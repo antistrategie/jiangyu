@@ -1,0 +1,22 @@
+<Project>
+
+  <!--
+    Default paths for MelonLoader and game assemblies.
+    Override in local.props (gitignored) if your game is installed elsewhere.
+  -->
+  <PropertyGroup Condition="'$(GameDir)' == '' AND '$(OS)' == 'Unix'">
+    <GameDir>$(HOME)/.local/share/Steam/steamapps/common/Menace</GameDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(GameDir)' == '' AND '$(OS)' == 'Windows_NT'">
+    <GameDir>C:\Program Files (x86)\Steam\steamapps\common\Menace</GameDir>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <MelonLoaderDir Condition="'$(MelonLoaderDir)' == ''">$(GameDir)/MelonLoader/net6</MelonLoaderDir>
+    <GameAssembliesDir Condition="'$(GameAssembliesDir)' == ''">$(GameDir)/MelonLoader/Il2CppAssemblies</GameAssembliesDir>
+  </PropertyGroup>
+
+  <Import Project="local.props" Condition="Exists('local.props')" />
+
+</Project>

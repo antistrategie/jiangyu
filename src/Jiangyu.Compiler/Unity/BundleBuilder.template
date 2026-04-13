@@ -1,0 +1,178 @@
+using System;
+using System.IO;
+using System.Linq;
+using UnityEditor;
+using UnityEngine;
+
+public static class BundleBuilder
+{
+    private const float SoldierBoneTranslationScaleFix = 100f;
+
+    public static void Build()
+    {
+        var args = Environment.GetCommandLineArgs();
+        var bundleName = GetArg(args, "-bundleName") ?? "mod";
+        var outputPath = GetArg(args, "-bundleOutputPath") ?? "AssetBundles";
+
+        Directory.CreateDirectory(outputPath);
+
+        var prefabDir = "Assets/Prefabs";
+        Directory.CreateDirectory(prefabDir);
+
+        // Find all model files in Assets/Models/
+        var modelGuids = AssetDatabase.FindAssets("", new[] { "Assets/Models" });
+        var prefabCount = 0;
+
+        foreach (var guid in modelGuids)
+        {
+            var assetPath = AssetDatabase.GUIDToAssetPath(guid);
+            if (AssetDatabase.IsValidFolder(assetPath))
+                continue;
+
+            // Configure model importer for skinned meshes
+            var modelImporter = AssetImporter.GetAtPath(assetPath) as ModelImporter;
+            if (modelImporter != null)
+            {
+                var needsReimport = false;
+
+                // Use Generic rig so Unity creates a skinned mesh with bone hierarchy
+                if (modelImporter.animationType != ModelImporterAnimationType.Generic)
+                {
+                    modelImporter.animationType = ModelImporterAnimationType.Generic;
+                    needsReimport = true;
+                }
+
+                // Meshes must be readable at runtime so the loader can copy vertex
+                // data into the game's existing mesh objects (which are GPU-only).
+                if (!modelImporter.isReadable)
+                {
+                    modelImporter.isReadable = true;
+                    needsReimport = true;
+                }
+
+                if (needsReimport)
+                    modelImporter.SaveAndReimport();
+            }
+
+            // Instantiate the model to get the full hierarchy with SkinnedMeshRenderer
+            var modelAsset = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+            if (modelAsset == null)
+            {
+                Debug.LogWarning($"[Jiangyu] Could not load model: {assetPath}");
+                continue;
+            }
+
+            // Create a prefab from the model — this preserves the SMR + bone hierarchy
+            var prefabName = Path.GetFileNameWithoutExtension(assetPath);
+            var prefabPath = $"{prefabDir}/{prefabName}.prefab";
+
+            // Instantiate, save as prefab, destroy the instance
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(modelAsset);
+            NormalizeCharacterPrefab(instance);
+            PrefabUtility.SaveAsPrefabAsset(instance, prefabPath);
+            UnityEngine.Object.DestroyImmediate(instance);
+
+            // Assign the prefab to the bundle
+            var prefabImporter = AssetImporter.GetAtPath(prefabPath);
+            if (prefabImporter != null)
+            {
+                prefabImporter.assetBundleName = bundleName;
+                prefabCount++;
+            }
+
+            Debug.Log($"[Jiangyu] Created prefab: {prefabPath}");
+        }
+
+        Debug.Log($"[Jiangyu] Building bundle '{bundleName}' with {prefabCount} prefab(s)");
+
+        var manifest = BuildPipeline.BuildAssetBundles(
+            outputPath,
+            BuildAssetBundleOptions.None,
+            EditorUserBuildSettings.activeBuildTarget);
+
+        if (manifest == null)
+        {
+            Debug.LogError("[Jiangyu] BuildAssetBundles returned null — build failed.");
+            EditorApplication.Exit(1);
+            return;
+        }
+
+        var bundles = manifest.GetAllAssetBundles();
+        Debug.Log($"[Jiangyu] Built {bundles.Length} bundle(s): {string.Join(", ", bundles)}");
+    }
+
+    private static string GetArg(string[] args, string name)
+    {
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (args[i] == name)
+                return args[i + 1];
+        }
+        return null;
+    }
+
+    private static void NormalizeCharacterPrefab(GameObject root)
+    {
+        if (root == null)
+            return;
+
+        var smrs = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        if (smrs == null || smrs.Length == 0)
+            return;
+
+        var skeletonOwner = FindSkeletonOwner(root.transform);
+        if (skeletonOwner != null && skeletonOwner != root.transform)
+        {
+            var movedChildren = new System.Collections.Generic.List<Transform>();
+            for (int i = 0; i < skeletonOwner.childCount; i++)
+                movedChildren.Add(skeletonOwner.GetChild(i));
+
+            foreach (var child in movedChildren)
+                child.SetParent(root.transform, true);
+
+            UnityEngine.Object.DestroyImmediate(skeletonOwner.gameObject);
+        }
+
+        var rootBone = root.transform.Find("Root");
+        if (rootBone != null)
+            ScaleSkeletonLocalTranslations(rootBone, SoldierBoneTranslationScaleFix);
+
+        var hips = root.transform.Find("Root/Hips");
+        if (hips != null)
+        {
+            foreach (var smr in smrs)
+            {
+                smr.rootBone = hips;
+            }
+        }
+    }
+
+    private static Transform FindSkeletonOwner(Transform root)
+    {
+        for (int i = 0; i < root.childCount; i++)
+        {
+            var child = root.GetChild(i);
+            if (child == null)
+                continue;
+
+            if (child.name == root.name)
+            {
+                var rootDescendant = child.Find("Root");
+                if (rootDescendant != null)
+                    return child;
+            }
+        }
+
+        return null;
+    }
+
+    private static void ScaleSkeletonLocalTranslations(Transform node, float factor)
+    {
+        if (node == null)
+            return;
+
+        node.localPosition *= factor;
+        for (int i = 0; i < node.childCount; i++)
+            ScaleSkeletonLocalTranslations(node.GetChild(i), factor);
+    }
+}
