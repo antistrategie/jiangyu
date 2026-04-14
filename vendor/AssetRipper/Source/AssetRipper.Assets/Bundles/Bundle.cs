@@ -167,6 +167,7 @@ public abstract class Bundle : IDisposable
 
 		/// <summary>
 		/// Attempts to resolve an <see cref="AssetCollection"/> with the specified name in the specified Bundle's child Bundles.
+		/// Searches recursively through all descendant bundles.
 		/// </summary>
 		/// <param name="currentBundle">The Bundle to attempt to resolve the <see cref="AssetCollection"/> from.</param>
 		/// <param name="name">The name of the <see cref="AssetCollection"/>.</param>
@@ -176,9 +177,19 @@ public abstract class Bundle : IDisposable
 		{
 			foreach (Bundle bundle in currentBundle.Bundles)
 			{
-				if (bundle != bundleToExclude && TryResolveFromCollections(bundle, name) is { } collection)
+				if (bundle == bundleToExclude)
+				{
+					continue;
+				}
+
+				if (TryResolveFromCollections(bundle, name) is { } collection)
 				{
 					return collection;
+				}
+
+				if (TryResolveFromChildBundles(bundle, name, null) is { } descendantCollection)
+				{
+					return descendantCollection;
 				}
 			}
 
@@ -241,6 +252,7 @@ public abstract class Bundle : IDisposable
 
 		/// <summary>
 		/// Attempts to resolve a ResourceFile with the specified name in the specified Bundle's child Bundles.
+		/// Searches recursively through all descendant bundles.
 		/// </summary>
 		/// <param name="currentBundle">The Bundle to attempt to resolve the ResourceFile from.</param>
 		/// <param name="originalName">The original name of the ResourceFile.</param>
@@ -251,9 +263,19 @@ public abstract class Bundle : IDisposable
 		{
 			foreach (Bundle bundle in currentBundle.Bundles)
 			{
-				if (bundle != bundleToExclude && TryResolveFromResources(bundle, fixedName) is { } resource)
+				if (bundle == bundleToExclude)
+				{
+					continue;
+				}
+
+				if (TryResolveFromResources(bundle, fixedName) is { } resource)
 				{
 					return resource;
+				}
+
+				if (TryResolveFromChildBundles(bundle, originalName, fixedName, null) is { } descendantResource)
+				{
+					return descendantResource;
 				}
 			}
 
