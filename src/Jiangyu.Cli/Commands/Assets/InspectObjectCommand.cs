@@ -84,6 +84,13 @@ public static class InspectObjectCommand
                 ResolvedObjectCandidate? resolved = null;
                 if (!string.IsNullOrWhiteSpace(name))
                 {
+                    var assetIndexService = new AssetPipelineService(gameDataPath, cachePath, new ConsoleProgressSink(), new ConsoleLogSink());
+                    if (!assetIndexService.IsIndexCurrent())
+                    {
+                        Console.Error.WriteLine("Error: asset index is missing or stale for the current game version. Run 'jiangyu assets index' first.");
+                        return 1;
+                    }
+
                     ObjectResolutionResult resolution = service.Resolve(request);
                     switch (resolution.Status)
                     {

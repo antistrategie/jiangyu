@@ -1,4 +1,7 @@
 using Jiangyu.Core.Compile;
+using Jiangyu.Core.Unity;
+using Jiangyu.Core.Tests.Helpers;
+using AssetRipper.Primitives;
 
 namespace Jiangyu.Core.Tests.Compile;
 
@@ -138,4 +141,64 @@ public class CollectAssetFilesTests
             Directory.Delete(dir, recursive: true);
         }
     }
+}
+
+public class UnityVersionValidationServiceTests
+{
+    [Theory]
+    [InlineData("/opt/Unity/Hub/Editor/6000.0.63f1/Editor/Unity", "6000.0.63f1")]
+    [InlineData("C:\\Program Files\\Unity\\Hub\\Editor\\6000.0.63f1\\Editor\\Unity.exe", "6000.0.63f1")]
+    [InlineData("Unity 6000.0.63f1", "6000.0.63f1")]
+    public void TryParseUnityVersionFromText_FindsUnityVersion(string text, string expected)
+    {
+        var success = UnityVersionValidationService.TryParseUnityVersionFromText(text, out var version);
+
+        Assert.True(success);
+        Assert.Equal(expected, version.ToString());
+    }
+
+    [Theory]
+    [InlineData("/opt/Unity/Hub/Editor/current/Editor/Unity")]
+    [InlineData("not a unity version")]
+    [InlineData("6000")]
+    public void TryParseUnityVersionFromText_RejectsNonVersionText(string text)
+    {
+        var success = UnityVersionValidationService.TryParseUnityVersionFromText(text, out _);
+
+        Assert.False(success);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_FailsWhenEditorDoesNotMatchGame()
+    {
+        var service = new UnityVersionValidationService(
+            new NullLogSink(),
+            _ => ParseVersion("6000.0.63f1"),
+            _ => Task.FromResult<UnityVersion?>(ParseVersion("6000.0.55f1")));
+
+        var result = await service.ValidateAsync("/fake/Menace_Data", "/fake/Unity");
+
+        Assert.False(result.Success);
+        Assert.Equal("6000.0.63f1", result.GameVersion?.ToString());
+        Assert.Equal("6000.0.55f1", result.EditorVersion?.ToString());
+        Assert.Contains("does not match MENACE", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_SucceedsWhenEditorMatchesGame()
+    {
+        var service = new UnityVersionValidationService(
+            new NullLogSink(),
+            _ => ParseVersion("6000.0.63f1"),
+            _ => Task.FromResult<UnityVersion?>(ParseVersion("6000.0.63f1")));
+
+        var result = await service.ValidateAsync("/fake/Menace_Data", "/fake/Unity");
+
+        Assert.True(result.Success);
+        Assert.Equal("6000.0.63f1", result.GameVersion?.ToString());
+        Assert.Equal("6000.0.63f1", result.EditorVersion?.ToString());
+        Assert.Null(result.ErrorMessage);
+    }
+
+    private static UnityVersion ParseVersion(string value) => UnityVersion.Parse(value);
 }

@@ -60,6 +60,12 @@ public static class AssetsCommand
                 return 1;
             }
 
+            if (!service.IsIndexCurrent())
+            {
+                Console.Error.WriteLine("Error: asset index is missing or stale for the current game version. Run 'jiangyu assets index' first.");
+                return 1;
+            }
+
             var results = service.Search(query, typeFilter);
             if (results.Count == 0)
             {
@@ -112,6 +118,12 @@ public static class AssetsCommand
             if (service is null)
             {
                 Console.Error.WriteLine(error);
+                return 1;
+            }
+
+            if (!service.IsIndexCurrent())
+            {
+                Console.Error.WriteLine("Error: asset index is missing or stale for the current game version. Run 'jiangyu assets index' first.");
                 return 1;
             }
 

@@ -85,4 +85,27 @@ public class GlobalConfigTests
         Assert.DoesNotContain("unityEditor", json);
         Assert.DoesNotContain("cache", json);
     }
+
+    [Fact]
+    public void ResolveGameDataPath_WithConfig_ReturnsMatchingDataDirectory()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"jiangyu-game-{Guid.NewGuid()}");
+
+        try
+        {
+            Directory.CreateDirectory(root);
+            var dataDir = Path.Combine(root, "Menace_Data");
+            Directory.CreateDirectory(dataDir);
+
+            var (gameDataPath, error) = GlobalConfig.ResolveGameDataPath(new GlobalConfig { Game = root });
+
+            Assert.Equal(dataDir, gameDataPath);
+            Assert.Null(error);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
 }

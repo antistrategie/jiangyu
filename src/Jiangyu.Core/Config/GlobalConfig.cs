@@ -89,7 +89,15 @@ public sealed class GlobalConfig
     /// </summary>
     public static (string? gameDataPath, string? error) ResolveGameDataPath()
     {
-        var config = Load();
+        return ResolveGameDataPath(Load());
+    }
+
+    /// <summary>
+    /// Resolves the game data directory (_Data) from the provided config's game path.
+    /// Returns null with an error message if not configured or not found.
+    /// </summary>
+    public static (string? gameDataPath, string? error) ResolveGameDataPath(GlobalConfig config)
+    {
         if (string.IsNullOrEmpty(config.Game))
         {
             return (null, $"Error: game path not set. Edit {ConfigPath}\n\nExample:\n  {{\n    \"game\": \"~/.steam/steam/steamapps/common/Menace\"\n  }}");

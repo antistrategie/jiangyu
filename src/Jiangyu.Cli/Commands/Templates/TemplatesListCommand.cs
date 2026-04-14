@@ -27,6 +27,12 @@ public static class TemplatesListCommand
                 return 1;
             }
 
+            if (!service.IsIndexCurrent())
+            {
+                Console.Error.WriteLine("Error: template index is missing or stale for the current game version. Run 'jiangyu templates index' first.");
+                return 1;
+            }
+
             TemplateIndex? index = service.LoadIndex();
             if (index is null)
             {

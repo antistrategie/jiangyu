@@ -27,14 +27,14 @@ public static class CompileCommand
                 var config = GlobalConfig.Load();
 
                 var service = new CompilationService(new ConsoleLogSink(), new ConsoleProgressSink());
-                await service.CompileAsync(new CompilationInput
+                CompilationResult result = await service.CompileAsync(new CompilationInput
                 {
                     Manifest = manifest,
                     Config = config,
                     ProjectDirectory = projectDir,
                 });
 
-                return 0;
+                return result.Success ? 0 : 1;
             }
             catch (Exception ex)
             {

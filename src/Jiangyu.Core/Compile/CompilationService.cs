@@ -3,6 +3,7 @@ using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Glb;
 using Jiangyu.Core.Models;
+using Jiangyu.Core.Unity;
 
 namespace Jiangyu.Core.Compile;
 
@@ -52,8 +53,17 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         if (string.IsNullOrEmpty(config.UnityEditor))
             return Fail($"unityEditor not set in global config ({GlobalConfig.ConfigPath})");
 
-        if (!File.Exists(config.UnityEditor))
-            return Fail($"Unity editor not found at: {config.UnityEditor}");
+        string unityEditorPath = GlobalConfig.ExpandHome(config.UnityEditor);
+        if (!File.Exists(unityEditorPath))
+            return Fail($"Unity editor not found at: {unityEditorPath}");
+
+        var (gameDataPath, gameDataError) = GlobalConfig.ResolveGameDataPath(config);
+        if (gameDataPath is null)
+            return Fail(gameDataError ?? "Could not resolve game data path.");
+
+        var versionValidation = await new UnityVersionValidationService(_log).ValidateAsync(gameDataPath, unityEditorPath);
+        if (!versionValidation.Success)
+            return Fail(versionValidation.ErrorMessage ?? "Unity version validation failed.");
 
         // Parse mesh mappings and collect model files
         var meshMappings = new Dictionary<string, string>();
@@ -119,14 +129,13 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             _log.Info("  Using experimental GLB mesh pipeline...");
             var bundleOutputPath = Path.Combine(unityProjectDir, "AssetBundles", bundleName);
             Directory.CreateDirectory(Path.GetDirectoryName(bundleOutputPath)!);
-            var (gameDataPath, _) = GlobalConfig.ResolveGameDataPath();
             var targetMeshNamesByBundleMesh = meshMappings
                 .ToDictionary(kv => kv.Value, kv => kv.Key, StringComparer.Ordinal);
 
             try
             {
                 var buildResult = await GlbMeshBundleCompiler.BuildAsync(
-                    config.UnityEditor,
+                    unityEditorPath,
                     unityProjectDir,
                     bundleName,
                     bundleOutputPath,
@@ -157,9 +166,9 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         {
             await SetupUnityProject(unityProjectDir, modelFiles);
 
-            var success = await InvokeUnityBuild(config.UnityEditor, unityProjectDir, bundleName);
-            if (!success)
-                return Fail("Unity build failed. Check logs for details.");
+                var success = await InvokeUnityBuild(unityEditorPath, unityProjectDir, bundleName);
+                if (!success)
+                    return Fail("Unity build failed. Check logs for details.");
         }
 
         // Collect output

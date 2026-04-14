@@ -84,6 +84,12 @@ public static class TemplatesInspectCommand
                 if (!string.IsNullOrWhiteSpace(name))
                 {
                     var templateIndexService = new TemplateIndexService(gameDataPath, cachePath, new ConsoleProgressSink(), new ConsoleLogSink());
+                    if (!templateIndexService.IsIndexCurrent())
+                    {
+                        Console.Error.WriteLine("Error: template index is missing or stale for the current game version. Run 'jiangyu templates index' first.");
+                        return 1;
+                    }
+
                     var resolver = new TemplateResolver(templateIndexService.LoadIndex());
                     TemplateResolutionResult resolution = resolver.Resolve(className!, name);
 
