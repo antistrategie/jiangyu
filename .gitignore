@@ -17,3 +17,6 @@ publish/
 
 ## Local config (contributor-specific paths)
 local.props
+
+!README.md
+*.md
