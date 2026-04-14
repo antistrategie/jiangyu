@@ -1,14 +1,13 @@
 using System.Diagnostics;
 using System.Numerics;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
-using Jiangyu.Compiler.Assets;
-using Jiangyu.Compiler.Commands;
 using SharpGLTF.Schema2;
 
-namespace Jiangyu.Compiler.Glb;
+namespace Jiangyu.Core.Glb;
 
-internal static class GlbMeshBundleCompiler
+public static class GlbMeshBundleCompiler
 {
     private const float MenaceCharacterSpaceScale = 100f;
     private const float MeshOnlyWeightedVertexScale = 0.01f;
@@ -22,7 +21,7 @@ internal static class GlbMeshBundleCompiler
         public required CompiledMesh Mesh { get; init; }
     }
 
-    internal sealed class MeshSourceEntry
+    public sealed class MeshSourceEntry
     {
         public required string SourceFilePath { get; init; }
         public required string BundleMeshName { get; init; }
@@ -58,7 +57,7 @@ internal static class GlbMeshBundleCompiler
         public required int IndexCount { get; init; }
     }
 
-    internal sealed class BuildResult
+    public sealed class BuildResult
     {
         public required Dictionary<string, string[]> MeshBoneNames { get; init; }
         public required Dictionary<string, string> MeshTexturePrefixes { get; init; }
@@ -1154,7 +1153,7 @@ internal static class GlbMeshBundleCompiler
         var editorDir = Path.Combine(assetsDir, "Editor");
         Directory.CreateDirectory(editorDir);
 
-        var buildScript = CompileCommand.LoadEmbeddedResource("Jiangyu.Compiler.Unity.MeshBundleBuilder.template");
+        var buildScript = LoadEmbeddedResource("Jiangyu.Core.Unity.MeshBundleBuilder.template");
         await File.WriteAllTextAsync(Path.Combine(editorDir, "MeshBundleBuilder.cs"), buildScript);
     }
 
@@ -1241,5 +1240,14 @@ internal static class GlbMeshBundleCompiler
                     writer.Write(value);
             }
         }
+    }
+
+    internal static string LoadEmbeddedResource(string name)
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        using var stream = assembly.GetManifestResourceStream(name)
+            ?? throw new InvalidOperationException($"Embedded resource '{name}' not found.");
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
     }
 }

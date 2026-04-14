@@ -1,10 +1,10 @@
 using SharpGLTF.Schema2;
 
-namespace Jiangyu.Compiler.Glb;
+namespace Jiangyu.Core.Glb;
 
-internal static class GlbCharacterContract
+public static class GlbCharacterContract
 {
-    internal sealed class CharacterContract
+    public sealed class CharacterContract
     {
         public required string GlbPath { get; init; }
         public required List<NodeInfo> Nodes { get; init; }
@@ -13,7 +13,7 @@ internal static class GlbCharacterContract
         public required List<JointRemapInfo> SuggestedJointRemaps { get; init; }
     }
 
-    internal sealed class NodeInfo
+    public sealed class NodeInfo
     {
         public required int Index { get; init; }
         public required string Name { get; init; }
@@ -26,7 +26,7 @@ internal static class GlbCharacterContract
         public required List<string> Children { get; init; }
     }
 
-    internal sealed class SkinInfo
+    public sealed class SkinInfo
     {
         public required int Index { get; init; }
         public required string Name { get; init; }
@@ -34,7 +34,7 @@ internal static class GlbCharacterContract
         public required List<SkinJointInfo> Joints { get; init; }
     }
 
-    internal sealed class SkinJointInfo
+    public sealed class SkinJointInfo
     {
         public required int Index { get; init; }
         public required string Name { get; init; }
@@ -42,7 +42,7 @@ internal static class GlbCharacterContract
         public required float[][] InverseBindMatrix { get; init; }
     }
 
-    internal sealed class JointRemapInfo
+    public sealed class JointRemapInfo
     {
         public required int SkinIndex { get; init; }
         public required int JointIndex { get; init; }

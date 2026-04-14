@@ -7,7 +7,9 @@ using SharpGLTF.Memory;
 using SharpGLTF.Scenes;
 using SharpGLTF.Schema2;
 
-namespace Jiangyu.Compiler.Services;
+using Jiangyu.Core.Abstractions;
+
+namespace Jiangyu.Core.Glb;
 
 /// <summary>
 /// Rebuilds a raw extracted GLB into a clean authoring GLB.
@@ -37,6 +39,7 @@ internal static class ModelCleanupService
     /// </param>
     public static SceneBuilder BuildCleanScene(
         string glbPath,
+        ILogSink? log = null,
         IReadOnlyDictionary<string, List<(string channelKey, byte[] pngData)>>? materialTextures = null)
     {
         var source = ModelRoot.Load(glbPath);
@@ -91,7 +94,7 @@ internal static class ModelCleanupService
             // by looking for any small-scale node whose name relates to the mesh.
             // For static meshes: trace the actual parent chain.
             float meshScale = sourceNode.Skin is not null
-                ? FindSkinnedMeshContainerScale(source, sourceNode)
+                ? FindSkinnedMeshContainerScale(source, sourceNode, log)
                 : FindAncestorContainerScale(sourceNode);
             var meshBuilder = RebuildMesh(sourceNode.Mesh, meshScale, meshName, materialTextures);
 
@@ -134,9 +137,9 @@ internal static class ModelCleanupService
     /// Convenience wrapper: loads raw GLB, cleans, and overwrites as GLB.
     /// Used for raw export path where .gltf is not needed.
     /// </summary>
-    public static void CleanupGlb(string glbPath)
+    public static void CleanupGlb(string glbPath, ILogSink? log = null)
     {
-        var scene = BuildCleanScene(glbPath);
+        var scene = BuildCleanScene(glbPath, log);
         var model = scene.ToGltf2();
         model.SaveGLB(glbPath);
     }
@@ -148,11 +151,11 @@ internal static class ModelCleanupService
     /// skin's SkinnedMeshRenderer by looking for nodes in the hierarchy that reference
     /// the same skin index, then trace THAT node's parent chain for the container scale.
     /// </summary>
-    private static float FindSkinnedMeshContainerScale(ModelRoot model, Node meshNode)
+    private static float FindSkinnedMeshContainerScale(ModelRoot model, Node meshNode, ILogSink? log)
     {
         if (meshNode.Skin is null || meshNode.Skin.JointsCount == 0)
         {
-            Console.Error.WriteLine($"  [cleanup] WARNING: skinned mesh '{meshNode.Mesh?.Name}' has no joints, scale=1.0");
+            log?.Warning($"[cleanup] skinned mesh '{meshNode.Mesh?.Name}' has no joints, scale=1.0");
             return 1f;
         }
 
@@ -170,7 +173,7 @@ internal static class ModelCleanupService
         var prefabRoot = skeletonRoot.VisualParent;
         if (prefabRoot is null)
         {
-            Console.Error.WriteLine($"  [cleanup] WARNING: skeleton root '{skeletonRoot.Name}' has no parent, scale=1.0");
+            log?.Warning($"[cleanup] skeleton root '{skeletonRoot.Name}' has no parent, scale=1.0");
             return 1f;
         }
 
@@ -181,7 +184,7 @@ internal static class ModelCleanupService
 
         if (candidates.Count == 0)
         {
-            Console.WriteLine($"  [cleanup] mesh='{meshNode.Mesh?.Name}' joint0='{firstJoint.Name}' skelRoot='{skeletonRoot.Name}' -> no container siblings, scale=1.0");
+            log?.Info($"[cleanup] mesh='{meshNode.Mesh?.Name}' joint0='{firstJoint.Name}' skelRoot='{skeletonRoot.Name}' -> no container siblings, scale=1.0");
             return 1f;
         }
 
@@ -190,12 +193,12 @@ internal static class ModelCleanupService
             var scales = candidates.Select(c => c.LocalTransform.Scale.X).Distinct().ToList();
             if (scales.Count > 1)
             {
-                Console.Error.WriteLine($"  [cleanup] WARNING: mesh='{meshNode.Mesh?.Name}' has {candidates.Count} container siblings with different scales: {string.Join(", ", scales)}. Using first.");
+                log?.Warning($"[cleanup] mesh='{meshNode.Mesh?.Name}' has {candidates.Count} container siblings with different scales: {string.Join(", ", scales)}. Using first.");
             }
         }
 
         float scale = candidates[0].LocalTransform.Scale.X;
-        Console.WriteLine($"  [cleanup] mesh='{meshNode.Mesh?.Name}' joint0='{firstJoint.Name}' skelRoot='{skeletonRoot.Name}' container='{candidates[0].Name}' -> scale={scale}");
+        log?.Info($"[cleanup] mesh='{meshNode.Mesh?.Name}' joint0='{firstJoint.Name}' skelRoot='{skeletonRoot.Name}' container='{candidates[0].Name}' -> scale={scale}");
         return scale;
     }
 

@@ -1,50 +1,16 @@
-using System.Text.Json;
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 
-namespace Jiangyu.Compiler.Commands;
+namespace Jiangyu.Core.Assets;
 
-public static class InspectMeshCommand
+public sealed class MeshInspectionService
 {
-    private const string DefaultOutputFileName = "jiangyu-inspect-mesh.json";
-    private static readonly JsonSerializerOptions PrettyJsonOptions = new() { WriteIndented = true };
     private const int ClassIdMesh = 43;
 
-    public static Task<int> RunAsync(string[] args)
-    {
-        var options = ParseArgs(args);
-        if (options is null)
-        {
-            PrintUsage();
-            return Task.FromResult(1);
-        }
-
-        var resolved = options.Value;
-        if (!File.Exists(resolved.BundlePath))
-        {
-            Console.Error.WriteLine($"Error: bundle not found: {resolved.BundlePath}");
-            return Task.FromResult(1);
-        }
-
-        if (!Directory.Exists(resolved.GameDataPath))
-        {
-            Console.Error.WriteLine($"Error: game data directory not found: {resolved.GameDataPath}");
-            return Task.FromResult(1);
-        }
-
-        try
-        {
-            Run(resolved);
-            return Task.FromResult(0);
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Error: inspect-mesh failed: {ex}");
-            return Task.FromResult(1);
-        }
-    }
-
-    private static void Run(InspectMeshOptions options)
+    /// <summary>
+    /// Inspects all mesh assets matching the given name across a bundle and the game's asset files.
+    /// </summary>
+    public MeshInspectionReport Inspect(string bundlePath, string gameDataPath, string meshName)
     {
         var am = new AssetsManager
         {
@@ -52,7 +18,7 @@ public static class InspectMeshCommand
             UseTemplateFieldCache = true,
         };
 
-        var bundle = am.LoadBundleFile(options.BundlePath);
+        var bundle = am.LoadBundleFile(bundlePath);
         var bundleAssetFiles = new List<AssetsFileInstance>();
         for (var i = 0; i < bundle.file.BlockAndDirInfo.DirectoryInfos.Count; i++)
         {
@@ -69,47 +35,19 @@ public static class InspectMeshCommand
         var meshTemplate = am.GetTemplateBaseField(templateSource, meshTemplateInfo)
             ?? throw new InvalidOperationException("Failed to get Mesh type template from bundle.");
 
-        var gameFiles = EnumerateGameAssetFiles(options.GameDataPath)
+        var gameFiles = EnumerateGameAssetFiles(gameDataPath)
             .Select(path => am.LoadAssetsFile(path, loadDeps: false))
             .Where(inst => inst?.file != null)
             .ToList();
 
-        var report = new MeshInspectionReport
+        return new MeshInspectionReport
         {
-            MeshName = options.MeshName,
-            BundlePath = options.BundlePath,
-            GameDataPath = options.GameDataPath,
-            BundleMeshes = [.. bundleAssetFiles.SelectMany(f => FindMeshes(f, meshTemplate, options.MeshName))],
-            GameMeshes = [.. gameFiles.SelectMany(f => FindMeshes(f, meshTemplate, options.MeshName))],
+            MeshName = meshName,
+            BundlePath = bundlePath,
+            GameDataPath = gameDataPath,
+            BundleMeshes = [.. bundleAssetFiles.SelectMany(f => FindMeshes(f, meshTemplate, meshName))],
+            GameMeshes = [.. gameFiles.SelectMany(f => FindMeshes(f, meshTemplate, meshName))],
         };
-
-        Directory.CreateDirectory(Path.GetDirectoryName(options.OutputPath)!);
-        File.WriteAllText(options.OutputPath, JsonSerializer.Serialize(report, PrettyJsonOptions));
-
-        Console.WriteLine($"Wrote mesh inspection report to {options.OutputPath}");
-        Console.WriteLine($"  bundle matches: {report.BundleMeshes.Count}");
-        Console.WriteLine($"  game matches:   {report.GameMeshes.Count}");
-
-        foreach (var mesh in report.GameMeshes.Take(2))
-            PrintMesh("game", mesh);
-        foreach (var mesh in report.BundleMeshes.Take(2))
-            PrintMesh("bundle", mesh);
-    }
-
-    private static void PrintMesh(string label, MeshInfo mesh)
-    {
-        Console.WriteLine($"[{label}] {Path.GetFileName(mesh.FilePath)} mesh={mesh.Name} pathId={mesh.PathId}");
-        Console.WriteLine($"  bindPoses={mesh.BindPoseCount} boneHashes={mesh.BoneNameHashes.Count} rootBoneHash={mesh.RootBoneNameHash?.ToString() ?? "null"}");
-        Console.WriteLine($"  bonesAabb={mesh.BonesAabbCount} variableBoneWeights={mesh.VariableBoneCountWeightsBytes}");
-        Console.WriteLine($"  vertexCount={mesh.VertexCount} channels={mesh.ChannelCount} dataSize={mesh.VertexDataSize}");
-        for (var i = 0; i < Math.Min(6, mesh.Channels.Count); i++)
-            Console.WriteLine($"  channel[{i}]={mesh.Channels[i]}");
-        for (var i = 0; i < mesh.VertexSamples.Count; i++)
-            Console.WriteLine($"  sample[{i}]={mesh.VertexSamples[i]}");
-        for (var i = 0; i < Math.Min(2, mesh.BindPoseSamples.Count); i++)
-        {
-            Console.WriteLine($"  bind[{i}]={mesh.BindPoseSamples[i]}");
-        }
     }
 
     private static IEnumerable<MeshInfo> FindMeshes(AssetsFileInstance inst, AssetTypeTemplateField meshTemplate, string meshName)
@@ -150,6 +88,8 @@ public static class InspectMeshCommand
         }
     }
 
+    // ── Array / byte helpers ──────────────────────────────────────────────
+
     private static int GetArrayCount(AssetTypeValueField field)
     {
         if (field.IsDummy)
@@ -170,6 +110,29 @@ public static class InspectMeshCommand
         return array.IsDummy ? 0 : array.Children.Count;
     }
 
+    private static byte[] GetByteArray(AssetTypeValueField field)
+    {
+        if (field is null || field.IsDummy)
+            return [];
+        if (field.Value is not null &&
+            field.Value.ValueType == AssetValueType.ByteArray &&
+            field.AsByteArray is not null)
+            return field.AsByteArray;
+
+        var array = field["Array"];
+        if (array.IsDummy)
+            return [];
+
+        var bytes = new byte[array.Children.Count];
+        for (var i = 0; i < array.Children.Count; i++)
+        {
+            if (!array.Children[i].IsDummy)
+                bytes[i] = array.Children[i].AsByte;
+        }
+
+        return bytes;
+    }
+
     private static List<uint> GetUIntArray(AssetTypeValueField field)
     {
         var list = new List<uint>();
@@ -186,6 +149,8 @@ public static class InspectMeshCommand
         return list;
     }
 
+    // ── Bind pose ─────────────────────────────────────────────────────────
+
     private static List<string> GetBindPoseSamples(AssetTypeValueField field, int count)
     {
         var result = new List<string>();
@@ -199,6 +164,47 @@ public static class InspectMeshCommand
         {
             result.Add(FormatMatrix(child));
         }
+        return result;
+    }
+
+    private static string FormatMatrix(AssetTypeValueField field)
+    {
+        string Cell(string name) => field[name].IsDummy ? "?" : field[name].AsFloat.ToString("0.0000");
+        var rows = new[]
+        {
+            $"{Cell("e00")} {Cell("e01")} {Cell("e02")} {Cell("e03")}",
+            $"{Cell("e10")} {Cell("e11")} {Cell("e12")} {Cell("e13")}",
+            $"{Cell("e20")} {Cell("e21")} {Cell("e22")} {Cell("e23")}",
+            $"{Cell("e30")} {Cell("e31")} {Cell("e32")} {Cell("e33")}",
+        };
+        return "[" + string.Join("; ", rows) + "]";
+    }
+
+    // ── Vertex channels ───────────────────────────────────────────────────
+
+    private static List<VertexChannelInfo> ReadChannels(AssetTypeValueField field)
+    {
+        var result = new List<VertexChannelInfo>();
+        if (field is null || field.IsDummy)
+            return result;
+        var array = field["Array"];
+        if (array.IsDummy)
+            return result;
+
+        for (var i = 0; i < array.Children.Count; i++)
+        {
+            var child = array.Children[i];
+            if (child.IsDummy)
+                continue;
+
+            result.Add(new VertexChannelInfo(
+                i,
+                child["stream"].IsDummy ? 0 : child["stream"].AsInt,
+                child["offset"].IsDummy ? 0 : child["offset"].AsInt,
+                child["format"].IsDummy ? 0 : child["format"].AsInt,
+                child["dimension"].IsDummy ? 0 : child["dimension"].AsInt));
+        }
+
         return result;
     }
 
@@ -225,6 +231,8 @@ public static class InspectMeshCommand
 
         return result;
     }
+
+    // ── Vertex decoding ───────────────────────────────────────────────────
 
     private static List<string> GetVertexSamples(AssetTypeValueField channelsField, AssetTypeValueField dataField, int vertexCount, int count)
     {
@@ -270,55 +278,6 @@ public static class InspectMeshCommand
             }
 
             result.Add($"v={vertex} {string.Join(" ", parts)}");
-        }
-
-        return result;
-    }
-
-    private static byte[] GetByteArray(AssetTypeValueField field)
-    {
-        if (field is null || field.IsDummy)
-            return [];
-        if (field.Value is not null &&
-            field.Value.ValueType == AssetValueType.ByteArray &&
-            field.AsByteArray is not null)
-            return field.AsByteArray;
-
-        var array = field["Array"];
-        if (array.IsDummy)
-            return [];
-
-        var bytes = new byte[array.Children.Count];
-        for (var i = 0; i < array.Children.Count; i++)
-        {
-            if (!array.Children[i].IsDummy)
-                bytes[i] = array.Children[i].AsByte;
-        }
-
-        return bytes;
-    }
-
-    private static List<VertexChannelInfo> ReadChannels(AssetTypeValueField field)
-    {
-        var result = new List<VertexChannelInfo>();
-        if (field is null || field.IsDummy)
-            return result;
-        var array = field["Array"];
-        if (array.IsDummy)
-            return result;
-
-        for (var i = 0; i < array.Children.Count; i++)
-        {
-            var child = array.Children[i];
-            if (child.IsDummy)
-                continue;
-
-            result.Add(new VertexChannelInfo(
-                i,
-                child["stream"].IsDummy ? 0 : child["stream"].AsInt,
-                child["offset"].IsDummy ? 0 : child["offset"].AsInt,
-                child["format"].IsDummy ? 0 : child["format"].AsInt,
-                child["dimension"].IsDummy ? 0 : child["dimension"].AsInt));
         }
 
         return result;
@@ -386,18 +345,7 @@ public static class InspectMeshCommand
             _ => $"Attr{attribute}",
         };
 
-    private static string FormatMatrix(AssetTypeValueField field)
-    {
-        string Cell(string name) => field[name].IsDummy ? "?" : field[name].AsFloat.ToString("0.0000");
-        var rows = new[]
-        {
-            $"{Cell("e00")} {Cell("e01")} {Cell("e02")} {Cell("e03")}",
-            $"{Cell("e10")} {Cell("e11")} {Cell("e12")} {Cell("e13")}",
-            $"{Cell("e20")} {Cell("e21")} {Cell("e22")} {Cell("e23")}",
-            $"{Cell("e30")} {Cell("e31")} {Cell("e32")} {Cell("e33")}",
-        };
-        return "[" + string.Join("; ", rows) + "]";
-    }
+    // ── Game asset file enumeration ───────────────────────────────────────
 
     private static IEnumerable<string> EnumerateGameAssetFiles(string gameDataPath)
     {
@@ -413,80 +361,35 @@ public static class InspectMeshCommand
             }
         }
     }
-
-    private static InspectMeshOptions? ParseArgs(string[] args)
-    {
-        string? bundlePath = null;
-        string? meshName = null;
-        var output = GetDefaultOutputPath();
-
-        for (var i = 0; i < args.Length; i++)
-        {
-            switch (args[i])
-            {
-                case "--bundle":
-                    bundlePath = args[++i];
-                    break;
-                case "--mesh":
-                    meshName = args[++i];
-                    break;
-                case "--out":
-                    output = args[++i];
-                    break;
-                default:
-                    return null;
-            }
-        }
-
-        if (bundlePath is null || meshName is null)
-            return null;
-
-        var (gameDataPath, error) = Models.GlobalConfig.ResolveGameDataPath();
-        if (gameDataPath is null)
-        {
-            Console.Error.WriteLine(error);
-            return null;
-        }
-
-        return new InspectMeshOptions(Path.GetFullPath(bundlePath), gameDataPath, meshName, Path.GetFullPath(output));
-    }
-
-    private static string GetDefaultOutputPath()
-        => Path.Combine(Path.GetTempPath(), DefaultOutputFileName);
-
-    private static void PrintUsage()
-    {
-        Console.Error.WriteLine("Usage: jiangyu assets inspect mesh --bundle <bundle> --mesh <meshName> [--out <json>]");
-    }
-
-    private readonly record struct InspectMeshOptions(string BundlePath, string GameDataPath, string MeshName, string OutputPath);
-
-    private sealed class MeshInspectionReport
-    {
-        public string MeshName { get; set; } = string.Empty;
-        public string BundlePath { get; set; } = string.Empty;
-        public string GameDataPath { get; set; } = string.Empty;
-        public List<MeshInfo> BundleMeshes { get; set; } = [];
-        public List<MeshInfo> GameMeshes { get; set; } = [];
-    }
-
-    private sealed class MeshInfo
-    {
-        public string FilePath { get; set; } = string.Empty;
-        public long PathId { get; set; }
-        public string Name { get; set; } = string.Empty;
-        public int BindPoseCount { get; set; }
-        public List<string> BindPoseSamples { get; set; } = [];
-        public List<uint> BoneNameHashes { get; set; } = [];
-        public uint? RootBoneNameHash { get; set; }
-        public int BonesAabbCount { get; set; }
-        public int VariableBoneCountWeightsBytes { get; set; }
-        public uint? VertexCount { get; set; }
-        public int ChannelCount { get; set; }
-        public List<string> Channels { get; set; } = [];
-        public int VertexDataSize { get; set; }
-        public List<string> VertexSamples { get; set; } = [];
-    }
-
-    private readonly record struct VertexChannelInfo(int Attribute, int Stream, int Offset, int Format, int Dimension);
 }
+
+// ── Data models ───────────────────────────────────────────────────────────
+
+public sealed class MeshInspectionReport
+{
+    public string MeshName { get; set; } = string.Empty;
+    public string BundlePath { get; set; } = string.Empty;
+    public string GameDataPath { get; set; } = string.Empty;
+    public List<MeshInfo> BundleMeshes { get; set; } = [];
+    public List<MeshInfo> GameMeshes { get; set; } = [];
+}
+
+public sealed class MeshInfo
+{
+    public string FilePath { get; set; } = string.Empty;
+    public long PathId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public int BindPoseCount { get; set; }
+    public List<string> BindPoseSamples { get; set; } = [];
+    public List<uint> BoneNameHashes { get; set; } = [];
+    public uint? RootBoneNameHash { get; set; }
+    public int BonesAabbCount { get; set; }
+    public int VariableBoneCountWeightsBytes { get; set; }
+    public uint? VertexCount { get; set; }
+    public int ChannelCount { get; set; }
+    public List<string> Channels { get; set; } = [];
+    public int VertexDataSize { get; set; }
+    public List<string> VertexSamples { get; set; } = [];
+}
+
+public readonly record struct VertexChannelInfo(int Attribute, int Stream, int Offset, int Format, int Dimension);

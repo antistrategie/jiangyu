@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/Jiangyu.Compiler/Jiangyu.Compiler.csproj" />
+    <Project Path="src/Jiangyu.Core/Jiangyu.Core.csproj" />
+    <Project Path="src/Jiangyu.Cli/Jiangyu.Cli.csproj" />
     <Project Path="src/Jiangyu.Loader/Jiangyu.Loader.csproj" />
   </Folder>
 </Solution>

@@ -1,16 +1,10 @@
-using System.Text.Json;
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 
-namespace Jiangyu.Compiler.Commands;
+namespace Jiangyu.Core.Assets;
 
-public static class InspectCommand
+public sealed class AssetInspectionService
 {
-    private const string DefaultOutputFileName = "jiangyu-inspect.json";
-    private static readonly JsonSerializerOptions PrettyJsonOptions = new()
-    {
-        WriteIndented = true,
-    };
     private const int ClassIdGameObject = 1;
     private const int ClassIdTransform = 4;
     private const int ClassIdMeshRenderer = 23;
@@ -20,43 +14,18 @@ public static class InspectCommand
     private const int ClassIdSkinnedMeshRenderer = 137;
     private const int ClassIdLODGroup = 205;
 
-    public static Task<int> RunAsync(string[] args)
+    /// <summary>
+    /// Inspects a bundle file and game data directory, returning a structured report
+    /// of all matching GameObjects and their components.
+    /// </summary>
+    public InspectionReport InspectBundles(
+        string bundlePath,
+        string gameDataPath,
+        string gameFilter = "basic_soldier",
+        string? bundleFilter = null)
     {
-        var options = ParseArgs(args);
-        if (options is null)
-        {
-            PrintUsage();
-            return Task.FromResult(1);
-        }
+        bundleFilter ??= gameFilter;
 
-        var resolvedOptions = options.Value;
-
-        if (!File.Exists(resolvedOptions.BundlePath))
-        {
-            Console.Error.WriteLine($"Error: bundle not found: {resolvedOptions.BundlePath}");
-            return Task.FromResult(1);
-        }
-
-        if (!Directory.Exists(resolvedOptions.GameDataPath))
-        {
-            Console.Error.WriteLine($"Error: game data directory not found: {resolvedOptions.GameDataPath}");
-            return Task.FromResult(1);
-        }
-
-        try
-        {
-            Run(resolvedOptions);
-            return Task.FromResult(0);
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Error: inspect failed: {ex}");
-            return Task.FromResult(1);
-        }
-    }
-
-    private static void Run(InspectOptions options)
-    {
         var am = new AssetsManager
         {
             UseQuickLookup = true,
@@ -64,7 +33,7 @@ public static class InspectCommand
             UseMonoTemplateFieldCache = true,
         };
 
-        var bundle = am.LoadBundleFile(options.BundlePath);
+        var bundle = am.LoadBundleFile(bundlePath);
         var bundleAssetFiles = new List<AssetsFileInstance>();
         for (var i = 0; i < bundle.file.BlockAndDirInfo.DirectoryInfos.Count; i++)
         {
@@ -81,69 +50,21 @@ public static class InspectCommand
 
         var templates = BuildTemplates(am, templateSource);
 
-        var gameFiles = EnumerateGameAssetFiles(options.GameDataPath)
+        var gameFiles = EnumerateGameAssetFiles(gameDataPath)
             .Select(path => am.LoadAssetsFile(path, loadDeps: false))
             .Where(inst => inst?.file != null)
             .ToList();
 
-        var report = new InspectionReport
+        return new InspectionReport
         {
-            BundlePath = options.BundlePath,
-            GameDataPath = options.GameDataPath,
-            GameFilter = options.GameFilter,
-            BundleFilter = options.BundleFilter,
-            BundleFiles = [.. bundleAssetFiles.Select(inst => InspectFile(inst, templates, options.BundleFilter))],
-            GameFiles = [.. gameFiles.Select(inst => InspectFile(inst, templates, options.GameFilter))],
+            BundlePath = bundlePath,
+            GameDataPath = gameDataPath,
+            GameFilter = gameFilter,
+            BundleFilter = bundleFilter,
+            BundleFiles = [.. bundleAssetFiles.Select(inst => InspectFile(inst, templates, bundleFilter))],
+            GameFiles = [.. gameFiles.Select(inst => InspectFile(inst, templates, gameFilter))],
         };
-
-        Directory.CreateDirectory(Path.GetDirectoryName(options.OutputPath)!);
-        File.WriteAllText(options.OutputPath, JsonSerializer.Serialize(report, PrettyJsonOptions));
-
-        var bundleMatches = report.BundleFiles.Sum(f => f.GameObjects.Count);
-        var gameMatches = report.GameFiles.Sum(f => f.GameObjects.Count);
-        Console.WriteLine($"Wrote inspection report to {options.OutputPath}");
-        Console.WriteLine($"  bundle matches: {bundleMatches}");
-        Console.WriteLine($"  game matches:   {gameMatches}");
-
-        foreach (var file in report.GameFiles.Where(f => f.GameObjects.Count > 0))
-        {
-            Console.WriteLine($"[game] {Path.GetFileName(file.Path)}");
-            foreach (var go in file.GameObjects.Take(8))
-                PrintGameObjectSummary(go);
-        }
-
-        foreach (var file in report.BundleFiles.Where(f => f.GameObjects.Count > 0))
-        {
-            Console.WriteLine($"[bundle] {Path.GetFileName(file.Path)}");
-            foreach (var go in file.GameObjects.Take(8))
-                PrintGameObjectSummary(go);
-        }
     }
-
-    private static void PrintGameObjectSummary(GameObjectInfo go)
-    {
-        var compSummary = string.Join(", ", go.Components.Select(c => c.TypeName));
-        Console.WriteLine($"  {go.Path} [{compSummary}]");
-        if (go.Transform is not null)
-        {
-            Console.WriteLine($"    Transform pos={FormatVector(go.Transform.LocalPosition)} scale={FormatVector(go.Transform.LocalScale)} children={go.Transform.ChildNames.Count}");
-        }
-        foreach (var smr in go.SkinnedMeshRenderers)
-        {
-            Console.WriteLine($"    SMR mesh={smr.MeshName ?? smr.MeshPathId?.ToString() ?? "null"} root={smr.RootBonePath ?? smr.RootBoneName ?? smr.RootBonePathId?.ToString() ?? "null"} bones={smr.BoneNames.Count} mats={smr.MaterialCount}");
-        }
-        foreach (var animator in go.Animators)
-        {
-            Console.WriteLine($"    Animator avatar={animator.AvatarPathId?.ToString() ?? "null"} controller={animator.ControllerPathId?.ToString() ?? "null"} culling={animator.CullingMode}");
-        }
-        foreach (var lod in go.LodGroups)
-        {
-            Console.WriteLine($"    LODGroup lods={lod.Lods.Count}");
-        }
-    }
-
-    private static string FormatVector(float[] values)
-        => $"({string.Join(", ", values.Select(v => v.ToString("0.####")))})";
 
     private static Dictionary<int, AssetTypeTemplateField> BuildTemplates(AssetsManager am, AssetsFileInstance templateSource)
     {
@@ -214,7 +135,7 @@ public static class InspectCommand
     {
         foreach (var path in Directory.EnumerateFiles(gameDataPath, "*", SearchOption.TopDirectoryOnly))
         {
-            var fileName = Path.GetFileName(path);
+            var fileName = System.IO.Path.GetFileName(path);
             if (fileName.Equals("globalgamemanagers.assets", StringComparison.OrdinalIgnoreCase) ||
                 fileName.Equals("resources.assets", StringComparison.OrdinalIgnoreCase) ||
                 fileName.StartsWith("sharedassets", StringComparison.OrdinalIgnoreCase) && fileName.EndsWith(".assets", StringComparison.OrdinalIgnoreCase) ||
@@ -225,59 +146,18 @@ public static class InspectCommand
         }
     }
 
-    private static InspectOptions? ParseArgs(string[] args)
+    internal static string GetClassName(int typeId) => typeId switch
     {
-        string? bundlePath = null;
-        var gameFilter = "basic_soldier";
-        string? bundleFilter = null;
-        var outputPath = GetDefaultOutputPath();
-
-        for (var i = 0; i < args.Length; i++)
-        {
-            switch (args[i])
-            {
-                case "--bundle":
-                    bundlePath = args[++i];
-                    break;
-                case "--filter":
-                    gameFilter = args[++i];
-                    break;
-                case "--bundle-filter":
-                    bundleFilter = args[++i];
-                    break;
-                case "--out":
-                    outputPath = args[++i];
-                    break;
-                default:
-                    return null;
-            }
-        }
-
-        if (bundlePath is null)
-            return null;
-
-        var (gameDataPath, error) = Models.GlobalConfig.ResolveGameDataPath();
-        if (gameDataPath is null)
-        {
-            Console.Error.WriteLine(error);
-            return null;
-        }
-
-        return new InspectOptions(
-            Path.GetFullPath(bundlePath),
-            gameDataPath,
-            gameFilter,
-            bundleFilter ?? gameFilter,
-            Path.GetFullPath(outputPath));
-    }
-
-    private static string GetDefaultOutputPath()
-        => Path.Combine(Path.GetTempPath(), DefaultOutputFileName);
-
-    private static void PrintUsage()
-    {
-        Console.Error.WriteLine("Usage: jiangyu assets inspect prefab --bundle <bundle> [--filter <name>] [--bundle-filter <name>] [--out <json>]");
-    }
+        ClassIdGameObject => nameof(GameObjectInfo),
+        ClassIdTransform => "Transform",
+        ClassIdMeshRenderer => "MeshRenderer",
+        ClassIdMeshFilter => "MeshFilter",
+        ClassIdMesh => "Mesh",
+        ClassIdAnimator => "Animator",
+        ClassIdSkinnedMeshRenderer => "SkinnedMeshRenderer",
+        ClassIdLODGroup => "LODGroup",
+        _ => $"ClassID:{typeId}",
+    };
 
     private sealed class FileContext(AssetsFileInstance inst, IReadOnlyDictionary<int, AssetTypeTemplateField> templates)
     {
@@ -640,104 +520,86 @@ public static class InspectCommand
         }
     }
 
-    private static string GetClassName(int typeId) => typeId switch
-    {
-        ClassIdGameObject => nameof(GameObjectInfo),
-        ClassIdTransform => "Transform",
-        ClassIdMeshRenderer => "MeshRenderer",
-        ClassIdMeshFilter => "MeshFilter",
-        ClassIdMesh => "Mesh",
-        ClassIdAnimator => "Animator",
-        ClassIdSkinnedMeshRenderer => "SkinnedMeshRenderer",
-        ClassIdLODGroup => "LODGroup",
-        _ => $"ClassID:{typeId}",
-    };
-
-    private readonly record struct InspectOptions(
-        string BundlePath,
-        string GameDataPath,
-        string GameFilter,
-        string BundleFilter,
-        string OutputPath);
-
     private readonly record struct ComponentRef(long PathId, int TypeId);
     private readonly record struct PPtr(int FileId, long PathId);
     private readonly record struct GameObjectSkeleton(long PathId, string Name, long TransformPathId, List<ComponentRef> Components);
+}
 
-    private sealed class InspectionReport
-    {
-        public string BundlePath { get; set; } = string.Empty;
-        public string GameDataPath { get; set; } = string.Empty;
-        public string GameFilter { get; set; } = string.Empty;
-        public string BundleFilter { get; set; } = string.Empty;
-        public List<AssetFileReport> BundleFiles { get; set; } = [];
-        public List<AssetFileReport> GameFiles { get; set; } = [];
-    }
+// --- Report types ---
 
-    private sealed class AssetFileReport
-    {
-        public string Path { get; set; } = string.Empty;
-        public bool HasTypeTree { get; set; }
-        public string UnityVersion { get; set; } = string.Empty;
-        public List<GameObjectInfo> GameObjects { get; set; } = [];
-    }
+public sealed class InspectionReport
+{
+    public string BundlePath { get; set; } = string.Empty;
+    public string GameDataPath { get; set; } = string.Empty;
+    public string GameFilter { get; set; } = string.Empty;
+    public string BundleFilter { get; set; } = string.Empty;
+    public List<AssetFileReport> BundleFiles { get; set; } = [];
+    public List<AssetFileReport> GameFiles { get; set; } = [];
+}
 
-    private sealed class GameObjectInfo
-    {
-        public long PathId { get; set; }
-        public string Name { get; set; } = string.Empty;
-        public string Path { get; set; } = string.Empty;
-        public List<ComponentInfo> Components { get; set; } = [];
-        public TransformInfo? Transform { get; set; }
-        public List<SkinnedMeshRendererInfo> SkinnedMeshRenderers { get; set; } = [];
-        public List<AnimatorInfo> Animators { get; set; } = [];
-        public List<LodGroupInfo> LodGroups { get; set; } = [];
-    }
+public sealed class AssetFileReport
+{
+    public string Path { get; set; } = string.Empty;
+    public bool HasTypeTree { get; set; }
+    public string UnityVersion { get; set; } = string.Empty;
+    public List<GameObjectInfo> GameObjects { get; set; } = [];
+}
 
-    private sealed class ComponentInfo
-    {
-        public long PathId { get; set; }
-        public int TypeId { get; set; }
-        public string TypeName { get; set; } = string.Empty;
-    }
+public sealed class GameObjectInfo
+{
+    public long PathId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Path { get; set; } = string.Empty;
+    public List<ComponentInfo> Components { get; set; } = [];
+    public TransformInfo? Transform { get; set; }
+    public List<SkinnedMeshRendererInfo> SkinnedMeshRenderers { get; set; } = [];
+    public List<AnimatorInfo> Animators { get; set; } = [];
+    public List<LodGroupInfo> LodGroups { get; set; } = [];
+}
 
-    private sealed class SkinnedMeshRendererInfo
-    {
-        public long PathId { get; set; }
-        public long? MeshPathId { get; set; }
-        public string? MeshName { get; set; }
-        public long? RootBonePathId { get; set; }
-        public string? RootBoneName { get; set; }
-        public string? RootBonePath { get; set; }
-        public List<string> BoneNames { get; set; } = [];
-        public int MaterialCount { get; set; }
-    }
+public sealed class ComponentInfo
+{
+    public long PathId { get; set; }
+    public int TypeId { get; set; }
+    public string TypeName { get; set; } = string.Empty;
+}
 
-    private sealed class TransformInfo
-    {
-        public long PathId { get; set; }
-        public float[] LocalPosition { get; set; } = [0f, 0f, 0f];
-        public float[] LocalScale { get; set; } = [1f, 1f, 1f];
-        public List<string> ChildNames { get; set; } = [];
-    }
+public sealed class SkinnedMeshRendererInfo
+{
+    public long PathId { get; set; }
+    public long? MeshPathId { get; set; }
+    public string? MeshName { get; set; }
+    public long? RootBonePathId { get; set; }
+    public string? RootBoneName { get; set; }
+    public string? RootBonePath { get; set; }
+    public List<string> BoneNames { get; set; } = [];
+    public int MaterialCount { get; set; }
+}
 
-    private sealed class AnimatorInfo
-    {
-        public long PathId { get; set; }
-        public long? AvatarPathId { get; set; }
-        public long? ControllerPathId { get; set; }
-        public int? CullingMode { get; set; }
-    }
+public sealed class TransformInfo
+{
+    public long PathId { get; set; }
+    public float[] LocalPosition { get; set; } = [0f, 0f, 0f];
+    public float[] LocalScale { get; set; } = [1f, 1f, 1f];
+    public List<string> ChildNames { get; set; } = [];
+}
 
-    private sealed class LodGroupInfo
-    {
-        public long PathId { get; set; }
-        public List<LodInfo> Lods { get; set; } = [];
-    }
+public sealed class AnimatorInfo
+{
+    public long PathId { get; set; }
+    public long? AvatarPathId { get; set; }
+    public long? ControllerPathId { get; set; }
+    public int? CullingMode { get; set; }
+}
 
-    private sealed class LodInfo
-    {
-        public float? ScreenRelativeHeight { get; set; }
-        public List<long> RendererPathIds { get; set; } = [];
-    }
+public sealed class LodGroupInfo
+{
+    public long PathId { get; set; }
+    public List<LodInfo> Lods { get; set; } = [];
+}
+
+public sealed class LodInfo
+{
+    public float? ScreenRelativeHeight { get; set; }
+    public List<long> RendererPathIds { get; set; } = [];
 }

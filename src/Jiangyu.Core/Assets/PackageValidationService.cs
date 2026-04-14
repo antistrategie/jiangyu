@@ -1,25 +1,18 @@
-using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace Jiangyu.Compiler.Commands;
+namespace Jiangyu.Core.Assets;
 
-public static class InspectPackageCommand
+public static class PackageValidationService
 {
-    public static Task<int> RunAsync(string[] args)
+    public sealed class ValidationResult
     {
-        if (args.Length == 0)
-        {
-            PrintUsage();
-            return Task.FromResult(1);
-        }
+        public required List<string> Issues { get; init; }
+        public required List<string> Info { get; init; }
+        public bool IsValid => Issues.Count == 0;
+    }
 
-        var packageDir = args[0];
-        if (!Directory.Exists(packageDir))
-        {
-            Console.Error.WriteLine($"Error: directory not found: {packageDir}");
-            return Task.FromResult(1);
-        }
-
+    public static ValidationResult Validate(string packageDir)
+    {
         var issues = new List<string>();
         var info = new List<string>();
 
@@ -31,12 +24,12 @@ public static class InspectPackageCommand
 
         if (isClean)
         {
-            info.Add($"Model: model.gltf (clean export)");
+            info.Add("Model: model.gltf (clean export)");
             ValidateGltf(gltfPath, packageDir, issues, info);
         }
         else if (isRaw)
         {
-            info.Add($"Model: model.glb (raw export)");
+            info.Add("Model: model.glb (raw export)");
         }
         else
         {
@@ -66,28 +59,7 @@ public static class InspectPackageCommand
             issues.Add("Stale jiangyu.export.json found — this format has been replaced by .gltf material graph");
         }
 
-        // Print results
-        Console.WriteLine($"Package: {Path.GetFullPath(packageDir)}");
-        Console.WriteLine();
-        foreach (var line in info)
-        {
-            Console.WriteLine($"  {line}");
-        }
-
-        if (issues.Count > 0)
-        {
-            Console.WriteLine();
-            Console.Error.WriteLine($"  {issues.Count} issue(s):");
-            foreach (var issue in issues)
-            {
-                Console.Error.WriteLine($"    - {issue}");
-            }
-            return Task.FromResult(1);
-        }
-
-        Console.WriteLine();
-        Console.WriteLine("  Package OK");
-        return Task.FromResult(0);
+        return new ValidationResult { Issues = issues, Info = info };
     }
 
     private static void ValidateGltf(string gltfPath, string packageDir, List<string> issues, List<string> info)
@@ -187,15 +159,5 @@ public static class InspectPackageCommand
                 }
             }
         }
-    }
-
-    private static void PrintUsage()
-    {
-        Console.Error.WriteLine("Usage: jiangyu assets inspect package <directory>");
-        Console.Error.WriteLine();
-        Console.Error.WriteLine("Validates an exported model package:");
-        Console.Error.WriteLine("  - model.gltf or model.glb exists");
-        Console.Error.WriteLine("  - textures are present and referenced correctly");
-        Console.Error.WriteLine("  - glTF extras (cleaned flag, material identity) are set");
     }
 }

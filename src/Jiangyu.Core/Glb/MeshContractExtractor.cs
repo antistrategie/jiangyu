@@ -1,13 +1,13 @@
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 
-namespace Jiangyu.Compiler.Assets;
+namespace Jiangyu.Core.Glb;
 
-internal static class MeshContractExtractor
+public static class MeshContractExtractor
 {
     private const int ClassIdMesh = 43;
 
-    internal sealed class MeshContract
+    public sealed class MeshContract
     {
         public required string MeshName { get; init; }
         public required uint[] BoneNameHashes { get; init; }

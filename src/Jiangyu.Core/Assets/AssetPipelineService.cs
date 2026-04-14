@@ -20,13 +20,16 @@ using AssetRipper.SourceGenerated.Classes.ClassID_28;
 using AssetRipper.SourceGenerated.Classes.ClassID_43;
 using AssetRipper.SourceGenerated.Classes.ClassID_137;
 using AssetRipper.SourceGenerated.Extensions;
+using Jiangyu.Core.Abstractions;
+using Jiangyu.Core.Glb;
+using Jiangyu.Core.Models;
 using SharpGLTF.Memory;
 using SharpGLTF.Scenes;
 using SharpGLTF.Schema2;
 
-namespace Jiangyu.Compiler.Services;
+namespace Jiangyu.Core.Assets;
 
-public sealed class ExtractionService
+public sealed class AssetPipelineService
 {
     private const string IndexFileName = "asset-index.json";
     private const string ManifestFileName = "index-manifest.json";
@@ -40,10 +43,15 @@ public sealed class ExtractionService
     public string GameDataPath { get; }
     public string CachePath { get; }
 
-    public ExtractionService(string gameDataPath, string cachePath)
+    private readonly IProgressSink _progress;
+    private readonly ILogSink _log;
+
+    public AssetPipelineService(string gameDataPath, string cachePath, IProgressSink progress, ILogSink log)
     {
         GameDataPath = gameDataPath;
         CachePath = cachePath;
+        _progress = progress;
+        _log = log;
     }
 
     /// <summary>
@@ -74,44 +82,44 @@ public sealed class ExtractionService
     /// </summary>
     public void BuildIndex()
     {
-        Console.WriteLine($"Loading game data from: {GameDataPath}");
+        _log.Info($"Loading game data from: {GameDataPath}");
 
         var settings = new CoreConfiguration();
         settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level0;
 
-        var progress = new ProgressLogger();
-        Logger.Add(progress);
+        var adapter = new AssetRipperProgressAdapter(_progress);
+        Logger.Add(adapter);
 
         AssetIndex index;
         try
         {
-            progress.SetPhase("Loading assets");
+            _progress.SetPhase("Loading assets");
             var gameStructure = GameStructure.Load([GameDataPath], LocalFileSystem.Instance, settings);
             var gameData = GameData.FromGameStructure(gameStructure);
 
             if (!gameData.GameBundle.HasAnyAssetCollections())
             {
-                progress.Finish();
-                Console.Error.WriteLine("Error: no asset collections found in game data.");
+                _progress.Finish();
+                _log.Error("No asset collections found in game data.");
                 return;
             }
 
-            progress.Finish();
+            _progress.Finish();
 
             int collectionCount = gameData.GameBundle.FetchAssetCollections().Count();
-            Console.WriteLine($"Loaded {collectionCount} asset collections");
+            _log.Info($"Loaded {collectionCount} asset collections");
 
-            progress.SetPhase("Processing");
+            _progress.SetPhase("Processing");
             RunProcessors(gameData);
-            progress.Finish();
+            _progress.Finish();
 
-            progress.SetPhase("Building index");
+            _progress.SetPhase("Building index");
             index = BuildAssetIndex(gameData);
-            progress.Finish();
+            _progress.Finish();
         }
         finally
         {
-            Logger.Remove(progress);
+            Logger.Remove(adapter);
         }
 
         // Write index
@@ -132,7 +140,7 @@ public sealed class ExtractionService
             Path.Combine(CachePath, ManifestFileName),
             JsonSerializer.Serialize(manifest, JsonOptions));
 
-        Console.WriteLine($"Indexed {index.Assets?.Count ?? 0} assets to: {CachePath}");
+        _log.Info($"Indexed {index.Assets?.Count ?? 0} assets to: {CachePath}");
     }
 
     /// <summary>
@@ -150,6 +158,44 @@ public sealed class ExtractionService
     }
 
     /// <summary>
+    /// Searches the asset index with optional query and type filter.
+    /// Returns matching entries, up to the specified limit.
+    /// Returns an empty list if no index exists.
+    /// </summary>
+    public List<AssetEntry> Search(string? query = null, string? typeFilter = null, int limit = 50)
+    {
+        var index = LoadIndex();
+        if (index?.Assets is null)
+        {
+            return [];
+        }
+
+        return index.Assets
+            .Where(a =>
+                (string.IsNullOrEmpty(query) || (a.Name?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
+                && (typeFilter is null || string.Equals(a.ClassName, typeFilter, StringComparison.OrdinalIgnoreCase)))
+            .Take(limit)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Resolves the first asset matching the given name and any of the specified class names.
+    /// Returns null if no index exists or no match is found.
+    /// </summary>
+    public AssetEntry? ResolveAsset(string assetName, params string[] classNames)
+    {
+        var index = LoadIndex();
+        if (index?.Assets is null)
+        {
+            return null;
+        }
+
+        return index.Assets.FirstOrDefault(a =>
+            string.Equals(a.Name, assetName, StringComparison.OrdinalIgnoreCase)
+            && classNames.Any(cn => string.Equals(a.ClassName, cn, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    /// <summary>
     /// Loads game data, finds the named asset, and exports a self-contained model package.
     /// Clean export layout:
     ///   {packageDir}/model.gltf          (references textures via standard glTF material channels)
@@ -161,32 +207,32 @@ public sealed class ExtractionService
     /// <param name="pathId">The asset PathID (from index).</param>
     public void ExportModel(string assetName, string packageDir, bool clean, string collection, long pathId)
     {
-        Console.WriteLine($"Loading game data from: {GameDataPath}");
+        _log.Info($"Loading game data from: {GameDataPath}");
 
         var settings = new CoreConfiguration();
         settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level0;
 
-        var progress = new ProgressLogger();
-        Logger.Add(progress);
+        var adapter = new AssetRipperProgressAdapter(_progress);
+        Logger.Add(adapter);
 
         try
         {
-            progress.SetPhase("Loading assets");
+            _progress.SetPhase("Loading assets");
             var gameStructure = GameStructure.Load([GameDataPath], LocalFileSystem.Instance, settings);
             var gameData = GameData.FromGameStructure(gameStructure);
 
             if (!gameData.GameBundle.HasAnyAssetCollections())
             {
-                progress.Finish();
-                Console.Error.WriteLine("Error: no asset collections found in game data.");
+                _progress.Finish();
+                _log.Error("No asset collections found in game data.");
                 return;
             }
 
-            progress.Finish();
+            _progress.Finish();
 
-            progress.SetPhase("Processing");
+            _progress.SetPhase("Processing");
             RunProcessors(gameData);
-            progress.Finish();
+            _progress.Finish();
 
             // Find the asset by stable indexed identity (collection + pathId)
             IUnityObjectBase? found = null;
@@ -203,25 +249,25 @@ public sealed class ExtractionService
 
             if (found is IGameObject gameObject)
             {
-                Console.WriteLine($"Found GameObject: {gameObject.Name}");
+                _log.Info($"Found GameObject: {gameObject.Name}");
                 ExportGameObjectPackage(gameObject, packageDir, clean);
                 return;
             }
 
             if (found is IMesh mesh)
             {
-                Console.WriteLine($"Found Mesh: {mesh.Name}");
+                _log.Info($"Found Mesh: {mesh.Name}");
                 Directory.CreateDirectory(packageDir);
                 var glbPath = Path.Combine(packageDir, "model.glb");
                 ExportMeshAsGlb(mesh, glbPath);
                 return;
             }
 
-            Console.Error.WriteLine($"Error: no GameObject or Mesh named '{assetName}' found.");
+            _log.Error($"No GameObject or Mesh named '{assetName}' found.");
         }
         finally
         {
-            Logger.Remove(progress);
+            Logger.Remove(adapter);
         }
     }
 
@@ -252,7 +298,7 @@ public sealed class ExtractionService
         public required byte[] PngData { get; init; }
     }
 
-    private static void ExportGameObjectPackage(IGameObject gameObject, string packageDir, bool clean)
+    private void ExportGameObjectPackage(IGameObject gameObject, string packageDir, bool clean)
     {
         Directory.CreateDirectory(packageDir);
 
@@ -268,7 +314,7 @@ public sealed class ExtractionService
             {
                 if (!GlbWriter.TryWrite(rawScene, stream, out string? errorMessage))
                 {
-                    Console.Error.WriteLine($"Error writing GLB: {errorMessage}");
+                    _log.Error($"Error writing GLB: {errorMessage}");
                     return;
                 }
             }
@@ -293,9 +339,9 @@ public sealed class ExtractionService
                 }
             }
 
-            var cleanScene = ModelCleanupService.BuildCleanScene(tempGlbPath, materialTextures);
+            var cleanScene = ModelCleanupService.BuildCleanScene(tempGlbPath, _log, materialTextures);
             File.Delete(tempGlbPath);
-            Console.WriteLine("  Cleaned: 1x authoring scale");
+            _log.Info("  Cleaned: 1x authoring scale");
 
             // Build .gltf — standard textures already attached at MaterialBuilder level,
             // SaveGltfPackage only handles non-standard textures + extras
@@ -304,7 +350,7 @@ public sealed class ExtractionService
 
             if (textures.Count > 0)
             {
-                Console.WriteLine($"  Exported {textures.Count} textures");
+                _log.Info($"  Exported {textures.Count} textures");
             }
         }
         else
@@ -315,11 +361,11 @@ public sealed class ExtractionService
             {
                 if (GlbWriter.TryWrite(rawScene, stream, out string? errorMessage))
                 {
-                    Console.WriteLine($"  Model: {glbPath}");
+                    _log.Info($"  Model: {glbPath}");
                 }
                 else
                 {
-                    Console.Error.WriteLine($"Error writing GLB: {errorMessage}");
+                    _log.Error($"Error writing GLB: {errorMessage}");
                     return;
                 }
             }
@@ -334,18 +380,18 @@ public sealed class ExtractionService
                 {
                     File.WriteAllBytes(Path.Combine(texturesDir, $"{tex.Name}.png"), tex.PngData);
                 }
-                Console.WriteLine($"  Exported {textures.Count} textures");
+                _log.Info($"  Exported {textures.Count} textures");
             }
         }
 
-        Console.WriteLine($"Package: {packageDir}");
+        _log.Info($"Package: {packageDir}");
     }
 
     /// <summary>
     /// Walks the source asset hierarchy, resolves material → texture references,
     /// and returns discovered textures with their PNG data in memory.
     /// </summary>
-    private static List<DiscoveredTexture> DiscoverTextures(IGameObject root)
+    private List<DiscoveredTexture> DiscoverTextures(IGameObject root)
     {
         var textures = new List<DiscoveredTexture>();
         var seen = new HashSet<string>();
@@ -412,7 +458,7 @@ public sealed class ExtractionService
                         PngData = ms.ToArray(),
                     });
 
-                    Console.WriteLine($"  Texture: {texture.Name}.png ({propName})");
+                    _log.Info($"  Texture: {texture.Name}.png ({propName})");
                 }
             }
         }
@@ -426,7 +472,7 @@ public sealed class ExtractionService
     /// BuildCleanScene). This method handles non-standard textures (written to disk,
     /// referenced in material extras) and root extras (cleaned flag).
     /// </summary>
-    private static void SaveGltfPackage(SceneBuilder scene, List<DiscoveredTexture> textures, string gltfPath)
+    private void SaveGltfPackage(SceneBuilder scene, List<DiscoveredTexture> textures, string gltfPath)
     {
         var model = scene.ToGltf2();
 
@@ -529,7 +575,7 @@ public sealed class ExtractionService
         model.SaveGLTF(gltfPath, settings);
     }
 
-    private static void ExportMeshAsGlb(IMesh mesh, string outputPath)
+    private void ExportMeshAsGlb(IMesh mesh, string outputPath)
     {
         SceneBuilder sceneBuilder = GlbMeshBuilder.Build(mesh);
 
@@ -537,11 +583,11 @@ public sealed class ExtractionService
         using var stream = File.Create(outputPath);
         if (GlbWriter.TryWrite(sceneBuilder, stream, out string? errorMessage))
         {
-            Console.WriteLine($"Exported to: {outputPath}");
+            _log.Info($"Exported to: {outputPath}");
         }
         else
         {
-            Console.Error.WriteLine($"Error writing GLB: {errorMessage}");
+            _log.Error($"Error writing GLB: {errorMessage}");
         }
     }
 
@@ -606,42 +652,4 @@ public sealed class ExtractionService
         return null;
     }
 
-    public sealed class AssetIndex
-    {
-        [JsonPropertyName("assets")]
-        public List<AssetEntry>? Assets { get; set; }
-    }
-
-    public sealed class AssetEntry
-    {
-        [JsonPropertyName("name")]
-        public string? Name { get; set; }
-
-        [JsonPropertyName("className")]
-        public string? ClassName { get; set; }
-
-        [JsonPropertyName("classId")]
-        public int ClassId { get; set; }
-
-        [JsonPropertyName("pathId")]
-        public long PathId { get; set; }
-
-        [JsonPropertyName("collection")]
-        public string? Collection { get; set; }
-    }
-
-    private sealed class IndexManifest
-    {
-        [JsonPropertyName("gameAssemblyHash")]
-        public string? GameAssemblyHash { get; set; }
-
-        [JsonPropertyName("indexedAt")]
-        public DateTimeOffset IndexedAt { get; set; }
-
-        [JsonPropertyName("gameDataPath")]
-        public string? GameDataPath { get; set; }
-
-        [JsonPropertyName("assetCount")]
-        public int AssetCount { get; set; }
-    }
 }

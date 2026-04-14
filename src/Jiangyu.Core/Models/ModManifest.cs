@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Jiangyu.Compiler.Models;
+namespace Jiangyu.Core.Models;
 
 public sealed class ModManifest
 {

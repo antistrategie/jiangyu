@@ -1,57 +1,68 @@
 using System.Diagnostics;
-using System.Reflection;
-using System.Text.Json;
-using Jiangyu.Compiler.Glb;
-using Jiangyu.Compiler.Models;
+using Jiangyu.Core.Abstractions;
+using Jiangyu.Core.Config;
+using Jiangyu.Core.Glb;
+using Jiangyu.Core.Models;
 
-namespace Jiangyu.Compiler.Commands;
+namespace Jiangyu.Core.Compile;
 
-public static class CompileCommand
+/// <summary>
+/// Parsed reference to an asset file, e.g. "models/file.gltf#meshname".
+/// </summary>
+public readonly record struct ParsedAssetReference(string FilePath, string MeshName, bool HasExplicitMeshName);
+
+/// <summary>
+/// Input to <see cref="CompilationService.CompileAsync"/>.
+/// </summary>
+public sealed class CompilationInput
 {
-    private static readonly JsonSerializerOptions MappingsJsonOptions = new()
+    public required ModManifest Manifest { get; init; }
+    public required GlobalConfig Config { get; init; }
+    public required string ProjectDirectory { get; init; }
+
+}
+
+/// <summary>
+/// Result from <see cref="CompilationService.CompileAsync"/>.
+/// </summary>
+public sealed class CompilationResult
+{
+    public required bool Success { get; init; }
+    public string? BundlePath { get; init; }
+    public string? ErrorMessage { get; init; }
+}
+
+/// <summary>
+/// Orchestrates compilation of a mod project into an asset bundle.
+/// Decides between the GLB mesh pipeline and the FBX/Unity pipeline,
+/// invokes the appropriate compiler, and copies outputs.
+/// </summary>
+public sealed class CompilationService
+{
+    private readonly ILogSink _log;
+    private readonly IProgressSink _progress;
+
+    public CompilationService(ILogSink log, IProgressSink progress)
     {
-        WriteIndented = true,
-        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
+        _log = log;
+        _progress = progress;
+    }
 
-    public static async Task<int> RunAsync(string[] args)
+    public async Task<CompilationResult> CompileAsync(CompilationInput input)
     {
-        var projectDir = Directory.GetCurrentDirectory();
+        var manifest = input.Manifest;
+        var config = input.Config;
+        var projectDir = input.ProjectDirectory;
 
-        // Load manifest
-        var manifestPath = Path.Combine(projectDir, ModManifest.FileName);
-        if (!File.Exists(manifestPath))
-        {
-            Console.Error.WriteLine($"Error: {ModManifest.FileName} not found. Run 'jiangyu init' first.");
-            return 1;
-        }
-
-        var manifest = ModManifest.FromJson(await File.ReadAllTextAsync(manifestPath));
-
-        // Load config
-        var configPath = Path.Combine(projectDir, ProjectConfig.FilePath);
-        if (!File.Exists(configPath))
-        {
-            Console.Error.WriteLine($"Error: {ProjectConfig.FilePath} not found. Run 'jiangyu init' first.");
-            return 1;
-        }
-
-        var config = ProjectConfig.FromJson(await File.ReadAllTextAsync(configPath));
-
+        // Validate config
         if (string.IsNullOrEmpty(config.UnityEditor))
-        {
-            Console.Error.WriteLine("Error: unityEditor not set in .jiangyu/config.json");
-            return 1;
-        }
+            return Fail($"unityEditor not set in global config ({GlobalConfig.ConfigPath})");
 
         if (!File.Exists(config.UnityEditor))
-        {
-            Console.Error.WriteLine($"Error: Unity editor not found at: {config.UnityEditor}");
-            return 1;
-        }
+            return Fail($"Unity editor not found at: {config.UnityEditor}");
 
         // Parse mesh mappings and collect model files
-        var meshMappings = new Dictionary<string, string>(); // game mesh name → bundle mesh name
+        var meshMappings = new Dictionary<string, string>();
         var modelFiles = new HashSet<string>();
         var mappedGlbEntries = new List<GlbMeshBundleCompiler.MeshSourceEntry>();
 
@@ -65,10 +76,7 @@ public static class CompileCommand
                 var meshName = assetRef.MeshName;
 
                 if (!File.Exists(filePath))
-                {
-                    Console.Error.WriteLine($"Error: model file not found: {sourceRef}");
-                    return 1;
-                }
+                    return Fail($"Model file not found: {sourceRef}");
 
                 modelFiles.Add(filePath);
                 meshMappings[gameMeshName] = meshName;
@@ -94,18 +102,18 @@ public static class CompileCommand
 
         if (modelFiles.Count == 0)
         {
-            Console.Error.WriteLine("No model files found. Nothing to compile.");
-            return 0;
+            _log.Info("No model files found. Nothing to compile.");
+            return new CompilationResult { Success = true };
         }
 
-        Console.WriteLine($"Compiling {manifest.Name}...");
-        Console.WriteLine($"  {modelFiles.Count} model(s), {meshMappings.Count} mapping(s)");
+        _log.Info($"Compiling {manifest.Name}...");
+        _log.Info($"  {modelFiles.Count} model(s), {meshMappings.Count} mapping(s)");
 
         var bundleName = manifest.Name.ToLowerInvariant().Replace(" ", "_");
         var outputDir = Path.Combine(projectDir, "compiled");
         Directory.CreateDirectory(outputDir);
-        var builtBundle = Path.Combine(Path.Combine(projectDir, ".jiangyu", "unity_project"), "AssetBundles", bundleName);
         var unityProjectDir = Path.Combine(projectDir, ".jiangyu", "unity_project");
+        var builtBundle = Path.Combine(unityProjectDir, "AssetBundles", bundleName);
 
         var useRawGlbPipeline = meshMappings.Count > 0 &&
                                 mappedGlbEntries.Count == meshMappings.Count &&
@@ -114,12 +122,10 @@ public static class CompileCommand
         ModManifest compiledManifest = manifest;
         if (useRawGlbPipeline)
         {
-            Console.WriteLine("  Using experimental GLB mesh pipeline...");
+            _log.Info("  Using experimental GLB mesh pipeline...");
             var bundleOutputPath = Path.Combine(unityProjectDir, "AssetBundles", bundleName);
             Directory.CreateDirectory(Path.GetDirectoryName(bundleOutputPath)!);
-            var gameDataPath = string.IsNullOrWhiteSpace(config.Game)
-                ? null
-                : Path.Combine(config.Game, "Menace_Data");
+            var (gameDataPath, _) = GlobalConfig.ResolveGameDataPath();
             var targetMeshNamesByBundleMesh = meshMappings
                 .ToDictionary(kv => kv.Value, kv => kv.Key, StringComparer.Ordinal);
 
@@ -150,26 +156,21 @@ public static class CompileCommand
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Error: experimental GLB mesh pipeline failed: {ex.Message}");
-                return 1;
+                return Fail($"Experimental GLB mesh pipeline failed: {ex.Message}");
             }
         }
         else
         {
-            // Set up Unity project
             await SetupUnityProject(unityProjectDir, modelFiles);
 
             var success = await InvokeUnityBuild(config.UnityEditor, unityProjectDir, bundleName);
             if (!success)
-                return 1;
+                return Fail("Unity build failed. Check logs for details.");
         }
 
         // Collect output
         if (!File.Exists(builtBundle))
-        {
-            Console.Error.WriteLine("Error: Unity build did not produce expected bundle.");
-            return 1;
-        }
+            return Fail("Unity build did not produce expected bundle.");
 
         var destBundle = Path.Combine(outputDir, $"{bundleName}.bundle");
         File.Copy(builtBundle, destBundle, overwrite: true);
@@ -185,17 +186,17 @@ public static class CompileCommand
         // Copy manifest alongside the bundle
         await File.WriteAllTextAsync(Path.Combine(outputDir, ModManifest.FileName), compiledManifest.ToJson());
 
-        Console.WriteLine($"  -> {destBundle}");
-        Console.WriteLine("Done.");
+        _log.Info($"  -> {destBundle}");
+        _log.Info("Done.");
 
-        return 0;
+        return new CompilationResult { Success = true, BundlePath = destBundle };
     }
 
     /// <summary>
     /// Parses "models/file.fbx#meshname" into (absolute file path, mesh name).
     /// If no #fragment, the mesh name defaults to the filename without extension.
     /// </summary>
-    private static ParsedAssetReference ParseAssetReference(string reference, string projectDir)
+    public static ParsedAssetReference ParseAssetReference(string reference, string projectDir)
     {
         var hashIndex = reference.IndexOf('#');
         if (hashIndex >= 0)
@@ -209,11 +210,11 @@ public static class CompileCommand
         return new ParsedAssetReference(fullPath, Path.GetFileNameWithoutExtension(fullPath), HasExplicitMeshName: false);
     }
 
-    private static bool IsGlbPath(string filePath)
+    public static bool IsGlbPath(string filePath)
         => string.Equals(Path.GetExtension(filePath), ".glb", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(Path.GetExtension(filePath), ".gltf", StringComparison.OrdinalIgnoreCase);
 
-    private static string[] CollectAssetFiles(string directory, params string[] patterns)
+    public static string[] CollectAssetFiles(string directory, params string[] patterns)
     {
         if (!Directory.Exists(directory))
             return [];
@@ -224,7 +225,7 @@ public static class CompileCommand
             .ToArray();
     }
 
-    private static async Task SetupUnityProject(string unityProjectDir, IEnumerable<string> modelFiles)
+    private async Task SetupUnityProject(string unityProjectDir, IEnumerable<string> modelFiles)
     {
         var assetsDir = Path.Combine(unityProjectDir, "Assets");
         var editorDir = Path.Combine(assetsDir, "Editor");
@@ -233,8 +234,7 @@ public static class CompileCommand
         Directory.CreateDirectory(editorDir);
         Directory.CreateDirectory(modelsImportDir);
 
-        // Write the build script from embedded resource
-        var buildScript = LoadEmbeddedResource("Jiangyu.Compiler.Unity.BundleBuilder.template");
+        var buildScript = Glb.GlbMeshBundleCompiler.LoadEmbeddedResource("Jiangyu.Core.Unity.BundleBuilder.template");
         await File.WriteAllTextAsync(Path.Combine(editorDir, "BundleBuilder.cs"), buildScript);
 
         // Copy model files into the Unity project
@@ -244,10 +244,10 @@ public static class CompileCommand
             File.Copy(modelFile, destFile, overwrite: true);
         }
 
-        Console.WriteLine($"  Unity project prepared at {unityProjectDir}");
+        _log.Info($"  Unity project prepared at {unityProjectDir}");
     }
 
-    private static async Task<bool> InvokeUnityBuild(string unityEditor, string unityProjectDir, string bundleName)
+    private async Task<bool> InvokeUnityBuild(string unityEditor, string unityProjectDir, string bundleName)
     {
         var logFile = Path.Combine(unityProjectDir, "build.log");
         var bundleOutputDir = Path.Combine(unityProjectDir, "AssetBundles");
@@ -263,7 +263,7 @@ public static class CompileCommand
             $"-bundleName {bundleName}",
             $"-bundleOutputPath \"{bundleOutputDir}\"");
 
-        Console.WriteLine("  Invoking Unity...");
+        _log.Info("  Invoking Unity...");
 
         var process = new Process
         {
@@ -282,16 +282,16 @@ public static class CompileCommand
 
         if (process.ExitCode != 0)
         {
-            Console.Error.WriteLine($"Error: Unity exited with code {process.ExitCode}");
-            Console.Error.WriteLine($"  Log: {logFile}");
+            _log.Error($"Unity exited with code {process.ExitCode}");
+            _log.Error($"  Log: {logFile}");
 
             if (File.Exists(logFile))
             {
                 var lines = await File.ReadAllLinesAsync(logFile);
                 var tail = lines.Skip(Math.Max(0, lines.Length - 20));
-                Console.Error.WriteLine();
+                _log.Error("");
                 foreach (var line in tail)
-                    Console.Error.WriteLine($"  {line}");
+                    _log.Error($"  {line}");
             }
 
             return false;
@@ -300,14 +300,9 @@ public static class CompileCommand
         return true;
     }
 
-    internal static string LoadEmbeddedResource(string name)
+    private CompilationResult Fail(string message)
     {
-        var assembly = Assembly.GetExecutingAssembly();
-        using var stream = assembly.GetManifestResourceStream(name)
-            ?? throw new InvalidOperationException($"Embedded resource '{name}' not found.");
-        using var reader = new StreamReader(stream);
-        return reader.ReadToEnd();
+        _log.Error(message);
+        return new CompilationResult { Success = false, ErrorMessage = message };
     }
-
-    private readonly record struct ParsedAssetReference(string FilePath, string MeshName, bool HasExplicitMeshName);
 }
