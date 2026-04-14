@@ -3,6 +3,7 @@ using System.Numerics;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using Jiangyu.Core.Models;
 using SharpGLTF.Schema2;
 
 namespace Jiangyu.Core.Glb;
@@ -19,6 +20,7 @@ public static class GlbMeshBundleCompiler
         public required string PrimaryName { get; init; }
         public required HashSet<string> Aliases { get; init; }
         public required CompiledMesh Mesh { get; init; }
+        public required List<CompiledMaterialBinding> MaterialBindings { get; init; }
     }
 
     public sealed class MeshSourceEntry
@@ -60,7 +62,7 @@ public static class GlbMeshBundleCompiler
     public sealed class BuildResult
     {
         public required Dictionary<string, string[]> MeshBoneNames { get; init; }
-        public required Dictionary<string, string> MeshTexturePrefixes { get; init; }
+        public required Dictionary<string, List<CompiledMaterialBinding>> MeshMaterialBindings { get; init; }
     }
 
     private sealed class MeshBuildContract
@@ -94,14 +96,6 @@ public static class GlbMeshBundleCompiler
         if (meshes.Count == 0)
             throw new InvalidOperationException("No GLB meshes were extracted.");
 
-        var texturePrefixByMesh = entries
-            .Select(entry => new
-            {
-                entry.BundleMeshName,
-                TexturePrefix = InferTexturePrefix(entry.SourceFilePath),
-            })
-            .Where(x => !string.IsNullOrWhiteSpace(x.TexturePrefix))
-            .ToDictionary(x => x.BundleMeshName, x => x.TexturePrefix!, StringComparer.Ordinal);
         var textures = ExtractTextures(entries);
 
         var sourceDiagnosticsPath = outputBundlePath + ".source-diagnostics.json";
@@ -168,7 +162,7 @@ public static class GlbMeshBundleCompiler
         return new BuildResult
         {
             MeshBoneNames = meshes.ToDictionary(m => m.Name, m => m.BoneNames, StringComparer.Ordinal),
-            MeshTexturePrefixes = texturePrefixByMesh,
+            MeshMaterialBindings = BuildMaterialBindings(entries),
         };
     }
 
@@ -218,6 +212,36 @@ public static class GlbMeshBundleCompiler
         return extracted;
     }
 
+    internal static Dictionary<string, List<CompiledMaterialBinding>> BuildMaterialBindings(IReadOnlyList<MeshSourceEntry> entries)
+    {
+        var result = new Dictionary<string, List<CompiledMaterialBinding>>(StringComparer.Ordinal);
+        var bySource = entries
+            .GroupBy(e => e.SourceFilePath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var group in bySource)
+        {
+            var model = ModelRoot.Load(group.Key);
+            var extractedCandidates = model.LogicalNodes
+                .Where(node => node.Mesh != null)
+                .Select(node => ExtractMeshCandidate(node, model, companionSkinData: null, isCleaned: IsCleanedExport(group.Key)))
+                .Where(candidate => candidate != null)
+                .Cast<ExtractedMeshCandidate>()
+                .ToList();
+
+            foreach (var entry in group)
+            {
+                var match = extractedCandidates.FirstOrDefault(candidate => candidate.Aliases.Contains(entry.BundleMeshName));
+                if (match == null && extractedCandidates.Count == 1)
+                    match = extractedCandidates[0];
+
+                result[entry.BundleMeshName] = match?.MaterialBindings ?? [];
+            }
+        }
+
+        return result;
+    }
+
     private static ExtractedMeshCandidate? ExtractMeshCandidate(Node node, ModelRoot model, CompanionSkinData? companionSkinData, bool isCleaned)
     {
         var mesh = node.Mesh;
@@ -250,6 +274,7 @@ public static class GlbMeshBundleCompiler
             PrimaryName = primaryName,
             Aliases = aliases,
             Mesh = CloneMeshWithName(compiled, primaryName),
+            MaterialBindings = ExtractMaterialBindings(node),
         };
     }
 
@@ -270,6 +295,73 @@ public static class GlbMeshBundleCompiler
             BoneIndices = mesh.BoneIndices,
             BindPoses = mesh.BindPoses,
             BoneNames = mesh.BoneNames,
+        };
+    }
+
+    private static List<CompiledMaterialBinding> ExtractMaterialBindings(Node node)
+    {
+        var mesh = node.Mesh;
+        if (mesh == null)
+            return [];
+
+        var bindings = new List<CompiledMaterialBinding>();
+        for (int slot = 0; slot < mesh.Primitives.Count; slot++)
+        {
+            var primitive = mesh.Primitives[slot];
+            var material = primitive.Material;
+            if (material == null)
+                continue;
+
+            var textures = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            foreach (var channel in material.Channels)
+            {
+                var propertyName = TryMapStandardMaterialProperty(channel.Key);
+                var image = channel.Texture?.PrimaryImage;
+                if (propertyName == null || image == null)
+                    continue;
+
+                textures[propertyName] = GetImageName(image);
+            }
+
+            if (material.Extras is System.Text.Json.Nodes.JsonObject matExtras &&
+                matExtras.TryGetPropertyValue("jiangyu", out var jiangyuNode) &&
+                jiangyuNode is System.Text.Json.Nodes.JsonObject jiangyuObj &&
+                jiangyuObj.TryGetPropertyValue("textures", out var texturesNode) &&
+                texturesNode is System.Text.Json.Nodes.JsonObject texturesObj)
+            {
+                foreach (var kvp in texturesObj)
+                {
+                    var propertyName = kvp.Key;
+                    var relativePath = kvp.Value?.GetValue<string>();
+                    if (string.IsNullOrWhiteSpace(propertyName) || string.IsNullOrWhiteSpace(relativePath))
+                        continue;
+
+                    textures[propertyName] = Path.GetFileNameWithoutExtension(relativePath);
+                }
+            }
+
+            if (textures.Count == 0)
+                continue;
+
+            bindings.Add(new CompiledMaterialBinding
+            {
+                Slot = slot,
+                Name = string.IsNullOrWhiteSpace(material.Name) ? null : material.Name,
+                Textures = textures,
+            });
+        }
+
+        return bindings;
+    }
+
+    private static string? TryMapStandardMaterialProperty(string channelKey)
+    {
+        return channelKey switch
+        {
+            "BaseColor" => "_BaseColorMap",
+            "Normal" => "_NormalMap",
+            _ => null,
         };
     }
 
@@ -644,7 +736,8 @@ public static class GlbMeshBundleCompiler
 
     /// <summary>
     /// Reads textures from a .gltf file's material graph.
-    /// Priority: standard material channels → naming inference → material extras.
+    /// Only explicitly declared textures count:
+    /// standard material channels plus Jiangyu material extras.
     /// </summary>
     internal static bool TryExtractTexturesFromGltf(string sourceFilePath, Dictionary<string, CompiledTexture> result)
     {
@@ -738,35 +831,6 @@ public static class GlbMeshBundleCompiler
                     };
                     found = true;
                 }
-            }
-        }
-
-        // 3. Naming inference — pick up textures in textures/ that match known
-        //    MENACE naming patterns but weren't captured from channels or extras.
-        //    Only recognised suffixes, not every .png in the directory.
-        var texturesDir = Path.Combine(sourceDir, "textures");
-        if (Directory.Exists(texturesDir))
-        {
-            foreach (var texturePath in Directory.EnumerateFiles(texturesDir, "*.png"))
-            {
-                var name = Path.GetFileNameWithoutExtension(texturePath);
-                if (result.ContainsKey(name))
-                {
-                    continue;
-                }
-
-                if (!IsMenaceTextureNamePattern(name))
-                {
-                    continue;
-                }
-
-                result[name] = new CompiledTexture
-                {
-                    Name = name,
-                    Content = File.ReadAllBytes(texturePath),
-                    Linear = IsLinearTextureName(name),
-                };
-                found = true;
             }
         }
 

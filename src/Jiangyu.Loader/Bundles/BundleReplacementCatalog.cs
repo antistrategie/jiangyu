@@ -147,13 +147,13 @@ internal sealed class BundleReplacementCatalog
                 if (targetName == null)
                     continue;
 
-                string texturePrefix = null;
+                var materialBindings = Array.Empty<CompiledMaterialBindingRecord>();
                 if (meshMetadata != null && meshMetadata.TryGetValue(bundleMeshName, out var prefabMetadata))
-                    texturePrefix = prefabMetadata.TexturePrefix;
+                    materialBindings = prefabMetadata.MaterialBindings ?? Array.Empty<CompiledMaterialBindingRecord>();
 
-                Meshes[targetName] = new ReplacementMesh(mesh, GetBoneNames(smr.bones), texturePrefix);
+                Meshes[targetName] = new ReplacementMesh(mesh, GetBoneNames(smr.bones), materialBindings);
                 mappedTargetNames.Add(targetName);
-                log.Msg($"  Registered: {bundleMeshName} -> {targetName} ({smr.bones.Length} bones, texturePrefix='{texturePrefix ?? "<none>"}')");
+                log.Msg($"  Registered: {bundleMeshName} -> {targetName} ({smr.bones.Length} bones, materialBindings={materialBindings.Length})");
             }
 
             if (mappedTargetNames.Count == 0)
@@ -204,8 +204,8 @@ internal sealed class BundleReplacementCatalog
         if (targetMeshName == null)
             return;
 
-        Meshes[targetMeshName] = new ReplacementMesh(loadedMesh, metadataForMesh.BoneNames, metadataForMesh.TexturePrefix);
-        log.Msg($"  Registered mesh asset: {loadedMesh.name} -> {targetMeshName} ({metadataForMesh.BoneNames.Length} bones, texturePrefix='{metadataForMesh.TexturePrefix ?? "<none>"}')");
+        Meshes[targetMeshName] = new ReplacementMesh(loadedMesh, metadataForMesh.BoneNames, metadataForMesh.MaterialBindings ?? Array.Empty<CompiledMaterialBindingRecord>());
+        log.Msg($"  Registered mesh asset: {loadedMesh.name} -> {targetMeshName} ({metadataForMesh.BoneNames.Length} bones, materialBindings={metadataForMesh.MaterialBindings?.Length ?? 0})");
     }
 
     private static string ResolveTargetMeshName(string bundleMeshName, Dictionary<string, string> bundleToGame)
@@ -294,10 +294,7 @@ internal sealed class BundleReplacementCatalog
                 result[bundleMeshName] = new CompiledMeshMetadataRecord
                 {
                     BoneNames = boneNames,
-                    TexturePrefix = compiledElement.TryGetProperty("texturePrefix", out var texturePrefixElement) &&
-                                    texturePrefixElement.ValueKind == System.Text.Json.JsonValueKind.String
-                        ? texturePrefixElement.GetString()
-                        : null,
+                    MaterialBindings = LoadCompiledMaterialBindings(compiledElement),
                 };
             }
 
@@ -311,6 +308,57 @@ internal sealed class BundleReplacementCatalog
             log.Error($"  Failed to read compiled mesh metadata: {ex.Message}");
             return null;
         }
+    }
+
+    private static CompiledMaterialBindingRecord[] LoadCompiledMaterialBindings(System.Text.Json.JsonElement compiledElement)
+    {
+        if (!compiledElement.TryGetProperty("materials", out var materialsElement) ||
+            materialsElement.ValueKind != System.Text.Json.JsonValueKind.Array)
+        {
+            return Array.Empty<CompiledMaterialBindingRecord>();
+        }
+
+        var result = new List<CompiledMaterialBindingRecord>();
+        foreach (var materialElement in materialsElement.EnumerateArray())
+        {
+            if (materialElement.ValueKind != System.Text.Json.JsonValueKind.Object ||
+                !materialElement.TryGetProperty("slot", out var slotElement) ||
+                slotElement.ValueKind != System.Text.Json.JsonValueKind.Number ||
+                !slotElement.TryGetInt32(out var slot) ||
+                !materialElement.TryGetProperty("textures", out var texturesElement) ||
+                texturesElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var textures = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var textureProperty in texturesElement.EnumerateObject())
+            {
+                if (textureProperty.Value.ValueKind != System.Text.Json.JsonValueKind.String)
+                    continue;
+
+                var textureName = textureProperty.Value.GetString();
+                if (string.IsNullOrWhiteSpace(textureName))
+                    continue;
+
+                textures[textureProperty.Name] = textureName;
+            }
+
+            if (textures.Count == 0)
+                continue;
+
+            result.Add(new CompiledMaterialBindingRecord
+            {
+                Slot = slot,
+                Name = materialElement.TryGetProperty("name", out var nameElement) &&
+                       nameElement.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? nameElement.GetString()
+                    : null,
+                Textures = textures,
+            });
+        }
+
+        return result.OrderBy(binding => binding.Slot).ToArray();
     }
 
     private static Dictionary<string, string> LoadMeshMappings(string manifestPath, MelonLogger.Instance log)

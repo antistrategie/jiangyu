@@ -16,12 +16,27 @@ internal sealed class MaterialReplacementService
         _pinned = pinned;
     }
 
-    public Material[] GetOrCreateReplacementMaterials(Material[] sourceMaterials, string texturePrefix)
+    public Material[] GetOrCreateReplacementMaterials(Material[] sourceMaterials, CompiledMaterialBindingRecord[] materialBindings)
     {
-        if (sourceMaterials == null || sourceMaterials.Length == 0 || string.IsNullOrWhiteSpace(texturePrefix))
+        if (sourceMaterials == null || sourceMaterials.Length == 0 || materialBindings == null || materialBindings.Length == 0)
             return sourceMaterials;
 
-        var keyParts = new List<string> { texturePrefix, sourceMaterials.Length.ToString() };
+        var bindingsBySlot = materialBindings
+            .GroupBy(binding => binding.Slot)
+            .ToDictionary(group => group.Key, group => group.First());
+
+        var keyParts = new List<string> { sourceMaterials.Length.ToString() };
+        foreach (var binding in materialBindings.OrderBy(binding => binding.Slot))
+        {
+            keyParts.Add(binding.Slot.ToString());
+            keyParts.Add(binding.Name ?? string.Empty);
+            foreach (var texture in binding.Textures.OrderBy(kvp => kvp.Key, StringComparer.Ordinal))
+            {
+                keyParts.Add(texture.Key);
+                keyParts.Add(texture.Value);
+            }
+        }
+
         for (int i = 0; i < sourceMaterials.Length; i++)
         {
             var material = sourceMaterials[i];
@@ -43,38 +58,49 @@ internal sealed class MaterialReplacementService
             if (sourceMaterial == null)
                 continue;
 
-            var clone = UnityEngine.Object.Instantiate(sourceMaterial);
-            clone.name = $"{sourceMaterial.name} [jiangyu:{texturePrefix}]";
-            _pinned.Add(clone);
+            if (!bindingsBySlot.TryGetValue(i, out var binding) || binding.Textures == null || binding.Textures.Count == 0)
+            {
+                clones[i] = sourceMaterial;
+                continue;
+            }
 
-            TryApplyReplacementTexture(clone, "_BaseColorMap", texturePrefix);
-            TryApplyReplacementTexture(clone, "_MaskMap", texturePrefix);
-            TryApplyReplacementTexture(clone, "_NormalMap", texturePrefix);
-            TryApplyReplacementTexture(clone, "_Effect_Map", texturePrefix);
+            Material clone = null;
+            foreach (var texture in binding.Textures)
+            {
+                if (!TryApplyReplacementTexture(ref clone, sourceMaterial, texture.Key, texture.Value, binding.Name))
+                    continue;
+            }
 
-            clones[i] = clone;
+            clones[i] = clone ?? sourceMaterial;
         }
 
         _materialCache[cacheKey] = clones;
         return clones;
     }
 
-    private bool TryApplyReplacementTexture(Material material, string propertyName, string texturePrefix)
+    private bool TryApplyReplacementTexture(ref Material clone, Material sourceMaterial, string propertyName, string replacementTextureName, string materialName)
     {
-        if (material == null || string.IsNullOrWhiteSpace(texturePrefix) || !material.HasProperty(propertyName))
-            return false;
-
-        var currentTextureName = GetTextureName(material, propertyName);
-        foreach (var replacementTextureName in ResolveReplacementTextureNames(texturePrefix, currentTextureName, propertyName))
+        if (sourceMaterial == null ||
+            string.IsNullOrWhiteSpace(propertyName) ||
+            string.IsNullOrWhiteSpace(replacementTextureName) ||
+            !sourceMaterial.HasProperty(propertyName) ||
+            !_replacementTextures.TryGetValue(replacementTextureName, out var replacementTexture))
         {
-            if (_replacementTextures.TryGetValue(replacementTextureName, out var replacementTexture))
-            {
-                material.SetTexture(propertyName, replacementTexture);
-                return true;
-            }
+            return false;
         }
 
-        return false;
+        clone ??= CreateMaterialClone(sourceMaterial, materialName);
+        clone.SetTexture(propertyName, replacementTexture);
+        return true;
+    }
+
+    private Material CreateMaterialClone(Material sourceMaterial, string materialName)
+    {
+        var clone = UnityEngine.Object.Instantiate(sourceMaterial);
+        var bindingLabel = string.IsNullOrWhiteSpace(materialName) ? sourceMaterial.name : materialName;
+        clone.name = $"{sourceMaterial.name} [jiangyu:{bindingLabel}]";
+        _pinned.Add(clone);
+        return clone;
     }
 
     private static string GetTextureName(Material material, string propertyName)
@@ -83,37 +109,5 @@ internal sealed class MaterialReplacementService
             return string.Empty;
 
         return material.GetTexture(propertyName)?.name ?? string.Empty;
-    }
-
-    private static IEnumerable<string> ResolveReplacementTextureNames(string texturePrefix, string currentTextureName, string propertyName)
-    {
-        var mapSuffix = propertyName switch
-        {
-            "_BaseColorMap" => "BaseMap",
-            "_MaskMap" => "MaskMap",
-            "_NormalMap" => "NormalMap",
-            "_Effect_Map" => "EffectMap",
-            _ => null,
-        };
-
-        if (mapSuffix == null)
-            yield break;
-
-        if (!string.IsNullOrWhiteSpace(currentTextureName))
-        {
-            var variantMatch = System.Text.RegularExpressions.Regex.Match(
-                currentTextureName,
-                $"^(.*?)(_(\\d+))?_{mapSuffix}$",
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-            if (variantMatch.Success)
-            {
-                var variantSuffix = variantMatch.Groups[2].Success ? variantMatch.Groups[2].Value : string.Empty;
-                if (!string.IsNullOrEmpty(variantSuffix))
-                    yield return $"{texturePrefix}{variantSuffix}_{mapSuffix}";
-            }
-        }
-
-        yield return $"{texturePrefix}_{mapSuffix}";
     }
 }

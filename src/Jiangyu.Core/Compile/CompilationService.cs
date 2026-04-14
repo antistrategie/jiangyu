@@ -152,7 +152,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                     meshEntry.Compiled = new CompiledMeshMetadata
                     {
                         BoneNames = boneNames,
-                        TexturePrefix = buildResult.MeshTexturePrefixes.GetValueOrDefault(bundleMeshName),
+                        Materials = buildResult.MeshMaterialBindings.GetValueOrDefault(bundleMeshName),
                     };
                 }
             }

@@ -6,13 +6,13 @@ internal sealed class ReplacementMesh
 {
     public Mesh Mesh;
     public string[] BoneNames;
-    public string TexturePrefix;
+    public CompiledMaterialBindingRecord[] MaterialBindings;
 
-    public ReplacementMesh(Mesh mesh, string[] boneNames, string texturePrefix)
+    public ReplacementMesh(Mesh mesh, string[] boneNames, CompiledMaterialBindingRecord[] materialBindings)
     {
         Mesh = mesh;
         BoneNames = boneNames;
-        TexturePrefix = texturePrefix;
+        MaterialBindings = materialBindings;
     }
 }
 
@@ -33,7 +33,14 @@ internal sealed class ReplacementPrefab
 internal sealed class CompiledMeshMetadataRecord
 {
     public string[] BoneNames;
-    public string TexturePrefix;
+    public CompiledMaterialBindingRecord[] MaterialBindings;
+}
+
+internal sealed class CompiledMaterialBindingRecord
+{
+    public int Slot;
+    public string Name;
+    public Dictionary<string, string> Textures;
 }
 
 internal sealed class PreparedMeshAssignment

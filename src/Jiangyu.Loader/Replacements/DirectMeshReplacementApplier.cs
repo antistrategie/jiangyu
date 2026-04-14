@@ -43,12 +43,13 @@ internal sealed class DirectMeshReplacementApplier
         smr.localBounds = prepared.Bounds;
         smr.updateWhenOffscreen = prepared.UpdateWhenOffscreen;
 
-        if (!string.IsNullOrWhiteSpace(replacement.TexturePrefix) &&
+        if (replacement.MaterialBindings != null &&
+            replacement.MaterialBindings.Length > 0 &&
             smr.sharedMaterials != null &&
             smr.sharedMaterials.Length > 0 &&
             _materialReplacements.HasReplacementTextures)
         {
-            smr.sharedMaterials = _materialReplacements.GetOrCreateReplacementMaterials(smr.sharedMaterials, replacement.TexturePrefix);
+            smr.sharedMaterials = _materialReplacements.GetOrCreateReplacementMaterials(smr.sharedMaterials, replacement.MaterialBindings);
         }
 
         log.Msg($"  Swapped: {smr.sharedMesh.name} (readable={smr.sharedMesh.isReadable}, rootBone={smr.rootBone?.name ?? "<null>"}, boundsCenter={FormatVector3(prepared.Bounds.center)}, boundsSize={FormatVector3(prepared.Bounds.size)}, updateWhenOffscreen={smr.updateWhenOffscreen})");

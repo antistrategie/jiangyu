@@ -81,7 +81,16 @@ public class ModManifestTests
                     "source": "models/soldier.glb#body",
                     "compiled": {
                         "boneNames": ["Hips", "Spine", "Head"],
-                        "texturePrefix": "soldier_"
+                        "materials": [
+                            {
+                                "slot": 0,
+                                "name": "Body",
+                                "textures": {
+                                    "_BaseColorMap": "soldier_body_BaseMap",
+                                    "_NormalMap": "soldier_body_NormalMap"
+                                }
+                            }
+                        ]
                     }
                 }
             }
@@ -94,7 +103,11 @@ public class ModManifestTests
         Assert.Equal("models/soldier.glb#body", entry.Source);
         Assert.NotNull(entry.Compiled);
         Assert.Equal(["Hips", "Spine", "Head"], entry.Compiled.BoneNames);
-        Assert.Equal("soldier_", entry.Compiled.TexturePrefix);
+        var material = Assert.Single(entry.Compiled.Materials!);
+        Assert.Equal(0, material.Slot);
+        Assert.Equal("Body", material.Name);
+        Assert.Equal("soldier_body_BaseMap", material.Textures["_BaseColorMap"]);
+        Assert.Equal("soldier_body_NormalMap", material.Textures["_NormalMap"]);
     }
 
     [Fact]
@@ -129,7 +142,18 @@ public class ModManifestTests
                     Compiled = new CompiledMeshMetadata
                     {
                         BoneNames = ["Hips"],
-                        TexturePrefix = "pfx_",
+                        Materials =
+                        [
+                            new CompiledMaterialBinding
+                            {
+                                Slot = 0,
+                                Name = "Body",
+                                Textures = new Dictionary<string, string>(StringComparer.Ordinal)
+                                {
+                                    ["_BaseColorMap"] = "body_BaseMap",
+                                },
+                            },
+                        ],
                     },
                 },
             },
@@ -140,10 +164,11 @@ public class ModManifestTests
         Assert.Contains("\"source\"", json);
         Assert.Contains("\"compiled\"", json);
         Assert.Contains("\"boneNames\"", json);
+        Assert.Contains("\"materials\"", json);
     }
 
     [Fact]
-    public void MeshEntry_CompiledRoundtrip_PreservesBoneNamesAndPrefix()
+    public void MeshEntry_CompiledRoundtrip_PreservesBoneNamesAndMaterialBindings()
     {
         var original = new ModManifest
         {
@@ -156,7 +181,18 @@ public class ModManifestTests
                     Compiled = new CompiledMeshMetadata
                     {
                         BoneNames = ["Hips", "Spine", "Head"],
-                        TexturePrefix = "soldier_",
+                        Materials =
+                        [
+                            new CompiledMaterialBinding
+                            {
+                                Slot = 1,
+                                Name = "Eyes",
+                                Textures = new Dictionary<string, string>(StringComparer.Ordinal)
+                                {
+                                    ["_BaseColorMap"] = "eyes_BaseMap",
+                                },
+                            },
+                        ],
                     },
                 },
             },
@@ -168,6 +204,9 @@ public class ModManifestTests
 
         Assert.Equal("models/file.glb", entry.Source);
         Assert.Equal(["Hips", "Spine", "Head"], entry.Compiled!.BoneNames);
-        Assert.Equal("soldier_", entry.Compiled.TexturePrefix);
+        var material = Assert.Single(entry.Compiled.Materials!);
+        Assert.Equal(1, material.Slot);
+        Assert.Equal("Eyes", material.Name);
+        Assert.Equal("eyes_BaseMap", material.Textures["_BaseColorMap"]);
     }
 }

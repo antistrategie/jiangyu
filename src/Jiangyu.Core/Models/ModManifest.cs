@@ -54,8 +54,20 @@ public sealed class CompiledMeshMetadata
     [JsonPropertyName("boneNames")]
     public required string[] BoneNames { get; set; }
 
-    [JsonPropertyName("texturePrefix")]
-    public string? TexturePrefix { get; set; }
+    [JsonPropertyName("materials")]
+    public List<CompiledMaterialBinding>? Materials { get; set; }
+}
+
+public sealed class CompiledMaterialBinding
+{
+    [JsonPropertyName("slot")]
+    public required int Slot { get; set; }
+
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("textures")]
+    public required Dictionary<string, string> Textures { get; set; }
 }
 
 [JsonConverter(typeof(MeshManifestEntryJsonConverter))]
