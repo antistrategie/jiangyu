@@ -481,7 +481,7 @@ internal static class ModelCleanupService
         return node.VisualChildren.Any(child => SubtreeContainsAnyJoint(child, jointNodes));
     }
 
-    private static Vector3 SnapScale(Vector3 scale)
+    internal static Vector3 SnapScale(Vector3 scale)
     {
         const float tolerance = 1e-5f;
         return new Vector3(
@@ -490,7 +490,7 @@ internal static class ModelCleanupService
             MathF.Abs(scale.Z - 1f) < tolerance ? 1f : scale.Z);
     }
 
-    private static bool IsUniformSmallScale(Vector3 scale)
+    internal static bool IsUniformSmallScale(Vector3 scale)
     {
         return MathF.Abs(scale.X - scale.Y) < 0.001f
             && MathF.Abs(scale.Y - scale.Z) < 0.001f

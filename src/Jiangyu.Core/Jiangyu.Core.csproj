@@ -24,4 +24,8 @@
     <EmbeddedResource Include="Unity\MeshBundleBuilder.template" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Jiangyu.Core.Tests" />
+  </ItemGroup>
+
 </Project>

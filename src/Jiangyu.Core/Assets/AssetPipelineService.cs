@@ -267,7 +267,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
     /// Only properties with genuine glTF PBR equivalents are mapped here.
     /// MENACE-specific properties (_MaskMap, _Effect_Map) are NOT mapped — they go to extras.
     /// </summary>
-    private static readonly Dictionary<string, string> StandardChannelMap = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly Dictionary<string, string> StandardChannelMap = new(StringComparer.OrdinalIgnoreCase)
     {
         ["_BaseColorMap"] = "BaseColor",
         ["_MainTex"] = "BaseColor",
@@ -279,7 +279,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         ["_OcclusionMap"] = "Occlusion",
     };
 
-    private sealed class DiscoveredTexture
+    internal sealed class DiscoveredTexture
     {
         public required string Name { get; init; }
         public required string MaterialName { get; init; }
@@ -462,7 +462,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
     /// BuildCleanScene). This method handles non-standard textures (written to disk,
     /// referenced in material extras) and root extras (cleaned flag).
     /// </summary>
-    private static void SaveGltfPackage(SceneBuilder scene, List<DiscoveredTexture> textures, string gltfPath)
+    internal static void SaveGltfPackage(SceneBuilder scene, List<DiscoveredTexture> textures, string gltfPath)
     {
         var model = scene.ToGltf2();
 

@@ -793,7 +793,7 @@ public static class GlbMeshBundleCompiler
         return sourceFileName;
     }
 
-    private static string? FindCommonPrefix(List<string> names)
+    internal static string? FindCommonPrefix(List<string> names)
     {
         if (names.Count == 0)
         {
@@ -852,7 +852,7 @@ public static class GlbMeshBundleCompiler
     /// <summary>
     /// Fallback texture discovery for non-.gltf sources (prefix-based directory search).
     /// </summary>
-    private static IEnumerable<string> EnumerateSidecarTexturePaths(string sourceFilePath, string texturePrefix)
+    internal static IEnumerable<string> EnumerateSidecarTexturePaths(string sourceFilePath, string texturePrefix)
     {
         var sourceDir = Path.GetDirectoryName(sourceFilePath);
         if (string.IsNullOrEmpty(sourceDir))
@@ -885,7 +885,7 @@ public static class GlbMeshBundleCompiler
         }
     }
 
-    private static bool IsLinearTextureName(string textureName)
+    internal static bool IsLinearTextureName(string textureName)
         => textureName.EndsWith("_MaskMap", StringComparison.OrdinalIgnoreCase) ||
            textureName.EndsWith("_NormalMap", StringComparison.OrdinalIgnoreCase) ||
            textureName.EndsWith("_Normal", StringComparison.OrdinalIgnoreCase) ||
@@ -895,7 +895,7 @@ public static class GlbMeshBundleCompiler
     /// Returns true if a texture filename matches a known MENACE texture naming pattern.
     /// Used by the naming inference step to avoid importing unrelated files from textures/.
     /// </summary>
-    private static bool IsMenaceTextureNamePattern(string textureName)
+    internal static bool IsMenaceTextureNamePattern(string textureName)
         => textureName.EndsWith("_BaseMap", StringComparison.OrdinalIgnoreCase) ||
            textureName.EndsWith("_BaseColorMap", StringComparison.OrdinalIgnoreCase) ||
            textureName.EndsWith("_NormalMap", StringComparison.OrdinalIgnoreCase) ||
