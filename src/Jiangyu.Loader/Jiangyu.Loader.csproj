@@ -34,10 +34,6 @@
       <HintPath>$(GameAssembliesDir)/UnityEngine.AssetBundleModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <Reference Include="UnityEngine.InputLegacyModule">
-      <HintPath>$(GameAssembliesDir)/UnityEngine.InputLegacyModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
     <Reference Include="UnityEngine.PhysicsModule">
       <HintPath>$(GameAssembliesDir)/UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>

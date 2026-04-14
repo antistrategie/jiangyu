@@ -12,14 +12,14 @@
 using MelonLoader;
 using MelonLoader.Utils;
 
-[assembly: MelonInfo(typeof(Jiangyu.Loader.JiangyuMod), "Jiangyu", "0.1.0", "antistrategie")]
+[assembly: MelonInfo(typeof(Jiangyu.Loader.Runtime.JiangyuMod), "Jiangyu", "0.1.0", "antistrategie")]
 [assembly: MelonGame("Overhype Studios", "Menace")]
 
-namespace Jiangyu.Loader;
+namespace Jiangyu.Loader.Runtime;
 
 public class JiangyuMod : MelonMod
 {
-    private readonly MeshReplacer _meshReplacer = new();
+    private readonly ReplacementCoordinator _replacementCoordinator = new();
     private bool _autoApplied;
 
     public override void OnInitializeMelon()
@@ -27,7 +27,7 @@ public class JiangyuMod : MelonMod
         LoggerInstance.Msg("Jiangyu loader initialising...");
 
         var modsDir = Path.Combine(MelonEnvironment.MelonBaseDirectory, "Mods");
-        var bundleCount = _meshReplacer.LoadBundles(modsDir, LoggerInstance);
+        var bundleCount = _replacementCoordinator.LoadBundles(modsDir, LoggerInstance);
 
         LoggerInstance.Msg($"Loaded {bundleCount} bundle(s).");
     }
@@ -40,12 +40,12 @@ public class JiangyuMod : MelonMod
 
     public override void OnUpdate()
     {
-        if (!_autoApplied && _meshReplacer.HasReplacementTargets())
+        if (!_autoApplied && _replacementCoordinator.HasReplacementTargets())
         {
             try
             {
-                LoggerInstance.Msg("Detected matching skinned meshes — auto-applying replacements...");
-                _meshReplacer.ApplyReplacements(LoggerInstance);
+                LoggerInstance.Msg("Detected matching runtime replacement targets — applying replacements...");
+                _replacementCoordinator.ApplyReplacements(LoggerInstance);
                 _autoApplied = true;
             }
             catch (Exception ex)
@@ -55,21 +55,6 @@ public class JiangyuMod : MelonMod
             }
         }
 
-        _meshReplacer.UpdateDrivenReplacements(LoggerInstance);
-
-        // F9 remains as a manual retry trigger during testing.
-        if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.F9))
-        {
-            try
-            {
-                LoggerInstance.Msg("F9 pressed — applying replacements...");
-                _meshReplacer.ApplyReplacements(LoggerInstance);
-                _autoApplied = true;
-            }
-            catch (Exception ex)
-            {
-                LoggerInstance.Error($"Manual apply failed: {ex}");
-            }
-        }
+        _replacementCoordinator.UpdateDrivenReplacements(LoggerInstance);
     }
 }

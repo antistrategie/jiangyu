@@ -6,6 +6,8 @@ namespace Jiangyu.Compiler.Commands;
 
 public static class InspectMeshCommand
 {
+    private const string DefaultOutputFileName = "jiangyu-inspect-mesh.json";
+    private static readonly JsonSerializerOptions PrettyJsonOptions = new() { WriteIndented = true };
     private const int ClassIdMesh = 43;
 
     public static Task<int> RunAsync(string[] args)
@@ -77,12 +79,12 @@ public static class InspectMeshCommand
             MeshName = options.MeshName,
             BundlePath = options.BundlePath,
             GameDataPath = options.GameDataPath,
-            BundleMeshes = bundleAssetFiles.SelectMany(f => FindMeshes(f, meshTemplate, options.MeshName)).ToList(),
-            GameMeshes = gameFiles.SelectMany(f => FindMeshes(f, meshTemplate, options.MeshName)).ToList(),
+            BundleMeshes = [.. bundleAssetFiles.SelectMany(f => FindMeshes(f, meshTemplate, options.MeshName))],
+            GameMeshes = [.. gameFiles.SelectMany(f => FindMeshes(f, meshTemplate, options.MeshName))],
         };
 
         Directory.CreateDirectory(Path.GetDirectoryName(options.OutputPath)!);
-        File.WriteAllText(options.OutputPath, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(options.OutputPath, JsonSerializer.Serialize(report, PrettyJsonOptions));
 
         Console.WriteLine($"Wrote mesh inspection report to {options.OutputPath}");
         Console.WriteLine($"  bundle matches: {report.BundleMeshes.Count}");
@@ -417,7 +419,7 @@ public static class InspectMeshCommand
         string? bundlePath = null;
         string? gameDataPath = null;
         string? meshName = null;
-        var output = "/tmp/jiangyu-inspect-mesh.json";
+        var output = GetDefaultOutputPath();
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -445,6 +447,9 @@ public static class InspectMeshCommand
 
         return new InspectMeshOptions(Path.GetFullPath(bundlePath), Path.GetFullPath(gameDataPath), meshName, Path.GetFullPath(output));
     }
+
+    private static string GetDefaultOutputPath()
+        => Path.Combine(Path.GetTempPath(), DefaultOutputFileName);
 
     private static void PrintUsage()
     {

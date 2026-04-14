@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 
-namespace Jiangyu.Loader;
+namespace Jiangyu.Loader.Bundles;
 
 // TODO: Remove this wrapper once MelonLoader ships a stable release with the Unity 6
 // AssetBundle fix (LavaGang/MelonLoader#1122, merged 2026-03-26 into alpha-development).
@@ -18,11 +18,14 @@ namespace Jiangyu.Loader;
 //
 // This wrapper resolves the _Injected ICalls directly, following the same pattern
 // as the fix in LavaGang/MelonLoader#1122. The bundle pointer returned by Unity 6
-// is wrapped — the real pointer is at offset 0x10 inside the wrapper object.
-// For byte arrays (LoadFromMemory), raw data starts at offset 0x20 past the
-// IL2CPP object header.
+// is wrapped — the real pointer is at offset UnityObjectWrapperNativePointerOffset
+// inside the wrapper object. For byte arrays (LoadFromMemory), raw data starts
+// at offset Il2CppByteArrayDataOffset past the IL2CPP object header.
 public static unsafe class BundleLoader
 {
+    private const int UnityObjectWrapperNativePointerOffset = 0x10;
+    private const int Il2CppByteArrayDataOffset = 0x20;
+
     [StructLayout(LayoutKind.Sequential)]
     private struct ManagedSpanWrapper
     {
@@ -77,8 +80,8 @@ public static unsafe class BundleLoader
             var gcHandle = LoadFromFileICall((IntPtr)(&wrapper), 0, 0);
             var wrappedPtr = ResolveGCHandle(gcHandle);
             if (wrappedPtr == IntPtr.Zero) return IntPtr.Zero;
-            // Unity 6 wraps the bundle pointer — real pointer is at offset 0x10
-            return Marshal.ReadIntPtr(wrappedPtr + 0x10);
+            // Unity 6 wraps the bundle pointer — real pointer is at the native pointer offset.
+            return Marshal.ReadIntPtr(wrappedPtr + UnityObjectWrapperNativePointerOffset);
         }
     }
 
@@ -101,7 +104,7 @@ public static unsafe class BundleLoader
         {
             var wrapper = new ManagedSpanWrapper { begin = (IntPtr)chars, length = name.Length };
             var gcHandle = LoadAssetICall(bundle, (IntPtr)(&wrapper), type);
-            // No 0x10 offset for asset return values — the GC handle target IS the
+            // No native pointer offset for asset return values — the GC handle target IS the
             // IL2CPP managed object pointer (usable with new Mesh(ptr) etc.)
             return ResolveGCHandle(gcHandle);
         }
@@ -124,13 +127,13 @@ public static unsafe class BundleLoader
 
     /// <summary>
     /// Reads the native Unity object pointer (m_CachedPtr) from an IL2CPP managed object.
-    /// For any UnityEngine.Object subclass, the native pointer is at offset 0x10
+    /// For any UnityEngine.Object subclass, the native pointer is at the native pointer offset
     /// from the IL2CPP object pointer.
     /// </summary>
     public static IntPtr GetNativePtr(IntPtr il2cppObjectPtr)
     {
         if (il2cppObjectPtr == IntPtr.Zero) return IntPtr.Zero;
-        return Marshal.ReadIntPtr(il2cppObjectPtr + 0x10);
+        return Marshal.ReadIntPtr(il2cppObjectPtr + UnityObjectWrapperNativePointerOffset);
     }
 
     /// <summary>

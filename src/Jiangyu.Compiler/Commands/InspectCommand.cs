@@ -6,6 +6,11 @@ namespace Jiangyu.Compiler.Commands;
 
 public static class InspectCommand
 {
+    private const string DefaultOutputFileName = "jiangyu-inspect.json";
+    private static readonly JsonSerializerOptions PrettyJsonOptions = new()
+    {
+        WriteIndented = true,
+    };
     private const int ClassIdGameObject = 1;
     private const int ClassIdTransform = 4;
     private const int ClassIdMeshRenderer = 23;
@@ -87,16 +92,12 @@ public static class InspectCommand
             GameDataPath = options.GameDataPath,
             GameFilter = options.GameFilter,
             BundleFilter = options.BundleFilter,
-            BundleFiles = bundleAssetFiles.Select(inst => InspectFile(inst, templates, options.BundleFilter)).ToList(),
-            GameFiles = gameFiles.Select(inst => InspectFile(inst, templates, options.GameFilter)).ToList(),
+            BundleFiles = [.. bundleAssetFiles.Select(inst => InspectFile(inst, templates, options.BundleFilter))],
+            GameFiles = [.. gameFiles.Select(inst => InspectFile(inst, templates, options.GameFilter))],
         };
 
-        var jsonOptions = new JsonSerializerOptions
-        {
-            WriteIndented = true,
-        };
         Directory.CreateDirectory(Path.GetDirectoryName(options.OutputPath)!);
-        File.WriteAllText(options.OutputPath, JsonSerializer.Serialize(report, jsonOptions));
+        File.WriteAllText(options.OutputPath, JsonSerializer.Serialize(report, PrettyJsonOptions));
 
         var bundleMatches = report.BundleFiles.Sum(f => f.GameObjects.Count);
         var gameMatches = report.GameFiles.Sum(f => f.GameObjects.Count);
@@ -142,7 +143,7 @@ public static class InspectCommand
     }
 
     private static string FormatVector(float[] values)
-        => $"({string.Join(", ", values.Select(v => v.ToString("0.####")) )})";
+        => $"({string.Join(", ", values.Select(v => v.ToString("0.####")))})";
 
     private static Dictionary<int, AssetTypeTemplateField> BuildTemplates(AssetsManager am, AssetsFileInstance templateSource)
     {
@@ -205,7 +206,7 @@ public static class InspectCommand
             Path = inst.path,
             HasTypeTree = inst.file.Metadata.TypeTreeEnabled,
             UnityVersion = inst.file.Metadata.UnityVersion,
-            GameObjects = matching.OrderBy(g => g.Path, StringComparer.OrdinalIgnoreCase).ToList(),
+            GameObjects = [.. matching.OrderBy(g => g.Path, StringComparer.OrdinalIgnoreCase)],
         };
     }
 
@@ -230,7 +231,7 @@ public static class InspectCommand
         string? gameDataPath = null;
         var gameFilter = "basic_soldier";
         string? bundleFilter = null;
-        var outputPath = "/tmp/jiangyu-inspect.json";
+        var outputPath = GetDefaultOutputPath();
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -267,23 +268,20 @@ public static class InspectCommand
             Path.GetFullPath(outputPath));
     }
 
+    private static string GetDefaultOutputPath()
+        => Path.Combine(Path.GetTempPath(), DefaultOutputFileName);
+
     private static void PrintUsage()
     {
         Console.Error.WriteLine("Usage: jiangyu inspect --bundle <bundle> --game-data <Menace_Data> [--filter <name>] [--bundle-filter <name>] [--out <json>]");
     }
 
-    private sealed class FileContext
+    private sealed class FileContext(AssetsFileInstance inst, IReadOnlyDictionary<int, AssetTypeTemplateField> templates)
     {
-        private readonly AssetsFileInstance _inst;
-        private readonly IReadOnlyDictionary<int, AssetTypeTemplateField> _templates;
-        private readonly Dictionary<long, GameObjectInfo> _gameObjectCache = new();
-        private readonly Dictionary<long, AssetTypeValueField?> _fieldCache = new();
-
-        public FileContext(AssetsFileInstance inst, IReadOnlyDictionary<int, AssetTypeTemplateField> templates)
-        {
-            _inst = inst;
-            _templates = templates;
-        }
+        private readonly AssetsFileInstance _inst = inst;
+        private readonly IReadOnlyDictionary<int, AssetTypeTemplateField> _templates = templates;
+        private readonly Dictionary<long, GameObjectInfo> _gameObjectCache = [];
+        private readonly Dictionary<long, AssetTypeValueField?> _fieldCache = [];
 
         public GameObjectInfo BuildGameObject(long pathId)
         {
@@ -296,7 +294,7 @@ public static class InspectCommand
             var componentRefs = ReadComponentRefs(field);
 
             var transformRef = componentRefs.FirstOrDefault(c => c.TypeId == ClassIdTransform);
-            var path = !transformRef.Equals(default(ComponentRef))
+            var path = !transformRef.Equals(default)
                 ? BuildTransformPath(transformRef.PathId)
                 : name;
 
@@ -305,13 +303,13 @@ public static class InspectCommand
                 PathId = pathId,
                 Name = name,
                 Path = path,
-                Components = componentRefs.Select(c => new ComponentInfo
+                Components = [.. componentRefs.Select(c => new ComponentInfo
                 {
                     PathId = c.PathId,
                     TypeId = c.TypeId,
                     TypeName = GetClassName(c.TypeId),
-                }).ToList(),
-                Transform = transformRef.Equals(default(ComponentRef)) ? null : ReadTransformInfo(transformRef.PathId),
+                })],
+                Transform = transformRef.Equals(default) ? null : ReadTransformInfo(transformRef.PathId),
             };
 
             foreach (var comp in componentRefs)
@@ -453,7 +451,7 @@ public static class InspectCommand
                 RootBonePathId = rootBone.PathId == 0 ? null : rootBone.PathId,
                 RootBoneName = rootBone.PathId == 0 ? null : ReadTransformGameObjectName(rootBone.PathId),
                 RootBonePath = rootBone.PathId == 0 ? null : BuildTransformPath(rootBone.PathId),
-                BoneNames = bones.Select(b => ReadTransformGameObjectName(b.PathId) ?? $"<{b.PathId}>").ToList(),
+                BoneNames = [.. bones.Select(b => ReadTransformGameObjectName(b.PathId) ?? $"<{b.PathId}>")],
                 MaterialCount = materials.Count(m => m.PathId != 0),
             };
         }
@@ -564,11 +562,10 @@ public static class InspectCommand
                 PathId = transformPathId,
                 LocalPosition = ReadVector3(field["m_LocalPosition"]),
                 LocalScale = ReadVector3(field["m_LocalScale"]),
-                ChildNames = GetArrayElements(field["m_Children"])
+                ChildNames = [.. GetArrayElements(field["m_Children"])
                     .Select(ReadPPtr)
                     .Where(p => p.PathId != 0)
-                    .Select(p => ReadTransformGameObjectName(p.PathId) ?? $"<{p.PathId}>")
-                    .ToList(),
+                    .Select(p => ReadTransformGameObjectName(p.PathId) ?? $"<{p.PathId}>")],
             };
         }
 
@@ -601,7 +598,7 @@ public static class InspectCommand
             return new GameObjectSkeleton(pathId, name, transformPathId, components);
         }
 
-        private static IEnumerable<AssetTypeValueField> GetArrayElements(AssetTypeValueField field)
+        private static List<AssetTypeValueField> GetArrayElements(AssetTypeValueField field)
         {
             if (field.IsDummy)
                 return [];

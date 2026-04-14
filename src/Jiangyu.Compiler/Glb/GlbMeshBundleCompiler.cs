@@ -10,6 +10,11 @@ namespace Jiangyu.Compiler.Glb;
 
 internal static class GlbMeshBundleCompiler
 {
+    private const float MenaceCharacterSpaceScale = 100f;
+    private const float MeshOnlyWeightedVertexScale = 0.01f;
+    private const float MeshOnlyWeightScaleExtentThreshold = 10f;
+    private static readonly JsonSerializerOptions PrettyJsonOptions = new() { WriteIndented = true };
+
     internal sealed class ExtractedMeshCandidate
     {
         public required string PrimaryName { get; init; }
@@ -308,7 +313,7 @@ internal static class GlbMeshBundleCompiler
 
         // AssetRipper mesh-only GLBs can contain weighted vertices in centimeter-scale
         // mesh space with no Skin object. In that case, bake a meter-scale correction.
-        var meshOnlyWeightScale = new Vector3(0.01f, 0.01f, 0.01f);
+        var meshOnlyWeightScale = new Vector3(MeshOnlyWeightedVertexScale, MeshOnlyWeightedVertexScale, MeshOnlyWeightedVertexScale);
         var bakeMeshOnlyWeightScale = skin == null &&
                                       hasSkinAttributes &&
                                       model.LogicalSkins.Count == 0 &&
@@ -337,9 +342,9 @@ internal static class GlbMeshBundleCompiler
                     // MENACE character meshes live in a centimeter-scale local space
                     // under a 0.01-scaled SkinnedMeshRenderer child. The raw GLB data
                     // is meter-scale and mirrored relative to that mesh space.
-                    allVertices.Add(-transformed.X * 100f);
-                    allVertices.Add(transformed.Y * 100f);
-                    allVertices.Add(transformed.Z * 100f);
+                    allVertices.Add(-transformed.X * MenaceCharacterSpaceScale);
+                    allVertices.Add(transformed.Y * MenaceCharacterSpaceScale);
+                    allVertices.Add(transformed.Z * MenaceCharacterSpaceScale);
                 }
                 else
                 {
@@ -488,16 +493,16 @@ internal static class GlbMeshBundleCompiler
         return new CompiledMesh
         {
             Name = mesh.Name ?? $"Mesh_{mesh.LogicalIndex}",
-            Vertices = allVertices.ToArray(),
-            Normals = allNormals.ToArray(),
-            Tangents = allTangents.ToArray(),
-            UV0 = allUv0.ToArray(),
-            UV1 = allUv1.ToArray(),
-            Colors = allColors.ToArray(),
-            Indices = allIndices.ToArray(),
+            Vertices = [.. allVertices],
+            Normals = [.. allNormals],
+            Tangents = [.. allTangents],
+            UV0 = [.. allUv0],
+            UV1 = [.. allUv1],
+            Colors = [.. allColors],
+            Indices = [.. allIndices],
             SubMeshes = subMeshes,
-            BoneWeights = allBoneWeights.ToArray(),
-            BoneIndices = allBoneIndices.ToArray(),
+            BoneWeights = [.. allBoneWeights],
+            BoneIndices = [.. allBoneIndices],
             BindPoses = bindPoses,
             BoneNames = boneNames,
         };
@@ -559,7 +564,7 @@ internal static class GlbMeshBundleCompiler
             maxExtent = Math.Max(maxExtent, Math.Max(extent.X, Math.Max(extent.Y, extent.Z)));
         }
 
-        return maxExtent > 10f;
+        return maxExtent > MeshOnlyWeightScaleExtentThreshold;
     }
 
     private static List<CompiledTexture> ExtractTextures(IReadOnlyList<MeshSourceEntry> entries)
@@ -586,7 +591,7 @@ internal static class GlbMeshBundleCompiler
             }
         }
 
-        return result.Values.OrderBy(texture => texture.Name, StringComparer.Ordinal).ToList();
+        return [.. result.Values.OrderBy(texture => texture.Name, StringComparer.Ordinal)];
     }
 
     private static string? InferTexturePrefix(string sourceFilePath)
@@ -711,7 +716,7 @@ internal static class GlbMeshBundleCompiler
             -m.M31, -m.M32, m.M33, -m.M34,
             m.M41, m.M42, -m.M43, m.M44);
 
-    private static void WriteMeshData(string path, IReadOnlyList<CompiledMesh> meshes)
+    private static void WriteMeshData(string path, List<CompiledMesh> meshes)
     {
         using var fs = File.Create(path);
         using var writer = new BinaryWriter(fs);
@@ -868,7 +873,7 @@ internal static class GlbMeshBundleCompiler
             };
         });
 
-        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
+        var json = JsonSerializer.Serialize(payload, PrettyJsonOptions);
         File.WriteAllText(path, json);
     }
 

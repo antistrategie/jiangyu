@@ -6,6 +6,9 @@ namespace Jiangyu.Compiler.Commands;
 
 public static class InspectGlbCommand
 {
+    private const string DefaultOutputFileName = "jiangyu-inspect-glb.json";
+    private static readonly JsonSerializerOptions PrettyJsonOptions = new() { WriteIndented = true };
+
     public static Task<int> RunAsync(string[] args)
     {
         var options = ParseArgs(args);
@@ -26,7 +29,7 @@ public static class InspectGlbCommand
         {
             var report = Inspect(resolved);
             Directory.CreateDirectory(Path.GetDirectoryName(resolved.OutputPath)!);
-            File.WriteAllText(resolved.OutputPath, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(resolved.OutputPath, JsonSerializer.Serialize(report, PrettyJsonOptions));
 
             Console.WriteLine($"Wrote GLB inspection report to {resolved.OutputPath}");
             Console.WriteLine($"  nodes: {report.Nodes.Count}");
@@ -55,7 +58,7 @@ public static class InspectGlbCommand
         return new GlbInspectionReport
         {
             GlbPath = options.GlbPath,
-            Nodes = contract.Nodes.Select(node => new GlbNodeInfo
+            Nodes = [.. contract.Nodes.Select(node => new GlbNodeInfo
             {
                 Index = node.Index,
                 Name = node.Name,
@@ -66,28 +69,28 @@ public static class InspectGlbCommand
                 LocalRotation = node.LocalRotation,
                 LocalScale = node.LocalScale,
                 Children = node.Children,
-            }).ToList(),
-            Skins = contract.Skins.Select(skin => new GlbSkinInfo
+            })],
+            Skins = [.. contract.Skins.Select(skin => new GlbSkinInfo
             {
                 Index = skin.Index,
                 Name = skin.Name,
                 JointCount = skin.JointCount,
-                Joints = skin.Joints.Select(joint => new GlbSkinJointInfo
+                Joints = [.. skin.Joints.Select(joint => new GlbSkinJointInfo
                 {
                     Index = joint.Index,
                     Name = joint.Name,
                     Path = joint.Path,
                     InverseBindMatrix = joint.InverseBindMatrix,
-                }).ToList(),
-            }).ToList(),
+                })],
+            })],
             CanonicalSkeletonRootPath = contract.CanonicalSkeletonRootPath,
-            SuggestedJointRemaps = contract.SuggestedJointRemaps.Select(remap => new GlbJointRemapInfo
+            SuggestedJointRemaps = [.. contract.SuggestedJointRemaps.Select(remap => new GlbJointRemapInfo
             {
                 SkinIndex = remap.SkinIndex,
                 JointIndex = remap.JointIndex,
                 SourcePath = remap.SourcePath,
                 CanonicalPath = remap.CanonicalPath,
-            }).ToList(),
+            })],
         };
     }
 
@@ -98,7 +101,7 @@ public static class InspectGlbCommand
     {
         string? glbPath = null;
         var filter = string.Empty;
-        var output = "/tmp/jiangyu-inspect-glb.json";
+        var output = GetDefaultOutputPath();
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -123,6 +126,9 @@ public static class InspectGlbCommand
 
         return new InspectGlbOptions(Path.GetFullPath(glbPath), filter, Path.GetFullPath(output));
     }
+
+    private static string GetDefaultOutputPath()
+        => Path.Combine(Path.GetTempPath(), DefaultOutputFileName);
 
     private static void PrintUsage()
     {
