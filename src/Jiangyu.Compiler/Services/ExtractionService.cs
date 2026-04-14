@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using AssetRipper.Assets;
 using AssetRipper.Export.Modules.Models;
@@ -19,7 +20,9 @@ using AssetRipper.SourceGenerated.Classes.ClassID_28;
 using AssetRipper.SourceGenerated.Classes.ClassID_43;
 using AssetRipper.SourceGenerated.Classes.ClassID_137;
 using AssetRipper.SourceGenerated.Extensions;
+using SharpGLTF.Memory;
 using SharpGLTF.Scenes;
+using SharpGLTF.Schema2;
 
 namespace Jiangyu.Compiler.Services;
 
@@ -148,14 +151,15 @@ public sealed class ExtractionService
 
     /// <summary>
     /// Loads game data, finds the named asset, and exports a self-contained model package.
-    /// Package layout:
-    ///   {packageDir}/model.glb
-    ///   {packageDir}/jiangyu.export.json
+    /// Clean export layout:
+    ///   {packageDir}/model.gltf          (references textures via standard glTF material channels)
     ///   {packageDir}/textures/*.png
+    /// Raw export layout:
+    ///   {packageDir}/model.glb            (self-contained, no textures)
     /// </summary>
-    /// <param name="collection">If specified, restricts the search to this collection (from index).</param>
-    /// <param name="pathId">If specified, finds the exact asset by PathID (from index).</param>
-    public void ExportModel(string assetName, string packageDir, bool clean = true, string? collection = null, long? pathId = null)
+    /// <param name="collection">The asset collection name (from index).</param>
+    /// <param name="pathId">The asset PathID (from index).</param>
+    public void ExportModel(string assetName, string packageDir, bool clean, string collection, long pathId)
     {
         Console.WriteLine($"Loading game data from: {GameDataPath}");
 
@@ -184,33 +188,17 @@ public sealed class ExtractionService
             RunProcessors(gameData);
             progress.Finish();
 
-            // Find the asset — prefer stable identity (collection + pathId) over name
+            // Find the asset by stable indexed identity (collection + pathId)
             IUnityObjectBase? found = null;
-
-            if (pathId is not null && collection is not null)
+            foreach (var col in gameData.GameBundle.FetchAssetCollections())
             {
-                // Exact lookup by indexed identity
-                foreach (var col in gameData.GameBundle.FetchAssetCollections())
+                if (col.Name != collection)
                 {
-                    if (col.Name != collection)
-                    {
-                        continue;
-                    }
-
-                    found = col.FirstOrDefault(a => a.PathID == pathId.Value);
-                    break;
+                    continue;
                 }
-            }
 
-            if (found is null)
-            {
-                // Fallback to name matching (for manual CLI use without index)
-                var allAssets = gameData.GameBundle.FetchAssets();
-                found = allAssets.OfType<IGameObject>()
-                    .FirstOrDefault(go => string.Equals(go.Name, assetName, StringComparison.OrdinalIgnoreCase))
-                    as IUnityObjectBase
-                    ?? allAssets.OfType<IMesh>()
-                    .FirstOrDefault(m => string.Equals(m.Name, assetName, StringComparison.OrdinalIgnoreCase));
+                found = col.FirstOrDefault(a => a.PathID == pathId);
+                break;
             }
 
             if (found is IGameObject gameObject)
@@ -237,49 +225,130 @@ public sealed class ExtractionService
         }
     }
 
+    /// <summary>
+    /// MENACE material property → standard glTF PBR channel.
+    /// Only properties with genuine glTF PBR equivalents are mapped here.
+    /// MENACE-specific properties (_MaskMap, _Effect_Map) are NOT mapped — they go to extras.
+    /// </summary>
+    private static readonly Dictionary<string, string> StandardChannelMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["_BaseColorMap"] = "BaseColor",
+        ["_MainTex"] = "BaseColor",
+        ["_BaseMap"] = "BaseColor",
+        ["_NormalMap"] = "Normal",
+        ["_BumpMap"] = "Normal",
+        ["_MetallicGlossMap"] = "MetallicRoughness",
+        ["_EmissionMap"] = "Emissive",
+        ["_OcclusionMap"] = "Occlusion",
+    };
+
+    private sealed class DiscoveredTexture
+    {
+        public required string Name { get; init; }
+        public required string MaterialName { get; init; }
+        /// <summary>Stable source identity: "collection:pathId". Matches extras.jiangyu.sourceMaterial in the GLB.</summary>
+        public required string SourceMaterialId { get; init; }
+        public required string Property { get; init; }
+        public required byte[] PngData { get; init; }
+    }
+
     private static void ExportGameObjectPackage(IGameObject gameObject, string packageDir, bool clean)
     {
         Directory.CreateDirectory(packageDir);
 
-        // Export GLB
         IGameObject root = gameObject.GetRoot();
         var assets = root.FetchHierarchy().Cast<IUnityObjectBase>();
-        SceneBuilder sceneBuilder = GlbLevelBuilder.Build(assets, false);
-
-        var glbPath = Path.Combine(packageDir, "model.glb");
-        using (var stream = File.Create(glbPath))
-        {
-            if (GlbWriter.TryWrite(sceneBuilder, stream, out string? errorMessage))
-            {
-                Console.WriteLine($"  Model: {glbPath}");
-            }
-            else
-            {
-                Console.Error.WriteLine($"Error writing GLB: {errorMessage}");
-                return;
-            }
-        }
+        SceneBuilder rawScene = GlbLevelBuilder.Build(assets, false);
 
         if (clean)
         {
-            ModelCleanupService.CleanupGlb(glbPath);
+            // Write raw GLB to temp file for cleanup
+            var tempGlbPath = Path.Combine(packageDir, ".model.tmp.glb");
+            using (var stream = File.Create(tempGlbPath))
+            {
+                if (!GlbWriter.TryWrite(rawScene, stream, out string? errorMessage))
+                {
+                    Console.Error.WriteLine($"Error writing GLB: {errorMessage}");
+                    return;
+                }
+            }
+
+            // Discover textures from source asset hierarchy
+            var textures = DiscoverTextures(root);
+
+            // Prepare standard-channel textures for MaterialBuilder attachment during cleanup.
+            // Keyed by stable source material identity (collection:pathId), not material name.
+            // This matches extras.jiangyu.sourceMaterial embedded in the GLB by GlbLevelBuilder.
+            var materialTextures = new Dictionary<string, List<(string channelKey, byte[] pngData)>>(StringComparer.Ordinal);
+            foreach (var tex in textures)
+            {
+                if (StandardChannelMap.TryGetValue(tex.Property, out var channelKey))
+                {
+                    if (!materialTextures.TryGetValue(tex.SourceMaterialId, out var list))
+                    {
+                        list = [];
+                        materialTextures[tex.SourceMaterialId] = list;
+                    }
+                    list.Add((channelKey, tex.PngData));
+                }
+            }
+
+            var cleanScene = ModelCleanupService.BuildCleanScene(tempGlbPath, materialTextures);
+            File.Delete(tempGlbPath);
             Console.WriteLine("  Cleaned: 1x authoring scale");
+
+            // Build .gltf — standard textures already attached at MaterialBuilder level,
+            // SaveGltfPackage only handles non-standard textures + extras
+            var gltfPath = Path.Combine(packageDir, "model.gltf");
+            SaveGltfPackage(cleanScene, textures, gltfPath);
+
+            if (textures.Count > 0)
+            {
+                Console.WriteLine($"  Exported {textures.Count} textures");
+            }
+        }
+        else
+        {
+            // Raw export: .glb + textures (for inspection, not authoring)
+            var glbPath = Path.Combine(packageDir, "model.glb");
+            using (var stream = File.Create(glbPath))
+            {
+                if (GlbWriter.TryWrite(rawScene, stream, out string? errorMessage))
+                {
+                    Console.WriteLine($"  Model: {glbPath}");
+                }
+                else
+                {
+                    Console.Error.WriteLine($"Error writing GLB: {errorMessage}");
+                    return;
+                }
+            }
+
+            // Export textures as loose files for inspection context
+            var textures = DiscoverTextures(root);
+            if (textures.Count > 0)
+            {
+                var texturesDir = Path.Combine(packageDir, "textures");
+                Directory.CreateDirectory(texturesDir);
+                foreach (var tex in textures)
+                {
+                    File.WriteAllBytes(Path.Combine(texturesDir, $"{tex.Name}.png"), tex.PngData);
+                }
+                Console.WriteLine($"  Exported {textures.Count} textures");
+            }
         }
 
-        // Export referenced textures and write package manifest
-        ExportReferencedTextures(root, packageDir, clean);
         Console.WriteLine($"Package: {packageDir}");
     }
 
     /// <summary>
-    /// Walks the hierarchy, resolves material → texture references, exports textures as PNGs,
-    /// and writes a package manifest. All paths in the manifest are relative to the package directory.
+    /// Walks the source asset hierarchy, resolves material → texture references,
+    /// and returns discovered textures with their PNG data in memory.
     /// </summary>
-    private static void ExportReferencedTextures(IGameObject root, string packageDir, bool clean)
+    private static List<DiscoveredTexture> DiscoverTextures(IGameObject root)
     {
-        var texturesDir = Path.Combine(packageDir, "textures");
-        var exportedNames = new HashSet<string>();
-        var textureEntries = new List<ExportManifestTexture>();
+        var textures = new List<DiscoveredTexture>();
+        var seen = new HashSet<string>();
 
         foreach (var editorExt in root.FetchHierarchy())
         {
@@ -319,102 +388,145 @@ public sealed class ExtractionService
                         continue;
                     }
 
-                    if (!exportedNames.Add(texture.Name))
+                    if (!seen.Add(texture.Name))
+                    {
+                        // Same texture referenced by multiple materials — expected for shared textures.
+                        // Different textures with the same name would be a data issue upstream.
+                        continue;
+                    }
+
+                    if (!TextureConverter.TryConvertToBitmap(texture, out DirectBitmap bitmap))
                     {
                         continue;
                     }
 
-                    var relativePath = $"textures/{texture.Name}.png";
-                    if (TextureConverter.TryConvertToBitmap(texture, out DirectBitmap bitmap))
-                    {
-                        Directory.CreateDirectory(texturesDir);
-                        using var texStream = File.Create(Path.Combine(packageDir, relativePath));
-                        bitmap.SaveAsPng(texStream);
-                        Console.WriteLine($"  Texture: {texture.Name}.png ({propName})");
-                    }
+                    using var ms = new MemoryStream();
+                    bitmap.SaveAsPng(ms);
 
-                    textureEntries.Add(new ExportManifestTexture
+                    textures.Add(new DiscoveredTexture
                     {
                         Name = texture.Name,
+                        MaterialName = material.Name,
+                        SourceMaterialId = $"{material.Collection.Name}:{material.PathID}",
                         Property = propName.ToString(),
-                        Path = relativePath,
+                        PngData = ms.ToArray(),
                     });
+
+                    Console.WriteLine($"  Texture: {texture.Name}.png ({propName})");
                 }
             }
         }
 
-        if (textureEntries.Count > 0)
-        {
-            // Derive texture prefix from the common prefix of all exported texture names
-            var texturePrefix = FindCommonPrefix(exportedNames);
-
-            var manifest = new ExportManifest
-            {
-                TexturePrefix = texturePrefix,
-                Textures = textureEntries,
-                Cleaned = clean,
-            };
-
-            var manifestPath = Path.Combine(packageDir, "jiangyu.export.json");
-            File.WriteAllText(manifestPath, JsonSerializer.Serialize(manifest, JsonOptions));
-            Console.WriteLine($"Exported {textureEntries.Count} textures, manifest: {Path.GetFileName(manifestPath)}");
-        }
+        return textures;
     }
 
-    private static string? FindCommonPrefix(HashSet<string> names)
+    /// <summary>
+    /// Converts a clean SceneBuilder to a .gltf file with external texture references.
+    /// Standard-channel textures are already attached at the MaterialBuilder level (by
+    /// BuildCleanScene). This method handles non-standard textures (written to disk,
+    /// referenced in material extras) and root extras (cleaned flag).
+    /// </summary>
+    private static void SaveGltfPackage(SceneBuilder scene, List<DiscoveredTexture> textures, string gltfPath)
     {
-        if (names.Count == 0)
-        {
-            return null;
-        }
+        var model = scene.ToGltf2();
 
-        var sorted = names.OrderBy(n => n.Length).ToList();
-        var shortest = sorted[0];
-
-        for (int len = shortest.Length; len > 0; len--)
+        // Images created by MaterialBuilder don't have Name or AlternateWriteFileName.
+        // Match them to discovered textures by content so we can set meaningful names.
+        var standardTextures = textures
+            .Where(t => StandardChannelMap.ContainsKey(t.Property))
+            .ToList();
+        foreach (var image in model.LogicalImages)
         {
-            var candidate = shortest[..len];
-            // Trim trailing underscore or separator
-            if (candidate.EndsWith('_'))
+            if (!string.IsNullOrEmpty(image.Name))
             {
-                candidate = candidate[..^1];
+                continue;
             }
 
-            if (sorted.All(n => n.StartsWith(candidate, StringComparison.Ordinal)))
+            var imageContent = image.Content.Content;
+            var match = standardTextures.FirstOrDefault(t =>
+                imageContent.Length == t.PngData.Length &&
+                imageContent.Span.SequenceEqual(t.PngData));
+            if (match is not null)
             {
-                return candidate;
+                image.Name = match.Name;
+                image.AlternateWriteFileName = $"textures/{match.Name}.png";
             }
         }
 
-        return null;
-    }
+        var gltfDir = Path.GetDirectoryName(gltfPath)!;
+        var texturesDir = Path.Combine(gltfDir, "textures");
 
-    public sealed class ExportManifest
-    {
-        [JsonPropertyName("texturePrefix")]
-        public string? TexturePrefix { get; set; }
+        // Build source material ID → Schema2 Material lookup (for non-standard extras only).
+        // Uses the same stable identity embedded by GlbLevelBuilder.
+        var materialsBySourceId = new Dictionary<string, SharpGLTF.Schema2.Material>(StringComparer.Ordinal);
+        foreach (var mat in model.LogicalMaterials)
+        {
+            if (mat.Extras is JsonObject matExtras &&
+                matExtras.TryGetPropertyValue("jiangyu", out var jNode) &&
+                jNode is JsonObject jObj &&
+                jObj.TryGetPropertyValue("sourceMaterial", out var smNode) &&
+                smNode is JsonObject smObj)
+            {
+                var collection = smObj["collection"]?.GetValue<string>();
+                var pathId = smObj["pathId"]?.GetValue<long>();
+                if (collection is not null && pathId is not null)
+                {
+                    materialsBySourceId.TryAdd($"{collection}:{pathId}", mat);
+                }
+            }
+        }
 
-        [JsonPropertyName("textures")]
-        public List<ExportManifestTexture>? Textures { get; set; }
+        // Write non-standard textures to disk and add extras references
+        var texturesByMaterial = textures
+            .Where(t => !StandardChannelMap.ContainsKey(t.Property))
+            .GroupBy(t => t.SourceMaterialId, StringComparer.Ordinal);
 
-        /// <summary>
-        /// True if vertices have been normalised to metre scale (authoring-ready).
-        /// False/absent for raw extraction with native cm-scale vertices.
-        /// </summary>
-        [JsonPropertyName("cleaned")]
-        public bool Cleaned { get; set; }
-    }
+        foreach (var group in texturesByMaterial)
+        {
+            var nonStandardTextures = new JsonObject();
+            foreach (var tex in group)
+            {
+                Directory.CreateDirectory(texturesDir);
+                File.WriteAllBytes(Path.Combine(texturesDir, $"{tex.Name}.png"), tex.PngData);
+                nonStandardTextures[tex.Property] = $"textures/{tex.Name}.png";
+            }
 
-    public sealed class ExportManifestTexture
-    {
-        [JsonPropertyName("name")]
-        public string? Name { get; set; }
+            if (nonStandardTextures.Count > 0 &&
+                materialsBySourceId.TryGetValue(group.Key, out var material))
+            {
+                // Merge into existing jiangyu extras (preserving any other fields)
+                var materialExtras = material.Extras as JsonObject ?? new JsonObject();
+                var jiangyuObj = materialExtras["jiangyu"] as JsonObject ?? new JsonObject();
+                jiangyuObj["textures"] = nonStandardTextures;
+                materialExtras["jiangyu"] = jiangyuObj;
+                material.Extras = materialExtras;
+            }
+        }
 
-        [JsonPropertyName("property")]
-        public string? Property { get; set; }
+        // Strip internal sourceMaterial identity from output — it's pipeline-internal,
+        // not useful for modders or the compiler reading the final .gltf
+        foreach (var mat in model.LogicalMaterials)
+        {
+            if (mat.Extras is JsonObject matExtras &&
+                matExtras["jiangyu"] is JsonObject jObj)
+            {
+                jObj.Remove("sourceMaterial");
+            }
+        }
 
-        [JsonPropertyName("path")]
-        public string? Path { get; set; }
+        // Set root extras
+        model.Extras = new JsonObject
+        {
+            ["jiangyu"] = new JsonObject
+            {
+                ["cleaned"] = true
+            }
+        };
+
+        // Save as .gltf with external satellite images
+        var settings = new WriteSettings();
+        settings.ImageWriting = ResourceWriteMode.SatelliteFile;
+        model.SaveGLTF(gltfPath, settings);
     }
 
     private static void ExportMeshAsGlb(IMesh mesh, string outputPath)

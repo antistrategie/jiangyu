@@ -582,13 +582,13 @@ internal static class GlbMeshBundleCompiler
         var result = new Dictionary<string, CompiledTexture>(StringComparer.Ordinal);
         foreach (var sourceFilePath in entries.Select(entry => entry.SourceFilePath).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            // Prefer explicit texture list from package manifest
-            if (TryExtractTexturesFromManifest(sourceFilePath, result))
+            // Prefer glTF material graph (clean export)
+            if (TryExtractTexturesFromGltf(sourceFilePath, result))
             {
                 continue;
             }
 
-            // Fallback: prefix-based discovery for old-style layouts
+            // Fallback: prefix-based directory discovery (for non-.gltf sources)
             var prefix = InferTexturePrefix(sourceFilePath);
             if (string.IsNullOrWhiteSpace(prefix))
                 continue;
@@ -611,79 +611,169 @@ internal static class GlbMeshBundleCompiler
         return [.. result.Values.OrderBy(texture => texture.Name, StringComparer.Ordinal)];
     }
 
-    private static bool TryExtractTexturesFromManifest(string sourceFilePath, Dictionary<string, CompiledTexture> result)
+    /// <summary>
+    /// Reads textures from a .gltf file's material graph.
+    /// Priority: standard material channels → naming inference → material extras.
+    /// </summary>
+    private static bool TryExtractTexturesFromGltf(string sourceFilePath, Dictionary<string, CompiledTexture> result)
     {
+        if (!sourceFilePath.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         var sourceDir = Path.GetDirectoryName(sourceFilePath);
         if (sourceDir is null)
         {
             return false;
         }
 
-        var manifestPath = Path.Combine(sourceDir, "jiangyu.export.json");
-        if (!File.Exists(manifestPath))
-        {
-            return false;
-        }
-
-        ExportManifestRef? manifest;
+        ModelRoot model;
         try
         {
-            manifest = JsonSerializer.Deserialize<ExportManifestRef>(File.ReadAllText(manifestPath));
+            model = ModelRoot.Load(sourceFilePath);
         }
         catch
         {
             return false;
         }
 
-        if (manifest?.Textures is null || manifest.Textures.Count == 0)
+        bool found = false;
+
+        // 1. Standard material channels — textures assigned to PBR slots
+        foreach (var material in model.LogicalMaterials)
         {
-            return false;
+            foreach (var channel in material.Channels)
+            {
+                var image = channel.Texture?.PrimaryImage;
+                if (image is null)
+                {
+                    continue;
+                }
+
+                var name = GetImageName(image);
+                if (result.ContainsKey(name))
+                {
+                    continue;
+                }
+
+                var content = image.Content;
+                if (content.IsEmpty)
+                {
+                    continue;
+                }
+
+                result[name] = new CompiledTexture
+                {
+                    Name = name,
+                    Content = content.Content.ToArray(),
+                    Linear = IsLinearTextureName(name),
+                };
+                found = true;
+            }
+
+            // 2. Non-standard textures from material extras (written by exporter)
+            if (material.Extras is System.Text.Json.Nodes.JsonObject matExtras &&
+                matExtras.TryGetPropertyValue("jiangyu", out var jiangyuNode) &&
+                jiangyuNode is System.Text.Json.Nodes.JsonObject jiangyuObj &&
+                jiangyuObj.TryGetPropertyValue("textures", out var texturesNode) &&
+                texturesNode is System.Text.Json.Nodes.JsonObject texturesObj)
+            {
+                foreach (var kvp in texturesObj)
+                {
+                    var relativePath = kvp.Value?.GetValue<string>();
+                    if (string.IsNullOrEmpty(relativePath))
+                    {
+                        continue;
+                    }
+
+                    var absolutePath = Path.Combine(sourceDir, relativePath);
+                    if (!File.Exists(absolutePath))
+                    {
+                        continue;
+                    }
+
+                    var name = Path.GetFileNameWithoutExtension(absolutePath);
+                    if (result.ContainsKey(name))
+                    {
+                        continue;
+                    }
+
+                    result[name] = new CompiledTexture
+                    {
+                        Name = name,
+                        Content = File.ReadAllBytes(absolutePath),
+                        Linear = IsLinearTextureName(name),
+                    };
+                    found = true;
+                }
+            }
         }
 
-        foreach (var entry in manifest.Textures)
+        // 3. Naming inference — pick up textures in textures/ that match known
+        //    MENACE naming patterns but weren't captured from channels or extras.
+        //    Only recognised suffixes, not every .png in the directory.
+        var texturesDir = Path.Combine(sourceDir, "textures");
+        if (Directory.Exists(texturesDir))
         {
-            if (string.IsNullOrEmpty(entry.Name) || string.IsNullOrEmpty(entry.Path))
+            foreach (var texturePath in Directory.EnumerateFiles(texturesDir, "*.png"))
             {
-                continue;
-            }
+                var name = Path.GetFileNameWithoutExtension(texturePath);
+                if (result.ContainsKey(name))
+                {
+                    continue;
+                }
 
-            // Paths in manifest are relative to the package directory
-            var texturePath = Path.Combine(sourceDir, entry.Path);
-            if (!File.Exists(texturePath))
-            {
-                continue;
-            }
+                if (!IsMenaceTextureNamePattern(name))
+                {
+                    continue;
+                }
 
-            if (result.ContainsKey(entry.Name))
-            {
-                continue;
+                result[name] = new CompiledTexture
+                {
+                    Name = name,
+                    Content = File.ReadAllBytes(texturePath),
+                    Linear = IsLinearTextureName(name),
+                };
+                found = true;
             }
-
-            result[entry.Name] = new CompiledTexture
-            {
-                Name = entry.Name,
-                Content = File.ReadAllBytes(texturePath),
-                Linear = IsLinearTextureName(entry.Name),
-            };
         }
 
-        return true;
+        return found;
+    }
+
+    private static string GetImageName(Image image)
+    {
+        // Name is set explicitly by the exporter
+        if (!string.IsNullOrEmpty(image.Name))
+        {
+            return image.Name;
+        }
+
+        // AlternateWriteFileName is only available during write, not after load
+        if (!string.IsNullOrEmpty(image.AlternateWriteFileName))
+        {
+            return Path.GetFileNameWithoutExtension(image.AlternateWriteFileName);
+        }
+
+        return $"image_{image.LogicalIndex}";
     }
 
     private static string? InferTexturePrefix(string sourceFilePath)
     {
-        // Prefer explicit prefix from package manifest (written by 'assets export model')
-        var sourceDir = Path.GetDirectoryName(sourceFilePath);
-        var manifestPath = sourceDir is not null ? Path.Combine(sourceDir, "jiangyu.export.json") : null;
-        if (manifestPath is not null && File.Exists(manifestPath))
+        // For .gltf files: derive from image names in the material graph
+        if (sourceFilePath.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
         {
             try
             {
-                var manifest = JsonSerializer.Deserialize<ExportManifestRef>(
-                    File.ReadAllText(manifestPath));
-                if (!string.IsNullOrWhiteSpace(manifest?.TexturePrefix))
+                var model = ModelRoot.Load(sourceFilePath);
+                var imageNames = model.LogicalImages
+                    .Select(img => GetImageName(img))
+                    .Where(n => !n.StartsWith("image_", StringComparison.Ordinal))
+                    .ToList();
+                if (imageNames.Count > 0)
                 {
-                    return manifest.TexturePrefix;
+                    return FindCommonPrefix(imageNames);
                 }
             }
             catch
@@ -704,56 +794,71 @@ internal static class GlbMeshBundleCompiler
         return sourceFileName;
     }
 
-    private sealed class ExportManifestRef
+    private static string? FindCommonPrefix(List<string> names)
     {
-        [System.Text.Json.Serialization.JsonPropertyName("texturePrefix")]
-        public string? TexturePrefix { get; set; }
+        if (names.Count == 0)
+        {
+            return null;
+        }
 
-        [System.Text.Json.Serialization.JsonPropertyName("cleaned")]
-        public bool Cleaned { get; set; }
+        var sorted = names.OrderBy(n => n.Length).ToList();
+        var shortest = sorted[0];
 
-        [System.Text.Json.Serialization.JsonPropertyName("textures")]
-        public List<ExportManifestTextureRef>? Textures { get; set; }
+        for (int len = shortest.Length; len > 0; len--)
+        {
+            var candidate = shortest[..len];
+            if (candidate.EndsWith('_'))
+            {
+                candidate = candidate[..^1];
+            }
+
+            if (sorted.All(n => n.StartsWith(candidate, StringComparison.Ordinal)))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
-    private sealed class ExportManifestTextureRef
-    {
-        [System.Text.Json.Serialization.JsonPropertyName("name")]
-        public string? Name { get; set; }
-
-        [System.Text.Json.Serialization.JsonPropertyName("path")]
-        public string? Path { get; set; }
-    }
-
+    /// <summary>
+    /// Reads the cleaned flag from a .gltf root extras, or false if not a .gltf or no extras.
+    /// </summary>
     private static bool IsCleanedExport(string sourceFilePath)
     {
-        var sourceDir = Path.GetDirectoryName(sourceFilePath);
-        var manifestPath = sourceDir is not null ? Path.Combine(sourceDir, "jiangyu.export.json") : null;
-        if (manifestPath is null || !File.Exists(manifestPath))
+        if (!sourceFilePath.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
         try
         {
-            var manifest = JsonSerializer.Deserialize<ExportManifestRef>(File.ReadAllText(manifestPath));
-            return manifest?.Cleaned ?? false;
+            var model = ModelRoot.Load(sourceFilePath);
+            if (model.Extras is System.Text.Json.Nodes.JsonObject rootExtras &&
+                rootExtras.TryGetPropertyValue("jiangyu", out var jiangyuNode) &&
+                jiangyuNode is System.Text.Json.Nodes.JsonObject jiangyuObj &&
+                jiangyuObj.TryGetPropertyValue("cleaned", out var cleanedNode))
+            {
+                return cleanedNode?.GetValue<bool>() ?? false;
+            }
         }
         catch
         {
-            return false;
+            // Fall through
         }
+
+        return false;
     }
 
+    /// <summary>
+    /// Fallback texture discovery for non-.gltf sources (prefix-based directory search).
+    /// </summary>
     private static IEnumerable<string> EnumerateSidecarTexturePaths(string sourceFilePath, string texturePrefix)
     {
         var sourceDir = Path.GetDirectoryName(sourceFilePath);
         if (string.IsNullOrEmpty(sourceDir))
             yield break;
 
-        // Search these directories for matching textures:
-        // 1. textures/ alongside the source file (from assets export model)
-        // 2. Texture2D/ in the parent directory (old AssetRipper extraction layout)
         var candidateDirs = new List<string>
         {
             Path.Combine(sourceDir, "textures"),
@@ -784,7 +889,24 @@ internal static class GlbMeshBundleCompiler
     private static bool IsLinearTextureName(string textureName)
         => textureName.EndsWith("_MaskMap", StringComparison.OrdinalIgnoreCase) ||
            textureName.EndsWith("_NormalMap", StringComparison.OrdinalIgnoreCase) ||
+           textureName.EndsWith("_Normal", StringComparison.OrdinalIgnoreCase) ||
            textureName.EndsWith("_EffectMap", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Returns true if a texture filename matches a known MENACE texture naming pattern.
+    /// Used by the naming inference step to avoid importing unrelated files from textures/.
+    /// </summary>
+    private static bool IsMenaceTextureNamePattern(string textureName)
+        => textureName.EndsWith("_BaseMap", StringComparison.OrdinalIgnoreCase) ||
+           textureName.EndsWith("_BaseColorMap", StringComparison.OrdinalIgnoreCase) ||
+           textureName.EndsWith("_NormalMap", StringComparison.OrdinalIgnoreCase) ||
+           textureName.EndsWith("_Normal", StringComparison.OrdinalIgnoreCase) ||
+           textureName.EndsWith("_MaskMap", StringComparison.OrdinalIgnoreCase) ||
+           textureName.EndsWith("_EffectMap", StringComparison.OrdinalIgnoreCase) ||
+           textureName.EndsWith("_Emissive", StringComparison.OrdinalIgnoreCase) ||
+           textureName.EndsWith("_EmissiveColorMap", StringComparison.OrdinalIgnoreCase) ||
+           textureName.EndsWith("_OcclusionMap", StringComparison.OrdinalIgnoreCase) ||
+           textureName.EndsWith("_MetallicGlossMap", StringComparison.OrdinalIgnoreCase);
 
     private static CompanionSkinData? TryLoadCompanionSkinData(string sourceFilePath)
     {

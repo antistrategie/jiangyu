@@ -228,7 +228,6 @@ public static class InspectCommand
     private static InspectOptions? ParseArgs(string[] args)
     {
         string? bundlePath = null;
-        string? gameDataPath = null;
         var gameFilter = "basic_soldier";
         string? bundleFilter = null;
         var outputPath = GetDefaultOutputPath();
@@ -239,9 +238,6 @@ public static class InspectCommand
             {
                 case "--bundle":
                     bundlePath = args[++i];
-                    break;
-                case "--game-data":
-                    gameDataPath = args[++i];
                     break;
                 case "--filter":
                     gameFilter = args[++i];
@@ -257,12 +253,19 @@ public static class InspectCommand
             }
         }
 
-        if (bundlePath is null || gameDataPath is null)
+        if (bundlePath is null)
             return null;
+
+        var (gameDataPath, error) = Models.GlobalConfig.ResolveGameDataPath();
+        if (gameDataPath is null)
+        {
+            Console.Error.WriteLine(error);
+            return null;
+        }
 
         return new InspectOptions(
             Path.GetFullPath(bundlePath),
-            Path.GetFullPath(gameDataPath),
+            gameDataPath,
             gameFilter,
             bundleFilter ?? gameFilter,
             Path.GetFullPath(outputPath));
@@ -273,7 +276,7 @@ public static class InspectCommand
 
     private static void PrintUsage()
     {
-        Console.Error.WriteLine("Usage: jiangyu inspect --bundle <bundle> --game-data <Menace_Data> [--filter <name>] [--bundle-filter <name>] [--out <json>]");
+        Console.Error.WriteLine("Usage: jiangyu assets inspect prefab --bundle <bundle> [--filter <name>] [--bundle-filter <name>] [--out <json>]");
     }
 
     private sealed class FileContext(AssetsFileInstance inst, IReadOnlyDictionary<int, AssetTypeTemplateField> templates)

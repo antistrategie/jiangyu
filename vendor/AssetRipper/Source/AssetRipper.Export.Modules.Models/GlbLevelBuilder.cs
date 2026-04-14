@@ -536,6 +536,22 @@ public static class GlbLevelBuilder
 		private MaterialBuilder MakeMaterialBuilder(IMaterial material)
 		{
 			MaterialBuilder materialBuilder = new MaterialBuilder(material.Name);
+
+			// Embed stable source material identity so downstream consumers (Jiangyu cleanup)
+			// can match textures without relying on material names being unique.
+			var sourceId = new System.Text.Json.Nodes.JsonObject
+			{
+				["collection"] = material.Collection.Name,
+				["pathId"] = material.PathID,
+			};
+			materialBuilder.Extras = new System.Text.Json.Nodes.JsonObject
+			{
+				["jiangyu"] = new System.Text.Json.Nodes.JsonObject
+				{
+					["sourceMaterial"] = sourceId,
+				},
+			};
+
 			GetTextures(material, out ITexture2D? mainTexture, out ITexture2D? normalTexture);
 			if (mainTexture is not null && TryGetOrMakeImage(mainTexture, out MemoryImage mainImage))
 			{

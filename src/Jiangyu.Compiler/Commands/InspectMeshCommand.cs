@@ -417,7 +417,6 @@ public static class InspectMeshCommand
     private static InspectMeshOptions? ParseArgs(string[] args)
     {
         string? bundlePath = null;
-        string? gameDataPath = null;
         string? meshName = null;
         var output = GetDefaultOutputPath();
 
@@ -427,9 +426,6 @@ public static class InspectMeshCommand
             {
                 case "--bundle":
                     bundlePath = args[++i];
-                    break;
-                case "--game-data":
-                    gameDataPath = args[++i];
                     break;
                 case "--mesh":
                     meshName = args[++i];
@@ -442,10 +438,17 @@ public static class InspectMeshCommand
             }
         }
 
-        if (bundlePath is null || gameDataPath is null || meshName is null)
+        if (bundlePath is null || meshName is null)
             return null;
 
-        return new InspectMeshOptions(Path.GetFullPath(bundlePath), Path.GetFullPath(gameDataPath), meshName, Path.GetFullPath(output));
+        var (gameDataPath, error) = Models.GlobalConfig.ResolveGameDataPath();
+        if (gameDataPath is null)
+        {
+            Console.Error.WriteLine(error);
+            return null;
+        }
+
+        return new InspectMeshOptions(Path.GetFullPath(bundlePath), gameDataPath, meshName, Path.GetFullPath(output));
     }
 
     private static string GetDefaultOutputPath()
@@ -453,7 +456,7 @@ public static class InspectMeshCommand
 
     private static void PrintUsage()
     {
-        Console.Error.WriteLine("Usage: jiangyu inspect-mesh --bundle <bundle> --game-data <Menace_Data> --mesh <meshName> [--out <json>]");
+        Console.Error.WriteLine("Usage: jiangyu assets inspect mesh --bundle <bundle> --mesh <meshName> [--out <json>]");
     }
 
     private readonly record struct InspectMeshOptions(string BundlePath, string GameDataPath, string MeshName, string OutputPath);

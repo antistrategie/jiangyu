@@ -87,7 +87,7 @@ public static class CompileCommand
 
         // Also collect any model files not referenced by mappings (from models/ directory)
         var modelsDir = Path.Combine(projectDir, "models");
-        foreach (var file in CollectAssetFiles(modelsDir, "*.glb", "*.fbx", "*.obj"))
+        foreach (var file in CollectAssetFiles(modelsDir, "*.gltf", "*.glb", "*.fbx", "*.obj"))
         {
             modelFiles.Add(file);
         }

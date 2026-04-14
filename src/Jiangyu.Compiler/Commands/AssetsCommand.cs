@@ -18,6 +18,7 @@ public static class AssetsCommand
             "index" => await IndexAsync(args[1..]),
             "search" => await SearchAsync(args[1..]),
             "export" => await ExportAsync(args[1..]),
+            "inspect" => await InspectAsync(args[1..]),
             _ => PrintUsage(),
         };
     }
@@ -111,9 +112,9 @@ public static class AssetsCommand
             Console.Error.WriteLine("Usage: jiangyu assets export model <name> [--output <dir>]");
             Console.Error.WriteLine();
             Console.Error.WriteLine("Exports a game asset as a self-contained model package:");
-            Console.Error.WriteLine("  <dir>/model.glb              The model");
-            Console.Error.WriteLine("  <dir>/jiangyu.export.json    Package manifest (texture prefix, paths)");
-            Console.Error.WriteLine("  <dir>/textures/*.png         Referenced textures");
+            Console.Error.WriteLine();
+            Console.Error.WriteLine("  Clean (default):  <dir>/model.gltf + textures/*.png");
+            Console.Error.WriteLine("  Raw (--raw):      <dir>/model.glb");
             return 1;
         }
 
@@ -128,28 +129,26 @@ public static class AssetsCommand
         }
 
         // Resolve asset identity from index (collection + pathId)
-        string? collection = null;
-        long? pathId = null;
         var index = service.LoadIndex();
-        if (index?.Assets is not null)
+        if (index?.Assets is null)
         {
-            var match = index.Assets.FirstOrDefault(a =>
-                string.Equals(a.Name, assetName, StringComparison.OrdinalIgnoreCase)
-                && a.ClassName is "GameObject" or "Mesh");
-            if (match is null)
-            {
-                Console.Error.WriteLine($"Error: no GameObject or Mesh named '{assetName}' in the index.");
-                Console.Error.WriteLine("Run 'jiangyu assets search' to find available assets.");
-                return 1;
-            }
-            collection = match.Collection;
-            pathId = match.PathId;
-            Console.WriteLine($"Found in index: {match.Name} ({match.ClassName}) in {match.Collection} [pathId={match.PathId}]");
+            Console.Error.WriteLine("Error: no index found. Run 'jiangyu assets index' first.");
+            return 1;
         }
-        else
+
+        var match = index.Assets.FirstOrDefault(a =>
+            string.Equals(a.Name, assetName, StringComparison.OrdinalIgnoreCase)
+            && a.ClassName is "GameObject" or "Mesh");
+        if (match is null)
         {
-            Console.WriteLine("Warning: no index found. Run 'jiangyu assets index' first for faster lookups.");
+            Console.Error.WriteLine($"Error: no GameObject or Mesh named '{assetName}' in the index.");
+            Console.Error.WriteLine("Run 'jiangyu assets search' to find available assets.");
+            return 1;
         }
+
+        var collection = match.Collection;
+        var pathId = match.PathId;
+        Console.WriteLine($"Found in index: {match.Name} ({match.ClassName}) in {match.Collection} [pathId={match.PathId}]");
 
         // Parse optional --output, default to cache/exports/<name>/
         string? packageDir = null;
@@ -169,53 +168,44 @@ public static class AssetsCommand
 
     private static (ExtractionService? service, string? error) CreateService()
     {
-        var globalConfig = GlobalConfig.Load();
-
-        var gamePath = globalConfig.Game;
-        if (string.IsNullOrEmpty(gamePath))
-        {
-            return (null, $"Error: game path not set. Edit {GlobalConfig.ConfigPath}\n\nExample:\n  {{\n    \"game\": \"~/.steam/steam/steamapps/common/Menace\"\n  }}");
-        }
-
-        gamePath = ExpandHome(gamePath);
-
-        var gameDataPath = FindGameDataDir(gamePath);
+        var (gameDataPath, error) = GlobalConfig.ResolveGameDataPath();
         if (gameDataPath is null)
         {
-            return (null, $"Error: could not find game data directory in: {gamePath}\nExpected a directory ending in _Data (e.g. Menace_Data)");
+            return (null, error);
         }
 
-        var cachePath = globalConfig.GetCachePath();
+        var cachePath = GlobalConfig.Load().GetCachePath();
         return (new ExtractionService(gameDataPath, cachePath), null);
     }
 
-    private static string? FindGameDataDir(string gamePath)
+    private static async Task<int> InspectAsync(string[] args)
     {
-        if (!Directory.Exists(gamePath))
+        if (args.Length == 0)
         {
-            return null;
+            PrintInspectUsage();
+            return 1;
         }
 
-        foreach (var dir in Directory.EnumerateDirectories(gamePath))
+        return args[0] switch
         {
-            if (Path.GetFileName(dir).EndsWith("_Data", StringComparison.OrdinalIgnoreCase))
-            {
-                return dir;
-            }
-        }
-
-        return null;
+            "prefab" => await InspectCommand.RunAsync(args[1..]),
+            "glb" => await InspectGlbCommand.RunAsync(args[1..]),
+            "mesh" => await InspectMeshCommand.RunAsync(args[1..]),
+            "package" => await InspectPackageCommand.RunAsync(args[1..]),
+            _ => PrintInspectUsage(),
+        };
     }
 
-    private static string ExpandHome(string path)
+    private static int PrintInspectUsage()
     {
-        if (path.StartsWith('~'))
-        {
-            return Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                path[2..]);
-        }
-        return path;
+        Console.Error.WriteLine("Usage: jiangyu assets inspect <type>");
+        Console.Error.WriteLine();
+        Console.Error.WriteLine("Types:");
+        Console.Error.WriteLine("  package    Validate an exported model package (.gltf + textures)");
+        Console.Error.WriteLine("  glb        Inspect raw GLB/glTF node hierarchy and skins");
+        Console.Error.WriteLine("  prefab     Compare game vs bundle prefab hierarchies (advanced)");
+        Console.Error.WriteLine("  mesh       Inspect serialised mesh contract fields (advanced)");
+        return 1;
     }
 
     private static int PrintUsage()
@@ -226,6 +216,7 @@ public static class AssetsCommand
         Console.Error.WriteLine("  index      Build searchable asset index from game data");
         Console.Error.WriteLine("  search     Search the asset index");
         Console.Error.WriteLine("  export     Export game assets as authoring-ready model packages");
+        Console.Error.WriteLine("  inspect    Inspect and validate assets");
         return 1;
     }
 }

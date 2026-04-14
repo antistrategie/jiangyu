@@ -132,7 +132,7 @@ public static class InspectGlbCommand
 
     private static void PrintUsage()
     {
-        Console.Error.WriteLine("Usage: jiangyu inspect-glb --glb <file.glb> [--filter <text>] [--out <json>]");
+        Console.Error.WriteLine("Usage: jiangyu assets inspect glb --glb <file.glb> [--filter <text>] [--out <json>]");
     }
 
     private readonly record struct InspectGlbOptions(string GlbPath, string Filter, string OutputPath);

@@ -1,7 +1,9 @@
 using System.Numerics;
+using System.Text.Json.Nodes;
 using SharpGLTF.Geometry;
 using SharpGLTF.Geometry.VertexTypes;
 using SharpGLTF.Materials;
+using SharpGLTF.Memory;
 using SharpGLTF.Scenes;
 using SharpGLTF.Schema2;
 
@@ -23,7 +25,19 @@ internal static class ModelCleanupService
 {
     private const float ContainerScaleThreshold = 0.02f;
 
-    public static void CleanupGlb(string glbPath)
+    /// <summary>
+    /// Loads a raw extracted GLB, rebuilds it as a clean scene, and returns the SceneBuilder.
+    /// Caller is responsible for saving (as .gltf with textures, or .glb).
+    /// </summary>
+    /// <param name="materialTextures">
+    /// Optional standard-channel textures to attach to materials during rebuild, keyed by
+    /// material name. Each entry is a list of (glTF channel key, PNG data) pairs.
+    /// Textures are attached at the MaterialBuilder level so they survive ToGltf2 dedup
+    /// and don't require a separate name-based join on Schema2 materials.
+    /// </param>
+    public static SceneBuilder BuildCleanScene(
+        string glbPath,
+        IReadOnlyDictionary<string, List<(string channelKey, byte[] pngData)>>? materialTextures = null)
     {
         var source = ModelRoot.Load(glbPath);
 
@@ -79,7 +93,7 @@ internal static class ModelCleanupService
             float meshScale = sourceNode.Skin is not null
                 ? FindSkinnedMeshContainerScale(source, sourceNode)
                 : FindAncestorContainerScale(sourceNode);
-            var meshBuilder = RebuildMesh(sourceNode.Mesh, meshScale, meshName);
+            var meshBuilder = RebuildMesh(sourceNode.Mesh, meshScale, meshName, materialTextures);
 
             if (sourceNode.Skin is not null)
             {
@@ -113,7 +127,16 @@ internal static class ModelCleanupService
             }
         }
 
-        // Write the clean GLB, replacing the raw one
+        return scene;
+    }
+
+    /// <summary>
+    /// Convenience wrapper: loads raw GLB, cleans, and overwrites as GLB.
+    /// Used for raw export path where .gltf is not needed.
+    /// </summary>
+    public static void CleanupGlb(string glbPath)
+    {
+        var scene = BuildCleanScene(glbPath);
         var model = scene.ToGltf2();
         model.SaveGLB(glbPath);
     }
@@ -225,6 +248,83 @@ internal static class ModelCleanupService
         }
     }
 
+    /// <summary>
+    /// Creates a MaterialBuilder, attaching standard-channel textures if available.
+    /// Looks up textures by the stable source material identity (collection:pathId)
+    /// embedded in the GLB material's extras by GlbLevelBuilder, not by material name.
+    /// </summary>
+    private static MaterialBuilder CreateMaterial(
+        SharpGLTF.Schema2.Material? sourceMaterial,
+        IReadOnlyDictionary<string, List<(string channelKey, byte[] pngData)>>? materialTextures)
+    {
+        var name = sourceMaterial?.Name ?? "default";
+        var material = new MaterialBuilder(name);
+
+        if (sourceMaterial is null)
+        {
+            return material;
+        }
+
+        // Carry source material extras through cleanup so they survive ToGltf2.
+        // This preserves the stable identity for downstream non-standard texture matching.
+        if (sourceMaterial.Extras is not null)
+        {
+            material.Extras = sourceMaterial.Extras.DeepClone();
+        }
+
+        if (materialTextures is null)
+        {
+            return material;
+        }
+
+        // Read stable source identity from GLB material extras
+        var sourceId = GetSourceMaterialId(sourceMaterial);
+        if (sourceId is not null && materialTextures.TryGetValue(sourceId, out var textures))
+        {
+            foreach (var (channelKey, pngData) in textures)
+            {
+                material.UseChannel(channelKey)
+                    .UseTexture()
+                    .WithPrimaryImage(new MemoryImage(pngData));
+            }
+        }
+
+        return material;
+    }
+
+    /// <summary>
+    /// Reads the stable source material identity ("collection:pathId") from a GLB material's extras.
+    /// Returns null if the extras are missing or malformed.
+    /// </summary>
+    private static string? GetSourceMaterialId(SharpGLTF.Schema2.Material material)
+    {
+        if (material.Extras is not JsonObject extras)
+        {
+            return null;
+        }
+
+        if (!extras.TryGetPropertyValue("jiangyu", out var jiangyuNode) ||
+            jiangyuNode is not JsonObject jiangyuObj)
+        {
+            return null;
+        }
+
+        if (!jiangyuObj.TryGetPropertyValue("sourceMaterial", out var sourceNode) ||
+            sourceNode is not JsonObject sourceObj)
+        {
+            return null;
+        }
+
+        var collection = sourceObj["collection"]?.GetValue<string>();
+        var pathId = sourceObj["pathId"]?.GetValue<long>();
+        if (collection is null || pathId is null)
+        {
+            return null;
+        }
+
+        return $"{collection}:{pathId}";
+    }
+
     private static void CopyNodeTransform(Node source, NodeBuilder target)
     {
         target.LocalTransform = new SharpGLTF.Transforms.AffineTransform(
@@ -233,7 +333,9 @@ internal static class ModelCleanupService
             source.LocalTransform.Translation);
     }
 
-    private static IMeshBuilder<MaterialBuilder> RebuildMesh(Mesh sourceMesh, float vertexScale, string meshName)
+    private static IMeshBuilder<MaterialBuilder> RebuildMesh(
+        Mesh sourceMesh, float vertexScale, string meshName,
+        IReadOnlyDictionary<string, List<(string channelKey, byte[] pngData)>>? materialTextures)
     {
         bool hasSkinning = sourceMesh.Primitives.Any(p =>
             p.GetVertexAccessor("JOINTS_0") is not null &&
@@ -241,13 +343,15 @@ internal static class ModelCleanupService
 
         if (hasSkinning)
         {
-            return RebuildSkinnedMesh(sourceMesh, vertexScale, meshName);
+            return RebuildSkinnedMesh(sourceMesh, vertexScale, meshName, materialTextures);
         }
 
-        return RebuildStaticMesh(sourceMesh, vertexScale, meshName);
+        return RebuildStaticMesh(sourceMesh, vertexScale, meshName, materialTextures);
     }
 
-    private static IMeshBuilder<MaterialBuilder> RebuildSkinnedMesh(Mesh sourceMesh, float vertexScale, string meshName)
+    private static IMeshBuilder<MaterialBuilder> RebuildSkinnedMesh(
+        Mesh sourceMesh, float vertexScale, string meshName,
+        IReadOnlyDictionary<string, List<(string channelKey, byte[] pngData)>>? materialTextures)
     {
         var meshBuilder = new MeshBuilder<VertexPositionNormal, VertexTexture1, VertexJoints4>(meshName);
 
@@ -261,7 +365,7 @@ internal static class ModelCleanupService
             var joints = primitive.GetVertexAccessor("JOINTS_0")?.AsVector4Array();
             var weights = primitive.GetVertexAccessor("WEIGHTS_0")?.AsVector4Array();
 
-            var material = new MaterialBuilder(primitive.Material?.Name ?? "default");
+            var material = CreateMaterial(primitive.Material, materialTextures);
             var primBuilder = meshBuilder.UsePrimitive(material);
             var indices = primitive.GetIndices().ToArray();
             int vertexCount = positions.Count;
@@ -291,7 +395,9 @@ internal static class ModelCleanupService
         return meshBuilder;
     }
 
-    private static IMeshBuilder<MaterialBuilder> RebuildStaticMesh(Mesh sourceMesh, float vertexScale, string meshName)
+    private static IMeshBuilder<MaterialBuilder> RebuildStaticMesh(
+        Mesh sourceMesh, float vertexScale, string meshName,
+        IReadOnlyDictionary<string, List<(string channelKey, byte[] pngData)>>? materialTextures)
     {
         var meshBuilder = new MeshBuilder<VertexPositionNormal, VertexTexture1, VertexEmpty>(meshName);
 
@@ -303,7 +409,7 @@ internal static class ModelCleanupService
             var normals = primitive.GetVertexAccessor("NORMAL")?.AsVector3Array();
             var uvs = primitive.GetVertexAccessor("TEXCOORD_0")?.AsVector2Array();
 
-            var material = new MaterialBuilder(primitive.Material?.Name ?? "default");
+            var material = CreateMaterial(primitive.Material, materialTextures);
             var primBuilder = meshBuilder.UsePrimitive(material);
             var indices = primitive.GetIndices().ToArray();
             int vertexCount = positions.Count;

@@ -80,4 +80,44 @@ public sealed class GlobalConfig
         Directory.CreateDirectory(ConfigDir);
         File.WriteAllText(ConfigPath, ToJson());
     }
+
+    /// <summary>
+    /// Resolves the game data directory (_Data) from the global config game path.
+    /// Returns null with an error message if not configured or not found.
+    /// </summary>
+    public static (string? gameDataPath, string? error) ResolveGameDataPath()
+    {
+        var config = Load();
+        if (string.IsNullOrEmpty(config.Game))
+        {
+            return (null, $"Error: game path not set. Edit {ConfigPath}\n\nExample:\n  {{\n    \"game\": \"~/.steam/steam/steamapps/common/Menace\"\n  }}");
+        }
+
+        var gamePath = ExpandHome(config.Game);
+        if (!Directory.Exists(gamePath))
+        {
+            return (null, $"Error: game directory not found: {gamePath}");
+        }
+
+        foreach (var dir in Directory.EnumerateDirectories(gamePath))
+        {
+            if (Path.GetFileName(dir).EndsWith("_Data", StringComparison.OrdinalIgnoreCase))
+            {
+                return (dir, null);
+            }
+        }
+
+        return (null, $"Error: could not find game data directory in: {gamePath}\nExpected a directory ending in _Data (e.g. Menace_Data)");
+    }
+
+    internal static string ExpandHome(string path)
+    {
+        if (path.StartsWith('~'))
+        {
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                path[2..]);
+        }
+        return path;
+    }
 }
