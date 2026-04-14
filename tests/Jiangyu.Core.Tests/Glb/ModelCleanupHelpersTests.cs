@@ -1,5 +1,6 @@
 using System.Numerics;
 using Jiangyu.Core.Glb;
+using static Jiangyu.Core.Glb.GlbMeshBundleCompiler;
 
 namespace Jiangyu.Core.Tests.Glb;
 
@@ -71,5 +72,53 @@ public class SnapScaleTests
         var result = ModelCleanupService.SnapScale(Vector3.Zero);
 
         Assert.Equal(Vector3.Zero, result);
+    }
+}
+
+public class DetermineVertexSpaceModeTests
+{
+    [Fact]
+    public void StaticMesh_NotSkinned()
+    {
+        var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
+            isSkinnedPath: false, isCleaned: false, hasDirectSkinBinding: false);
+
+        Assert.Equal(VertexSpaceMode.StaticMesh, mode);
+    }
+
+    [Fact]
+    public void RawPrefab_UncleandWithDirectSkin()
+    {
+        var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
+            isSkinnedPath: true, isCleaned: false, hasDirectSkinBinding: true);
+
+        Assert.Equal(VertexSpaceMode.RawPrefabSkinned, mode);
+    }
+
+    [Fact]
+    public void CleanedExport_SkinnedPath()
+    {
+        var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
+            isSkinnedPath: true, isCleaned: true, hasDirectSkinBinding: true);
+
+        Assert.Equal(VertexSpaceMode.CleanedSkinned, mode);
+    }
+
+    [Fact]
+    public void MeshOnlyGlb_SkinnedButNoDirectBinding()
+    {
+        var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
+            isSkinnedPath: true, isCleaned: false, hasDirectSkinBinding: false);
+
+        Assert.Equal(VertexSpaceMode.CleanedSkinned, mode);
+    }
+
+    [Fact]
+    public void CleanedStaticMesh_StillStatic()
+    {
+        var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
+            isSkinnedPath: false, isCleaned: true, hasDirectSkinBinding: false);
+
+        Assert.Equal(VertexSpaceMode.StaticMesh, mode);
     }
 }

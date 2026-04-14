@@ -33,9 +33,9 @@ public sealed class EnvironmentContext
                 Config = config,
                 GameDataPath = gameDataPath,
                 CachePath = config.GetCachePath(),
-                UnityEditorPath = string.IsNullOrWhiteSpace(config.UnityEditor)
-                    ? null
-                    : GlobalConfig.ExpandHome(config.UnityEditor),
+                UnityEditorPath = !string.IsNullOrWhiteSpace(config.UnityEditor)
+                    ? GlobalConfig.ExpandHome(config.UnityEditor)
+                    : GlobalConfig.DiscoverUnityEditor(),
             },
         };
     }

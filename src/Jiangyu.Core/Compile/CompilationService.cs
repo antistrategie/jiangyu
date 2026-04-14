@@ -49,17 +49,16 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var config = input.Config;
         var projectDir = input.ProjectDirectory;
 
-        // Validate config
-        if (string.IsNullOrEmpty(config.UnityEditor))
-            return Fail($"unityEditor not set in global config ({GlobalConfig.ConfigPath})");
-
-        string unityEditorPath = GlobalConfig.ExpandHome(config.UnityEditor);
-        if (!File.Exists(unityEditorPath))
-            return Fail($"Unity editor not found at: {unityEditorPath}");
-
+        // Resolve game data first — needed to detect the Unity version for editor discovery
         var (gameDataPath, gameDataError) = GlobalConfig.ResolveGameDataPath(config);
         if (gameDataPath is null)
             return Fail(gameDataError ?? "Could not resolve game data path.");
+
+        // Detect game Unity version and use it to find the matching editor
+        var gameVersion = UnityVersionValidationService.DetectGameVersion(gameDataPath);
+        var (unityEditorPath, editorError) = GlobalConfig.ResolveUnityEditorPath(config, gameVersion?.ToString());
+        if (unityEditorPath is null)
+            return Fail(editorError!);
 
         var versionValidation = await new UnityVersionValidationService(_log).ValidateAsync(gameDataPath, unityEditorPath);
         if (!versionValidation.Success)

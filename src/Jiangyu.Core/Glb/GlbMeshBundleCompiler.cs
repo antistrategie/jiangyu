@@ -74,7 +74,7 @@ public static class GlbMeshBundleCompiler
     private const uint Magic = 0x4D455348; // "MESH"
     private const uint TextureMagic = 0x54585452; // "TXTR"
 
-    private sealed class CompiledTexture
+    internal sealed class CompiledTexture
     {
         public required string Name { get; init; }
         public required byte[] Content { get; init; }
@@ -273,6 +273,40 @@ public static class GlbMeshBundleCompiler
         };
     }
 
+    /// <summary>
+    /// How vertices should be transformed from glTF source space into MENACE's native coordinate system.
+    /// </summary>
+    internal enum VertexSpaceMode
+    {
+        /// <summary>
+        /// Raw full-prefab GLB with direct skin binding. Vertices are already in MENACE cm-space.
+        /// Transform: mirror X only.
+        /// </summary>
+        RawPrefabSkinned,
+
+        /// <summary>
+        /// Cleaned .gltf export or mesh-only GLB. Vertices are in metre-space.
+        /// Transform: mirror X + 100x scale to reach MENACE cm-space.
+        /// </summary>
+        CleanedSkinned,
+
+        /// <summary>
+        /// Static mesh (no skinning). Standard glTF-to-Unity coordinate flip.
+        /// Transform: mirror Z only.
+        /// </summary>
+        StaticMesh,
+    }
+
+    internal static VertexSpaceMode DetermineVertexSpaceMode(bool isSkinnedPath, bool isCleaned, bool hasDirectSkinBinding)
+    {
+        if (!isSkinnedPath)
+            return VertexSpaceMode.StaticMesh;
+
+        return !isCleaned && hasDirectSkinBinding
+            ? VertexSpaceMode.RawPrefabSkinned
+            : VertexSpaceMode.CleanedSkinned;
+    }
+
     private static CompiledMesh? ExtractMesh(SharpGLTF.Schema2.Mesh mesh, ModelRoot model, Node meshNode, CompanionSkinData? companionSkinData, bool isCleaned = false)
     {
         var allVertices = new List<float>();
@@ -323,6 +357,9 @@ public static class GlbMeshBundleCompiler
         Matrix4x4.Invert(worldTransform, out var inverseWorldTransform);
         var normalTransform = Matrix4x4.Transpose(inverseWorldTransform);
 
+        bool isSkinnedPath = skin != null || (companionSkinData is not null && companionSkinData.BoneNames.Length > 0);
+        var spaceMode = DetermineVertexSpaceMode(isSkinnedPath, isCleaned, hasDirectSkinBinding: meshNode.Skin != null);
+
         var vertexOffset = 0;
         foreach (var primitive in mesh.Primitives)
         {
@@ -338,28 +375,23 @@ public static class GlbMeshBundleCompiler
                 if (bakeMeshOnlyWeightScale)
                     transformed *= meshOnlyWeightScale;
 
-                // Raw full-prefab GLBs have cm-scale vertices — just mirror X.
-                // Cleaned exports and mesh-only GLBs have metre-scale — apply 100x.
-                bool isSkinnedPath = skin != null || (companionSkinData is not null && companionSkinData.BoneNames.Length > 0);
-                bool skipCharacterScale = !isCleaned && meshNode.Skin != null;
-
-                if (isSkinnedPath && skipCharacterScale)
+                switch (spaceMode)
                 {
-                    allVertices.Add(-transformed.X);
-                    allVertices.Add(transformed.Y);
-                    allVertices.Add(transformed.Z);
-                }
-                else if (isSkinnedPath)
-                {
-                    allVertices.Add(-transformed.X * MenaceCharacterSpaceScale);
-                    allVertices.Add(transformed.Y * MenaceCharacterSpaceScale);
-                    allVertices.Add(transformed.Z * MenaceCharacterSpaceScale);
-                }
-                else
-                {
-                    allVertices.Add(transformed.X);
-                    allVertices.Add(transformed.Y);
-                    allVertices.Add(-transformed.Z);
+                    case VertexSpaceMode.RawPrefabSkinned:
+                        allVertices.Add(-transformed.X);
+                        allVertices.Add(transformed.Y);
+                        allVertices.Add(transformed.Z);
+                        break;
+                    case VertexSpaceMode.CleanedSkinned:
+                        allVertices.Add(-transformed.X * MenaceCharacterSpaceScale);
+                        allVertices.Add(transformed.Y * MenaceCharacterSpaceScale);
+                        allVertices.Add(transformed.Z * MenaceCharacterSpaceScale);
+                        break;
+                    case VertexSpaceMode.StaticMesh:
+                        allVertices.Add(transformed.X);
+                        allVertices.Add(transformed.Y);
+                        allVertices.Add(-transformed.Z);
+                        break;
                 }
             }
 
@@ -369,7 +401,7 @@ public static class GlbMeshBundleCompiler
                 foreach (var normal in normals)
                 {
                     var transformed = bakeNodeTransform ? Vector3.Normalize(Vector3.TransformNormal(normal, normalTransform)) : normal;
-                    if (skin != null || (companionSkinData is not null && companionSkinData.BoneNames.Length > 0))
+                    if (spaceMode != VertexSpaceMode.StaticMesh)
                     {
                         allNormals.Add(-transformed.X);
                         allNormals.Add(transformed.Y);
@@ -391,7 +423,7 @@ public static class GlbMeshBundleCompiler
                 {
                     var tangentVector = new Vector3(tangent.X, tangent.Y, tangent.Z);
                     var transformed = bakeNodeTransform ? Vector3.Normalize(Vector3.TransformNormal(tangentVector, normalTransform)) : tangentVector;
-                    if (skin != null || (companionSkinData is not null && companionSkinData.BoneNames.Length > 0))
+                    if (spaceMode != VertexSpaceMode.StaticMesh)
                     {
                         allTangents.Add(-transformed.X);
                         allTangents.Add(transformed.Y);
@@ -614,7 +646,7 @@ public static class GlbMeshBundleCompiler
     /// Reads textures from a .gltf file's material graph.
     /// Priority: standard material channels → naming inference → material extras.
     /// </summary>
-    private static bool TryExtractTexturesFromGltf(string sourceFilePath, Dictionary<string, CompiledTexture> result)
+    internal static bool TryExtractTexturesFromGltf(string sourceFilePath, Dictionary<string, CompiledTexture> result)
     {
         if (!sourceFilePath.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
         {
@@ -741,7 +773,7 @@ public static class GlbMeshBundleCompiler
         return found;
     }
 
-    private static string GetImageName(Image image)
+    internal static string GetImageName(Image image)
     {
         // Name is set explicitly by the exporter
         if (!string.IsNullOrEmpty(image.Name))
@@ -758,7 +790,7 @@ public static class GlbMeshBundleCompiler
         return $"image_{image.LogicalIndex}";
     }
 
-    private static string? InferTexturePrefix(string sourceFilePath)
+    internal static string? InferTexturePrefix(string sourceFilePath)
     {
         // For .gltf files: derive from image names in the material graph
         if (sourceFilePath.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
@@ -823,7 +855,7 @@ public static class GlbMeshBundleCompiler
     /// <summary>
     /// Reads the cleaned flag from a .gltf root extras, or false if not a .gltf or no extras.
     /// </summary>
-    private static bool IsCleanedExport(string sourceFilePath)
+    internal static bool IsCleanedExport(string sourceFilePath)
     {
         if (!sourceFilePath.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
         {
