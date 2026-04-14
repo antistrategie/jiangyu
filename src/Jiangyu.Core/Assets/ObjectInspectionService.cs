@@ -7,6 +7,7 @@ using AssetRipper.Processing;
 using AssetRipper.Processing.AnimatorControllers;
 using AssetRipper.Processing.Prefabs;
 using AssetRipper.Processing.Scenes;
+using AssetRipper.SourceGenerated.Classes.ClassID_114;
 using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Models;
 
@@ -62,7 +63,7 @@ public sealed class ObjectInspectionService(string gameDataPath, string cachePat
             ?? throw new InvalidOperationException("Inspection requires a resolved path ID.");
 
         var settings = new CoreConfiguration();
-        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level0;
+        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level2;
 
         var adapter = new AssetRipperProgressAdapter(_progress);
         Logger.Add(adapter);
@@ -88,6 +89,10 @@ public sealed class ObjectInspectionService(string gameDataPath, string cachePat
                 ?? throw new InvalidOperationException($"No asset found in collection '{collectionName}' with pathId {pathId}.");
 
             ObjectFieldInspection inspection = ObjectFieldInspector.Inspect(asset, request.MaxDepth, request.MaxArraySampleLength);
+            if (asset is IMonoBehaviour monoBehaviour)
+            {
+                ManagedTypeInspectionEnricher.Enrich(monoBehaviour, gameData.AssemblyManager, inspection.Fields);
+            }
 
             return new ObjectInspectionResult
             {

@@ -3,7 +3,7 @@ using System.Text.Json;
 using Jiangyu.Core.Assets;
 using Jiangyu.Core.Config;
 
-namespace Jiangyu.Cli.Commands;
+namespace Jiangyu.Cli.Commands.Assets;
 
 public static class InspectMeshCommand
 {
@@ -22,32 +22,29 @@ public static class InspectMeshCommand
             outOption
         };
 
-        command.SetAction((ctx) =>
+        command.SetAction((parseResult) =>
         {
-            var bundlePath = Path.GetFullPath(ctx.GetRequiredValue(bundleOption));
-            var meshName = ctx.GetRequiredValue(meshOption);
-            var outputPath = Path.GetFullPath(ctx.GetValue(outOption) ?? Path.Combine(Path.GetTempPath(), "jiangyu-inspect-mesh.json"));
+            var bundlePath = Path.GetFullPath(parseResult.GetRequiredValue(bundleOption));
+            var meshName = parseResult.GetRequiredValue(meshOption);
+            var outputPath = Path.GetFullPath(parseResult.GetValue(outOption) ?? Path.Combine(Path.GetTempPath(), "jiangyu-inspect-mesh.json"));
 
             if (!File.Exists(bundlePath))
             {
                 Console.Error.WriteLine($"Error: bundle not found: {bundlePath}");
-                ctx.ExitCode = 1;
-                return;
+                return 1;
             }
 
             var (gameDataPath, error) = GlobalConfig.ResolveGameDataPath();
             if (gameDataPath is null)
             {
                 Console.Error.WriteLine(error);
-                ctx.ExitCode = 1;
-                return;
+                return 1;
             }
 
             if (!Directory.Exists(gameDataPath))
             {
                 Console.Error.WriteLine($"Error: game data directory not found: {gameDataPath}");
-                ctx.ExitCode = 1;
-                return;
+                return 1;
             }
 
             try
@@ -67,12 +64,12 @@ public static class InspectMeshCommand
                 foreach (var mesh in report.BundleMeshes.Take(2))
                     PrintMesh("bundle", mesh);
 
-                ctx.ExitCode = 0;
+                return 0;
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Error: inspect-mesh failed: {ex}");
-                ctx.ExitCode = 1;
+                return 1;
             }
         });
 

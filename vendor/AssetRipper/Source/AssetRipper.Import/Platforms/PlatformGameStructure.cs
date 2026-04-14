@@ -109,31 +109,11 @@ public abstract partial class PlatformGameStructure
 			return dependencyPath;
 		}
 
-		// 3. Match by filename only (dependency might be just a name without path)
+		// 3. Search in DataPaths with case variation fallback.
+		// This must happen before extension-less fallback so dependencies like
+		// "globalgamemanagers.assets" do not incorrectly resolve to the sibling
+		// "globalgamemanagers" file when both exist.
 		string dependencyFileName = FileSystem.Path.GetFileName(dependency);
-		dependencyPath = Files.FirstOrDefault(t =>
-			string.Equals(FileSystem.Path.GetFileName(t.Key), dependencyFileName, StringComparison.OrdinalIgnoreCase)).Value;
-		if (!string.IsNullOrEmpty(dependencyPath))
-		{
-			return dependencyPath;
-		}
-
-		// 4. Match by filename without extension
-		string dependencyWithoutExt = FileSystem.Path.GetFileNameWithoutExtension(dependency);
-		if (!string.IsNullOrEmpty(dependencyWithoutExt))
-		{
-			dependencyPath = Files.FirstOrDefault(t =>
-			{
-				string keyWithoutExt = FileSystem.Path.GetFileNameWithoutExtension(t.Key);
-				return string.Equals(keyWithoutExt, dependencyWithoutExt, StringComparison.OrdinalIgnoreCase);
-			}).Value;
-			if (!string.IsNullOrEmpty(dependencyPath))
-			{
-				return dependencyPath;
-			}
-		}
-
-		// 5. Search in DataPaths with case variation fallback
 		foreach (string dataPath in DataPaths)
 		{
 			string filePath = FileSystem.Path.Join(dataPath, dependency);
@@ -157,6 +137,29 @@ public abstract partial class PlatformGameStructure
 			{
 				return FindEngineDependency(dataPath, SpecialFileNames.BuiltinExtraName1) ??
 					FindEngineDependency(dataPath, SpecialFileNames.BuiltinExtraName2);
+			}
+		}
+
+		// 4. Match by filename only (dependency might be just a name without path)
+		dependencyPath = Files.FirstOrDefault(t =>
+			string.Equals(FileSystem.Path.GetFileName(t.Key), dependencyFileName, StringComparison.OrdinalIgnoreCase)).Value;
+		if (!string.IsNullOrEmpty(dependencyPath))
+		{
+			return dependencyPath;
+		}
+
+		// 5. Match by filename without extension
+		string dependencyWithoutExt = FileSystem.Path.GetFileNameWithoutExtension(dependency);
+		if (!string.IsNullOrEmpty(dependencyWithoutExt))
+		{
+			dependencyPath = Files.FirstOrDefault(t =>
+			{
+				string keyWithoutExt = FileSystem.Path.GetFileNameWithoutExtension(t.Key);
+				return string.Equals(keyWithoutExt, dependencyWithoutExt, StringComparison.OrdinalIgnoreCase);
+			}).Value;
+			if (!string.IsNullOrEmpty(dependencyPath))
+			{
+				return dependencyPath;
 			}
 		}
 

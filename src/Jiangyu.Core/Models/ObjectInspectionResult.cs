@@ -34,17 +34,17 @@ public sealed class ObjectInspectionOptions
 
 public sealed class InspectedFieldNode
 {
-    public string? Name { get; init; }
-    public required string Kind { get; init; }
-    public string? FieldTypeName { get; init; }
-    public bool? Null { get; init; }
-    public bool? Truncated { get; init; }
-    public object? Value { get; init; }
-    public int? Count { get; init; }
-    public InspectedReference? Reference { get; init; }
-    public List<InspectedFieldNode>? Elements { get; init; }
-    public List<InspectedFieldNode>? Fields { get; init; }
-    public string? Reason { get; init; }
+    public string? Name { get; set; }
+    public required string Kind { get; set; }
+    public string? FieldTypeName { get; set; }
+    public bool? Null { get; set; }
+    public bool? Truncated { get; set; }
+    public object? Value { get; set; }
+    public int? Count { get; set; }
+    public InspectedReference? Reference { get; set; }
+    public List<InspectedFieldNode>? Elements { get; set; }
+    public List<InspectedFieldNode>? Fields { get; set; }
+    public string? Reason { get; set; }
 }
 
 public sealed class InspectedReference

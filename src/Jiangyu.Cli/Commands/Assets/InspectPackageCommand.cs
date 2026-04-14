@@ -1,7 +1,7 @@
 using System.CommandLine;
 using Jiangyu.Core.Assets;
 
-namespace Jiangyu.Cli.Commands;
+namespace Jiangyu.Cli.Commands.Assets;
 
 public static class InspectPackageCommand
 {
@@ -13,15 +13,14 @@ public static class InspectPackageCommand
         {
             dirArg
         };
-        command.SetAction((ctx) =>
+        command.SetAction((parseResult) =>
         {
-            var packageDir = ctx.GetRequiredValue(dirArg);
+            var packageDir = parseResult.GetRequiredValue(dirArg);
 
             if (!Directory.Exists(packageDir))
             {
                 Console.Error.WriteLine($"Error: directory not found: {packageDir}");
-                ctx.ExitCode = 1;
-                return;
+                return 1;
             }
 
             var result = PackageValidationService.Validate(packageDir);
@@ -37,13 +36,12 @@ public static class InspectPackageCommand
                 Console.Error.WriteLine($"  {result.Issues.Count} issue(s):");
                 foreach (var issue in result.Issues)
                     Console.Error.WriteLine($"    - {issue}");
-                ctx.ExitCode = 1;
-                return;
+                return 1;
             }
 
             Console.WriteLine();
             Console.WriteLine("  Package OK");
-            ctx.ExitCode = 0;
+            return 0;
         });
 
         return command;

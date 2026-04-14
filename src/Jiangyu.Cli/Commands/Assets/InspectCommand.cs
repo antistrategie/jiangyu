@@ -3,7 +3,7 @@ using System.Text.Json;
 using Jiangyu.Core.Assets;
 using Jiangyu.Core.Config;
 
-namespace Jiangyu.Cli.Commands;
+namespace Jiangyu.Cli.Commands.Assets;
 
 public static class InspectCommand
 {
@@ -24,33 +24,30 @@ public static class InspectCommand
             outOption
         };
 
-        command.SetAction((ctx) =>
+        command.SetAction((parseResult) =>
         {
-            var bundlePath = Path.GetFullPath(ctx.GetRequiredValue(bundleOption));
-            var gameFilter = ctx.GetValue(filterOption) ?? "basic_soldier";
-            var bundleFilter = ctx.GetValue(bundleFilterOption) ?? gameFilter;
-            var outputPath = Path.GetFullPath(ctx.GetValue(outOption) ?? Path.Combine(Path.GetTempPath(), "jiangyu-inspect.json"));
+            var bundlePath = Path.GetFullPath(parseResult.GetRequiredValue(bundleOption));
+            var gameFilter = parseResult.GetValue(filterOption) ?? "basic_soldier";
+            var bundleFilter = parseResult.GetValue(bundleFilterOption) ?? gameFilter;
+            var outputPath = Path.GetFullPath(parseResult.GetValue(outOption) ?? Path.Combine(Path.GetTempPath(), "jiangyu-inspect.json"));
 
             if (!File.Exists(bundlePath))
             {
                 Console.Error.WriteLine($"Error: bundle not found: {bundlePath}");
-                ctx.ExitCode = 1;
-                return;
+                return 1;
             }
 
             var (gameDataPath, error) = GlobalConfig.ResolveGameDataPath();
             if (gameDataPath is null)
             {
                 Console.Error.WriteLine(error);
-                ctx.ExitCode = 1;
-                return;
+                return 1;
             }
 
             if (!Directory.Exists(gameDataPath))
             {
                 Console.Error.WriteLine($"Error: game data directory not found: {gameDataPath}");
-                ctx.ExitCode = 1;
-                return;
+                return 1;
             }
 
             try
@@ -81,12 +78,12 @@ public static class InspectCommand
                         PrintGameObjectSummary(go);
                 }
 
-                ctx.ExitCode = 0;
+                return 0;
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Error: inspect failed: {ex}");
-                ctx.ExitCode = 1;
+                return 1;
             }
         });
 

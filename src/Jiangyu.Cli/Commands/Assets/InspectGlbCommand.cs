@@ -2,7 +2,7 @@ using System.CommandLine;
 using System.Text.Json;
 using Jiangyu.Core.Glb;
 
-namespace Jiangyu.Cli.Commands;
+namespace Jiangyu.Cli.Commands.Assets;
 
 public static class InspectGlbCommand
 {
@@ -20,17 +20,16 @@ public static class InspectGlbCommand
             filterOption,
             outOption
         };
-        command.SetAction((ctx) =>
+        command.SetAction((parseResult) =>
         {
-            var glbPath = Path.GetFullPath(ctx.GetRequiredValue(glbOption));
-            var filter = ctx.GetValue(filterOption);
-            var outputPath = Path.GetFullPath(ctx.GetValue(outOption) ?? Path.Combine(Path.GetTempPath(), "jiangyu-inspect-glb.json"));
+            var glbPath = Path.GetFullPath(parseResult.GetRequiredValue(glbOption));
+            var filter = parseResult.GetValue(filterOption);
+            var outputPath = Path.GetFullPath(parseResult.GetValue(outOption) ?? Path.Combine(Path.GetTempPath(), "jiangyu-inspect-glb.json"));
 
             if (!File.Exists(glbPath))
             {
                 Console.Error.WriteLine($"Error: GLB not found: {glbPath}");
-                ctx.ExitCode = 1;
-                return;
+                return 1;
             }
 
             try
@@ -52,12 +51,12 @@ public static class InspectGlbCommand
                 foreach (var node in report.Nodes.Take(20))
                     Console.WriteLine($"  {node.Path} pos={Format(node.LocalTranslation)} scale={Format(node.LocalScale)} mesh={node.MeshName ?? "-"} skin={node.SkinIndex?.ToString() ?? "-"}");
 
-                ctx.ExitCode = 0;
+                return 0;
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Error: inspect-glb failed: {ex}");
-                ctx.ExitCode = 1;
+                return 1;
             }
         });
 

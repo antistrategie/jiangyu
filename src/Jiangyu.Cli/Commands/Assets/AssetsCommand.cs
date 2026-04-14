@@ -3,7 +3,7 @@ using Jiangyu.Core.Assets;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
 
-namespace Jiangyu.Cli.Commands;
+namespace Jiangyu.Cli.Commands.Assets;
 
 public static class AssetsCommand
 {
@@ -23,18 +23,17 @@ public static class AssetsCommand
     private static Command CreateIndexCommand()
     {
         var command = new Command("index", "Build searchable asset index from game data");
-        command.SetAction((ctx) =>
+        command.SetAction((parseResult) =>
         {
             var (service, error) = CreateService();
             if (service is null)
             {
                 Console.Error.WriteLine(error);
-                ctx.ExitCode = 1;
-                return;
+                return 1;
             }
 
             service.BuildIndex();
-            ctx.ExitCode = 0;
+            return 0;
         });
         return command;
     }
@@ -49,25 +48,23 @@ public static class AssetsCommand
             queryArg,
             typeOption
         };
-        command.SetAction((ctx) =>
+        command.SetAction((parseResult) =>
         {
-            var query = ctx.GetValue(queryArg) ?? "";
-            var typeFilter = ctx.GetValue(typeOption);
+            var query = parseResult.GetValue(queryArg) ?? "";
+            var typeFilter = parseResult.GetValue(typeOption);
 
             var (service, error) = CreateService();
             if (service is null)
             {
                 Console.Error.WriteLine(error);
-                ctx.ExitCode = 1;
-                return;
+                return 1;
             }
 
             var results = service.Search(query, typeFilter);
             if (results.Count == 0)
             {
                 Console.WriteLine("No matching assets found.");
-                ctx.ExitCode = 0;
-                return;
+                return 0;
             }
 
             int nameWidth = Math.Min(results.Max(r => r.Name?.Length ?? 0), 50);
@@ -85,7 +82,7 @@ public static class AssetsCommand
                 Console.WriteLine("  ... (showing first 50 results, refine your query)");
             }
 
-            ctx.ExitCode = 0;
+            return 0;
         });
 
         return command;
@@ -105,18 +102,17 @@ public static class AssetsCommand
             outputOption,
             rawOption
         };
-        modelCommand.SetAction((ctx) =>
+        modelCommand.SetAction((parseResult) =>
         {
-            var assetName = ctx.GetRequiredValue(nameArg);
-            var outputDir = ctx.GetValue(outputOption);
-            var raw = ctx.GetValue(rawOption);
+            var assetName = parseResult.GetRequiredValue(nameArg);
+            var outputDir = parseResult.GetValue(outputOption);
+            var raw = parseResult.GetValue(rawOption);
 
             var (service, error) = CreateService();
             if (service is null)
             {
                 Console.Error.WriteLine(error);
-                ctx.ExitCode = 1;
-                return;
+                return 1;
             }
 
             var match = service.ResolveAsset(assetName, "GameObject", "Mesh");
@@ -124,8 +120,7 @@ public static class AssetsCommand
             {
                 Console.Error.WriteLine($"Error: no GameObject or Mesh named '{assetName}' in the index.");
                 Console.Error.WriteLine("Run 'jiangyu assets search' to find available assets.");
-                ctx.ExitCode = 1;
-                return;
+                return 1;
             }
 
             var collection = match.Collection ?? "";
@@ -134,7 +129,7 @@ public static class AssetsCommand
 
             var packageDir = outputDir ?? Path.Combine(service.CachePath, "exports", assetName);
             service.ExportModel(assetName, packageDir, clean: !raw, collection: collection, pathId: pathId);
-            ctx.ExitCode = 0;
+            return 0;
         });
 
         exportCommand.Add(modelCommand);

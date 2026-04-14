@@ -10,7 +10,7 @@ public static class CompileCommand
     public static Command Create()
     {
         var command = new Command("compile", "Compile mod assets into AssetBundles");
-        command.SetAction(async (ctx) =>
+        command.SetAction(async (parseResult) =>
         {
             var projectDir = Directory.GetCurrentDirectory();
 
@@ -18,8 +18,7 @@ public static class CompileCommand
             if (!File.Exists(manifestPath))
             {
                 Console.Error.WriteLine($"Error: {ModManifest.FileName} not found. Run 'jiangyu init' first.");
-                ctx.ExitCode = 1;
-                return;
+                return 1;
             }
 
             try
@@ -35,12 +34,12 @@ public static class CompileCommand
                     ProjectDirectory = projectDir,
                 });
 
-                ctx.ExitCode = 0;
+                return 0;
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Error: compile failed: {ex.Message}");
-                ctx.ExitCode = 1;
+                return 1;
             }
         });
         return command;

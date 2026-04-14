@@ -5,7 +5,7 @@ using Jiangyu.Core.Assets;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
 
-namespace Jiangyu.Cli.Commands;
+namespace Jiangyu.Cli.Commands.Assets;
 
 public static class InspectObjectCommand
 {
@@ -43,29 +43,27 @@ public static class InspectObjectCommand
             outputOption,
         };
 
-        command.SetAction((ctx) =>
+        command.SetAction((parseResult) =>
         {
-            var collection = ctx.GetValue(collectionOption);
-            var pathId = ctx.GetValue(pathIdOption);
-            var name = ctx.GetValue(nameOption);
-            var className = ctx.GetValue(typeOption);
-            var maxDepth = ctx.GetValue(maxDepthOption);
-            var maxArraySampleLength = ctx.GetValue(maxArraySampleOption);
-            var output = (ctx.GetValue(outputOption) ?? "pretty").ToLowerInvariant();
+            var collection = parseResult.GetValue(collectionOption);
+            var pathId = parseResult.GetValue(pathIdOption);
+            var name = parseResult.GetValue(nameOption);
+            var className = parseResult.GetValue(typeOption);
+            var maxDepth = parseResult.GetValue(maxDepthOption);
+            var maxArraySampleLength = parseResult.GetValue(maxArraySampleOption);
+            var output = (parseResult.GetValue(outputOption) ?? "pretty").ToLowerInvariant();
 
             if (!TryValidateInput(collection, pathId, name, output, maxDepth, maxArraySampleLength, out string? error))
             {
                 Console.Error.WriteLine($"Error: {error}");
-                ctx.ExitCode = 1;
-                return;
+                return 1;
             }
 
             var (gameDataPath, gameDataError) = GlobalConfig.ResolveGameDataPath();
             if (gameDataPath is null)
             {
                 Console.Error.WriteLine(gameDataError);
-                ctx.ExitCode = 1;
-                return;
+                return 1;
             }
 
             var cachePath = GlobalConfig.Load().GetCachePath();
@@ -94,12 +92,10 @@ public static class InspectObjectCommand
                             break;
                         case ObjectResolutionStatus.IndexUnavailable:
                             Console.Error.WriteLine("Error: asset index not found. Run 'jiangyu assets index' first.");
-                            ctx.ExitCode = 1;
-                            return;
+                            return 1;
                         case ObjectResolutionStatus.NotFound:
                             Console.Error.WriteLine($"Error: no asset named '{name}' found{FormatClassSuffix(className)}.");
-                            ctx.ExitCode = 1;
-                            return;
+                            return 1;
                         case ObjectResolutionStatus.Ambiguous:
                             Console.Error.WriteLine($"Error: asset name '{name}' is ambiguous{FormatClassSuffix(className)}.");
                             foreach (var candidate in resolution.Candidates)
@@ -107,24 +103,22 @@ public static class InspectObjectCommand
                                 Console.Error.WriteLine($"  {candidate.Name} ({candidate.ClassName}) in {candidate.Collection} [pathId={candidate.PathId}]");
                             }
                             Console.Error.WriteLine("Rerun with --collection and --path-id.");
-                            ctx.ExitCode = 1;
-                            return;
+                            return 1;
                         default:
                             Console.Error.WriteLine($"Error: unsupported resolution status '{resolution.Status}'.");
-                            ctx.ExitCode = 1;
-                            return;
+                            return 1;
                     }
                 }
 
                 ObjectInspectionResult result = service.Inspect(request, resolved);
                 string json = JsonSerializer.Serialize(result, output == "json" ? CompactJsonOptions : PrettyJsonOptions);
                 Console.WriteLine(json);
-                ctx.ExitCode = 0;
+                return 0;
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Error: inspect failed: {ex.Message}");
-                ctx.ExitCode = 1;
+                return 1;
             }
         });
 

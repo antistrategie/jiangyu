@@ -19,4 +19,5 @@ publish/
 local.props
 
 !README.md
+docs/research
 *.md

@@ -10,7 +10,7 @@ public static class InitCommand
     public static Command Create()
     {
         var command = new Command("init", "Scaffold a new mod project");
-        command.SetAction(async (ctx) =>
+        command.SetAction(async (parseResult) =>
         {
             var projectDir = Directory.GetCurrentDirectory();
 
@@ -18,8 +18,7 @@ public static class InitCommand
             if (File.Exists(manifestPath))
             {
                 Console.Error.WriteLine($"Error: {ModManifest.FileName} already exists in this directory.");
-                ctx.ExitCode = 1;
-                return;
+                return 1;
             }
 
             try
@@ -49,12 +48,12 @@ public static class InitCommand
                 Console.WriteLine("  audio/                Audio files");
                 Console.WriteLine("  templates/            Template patches (JSON)");
                 Console.WriteLine("  compiled/             Build output");
-                ctx.ExitCode = 0;
+                return 0;
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Error: init failed: {ex.Message}");
-                ctx.ExitCode = 1;
+                return 1;
             }
         });
         return command;
