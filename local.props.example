@@ -1,9 +1,0 @@
-<!--
-  Copy this file to local.props and adjust paths to your local setup.
-  local.props is gitignored.
--->
-<Project>
-  <PropertyGroup>
-    <GameDir>/path/to/your/Menace</GameDir>
-  </PropertyGroup>
-</Project>
