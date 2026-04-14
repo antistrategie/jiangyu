@@ -75,6 +75,7 @@ public sealed class TemplateIndexServiceTests : IDisposable
     [Fact]
     public void IsIndexCurrent_ReturnsTrue_WhenManifestMatchesHashAndRule()
     {
+        WriteIndex();
         WriteManifest(new TemplateIndexManifest
         {
             GameAssemblyHash = ComputeGameAssemblyHash(),
@@ -92,6 +93,7 @@ public sealed class TemplateIndexServiceTests : IDisposable
     [Fact]
     public void IsIndexCurrent_ReturnsFalse_WhenRuleVersionDiffers()
     {
+        WriteIndex();
         WriteManifest(new TemplateIndexManifest
         {
             GameAssemblyHash = ComputeGameAssemblyHash(),
@@ -111,6 +113,20 @@ public sealed class TemplateIndexServiceTests : IDisposable
         File.WriteAllText(
             Path.Combine(_cacheDir, "template-index-manifest.json"),
             JsonSerializer.Serialize(manifest, JsonOptions));
+    }
+
+    private void WriteIndex()
+    {
+        var index = new TemplateIndex
+        {
+            Classification = TemplateClassifier.GetMetadata(),
+            TemplateTypes = [],
+            Instances = [],
+        };
+
+        File.WriteAllText(
+            Path.Combine(_cacheDir, "template-index.json"),
+            JsonSerializer.Serialize(index, JsonOptions));
     }
 
     private string ComputeGameAssemblyHash()

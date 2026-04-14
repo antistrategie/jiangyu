@@ -1,5 +1,4 @@
 using System.CommandLine;
-using Jiangyu.Core.Assets;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
 
@@ -12,13 +11,14 @@ public static class TemplatesIndexCommand
         var command = new Command("index", "Build searchable template index from game data");
         command.SetAction((parseResult) =>
         {
-            var (service, error) = CreateService();
-            if (service is null)
+            var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+            if (!resolution.Success)
             {
-                Console.Error.WriteLine(error);
+                Console.Error.WriteLine(resolution.Error);
                 return 1;
             }
 
+            var service = resolution.Context!.CreateTemplateIndexService(new ConsoleProgressSink(), new ConsoleLogSink());
             try
             {
                 service.BuildIndex();
@@ -42,17 +42,5 @@ public static class TemplatesIndexCommand
         });
 
         return command;
-    }
-
-    private static (TemplateIndexService? service, string? error) CreateService()
-    {
-        var (gameDataPath, error) = GlobalConfig.ResolveGameDataPath();
-        if (gameDataPath is null)
-        {
-            return (null, error);
-        }
-
-        string cachePath = GlobalConfig.Load().GetCachePath();
-        return (new TemplateIndexService(gameDataPath, cachePath, new ConsoleProgressSink(), new ConsoleLogSink()), null);
     }
 }

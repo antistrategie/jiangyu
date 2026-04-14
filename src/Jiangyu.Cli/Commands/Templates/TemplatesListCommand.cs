@@ -1,5 +1,4 @@
 using System.CommandLine;
-using Jiangyu.Core.Assets;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
 
@@ -20,16 +19,18 @@ public static class TemplatesListCommand
         {
             string? className = parseResult.GetValue(typeOption);
 
-            var (service, error) = CreateService();
-            if (service is null)
+            var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+            if (!resolution.Success)
             {
-                Console.Error.WriteLine(error);
+                Console.Error.WriteLine(resolution.Error);
                 return 1;
             }
 
-            if (!service.IsIndexCurrent())
+            var service = resolution.Context!.CreateTemplateIndexService(new ConsoleProgressSink(), new ConsoleLogSink());
+            CachedIndexStatus indexStatus = service.GetIndexStatus();
+            if (!indexStatus.IsCurrent)
             {
-                Console.Error.WriteLine("Error: template index is missing or stale for the current game version. Run 'jiangyu templates index' first.");
+                Console.Error.WriteLine($"Error: {indexStatus.Reason}");
                 return 1;
             }
 
@@ -86,17 +87,5 @@ public static class TemplatesListCommand
         }
 
         return true;
-    }
-
-    private static (TemplateIndexService? service, string? error) CreateService()
-    {
-        var (gameDataPath, error) = GlobalConfig.ResolveGameDataPath();
-        if (gameDataPath is null)
-        {
-            return (null, error);
-        }
-
-        string cachePath = GlobalConfig.Load().GetCachePath();
-        return (new TemplateIndexService(gameDataPath, cachePath, new ConsoleProgressSink(), new ConsoleLogSink()), null);
     }
 }

@@ -122,7 +122,7 @@ public sealed partial class UnityVersionValidationService
         }
     }
 
-    private async Task<UnityVersion?> TryGetUnityVersionFromProcessAsync(string unityEditorPath)
+    private static async Task<UnityVersion?> TryGetUnityVersionFromProcessAsync(string unityEditorPath)
     {
         try
         {
@@ -171,12 +171,12 @@ public sealed partial class UnityVersionValidationService
         string message,
         UnityVersion? gameVersion = null,
         UnityVersion? editorVersion = null) => new()
-    {
-        Success = false,
-        GameVersion = gameVersion,
-        EditorVersion = editorVersion,
-        ErrorMessage = message,
-    };
+        {
+            Success = false,
+            GameVersion = gameVersion,
+            EditorVersion = editorVersion,
+            ErrorMessage = message,
+        };
 
     [GeneratedRegex(@"\b\d{4,}\.\d+\.\d+[a-z]\d+\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex UnityVersionRegex();

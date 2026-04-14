@@ -36,19 +36,50 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
 
     public bool IsIndexCurrent()
     {
+        return GetIndexStatus().IsCurrent;
+    }
+
+    public CachedIndexStatus GetIndexStatus()
+    {
+        string indexPath = Path.Combine(CachePath, IndexFileName);
+        if (!File.Exists(indexPath))
+        {
+            return new CachedIndexStatus
+            {
+                State = CachedIndexState.Missing,
+                Reason = "Template index not found. Run 'jiangyu templates index' first.",
+            };
+        }
+
         TemplateIndexManifest? manifest = LoadManifest();
         if (manifest is null)
         {
-            return false;
+            return new CachedIndexStatus
+            {
+                State = CachedIndexState.Stale,
+                Reason = "Template index manifest is unreadable. Rebuild it with 'jiangyu templates index'.",
+            };
         }
 
         TemplateClassificationMetadata classification = TemplateClassifier.GetMetadata();
         string? currentHash = ComputeGameAssemblyHash();
 
-        return currentHash is not null
-            && string.Equals(currentHash, manifest.GameAssemblyHash, StringComparison.Ordinal)
-            && string.Equals(manifest.RuleVersion, classification.RuleVersion, StringComparison.Ordinal)
-            && string.Equals(manifest.RuleDescription, classification.RuleDescription, StringComparison.Ordinal);
+        if (currentHash is null
+            || !string.Equals(currentHash, manifest.GameAssemblyHash, StringComparison.Ordinal)
+            || !string.Equals(manifest.RuleVersion, classification.RuleVersion, StringComparison.Ordinal)
+            || !string.Equals(manifest.RuleDescription, classification.RuleDescription, StringComparison.Ordinal))
+        {
+            return new CachedIndexStatus
+            {
+                State = CachedIndexState.Stale,
+                Reason = "Template index is missing or stale for the current game version. Run 'jiangyu templates index' first.",
+            };
+        }
+
+        return new CachedIndexStatus
+        {
+            State = CachedIndexState.Current,
+        };
     }
 
     public void BuildIndex()

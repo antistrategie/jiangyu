@@ -37,13 +37,14 @@ public static class InspectCommand
                 return 1;
             }
 
-            var (gameDataPath, error) = GlobalConfig.ResolveGameDataPath();
-            if (gameDataPath is null)
+            var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+            if (!resolution.Success)
             {
-                Console.Error.WriteLine(error);
+                Console.Error.WriteLine(resolution.Error);
                 return 1;
             }
 
+            var gameDataPath = resolution.Context!.GameDataPath;
             if (!Directory.Exists(gameDataPath))
             {
                 Console.Error.WriteLine($"Error: game data directory not found: {gameDataPath}");

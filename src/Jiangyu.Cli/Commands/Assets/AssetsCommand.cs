@@ -25,13 +25,14 @@ public static class AssetsCommand
         var command = new Command("index", "Build searchable asset index from game data");
         command.SetAction((parseResult) =>
         {
-            var (service, error) = CreateService();
-            if (service is null)
+            var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+            if (!resolution.Success)
             {
-                Console.Error.WriteLine(error);
+                Console.Error.WriteLine(resolution.Error);
                 return 1;
             }
 
+            var service = resolution.Context!.CreateAssetPipelineService(new ConsoleProgressSink(), new ConsoleLogSink());
             service.BuildIndex();
             return 0;
         });
@@ -53,16 +54,18 @@ public static class AssetsCommand
             var query = parseResult.GetValue(queryArg) ?? "";
             var typeFilter = parseResult.GetValue(typeOption);
 
-            var (service, error) = CreateService();
-            if (service is null)
+            var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+            if (!resolution.Success)
             {
-                Console.Error.WriteLine(error);
+                Console.Error.WriteLine(resolution.Error);
                 return 1;
             }
 
-            if (!service.IsIndexCurrent())
+            var service = resolution.Context!.CreateAssetPipelineService(new ConsoleProgressSink(), new ConsoleLogSink());
+            CachedIndexStatus indexStatus = service.GetIndexStatus();
+            if (!indexStatus.IsCurrent)
             {
-                Console.Error.WriteLine("Error: asset index is missing or stale for the current game version. Run 'jiangyu assets index' first.");
+                Console.Error.WriteLine($"Error: {indexStatus.Reason}");
                 return 1;
             }
 
@@ -114,16 +117,18 @@ public static class AssetsCommand
             var outputDir = parseResult.GetValue(outputOption);
             var raw = parseResult.GetValue(rawOption);
 
-            var (service, error) = CreateService();
-            if (service is null)
+            var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+            if (!resolution.Success)
             {
-                Console.Error.WriteLine(error);
+                Console.Error.WriteLine(resolution.Error);
                 return 1;
             }
 
-            if (!service.IsIndexCurrent())
+            var service = resolution.Context!.CreateAssetPipelineService(new ConsoleProgressSink(), new ConsoleLogSink());
+            CachedIndexStatus indexStatus = service.GetIndexStatus();
+            if (!indexStatus.IsCurrent)
             {
-                Console.Error.WriteLine("Error: asset index is missing or stale for the current game version. Run 'jiangyu assets index' first.");
+                Console.Error.WriteLine($"Error: {indexStatus.Reason}");
                 return 1;
             }
 
@@ -160,19 +165,5 @@ public static class AssetsCommand
         };
 
         return command;
-    }
-
-    private static (AssetPipelineService? service, string? error) CreateService()
-    {
-        var (gameDataPath, error) = GlobalConfig.ResolveGameDataPath();
-        if (gameDataPath is null)
-        {
-            return (null, error);
-        }
-
-        var cachePath = GlobalConfig.Load().GetCachePath();
-        var progress = new ConsoleProgressSink();
-        var log = new ConsoleLogSink();
-        return (new AssetPipelineService(gameDataPath, cachePath, progress, log), null);
     }
 }

@@ -166,9 +166,9 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         {
             await SetupUnityProject(unityProjectDir, modelFiles);
 
-                var success = await InvokeUnityBuild(unityEditorPath, unityProjectDir, bundleName);
-                if (!success)
-                    return Fail("Unity build failed. Check logs for details.");
+            var success = await InvokeUnityBuild(unityEditorPath, unityProjectDir, bundleName);
+            if (!success)
+                return Fail("Unity build failed. Check logs for details.");
         }
 
         // Collect output

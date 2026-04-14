@@ -59,15 +59,15 @@ public static class InspectObjectCommand
                 return 1;
             }
 
-            var (gameDataPath, gameDataError) = GlobalConfig.ResolveGameDataPath();
-            if (gameDataPath is null)
+            var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+            if (!resolution.Success)
             {
-                Console.Error.WriteLine(gameDataError);
+                Console.Error.WriteLine(resolution.Error);
                 return 1;
             }
 
-            var cachePath = GlobalConfig.Load().GetCachePath();
-            var service = new ObjectInspectionService(gameDataPath, cachePath, new ConsoleProgressSink(), new ConsoleLogSink());
+            var context = resolution.Context!;
+            var service = context.CreateObjectInspectionService(new ConsoleProgressSink(), new ConsoleLogSink());
 
             var request = new ObjectInspectionRequest
             {
@@ -84,18 +84,19 @@ public static class InspectObjectCommand
                 ResolvedObjectCandidate? resolved = null;
                 if (!string.IsNullOrWhiteSpace(name))
                 {
-                    var assetIndexService = new AssetPipelineService(gameDataPath, cachePath, new ConsoleProgressSink(), new ConsoleLogSink());
-                    if (!assetIndexService.IsIndexCurrent())
+                    var assetIndexService = context.CreateAssetPipelineService(new ConsoleProgressSink(), new ConsoleLogSink());
+                    CachedIndexStatus indexStatus = assetIndexService.GetIndexStatus();
+                    if (!indexStatus.IsCurrent)
                     {
-                        Console.Error.WriteLine("Error: asset index is missing or stale for the current game version. Run 'jiangyu assets index' first.");
+                        Console.Error.WriteLine($"Error: {indexStatus.Reason}");
                         return 1;
                     }
 
-                    ObjectResolutionResult resolution = service.Resolve(request);
-                    switch (resolution.Status)
+                    ObjectResolutionResult objectResolution = service.Resolve(request);
+                    switch (objectResolution.Status)
                     {
                         case ObjectResolutionStatus.Success:
-                            resolved = resolution.Resolved;
+                            resolved = objectResolution.Resolved;
                             break;
                         case ObjectResolutionStatus.IndexUnavailable:
                             Console.Error.WriteLine("Error: asset index not found. Run 'jiangyu assets index' first.");
@@ -105,14 +106,14 @@ public static class InspectObjectCommand
                             return 1;
                         case ObjectResolutionStatus.Ambiguous:
                             Console.Error.WriteLine($"Error: asset name '{name}' is ambiguous{FormatClassSuffix(className)}.");
-                            foreach (var candidate in resolution.Candidates)
+                            foreach (var candidate in objectResolution.Candidates)
                             {
                                 Console.Error.WriteLine($"  {candidate.Name} ({candidate.ClassName}) in {candidate.Collection} [pathId={candidate.PathId}]");
                             }
                             Console.Error.WriteLine("Rerun with --collection and --path-id.");
                             return 1;
                         default:
-                            Console.Error.WriteLine($"Error: unsupported resolution status '{resolution.Status}'.");
+                            Console.Error.WriteLine($"Error: unsupported resolution status '{objectResolution.Status}'.");
                             return 1;
                     }
                 }

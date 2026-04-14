@@ -51,21 +51,47 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
     /// </summary>
     public bool IsIndexCurrent()
     {
+        return GetIndexStatus().IsCurrent;
+    }
+
+    public CachedIndexStatus GetIndexStatus()
+    {
+        var indexPath = Path.Combine(CachePath, IndexFileName);
         var manifestPath = Path.Combine(CachePath, ManifestFileName);
-        if (!File.Exists(manifestPath))
+        if (!File.Exists(indexPath) || !File.Exists(manifestPath))
         {
-            return false;
+            return new CachedIndexStatus
+            {
+                State = CachedIndexState.Missing,
+                Reason = "Asset index not found. Run 'jiangyu assets index' first.",
+            };
         }
 
         var manifest = JsonSerializer.Deserialize<IndexManifest>(
             File.ReadAllText(manifestPath), JsonOptions);
         if (manifest is null)
         {
-            return false;
+            return new CachedIndexStatus
+            {
+                State = CachedIndexState.Stale,
+                Reason = "Asset index manifest is unreadable. Rebuild it with 'jiangyu assets index'.",
+            };
         }
 
         var currentHash = ComputeGameAssemblyHash();
-        return currentHash is not null && currentHash == manifest.GameAssemblyHash;
+        if (currentHash is null || currentHash != manifest.GameAssemblyHash)
+        {
+            return new CachedIndexStatus
+            {
+                State = CachedIndexState.Stale,
+                Reason = "Asset index is stale for the current game version. Run 'jiangyu assets index' first.",
+            };
+        }
+
+        return new CachedIndexStatus
+        {
+            State = CachedIndexState.Current,
+        };
     }
 
     /// <summary>

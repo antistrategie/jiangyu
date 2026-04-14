@@ -59,15 +59,15 @@ public static class TemplatesInspectCommand
                 return 1;
             }
 
-            var (gameDataPath, gameDataError) = GlobalConfig.ResolveGameDataPath();
-            if (gameDataPath is null)
+            var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+            if (!resolution.Success)
             {
-                Console.Error.WriteLine(gameDataError);
+                Console.Error.WriteLine(resolution.Error);
                 return 1;
             }
 
-            string cachePath = GlobalConfig.Load().GetCachePath();
-            var objectInspectionService = new ObjectInspectionService(gameDataPath, cachePath, new ConsoleProgressSink(), new ConsoleLogSink());
+            var context = resolution.Context!;
+            var objectInspectionService = context.CreateObjectInspectionService(new ConsoleProgressSink(), new ConsoleLogSink());
 
             var request = new ObjectInspectionRequest
             {
@@ -83,23 +83,24 @@ public static class TemplatesInspectCommand
             {
                 if (!string.IsNullOrWhiteSpace(name))
                 {
-                    var templateIndexService = new TemplateIndexService(gameDataPath, cachePath, new ConsoleProgressSink(), new ConsoleLogSink());
-                    if (!templateIndexService.IsIndexCurrent())
+                    var templateIndexService = context.CreateTemplateIndexService(new ConsoleProgressSink(), new ConsoleLogSink());
+                    CachedIndexStatus indexStatus = templateIndexService.GetIndexStatus();
+                    if (!indexStatus.IsCurrent)
                     {
-                        Console.Error.WriteLine("Error: template index is missing or stale for the current game version. Run 'jiangyu templates index' first.");
+                        Console.Error.WriteLine($"Error: {indexStatus.Reason}");
                         return 1;
                     }
 
                     var resolver = new TemplateResolver(templateIndexService.LoadIndex());
-                    TemplateResolutionResult resolution = resolver.Resolve(className!, name);
+                    TemplateResolutionResult templateResolution = resolver.Resolve(className!, name);
 
-                    switch (resolution.Status)
+                    switch (templateResolution.Status)
                     {
                         case TemplateResolutionStatus.Success:
                             request = new ObjectInspectionRequest
                             {
-                                Collection = resolution.Resolved!.Identity.Collection,
-                                PathId = resolution.Resolved.Identity.PathId,
+                                Collection = templateResolution.Resolved!.Identity.Collection,
+                                PathId = templateResolution.Resolved.Identity.PathId,
                                 MaxDepth = maxDepth,
                                 MaxArraySampleLength = maxArraySampleLength,
                             };
@@ -112,14 +113,14 @@ public static class TemplatesInspectCommand
                             return 1;
                         case TemplateResolutionStatus.Ambiguous:
                             Console.Error.WriteLine($"Error: template name '{name}' is ambiguous for type '{className}'.");
-                            foreach (ResolvedTemplateCandidate candidate in resolution.Candidates)
+                            foreach (ResolvedTemplateCandidate candidate in templateResolution.Candidates)
                             {
                                 Console.Error.WriteLine($"  {candidate.Name} ({candidate.ClassName}) in {candidate.Identity.Collection} [pathId={candidate.Identity.PathId}]");
                             }
                             Console.Error.WriteLine("Rerun with --collection and --path-id.");
                             return 1;
                         default:
-                            Console.Error.WriteLine($"Error: unsupported resolution status '{resolution.Status}'.");
+                            Console.Error.WriteLine($"Error: unsupported resolution status '{templateResolution.Status}'.");
                             return 1;
                     }
                 }
