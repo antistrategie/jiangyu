@@ -20,6 +20,7 @@ public static class InspectPackageCommand
             if (!Directory.Exists(packageDir))
             {
                 Console.Error.WriteLine($"Error: directory not found: {packageDir}");
+                ctx.ExitCode = 1;
                 return;
             }
 
@@ -36,11 +37,13 @@ public static class InspectPackageCommand
                 Console.Error.WriteLine($"  {result.Issues.Count} issue(s):");
                 foreach (var issue in result.Issues)
                     Console.Error.WriteLine($"    - {issue}");
+                ctx.ExitCode = 1;
                 return;
             }
 
             Console.WriteLine();
             Console.WriteLine("  Package OK");
+            ctx.ExitCode = 0;
         });
 
         return command;

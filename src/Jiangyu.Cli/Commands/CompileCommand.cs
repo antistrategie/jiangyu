@@ -18,19 +18,30 @@ public static class CompileCommand
             if (!File.Exists(manifestPath))
             {
                 Console.Error.WriteLine($"Error: {ModManifest.FileName} not found. Run 'jiangyu init' first.");
+                ctx.ExitCode = 1;
                 return;
             }
 
-            var manifest = ModManifest.FromJson(await File.ReadAllTextAsync(manifestPath));
-            var config = GlobalConfig.Load();
-
-            var service = new CompilationService(new ConsoleLogSink(), new ConsoleProgressSink());
-            await service.CompileAsync(new CompilationInput
+            try
             {
-                Manifest = manifest,
-                Config = config,
-                ProjectDirectory = projectDir,
-            });
+                var manifest = ModManifest.FromJson(await File.ReadAllTextAsync(manifestPath));
+                var config = GlobalConfig.Load();
+
+                var service = new CompilationService(new ConsoleLogSink(), new ConsoleProgressSink());
+                await service.CompileAsync(new CompilationInput
+                {
+                    Manifest = manifest,
+                    Config = config,
+                    ProjectDirectory = projectDir,
+                });
+
+                ctx.ExitCode = 0;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Error: compile failed: {ex.Message}");
+                ctx.ExitCode = 1;
+            }
         });
         return command;
     }

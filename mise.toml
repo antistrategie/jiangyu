@@ -1,0 +1,27 @@
+[tasks."build:core"]
+description = "Build Jiangyu.Core"
+run = "dotnet build src/Jiangyu.Core/Jiangyu.Core.csproj"
+
+[tasks."build:cli"]
+description = "Build Jiangyu.Cli"
+run = "dotnet build src/Jiangyu.Cli/Jiangyu.Cli.csproj"
+
+[tasks."build:loader"]
+description = "Build Jiangyu.Loader"
+run = "dotnet build src/Jiangyu.Loader/Jiangyu.Loader.csproj"
+
+[tasks.build]
+description = "Build the full solution"
+run = "dotnet build Jiangyu.slnx"
+
+[tasks.test]
+description = "Run Jiangyu.Core tests"
+run = "dotnet test tests/Jiangyu.Core.Tests/Jiangyu.Core.Tests.csproj"
+
+[tasks.format]
+description = "Verify Roslyn formatting/style on first-party code"
+run = "dotnet format Jiangyu.slnx --verify-no-changes --severity info --no-restore --exclude vendor/AssetRipper"
+
+[tasks."format:fix"]
+description = "Apply Roslyn formatting/style fixes to first-party code"
+run = "dotnet format Jiangyu.slnx --severity info --no-restore --exclude vendor/AssetRipper"

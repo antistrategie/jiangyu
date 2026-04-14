@@ -31,6 +31,7 @@ public static class InspectMeshCommand
             if (!File.Exists(bundlePath))
             {
                 Console.Error.WriteLine($"Error: bundle not found: {bundlePath}");
+                ctx.ExitCode = 1;
                 return;
             }
 
@@ -38,12 +39,14 @@ public static class InspectMeshCommand
             if (gameDataPath is null)
             {
                 Console.Error.WriteLine(error);
+                ctx.ExitCode = 1;
                 return;
             }
 
             if (!Directory.Exists(gameDataPath))
             {
                 Console.Error.WriteLine($"Error: game data directory not found: {gameDataPath}");
+                ctx.ExitCode = 1;
                 return;
             }
 
@@ -63,10 +66,13 @@ public static class InspectMeshCommand
                     PrintMesh("game", mesh);
                 foreach (var mesh in report.BundleMeshes.Take(2))
                     PrintMesh("bundle", mesh);
+
+                ctx.ExitCode = 0;
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Error: inspect-mesh failed: {ex}");
+                ctx.ExitCode = 1;
             }
         });
 

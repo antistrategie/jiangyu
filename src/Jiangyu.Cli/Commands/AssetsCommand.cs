@@ -29,10 +29,12 @@ public static class AssetsCommand
             if (service is null)
             {
                 Console.Error.WriteLine(error);
+                ctx.ExitCode = 1;
                 return;
             }
 
             service.BuildIndex();
+            ctx.ExitCode = 0;
         });
         return command;
     }
@@ -56,6 +58,7 @@ public static class AssetsCommand
             if (service is null)
             {
                 Console.Error.WriteLine(error);
+                ctx.ExitCode = 1;
                 return;
             }
 
@@ -63,6 +66,7 @@ public static class AssetsCommand
             if (results.Count == 0)
             {
                 Console.WriteLine("No matching assets found.");
+                ctx.ExitCode = 0;
                 return;
             }
 
@@ -80,6 +84,8 @@ public static class AssetsCommand
             {
                 Console.WriteLine("  ... (showing first 50 results, refine your query)");
             }
+
+            ctx.ExitCode = 0;
         });
 
         return command;
@@ -109,6 +115,7 @@ public static class AssetsCommand
             if (service is null)
             {
                 Console.Error.WriteLine(error);
+                ctx.ExitCode = 1;
                 return;
             }
 
@@ -117,6 +124,7 @@ public static class AssetsCommand
             {
                 Console.Error.WriteLine($"Error: no GameObject or Mesh named '{assetName}' in the index.");
                 Console.Error.WriteLine("Run 'jiangyu assets search' to find available assets.");
+                ctx.ExitCode = 1;
                 return;
             }
 
@@ -126,6 +134,7 @@ public static class AssetsCommand
 
             var packageDir = outputDir ?? Path.Combine(service.CachePath, "exports", assetName);
             service.ExportModel(assetName, packageDir, clean: !raw, collection: collection, pathId: pathId);
+            ctx.ExitCode = 0;
         });
 
         exportCommand.Add(modelCommand);
@@ -138,6 +147,7 @@ public static class AssetsCommand
         {
             InspectPackageCommand.Create(),
             InspectGlbCommand.Create(),
+            InspectObjectCommand.Create(),
             InspectCommand.Create(),
             InspectMeshCommand.Create()
         };

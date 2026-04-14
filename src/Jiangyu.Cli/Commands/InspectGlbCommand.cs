@@ -29,6 +29,7 @@ public static class InspectGlbCommand
             if (!File.Exists(glbPath))
             {
                 Console.Error.WriteLine($"Error: GLB not found: {glbPath}");
+                ctx.ExitCode = 1;
                 return;
             }
 
@@ -50,10 +51,13 @@ public static class InspectGlbCommand
                 }
                 foreach (var node in report.Nodes.Take(20))
                     Console.WriteLine($"  {node.Path} pos={Format(node.LocalTranslation)} scale={Format(node.LocalScale)} mesh={node.MeshName ?? "-"} skin={node.SkinIndex?.ToString() ?? "-"}");
+
+                ctx.ExitCode = 0;
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Error: inspect-glb failed: {ex}");
+                ctx.ExitCode = 1;
             }
         });
 

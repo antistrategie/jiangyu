@@ -34,6 +34,7 @@ public static class InspectCommand
             if (!File.Exists(bundlePath))
             {
                 Console.Error.WriteLine($"Error: bundle not found: {bundlePath}");
+                ctx.ExitCode = 1;
                 return;
             }
 
@@ -41,12 +42,14 @@ public static class InspectCommand
             if (gameDataPath is null)
             {
                 Console.Error.WriteLine(error);
+                ctx.ExitCode = 1;
                 return;
             }
 
             if (!Directory.Exists(gameDataPath))
             {
                 Console.Error.WriteLine($"Error: game data directory not found: {gameDataPath}");
+                ctx.ExitCode = 1;
                 return;
             }
 
@@ -77,10 +80,13 @@ public static class InspectCommand
                     foreach (var go in file.GameObjects.Take(8))
                         PrintGameObjectSummary(go);
                 }
+
+                ctx.ExitCode = 0;
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Error: inspect failed: {ex}");
+                ctx.ExitCode = 1;
             }
         });
 
