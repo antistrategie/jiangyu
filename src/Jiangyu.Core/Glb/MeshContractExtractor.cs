@@ -93,10 +93,9 @@ public static class MeshContractExtractor
         if (array.IsDummy)
             return [];
 
-        return array.Children
+        return [.. array.Children
             .Where(child => !child.IsDummy)
-            .Select(child => child.AsUInt)
-            .ToArray();
+            .Select(child => child.AsUInt)];
     }
 
     private static float[][] GetBindPoses(AssetTypeValueField field)
@@ -108,7 +107,7 @@ public static class MeshContractExtractor
         if (array.IsDummy)
             return [];
 
-        return array.Children
+        return [.. array.Children
             .Where(child => !child.IsDummy)
             .Select(child => new[]
             {
@@ -116,8 +115,7 @@ public static class MeshContractExtractor
                 child["e10"].AsFloat, child["e11"].AsFloat, child["e12"].AsFloat, child["e13"].AsFloat,
                 child["e20"].AsFloat, child["e21"].AsFloat, child["e22"].AsFloat, child["e23"].AsFloat,
                 child["e30"].AsFloat, child["e31"].AsFloat, child["e32"].AsFloat, child["e33"].AsFloat,
-            })
-            .ToArray();
+            })];
     }
 
     private static IEnumerable<string> EnumerateGameAssetFiles(string gameDataPath)

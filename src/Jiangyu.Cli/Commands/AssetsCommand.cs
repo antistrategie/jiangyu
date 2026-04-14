@@ -9,12 +9,13 @@ public static class AssetsCommand
 {
     public static Command Create()
     {
-        var command = new Command("assets", "Asset pipeline: index, search, export, inspect");
-
-        command.Add(CreateIndexCommand());
-        command.Add(CreateSearchCommand());
-        command.Add(CreateExportCommand());
-        command.Add(CreateInspectCommand());
+        var command = new Command("assets", "Asset pipeline: index, search, export, inspect")
+        {
+            CreateIndexCommand(),
+            CreateSearchCommand(),
+            CreateExportCommand(),
+            CreateInspectCommand()
+        };
 
         return command;
     }
@@ -41,9 +42,11 @@ public static class AssetsCommand
         var queryArg = new Argument<string>("query") { Description = "Search term (matches asset name)" };
         var typeOption = new Option<string?>("--type") { Description = "Filter by class name (e.g. Mesh, GameObject)" };
 
-        var command = new Command("search", "Search the asset index");
-        command.Add(queryArg);
-        command.Add(typeOption);
+        var command = new Command("search", "Search the asset index")
+        {
+            queryArg,
+            typeOption
+        };
         command.SetAction((ctx) =>
         {
             var query = ctx.GetValue(queryArg) ?? "";
@@ -90,10 +93,12 @@ public static class AssetsCommand
         var outputOption = new Option<string?>("--output") { Description = "Output directory" };
         var rawOption = new Option<bool>("--raw") { Description = "Export raw GLB instead of clean glTF" };
 
-        var modelCommand = new Command("model", "Export a game model");
-        modelCommand.Add(nameArg);
-        modelCommand.Add(outputOption);
-        modelCommand.Add(rawOption);
+        var modelCommand = new Command("model", "Export a game model")
+        {
+            nameArg,
+            outputOption,
+            rawOption
+        };
         modelCommand.SetAction((ctx) =>
         {
             var assetName = ctx.GetRequiredValue(nameArg);
@@ -129,12 +134,13 @@ public static class AssetsCommand
 
     private static Command CreateInspectCommand()
     {
-        var command = new Command("inspect", "Inspect and validate assets");
-
-        command.Add(InspectPackageCommand.Create());
-        command.Add(InspectGlbCommand.Create());
-        command.Add(InspectCommand.Create());
-        command.Add(InspectMeshCommand.Create());
+        var command = new Command("inspect", "Inspect and validate assets")
+        {
+            InspectPackageCommand.Create(),
+            InspectGlbCommand.Create(),
+            InspectCommand.Create(),
+            InspectMeshCommand.Create()
+        };
 
         return command;
     }

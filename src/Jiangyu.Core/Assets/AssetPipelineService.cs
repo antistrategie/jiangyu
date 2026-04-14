@@ -29,7 +29,7 @@ using SharpGLTF.Schema2;
 
 namespace Jiangyu.Core.Assets;
 
-public sealed class AssetPipelineService
+public sealed class AssetPipelineService(string gameDataPath, string cachePath, IProgressSink progress, ILogSink log)
 {
     private const string IndexFileName = "asset-index.json";
     private const string ManifestFileName = "index-manifest.json";
@@ -40,19 +40,11 @@ public sealed class AssetPipelineService
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    public string GameDataPath { get; }
-    public string CachePath { get; }
+    public string GameDataPath { get; } = gameDataPath;
+    public string CachePath { get; } = cachePath;
 
-    private readonly IProgressSink _progress;
-    private readonly ILogSink _log;
-
-    public AssetPipelineService(string gameDataPath, string cachePath, IProgressSink progress, ILogSink log)
-    {
-        GameDataPath = gameDataPath;
-        CachePath = cachePath;
-        _progress = progress;
-        _log = log;
-    }
+    private readonly IProgressSink _progress = progress;
+    private readonly ILogSink _log = log;
 
     /// <summary>
     /// Checks whether the index is current by comparing the GameAssembly hash.
@@ -170,12 +162,11 @@ public sealed class AssetPipelineService
             return [];
         }
 
-        return index.Assets
+        return [.. index.Assets
             .Where(a =>
                 (string.IsNullOrEmpty(query) || (a.Name?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
                 && (typeFilter is null || string.Equals(a.ClassName, typeFilter, StringComparison.OrdinalIgnoreCase)))
-            .Take(limit)
-            .ToList();
+            .Take(limit)];
     }
 
     /// <summary>
@@ -428,8 +419,7 @@ public sealed class AssetPipelineService
 
                 foreach (var (propName, texEnv) in material.GetTextureProperties())
                 {
-                    var texture = texEnv.Texture.TryGetAsset(material.Collection) as ITexture2D;
-                    if (texture is null || string.IsNullOrEmpty(texture.Name))
+                    if (texEnv.Texture.TryGetAsset(material.Collection) is not ITexture2D texture || string.IsNullOrEmpty(texture.Name))
                     {
                         continue;
                     }
@@ -472,7 +462,7 @@ public sealed class AssetPipelineService
     /// BuildCleanScene). This method handles non-standard textures (written to disk,
     /// referenced in material extras) and root extras (cleaned flag).
     /// </summary>
-    private void SaveGltfPackage(SceneBuilder scene, List<DiscoveredTexture> textures, string gltfPath)
+    private static void SaveGltfPackage(SceneBuilder scene, List<DiscoveredTexture> textures, string gltfPath)
     {
         var model = scene.ToGltf2();
 
@@ -541,8 +531,8 @@ public sealed class AssetPipelineService
                 materialsBySourceId.TryGetValue(group.Key, out var material))
             {
                 // Merge into existing jiangyu extras (preserving any other fields)
-                var materialExtras = material.Extras as JsonObject ?? new JsonObject();
-                var jiangyuObj = materialExtras["jiangyu"] as JsonObject ?? new JsonObject();
+                var materialExtras = material.Extras as JsonObject ?? [];
+                var jiangyuObj = materialExtras["jiangyu"] as JsonObject ?? [];
                 jiangyuObj["textures"] = nonStandardTextures;
                 materialExtras["jiangyu"] = jiangyuObj;
                 material.Extras = materialExtras;
@@ -570,8 +560,10 @@ public sealed class AssetPipelineService
         };
 
         // Save as .gltf with external satellite images
-        var settings = new WriteSettings();
-        settings.ImageWriting = ResourceWriteMode.SatelliteFile;
+        var settings = new WriteSettings
+        {
+            ImageWriting = ResourceWriteMode.SatelliteFile
+        };
         model.SaveGLTF(gltfPath, settings);
     }
 

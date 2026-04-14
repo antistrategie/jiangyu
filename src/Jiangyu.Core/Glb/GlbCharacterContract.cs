@@ -100,11 +100,11 @@ public static class GlbCharacterContract
                 LocalTranslation = [local.Translation.X, local.Translation.Y, local.Translation.Z],
                 LocalRotation = [local.Rotation.X, local.Rotation.Y, local.Rotation.Z, local.Rotation.W],
                 LocalScale = [local.Scale.X, local.Scale.Y, local.Scale.Z],
-                Children = node.VisualChildren.Select(c => c.Name ?? $"Node_{c.LogicalIndex}").ToList(),
+                Children = [.. node.VisualChildren.Select(c => c.Name ?? $"Node_{c.LogicalIndex}")],
             });
         }
 
-        nodes = nodes.OrderBy(n => n.Path, StringComparer.OrdinalIgnoreCase).ToList();
+        nodes = [.. nodes.OrderBy(n => n.Path, StringComparer.OrdinalIgnoreCase)];
         var canonicalRoot = FindCanonicalRootPath(model);
         var remaps = new List<JointRemapInfo>();
         if (!string.IsNullOrEmpty(canonicalRoot))

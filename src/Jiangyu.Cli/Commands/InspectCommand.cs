@@ -16,11 +16,13 @@ public static class InspectCommand
         var bundleFilterOption = new Option<string?>("--bundle-filter") { Description = "Bundle asset name filter (defaults to --filter value)" };
         var outOption = new Option<string?>("--out") { Description = "Output JSON path" };
 
-        var command = new Command("prefab", "Compare game vs bundle prefab hierarchies (advanced)");
-        command.Add(bundleOption);
-        command.Add(filterOption);
-        command.Add(bundleFilterOption);
-        command.Add(outOption);
+        var command = new Command("prefab", "Compare game vs bundle prefab hierarchies (advanced)")
+        {
+            bundleOption,
+            filterOption,
+            bundleFilterOption,
+            outOption
+        };
 
         command.SetAction((ctx) =>
         {
@@ -51,7 +53,7 @@ public static class InspectCommand
             try
             {
                 var service = new AssetInspectionService();
-                var report = service.InspectBundles(bundlePath, gameDataPath, gameFilter, bundleFilter);
+                var report = AssetInspectionService.InspectBundles(bundlePath, gameDataPath, gameFilter, bundleFilter);
 
                 Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
                 File.WriteAllText(outputPath, JsonSerializer.Serialize(report, PrettyJsonOptions));

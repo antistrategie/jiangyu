@@ -9,8 +9,10 @@ public static class InspectPackageCommand
     {
         var dirArg = new Argument<string>("directory") { Description = "Model package directory to validate" };
 
-        var command = new Command("package", "Validate an exported model package (.gltf + textures)");
-        command.Add(dirArg);
+        var command = new Command("package", "Validate an exported model package (.gltf + textures)")
+        {
+            dirArg
+        };
         command.SetAction((ctx) =>
         {
             var packageDir = ctx.GetRequiredValue(dirArg);

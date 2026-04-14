@@ -37,16 +37,10 @@ public sealed class CompilationResult
 /// Decides between the GLB mesh pipeline and the FBX/Unity pipeline,
 /// invokes the appropriate compiler, and copies outputs.
 /// </summary>
-public sealed class CompilationService
+public sealed class CompilationService(ILogSink log, IProgressSink progress)
 {
-    private readonly ILogSink _log;
-    private readonly IProgressSink _progress;
-
-    public CompilationService(ILogSink log, IProgressSink progress)
-    {
-        _log = log;
-        _progress = progress;
-    }
+    private readonly ILogSink _log = log;
+    private readonly IProgressSink _progress = progress;
 
     public async Task<CompilationResult> CompileAsync(CompilationInput input)
     {
@@ -219,10 +213,9 @@ public sealed class CompilationService
         if (!Directory.Exists(directory))
             return [];
 
-        return patterns
+        return [.. patterns
             .SelectMany(p => Directory.GetFiles(directory, p, SearchOption.AllDirectories))
-            .OrderBy(f => f)
-            .ToArray();
+            .OrderBy(f => f)];
     }
 
     private async Task SetupUnityProject(string unityProjectDir, IEnumerable<string> modelFiles)

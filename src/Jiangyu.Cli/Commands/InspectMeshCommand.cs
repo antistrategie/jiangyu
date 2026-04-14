@@ -15,10 +15,12 @@ public static class InspectMeshCommand
         var meshOption = new Option<string>("--mesh") { Description = "Mesh name to inspect", Required = true };
         var outOption = new Option<string?>("--out") { Description = "Output JSON path" };
 
-        var command = new Command("mesh", "Inspect serialised mesh contract fields (advanced)");
-        command.Add(bundleOption);
-        command.Add(meshOption);
-        command.Add(outOption);
+        var command = new Command("mesh", "Inspect serialised mesh contract fields (advanced)")
+        {
+            bundleOption,
+            meshOption,
+            outOption
+        };
 
         command.SetAction((ctx) =>
         {
@@ -48,7 +50,7 @@ public static class InspectMeshCommand
             try
             {
                 var service = new MeshInspectionService();
-                var report = service.Inspect(bundlePath, gameDataPath, meshName);
+                var report = MeshInspectionService.Inspect(bundlePath, gameDataPath, meshName);
 
                 Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
                 File.WriteAllText(outputPath, JsonSerializer.Serialize(report, PrettyJsonOptions));

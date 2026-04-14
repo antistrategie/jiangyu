@@ -14,10 +14,12 @@ public static class InspectGlbCommand
         var filterOption = new Option<string?>("--filter") { Description = "Filter nodes by name" };
         var outOption = new Option<string?>("--out") { Description = "Output JSON path" };
 
-        var command = new Command("glb", "Inspect raw GLB/glTF node hierarchy and skins");
-        command.Add(glbOption);
-        command.Add(filterOption);
-        command.Add(outOption);
+        var command = new Command("glb", "Inspect raw GLB/glTF node hierarchy and skins")
+        {
+            glbOption,
+            filterOption,
+            outOption
+        };
         command.SetAction((ctx) =>
         {
             var glbPath = Path.GetFullPath(ctx.GetRequiredValue(glbOption));

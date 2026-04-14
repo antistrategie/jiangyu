@@ -10,7 +10,7 @@ public sealed class MeshInspectionService
     /// <summary>
     /// Inspects all mesh assets matching the given name across a bundle and the game's asset files.
     /// </summary>
-    public MeshInspectionReport Inspect(string bundlePath, string gameDataPath, string meshName)
+    public static MeshInspectionReport Inspect(string bundlePath, string gameDataPath, string meshName)
     {
         var am = new AssetsManager
         {

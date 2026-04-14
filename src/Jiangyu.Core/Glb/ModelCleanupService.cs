@@ -94,7 +94,7 @@ internal static class ModelCleanupService
             // by looking for any small-scale node whose name relates to the mesh.
             // For static meshes: trace the actual parent chain.
             float meshScale = sourceNode.Skin is not null
-                ? FindSkinnedMeshContainerScale(source, sourceNode, log)
+                ? FindSkinnedMeshContainerScale(sourceNode, log)
                 : FindAncestorContainerScale(sourceNode);
             var meshBuilder = RebuildMesh(sourceNode.Mesh, meshScale, meshName, materialTextures);
 
@@ -151,7 +151,7 @@ internal static class ModelCleanupService
     /// skin's SkinnedMeshRenderer by looking for nodes in the hierarchy that reference
     /// the same skin index, then trace THAT node's parent chain for the container scale.
     /// </summary>
-    private static float FindSkinnedMeshContainerScale(ModelRoot model, Node meshNode, ILogSink? log)
+    private static float FindSkinnedMeshContainerScale(Node meshNode, ILogSink? log)
     {
         if (meshNode.Skin is null || meshNode.Skin.JointsCount == 0)
         {
@@ -352,7 +352,7 @@ internal static class ModelCleanupService
         return RebuildStaticMesh(sourceMesh, vertexScale, meshName, materialTextures);
     }
 
-    private static IMeshBuilder<MaterialBuilder> RebuildSkinnedMesh(
+    private static MeshBuilder<VertexPositionNormal, VertexTexture1, VertexJoints4> RebuildSkinnedMesh(
         Mesh sourceMesh, float vertexScale, string meshName,
         IReadOnlyDictionary<string, List<(string channelKey, byte[] pngData)>>? materialTextures)
     {
@@ -398,7 +398,7 @@ internal static class ModelCleanupService
         return meshBuilder;
     }
 
-    private static IMeshBuilder<MaterialBuilder> RebuildStaticMesh(
+    private static MeshBuilder<VertexPositionNormal, VertexTexture1, VertexEmpty> RebuildStaticMesh(
         Mesh sourceMesh, float vertexScale, string meshName,
         IReadOnlyDictionary<string, List<(string channelKey, byte[] pngData)>>? materialTextures)
     {

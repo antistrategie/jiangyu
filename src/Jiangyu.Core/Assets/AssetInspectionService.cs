@@ -18,7 +18,7 @@ public sealed class AssetInspectionService
     /// Inspects a bundle file and game data directory, returning a structured report
     /// of all matching GameObjects and their components.
     /// </summary>
-    public InspectionReport InspectBundles(
+    public static InspectionReport InspectBundles(
         string bundlePath,
         string gameDataPath,
         string gameFilter = "basic_soldier",

@@ -7,14 +7,9 @@ namespace Jiangyu.Core.Abstractions;
 /// Bridges IProgressSink to AssetRipper's ILogger interface.
 /// Parses "(N/Total) Exporting 'name'" progress messages from AssetRipper.
 /// </summary>
-public sealed partial class AssetRipperProgressAdapter : ILogger
+public sealed partial class AssetRipperProgressAdapter(IProgressSink sink) : ILogger
 {
-    private readonly IProgressSink _sink;
-
-    public AssetRipperProgressAdapter(IProgressSink sink)
-    {
-        _sink = sink;
-    }
+    private readonly IProgressSink _sink = sink;
 
     public void Log(LogType type, LogCategory category, string message)
     {

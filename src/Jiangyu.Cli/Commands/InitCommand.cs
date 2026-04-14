@@ -5,6 +5,8 @@ namespace Jiangyu.Cli.Commands;
 
 public static class InitCommand
 {
+    private static readonly string[] stringArray = ["models", "textures", "audio", "templates", "compiled"];
+
     public static Command Create()
     {
         var command = new Command("init", "Scaffold a new mod project");
@@ -22,7 +24,7 @@ public static class InitCommand
             var dirName = Path.GetFileName(projectDir) ?? "MyMod";
             var manifest = ModManifest.CreateDefault(dirName);
 
-            foreach (var dir in new[] { "models", "textures", "audio", "templates", "compiled" })
+            foreach (var dir in stringArray)
                 Directory.CreateDirectory(Path.Combine(projectDir, dir));
 
             await File.WriteAllTextAsync(manifestPath, manifest.ToJson());
