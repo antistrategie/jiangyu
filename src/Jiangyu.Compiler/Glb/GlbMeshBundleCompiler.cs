@@ -184,9 +184,10 @@ internal static class GlbMeshBundleCompiler
         {
             var model = ModelRoot.Load(group.Key);
             var companionSkinData = TryLoadCompanionSkinData(group.Key);
+            var isCleaned = IsCleanedExport(group.Key);
             var extractedCandidates = model.LogicalNodes
                 .Where(node => node.Mesh != null)
-                .Select(node => ExtractMeshCandidate(node, model, companionSkinData))
+                .Select(node => ExtractMeshCandidate(node, model, companionSkinData, isCleaned))
                 .Where(candidate => candidate != null)
                 .Cast<ExtractedMeshCandidate>()
                 .ToList();
@@ -218,13 +219,13 @@ internal static class GlbMeshBundleCompiler
         return extracted;
     }
 
-    private static ExtractedMeshCandidate? ExtractMeshCandidate(Node node, ModelRoot model, CompanionSkinData? companionSkinData)
+    private static ExtractedMeshCandidate? ExtractMeshCandidate(Node node, ModelRoot model, CompanionSkinData? companionSkinData, bool isCleaned)
     {
         var mesh = node.Mesh;
         if (mesh == null)
             return null;
 
-        var compiled = ExtractMesh(mesh, model, node, companionSkinData);
+        var compiled = ExtractMesh(mesh, model, node, companionSkinData, isCleaned);
         if (compiled == null)
             return null;
 
@@ -273,7 +274,7 @@ internal static class GlbMeshBundleCompiler
         };
     }
 
-    private static CompiledMesh? ExtractMesh(SharpGLTF.Schema2.Mesh mesh, ModelRoot model, Node meshNode, CompanionSkinData? companionSkinData)
+    private static CompiledMesh? ExtractMesh(SharpGLTF.Schema2.Mesh mesh, ModelRoot model, Node meshNode, CompanionSkinData? companionSkinData, bool isCleaned = false)
     {
         var allVertices = new List<float>();
         var allNormals = new List<float>();
@@ -337,11 +338,20 @@ internal static class GlbMeshBundleCompiler
                     transformed *= implicitSkinScale;
                 if (bakeMeshOnlyWeightScale)
                     transformed *= meshOnlyWeightScale;
-                if (skin != null || (companionSkinData is not null && companionSkinData.BoneNames.Length > 0))
+
+                // Raw full-prefab GLBs have cm-scale vertices — just mirror X.
+                // Cleaned exports and mesh-only GLBs have metre-scale — apply 100x.
+                bool isSkinnedPath = skin != null || (companionSkinData is not null && companionSkinData.BoneNames.Length > 0);
+                bool skipCharacterScale = !isCleaned && meshNode.Skin != null;
+
+                if (isSkinnedPath && skipCharacterScale)
                 {
-                    // MENACE character meshes live in a centimeter-scale local space
-                    // under a 0.01-scaled SkinnedMeshRenderer child. The raw GLB data
-                    // is meter-scale and mirrored relative to that mesh space.
+                    allVertices.Add(-transformed.X);
+                    allVertices.Add(transformed.Y);
+                    allVertices.Add(transformed.Z);
+                }
+                else if (isSkinnedPath)
+                {
                     allVertices.Add(-transformed.X * MenaceCharacterSpaceScale);
                     allVertices.Add(transformed.Y * MenaceCharacterSpaceScale);
                     allVertices.Add(transformed.Z * MenaceCharacterSpaceScale);
@@ -572,6 +582,13 @@ internal static class GlbMeshBundleCompiler
         var result = new Dictionary<string, CompiledTexture>(StringComparer.Ordinal);
         foreach (var sourceFilePath in entries.Select(entry => entry.SourceFilePath).Distinct(StringComparer.OrdinalIgnoreCase))
         {
+            // Prefer explicit texture list from package manifest
+            if (TryExtractTexturesFromManifest(sourceFilePath, result))
+            {
+                continue;
+            }
+
+            // Fallback: prefix-based discovery for old-style layouts
             var prefix = InferTexturePrefix(sourceFilePath);
             if (string.IsNullOrWhiteSpace(prefix))
                 continue;
@@ -594,8 +611,88 @@ internal static class GlbMeshBundleCompiler
         return [.. result.Values.OrderBy(texture => texture.Name, StringComparer.Ordinal)];
     }
 
+    private static bool TryExtractTexturesFromManifest(string sourceFilePath, Dictionary<string, CompiledTexture> result)
+    {
+        var sourceDir = Path.GetDirectoryName(sourceFilePath);
+        if (sourceDir is null)
+        {
+            return false;
+        }
+
+        var manifestPath = Path.Combine(sourceDir, "jiangyu.export.json");
+        if (!File.Exists(manifestPath))
+        {
+            return false;
+        }
+
+        ExportManifestRef? manifest;
+        try
+        {
+            manifest = JsonSerializer.Deserialize<ExportManifestRef>(File.ReadAllText(manifestPath));
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (manifest?.Textures is null || manifest.Textures.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var entry in manifest.Textures)
+        {
+            if (string.IsNullOrEmpty(entry.Name) || string.IsNullOrEmpty(entry.Path))
+            {
+                continue;
+            }
+
+            // Paths in manifest are relative to the package directory
+            var texturePath = Path.Combine(sourceDir, entry.Path);
+            if (!File.Exists(texturePath))
+            {
+                continue;
+            }
+
+            if (result.ContainsKey(entry.Name))
+            {
+                continue;
+            }
+
+            result[entry.Name] = new CompiledTexture
+            {
+                Name = entry.Name,
+                Content = File.ReadAllBytes(texturePath),
+                Linear = IsLinearTextureName(entry.Name),
+            };
+        }
+
+        return true;
+    }
+
     private static string? InferTexturePrefix(string sourceFilePath)
     {
+        // Prefer explicit prefix from package manifest (written by 'assets export model')
+        var sourceDir = Path.GetDirectoryName(sourceFilePath);
+        var manifestPath = sourceDir is not null ? Path.Combine(sourceDir, "jiangyu.export.json") : null;
+        if (manifestPath is not null && File.Exists(manifestPath))
+        {
+            try
+            {
+                var manifest = JsonSerializer.Deserialize<ExportManifestRef>(
+                    File.ReadAllText(manifestPath));
+                if (!string.IsNullOrWhiteSpace(manifest?.TexturePrefix))
+                {
+                    return manifest.TexturePrefix;
+                }
+            }
+            catch
+            {
+                // Fall through to filename heuristic
+            }
+        }
+
+        // Fallback: infer from filename
         var sourceFileName = Path.GetFileNameWithoutExtension(sourceFilePath);
         if (string.IsNullOrWhiteSpace(sourceFileName))
             return null;
@@ -607,28 +704,80 @@ internal static class GlbMeshBundleCompiler
         return sourceFileName;
     }
 
+    private sealed class ExportManifestRef
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("texturePrefix")]
+        public string? TexturePrefix { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("cleaned")]
+        public bool Cleaned { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("textures")]
+        public List<ExportManifestTextureRef>? Textures { get; set; }
+    }
+
+    private sealed class ExportManifestTextureRef
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("name")]
+        public string? Name { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("path")]
+        public string? Path { get; set; }
+    }
+
+    private static bool IsCleanedExport(string sourceFilePath)
+    {
+        var sourceDir = Path.GetDirectoryName(sourceFilePath);
+        var manifestPath = sourceDir is not null ? Path.Combine(sourceDir, "jiangyu.export.json") : null;
+        if (manifestPath is null || !File.Exists(manifestPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var manifest = JsonSerializer.Deserialize<ExportManifestRef>(File.ReadAllText(manifestPath));
+            return manifest?.Cleaned ?? false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static IEnumerable<string> EnumerateSidecarTexturePaths(string sourceFilePath, string texturePrefix)
     {
         var sourceDir = Path.GetDirectoryName(sourceFilePath);
         if (string.IsNullOrEmpty(sourceDir))
             yield break;
 
-        var assetsDir = Directory.GetParent(sourceDir)?.FullName;
-        if (string.IsNullOrEmpty(assetsDir))
-            yield break;
-
-        var textureDir = Path.Combine(assetsDir, "Texture2D");
-        if (!Directory.Exists(textureDir))
-            yield break;
-
-        foreach (var texturePath in Directory.EnumerateFiles(textureDir, $"{texturePrefix}*.*", SearchOption.TopDirectoryOnly)
-                     .Where(path =>
-                         path.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
-                         path.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
-                         path.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase))
-                     .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+        // Search these directories for matching textures:
+        // 1. textures/ alongside the source file (from assets export model)
+        // 2. Texture2D/ in the parent directory (old AssetRipper extraction layout)
+        var candidateDirs = new List<string>
         {
-            yield return texturePath;
+            Path.Combine(sourceDir, "textures"),
+        };
+        var assetsDir = Directory.GetParent(sourceDir)?.FullName;
+        if (!string.IsNullOrEmpty(assetsDir))
+        {
+            candidateDirs.Add(Path.Combine(assetsDir, "Texture2D"));
+        }
+
+        foreach (var textureDir in candidateDirs)
+        {
+            if (!Directory.Exists(textureDir))
+                continue;
+
+            foreach (var texturePath in Directory.EnumerateFiles(textureDir, $"{texturePrefix}*.*", SearchOption.TopDirectoryOnly)
+                         .Where(path =>
+                             path.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+                             path.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                             path.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase))
+                         .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+            {
+                yield return texturePath;
+            }
         }
     }
 

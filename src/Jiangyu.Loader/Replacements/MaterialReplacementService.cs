@@ -65,15 +65,16 @@ internal sealed class MaterialReplacementService
             return false;
 
         var currentTextureName = GetTextureName(material, propertyName);
-        var replacementTextureName = ResolveReplacementTextureName(texturePrefix, currentTextureName, propertyName);
-        if (string.IsNullOrEmpty(replacementTextureName))
-            return false;
+        foreach (var replacementTextureName in ResolveReplacementTextureNames(texturePrefix, currentTextureName, propertyName))
+        {
+            if (_replacementTextures.TryGetValue(replacementTextureName, out var replacementTexture))
+            {
+                material.SetTexture(propertyName, replacementTexture);
+                return true;
+            }
+        }
 
-        if (!_replacementTextures.TryGetValue(replacementTextureName, out var replacementTexture))
-            return false;
-
-        material.SetTexture(propertyName, replacementTexture);
-        return true;
+        return false;
     }
 
     private static string GetTextureName(Material material, string propertyName)
@@ -84,7 +85,7 @@ internal sealed class MaterialReplacementService
         return material.GetTexture(propertyName)?.name ?? string.Empty;
     }
 
-    private static string ResolveReplacementTextureName(string texturePrefix, string currentTextureName, string propertyName)
+    private static IEnumerable<string> ResolveReplacementTextureNames(string texturePrefix, string currentTextureName, string propertyName)
     {
         var mapSuffix = propertyName switch
         {
@@ -96,7 +97,7 @@ internal sealed class MaterialReplacementService
         };
 
         if (mapSuffix == null)
-            return null;
+            yield break;
 
         if (!string.IsNullOrWhiteSpace(currentTextureName))
         {
@@ -108,10 +109,11 @@ internal sealed class MaterialReplacementService
             if (variantMatch.Success)
             {
                 var variantSuffix = variantMatch.Groups[2].Success ? variantMatch.Groups[2].Value : string.Empty;
-                return $"{texturePrefix}{variantSuffix}_{mapSuffix}";
+                if (!string.IsNullOrEmpty(variantSuffix))
+                    yield return $"{texturePrefix}{variantSuffix}_{mapSuffix}";
             }
         }
 
-        return $"{texturePrefix}_{mapSuffix}";
+        yield return $"{texturePrefix}_{mapSuffix}";
     }
 }

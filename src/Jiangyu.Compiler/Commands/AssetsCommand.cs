@@ -17,6 +17,7 @@ public static class AssetsCommand
         {
             "index" => await IndexAsync(args[1..]),
             "search" => await SearchAsync(args[1..]),
+            "export" => await ExportAsync(args[1..]),
             _ => PrintUsage(),
         };
     }
@@ -103,6 +104,69 @@ public static class AssetsCommand
         return 0;
     }
 
+    private static async Task<int> ExportAsync(string[] args)
+    {
+        if (args.Length == 0 || args[0] != "model" || args.Length < 2)
+        {
+            Console.Error.WriteLine("Usage: jiangyu assets export model <name> [--output <dir>]");
+            Console.Error.WriteLine();
+            Console.Error.WriteLine("Exports a game asset as a self-contained model package:");
+            Console.Error.WriteLine("  <dir>/model.glb              The model");
+            Console.Error.WriteLine("  <dir>/jiangyu.export.json    Package manifest (texture prefix, paths)");
+            Console.Error.WriteLine("  <dir>/textures/*.png         Referenced textures");
+            return 1;
+        }
+
+        string assetName = args[1];
+        bool raw = args.Contains("--raw");
+
+        var (service, error) = CreateService();
+        if (service is null)
+        {
+            Console.Error.WriteLine(error);
+            return 1;
+        }
+
+        // Resolve asset identity from index (collection + pathId)
+        string? collection = null;
+        long? pathId = null;
+        var index = service.LoadIndex();
+        if (index?.Assets is not null)
+        {
+            var match = index.Assets.FirstOrDefault(a =>
+                string.Equals(a.Name, assetName, StringComparison.OrdinalIgnoreCase)
+                && a.ClassName is "GameObject" or "Mesh");
+            if (match is null)
+            {
+                Console.Error.WriteLine($"Error: no GameObject or Mesh named '{assetName}' in the index.");
+                Console.Error.WriteLine("Run 'jiangyu assets search' to find available assets.");
+                return 1;
+            }
+            collection = match.Collection;
+            pathId = match.PathId;
+            Console.WriteLine($"Found in index: {match.Name} ({match.ClassName}) in {match.Collection} [pathId={match.PathId}]");
+        }
+        else
+        {
+            Console.WriteLine("Warning: no index found. Run 'jiangyu assets index' first for faster lookups.");
+        }
+
+        // Parse optional --output, default to cache/exports/<name>/
+        string? packageDir = null;
+        for (int i = 2; i < args.Length; i++)
+        {
+            if (args[i] == "--output" && i + 1 < args.Length)
+            {
+                packageDir = args[++i];
+            }
+        }
+
+        packageDir ??= Path.Combine(service.CachePath, "exports", assetName);
+
+        service.ExportModel(assetName, packageDir, clean: !raw, collection: collection, pathId: pathId);
+        return 0;
+    }
+
     private static (ExtractionService? service, string? error) CreateService()
     {
         var globalConfig = GlobalConfig.Load();
@@ -121,7 +185,7 @@ public static class AssetsCommand
             return (null, $"Error: could not find game data directory in: {gamePath}\nExpected a directory ending in _Data (e.g. Menace_Data)");
         }
 
-        var cachePath = globalConfig.GetExtractedAssetsPath();
+        var cachePath = globalConfig.GetCachePath();
         return (new ExtractionService(gameDataPath, cachePath), null);
     }
 
@@ -161,6 +225,7 @@ public static class AssetsCommand
         Console.Error.WriteLine("Commands:");
         Console.Error.WriteLine("  index      Build searchable asset index from game data");
         Console.Error.WriteLine("  search     Search the asset index");
+        Console.Error.WriteLine("  export     Export game assets as authoring-ready model packages");
         return 1;
     }
 }

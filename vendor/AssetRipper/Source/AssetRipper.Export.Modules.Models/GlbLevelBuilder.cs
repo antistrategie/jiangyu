@@ -50,8 +50,16 @@ public static class GlbLevelBuilder
 			if (!exportedAssets.Contains(asset) && asset is IGameObject or IComponent)
 			{
 				IGameObject root = GetRoot(asset);
+				ITransform rootTransform = root.GetTransform();
 
-				AddGameObjectToScene(sceneBuilder, parameters, null, Transformation.Identity, Transformation.Identity, root.GetTransform());
+				// Pass 1: Build all nodes and register in BoneNodeCache.
+				// This ensures canonical skeleton nodes (Root/Hips/...) exist
+				// before any SMR tries to resolve joints.
+				BuildNodeHierarchy(sceneBuilder, parameters, null, Transformation.Identity, Transformation.Identity, rootTransform);
+
+				// Pass 2: Attach meshes/skins to the already-built nodes.
+				// SMRs resolve joints from BoneNodeCache, reusing canonical nodes.
+				AttachMeshes(sceneBuilder, parameters, Transformation.Identity, Transformation.Identity, rootTransform);
 
 				foreach (IEditorExtension exportedAsset in root.FetchHierarchy())
 				{
@@ -63,7 +71,47 @@ public static class GlbLevelBuilder
 		return sceneBuilder;
 	}
 
-	private static void AddGameObjectToScene(SceneBuilder sceneBuilder, BuildParameters parameters, NodeBuilder? parentNode, Transformation parentGlobalTransform, Transformation parentGlobalInverseTransform, ITransform transform)
+	/// <summary>
+	/// Pass 1: Build the full node hierarchy without attaching any meshes.
+	/// Registers every node in BoneNodeCache keyed by ITransform so that
+	/// skinned mesh export can resolve joints to canonical shared nodes
+	/// (e.g. Root/Hips) instead of creating per-LOD duplicates.
+	/// </summary>
+	private static void BuildNodeHierarchy(SceneBuilder sceneBuilder, BuildParameters parameters, NodeBuilder? parentNode, Transformation parentGlobalTransform, Transformation parentGlobalInverseTransform, ITransform transform)
+	{
+		IGameObject? gameObject = transform.GameObject_C4P;
+		if (gameObject is null)
+		{
+			return;
+		}
+
+		Transformation localTransform = transform.ToTransformation();
+		Transformation localInverseTransform = transform.ToInverseTransformation();
+
+		NodeBuilder node = parentNode is null ? new NodeBuilder(gameObject.Name) : parentNode.CreateNode(gameObject.Name);
+		if (parentNode is not null || parameters.IsScene)
+		{
+			node.LocalTransform = new SharpGLTF.Transforms.AffineTransform(
+				SnapScale(transform.LocalScale_C4.CastToStruct()),
+				GlbCoordinateConversion.ToGltfQuaternionConvert(transform.LocalRotation_C4),
+				GlbCoordinateConversion.ToGltfVector3Convert(transform.LocalPosition_C4));
+		}
+		sceneBuilder.AddNode(node);
+
+		// Register in bone cache so SMRs can resolve joints to these canonical nodes
+		parameters.BoneNodeCache[transform] = node;
+
+		foreach (ITransform childTransform in transform.Children_C4P.WhereNotNull())
+		{
+			BuildNodeHierarchy(sceneBuilder, parameters, node, localTransform * parentGlobalTransform, parentGlobalInverseTransform * localInverseTransform, childTransform);
+		}
+	}
+
+	/// <summary>
+	/// Pass 2: Walk the hierarchy again, attaching meshes to already-built nodes.
+	/// Skinned meshes resolve joints from BoneNodeCache (populated by pass 1).
+	/// </summary>
+	private static void AttachMeshes(SceneBuilder sceneBuilder, BuildParameters parameters, Transformation parentGlobalTransform, Transformation parentGlobalInverseTransform, ITransform transform)
 	{
 		IGameObject? gameObject = transform.GameObject_C4P;
 		if (gameObject is null)
@@ -76,15 +124,10 @@ public static class GlbLevelBuilder
 		Transformation globalTransform = localTransform * parentGlobalTransform;
 		Transformation globalInverseTransform = parentGlobalInverseTransform * localInverseTransform;
 
-		NodeBuilder node = parentNode is null ? new NodeBuilder(gameObject.Name) : parentNode.CreateNode(gameObject.Name);
-		if (parentNode is not null || parameters.IsScene)
+		if (!parameters.BoneNodeCache.TryGetValue(transform, out NodeBuilder? node))
 		{
-			node.LocalTransform = new SharpGLTF.Transforms.AffineTransform(
-				transform.LocalScale_C4.CastToStruct(),//Scaling is the same in both coordinate systems
-				GlbCoordinateConversion.ToGltfQuaternionConvert(transform.LocalRotation_C4),
-				GlbCoordinateConversion.ToGltfVector3Convert(transform.LocalPosition_C4));
+			return;
 		}
-		sceneBuilder.AddNode(node);
 
 		// Handle SkinnedMeshRenderer (bones, skinned meshes) first
 		if (gameObject.TryGetComponent(out ISkinnedMeshRenderer? skinnedRenderer))
@@ -92,6 +135,13 @@ public static class GlbLevelBuilder
 			IMesh? skinnedMesh = skinnedRenderer.MeshP;
 			if (skinnedMesh is not null && skinnedMesh.IsSet() && parameters.TryGetOrMakeMeshData(skinnedMesh, out MeshData skinnedMeshData))
 			{
+				// Rename container node if it collides with the mesh name
+				// so the mesh keeps the clean name in Blender's namespace
+				if (node.Name == skinnedMesh.Name)
+				{
+					node.Name = $"{node.Name}_container";
+				}
+
 				AddSkinnedMeshToScene(sceneBuilder, parameters, node, skinnedMesh, skinnedMeshData, skinnedRenderer, globalTransform, globalInverseTransform);
 			}
 		}
@@ -117,7 +167,7 @@ public static class GlbLevelBuilder
 
 		foreach (ITransform childTransform in transform.Children_C4P.WhereNotNull())
 		{
-			AddGameObjectToScene(sceneBuilder, parameters, node, localTransform * parentGlobalTransform, parentGlobalInverseTransform * localInverseTransform, childTransform);
+			AttachMeshes(sceneBuilder, parameters, localTransform * parentGlobalTransform, parentGlobalInverseTransform * localInverseTransform, childTransform);
 		}
 	}
 
@@ -131,7 +181,7 @@ public static class GlbLevelBuilder
 			subMeshArray[i] = (subMeshes[i], materialBuilder);
 		}
 		ArraySegment<(ISubMesh, MaterialBuilder)> arraySegment = new ArraySegment<(ISubMesh, MaterialBuilder)>(subMeshArray, 0, subMeshes.Count);
-		IMeshBuilder<MaterialBuilder> subMeshBuilder = GlbSubMeshBuilder.BuildSubMeshes(arraySegment, mesh.Is16BitIndices(), meshData, Transformation.Identity, Transformation.Identity);
+		IMeshBuilder<MaterialBuilder> subMeshBuilder = GlbSubMeshBuilder.BuildSubMeshes(arraySegment, mesh.Is16BitIndices(), meshData, Transformation.Identity, Transformation.Identity, mesh.Name);
 		sceneBuilder.AddRigidMesh(subMeshBuilder, node);
 		ArrayPool<(ISubMesh, MaterialBuilder)>.Shared.Return(subMeshArray);
 	}
@@ -147,7 +197,7 @@ public static class GlbLevelBuilder
 			subMeshArray[i] = (subMesh, materialBuilder);
 		}
 		ArraySegment<(ISubMesh, MaterialBuilder)> arraySegment = new ArraySegment<(ISubMesh, MaterialBuilder)>(subMeshArray, 0, subsetIndices.Length);
-		IMeshBuilder<MaterialBuilder> subMeshBuilder = GlbSubMeshBuilder.BuildSubMeshes(arraySegment, mesh.Is16BitIndices(), meshData, globalInverseTransform, globalTransform);
+		IMeshBuilder<MaterialBuilder> subMeshBuilder = GlbSubMeshBuilder.BuildSubMeshes(arraySegment, mesh.Is16BitIndices(), meshData, globalInverseTransform, globalTransform, mesh.Name);
 		sceneBuilder.AddRigidMesh(subMeshBuilder, node);
 		ArrayPool<(ISubMesh, MaterialBuilder)>.Shared.Return(subMeshArray);
 	}
@@ -167,89 +217,27 @@ public static class GlbLevelBuilder
 			var bones = skinnedRenderer.BonesP;
 			if (bones.Count == 0)
 			{
-				// No bones — fall back to dynamic mesh
 				AddDynamicMeshToScene(sceneBuilder, parameters, node, mesh, meshData, new MaterialList(skinnedRenderer));
 				return;
 			}
 
-			// Map each bone transform to its index
-			Dictionary<ITransform, int> transformToIndex = new();
-			ITransform?[] boneTransforms = new ITransform?[bones.Count];
+			// Resolve joint nodes from BoneNodeCache (populated by BuildNodeHierarchy pass 1).
+			// All bone transforms should already be canonical hierarchy nodes — no per-SMR
+			// skeleton duplication. Primary key is ITransform identity.
+			NodeBuilder[] jointNodes = new NodeBuilder[bones.Count];
 			for (int i = 0; i < bones.Count; i++)
 			{
 				ITransform? bone = bones[i];
-				if (bone is not null)
+				if (bone is not null && parameters.BoneNodeCache.TryGetValue(bone, out NodeBuilder? boneNode))
 				{
-					transformToIndex[bone] = i;
-					boneTransforms[i] = bone;
+					jointNodes[i] = boneNode;
 				}
 			}
 
-			// Build parent-child relationships and find roots
-			Dictionary<int, List<int>> childrenMap = new();
-			List<int> rootBoneIndices = new();
-			for (int i = 0; i < boneTransforms.Length; i++)
+			// Fill any unresolved slots with placeholders
+			for (int i = 0; i < jointNodes.Length; i++)
 			{
-				ITransform? bone = boneTransforms[i];
-				if (bone is null)
-				{
-					continue;
-				}
-
-				ITransform? parent = bone.Father_C4P;
-				if (parent is not null && transformToIndex.TryGetValue(parent, out int parentIndex))
-				{
-					if (!childrenMap.TryGetValue(parentIndex, out List<int>? children))
-					{
-						children = new List<int>();
-						childrenMap[parentIndex] = children;
-					}
-					children.Add(i);
-				}
-				else
-				{
-					rootBoneIndices.Add(i);
-				}
-			}
-
-			// Build the skeleton node hierarchy
-			NodeBuilder skeletonRoot = node.CreateNode($"{mesh.Name}_Skeleton");
-			NodeBuilder[] jointNodes = new NodeBuilder[bones.Count];
-			Dictionary<string, NodeBuilder> bonePathToNode = new();
-
-			NodeBuilder BuildBoneNode(int boneIndex, NodeBuilder parent)
-			{
-				ITransform bone = boneTransforms[boneIndex]!;
-				string boneName = bone.GameObject_C4P?.Name ?? $"Bone_{boneIndex}";
-				NodeBuilder boneNode = parent.CreateNode(boneName);
-
-				boneNode.LocalTransform = new SharpGLTF.Transforms.AffineTransform(
-					bone.LocalScale_C4.CastToStruct(),
-					GlbCoordinateConversion.ToGltfQuaternionConvert(bone.LocalRotation_C4),
-					GlbCoordinateConversion.ToGltfVector3Convert(bone.LocalPosition_C4));
-
-				jointNodes[boneIndex] = boneNode;
-
-				IGameObject? rootGo = skinnedRenderer.GameObject_C2P?.GetRoot();
-				string path = GetTransformPath(bone, rootGo);
-				bonePathToNode[path] = boneNode;
-				// Also store by just bone name for fallback matching
-				bonePathToNode[boneName] = boneNode;
-
-				if (childrenMap.TryGetValue(boneIndex, out List<int>? children))
-				{
-					foreach (int childIndex in children)
-					{
-						BuildBoneNode(childIndex, boneNode);
-					}
-				}
-
-				return boneNode;
-			}
-
-			foreach (int rootIndex in rootBoneIndices)
-			{
-				BuildBoneNode(rootIndex, skeletonRoot);
+				jointNodes[i] ??= node.CreateNode($"UnusedBone_{i}");
 			}
 
 			// Build the mesh
@@ -262,29 +250,29 @@ public static class GlbLevelBuilder
 				subMeshArray[i] = (subMeshes[i], materialBuilder);
 			}
 			ArraySegment<(ISubMesh, MaterialBuilder)> arraySegment = new(subMeshArray, 0, subMeshes.Count);
-			IMeshBuilder<MaterialBuilder> meshBuilder = GlbSubMeshBuilder.BuildSubMeshes(arraySegment, mesh.Is16BitIndices(), meshData, Transformation.Identity, Transformation.Identity);
+			IMeshBuilder<MaterialBuilder> meshBuilder = GlbSubMeshBuilder.BuildSubMeshes(arraySegment, mesh.Is16BitIndices(), meshData, Transformation.Identity, Transformation.Identity, mesh.Name);
 			ArrayPool<(ISubMesh, MaterialBuilder)>.Shared.Return(subMeshArray);
 
-			// Ensure all joint slots are filled (null bones get a placeholder)
-			for (int i = 0; i < jointNodes.Length; i++)
-			{
-				jointNodes[i] ??= skeletonRoot.CreateNode($"UnusedBone_{i}");
-			}
-
 			sceneBuilder.AddSkinnedMesh(meshBuilder, System.Numerics.Matrix4x4.Identity, jointNodes);
-
-			// Try exporting animations
-			IGameObject? gameObject = skinnedRenderer.GameObject_C2P;
-			if (gameObject is not null)
-			{
-				TryExportAnimations(gameObject, bonePathToNode);
-			}
 		}
 		catch (Exception ex)
 		{
 			Logger.Warning(LogCategory.Export, $"Failed to export skinned mesh '{mesh.Name}', falling back to rigid: {ex.Message}");
 			AddDynamicMeshToScene(sceneBuilder, parameters, node, mesh, meshData, new MaterialList(skinnedRenderer));
 		}
+	}
+
+	/// <summary>
+	/// Snaps near-1.0 scale components to exactly 1.0 to eliminate floating point noise
+	/// from matrix decomposition (e.g. 0.9999997 → 1.0).
+	/// </summary>
+	private static System.Numerics.Vector3 SnapScale(System.Numerics.Vector3 scale)
+	{
+		const float tolerance = 1e-5f;
+		return new System.Numerics.Vector3(
+			MathF.Abs(scale.X - 1f) < tolerance ? 1f : scale.X,
+			MathF.Abs(scale.Y - 1f) < tolerance ? 1f : scale.Y,
+			MathF.Abs(scale.Z - 1f) < tolerance ? 1f : scale.Z);
 	}
 
 	private static string GetTransformPath(ITransform transform, IGameObject? root)
@@ -493,9 +481,10 @@ public static class GlbLevelBuilder
 		Dictionary<ITexture2D, MemoryImage> ImageCache,
 		Dictionary<IMaterial, MaterialBuilder> MaterialCache,
 		Dictionary<IMesh, MeshData> MeshCache,
+		Dictionary<ITransform, NodeBuilder> BoneNodeCache,
 		bool IsScene)
 	{
-		public BuildParameters(bool isScene) : this(new MaterialBuilder("DefaultMaterial"), new(), new(), new(), isScene) { }
+		public BuildParameters(bool isScene) : this(new MaterialBuilder("DefaultMaterial"), new(), new(), new(), new(), isScene) { }
 		public bool TryGetOrMakeMeshData(IMesh mesh, out MeshData meshData)
 		{
 			if (MeshCache.TryGetValue(mesh, out meshData))

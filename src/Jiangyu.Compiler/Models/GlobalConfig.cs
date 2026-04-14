@@ -18,8 +18,14 @@ public sealed class GlobalConfig
     [JsonPropertyName("unityEditor")]
     public string? UnityEditor { get; set; }
 
-    [JsonPropertyName("extractedAssets")]
-    public string? ExtractedAssets { get; set; }
+    /// <summary>
+    /// Asset pipeline cache root. Contains:
+    ///   asset-index.json     — searchable asset catalogue (from 'assets index')
+    ///   index-manifest.json  — cache validity metadata
+    ///   exports/             — raw exported assets (from 'assets export')
+    /// </summary>
+    [JsonPropertyName("cache")]
+    public string? Cache { get; set; }
 
     public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
 
@@ -39,20 +45,20 @@ public sealed class GlobalConfig
     public static string ConfigPath => Path.Combine(ConfigDir, "config.json");
 
     /// <summary>
-    /// Default extracted assets cache. Respects XDG_DATA_HOME on Linux, uses %LOCALAPPDATA% on Windows.
+    /// Default cache directory. Respects XDG_DATA_HOME on Linux, uses %LOCALAPPDATA% on Windows.
     /// </summary>
-    public static string DefaultExtractedAssetsDir =>
+    public static string DefaultCacheDir =>
         Path.Combine(
             Environment.GetEnvironmentVariable("XDG_DATA_HOME")
                 ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "jiangyu",
-            "extracted");
+            "cache");
 
     /// <summary>
-    /// Resolves the extracted assets path: explicit config, or XDG default.
+    /// Resolves the cache path: explicit config, or platform default.
     /// </summary>
-    public string GetExtractedAssetsPath() =>
-        ExtractedAssets ?? DefaultExtractedAssetsDir;
+    public string GetCachePath() =>
+        Cache ?? DefaultCacheDir;
 
     /// <summary>
     /// Loads global config from disk. Returns default config if file doesn't exist.

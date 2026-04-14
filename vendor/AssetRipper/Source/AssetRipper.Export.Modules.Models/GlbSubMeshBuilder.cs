@@ -13,9 +13,9 @@ namespace AssetRipper.Export.Modules.Models;
 
 internal static class GlbSubMeshBuilder
 {
-	public static IMeshBuilder<MaterialBuilder> BuildSubMeshes(ArraySegment<ValueTuple<ISubMesh, MaterialBuilder>> subMeshes, bool is16BitIndices, MeshData meshData, Transformation transform, Transformation inverseTransform)
+	public static IMeshBuilder<MaterialBuilder> BuildSubMeshes(ArraySegment<ValueTuple<ISubMesh, MaterialBuilder>> subMeshes, bool is16BitIndices, MeshData meshData, Transformation transform, Transformation inverseTransform, string? meshName = null)
 	{
-		BuildSubMeshParameters parameters = new BuildSubMeshParameters(subMeshes, is16BitIndices, meshData, transform, inverseTransform);
+		BuildSubMeshParameters parameters = new BuildSubMeshParameters(subMeshes, is16BitIndices, meshData, transform, inverseTransform, meshName);
 		switch (meshData.GetMeshType())
 		{
 			case GlbMeshType.Position | GlbMeshType.Empty | GlbMeshType.Empty:
@@ -136,6 +136,10 @@ internal static class GlbSubMeshBuilder
 		Transformation tangentTransform = positionTransform.RemoveTranslation();
 		Transformation normalTransform = parameters.InverseTransform.Transpose();
 		MeshBuilder<TvG, TvM, TvS> meshBuilder = VertexBuilder<TvG, TvM, TvS>.CreateCompatibleMesh();
+		if (parameters.MeshName is not null)
+		{
+			meshBuilder.Name = parameters.MeshName;
+		}
 
 		for (int i = 0; i < parameters.SubMeshes.Count; i++)
 		{
@@ -400,7 +404,8 @@ internal static class GlbSubMeshBuilder
 		bool Is16BitIndices,
 		MeshData MeshData,
 		Transformation Transform,
-		Transformation InverseTransform)
+		Transformation InverseTransform,
+		string? MeshName)
 	{
 	}
 }
