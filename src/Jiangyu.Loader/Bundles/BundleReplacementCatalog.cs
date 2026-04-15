@@ -10,6 +10,9 @@ internal sealed class BundleReplacementCatalog
     private static readonly Vector3 HiddenTemplateInstancePosition = new(0f, -10000f, 0f);
 
     private readonly List<UnityEngine.Object> _pinned;
+    private readonly Dictionary<string, string> _meshOwners = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _prefabOwners = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _textureOwners = new(StringComparer.Ordinal);
 
     public Dictionary<string, ReplacementMesh> Meshes { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, ReplacementPrefab> Prefabs { get; } = new(StringComparer.Ordinal);
@@ -20,21 +23,37 @@ internal sealed class BundleReplacementCatalog
         _pinned = pinned;
     }
 
-    public int LoadBundles(string modsDir, MelonLogger.Instance log)
+    public BundleLoadSummary LoadBundles(string modsDir, MelonLogger.Instance log)
     {
         var bundleCount = 0;
+        var loadableModCount = 0;
 
         if (!Directory.Exists(modsDir))
-            return 0;
+            return new BundleLoadSummary(0, 0, 0);
 
-        foreach (var manifest in Directory.GetFiles(modsDir, "jiangyu.json", SearchOption.AllDirectories))
+        var plan = ModLoadPlanBuilder.Build(modsDir);
+        foreach (var blockedMod in plan.BlockedMods)
         {
-            var modDir = Path.GetDirectoryName(manifest);
-            foreach (var bundlePath in Directory.GetFiles(modDir, "*.bundle"))
+            log.Error($"Skipping mod '{blockedMod.DisplayName}' [{blockedMod.RelativeDirectoryPath}]: {blockedMod.Reason}");
+        }
+
+        foreach (var mod in plan.LoadableMods)
+        {
+            loadableModCount++;
+            LogIgnoredConstraints(mod, log);
+
+            if (mod.BundlePaths.Count == 0)
+            {
+                log.Msg($"Mod '{mod.Name}' [{mod.RelativeDirectoryPath}] has no bundle files; treated as present for dependency checks.");
+                continue;
+            }
+
+            log.Msg($"Loading mod '{mod.Name}' from [{mod.RelativeDirectoryPath}]");
+            foreach (var bundlePath in mod.BundlePaths)
             {
                 try
                 {
-                    LoadBundle(bundlePath, log);
+                    LoadBundle(mod, bundlePath, log);
                     bundleCount++;
                 }
                 catch (Exception ex)
@@ -44,14 +63,27 @@ internal sealed class BundleReplacementCatalog
             }
         }
 
-        return bundleCount;
+        return new BundleLoadSummary(loadableModCount, plan.BlockedMods.Count, bundleCount);
     }
 
-    private void LoadBundle(string bundlePath, MelonLogger.Instance log)
+    private static void LogIgnoredConstraints(DiscoveredMod mod, MelonLogger.Instance log)
     {
+        foreach (var dependency in mod.Dependencies)
+        {
+            if (string.IsNullOrWhiteSpace(dependency.Constraint))
+                continue;
+
+            log.Warning(
+                $"Mod '{mod.Name}' dependency '{dependency.Raw}' includes a version constraint that is not enforced yet; required presence only.");
+        }
+    }
+
+    private void LoadBundle(DiscoveredMod mod, string bundlePath, MelonLogger.Instance log)
+    {
+        var ownerLabel = $"{mod.Name}/{Path.GetFileName(bundlePath)}";
         log.Msg($"Loading bundle: {Path.GetFileName(bundlePath)}");
 
-        var manifestPath = Path.Combine(Path.GetDirectoryName(bundlePath), "jiangyu.json");
+        var manifestPath = mod.ManifestPath;
         var meshMappings = LoadMeshMappings(manifestPath, log);
         var meshMetadata = LoadCompiledMeshMetadata(manifestPath, log);
 
@@ -89,14 +121,14 @@ internal sealed class BundleReplacementCatalog
             var assetPtr = BundleLoader.LoadAsset(bundle, assetName, goTypePtr);
             if (assetPtr != IntPtr.Zero)
             {
-                RegisterPrefabAsset(assetName, assetPtr, bundleToGame, meshMetadata, log);
+                RegisterPrefabAsset(ownerLabel, assetName, assetPtr, bundleToGame, meshMetadata, log);
                 continue;
             }
 
             var texturePtr = BundleLoader.LoadAsset(bundle, assetName, textureTypePtr);
             if (texturePtr != IntPtr.Zero)
             {
-                RegisterTextureAsset(texturePtr, log);
+                RegisterTextureAsset(ownerLabel, texturePtr, log);
                 continue;
             }
 
@@ -105,11 +137,12 @@ internal sealed class BundleReplacementCatalog
 
             var meshPtr = BundleLoader.LoadAsset(bundle, assetName, meshTypePtr);
             if (meshPtr != IntPtr.Zero)
-                RegisterMeshAsset(meshPtr, bundleToGame, meshMetadata, log);
+                RegisterMeshAsset(ownerLabel, meshPtr, bundleToGame, meshMetadata, log);
         }
     }
 
     private void RegisterPrefabAsset(
+        string ownerLabel,
         string assetName,
         IntPtr assetPtr,
         Dictionary<string, string> bundleToGame,
@@ -151,7 +184,11 @@ internal sealed class BundleReplacementCatalog
                 if (meshMetadata != null && meshMetadata.TryGetValue(bundleMeshName, out var prefabMetadata))
                     materialBindings = prefabMetadata.MaterialBindings ?? Array.Empty<CompiledMaterialBindingRecord>();
 
-                Meshes[targetName] = new ReplacementMesh(mesh, GetBoneNames(smr.bones), materialBindings);
+                RegisterMeshOverride(
+                    targetName,
+                    new ReplacementMesh(mesh, GetBoneNames(smr.bones), materialBindings),
+                    ownerLabel,
+                    log);
                 mappedTargetNames.Add(targetName);
                 log.Msg($"  Registered: {bundleMeshName} -> {targetName} ({smr.bones.Length} bones, materialBindings={materialBindings.Length})");
             }
@@ -161,7 +198,11 @@ internal sealed class BundleReplacementCatalog
 
             var prefabBoneNames = CollectPrefabBoneNames(instance);
             foreach (var targetName in mappedTargetNames)
-                Prefabs[targetName] = new ReplacementPrefab(instance, prefab.name, prefabBoneNames);
+                RegisterPrefabOverride(
+                    targetName,
+                    new ReplacementPrefab(instance, prefab.name, prefabBoneNames),
+                    ownerLabel,
+                    log);
 
             instance.transform.position = HiddenTemplateInstancePosition;
             instance.SetActive(false);
@@ -176,18 +217,19 @@ internal sealed class BundleReplacementCatalog
         }
     }
 
-    private void RegisterTextureAsset(IntPtr texturePtr, MelonLogger.Instance log)
+    private void RegisterTextureAsset(string ownerLabel, IntPtr texturePtr, MelonLogger.Instance log)
     {
         var loadedTexture = new Texture2D(texturePtr)
         {
             hideFlags = HideFlags.DontUnloadUnusedAsset,
         };
-        ReplacementTextures[loadedTexture.name] = loadedTexture;
+        RegisterTextureOverride(loadedTexture.name, loadedTexture, ownerLabel, log);
         _pinned.Add(loadedTexture);
         log.Msg($"  Registered texture asset: {loadedTexture.name} ({loadedTexture.width}x{loadedTexture.height})");
     }
 
     private void RegisterMeshAsset(
+        string ownerLabel,
         IntPtr meshPtr,
         Dictionary<string, string> bundleToGame,
         Dictionary<string, CompiledMeshMetadataRecord> meshMetadata,
@@ -204,8 +246,39 @@ internal sealed class BundleReplacementCatalog
         if (targetMeshName == null)
             return;
 
-        Meshes[targetMeshName] = new ReplacementMesh(loadedMesh, metadataForMesh.BoneNames, metadataForMesh.MaterialBindings ?? Array.Empty<CompiledMaterialBindingRecord>());
+        RegisterMeshOverride(
+            targetMeshName,
+            new ReplacementMesh(loadedMesh, metadataForMesh.BoneNames, metadataForMesh.MaterialBindings ?? Array.Empty<CompiledMaterialBindingRecord>()),
+            ownerLabel,
+            log);
         log.Msg($"  Registered mesh asset: {loadedMesh.name} -> {targetMeshName} ({metadataForMesh.BoneNames.Length} bones, materialBindings={metadataForMesh.MaterialBindings?.Length ?? 0})");
+    }
+
+    private void RegisterMeshOverride(string targetName, ReplacementMesh mesh, string ownerLabel, MelonLogger.Instance log)
+    {
+        if (_meshOwners.TryGetValue(targetName, out var previousOwner))
+            log.Warning($"  Override mesh target '{targetName}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
+
+        Meshes[targetName] = mesh;
+        _meshOwners[targetName] = ownerLabel;
+    }
+
+    private void RegisterPrefabOverride(string targetName, ReplacementPrefab prefab, string ownerLabel, MelonLogger.Instance log)
+    {
+        if (_prefabOwners.TryGetValue(targetName, out var previousOwner))
+            log.Warning($"  Override prefab target '{targetName}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
+
+        Prefabs[targetName] = prefab;
+        _prefabOwners[targetName] = ownerLabel;
+    }
+
+    private void RegisterTextureOverride(string textureName, Texture2D texture, string ownerLabel, MelonLogger.Instance log)
+    {
+        if (_textureOwners.TryGetValue(textureName, out var previousOwner))
+            log.Warning($"  Override texture '{textureName}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
+
+        ReplacementTextures[textureName] = texture;
+        _textureOwners[textureName] = ownerLabel;
     }
 
     private static string ResolveTargetMeshName(string bundleMeshName, Dictionary<string, string> bundleToGame)
@@ -411,3 +484,5 @@ internal sealed class BundleReplacementCatalog
             : Path.GetFileNameWithoutExtension(sourceRef);
     }
 }
+
+internal readonly record struct BundleLoadSummary(int LoadableModCount, int BlockedModCount, int LoadedBundleCount);

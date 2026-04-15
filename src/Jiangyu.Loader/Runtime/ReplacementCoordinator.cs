@@ -24,7 +24,7 @@ public class ReplacementCoordinator
         _drivenReplacements = new DrivenPrefabReplacementManager(_pinned);
     }
 
-    public int LoadBundles(string modsDir, MelonLogger.Instance log)
+    public BundleLoadSummary LoadBundles(string modsDir, MelonLogger.Instance log)
         => _catalog.LoadBundles(modsDir, log);
 
     public void ApplyReplacements(MelonLogger.Instance log)

@@ -27,9 +27,10 @@ public class JiangyuMod : MelonMod
         LoggerInstance.Msg("Jiangyu loader initialising...");
 
         var modsDir = Path.Combine(MelonEnvironment.MelonBaseDirectory, "Mods");
-        var bundleCount = _replacementCoordinator.LoadBundles(modsDir, LoggerInstance);
+        var loadSummary = _replacementCoordinator.LoadBundles(modsDir, LoggerInstance);
 
-        LoggerInstance.Msg($"Loaded {bundleCount} bundle(s).");
+        LoggerInstance.Msg(
+            $"Resolved {loadSummary.LoadableModCount} loadable mod(s), skipped {loadSummary.BlockedModCount} blocked mod(s), loaded {loadSummary.LoadedBundleCount} bundle(s).");
     }
 
     public override void OnSceneWasLoaded(int buildIndex, string sceneName)

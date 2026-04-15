@@ -73,6 +73,8 @@ public static class GlbMeshBundleCompiler
         public required float[][] BindPoses { get; init; }
     }
 
+    // Jiangyu-owned binary format markers for mesh/texture staging data written to disk
+    // before the Unity build step. These are not discovered MENACE contract values.
     private const uint Magic = 0x4D455348; // "MESH"
     private const uint TextureMagic = 0x54585452; // "TXTR"
 

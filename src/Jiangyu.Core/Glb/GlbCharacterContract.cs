@@ -161,6 +161,10 @@ public static class GlbCharacterContract
         foreach (var node in model.LogicalNodes)
         {
             var path = BuildNodePath(node);
+            // JIANGYU-CONTRACT: current MENACE character authoring path assumes a canonical
+            // skeleton root named "Root" with a direct "Hips" child. This is acceptable for
+            // the proven character replacement workflow, but it is not a general skeleton rule
+            // for all future prefab/model work and should be re-validated when broadening scope.
             if (!path.EndsWith("/Root", StringComparison.Ordinal))
                 continue;
 
@@ -192,6 +196,9 @@ public static class GlbCharacterContract
     private static string? GetPathSuffixFromHips(string path)
     {
         var marker = "/Hips";
+        // JIANGYU-CONTRACT: joint remap suffixes are currently normalized from the first
+        // "Hips" segment because that matches the proven MENACE character rigs Jiangyu was
+        // validated against. Keep this scoped to character-rig handling until generalized.
         var index = path.IndexOf(marker, StringComparison.Ordinal);
         if (index < 0)
             return null;
