@@ -30,6 +30,12 @@ public sealed class TemplateTypeEntry
 
     [JsonPropertyName("count")]
     public required int Count { get; init; }
+
+    [JsonPropertyName("classifiedVia")]
+    public required string ClassifiedVia { get; init; }
+
+    [JsonPropertyName("templateAncestor")]
+    public string? TemplateAncestor { get; init; }
 }
 
 public sealed class TemplateIdentity

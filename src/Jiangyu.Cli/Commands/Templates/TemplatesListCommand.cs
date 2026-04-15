@@ -61,7 +61,10 @@ public static class TemplatesListCommand
 
         foreach (TemplateTypeEntry entry in index.TemplateTypes)
         {
-            Console.WriteLine($"{entry.ClassName.PadRight(width)}  {entry.Count}");
+            string suffix = entry.TemplateAncestor is not null
+                ? $"  (via {entry.TemplateAncestor})"
+                : "";
+            Console.WriteLine($"{entry.ClassName.PadRight(width)}  {entry.Count}{suffix}");
         }
     }
 

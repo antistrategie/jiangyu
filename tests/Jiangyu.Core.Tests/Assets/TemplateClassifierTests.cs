@@ -15,12 +15,22 @@ public class TemplateClassifierTests
     }
 
     [Fact]
-    public void GetMetadata_ReturnsVersionedRuleDescription()
+    public void IsTemplateLike_RejectsNonTemplateSuffixes()
+    {
+        Assert.False(TemplateClassifier.IsTemplateLike("ApplySkillTileEffect"));
+        Assert.False(TemplateClassifier.IsTemplateLike("Attack"));
+        Assert.False(TemplateClassifier.IsTemplateLike("TileEffectGroup"));
+        Assert.False(TemplateClassifier.IsTemplateLike("HDAdditionalLightData"));
+    }
+
+    [Fact]
+    public void GetMetadata_ReturnsV3RuleDescription()
     {
         var metadata = TemplateClassifier.GetMetadata();
 
-        Assert.Equal("v2", metadata.RuleVersion);
+        Assert.Equal("v3", metadata.RuleVersion);
         Assert.Contains("MonoBehaviour", metadata.RuleDescription);
         Assert.Contains("m_Script", metadata.RuleDescription);
+        Assert.Contains("inheritance", metadata.RuleDescription);
     }
 }

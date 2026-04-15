@@ -48,7 +48,7 @@ public sealed class TemplateIndexServiceTests : IDisposable
             Classification = TemplateClassifier.GetMetadata(),
             TemplateTypes =
             [
-                new TemplateTypeEntry { ClassName = "EntityTemplate", Count = 1 },
+                new TemplateTypeEntry { ClassName = "EntityTemplate", Count = 1, ClassifiedVia = "suffix" },
             ],
             Instances =
             [

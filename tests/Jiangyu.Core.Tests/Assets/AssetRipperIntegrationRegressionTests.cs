@@ -58,13 +58,15 @@ public sealed class AssetRipperIntegrationRegressionTests
         helper.Name = "debug.helper";
         helper.ScriptP = helperScript;
 
-        var index = TemplateIndexService.BuildTemplateIndex([collection]);
+        var index = TemplateIndexService.BuildTemplateIndex([collection], assemblyManager: null);
 
         TemplateTypeEntry templateType = Assert.Single(index.TemplateTypes);
         TemplateInstanceEntry instance = Assert.Single(index.Instances);
 
         Assert.Equal("WeaponTemplate", templateType.ClassName);
         Assert.Equal(1, templateType.Count);
+        Assert.Equal("suffix", templateType.ClassifiedVia);
+        Assert.Null(templateType.TemplateAncestor);
         Assert.Equal("weapon.template", instance.Name);
         Assert.Equal("WeaponTemplate", instance.ClassName);
         Assert.Equal("resources.assets", instance.Identity.Collection);

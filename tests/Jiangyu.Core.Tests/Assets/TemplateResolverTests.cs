@@ -13,7 +13,7 @@ public class TemplateResolverTests
             Classification = TemplateClassifier.GetMetadata(),
             TemplateTypes =
             [
-                new TemplateTypeEntry { ClassName = "WeaponTemplate", Count = 3 },
+                new TemplateTypeEntry { ClassName = "WeaponTemplate", Count = 3, ClassifiedVia = "suffix" },
             ],
             Instances =
             [

@@ -6,11 +6,13 @@ using AssetRipper.Assets.Collections;
 using AssetRipper.Import.Configuration;
 using AssetRipper.Import.Logging;
 using AssetRipper.Import.Structure;
+using AssetRipper.Import.Structure.Assembly.Managers;
 using AssetRipper.IO.Files;
 using AssetRipper.Processing;
 using AssetRipper.Processing.AnimatorControllers;
 using AssetRipper.Processing.Prefabs;
 using AssetRipper.Processing.Scenes;
+using AssetRipper.SourceGenerated.Classes.ClassID_114;
 using AssetRipper.SourceGenerated.Extensions;
 using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Models;
@@ -111,7 +113,7 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
             _progress.Finish();
 
             _progress.SetPhase("Building template index");
-            index = BuildTemplateIndex(gameData.GameBundle.FetchAssetCollections());
+            index = BuildTemplateIndex(gameData.GameBundle.FetchAssetCollections(), gameData.AssemblyManager);
             _progress.Finish();
         }
         finally
@@ -164,30 +166,53 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
         return JsonSerializer.Deserialize<TemplateIndexManifest>(File.ReadAllText(manifestPath), JsonOptions);
     }
 
-    internal static TemplateIndex BuildTemplateIndex(IEnumerable<AssetCollection> collections)
+    internal static TemplateIndex BuildTemplateIndex(IEnumerable<AssetCollection> collections, IAssemblyManager? assemblyManager)
     {
         var instances = new List<TemplateInstanceEntry>();
+
+        // Track classification method per concrete class name so we can aggregate to TemplateTypeEntry.
+        var classificationByType = new Dictionary<string, (string ClassifiedVia, string? Ancestor)>(StringComparer.OrdinalIgnoreCase);
 
         foreach (AssetCollection collection in collections)
         {
             string collectionName = collection.Name;
             foreach (IUnityObjectBase asset in collection)
             {
-                if (!TemplateClassifier.TryGetTemplateClassName(asset, out string? templateClassName))
+                // Fast path: suffix match.
+                if (TemplateClassifier.TryGetTemplateClassName(asset, out string? templateClassName))
                 {
+                    instances.Add(new TemplateInstanceEntry
+                    {
+                        Name = asset.GetBestName(),
+                        ClassName = templateClassName!,
+                        Identity = new TemplateIdentity
+                        {
+                            Collection = collectionName,
+                            PathId = asset.PathID,
+                        },
+                    });
+                    classificationByType.TryAdd(templateClassName!, ("suffix", null));
                     continue;
                 }
 
-                instances.Add(new TemplateInstanceEntry
+                // Inheritance fallback: walk managed type hierarchy for a Template-named ancestor.
+                if (assemblyManager is not null
+                    && asset is IMonoBehaviour monoBehaviour
+                    && TemplateClassifier.TryGetInheritedTemplateClassName(
+                        monoBehaviour, assemblyManager, out string? inheritedClassName, out string? ancestorClassName))
                 {
-                    Name = asset.GetBestName(),
-                    ClassName = templateClassName!,
-                    Identity = new TemplateIdentity
+                    instances.Add(new TemplateInstanceEntry
                     {
-                        Collection = collectionName,
-                        PathId = asset.PathID,
-                    },
-                });
+                        Name = asset.GetBestName(),
+                        ClassName = inheritedClassName!,
+                        Identity = new TemplateIdentity
+                        {
+                            Collection = collectionName,
+                            PathId = asset.PathID,
+                        },
+                    });
+                    classificationByType.TryAdd(inheritedClassName!, ("inheritance", ancestorClassName));
+                }
             }
         }
 
@@ -199,10 +224,19 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
 
         var templateTypes = instances
             .GroupBy(instance => instance.ClassName, StringComparer.OrdinalIgnoreCase)
-            .Select(group => new TemplateTypeEntry
+            .Select(group =>
             {
-                ClassName = group.Key,
-                Count = group.Count(),
+                var (classifiedVia, ancestor) = classificationByType.TryGetValue(group.Key, out var info)
+                    ? info
+                    : ("suffix", (string?)null);
+
+                return new TemplateTypeEntry
+                {
+                    ClassName = group.Key,
+                    Count = group.Count(),
+                    ClassifiedVia = classifiedVia,
+                    TemplateAncestor = ancestor,
+                };
             })
             .OrderBy(entry => entry.ClassName, StringComparer.OrdinalIgnoreCase)
             .ToList();
