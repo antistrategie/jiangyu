@@ -103,6 +103,75 @@ public class ModelReplacementAliasTests
 
         Assert.False(success);
     }
+
+    [Fact]
+    public void BuildTextureReplacementRelativePath_UsesTargetNameAndPathId()
+    {
+        var path = CompilationService.BuildTextureReplacementRelativePath("local_forces_basic_soldier_BaseMap", 1234);
+
+        Assert.Equal(
+            "assets/replacements/textures/local_forces_basic_soldier_BaseMap--1234.png",
+            path);
+    }
+
+    [Fact]
+    public void BuildAudioReplacementRelativePath_UsesTargetNameAndPathId()
+    {
+        var path = CompilationService.BuildAudioReplacementRelativePath("sfx_rifle_fire", 4321);
+
+        Assert.Equal(
+            "assets/replacements/audio/sfx_rifle_fire--4321.wav",
+            path);
+    }
+
+    [Fact]
+    public void BuildSpriteReplacementRelativePath_UsesTargetNameAndPathId()
+    {
+        var path = CompilationService.BuildSpriteReplacementRelativePath("MenaceFontIcons_0", 9876);
+
+        Assert.Equal(
+            "assets/replacements/sprites/MenaceFontIcons_0--9876.png",
+            path);
+    }
+}
+
+public class LodNamingTests
+{
+    [Fact]
+    public void TryParseLodName_ExtractsBaseNameAndIndex()
+    {
+        var success = CompilationService.TryParseLodName("local_forces_basic_soldier_LOD3", out var baseName, out var lodIndex);
+
+        Assert.True(success);
+        Assert.Equal("local_forces_basic_soldier", baseName);
+        Assert.Equal(3, lodIndex);
+    }
+
+    [Fact]
+    public void BuildIncompleteLodWarnings_WarnsForPartialFamily()
+    {
+        var warnings = CompilationService.BuildIncompleteLodWarnings(
+            "el.local_forces_basic_soldier--519",
+            ["local_forces_basic_soldier_LOD0", "local_forces_basic_soldier_LOD1", "local_forces_basic_soldier_LOD2", "local_forces_basic_soldier_LOD3"],
+            ["local_forces_basic_soldier_LOD2"]);
+
+        var warning = Assert.Single(warnings);
+        Assert.Contains("partial of LOD family 'local_forces_basic_soldier'", warning);
+        Assert.Contains("provided local_forces_basic_soldier_LOD2", warning);
+        Assert.Contains("missing local_forces_basic_soldier_LOD0, local_forces_basic_soldier_LOD1, local_forces_basic_soldier_LOD3", warning);
+        Assert.Contains("nearest available replacement", warning);
+    }
+
+    [Fact]
+    public void BuildIncompleteLodWarnings_DoesNotWarnWhenFamilyIsComplete()
+    {
+        var warnings = CompilationService.BuildIncompleteLodWarnings(
+            "el.local_forces_basic_soldier--519",
+            ["local_forces_basic_soldier_LOD0", "local_forces_basic_soldier_LOD1"],
+            ["local_forces_basic_soldier_LOD0", "local_forces_basic_soldier_LOD1"]);
+
+        Assert.Empty(warnings);
+    }
 }
 
 public class IsGlbPathTests

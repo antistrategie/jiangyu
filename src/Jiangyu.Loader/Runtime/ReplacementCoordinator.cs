@@ -1,12 +1,13 @@
 using Il2CppInterop.Runtime;
 using MelonLoader;
 using UnityEngine;
+using UnityEngine.UI;
 using Jiangyu.Loader.Bundles;
 using Jiangyu.Loader.Replacements;
 
 namespace Jiangyu.Loader.Runtime;
 
-public class ReplacementCoordinator
+internal class ReplacementCoordinator
 {
     private readonly List<UnityEngine.Object> _pinned = new();
     private readonly BundleReplacementCatalog _catalog;
@@ -29,10 +30,14 @@ public class ReplacementCoordinator
 
     public void ApplyReplacements(MelonLogger.Instance log)
     {
-        if (_catalog.Meshes.Count == 0 && _catalog.Prefabs.Count == 0)
+        if (_catalog.Meshes.Count == 0 &&
+            _catalog.Prefabs.Count == 0 &&
+            _catalog.ReplacementTextures.Count == 0 &&
+            _catalog.ReplacementSprites.Count == 0 &&
+            _catalog.ReplacementAudioClips.Count == 0)
             return;
 
-        var replaced = 0;
+        var visualReplacements = 0;
         var skinnedRenderers = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<SkinnedMeshRenderer>(), true);
 
         foreach (var obj in skinnedRenderers)
@@ -59,37 +64,224 @@ public class ReplacementCoordinator
                     !_drivenReplacements.HasReplacementFor(entityRoot) &&
                     _drivenReplacements.TryCreate(log, entityRoot, smr, prefabReplacement))
                 {
-                    replaced++;
+                    visualReplacements++;
                 }
 
                 continue;
             }
 
-            if (_catalog.Meshes.TryGetValue(smr.sharedMesh.name, out var meshReplacement) &&
-                _directReplacements.Apply(log, smr, meshReplacement))
+            if (TryGetReplacementMesh(smr.sharedMesh.name, out var resolvedMeshName, out var meshReplacement))
             {
-                replaced++;
+                if (!string.Equals(resolvedMeshName, smr.sharedMesh.name, StringComparison.Ordinal))
+                {
+                    log.Msg($"  LOD fallback: {smr.sharedMesh.name} -> {resolvedMeshName}");
+                }
+
+                if (_directReplacements.Apply(log, smr, meshReplacement))
+                {
+                    visualReplacements++;
+                }
+
+                continue;
+            }
+
+            if (_materialReplacements.HasReplacementTextures &&
+                smr.sharedMaterials != null &&
+                smr.sharedMaterials.Length > 0 &&
+                _materialReplacements.HasDirectTextureReplacementTargets(smr.sharedMaterials))
+            {
+                // JIANGYU-CONTRACT: Direct texture replacement currently resolves live targets by the
+                // existing Material texture object's name on known texture properties. This is valid for
+                // the current proven Texture2D replacement path when the target texture name is unique at
+                // runtime. Compile-time convention-first replacement must reject ambiguous Texture2D
+                // targets until Jiangyu has a stronger live texture identity.
+                smr.sharedMaterials = _materialReplacements.GetOrCreateDirectTextureReplacementMaterials(smr.sharedMaterials);
+                visualReplacements++;
             }
         }
 
-        if (replaced > 0)
-            log.Msg($"Applied {replaced} mesh replacement(s).");
+        if (_catalog.ReplacementTextures.Count > 0)
+        {
+            var renderers = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<Renderer>(), true);
+            foreach (var obj in renderers)
+            {
+                var renderer = obj.Cast<Renderer>();
+                if (renderer is SkinnedMeshRenderer || !IsLiveSceneObject(renderer?.gameObject))
+                    continue;
+
+                if (renderer.sharedMaterials == null ||
+                    renderer.sharedMaterials.Length == 0 ||
+                    !_materialReplacements.HasDirectTextureReplacementTargets(renderer.sharedMaterials))
+                {
+                    continue;
+                }
+
+                renderer.sharedMaterials = _materialReplacements.GetOrCreateDirectTextureReplacementMaterials(renderer.sharedMaterials);
+                visualReplacements++;
+            }
+        }
+
+        var spriteReplacements = 0;
+        if (_catalog.ReplacementSprites.Count > 0)
+        {
+            var spriteRenderers = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<SpriteRenderer>(), true);
+            foreach (var obj in spriteRenderers)
+            {
+                var spriteRenderer = obj.Cast<SpriteRenderer>();
+                if (!IsLiveSceneObject(spriteRenderer?.gameObject))
+                    continue;
+
+                var sprite = spriteRenderer.sprite;
+                if (sprite == null || !_catalog.ReplacementSprites.TryGetValue(sprite.name, out var replacementSprite))
+                    continue;
+
+                // JIANGYU-CONTRACT: Direct sprite replacement currently resolves live targets by
+                // SpriteRenderer.sprite.name. This is valid for the current proven Sprite replacement
+                // path when the target sprite name is unique at runtime. Compile-time convention-first
+                // replacement must reject ambiguous Sprite targets until Jiangyu has a stronger live
+                // sprite identity.
+                spriteRenderer.sprite = replacementSprite;
+                spriteReplacements++;
+            }
+
+            var images = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<Image>(), true);
+            foreach (var obj in images)
+            {
+                var image = obj.Cast<Image>();
+                if (!IsLiveSceneObject(image?.gameObject))
+                    continue;
+
+                var sprite = image.sprite;
+                if (sprite == null || !_catalog.ReplacementSprites.TryGetValue(sprite.name, out var replacementSprite))
+                    continue;
+
+                // JIANGYU-CONTRACT: Direct sprite replacement currently resolves live targets by
+                // UnityEngine.UI.Image.sprite.name. This is valid for the current proven Sprite
+                // replacement path when the target sprite name is unique at runtime. Compile-time
+                // convention-first replacement must reject ambiguous Sprite targets until Jiangyu
+                // has a stronger live sprite identity.
+                image.sprite = replacementSprite;
+                spriteReplacements++;
+            }
+        }
+
+        var audioReplacements = 0;
+        if (_catalog.ReplacementAudioClips.Count > 0)
+        {
+            var audioSources = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<AudioSource>(), true);
+            foreach (var obj in audioSources)
+            {
+                var audioSource = obj.Cast<AudioSource>();
+                if (!IsLiveSceneObject(audioSource?.gameObject))
+                    continue;
+
+                var clip = audioSource.clip;
+                if (clip == null || !_catalog.ReplacementAudioClips.TryGetValue(clip.name, out var replacementClip))
+                    continue;
+
+                // JIANGYU-CONTRACT: Direct audio replacement currently resolves live targets by
+                // AudioSource.clip.name. This is valid for the current proven AudioClip replacement path
+                // when the target clip name is unique at runtime. Compile-time convention-first
+                // replacement must reject ambiguous AudioClip targets until Jiangyu has a stronger live
+                // audio identity.
+                audioSource.clip = replacementClip;
+                audioReplacements++;
+            }
+        }
+
+        if (visualReplacements > 0 || spriteReplacements > 0 || audioReplacements > 0)
+            log.Msg($"Applied {visualReplacements} visual replacement(s), {spriteReplacements} sprite replacement(s), and {audioReplacements} audio replacement(s).");
     }
 
     public bool HasReplacementTargets()
     {
-        if (_catalog.Meshes.Count == 0 && _catalog.Prefabs.Count == 0)
+        if (_catalog.Meshes.Count == 0 &&
+            _catalog.Prefabs.Count == 0 &&
+            _catalog.ReplacementTextures.Count == 0 &&
+            _catalog.ReplacementSprites.Count == 0 &&
+            _catalog.ReplacementAudioClips.Count == 0)
             return false;
 
-        var skinnedRenderers = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<SkinnedMeshRenderer>(), true);
-        foreach (var obj in skinnedRenderers)
+        if (_catalog.Meshes.Count > 0 || _catalog.Prefabs.Count > 0 || _catalog.ReplacementTextures.Count > 0)
         {
-            var smr = obj.Cast<SkinnedMeshRenderer>();
-            if (!IsLiveSceneRenderer(smr) || IsAlreadyProcessedMesh(smr.sharedMesh))
-                continue;
+            var skinnedRenderers = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<SkinnedMeshRenderer>(), true);
+            foreach (var obj in skinnedRenderers)
+            {
+                var smr = obj.Cast<SkinnedMeshRenderer>();
+                if (!IsLiveSceneRenderer(smr) || IsAlreadyProcessedMesh(smr.sharedMesh))
+                    continue;
 
-            if (_catalog.Prefabs.ContainsKey(smr.sharedMesh.name) || _catalog.Meshes.ContainsKey(smr.sharedMesh.name))
-                return true;
+                if (_catalog.Prefabs.ContainsKey(smr.sharedMesh.name) || TryGetReplacementMesh(smr.sharedMesh.name, out _, out _))
+                    return true;
+
+                if (_catalog.ReplacementTextures.Count > 0 &&
+                    smr.sharedMaterials != null &&
+                    smr.sharedMaterials.Length > 0 &&
+                    _materialReplacements.HasDirectTextureReplacementTargets(smr.sharedMaterials))
+                {
+                    return true;
+                }
+            }
+
+            if (_catalog.ReplacementTextures.Count > 0)
+            {
+                var renderers = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<Renderer>(), true);
+                foreach (var obj in renderers)
+                {
+                    var renderer = obj.Cast<Renderer>();
+                    if (renderer is SkinnedMeshRenderer || !IsLiveSceneObject(renderer?.gameObject))
+                        continue;
+
+                    if (renderer.sharedMaterials != null &&
+                        renderer.sharedMaterials.Length > 0 &&
+                        _materialReplacements.HasDirectTextureReplacementTargets(renderer.sharedMaterials))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        if (_catalog.ReplacementSprites.Count > 0)
+        {
+            var spriteRenderers = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<SpriteRenderer>(), true);
+            foreach (var obj in spriteRenderers)
+            {
+                var spriteRenderer = obj.Cast<SpriteRenderer>();
+                if (!IsLiveSceneObject(spriteRenderer?.gameObject))
+                    continue;
+
+                var sprite = spriteRenderer.sprite;
+                if (sprite != null && _catalog.ReplacementSprites.ContainsKey(sprite.name))
+                    return true;
+            }
+
+            var images = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<Image>(), true);
+            foreach (var obj in images)
+            {
+                var image = obj.Cast<Image>();
+                if (!IsLiveSceneObject(image?.gameObject))
+                    continue;
+
+                var sprite = image.sprite;
+                if (sprite != null && _catalog.ReplacementSprites.ContainsKey(sprite.name))
+                    return true;
+            }
+        }
+
+        if (_catalog.ReplacementAudioClips.Count > 0)
+        {
+            var audioSources = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<AudioSource>(), true);
+            foreach (var obj in audioSources)
+            {
+                var audioSource = obj.Cast<AudioSource>();
+                if (!IsLiveSceneObject(audioSource?.gameObject))
+                    continue;
+
+                var clip = audioSource.clip;
+                if (clip != null && _catalog.ReplacementAudioClips.ContainsKey(clip.name))
+                    return true;
+            }
         }
 
         return false;
@@ -105,15 +297,38 @@ public class ReplacementCoordinator
 
         if (smr.hideFlags != HideFlags.None)
             return false;
-        if (smr.gameObject.hideFlags != HideFlags.None)
+
+        return IsLiveSceneObject(smr.gameObject);
+    }
+
+    private static bool IsLiveSceneObject(GameObject gameObject)
+    {
+        if (gameObject == null || gameObject.hideFlags != HideFlags.None)
             return false;
 
-        var scene = smr.gameObject.scene;
+        var scene = gameObject.scene;
         return scene.IsValid() && scene.isLoaded;
     }
 
     private static bool IsAlreadyProcessedMesh(Mesh mesh)
         => mesh != null && mesh.name.EndsWith(" [jiangyu]", StringComparison.Ordinal);
+
+    private bool TryGetReplacementMesh(string requestedMeshName, out string resolvedMeshName, out ReplacementMesh replacement)
+    {
+        resolvedMeshName = string.Empty;
+        if (_catalog.Meshes.TryGetValue(requestedMeshName, out replacement))
+        {
+            resolvedMeshName = requestedMeshName;
+            return true;
+        }
+
+        var fallbackName = LodReplacementResolver.FindNearestAvailableTarget(_catalog.Meshes.Keys, requestedMeshName);
+        if (fallbackName is null || !_catalog.Meshes.TryGetValue(fallbackName, out replacement))
+            return false;
+
+        resolvedMeshName = fallbackName;
+        return true;
+    }
 
     private static GameObject FindEntityRoot(SkinnedMeshRenderer smr)
     {

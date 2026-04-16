@@ -1,3 +1,4 @@
+#nullable enable
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -45,12 +46,12 @@ internal sealed class DiscoveredMod
 
 internal sealed class BlockedMod
 {
-    public string? Name { get; }
+    public string Name { get; }
     public string DirectoryPath { get; }
     public string RelativeDirectoryPath { get; }
     public string Reason { get; }
 
-    public BlockedMod(string? name, string directoryPath, string relativeDirectoryPath, string reason)
+    public BlockedMod(string name, string directoryPath, string relativeDirectoryPath, string reason)
     {
         Name = name;
         DirectoryPath = directoryPath;
@@ -187,7 +188,7 @@ internal static class ModLoadPlanBuilder
             if (manifest == null)
             {
                 blockedMod = new BlockedMod(
-                    null,
+                    string.Empty,
                     modDir,
                     relativeDirectoryPath,
                     "Manifest is unreadable.");
@@ -197,7 +198,7 @@ internal static class ModLoadPlanBuilder
             if (string.IsNullOrWhiteSpace(manifest.Name))
             {
                 blockedMod = new BlockedMod(
-                    null,
+                    string.Empty,
                     modDir,
                     relativeDirectoryPath,
                     "Manifest is missing a non-empty 'name'.");
@@ -224,13 +225,13 @@ internal static class ModLoadPlanBuilder
                 relativeDirectoryPath,
                 manifestPath,
                 bundlePaths,
-                dependencies!);
+                dependencies);
             return true;
         }
         catch (Exception ex)
         {
             blockedMod = new BlockedMod(
-                null,
+                string.Empty,
                 modDir,
                 relativeDirectoryPath,
                 $"Failed to read manifest: {ex.Message}");
@@ -240,7 +241,7 @@ internal static class ModLoadPlanBuilder
 
     private static bool TryParseDependencies(
         IReadOnlyList<string>? rawDependencies,
-        out IReadOnlyList<ManifestDependency>? dependencies,
+        out IReadOnlyList<ManifestDependency> dependencies,
         out string? error)
     {
         dependencies = Array.Empty<ManifestDependency>();
@@ -255,7 +256,6 @@ internal static class ModLoadPlanBuilder
             if (string.IsNullOrWhiteSpace(rawDependency))
             {
                 error = "Manifest contains an empty dependency entry.";
-                dependencies = null;
                 return false;
             }
 
@@ -263,7 +263,6 @@ internal static class ModLoadPlanBuilder
             if (!match.Success)
             {
                 error = $"Dependency entry '{rawDependency}' is invalid.";
-                dependencies = null;
                 return false;
             }
 
@@ -271,7 +270,6 @@ internal static class ModLoadPlanBuilder
             if (string.IsNullOrWhiteSpace(name))
             {
                 error = $"Dependency entry '{rawDependency}' does not name a required mod.";
-                dependencies = null;
                 return false;
             }
 

@@ -38,12 +38,6 @@ public static class MeshBundleBuilder
         var meshes = ReadMeshData(meshDataPath);
         var textures = ReadTextureData(textureDataPath);
         var contracts = ReadMeshContracts(meshContractPath);
-        if (meshes.Count == 0)
-        {
-            Debug.LogError("[Jiangyu] No meshes found in meshdata.bin");
-            EditorApplication.Exit(1);
-            return;
-        }
 
         var generatedDir = "Assets/Generated";
         if (Directory.Exists(generatedDir))
@@ -74,6 +68,61 @@ public static class MeshBundleBuilder
             assetPaths.Add(assetPath);
         }
 
+        var spriteAssetCount = 0;
+        var spriteSourceGuids = AssetDatabase.FindAssets("t:Texture2D", new[] { "Assets/SpriteSources" });
+        foreach (var guid in spriteSourceGuids)
+        {
+            var sourceTexturePath = AssetDatabase.GUIDToAssetPath(guid);
+            if (string.IsNullOrEmpty(sourceTexturePath))
+                continue;
+
+            var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(sourceTexturePath);
+            if (texture == null)
+                continue;
+
+            var spriteName = Path.GetFileNameWithoutExtension(sourceTexturePath);
+            const string prefix = "sprite_source__";
+            if (spriteName.StartsWith(prefix, StringComparison.Ordinal))
+                spriteName = spriteName.Substring(prefix.Length);
+
+            var sprite = Sprite.Create(
+                texture,
+                new Rect(0f, 0f, texture.width, texture.height),
+                new Vector2(0.5f, 0.5f),
+                pixelsPerUnit: 100f);
+            sprite.name = spriteName;
+
+            var assetPath = $"{generatedDir}/{sprite.name}.sprite.asset";
+            AssetDatabase.CreateAsset(sprite, assetPath);
+            AssetImporter.GetAtPath(assetPath).assetBundleName = bundleName;
+            assetPaths.Add(assetPath);
+            spriteAssetCount++;
+        }
+
+        var audioAssetCount = 0;
+        var audioGuids = AssetDatabase.FindAssets("t:AudioClip", new[] { "Assets/Audio" });
+        foreach (var guid in audioGuids)
+        {
+            var assetPath = AssetDatabase.GUIDToAssetPath(guid);
+            if (string.IsNullOrEmpty(assetPath))
+                continue;
+
+            var importer = AssetImporter.GetAtPath(assetPath);
+            if (importer == null)
+                continue;
+
+            importer.assetBundleName = bundleName;
+            assetPaths.Add(assetPath);
+            audioAssetCount++;
+        }
+
+        if (assetPaths.Count == 0)
+        {
+            Debug.LogError("[Jiangyu] No meshes, textures, sprites, or audio assets found to bundle");
+            EditorApplication.Exit(1);
+            return;
+        }
+
         AssetDatabase.SaveAssets();
 
         if (!string.IsNullOrEmpty(diagnosticsPath))
@@ -82,6 +131,8 @@ public static class MeshBundleBuilder
         var outputDir = Path.GetDirectoryName(outputPath);
         if (!string.IsNullOrEmpty(outputDir))
             Directory.CreateDirectory(outputDir);
+
+        Debug.Log($"[Jiangyu] Prepared {meshes.Count} mesh(es), {textures.Count} texture(s), {spriteAssetCount} sprite(s), {audioAssetCount} audio clip(s) for bundle '{bundleName}'");
 
         var builds = new[]
         {

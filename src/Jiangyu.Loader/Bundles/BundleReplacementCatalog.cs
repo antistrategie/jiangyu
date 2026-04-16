@@ -13,10 +13,14 @@ internal sealed class BundleReplacementCatalog
     private readonly Dictionary<string, string> _meshOwners = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _prefabOwners = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _textureOwners = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _spriteOwners = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _audioOwners = new(StringComparer.Ordinal);
 
     public Dictionary<string, ReplacementMesh> Meshes { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, ReplacementPrefab> Prefabs { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, Texture2D> ReplacementTextures { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, Sprite> ReplacementSprites { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, AudioClip> ReplacementAudioClips { get; } = new(StringComparer.Ordinal);
 
     public BundleReplacementCatalog(List<UnityEngine.Object> pinned)
     {
@@ -108,6 +112,10 @@ internal sealed class BundleReplacementCatalog
         var meshTypePtr = IL2CPP.Il2CppObjectBaseToPtr(meshType);
         var textureType = Il2CppType.Of<Texture2D>();
         var textureTypePtr = IL2CPP.Il2CppObjectBaseToPtr(textureType);
+        var spriteType = Il2CppType.Of<Sprite>();
+        var spriteTypePtr = IL2CPP.Il2CppObjectBaseToPtr(spriteType);
+        var audioClipType = Il2CppType.Of<AudioClip>();
+        var audioClipTypePtr = IL2CPP.Il2CppObjectBaseToPtr(audioClipType);
         var assetNames = BundleLoader.GetAllAssetNames(bundle);
 
         if (assetNames == null || assetNames.Length == 0)
@@ -129,6 +137,20 @@ internal sealed class BundleReplacementCatalog
             if (texturePtr != IntPtr.Zero)
             {
                 RegisterTextureAsset(ownerLabel, texturePtr, log);
+                continue;
+            }
+
+            var spritePtr = BundleLoader.LoadAsset(bundle, assetName, spriteTypePtr);
+            if (spritePtr != IntPtr.Zero)
+            {
+                RegisterSpriteAsset(ownerLabel, spritePtr, log);
+                continue;
+            }
+
+            var audioClipPtr = BundleLoader.LoadAsset(bundle, assetName, audioClipTypePtr);
+            if (audioClipPtr != IntPtr.Zero)
+            {
+                RegisterAudioAsset(ownerLabel, audioClipPtr, log);
                 continue;
             }
 
@@ -228,6 +250,28 @@ internal sealed class BundleReplacementCatalog
         log.Msg($"  Registered texture asset: {loadedTexture.name} ({loadedTexture.width}x{loadedTexture.height})");
     }
 
+    private void RegisterAudioAsset(string ownerLabel, IntPtr audioClipPtr, MelonLogger.Instance log)
+    {
+        var loadedClip = new AudioClip(audioClipPtr)
+        {
+            hideFlags = HideFlags.DontUnloadUnusedAsset,
+        };
+        RegisterAudioOverride(loadedClip.name, loadedClip, ownerLabel, log);
+        _pinned.Add(loadedClip);
+        log.Msg($"  Registered audio asset: {loadedClip.name}");
+    }
+
+    private void RegisterSpriteAsset(string ownerLabel, IntPtr spritePtr, MelonLogger.Instance log)
+    {
+        var loadedSprite = new Sprite(spritePtr)
+        {
+            hideFlags = HideFlags.DontUnloadUnusedAsset,
+        };
+        RegisterSpriteOverride(loadedSprite.name, loadedSprite, ownerLabel, log);
+        _pinned.Add(loadedSprite);
+        log.Msg($"  Registered sprite asset: {loadedSprite.name}");
+    }
+
     private void RegisterMeshAsset(
         string ownerLabel,
         IntPtr meshPtr,
@@ -279,6 +323,24 @@ internal sealed class BundleReplacementCatalog
 
         ReplacementTextures[textureName] = texture;
         _textureOwners[textureName] = ownerLabel;
+    }
+
+    private void RegisterSpriteOverride(string spriteName, Sprite sprite, string ownerLabel, MelonLogger.Instance log)
+    {
+        if (_spriteOwners.TryGetValue(spriteName, out var previousOwner))
+            log.Warning($"  Override sprite '{spriteName}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
+
+        ReplacementSprites[spriteName] = sprite;
+        _spriteOwners[spriteName] = ownerLabel;
+    }
+
+    private void RegisterAudioOverride(string clipName, AudioClip clip, string ownerLabel, MelonLogger.Instance log)
+    {
+        if (_audioOwners.TryGetValue(clipName, out var previousOwner))
+            log.Warning($"  Override audio '{clipName}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
+
+        ReplacementAudioClips[clipName] = clip;
+        _audioOwners[clipName] = ownerLabel;
     }
 
     private static string ResolveTargetMeshName(string bundleMeshName, Dictionary<string, string> bundleToGame)

@@ -89,10 +89,24 @@ public static class AssetsCommand
                 {
                     Console.WriteLine($"    path: {entry.CanonicalPath}");
                 }
-                if (!string.IsNullOrWhiteSpace(entry.Name) &&
-                    string.Equals(entry.ClassName, "PrefabHierarchyObject", StringComparison.Ordinal))
+                if (string.IsNullOrWhiteSpace(entry.Name))
+                    continue;
+
+                if (string.Equals(entry.ClassName, "PrefabHierarchyObject", StringComparison.Ordinal))
                 {
                     Console.WriteLine($"    replacement target: {CompilationService.BuildModelReplacementRelativePath(entry.Name!, entry.PathId)}");
+                }
+                else if (string.Equals(entry.ClassName, "Texture2D", StringComparison.Ordinal))
+                {
+                    Console.WriteLine($"    replacement target: {CompilationService.BuildTextureReplacementRelativePath(entry.Name!, entry.PathId)}");
+                }
+                else if (string.Equals(entry.ClassName, "Sprite", StringComparison.Ordinal))
+                {
+                    Console.WriteLine($"    replacement target: {CompilationService.BuildSpriteReplacementRelativePath(entry.Name!, entry.PathId)}");
+                }
+                else if (string.Equals(entry.ClassName, "AudioClip", StringComparison.Ordinal))
+                {
+                    Console.WriteLine($"    replacement target: {CompilationService.BuildAudioReplacementRelativePath(entry.Name!, entry.PathId)}");
                 }
             }
 

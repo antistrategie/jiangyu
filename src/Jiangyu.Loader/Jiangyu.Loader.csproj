@@ -30,6 +30,18 @@
       <HintPath>$(GameAssembliesDir)/UnityEngine.AnimationModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>$(GameAssembliesDir)/UnityEngine.AudioModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(GameAssembliesDir)/UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(GameAssembliesDir)/UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.AssetBundleModule">
       <HintPath>$(GameAssembliesDir)/UnityEngine.AssetBundleModule.dll</HintPath>
       <Private>false</Private>

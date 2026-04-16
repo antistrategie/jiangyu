@@ -15,6 +15,9 @@ namespace Jiangyu.Core.Compile;
 /// </summary>
 public readonly record struct ParsedAssetReference(string FilePath, string MeshName, bool HasExplicitMeshName);
 internal readonly record struct ReplacementModelTarget(string Alias, string Name, long PathId, string Collection, string? CanonicalPath);
+internal readonly record struct ReplacementTextureTarget(string Alias, string Name, long PathId, string Collection, string? CanonicalPath);
+internal readonly record struct ReplacementSpriteTarget(string Alias, string Name, long PathId, string Collection, string? CanonicalPath);
+internal readonly record struct ReplacementAudioTarget(string Alias, string Name, long PathId, string Collection, string? CanonicalPath);
 
 /// <summary>
 /// Input to <see cref="CompilationService.CompileAsync"/>.
@@ -72,6 +75,9 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var replacementRoot = Path.Combine(projectDir, "assets", "replacements");
         var additionRoot = Path.Combine(projectDir, "assets", "additions");
         var replacementEntries = DiscoverReplacementMeshEntries(projectDir, replacementRoot, config.GetCachePath(), gameDataPath);
+        var replacementTextures = DiscoverReplacementTextureEntries(projectDir, replacementRoot, config.GetCachePath());
+        var replacementSprites = DiscoverReplacementSpriteEntries(projectDir, replacementRoot, config.GetCachePath());
+        var replacementAudio = DiscoverReplacementAudioEntries(projectDir, replacementRoot, config.GetCachePath());
         var replacementModelFiles = replacementEntries
             .Select(entry => entry.SourceFilePath)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -82,15 +88,18 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             .Concat(additionModelFiles)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var replacementAssetCount = replacementEntries.Count + replacementTextures.Count + replacementSprites.Count + replacementAudio.Count;
+        var totalCompileInputCount = modelFiles.Count + replacementTextures.Count + replacementSprites.Count + replacementAudio.Count;
 
-        if (modelFiles.Count == 0)
+        if (totalCompileInputCount == 0)
         {
-            _log.Info("No model files found. Nothing to compile.");
+            _log.Info("No replacement assets found. Nothing to compile.");
             return new CompilationResult { Success = true };
         }
 
         _log.Info($"Compiling {manifest.Name}...");
-        _log.Info($"  {modelFiles.Count} model file(s), {replacementEntries.Count} replacement mesh target(s)");
+        _log.Info(
+            $"  {modelFiles.Count} model file(s), {replacementTextures.Count} texture replacement(s), {replacementSprites.Count} sprite replacement(s), {replacementAudio.Count} audio replacement(s), {replacementEntries.Count} replacement mesh target(s)");
 
         var bundleName = manifest.Name.ToLowerInvariant().Replace(" ", "_");
         var outputDir = Path.Combine(projectDir, "compiled");
@@ -98,7 +107,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var unityProjectDir = Path.Combine(projectDir, ".jiangyu", "unity_project");
         var builtBundle = Path.Combine(unityProjectDir, "AssetBundles", bundleName);
 
-        var useRawGlbPipeline = replacementEntries.Count > 0;
+        var useRawGlbPipeline = replacementAssetCount > 0;
 
         ModManifest compiledManifest = manifest;
         if (useRawGlbPipeline)
@@ -117,6 +126,9 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                     bundleName,
                     bundleOutputPath,
                     replacementEntries,
+                    replacementTextures,
+                    replacementSprites,
+                    replacementAudio,
                     gameDataPath,
                     targetMeshNamesByBundleMesh);
                 compiledManifest = ModManifest.FromJson(manifest.ToJson());
@@ -183,6 +195,18 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         => Path.Combine("assets", "replacements", "models", BuildModelReplacementAlias(targetName, pathId), fileName)
             .Replace(Path.DirectorySeparatorChar, '/');
 
+    public static string BuildTextureReplacementRelativePath(string targetName, long pathId, string extension = ".png")
+        => Path.Combine("assets", "replacements", "textures", $"{BuildModelReplacementAlias(targetName, pathId)}{NormalizeReplacementExtension(extension)}")
+            .Replace(Path.DirectorySeparatorChar, '/');
+
+    public static string BuildSpriteReplacementRelativePath(string targetName, long pathId, string extension = ".png")
+        => Path.Combine("assets", "replacements", "sprites", $"{BuildModelReplacementAlias(targetName, pathId)}{NormalizeReplacementExtension(extension)}")
+            .Replace(Path.DirectorySeparatorChar, '/');
+
+    public static string BuildAudioReplacementRelativePath(string targetName, long pathId, string extension = ".wav")
+        => Path.Combine("assets", "replacements", "audio", $"{BuildModelReplacementAlias(targetName, pathId)}{NormalizeReplacementExtension(extension)}")
+            .Replace(Path.DirectorySeparatorChar, '/');
+
     public static bool TryParseModelReplacementAlias(string alias, out string targetName, out long pathId)
     {
         targetName = string.Empty;
@@ -197,6 +221,14 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         targetName = alias[..separatorIndex];
         return long.TryParse(alias[(separatorIndex + 2)..], out pathId);
+    }
+
+    private static string NormalizeReplacementExtension(string extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension))
+            return string.Empty;
+
+        return extension.StartsWith('.') ? extension : $".{extension}";
     }
 
     private List<GlbMeshBundleCompiler.MeshSourceEntry> DiscoverReplacementMeshEntries(string projectDir, string replacementsRoot, string cachePath, string gameDataPath)
@@ -272,9 +304,22 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 .ToArray();
             if (missingMeshNames.Length > 0)
             {
-                _log.Warning(
-                    $"Replacement target '{targetAlias}' is missing expected mesh names: {string.Join(", ", missingMeshNames)}. " +
-                    "Only provided meshes will be replaced.");
+                foreach (var warning in BuildIncompleteLodWarnings(targetAlias, expectedMeshNames, providedMeshNames))
+                {
+                    _log.Warning(warning);
+                }
+
+                var lodMissingMeshNames = GetLodMissingMeshNames(expectedMeshNames, providedMeshNames);
+                var genericMissingMeshNames = missingMeshNames
+                    .Except(lodMissingMeshNames, StringComparer.Ordinal)
+                    .ToArray();
+
+                if (genericMissingMeshNames.Length > 0)
+                {
+                    _log.Warning(
+                        $"Replacement target '{targetAlias}' is missing expected mesh names: {string.Join(", ", genericMissingMeshNames)}. " +
+                        "Only provided meshes will be replaced.");
+                }
             }
 
             foreach (var meshName in providedMeshNames)
@@ -313,6 +358,160 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         return [.. entries
             .OrderBy(entry => entry.SourceReference, StringComparer.Ordinal)
             .ThenBy(entry => entry.BundleMeshName, StringComparer.Ordinal)];
+    }
+
+    private static List<GlbMeshBundleCompiler.CompiledTexture> DiscoverReplacementTextureEntries(string projectDir, string replacementsRoot, string cachePath)
+    {
+        var texturesRoot = Path.Combine(replacementsRoot, "textures");
+        if (!Directory.Exists(texturesRoot))
+            return [];
+
+        var index = LoadAssetIndex(cachePath)
+            ?? throw new InvalidOperationException(
+                $"Asset index not found or unreadable at '{Path.Combine(cachePath, AssetIndexFileName)}'. Run 'jiangyu assets index' first.");
+
+        var files = CollectAssetFiles(texturesRoot, "*.png", "*.jpg", "*.jpeg");
+        if (files.Length == 0)
+            return [];
+
+        var entries = new List<GlbMeshBundleCompiler.CompiledTexture>();
+        foreach (var file in files)
+        {
+            var alias = Path.GetFileNameWithoutExtension(file);
+            if (!TryParseModelReplacementAlias(alias, out var targetName, out var targetPathId))
+            {
+                throw new InvalidOperationException(
+                    $"Replacement texture '{Path.GetRelativePath(projectDir, file)}' must be named '<target-name>--<pathId>.<ext>'.");
+            }
+
+            var target = ResolveReplacementTextureTarget(index, alias, targetName, targetPathId);
+            ValidateUniqueRuntimeTextureNames(index, target);
+
+            entries.Add(new GlbMeshBundleCompiler.CompiledTexture
+            {
+                Name = target.Name,
+                Content = File.ReadAllBytes(file),
+                Linear = GlbMeshBundleCompiler.IsLinearTextureName(target.Name),
+            });
+        }
+
+        var duplicateTargets = entries
+            .GroupBy(entry => entry.Name, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        if (duplicateTargets.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"Multiple replacement textures resolve to the same target name under assets/replacements/textures: {string.Join(", ", duplicateTargets)}");
+        }
+
+        return [.. entries.OrderBy(entry => entry.Name, StringComparer.Ordinal)];
+    }
+
+    private static List<GlbMeshBundleCompiler.ImportedSpriteAsset> DiscoverReplacementSpriteEntries(string projectDir, string replacementsRoot, string cachePath)
+    {
+        var spritesRoot = Path.Combine(replacementsRoot, "sprites");
+        if (!Directory.Exists(spritesRoot))
+            return [];
+
+        var index = LoadAssetIndex(cachePath)
+            ?? throw new InvalidOperationException(
+                $"Asset index not found or unreadable at '{Path.Combine(cachePath, AssetIndexFileName)}'. Run 'jiangyu assets index' first.");
+
+        var files = CollectAssetFiles(spritesRoot, "*.png", "*.jpg", "*.jpeg");
+        if (files.Length == 0)
+            return [];
+
+        var entries = new List<GlbMeshBundleCompiler.ImportedSpriteAsset>();
+        foreach (var file in files)
+        {
+            var alias = Path.GetFileNameWithoutExtension(file);
+            if (!TryParseModelReplacementAlias(alias, out var targetName, out var targetPathId))
+            {
+                throw new InvalidOperationException(
+                    $"Replacement sprite '{Path.GetRelativePath(projectDir, file)}' must be named '<target-name>--<pathId>.<ext>'.");
+            }
+
+            var target = ResolveReplacementSpriteTarget(index, alias, targetName, targetPathId);
+            ValidateUniqueRuntimeSpriteNames(index, target);
+
+            entries.Add(new GlbMeshBundleCompiler.ImportedSpriteAsset
+            {
+                Name = target.Name,
+                SourceFilePath = file,
+                Extension = Path.GetExtension(file),
+                StagingName = $"sprite_source__{alias}",
+            });
+        }
+
+        var duplicateTargets = entries
+            .GroupBy(entry => entry.Name, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        if (duplicateTargets.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"Multiple replacement sprite files resolve to the same target name under assets/replacements/sprites: {string.Join(", ", duplicateTargets)}");
+        }
+
+        return [.. entries.OrderBy(entry => entry.Name, StringComparer.Ordinal)];
+    }
+
+    private static List<GlbMeshBundleCompiler.ImportedAudioAsset> DiscoverReplacementAudioEntries(string projectDir, string replacementsRoot, string cachePath)
+    {
+        var audioRoot = Path.Combine(replacementsRoot, "audio");
+        if (!Directory.Exists(audioRoot))
+            return [];
+
+        var index = LoadAssetIndex(cachePath)
+            ?? throw new InvalidOperationException(
+                $"Asset index not found or unreadable at '{Path.Combine(cachePath, AssetIndexFileName)}'. Run 'jiangyu assets index' first.");
+
+        var files = CollectAssetFiles(audioRoot, "*.wav", "*.ogg", "*.mp3");
+        if (files.Length == 0)
+            return [];
+
+        var entries = new List<GlbMeshBundleCompiler.ImportedAudioAsset>();
+        foreach (var file in files)
+        {
+            var alias = Path.GetFileNameWithoutExtension(file);
+            if (!TryParseModelReplacementAlias(alias, out var targetName, out var targetPathId))
+            {
+                throw new InvalidOperationException(
+                    $"Replacement audio '{Path.GetRelativePath(projectDir, file)}' must be named '<target-name>--<pathId>.<ext>'.");
+            }
+
+            var target = ResolveReplacementAudioTarget(index, alias, targetName, targetPathId);
+            ValidateUniqueRuntimeAudioNames(index, target);
+
+            entries.Add(new GlbMeshBundleCompiler.ImportedAudioAsset
+            {
+                Name = target.Name,
+                SourceFilePath = file,
+                Extension = Path.GetExtension(file),
+            });
+        }
+
+        var duplicateTargets = entries
+            .GroupBy(entry => entry.Name, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        if (duplicateTargets.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"Multiple replacement audio files resolve to the same target name under assets/replacements/audio: {string.Join(", ", duplicateTargets)}");
+        }
+
+        return [.. entries.OrderBy(entry => entry.Name, StringComparer.Ordinal)];
     }
 
     private static AssetIndex? LoadAssetIndex(string cachePath)
@@ -385,6 +584,87 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         return new ReplacementModelTarget(alias, backingGameObject.Name ?? targetName, backingGameObject.PathId, backingGameObject.Collection ?? string.Empty, backingGameObject.CanonicalPath);
     }
 
+    private static ReplacementTextureTarget ResolveReplacementTextureTarget(AssetIndex index, string alias, string targetName, long targetPathId)
+    {
+        var candidates = index.Assets?
+            .Where(entry =>
+                string.Equals(entry.ClassName, "Texture2D", StringComparison.Ordinal) &&
+                string.Equals(entry.Name, targetName, StringComparison.Ordinal) &&
+                entry.PathId == targetPathId)
+            .ToList()
+            ?? [];
+
+        if (candidates.Count == 0)
+            throw new InvalidOperationException(
+                $"Replacement target '{alias}' could not be resolved as a Texture2D in the asset index. Use 'jiangyu assets search <name> --type Texture2D'.");
+
+        if (candidates.Count > 1)
+        {
+            var matches = candidates
+                .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/Texture2D/{entry.Name}--{entry.PathId}")
+                .OrderBy(path => path, StringComparer.Ordinal);
+            throw new InvalidOperationException(
+                $"Replacement target '{alias}' is ambiguous in the asset index. Matches: {string.Join(", ", matches)}");
+        }
+
+        var candidate = candidates[0];
+        return new ReplacementTextureTarget(alias, candidate.Name ?? targetName, candidate.PathId, candidate.Collection ?? string.Empty, candidate.CanonicalPath);
+    }
+
+    private static ReplacementAudioTarget ResolveReplacementAudioTarget(AssetIndex index, string alias, string targetName, long targetPathId)
+    {
+        var candidates = index.Assets?
+            .Where(entry =>
+                string.Equals(entry.ClassName, "AudioClip", StringComparison.Ordinal) &&
+                string.Equals(entry.Name, targetName, StringComparison.Ordinal) &&
+                entry.PathId == targetPathId)
+            .ToList()
+            ?? [];
+
+        if (candidates.Count == 0)
+            throw new InvalidOperationException(
+                $"Replacement target '{alias}' could not be resolved as an AudioClip in the asset index. Use 'jiangyu assets search <name> --type AudioClip'.");
+
+        if (candidates.Count > 1)
+        {
+            var matches = candidates
+                .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/AudioClip/{entry.Name}--{entry.PathId}")
+                .OrderBy(path => path, StringComparer.Ordinal);
+            throw new InvalidOperationException(
+                $"Replacement target '{alias}' is ambiguous in the asset index. Matches: {string.Join(", ", matches)}");
+        }
+
+        var candidate = candidates[0];
+        return new ReplacementAudioTarget(alias, candidate.Name ?? targetName, candidate.PathId, candidate.Collection ?? string.Empty, candidate.CanonicalPath);
+    }
+
+    private static ReplacementSpriteTarget ResolveReplacementSpriteTarget(AssetIndex index, string alias, string targetName, long targetPathId)
+    {
+        var candidates = index.Assets?
+            .Where(entry =>
+                string.Equals(entry.ClassName, "Sprite", StringComparison.Ordinal) &&
+                string.Equals(entry.Name, targetName, StringComparison.Ordinal) &&
+                entry.PathId == targetPathId)
+            .ToList()
+            ?? [];
+
+        if (candidates.Count == 0)
+            throw new InvalidOperationException(
+                $"Replacement target '{alias}' could not be resolved as a Sprite in the asset index. Use 'jiangyu assets search <name> --type Sprite'.");
+
+        if (candidates.Count > 1)
+        {
+            var matches = candidates
+                .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/Sprite/{entry.Name}--{entry.PathId}")
+                .OrderBy(path => path, StringComparer.Ordinal);
+            throw new InvalidOperationException(
+                $"Replacement target '{alias}' is ambiguous in the asset index. Matches: {string.Join(", ", matches)}");
+        }
+
+        var candidate = candidates[0];
+        return new ReplacementSpriteTarget(alias, candidate.Name ?? targetName, candidate.PathId, candidate.Collection ?? string.Empty, candidate.CanonicalPath);
+    }
+
     private static void ValidateUniqueRuntimeMeshNames(AssetIndex index, ReplacementModelTarget target, IReadOnlyList<string> expectedMeshNames)
     {
         var duplicateRuntimeTargets = expectedMeshNames
@@ -415,6 +695,70 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         throw new InvalidOperationException(
             $"Replacement target '{target.Alias}' cannot be compiled safely because one or more target mesh names are ambiguous at runtime. " +
             $"The loader still matches live meshes by sharedMesh.name. Ambiguous mesh names: {string.Join("; ", details)}");
+    }
+
+    private static void ValidateUniqueRuntimeTextureNames(AssetIndex index, ReplacementTextureTarget target)
+    {
+        var matches = index.Assets?
+            .Where(entry =>
+                string.Equals(entry.ClassName, "Texture2D", StringComparison.Ordinal) &&
+                string.Equals(entry.Name, target.Name, StringComparison.Ordinal))
+            .ToList()
+            ?? [];
+
+        if (matches.Count <= 1)
+            return;
+
+        var canonicalPaths = matches
+            .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/Texture2D/{entry.Name}--{entry.PathId}")
+            .OrderBy(path => path, StringComparer.Ordinal);
+
+        throw new InvalidOperationException(
+            $"Replacement target '{target.Alias}' cannot be compiled safely because texture name '{target.Name}' is ambiguous at runtime. " +
+            $"The loader currently matches live textures by texture.name. Ambiguous texture assets: {string.Join(", ", canonicalPaths)}");
+    }
+
+    private static void ValidateUniqueRuntimeSpriteNames(AssetIndex index, ReplacementSpriteTarget target)
+    {
+        var collisions = index.Assets?
+            .Where(entry =>
+                string.Equals(entry.ClassName, "Sprite", StringComparison.Ordinal) &&
+                string.Equals(entry.Name, target.Name, StringComparison.Ordinal) &&
+                entry.PathId != target.PathId)
+            .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/Sprite/{entry.Name}--{entry.PathId}")
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray()
+            ?? [];
+
+        if (collisions.Length == 0)
+            return;
+
+        throw new InvalidOperationException(
+            $"Replacement sprite target '{target.Alias}' resolves to runtime sprite name '{target.Name}', but that sprite name is ambiguous across indexed assets. " +
+            $"Current target: {target.CanonicalPath ?? $"{target.Collection}/Sprite/{target.Name}--{target.PathId}"}. " +
+            $"Conflicts: {string.Join(", ", collisions)}. " +
+            "Jiangyu currently resolves live sprite replacements by sprite name at runtime, so ambiguous sprite targets must be rejected until a stronger runtime identity exists.");
+    }
+
+    private static void ValidateUniqueRuntimeAudioNames(AssetIndex index, ReplacementAudioTarget target)
+    {
+        var matches = index.Assets?
+            .Where(entry =>
+                string.Equals(entry.ClassName, "AudioClip", StringComparison.Ordinal) &&
+                string.Equals(entry.Name, target.Name, StringComparison.Ordinal))
+            .ToList()
+            ?? [];
+
+        if (matches.Count <= 1)
+            return;
+
+        var canonicalPaths = matches
+            .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/AudioClip/{entry.Name}--{entry.PathId}")
+            .OrderBy(path => path, StringComparer.Ordinal);
+
+        throw new InvalidOperationException(
+            $"Replacement target '{target.Alias}' cannot be compiled safely because audio clip name '{target.Name}' is ambiguous at runtime. " +
+            $"The loader currently matches live audio by clip.name. Ambiguous audio assets: {string.Join(", ", canonicalPaths)}");
     }
 
     private static IReadOnlyList<string> DiscoverReplacementMeshNames(string filePath)
@@ -483,6 +827,106 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         return [.. patterns
             .SelectMany(p => Directory.GetFiles(directory, p, SearchOption.AllDirectories))
             .OrderBy(f => f)];
+    }
+
+    internal static IReadOnlyList<string> BuildIncompleteLodWarnings(
+        string targetAlias,
+        IReadOnlyList<string> expectedMeshNames,
+        IReadOnlyList<string> providedMeshNames)
+    {
+        var expectedFamilies = BuildLodFamilies(expectedMeshNames);
+        if (expectedFamilies.Count == 0)
+            return [];
+
+        var providedSet = new HashSet<string>(providedMeshNames, StringComparer.Ordinal);
+        var warnings = new List<string>();
+
+        foreach (var family in expectedFamilies.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+        {
+            var expectedFamilyMeshes = family.Value.OrderBy(name => name, StringComparer.Ordinal).ToArray();
+            var providedFamilyMeshes = expectedFamilyMeshes.Where(providedSet.Contains).OrderBy(name => name, StringComparer.Ordinal).ToArray();
+
+            if (providedFamilyMeshes.Length == 0 || providedFamilyMeshes.Length == expectedFamilyMeshes.Length)
+                continue;
+
+            var missingFamilyMeshes = expectedFamilyMeshes
+                .Except(providedFamilyMeshes, StringComparer.Ordinal)
+                .OrderBy(name => name, StringComparer.Ordinal);
+
+            warnings.Add(
+                $"Replacement target '{targetAlias}' provides only part of LOD family '{family.Key}': " +
+                $"provided {string.Join(", ", providedFamilyMeshes)}; missing {string.Join(", ", missingFamilyMeshes)}. " +
+                "Runtime will use the nearest available replacement within the family for missing LODs.");
+        }
+
+        return warnings;
+    }
+
+    private static IReadOnlyCollection<string> GetLodMissingMeshNames(
+        IReadOnlyList<string> expectedMeshNames,
+        IReadOnlyList<string> providedMeshNames)
+    {
+        var expectedFamilies = BuildLodFamilies(expectedMeshNames);
+        if (expectedFamilies.Count == 0)
+            return [];
+
+        var providedSet = new HashSet<string>(providedMeshNames, StringComparer.Ordinal);
+        var lodMissingMeshNames = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var family in expectedFamilies.Values)
+        {
+            var providedCount = family.Count(providedSet.Contains);
+            if (providedCount == 0 || providedCount == family.Count)
+                continue;
+
+            foreach (var meshName in family.Where(name => !providedSet.Contains(name)))
+            {
+                lodMissingMeshNames.Add(meshName);
+            }
+        }
+
+        return lodMissingMeshNames;
+    }
+
+    private static Dictionary<string, List<string>> BuildLodFamilies(IReadOnlyList<string> meshNames)
+    {
+        var families = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var meshName in meshNames)
+        {
+            if (!TryParseLodName(meshName, out var baseName, out _))
+                continue;
+
+            if (!families.TryGetValue(baseName, out var family))
+            {
+                family = [];
+                families[baseName] = family;
+            }
+
+            family.Add(meshName);
+        }
+
+        return families;
+    }
+
+    internal static bool TryParseLodName(string meshName, out string baseName, out int lodIndex)
+    {
+        baseName = string.Empty;
+        lodIndex = -1;
+
+        if (string.IsNullOrWhiteSpace(meshName))
+            return false;
+
+        var markerIndex = meshName.LastIndexOf("_LOD", StringComparison.OrdinalIgnoreCase);
+        if (markerIndex <= 0)
+            return false;
+
+        var suffix = meshName[(markerIndex + 4)..];
+        if (!int.TryParse(suffix, out lodIndex))
+            return false;
+
+        baseName = meshName[..markerIndex];
+        return !string.IsNullOrWhiteSpace(baseName);
     }
 
     private async Task SetupUnityProject(string unityProjectDir, IEnumerable<string> modelFiles)

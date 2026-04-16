@@ -4,8 +4,21 @@ namespace Jiangyu.Loader.Replacements;
 
 internal sealed class MaterialReplacementService
 {
+    private static readonly string[] DirectTextureProperties =
+    {
+        "_BaseColorMap",
+        "_MainTex",
+        "_MaskMap",
+        "_NormalMap",
+        "_BumpMap",
+        "_Effect_Map",
+        "_EffectMap",
+        "_EmissionMap",
+    };
+
     private readonly Dictionary<string, Texture2D> _replacementTextures;
     private readonly Dictionary<string, Material[]> _materialCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Material[]> _directMaterialCache = new(StringComparer.Ordinal);
     private readonly List<UnityEngine.Object> _pinned;
 
     public bool HasReplacementTextures => _replacementTextures.Count > 0;
@@ -75,6 +88,87 @@ internal sealed class MaterialReplacementService
         }
 
         _materialCache[cacheKey] = clones;
+        return clones;
+    }
+
+    public bool HasDirectTextureReplacementTargets(Material[] sourceMaterials)
+    {
+        if (!_replacementTextures.Any() || sourceMaterials == null || sourceMaterials.Length == 0)
+            return false;
+
+        foreach (var material in sourceMaterials)
+        {
+            if (material == null)
+                continue;
+
+            foreach (var propertyName in DirectTextureProperties)
+            {
+                if (!material.HasProperty(propertyName))
+                    continue;
+
+                var currentTextureName = material.GetTexture(propertyName)?.name;
+                if (!string.IsNullOrWhiteSpace(currentTextureName) && _replacementTextures.ContainsKey(currentTextureName))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    public Material[] GetOrCreateDirectTextureReplacementMaterials(Material[] sourceMaterials)
+    {
+        if (sourceMaterials == null || sourceMaterials.Length == 0 || !HasDirectTextureReplacementTargets(sourceMaterials))
+            return sourceMaterials;
+
+        var keyParts = new List<string> { sourceMaterials.Length.ToString(), "direct" };
+        for (int i = 0; i < sourceMaterials.Length; i++)
+        {
+            var material = sourceMaterials[i];
+            keyParts.Add(material != null ? material.GetInstanceID().ToString() : "null");
+            foreach (var propertyName in DirectTextureProperties)
+            {
+                keyParts.Add(propertyName);
+                keyParts.Add(GetTextureName(material, propertyName));
+            }
+        }
+
+        var cacheKey = string.Join("|", keyParts);
+        if (_directMaterialCache.TryGetValue(cacheKey, out var cached))
+            return cached;
+
+        var clones = new Material[sourceMaterials.Length];
+        var changed = false;
+        for (int i = 0; i < sourceMaterials.Length; i++)
+        {
+            var sourceMaterial = sourceMaterials[i];
+            if (sourceMaterial == null)
+                continue;
+
+            Material clone = null;
+            foreach (var propertyName in DirectTextureProperties)
+            {
+                if (!sourceMaterial.HasProperty(propertyName))
+                    continue;
+
+                var currentTextureName = sourceMaterial.GetTexture(propertyName)?.name;
+                if (string.IsNullOrWhiteSpace(currentTextureName) ||
+                    !_replacementTextures.TryGetValue(currentTextureName, out var replacementTexture))
+                {
+                    continue;
+                }
+
+                clone ??= CreateMaterialClone(sourceMaterial, sourceMaterial.name);
+                clone.SetTexture(propertyName, replacementTexture);
+                changed = true;
+            }
+
+            clones[i] = clone ?? sourceMaterial;
+        }
+
+        if (!changed)
+            return sourceMaterials;
+
+        _directMaterialCache[cacheKey] = clones;
         return clones;
     }
 

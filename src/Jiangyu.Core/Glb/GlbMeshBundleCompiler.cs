@@ -86,20 +86,41 @@ public static class GlbMeshBundleCompiler
         public required bool Linear { get; init; }
     }
 
-    public static async Task<BuildResult> BuildAsync(
+    public sealed class ImportedAudioAsset
+    {
+        public required string Name { get; init; }
+        public required string SourceFilePath { get; init; }
+        public required string Extension { get; init; }
+    }
+
+    public sealed class ImportedSpriteAsset
+    {
+        public required string Name { get; init; }
+        public required string SourceFilePath { get; init; }
+        public required string Extension { get; init; }
+        public required string StagingName { get; init; }
+    }
+
+    internal static async Task<BuildResult> BuildAsync(
         string unityEditor,
         string unityProjectDir,
         string bundleName,
         string outputBundlePath,
         IReadOnlyList<MeshSourceEntry> entries,
+        IReadOnlyList<CompiledTexture> directTextures,
+        IReadOnlyList<ImportedSpriteAsset> directSprites,
+        IReadOnlyList<ImportedAudioAsset> directAudioAssets,
         string? gameDataPath,
         IReadOnlyDictionary<string, string> targetMeshNamesByBundleMesh)
     {
         var meshes = ExtractMeshes(entries);
-        if (meshes.Count == 0)
-            throw new InvalidOperationException("No GLB meshes were extracted.");
+        var textures = ExtractTextures(entries)
+            .ToDictionary(texture => texture.Name, StringComparer.Ordinal);
+        foreach (var texture in directTextures)
+            textures[texture.Name] = texture;
 
-        var textures = ExtractTextures(entries);
+        if (meshes.Count == 0 && textures.Count == 0 && directSprites.Count == 0 && directAudioAssets.Count == 0)
+            throw new InvalidOperationException("No replacement assets were extracted.");
 
         var sourceDiagnosticsPath = outputBundlePath + ".source-diagnostics.json";
         WriteSourceDiagnostics(sourceDiagnosticsPath, meshes);
@@ -107,8 +128,8 @@ public static class GlbMeshBundleCompiler
         var meshDataPath = Path.Combine(unityProjectDir, "meshdata.bin");
         var textureDataPath = Path.Combine(unityProjectDir, "texturedata.bin");
         WriteMeshData(meshDataPath, meshes);
-        WriteTextureData(textureDataPath, textures);
-        await SetupUnityProjectAsync(unityProjectDir);
+        WriteTextureData(textureDataPath, [.. textures.Values.OrderBy(texture => texture.Name, StringComparer.Ordinal)]);
+        await SetupUnityProjectAsync(unityProjectDir, directSprites, directAudioAssets);
         var diagnosticsPath = outputBundlePath + ".unity-diagnostics.json";
         var contractPath = Path.Combine(unityProjectDir, "meshcontract.bin");
         var firstPassOutputPath = outputBundlePath;
@@ -1246,7 +1267,10 @@ public static class GlbMeshBundleCompiler
         File.WriteAllText(path, json);
     }
 
-    private static async Task SetupUnityProjectAsync(string unityProjectDir)
+    private static async Task SetupUnityProjectAsync(
+        string unityProjectDir,
+        IReadOnlyList<ImportedSpriteAsset> directSprites,
+        IReadOnlyList<ImportedAudioAsset> directAudioAssets)
     {
         var assetsDir = Path.Combine(unityProjectDir, "Assets");
         var editorDir = Path.Combine(assetsDir, "Editor");
@@ -1254,6 +1278,41 @@ public static class GlbMeshBundleCompiler
 
         var buildScript = LoadEmbeddedResource("Jiangyu.Core.Unity.MeshBundleBuilder.template");
         await File.WriteAllTextAsync(Path.Combine(editorDir, "MeshBundleBuilder.cs"), buildScript);
+
+        var audioDir = Path.Combine(assetsDir, "Audio");
+        if (Directory.Exists(audioDir))
+            Directory.Delete(audioDir, recursive: true);
+
+        var spriteSourceDir = Path.Combine(assetsDir, "SpriteSources");
+        if (Directory.Exists(spriteSourceDir))
+            Directory.Delete(spriteSourceDir, recursive: true);
+
+        if (directAudioAssets.Count == 0 && directSprites.Count == 0)
+            return;
+
+        if (directAudioAssets.Count > 0)
+            Directory.CreateDirectory(audioDir);
+        foreach (var asset in directAudioAssets)
+        {
+            var extension = string.IsNullOrWhiteSpace(asset.Extension) ? string.Empty : asset.Extension;
+            if (!string.IsNullOrEmpty(extension) && !extension.StartsWith('.'))
+                extension = $".{extension}";
+
+            var destinationPath = Path.Combine(audioDir, $"{asset.Name}{extension}");
+            File.Copy(asset.SourceFilePath, destinationPath, overwrite: true);
+        }
+
+        if (directSprites.Count > 0)
+            Directory.CreateDirectory(spriteSourceDir);
+        foreach (var asset in directSprites)
+        {
+            var extension = string.IsNullOrWhiteSpace(asset.Extension) ? string.Empty : asset.Extension;
+            if (!string.IsNullOrEmpty(extension) && !extension.StartsWith('.'))
+                extension = $".{extension}";
+
+            var destinationPath = Path.Combine(spriteSourceDir, $"{asset.StagingName}{extension}");
+            File.Copy(asset.SourceFilePath, destinationPath, overwrite: true);
+        }
     }
 
     private static async Task InvokeUnityBuildAsync(
