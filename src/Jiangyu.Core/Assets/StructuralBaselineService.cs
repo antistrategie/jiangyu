@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using AssetRipper.Assets;
@@ -20,6 +21,7 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         WriteIndented = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
@@ -470,7 +472,7 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
     {
         foreach (InspectedFieldNode field in fields)
         {
-            if (string.Equals(field.FieldTypeName, typeName, StringComparison.Ordinal)
+            if (MatchesTypeName(field.FieldTypeName, typeName)
                 && field.Fields is { Count: > 0 })
             {
                 return field;
@@ -492,7 +494,7 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
 
             foreach (InspectedFieldNode element in field.Elements)
             {
-                if (string.Equals(element.FieldTypeName, typeName, StringComparison.Ordinal)
+                if (MatchesTypeName(element.FieldTypeName, typeName)
                     && element.Fields is { Count: > 0 })
                 {
                     return element;
@@ -510,6 +512,35 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
         }
 
         return null;
+    }
+
+    internal static bool MatchesTypeName(string? observedTypeName, string? expectedTypeName)
+    {
+        if (string.IsNullOrWhiteSpace(observedTypeName) || string.IsNullOrWhiteSpace(expectedTypeName))
+        {
+            return false;
+        }
+
+        if (string.Equals(observedTypeName, expectedTypeName, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        string observedSimple = GetSimpleTypeName(observedTypeName);
+        string expectedSimple = GetSimpleTypeName(expectedTypeName);
+        return string.Equals(observedSimple, expectedSimple, StringComparison.Ordinal);
+    }
+
+    private static string GetSimpleTypeName(string typeName)
+    {
+        int genericStart = typeName.IndexOf('<');
+        if (genericStart >= 0)
+        {
+            typeName = typeName[..genericStart];
+        }
+
+        int lastDot = typeName.LastIndexOf('.');
+        return lastDot >= 0 ? typeName[(lastDot + 1)..] : typeName;
     }
 
     internal static List<BaselineFieldEntry> ExtractFieldEntries(List<InspectedFieldNode> fields)
@@ -533,12 +564,55 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
             return null;
         }
 
+        string? declaredElementType = TryParseArrayElementTypeName(field.FieldTypeName);
+        if (!string.IsNullOrWhiteSpace(declaredElementType))
+        {
+            return declaredElementType;
+        }
+
         if (field.Elements is { Count: > 0 })
         {
             return field.Elements[0].FieldTypeName;
         }
 
         return null;
+    }
+
+    internal static string? TryParseArrayElementTypeName(string? fieldTypeName)
+    {
+        if (string.IsNullOrWhiteSpace(fieldTypeName))
+        {
+            return null;
+        }
+
+        fieldTypeName = fieldTypeName.Trim();
+
+        if (fieldTypeName.EndsWith("[]", StringComparison.Ordinal))
+        {
+            string arrayElement = fieldTypeName[..^2].Trim();
+            return arrayElement.Length == 0 ? null : arrayElement;
+        }
+
+        int genericStart = fieldTypeName.IndexOf('<');
+        if (genericStart < 0 || !fieldTypeName.EndsWith('>'))
+        {
+            return null;
+        }
+
+        string genericTypeName = fieldTypeName[..genericStart].Trim();
+        bool isArrayLike =
+            string.Equals(genericTypeName, "Array", StringComparison.Ordinal)
+            || genericTypeName.EndsWith(".List`1", StringComparison.Ordinal)
+            || string.Equals(genericTypeName, "List", StringComparison.Ordinal)
+            || string.Equals(genericTypeName, "List`1", StringComparison.Ordinal);
+
+        if (!isArrayLike)
+        {
+            return null;
+        }
+
+        string inner = fieldTypeName[(genericStart + 1)..^1].Trim();
+        return inner.Length == 0 ? null : inner;
     }
 
     private static BaselineTypeDiff? DiffType(BaselineTypeEntry previous, BaselineTypeEntry current)

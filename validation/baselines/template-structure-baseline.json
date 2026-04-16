@@ -1,0 +1,1198 @@
+{
+  "generatedAt": "2026-04-16T01:58:21.4857074+00:00",
+  "gameAssemblyHash": "d4e181a6dedcfa3753e5df4eecba1617d93ba7a8b9ba60057d27d7dcbad31063",
+  "types": [
+    {
+      "typeName": "Menace.Tactical.EntityLootEntry",
+      "category": "supportType",
+      "fieldCount": 4,
+      "sampleNames": [
+        "enemy.alien_01_big_warrior_queen",
+        "enemy.construct_soldier_tier1",
+        "enemy.pirate_boarding_commandos"
+      ],
+      "fields": [
+        {
+          "name": "Item",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Items.BaseItemTemplate"
+        },
+        {
+          "name": "Count",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "OverrideDefaultDropChance",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "DropChance",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        }
+      ]
+    },
+    {
+      "typeName": "Menace.Tactical.EntityProperties",
+      "category": "supportType",
+      "fieldCount": 102,
+      "sampleNames": [
+        "building_military_1x1_bunker",
+        "enemy.pirate_scavengers",
+        "player_squad.darby",
+        "player_vehicle.modular_ifv"
+      ],
+      "fields": [
+        {
+          "name": "MaxElements",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "HitpointsPerElement",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "HitpointsPerElementMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "Armor",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "ArmorSide",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "ArmorBack",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "ArmorMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "ArmorDurabilityPerElement",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "ArmorDurabilityPerElementMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "ActionPoints",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "ActionPointsMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "AdditionalMovementCost",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "AdditionalTurningCost",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "AdditionalAttackCost",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "AttackCostMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "AdditionalMalfunctionChance",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "APEnterCost",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "APLeaveCost",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "LowestModifiedMovementCosts",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "BackwardsMovementMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "Accuracy",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "AccuracyMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "AccuracyDropoff",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "AccuracyDropoffMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "HitchanceMin",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "CriticalChance",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "CriticalDamageMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DefenseMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "CoverEffectivenessMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamageSustainedMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamageSustainedSquadLeaderMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "ProvidedCoverBonus",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "CoverTypeOffset",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "CoverGainedByVehicleOffset",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "Discipline",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DisciplineMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "MoraleEvents",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.MoraleEvent"
+        },
+        {
+          "name": "MoraleBonus",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "MoraleMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "MoraleRecoveryMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamageToMoraleMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "MoraleImpactMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "MoraleStateOffset",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "Vision",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "VisionMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "Detection",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "DetectionMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "Concealment",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "ConcealmentMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "SuppressionImpactMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "SuppressionDealt",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "SuppressionDealtMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "SuppressionDealtDropoffAOE",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "Flags",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.EntityFlags"
+        },
+        {
+          "name": "PromotionCostMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DeploymentZoneMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DeploymentZoneMinExtend",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "DeployCostMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "ArmorPenetration",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "ArmorPenetrationMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "ArmorPenetrationDropoff",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "ArmorPenetrationDropoffMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "ArmorPenetrationDropoffAOE",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "IgnoreCoverMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "Damage",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamageMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamageDropoff",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamageDropoffMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamageDropoffAOE",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamageToArmorDurability",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamageToArmorDurabilityMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamageToArmorDurabilityDropoff",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamageToArmorDurabilityDropoffMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamageToArmorDurabilityDropoffAOE",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "TotalDamageMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamagePctCurrentHitpoints",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamagePctCurrentHitpointsMin",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamagePctMaxHitpoints",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamagePctMaxHitpointsMin",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "GetDismemberedChanceBonus",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "GetDismemberedChanceMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "GetDismemberedMinParts",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "GetDismemberedMaxParts",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "DismemberChance",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "DismemberArea",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.RagdollHitArea"
+        },
+        {
+          "name": "ElementsHit",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "ElementsHitPct",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "ReduceElementsHit",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "DefectThresholdOffset",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "FatalityType",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.FatalityType"
+        },
+        {
+          "name": "DamageVisualizationType",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.DamageVisualizationType"
+        },
+        {
+          "name": "AIPriorityMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "SoundOnMovementStart",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        },
+        {
+          "name": "SoundOnMovementStop",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        },
+        {
+          "name": "SoundOnMovementStep",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        },
+        {
+          "name": "SoundOnMovementSymbolic",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        },
+        {
+          "name": "SoundOnMovementStepOverrides2",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.SurfaceSoundsTemplate"
+        },
+        {
+          "name": "SoundOnArmorHit",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        },
+        {
+          "name": "SoundOnHitpointsHit",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        },
+        {
+          "name": "SoundOnHitpointsHitFemale",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        },
+        {
+          "name": "SoundOnDeath",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        },
+        {
+          "name": "SoundOnDeathFemale",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        }
+      ]
+    },
+    {
+      "typeName": "Menace.Tactical.PrefabAttachment",
+      "category": "supportType",
+      "fieldCount": 3,
+      "sampleNames": [
+        "player_vehicle.generic_heavy_attack_walker",
+        "player_vehicle.modular_ifv"
+      ],
+      "fields": [
+        {
+          "name": "IsLight",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "AttachmentPointName",
+          "kind": "string",
+          "fieldTypeName": "String"
+        },
+        {
+          "name": "Prefab",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.GameObject"
+        }
+      ]
+    },
+    {
+      "typeName": "Menace.Tactical.Skills.SkillOnSurfaceDefinition",
+      "category": "supportType",
+      "fieldCount": 6,
+      "sampleNames": [
+        "active.change_plates",
+        "active.fire_assault_rifle_tier1_556",
+        "passive.ammo_armor_piercing"
+      ],
+      "fields": [
+        {
+          "name": "ImpactEffect",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "Decals",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.DecalCollection"
+        },
+        {
+          "name": "DecalChance",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "RicochetChance",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "SoundOnRicochet",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        },
+        {
+          "name": "SoundOnImpact",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        }
+      ]
+    },
+    {
+      "typeName": "EntityTemplate",
+      "category": "template",
+      "fieldCount": 109,
+      "sampleNames": [
+        "enemy.pirate_scavengers",
+        "player_squad.darby"
+      ],
+      "fields": [
+        {
+          "name": "serializationData",
+          "kind": "object",
+          "fieldTypeName": "Sirenix.Serialization.SerializationData"
+        },
+        {
+          "name": "m_GameDesignComment",
+          "kind": "string",
+          "fieldTypeName": "String"
+        },
+        {
+          "name": "m_LocaState",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tools.LocaState"
+        },
+        {
+          "name": "Title",
+          "kind": "object",
+          "fieldTypeName": "Menace.Tools.LocalizedLine"
+        },
+        {
+          "name": "Description",
+          "kind": "object",
+          "fieldTypeName": "Menace.Tools.LocalizedMultiLine"
+        },
+        {
+          "name": "Type",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.EntityType"
+        },
+        {
+          "name": "ActorType",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.ActorType"
+        },
+        {
+          "name": "StructureType",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.StructureType"
+        },
+        {
+          "name": "SurfaceType",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.SurfaceType"
+        },
+        {
+          "name": "SpeakerTemplate",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Conversations.SpeakerTemplate"
+        },
+        {
+          "name": "Tags",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tags.TagTemplate>",
+          "elementTypeName": "Menace.Tags.TagTemplate"
+        },
+        {
+          "name": "ElementsMin",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "ElementsMax",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "ChanceForFemaleElements",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "ArmyPointCost",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "ReqCampaignProgress",
+          "kind": "object",
+          "fieldTypeName": "UnityEngine.Vector2Int"
+        },
+        {
+          "name": "ProvidesCover",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.CoverType"
+        },
+        {
+          "name": "ProvidesCoverWhenDestroyed",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "UsesCover",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.UseCoverType"
+        },
+        {
+          "name": "IsContainableInEntities",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "ContainerType",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.EntityContainerType"
+        },
+        {
+          "name": "ContainedEntityOnSpawn",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.EntityTemplate"
+        },
+        {
+          "name": "DespawnIfEmpty",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "ProvidesCoverInside",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.Skills.InsideCoverTemplate"
+        },
+        {
+          "name": "EffectOnContained",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.Skills.SkillTemplate"
+        },
+        {
+          "name": "IsIgnoredInActorCount",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsDestructible",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsSurfaceChangedOnDeath",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "ChangeSurfaceOnDeath",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.SurfaceType"
+        },
+        {
+          "name": "IsTraversableByInfantry",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsAffectedByFatalities",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "DestroyPropsOnDeath",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "DestroyPropsRadius",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DefectGroups",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tactical.DefectGroup>",
+          "elementTypeName": "Menace.Tactical.DefectGroup"
+        },
+        {
+          "name": "AnimationSoundTemplate",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tools.AnimationSoundTemplate"
+        },
+        {
+          "name": "IsAligningWithTerrain",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "FixedRotationForDestroyedPrefab",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsCompatibleWithCables",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "HasExtendedRangeForCables",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "CameraAutoHeightOffset",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "OverrideMissionPreviewColor",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "MissionPreviewColorOverride",
+          "kind": "object",
+          "fieldTypeName": "UnityEngine.Color"
+        },
+        {
+          "name": "Prefabs",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<UnityEngine.GameObject>",
+          "elementTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "Decoration",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tools.PrefabListTemplate>",
+          "elementTypeName": "Menace.Tools.PrefabListTemplate"
+        },
+        {
+          "name": "SmallDecoration",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tools.PrefabListTemplate>",
+          "elementTypeName": "Menace.Tools.PrefabListTemplate"
+        },
+        {
+          "name": "DestroyedPrefabs",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<UnityEngine.GameObject>",
+          "elementTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "DestroyedDecoration",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tools.PrefabListTemplate>",
+          "elementTypeName": "Menace.Tools.PrefabListTemplate"
+        },
+        {
+          "name": "DestroyedWalls",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<UnityEngine.GameObject>",
+          "elementTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "Scale",
+          "kind": "object",
+          "fieldTypeName": "UnityEngine.Vector2"
+        },
+        {
+          "name": "OverrideScaleForSquadLeader",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "ScaleOffsetSquadLeader",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "ActorLightOverride",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "ActorLightParentName",
+          "kind": "string",
+          "fieldTypeName": "String"
+        },
+        {
+          "name": "m_SerBlockedTiles",
+          "kind": "object",
+          "fieldTypeName": "UnityEngine.Rendering.BitArray64"
+        },
+        {
+          "name": "IsBlockingLineOfSight",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "m_SerBlockedLineOfSight",
+          "kind": "object",
+          "fieldTypeName": "UnityEngine.Rendering.BitArray64"
+        },
+        {
+          "name": "CustomLineOfSightOffset",
+          "kind": "object",
+          "fieldTypeName": "UnityEngine.Vector2Int"
+        },
+        {
+          "name": "HudYOffsetScale",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "Badge",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "BadgeWhite",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "PreviewMapIcon",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "AttachedPrefabs",
+          "kind": "array",
+          "fieldTypeName": "Menace.Tactical.PrefabAttachment[]",
+          "elementTypeName": "Menace.Tactical.PrefabAttachment"
+        },
+        {
+          "name": "FactionSpecificAnimation",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.FactionAnimationType"
+        },
+        {
+          "name": "AimWithVisualSlot",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Items.VisualAlterationSlot"
+        },
+        {
+          "name": "AnimatorTemplate",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.ElementAnimatorTemplate"
+        },
+        {
+          "name": "OverrideAnimatorController",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.RuntimeAnimatorController"
+        },
+        {
+          "name": "MinSkinQuality",
+          "kind": "enum",
+          "fieldTypeName": "UnityEngine.SkinQuality"
+        },
+        {
+          "name": "BloodDecals",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.DecalCollection"
+        },
+        {
+          "name": "BloodDecalsOverride",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.SurfaceDecalsTemplate"
+        },
+        {
+          "name": "BloodPool",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.DecalCollection"
+        },
+        {
+          "name": "BloodPoolOverride",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.SurfaceDecalsTemplate"
+        },
+        {
+          "name": "BloodPoolTriggerType",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.EffectTriggerType"
+        },
+        {
+          "name": "BloodPoolAnimation",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "DamageReceivedEffect",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "HeavyDamageReceivedEffect",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "DamageReceivedEffectThreshold",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "GetDismemberedBloodSprayEffect",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "GetDismemberedSmallAdditionalParts",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tools.PrefabListTemplate"
+        },
+        {
+          "name": "DeathEffectOverrides2",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.SurfaceEffectsTemplate"
+        },
+        {
+          "name": "DeathEffect",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "DeathEffectTriggerType",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.EffectTriggerType"
+        },
+        {
+          "name": "DeathAttachEffect",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "IsSinkingIntoGroundOnDeath",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "DeathCameraEffect",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.CameraEffectType"
+        },
+        {
+          "name": "SoundOnAim",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        },
+        {
+          "name": "SoundWhileAlive",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        },
+        {
+          "name": "ExhaustDriveEffect",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "ExhaustRevEffect",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "ExhaustIdleEffect",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "MovementEffectOverrides2",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.SurfaceEffectsTemplate"
+        },
+        {
+          "name": "TriggerMovementEffectsOnStep",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "TriggerMovementStepIntervall",
+          "kind": "int",
+          "fieldTypeName": "UInt32"
+        },
+        {
+          "name": "MovementType",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.MovementType"
+        },
+        {
+          "name": "VisualPositioning",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.TilePositioning"
+        },
+        {
+          "name": "PullTowardsTileCenter",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "RotationAfterMovement",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.RotationAfterMovement"
+        },
+        {
+          "name": "CameraShakeOnMovement",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "CameraShakeOnMovementStepInterval",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "CameraShakeOnMovementDuration",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "CameraShakeOnMovementIntensity",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "CameraShakeOnMovementRecoverTime",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "InventoryType",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Items.InventoryType"
+        },
+        {
+          "name": "Items",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Items.ItemTemplate>",
+          "elementTypeName": "Menace.Items.ItemTemplate"
+        },
+        {
+          "name": "Loot",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tactical.EntityLootEntry>",
+          "elementTypeName": "Menace.Tactical.EntityLootEntry"
+        },
+        {
+          "name": "ModularVehicle",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Strategy.ModularVehicleTemplate"
+        },
+        {
+          "name": "Properties",
+          "kind": "object",
+          "fieldTypeName": "Menace.Tactical.EntityProperties"
+        },
+        {
+          "name": "SkillGroups",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tactical.Skills.SkillGroup>",
+          "elementTypeName": "Menace.Tactical.Skills.SkillGroup"
+        },
+        {
+          "name": "Skills",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tactical.Skills.SkillTemplate>",
+          "elementTypeName": "Menace.Tactical.Skills.SkillTemplate"
+        },
+        {
+          "name": "AIRole",
+          "kind": "object",
+          "fieldTypeName": "Menace.Tactical.AI.Data.RoleData"
+        }
+      ]
+    }
+  ]
+}

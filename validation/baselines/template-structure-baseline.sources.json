@@ -5,5 +5,38 @@
       "sampleNames": ["player_squad.darby", "enemy.pirate_scavengers"]
     }
   ],
-  "supportTypes": []
+  "supportTypes": [
+    {
+      "typeName": "Menace.Tactical.EntityProperties",
+      "sampleNames": [
+        "player_squad.darby",
+        "enemy.pirate_scavengers",
+        "building_military_1x1_bunker",
+        "player_vehicle.modular_ifv"
+      ]
+    },
+    {
+      "typeName": "Menace.Tactical.PrefabAttachment",
+      "sampleNames": [
+        "player_vehicle.modular_ifv",
+        "player_vehicle.generic_heavy_attack_walker"
+      ]
+    },
+    {
+      "typeName": "Menace.Tactical.EntityLootEntry",
+      "sampleNames": [
+        "enemy.pirate_boarding_commandos",
+        "enemy.alien_01_big_warrior_queen",
+        "enemy.construct_soldier_tier1"
+      ]
+    },
+    {
+      "typeName": "Menace.Tactical.Skills.SkillOnSurfaceDefinition",
+      "sampleNames": [
+        "active.fire_assault_rifle_tier1_556",
+        "active.change_plates",
+        "passive.ammo_armor_piercing"
+      ]
+    }
+  ]
 }
