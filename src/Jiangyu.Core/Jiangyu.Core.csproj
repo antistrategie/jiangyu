@@ -16,7 +16,7 @@
     <ProjectReference Include="..\..\vendor\AssetRipper\Source\AssetRipper.Import\AssetRipper.Import.csproj" />
     <ProjectReference Include="..\..\vendor\AssetRipper\Source\AssetRipper.Processing\AssetRipper.Processing.csproj" />
     <ProjectReference Include="..\..\vendor\AssetRipper\Source\AssetRipper.Export.Modules.Models\AssetRipper.Export.Modules.Models.csproj" />
-    <ProjectReference Include="..\..\vendor\AssetRipper\Source\AssetRipper.Export.PrimaryContent\AssetRipper.Export.PrimaryContent.csproj" />
+    <ProjectReference Include="..\..\vendor\AssetRipper\Source\AssetRipper.Export.Modules.Textures\AssetRipper.Export.Modules.Textures.csproj" />
   </ItemGroup>
 
   <ItemGroup>

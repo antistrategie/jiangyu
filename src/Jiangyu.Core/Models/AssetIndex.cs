@@ -13,6 +13,9 @@ public sealed class AssetEntry
     [JsonPropertyName("name")]
     public string? Name { get; set; }
 
+    [JsonPropertyName("canonicalPath")]
+    public string? CanonicalPath { get; set; }
+
     [JsonPropertyName("className")]
     public string? ClassName { get; set; }
 

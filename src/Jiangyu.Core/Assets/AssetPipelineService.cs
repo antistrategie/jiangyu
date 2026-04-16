@@ -190,7 +190,9 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
 
         return [.. index.Assets
             .Where(a =>
-                (string.IsNullOrEmpty(query) || (a.Name?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
+                (string.IsNullOrEmpty(query)
+                 || (a.Name?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+                 || (a.CanonicalPath?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
                 && (typeFilter is null || string.Equals(a.ClassName, typeFilter, StringComparison.OrdinalIgnoreCase)))
             .Take(limit)];
     }
@@ -622,6 +624,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
                 entries.Add(new AssetEntry
                 {
                     Name = asset.GetBestName(),
+                    CanonicalPath = BuildCanonicalAssetPath(collectionName, asset.ClassName, asset.GetBestName(), asset.PathID),
                     ClassName = asset.ClassName,
                     ClassId = asset.ClassID,
                     PathId = asset.PathID,
@@ -631,6 +634,34 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         }
 
         return new AssetIndex { Assets = entries };
+    }
+
+    private static string BuildCanonicalAssetPath(string? collectionName, string? className, string? assetName, long pathId)
+    {
+        var collectionSegment = SanitizeAssetPathSegment(string.IsNullOrWhiteSpace(collectionName) ? "unknown-collection" : collectionName);
+        var classSegment = SanitizeAssetPathSegment(string.IsNullOrWhiteSpace(className) ? "UnknownClass" : className);
+        var nameSegment = SanitizeAssetPathSegment(string.IsNullOrWhiteSpace(assetName) ? "unnamed" : assetName);
+        return $"{collectionSegment}/{classSegment}/{nameSegment}--{pathId}";
+    }
+
+    private static string SanitizeAssetPathSegment(string value)
+    {
+        Span<char> buffer = stackalloc char[value.Length];
+        int index = 0;
+
+        foreach (char c in value)
+        {
+            if (char.IsLetterOrDigit(c) || c is '.' or '_' or '-')
+            {
+                buffer[index++] = c;
+            }
+            else
+            {
+                buffer[index++] = '_';
+            }
+        }
+
+        return index == 0 ? "_" : new string(buffer[..index]);
     }
 
     private static void RunProcessors(GameData gameData)

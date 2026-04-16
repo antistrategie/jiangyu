@@ -1,5 +1,6 @@
 using System.CommandLine;
 using Jiangyu.Core.Assets;
+using Jiangyu.Core.Compile;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
 
@@ -84,6 +85,15 @@ public static class AssetsCommand
                 string name = entry.Name ?? "(unnamed)";
                 if (name.Length > 50) name = name[..47] + "...";
                 Console.WriteLine($"  {name.PadRight(nameWidth + 2)} {entry.ClassName?.PadRight(typeWidth + 2)} {entry.Collection}");
+                if (!string.IsNullOrWhiteSpace(entry.CanonicalPath))
+                {
+                    Console.WriteLine($"    path: {entry.CanonicalPath}");
+                }
+                if (!string.IsNullOrWhiteSpace(entry.Name) &&
+                    string.Equals(entry.ClassName, "PrefabHierarchyObject", StringComparison.Ordinal))
+                {
+                    Console.WriteLine($"    replacement target: {CompilationService.BuildModelReplacementRelativePath(entry.Name!, entry.PathId)}");
+                }
             }
 
             if (results.Count == 50)

@@ -28,6 +28,7 @@ public static class GlbMeshBundleCompiler
         public required string SourceFilePath { get; init; }
         public required string BundleMeshName { get; init; }
         public required bool HasExplicitMeshName { get; init; }
+        public string? SourceReference { get; init; }
     }
 
     internal sealed class CompiledMesh

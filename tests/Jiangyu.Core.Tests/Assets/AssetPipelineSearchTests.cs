@@ -20,12 +20,12 @@ public class AssetPipelineSearchTests : IDisposable
         {
             Assets =
             [
-                new AssetEntry { Name = "Soldier_Body", ClassName = "Mesh", ClassId = 43, PathId = 100, Collection = "level0" },
-                new AssetEntry { Name = "Soldier_Body", ClassName = "GameObject", ClassId = 1, PathId = 101, Collection = "level0" },
-                new AssetEntry { Name = "Soldier_Head", ClassName = "Mesh", ClassId = 43, PathId = 200, Collection = "level0" },
-                new AssetEntry { Name = "Alien_Body", ClassName = "Mesh", ClassId = 43, PathId = 300, Collection = "sharedassets1" },
-                new AssetEntry { Name = "Tank_Hull", ClassName = "GameObject", ClassId = 1, PathId = 400, Collection = "sharedassets2" },
-                new AssetEntry { Name = "Rifle_Model", ClassName = "Mesh", ClassId = 43, PathId = 500, Collection = "sharedassets2" },
+                new AssetEntry { Name = "Soldier_Body", CanonicalPath = "level0/Mesh/Soldier_Body--100", ClassName = "Mesh", ClassId = 43, PathId = 100, Collection = "level0" },
+                new AssetEntry { Name = "Soldier_Body", CanonicalPath = "level0/GameObject/Soldier_Body--101", ClassName = "GameObject", ClassId = 1, PathId = 101, Collection = "level0" },
+                new AssetEntry { Name = "Soldier_Head", CanonicalPath = "level0/Mesh/Soldier_Head--200", ClassName = "Mesh", ClassId = 43, PathId = 200, Collection = "level0" },
+                new AssetEntry { Name = "Alien_Body", CanonicalPath = "sharedassets1/Mesh/Alien_Body--300", ClassName = "Mesh", ClassId = 43, PathId = 300, Collection = "sharedassets1" },
+                new AssetEntry { Name = "Tank_Hull", CanonicalPath = "sharedassets2/GameObject/Tank_Hull--400", ClassName = "GameObject", ClassId = 1, PathId = 400, Collection = "sharedassets2" },
+                new AssetEntry { Name = "Rifle_Model", CanonicalPath = "sharedassets2/Mesh/Rifle_Model--500", ClassName = "Mesh", ClassId = 43, PathId = 500, Collection = "sharedassets2" },
             ],
         };
 
@@ -82,6 +82,16 @@ public class AssetPipelineSearchTests : IDisposable
 
         Assert.Equal(3, results.Count);
         Assert.All(results, r => Assert.Contains("Soldier", r.Name));
+    }
+
+    [Fact]
+    public void Search_ByCanonicalPathSegment_MatchesCaseInsensitive()
+    {
+        var results = _service.Search(query: "sharedassets2/mesh");
+
+        Assert.Single(results);
+        Assert.Equal("Rifle_Model", results[0].Name);
+        Assert.Equal("sharedassets2/Mesh/Rifle_Model--500", results[0].CanonicalPath);
     }
 
     [Fact]
@@ -178,7 +188,9 @@ public class AssetPipelineSearchTests : IDisposable
         Assert.NotNull(go);
         Assert.Equal(100, mesh.PathId);
         Assert.Equal("level0", mesh.Collection);
+        Assert.Equal("level0/Mesh/Soldier_Body--100", mesh.CanonicalPath);
         Assert.Equal(101, go.PathId);
         Assert.Equal("level0", go.Collection);
+        Assert.Equal("level0/GameObject/Soldier_Body--101", go.CanonicalPath);
     }
 }

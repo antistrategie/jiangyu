@@ -69,6 +69,42 @@ public class ParseAssetReferenceTests
     }
 }
 
+public class ModelReplacementAliasTests
+{
+    [Fact]
+    public void BuildModelReplacementRelativePath_UsesTargetNameAndPathId()
+    {
+        var path = CompilationService.BuildModelReplacementRelativePath("el.local_forces_basic_soldier", 519);
+
+        Assert.Equal(
+            "assets/replacements/models/el.local_forces_basic_soldier--519/model.gltf",
+            path);
+    }
+
+    [Fact]
+    public void TryParseModelReplacementAlias_ExtractsNameAndPathId()
+    {
+        var success = CompilationService.TryParseModelReplacementAlias("el.local_forces_basic_soldier--20510", out var name, out var pathId);
+
+        Assert.True(success);
+        Assert.Equal("el.local_forces_basic_soldier", name);
+        Assert.Equal(20510, pathId);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("soldier")]
+    [InlineData("soldier--")]
+    [InlineData("--20510")]
+    [InlineData("soldier--abc")]
+    public void TryParseModelReplacementAlias_RejectsInvalidValues(string alias)
+    {
+        var success = CompilationService.TryParseModelReplacementAlias(alias, out _, out _);
+
+        Assert.False(success);
+    }
+}
+
 public class IsGlbPathTests
 {
     [Theory]

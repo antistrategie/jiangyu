@@ -41,6 +41,17 @@ public class ReplacementCoordinator
             if (!IsLiveSceneRenderer(smr) || IsAlreadyProcessedMesh(smr.sharedMesh))
                 continue;
 
+            // JIANGYU-CONTRACT: Runtime mesh replacement currently resolves live targets by
+            // SkinnedMeshRenderer.sharedMesh.name only. This is valid for the current proven
+            // replacement path where target mesh names are unique for the selected model target.
+            // Compile-time convention-first replacement must reject targets whose expected mesh
+            // names are globally duplicated until Jiangyu has a stronger runtime asset identity.
+            //
+            // JIANGYU-CONTRACT: If Jiangyu later adds a more specific prefab-aware runtime
+            // identity, the current shared-mesh behavior must remain the fallback so one
+            // replacement can still intentionally apply across multiple prefab variants that
+            // share the same live mesh names. Per-variant replacement should be opt-in and win
+            // only when explicitly defined.
             if (_catalog.Prefabs.TryGetValue(smr.sharedMesh.name, out var prefabReplacement))
             {
                 var entityRoot = FindEntityRoot(smr);

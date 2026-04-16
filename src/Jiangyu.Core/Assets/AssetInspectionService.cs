@@ -1,5 +1,16 @@
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
+using AssetRipper.Assets;
+using AssetRipper.Import.Configuration;
+using AssetRipper.Import.Structure;
+using AssetRipper.Processing;
+using AssetRipper.Processing.AnimatorControllers;
+using AssetRipper.Processing.Prefabs;
+using AssetRipper.Processing.Scenes;
+using AssetRipper.SourceGenerated.Classes.ClassID_1;
+using AssetRipper.SourceGenerated.Classes.ClassID_137;
+using AssetRipper.SourceGenerated.Extensions;
+using AssetRipper.IO.Files;
 
 namespace Jiangyu.Core.Assets;
 
@@ -13,6 +24,89 @@ public sealed class AssetInspectionService
     private const int ClassIdAnimator = 95;
     private const int ClassIdSkinnedMeshRenderer = 137;
     private const int ClassIdLODGroup = 205;
+
+    /// <summary>
+    /// Inspects a specific indexed GameObject and returns the distinct mesh names referenced by
+    /// SkinnedMeshRenderers in its hierarchy.
+    /// </summary>
+    public static IReadOnlyList<string> GetSkinnedMeshNamesForGameObject(string gameDataPath, string collectionName, long pathId)
+    {
+        var assetPath = EnumerateGameAssetFiles(gameDataPath)
+            .FirstOrDefault(path => string.Equals(Path.GetFileName(path), collectionName, StringComparison.Ordinal)) ?? throw new InvalidOperationException($"Could not find asset collection '{collectionName}' under '{gameDataPath}'.");
+        var am = new AssetsManager
+        {
+            UseQuickLookup = true,
+            UseTemplateFieldCache = true,
+            UseMonoTemplateFieldCache = true,
+        };
+
+        var inst = am.LoadAssetsFile(assetPath, loadDeps: false);
+        if (inst?.file is null)
+            throw new InvalidOperationException($"Failed to load asset collection '{assetPath}'.");
+
+        var templates = BuildTemplates(am, inst);
+        var ctx = new FileContext(inst, templates);
+        var matchingPathIds = new HashSet<long>();
+        ctx.CollectGameObjectAndDescendants(pathId, matchingPathIds);
+
+        if (matchingPathIds.Count == 0)
+            throw new InvalidOperationException(
+                $"No GameObject hierarchy could be collected for pathId {pathId} in collection '{collectionName}'.");
+
+        return matchingPathIds
+            .Select(ctx.BuildGameObject)
+            .SelectMany(go => go.SkinnedMeshRenderers)
+            .Select(renderer => renderer.MeshName)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray()!;
+    }
+
+    /// <summary>
+    /// Inspects a specific indexed object via the AssetRipper-processed game view and returns the distinct
+    /// mesh names referenced by SkinnedMeshRenderers in its hierarchy. Supports both raw GameObject assets
+    /// and processed prefab hierarchy objects that AssetRipper exposes as IGameObject roots.
+    /// </summary>
+    public static IReadOnlyList<string> GetSkinnedMeshNamesForIndexedObject(string gameDataPath, string collectionName, long pathId)
+    {
+        var settings = new CoreConfiguration();
+        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level0;
+
+        var gameStructure = GameStructure.Load([gameDataPath], LocalFileSystem.Instance, settings);
+        var gameData = GameData.FromGameStructure(gameStructure);
+        RunProcessors(gameData);
+
+        IUnityObjectBase? found = null;
+        foreach (var collection in gameData.GameBundle.FetchAssetCollections())
+        {
+            if (!string.Equals(collection.Name, collectionName, StringComparison.Ordinal))
+                continue;
+
+            found = collection.FirstOrDefault(asset => asset.PathID == pathId);
+            break;
+        }
+
+        if (found is not IGameObject gameObject)
+        {
+            throw new InvalidOperationException(
+                $"Failed to read indexed object {pathId} from collection '{collectionName}' as a GameObject hierarchy.");
+        }
+
+        return gameObject.GetRoot()
+            .FetchHierarchy()
+            .OfType<IGameObject>()
+            .Where(go => go.TryGetComponent(out ISkinnedMeshRenderer? _))
+            .Select(go =>
+            {
+                go.TryGetComponent(out ISkinnedMeshRenderer? smr);
+                return smr?.MeshP?.Name?.ToString();
+            })
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray()!;
+    }
 
     /// <summary>
     /// Inspects a bundle file and game data directory, returning a structured report
@@ -143,6 +237,22 @@ public sealed class AssetInspectionService
             {
                 yield return path;
             }
+        }
+    }
+
+    private static void RunProcessors(GameData gameData)
+    {
+        IAssetProcessor[] processors =
+        [
+            new SceneDefinitionProcessor(),
+            new MainAssetProcessor(),
+            new AnimatorControllerProcessor(),
+            new PrefabProcessor(),
+        ];
+
+        foreach (var processor in processors)
+        {
+            processor.Process(gameData);
         }
     }
 
