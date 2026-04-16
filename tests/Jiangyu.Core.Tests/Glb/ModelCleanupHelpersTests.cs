@@ -49,6 +49,16 @@ public class SnapScaleTests
     }
 
     [Fact]
+    public void BlenderStyleNearOneValues_SnapToOne()
+    {
+        var result = ModelCleanupService.SnapScale(new Vector3(1.0000173f, 1.0000001f, 1.0000073f));
+
+        Assert.Equal(1f, result.X);
+        Assert.Equal(1f, result.Y);
+        Assert.Equal(1f, result.Z);
+    }
+
+    [Fact]
     public void FarFromOne_Preserved()
     {
         var result = ModelCleanupService.SnapScale(new Vector3(0.5f, 2.0f, 0.01f));
@@ -81,16 +91,16 @@ public class DetermineVertexSpaceModeTests
     public void StaticMesh_NotSkinned()
     {
         var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
-            isSkinnedPath: false, isCleaned: false, hasDirectSkinBinding: false);
+            isSkinnedPath: false, isCleaned: false, hasDirectSkinBinding: false, appearsCentimeterScale: false);
 
         Assert.Equal(VertexSpaceMode.StaticMesh, mode);
     }
 
     [Fact]
-    public void RawPrefab_UncleandWithDirectSkin()
+    public void RawPrefab_CentimeterScaleWithDirectSkin()
     {
         var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
-            isSkinnedPath: true, isCleaned: false, hasDirectSkinBinding: true);
+            isSkinnedPath: true, isCleaned: false, hasDirectSkinBinding: true, appearsCentimeterScale: true);
 
         Assert.Equal(VertexSpaceMode.RawPrefabSkinned, mode);
     }
@@ -99,7 +109,7 @@ public class DetermineVertexSpaceModeTests
     public void CleanedExport_SkinnedPath()
     {
         var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
-            isSkinnedPath: true, isCleaned: true, hasDirectSkinBinding: true);
+            isSkinnedPath: true, isCleaned: true, hasDirectSkinBinding: true, appearsCentimeterScale: true);
 
         Assert.Equal(VertexSpaceMode.CleanedSkinned, mode);
     }
@@ -108,7 +118,7 @@ public class DetermineVertexSpaceModeTests
     public void MeshOnlyGlb_SkinnedButNoDirectBinding()
     {
         var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
-            isSkinnedPath: true, isCleaned: false, hasDirectSkinBinding: false);
+            isSkinnedPath: true, isCleaned: false, hasDirectSkinBinding: false, appearsCentimeterScale: true);
 
         Assert.Equal(VertexSpaceMode.CleanedSkinned, mode);
     }
@@ -117,8 +127,75 @@ public class DetermineVertexSpaceModeTests
     public void CleanedStaticMesh_StillStatic()
     {
         var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
-            isSkinnedPath: false, isCleaned: true, hasDirectSkinBinding: false);
+            isSkinnedPath: false, isCleaned: true, hasDirectSkinBinding: false, appearsCentimeterScale: true);
 
         Assert.Equal(VertexSpaceMode.StaticMesh, mode);
+    }
+
+    /// <summary>
+    /// Blender round-trip without the Jiangyu cleaned flag but with direct skin
+    /// bindings. Vertices remain in metre-space, so must get CleanedSkinned.
+    /// </summary>
+    [Fact]
+    public void AuthoredMetreSpace_UncleanedWithDirectSkin_TreatedAsMetreSpace()
+    {
+        var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
+            isSkinnedPath: true, isCleaned: false, hasDirectSkinBinding: true, appearsCentimeterScale: false);
+
+        Assert.Equal(VertexSpaceMode.CleanedSkinned, mode);
+    }
+
+    [Fact]
+    public void UncleanedStaticMesh_StillStatic()
+    {
+        var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
+            isSkinnedPath: false, isCleaned: false, hasDirectSkinBinding: false, appearsCentimeterScale: false);
+
+        Assert.Equal(VertexSpaceMode.StaticMesh, mode);
+    }
+
+    [Fact]
+    public void AuthoredGlb_UncleanedWithDirectSkin_TreatedAsMetreSpace()
+    {
+        var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
+            isSkinnedPath: true, isCleaned: false, hasDirectSkinBinding: true, appearsCentimeterScale: false);
+
+        Assert.Equal(VertexSpaceMode.CleanedSkinned, mode);
+    }
+}
+
+public class ShouldBakeMeshNodeTransformTests
+{
+    [Fact]
+    public void DirectSkinBinding_DoesNotBakeWorldTransform()
+    {
+        var bake = GlbMeshBundleCompiler.ShouldBakeMeshNodeTransform(
+            hasResolvedSkin: true,
+            hasDirectSkinBinding: true,
+            hasIdentityWorldTransform: false);
+
+        Assert.False(bake);
+    }
+
+    [Fact]
+    public void CompanionSkinBinding_BakesNonIdentityWorldTransform()
+    {
+        var bake = GlbMeshBundleCompiler.ShouldBakeMeshNodeTransform(
+            hasResolvedSkin: true,
+            hasDirectSkinBinding: false,
+            hasIdentityWorldTransform: false);
+
+        Assert.True(bake);
+    }
+
+    [Fact]
+    public void NoResolvedSkin_DoesNotBakeWorldTransform()
+    {
+        var bake = GlbMeshBundleCompiler.ShouldBakeMeshNodeTransform(
+            hasResolvedSkin: false,
+            hasDirectSkinBinding: false,
+            hasIdentityWorldTransform: false);
+
+        Assert.False(bake);
     }
 }

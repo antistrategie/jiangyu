@@ -112,7 +112,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         ModManifest compiledManifest = manifest;
         if (useRawGlbPipeline)
         {
-            _log.Info("  Using experimental GLB mesh pipeline...");
+            _log.Info("  Using direct mesh replacement pipeline...");
             var bundleOutputPath = Path.Combine(unityProjectDir, "AssetBundles", bundleName);
             Directory.CreateDirectory(Path.GetDirectoryName(bundleOutputPath)!);
             var targetMeshNamesByBundleMesh = replacementEntries

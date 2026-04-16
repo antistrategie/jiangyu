@@ -246,9 +246,10 @@ public static class GlbMeshBundleCompiler
         foreach (var group in bySource)
         {
             var model = ModelRoot.Load(group.Key);
+            var isCleaned = IsCleanedExport(group.Key);
             var extractedCandidates = model.LogicalNodes
                 .Where(node => node.Mesh != null)
-                .Select(node => ExtractMeshCandidate(node, model, companionSkinData: null, isCleaned: IsCleanedExport(group.Key)))
+                .Select(node => ExtractMeshCandidate(node, model, companionSkinData: null, isCleaned))
                 .Where(candidate => candidate != null)
                 .Cast<ExtractedMeshCandidate>()
                 .ToList();
@@ -413,17 +414,46 @@ public static class GlbMeshBundleCompiler
         StaticMesh,
     }
 
-    internal static VertexSpaceMode DetermineVertexSpaceMode(bool isSkinnedPath, bool isCleaned, bool hasDirectSkinBinding)
+    /// <summary>
+    /// JIANGYU-CONTRACT: authored skinned replacements stay in metre-space even when
+    /// third-party tools (Blender, etc.) strip the Jiangyu <c>extras.jiangyu.cleaned</c>
+    /// flag and export as either .gltf or .glb. Distinguish authored metre-space
+    /// sources from raw AssetRipper centimeter-space prefab dumps by inspected mesh
+    /// extents, not file extension. Validated against Blender round-trips of Jiangyu
+    /// character exports.
+    /// Scope: proven skinned-model replacement path for authored character swaps.
+    /// </summary>
+    internal static VertexSpaceMode DetermineVertexSpaceMode(bool isSkinnedPath, bool isCleaned, bool hasDirectSkinBinding, bool appearsCentimeterScale)
     {
         if (!isSkinnedPath)
             return VertexSpaceMode.StaticMesh;
 
-        return !isCleaned && hasDirectSkinBinding
+        if (isCleaned)
+            return VertexSpaceMode.CleanedSkinned;
+
+        if (!hasDirectSkinBinding)
+            return VertexSpaceMode.CleanedSkinned;
+
+        return appearsCentimeterScale
             ? VertexSpaceMode.RawPrefabSkinned
             : VertexSpaceMode.CleanedSkinned;
     }
 
-    private static CompiledMesh? ExtractMesh(SharpGLTF.Schema2.Mesh mesh, ModelRoot model, Node meshNode, CompanionSkinData? companionSkinData, bool isCleaned = false)
+    /// <summary>
+    /// JIANGYU-CONTRACT: direct-skin mesh nodes keep their authored vertex space even
+    /// when third-party tools parent them under an armature root with a non-identity
+    /// transform. The compiler must not bake that mesh-node world transform into
+    /// skinned vertices for the proven authored replacement path.
+    /// Scope: skinned mesh extraction for authored replacement sources.
+    /// </summary>
+    internal static bool ShouldBakeMeshNodeTransform(bool hasResolvedSkin, bool hasDirectSkinBinding, bool hasIdentityWorldTransform)
+    {
+        return hasResolvedSkin &&
+               !hasDirectSkinBinding &&
+               !hasIdentityWorldTransform;
+    }
+
+    private static CompiledMesh? ExtractMesh(SharpGLTF.Schema2.Mesh mesh, ModelRoot model, Node meshNode, CompanionSkinData? companionSkinData, bool isCleaned)
     {
         var allVertices = new List<float>();
         var allNormals = new List<float>();
@@ -444,9 +474,10 @@ public static class GlbMeshBundleCompiler
         if (skin == null && hasSkinAttributes && model.LogicalSkins.Count > 0)
             skin = model.LogicalSkins[0];
 
-        var bakeNodeTransform = skin != null &&
-                                meshNode.Skin == null &&
-                                !IsIdentityMatrix(meshNode.WorldMatrix);
+        var bakeNodeTransform = ShouldBakeMeshNodeTransform(
+            hasResolvedSkin: skin != null,
+            hasDirectSkinBinding: meshNode.Skin != null,
+            hasIdentityWorldTransform: IsIdentityMatrix(meshNode.WorldMatrix));
 
         var implicitSkinScale = Vector3.One;
         var bakeImplicitSkinScale = false;
@@ -474,7 +505,11 @@ public static class GlbMeshBundleCompiler
         var normalTransform = Matrix4x4.Transpose(inverseWorldTransform);
 
         bool isSkinnedPath = skin != null || (companionSkinData is not null && companionSkinData.BoneNames.Length > 0);
-        var spaceMode = DetermineVertexSpaceMode(isSkinnedPath, isCleaned, hasDirectSkinBinding: meshNode.Skin != null);
+        var spaceMode = DetermineVertexSpaceMode(
+            isSkinnedPath,
+            isCleaned,
+            hasDirectSkinBinding: meshNode.Skin != null,
+            appearsCentimeterScale: IsLikelyCentimeterScale(mesh));
 
         var vertexOffset = 0;
         foreach (var primitive in mesh.Primitives)
@@ -700,7 +735,7 @@ public static class GlbMeshBundleCompiler
                Math.Abs(scale.Z - 1f) < epsilon;
     }
 
-    private static bool NeedsMeshOnlyWeightScale(SharpGLTF.Schema2.Mesh mesh)
+    internal static bool IsLikelyCentimeterScale(SharpGLTF.Schema2.Mesh mesh)
     {
         var maxExtent = 0f;
         foreach (var primitive in mesh.Primitives)
@@ -723,6 +758,9 @@ public static class GlbMeshBundleCompiler
 
         return maxExtent > MeshOnlyWeightScaleExtentThreshold;
     }
+
+    private static bool NeedsMeshOnlyWeightScale(SharpGLTF.Schema2.Mesh mesh)
+        => IsLikelyCentimeterScale(mesh);
 
     private static List<CompiledTexture> ExtractTextures(IReadOnlyList<MeshSourceEntry> entries)
     {

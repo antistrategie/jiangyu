@@ -156,7 +156,7 @@ public class LodNamingTests
             ["local_forces_basic_soldier_LOD2"]);
 
         var warning = Assert.Single(warnings);
-        Assert.Contains("partial of LOD family 'local_forces_basic_soldier'", warning);
+        Assert.Contains("only part of LOD family 'local_forces_basic_soldier'", warning);
         Assert.Contains("provided local_forces_basic_soldier_LOD2", warning);
         Assert.Contains("missing local_forces_basic_soldier_LOD0, local_forces_basic_soldier_LOD1, local_forces_basic_soldier_LOD3", warning);
         Assert.Contains("nearest available replacement", warning);

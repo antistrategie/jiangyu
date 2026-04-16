@@ -483,7 +483,7 @@ internal static class ModelCleanupService
 
     internal static Vector3 SnapScale(Vector3 scale)
     {
-        const float tolerance = 1e-5f;
+        const float tolerance = 1e-4f;
         return new Vector3(
             MathF.Abs(scale.X - 1f) < tolerance ? 1f : scale.X,
             MathF.Abs(scale.Y - 1f) < tolerance ? 1f : scale.Y,

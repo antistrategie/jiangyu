@@ -39,6 +39,11 @@ assets/replacements/models/el.local_forces_basic_soldier--519/model.gltf
 
 Inside `model.gltf`, mesh names should match the target mesh/LOD contract.
 
+Jiangyu accepts authored skinned model replacements from Blender in both `.gltf` and
+`.glb` form. The compiler normalizes authored metre-space skin data onto Jiangyu's
+proven replacement path; modders do not need to preserve Jiangyu-specific glTF metadata
+for that round-trip to work.
+
 If a replacement only provides part of an LOD family, Jiangyu warns at compile time and the loader uses the nearest available replacement within that family at runtime. Complete LOD sets are still preferred.
 
 ## Current Limitation
