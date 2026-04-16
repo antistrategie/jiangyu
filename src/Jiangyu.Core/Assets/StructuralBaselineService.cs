@@ -1,0 +1,628 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using AssetRipper.Assets;
+using AssetRipper.Import.Configuration;
+using AssetRipper.Import.Logging;
+using AssetRipper.Import.Structure;
+using AssetRipper.IO.Files;
+using AssetRipper.Processing;
+using AssetRipper.Processing.AnimatorControllers;
+using AssetRipper.Processing.Prefabs;
+using AssetRipper.Processing.Scenes;
+using AssetRipper.SourceGenerated.Classes.ClassID_114;
+using AssetRipper.SourceGenerated.Extensions;
+using Jiangyu.Core.Abstractions;
+using Jiangyu.Core.Models;
+
+namespace Jiangyu.Core.Assets;
+
+public sealed class StructuralBaselineService(string gameDataPath, string cachePath, IProgressSink progress, ILogSink log)
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    /// <summary>
+    /// Depth 4: covers template top-level fields plus up to two levels of support-type nesting.
+    /// </summary>
+    private const int InspectionMaxDepth = 4;
+
+    /// <summary>
+    /// Only one element is needed to determine array element type.
+    /// </summary>
+    private const int InspectionMaxArraySample = 1;
+
+    public StructuralBaseline GenerateBaseline(BaselineSources sources)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+
+        var indexService = new TemplateIndexService(gameDataPath, cachePath, progress, log);
+        CachedIndexStatus indexStatus = indexService.GetIndexStatus();
+        if (!indexStatus.IsCurrent)
+        {
+            throw new InvalidOperationException(
+                $"Template index is not current: {indexStatus.Reason}");
+        }
+
+        TemplateIndex index = indexService.LoadIndex()
+            ?? throw new InvalidOperationException("Template index could not be loaded.");
+        TemplateIndexManifest manifest = indexService.LoadManifest()
+            ?? throw new InvalidOperationException("Template index manifest could not be loaded.");
+
+        var resolver = new TemplateResolver(index);
+
+        // Resolve all samples upfront — fail fast on any unresolvable.
+        var resolvedTemplates = ResolveTemplateSamples(sources.Templates, resolver);
+        var resolvedSupportTypes = ResolveSupportTypeSamples(sources.SupportTypes, index);
+
+        log.Info($"Loading game data from: {gameDataPath}");
+        var settings = new CoreConfiguration();
+        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level2;
+
+        var adapter = new AssetRipperProgressAdapter(progress);
+        Logger.Add(adapter);
+
+        try
+        {
+            progress.SetPhase("Loading assets");
+            var gameStructure = GameStructure.Load([gameDataPath], LocalFileSystem.Instance, settings);
+            var gameData = GameData.FromGameStructure(gameStructure);
+
+            if (!gameData.GameBundle.HasAnyAssetCollections())
+            {
+                throw new InvalidOperationException("No asset collections found in game data.");
+            }
+
+            progress.Finish();
+
+            progress.SetPhase("Processing");
+            RunProcessors(gameData);
+            progress.Finish();
+
+            progress.SetPhase("Generating baseline");
+            var types = new List<BaselineTypeEntry>();
+
+            foreach (var (source, samples) in resolvedTemplates)
+            {
+                types.Add(BuildTemplateEntry(source, samples, gameData));
+            }
+
+            foreach (var (source, samples) in resolvedSupportTypes)
+            {
+                types.Add(BuildSupportTypeEntry(source, samples, gameData));
+            }
+
+            types = [.. types
+                .OrderBy(t => t.Category, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(t => t.TypeName, StringComparer.OrdinalIgnoreCase)];
+
+            progress.Finish();
+
+            return new StructuralBaseline
+            {
+                GeneratedAt = DateTimeOffset.UtcNow,
+                GameAssemblyHash = manifest.GameAssemblyHash,
+                Types = types,
+            };
+        }
+        finally
+        {
+            Logger.Remove(adapter);
+        }
+    }
+
+    public static BaselineSources? LoadSources(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<BaselineSources>(File.ReadAllText(path), JsonOptions);
+    }
+
+    public static StructuralBaseline? LoadBaseline(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<StructuralBaseline>(File.ReadAllText(path), JsonOptions);
+    }
+
+    public static BaselineDiff DiffBaselines(StructuralBaseline previous, StructuralBaseline current)
+    {
+        ArgumentNullException.ThrowIfNull(previous);
+        ArgumentNullException.ThrowIfNull(current);
+
+        var previousByName = previous.Types.ToDictionary(t => t.TypeName, StringComparer.Ordinal);
+        var currentByName = current.Types.ToDictionary(t => t.TypeName, StringComparer.Ordinal);
+
+        var allTypeNames = previousByName.Keys
+            .Union(currentByName.Keys)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+
+        var addedTypes = new List<string>();
+        var removedTypes = new List<string>();
+        var changedTypes = new List<BaselineTypeDiff>();
+
+        foreach (string typeName in allTypeNames)
+        {
+            bool inPrevious = previousByName.TryGetValue(typeName, out var prevType);
+            bool inCurrent = currentByName.TryGetValue(typeName, out var currType);
+
+            if (!inPrevious)
+            {
+                addedTypes.Add(typeName);
+                continue;
+            }
+
+            if (!inCurrent)
+            {
+                removedTypes.Add(typeName);
+                continue;
+            }
+
+            var typeDiff = DiffType(prevType!, currType!);
+            if (typeDiff is not null)
+            {
+                changedTypes.Add(typeDiff);
+            }
+        }
+
+        return new BaselineDiff
+        {
+            PreviousGeneratedAt = previous.GeneratedAt,
+            CurrentGeneratedAt = current.GeneratedAt,
+            AddedTypes = addedTypes,
+            RemovedTypes = removedTypes,
+            ChangedTypes = changedTypes,
+        };
+    }
+
+    private static List<(BaselineSourceEntry Source, List<ResolvedTemplateCandidate> Samples)> ResolveTemplateSamples(
+        List<BaselineSourceEntry> templates,
+        TemplateResolver resolver)
+    {
+        var result = new List<(BaselineSourceEntry, List<ResolvedTemplateCandidate>)>();
+        var errors = new List<string>();
+
+        foreach (BaselineSourceEntry entry in templates)
+        {
+            if (entry.SampleNames.Count == 0)
+            {
+                errors.Add($"Template '{entry.TypeName}' has no sample names.");
+                continue;
+            }
+
+            var samples = new List<ResolvedTemplateCandidate>();
+            foreach (string sampleName in entry.SampleNames)
+            {
+                TemplateResolutionResult resolution = resolver.Resolve(entry.TypeName, sampleName);
+                switch (resolution.Status)
+                {
+                    case TemplateResolutionStatus.Success:
+                        samples.Add(resolution.Resolved!);
+                        break;
+                    case TemplateResolutionStatus.NotFound:
+                        errors.Add($"Template sample '{sampleName}' not found for type '{entry.TypeName}'.");
+                        break;
+                    case TemplateResolutionStatus.Ambiguous:
+                        errors.Add($"Template sample '{sampleName}' is ambiguous for type '{entry.TypeName}'.");
+                        break;
+                    default:
+                        errors.Add($"Template sample '{sampleName}' could not be resolved for type '{entry.TypeName}': {resolution.Status}.");
+                        break;
+                }
+            }
+
+            result.Add((entry, samples));
+        }
+
+        if (errors.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Failed to resolve baseline samples:\n  {string.Join("\n  ", errors)}");
+        }
+
+        return result;
+    }
+
+    private static List<(BaselineSourceEntry Source, List<ResolvedTemplateCandidate> Samples)> ResolveSupportTypeSamples(
+        List<BaselineSourceEntry> supportTypes,
+        TemplateIndex index)
+    {
+        var result = new List<(BaselineSourceEntry, List<ResolvedTemplateCandidate>)>();
+        var errors = new List<string>();
+
+        foreach (BaselineSourceEntry entry in supportTypes)
+        {
+            if (entry.SampleNames.Count == 0)
+            {
+                errors.Add($"Support type '{entry.TypeName}' has no sample names.");
+                continue;
+            }
+
+            var samples = new List<ResolvedTemplateCandidate>();
+            foreach (string sampleName in entry.SampleNames)
+            {
+                var candidates = index.Instances
+                    .Where(i => string.Equals(i.Name, sampleName, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (candidates.Count == 0)
+                {
+                    errors.Add($"Support type sample '{sampleName}' not found in template index (for type '{entry.TypeName}').");
+                }
+                else if (candidates.Count > 1)
+                {
+                    string matches = string.Join(", ", candidates.Select(c => c.ClassName));
+                    errors.Add($"Support type sample '{sampleName}' is ambiguous in template index (for type '{entry.TypeName}'): matches {matches}.");
+                }
+                else
+                {
+                    TemplateInstanceEntry instance = candidates[0];
+                    samples.Add(new ResolvedTemplateCandidate
+                    {
+                        Name = instance.Name,
+                        ClassName = instance.ClassName,
+                        Identity = new TemplateIdentity
+                        {
+                            Collection = instance.Identity.Collection,
+                            PathId = instance.Identity.PathId,
+                        },
+                    });
+                }
+            }
+
+            result.Add((entry, samples));
+        }
+
+        if (errors.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Failed to resolve baseline samples:\n  {string.Join("\n  ", errors)}");
+        }
+
+        return result;
+    }
+
+    private static BaselineTypeEntry BuildTemplateEntry(
+        BaselineSourceEntry source,
+        List<ResolvedTemplateCandidate> samples,
+        GameData gameData)
+    {
+        List<BaselineFieldEntry>? canonicalFields = null;
+        string? canonicalSampleName = null;
+
+        foreach (ResolvedTemplateCandidate sample in samples)
+        {
+            List<InspectedFieldNode> inspectedFields = InspectStructureFields(sample, gameData);
+            List<BaselineFieldEntry> fields = ExtractFieldEntries(inspectedFields);
+
+            if (canonicalFields is null)
+            {
+                canonicalFields = fields;
+                canonicalSampleName = sample.Name;
+                continue;
+            }
+
+            AssertFieldsConsistent(source.TypeName, canonicalSampleName!, canonicalFields, sample.Name, fields);
+        }
+
+        return new BaselineTypeEntry
+        {
+            TypeName = source.TypeName,
+            Category = "template",
+            FieldCount = canonicalFields!.Count,
+            SampleNames = [.. source.SampleNames.Order(StringComparer.OrdinalIgnoreCase)],
+            Fields = canonicalFields,
+        };
+    }
+
+    private static BaselineTypeEntry BuildSupportTypeEntry(
+        BaselineSourceEntry source,
+        List<ResolvedTemplateCandidate> samples,
+        GameData gameData)
+    {
+        List<BaselineFieldEntry>? canonicalFields = null;
+        string? canonicalSampleName = null;
+
+        foreach (ResolvedTemplateCandidate sample in samples)
+        {
+            List<InspectedFieldNode> inspectedFields = InspectStructureFields(sample, gameData);
+
+            InspectedFieldNode? supportTypeNode = FindFieldByTypeName(inspectedFields, source.TypeName)
+                ?? throw new InvalidOperationException(
+                    $"Support type '{source.TypeName}' not found in template '{sample.Name}' ({sample.ClassName}).");
+
+            if (supportTypeNode.Fields is null || supportTypeNode.Fields.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    $"Support type '{source.TypeName}' in template '{sample.Name}' has no fields (may need deeper inspection depth).");
+            }
+
+            List<BaselineFieldEntry> fields = ExtractFieldEntries(supportTypeNode.Fields);
+
+            if (canonicalFields is null)
+            {
+                canonicalFields = fields;
+                canonicalSampleName = sample.Name;
+                continue;
+            }
+
+            AssertFieldsConsistent(source.TypeName, canonicalSampleName!, canonicalFields, sample.Name, fields);
+        }
+
+        return new BaselineTypeEntry
+        {
+            TypeName = source.TypeName,
+            Category = "supportType",
+            FieldCount = canonicalFields!.Count,
+            SampleNames = [.. source.SampleNames.Order(StringComparer.OrdinalIgnoreCase)],
+            Fields = canonicalFields,
+        };
+    }
+
+    private static void AssertFieldsConsistent(
+        string typeName,
+        string canonicalSampleName,
+        List<BaselineFieldEntry> canonicalFields,
+        string otherSampleName,
+        List<BaselineFieldEntry> otherFields)
+    {
+        var canonicalByName = canonicalFields.ToDictionary(f => f.Name, StringComparer.Ordinal);
+        var otherByName = otherFields.ToDictionary(f => f.Name, StringComparer.Ordinal);
+
+        var mismatches = new List<string>();
+
+        // Fields present in canonical but missing from other.
+        foreach (string name in canonicalByName.Keys.Except(otherByName.Keys, StringComparer.Ordinal))
+        {
+            mismatches.Add($"  field '{name}' present in '{canonicalSampleName}' but missing in '{otherSampleName}'");
+        }
+
+        // Fields present in other but missing from canonical.
+        foreach (string name in otherByName.Keys.Except(canonicalByName.Keys, StringComparer.Ordinal))
+        {
+            mismatches.Add($"  field '{name}' present in '{otherSampleName}' but missing in '{canonicalSampleName}'");
+        }
+
+        // Fields present in both but structurally different.
+        foreach (string name in canonicalByName.Keys.Intersect(otherByName.Keys, StringComparer.Ordinal))
+        {
+            BaselineFieldEntry a = canonicalByName[name];
+            BaselineFieldEntry b = otherByName[name];
+
+            if (!string.Equals(a.Kind, b.Kind, StringComparison.Ordinal))
+            {
+                mismatches.Add($"  field '{name}' kind differs: '{a.Kind}' in '{canonicalSampleName}' vs '{b.Kind}' in '{otherSampleName}'");
+            }
+
+            if (!string.Equals(a.FieldTypeName, b.FieldTypeName, StringComparison.Ordinal))
+            {
+                mismatches.Add($"  field '{name}' fieldTypeName differs: '{a.FieldTypeName}' in '{canonicalSampleName}' vs '{b.FieldTypeName}' in '{otherSampleName}'");
+            }
+
+            if (!string.Equals(a.ElementTypeName, b.ElementTypeName, StringComparison.Ordinal))
+            {
+                mismatches.Add($"  field '{name}' elementTypeName differs: '{a.ElementTypeName}' in '{canonicalSampleName}' vs '{b.ElementTypeName}' in '{otherSampleName}'");
+            }
+        }
+
+        if (mismatches.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Structural inconsistency in '{typeName}' across curated samples:\n{string.Join("\n", mismatches)}");
+        }
+    }
+
+    private static List<InspectedFieldNode> InspectStructureFields(
+        ResolvedTemplateCandidate sample,
+        GameData gameData)
+    {
+        IUnityObjectBase asset = FindAsset(gameData, sample.Identity.Collection, sample.Identity.PathId)
+            ?? throw new InvalidOperationException(
+                $"Asset '{sample.Name}' not found in collection '{sample.Identity.Collection}' with pathId {sample.Identity.PathId}.");
+
+        ObjectFieldInspection inspection = ObjectFieldInspector.Inspect(asset, InspectionMaxDepth, InspectionMaxArraySample);
+
+        if (asset is IMonoBehaviour monoBehaviour)
+        {
+            ManagedTypeInspectionEnricher.Enrich(monoBehaviour, gameData.AssemblyManager, inspection.Fields);
+        }
+
+        InspectedFieldNode? structureNode = inspection.Fields
+            .FirstOrDefault(f => string.Equals(f.Name, "m_Structure", StringComparison.Ordinal));
+
+        if (structureNode?.Fields is null || structureNode.Fields.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Template '{sample.Name}' ({sample.ClassName}) has no m_Structure fields.");
+        }
+
+        return structureNode.Fields;
+    }
+
+    private static IUnityObjectBase? FindAsset(GameData gameData, string collectionName, long pathId)
+    {
+        foreach (var collection in gameData.GameBundle.FetchAssetCollections())
+        {
+            if (!string.Equals(collection.Name, collectionName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (collection.TryGetAsset(pathId, out IUnityObjectBase? asset))
+            {
+                return asset;
+            }
+        }
+
+        return null;
+    }
+
+    internal static InspectedFieldNode? FindFieldByTypeName(List<InspectedFieldNode> fields, string typeName)
+    {
+        foreach (InspectedFieldNode field in fields)
+        {
+            if (string.Equals(field.FieldTypeName, typeName, StringComparison.Ordinal)
+                && field.Fields is { Count: > 0 })
+            {
+                return field;
+            }
+
+            if (field.Fields is { Count: > 0 })
+            {
+                InspectedFieldNode? found = FindFieldByTypeName(field.Fields, typeName);
+                if (found is not null)
+                {
+                    return found;
+                }
+            }
+
+            if (field.Elements is not { Count: > 0 })
+            {
+                continue;
+            }
+
+            foreach (InspectedFieldNode element in field.Elements)
+            {
+                if (string.Equals(element.FieldTypeName, typeName, StringComparison.Ordinal)
+                    && element.Fields is { Count: > 0 })
+                {
+                    return element;
+                }
+
+                if (element.Fields is { Count: > 0 })
+                {
+                    InspectedFieldNode? found = FindFieldByTypeName(element.Fields, typeName);
+                    if (found is not null)
+                    {
+                        return found;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    internal static List<BaselineFieldEntry> ExtractFieldEntries(List<InspectedFieldNode> fields)
+    {
+        return
+        [
+            .. fields.Select(f => new BaselineFieldEntry
+            {
+                Name = f.Name ?? "(unnamed)",
+                Kind = f.Kind,
+                FieldTypeName = f.FieldTypeName,
+                ElementTypeName = ResolveElementTypeName(f),
+            }),
+        ];
+    }
+
+    private static string? ResolveElementTypeName(InspectedFieldNode field)
+    {
+        if (!string.Equals(field.Kind, "array", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (field.Elements is { Count: > 0 })
+        {
+            return field.Elements[0].FieldTypeName;
+        }
+
+        return null;
+    }
+
+    private static BaselineTypeDiff? DiffType(BaselineTypeEntry previous, BaselineTypeEntry current)
+    {
+        var prevFieldsByName = previous.Fields.ToDictionary(f => f.Name, StringComparer.Ordinal);
+        var currFieldsByName = current.Fields.ToDictionary(f => f.Name, StringComparer.Ordinal);
+
+        var allFieldNames = prevFieldsByName.Keys
+            .Union(currFieldsByName.Keys)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+
+        var addedFields = new List<string>();
+        var removedFields = new List<string>();
+        var changedFields = new List<BaselineFieldDiff>();
+
+        foreach (string fieldName in allFieldNames)
+        {
+            bool inPrevious = prevFieldsByName.TryGetValue(fieldName, out var prevField);
+            bool inCurrent = currFieldsByName.TryGetValue(fieldName, out var currField);
+
+            if (!inPrevious)
+            {
+                addedFields.Add(fieldName);
+                continue;
+            }
+
+            if (!inCurrent)
+            {
+                removedFields.Add(fieldName);
+                continue;
+            }
+
+            bool kindChanged = !string.Equals(prevField!.Kind, currField!.Kind, StringComparison.Ordinal);
+            bool typeChanged = !string.Equals(prevField.FieldTypeName, currField.FieldTypeName, StringComparison.Ordinal);
+            bool elementTypeChanged = !string.Equals(prevField.ElementTypeName, currField.ElementTypeName, StringComparison.Ordinal);
+
+            if (kindChanged || typeChanged || elementTypeChanged)
+            {
+                changedFields.Add(new BaselineFieldDiff
+                {
+                    Name = fieldName,
+                    PreviousKind = kindChanged ? prevField.Kind : null,
+                    CurrentKind = kindChanged ? currField.Kind : null,
+                    PreviousFieldTypeName = typeChanged ? prevField.FieldTypeName : null,
+                    CurrentFieldTypeName = typeChanged ? currField.FieldTypeName : null,
+                    PreviousElementTypeName = elementTypeChanged ? prevField.ElementTypeName : null,
+                    CurrentElementTypeName = elementTypeChanged ? currField.ElementTypeName : null,
+                });
+            }
+        }
+
+        if (addedFields.Count == 0 && removedFields.Count == 0 && changedFields.Count == 0)
+        {
+            return null;
+        }
+
+        int? fieldCountDelta = current.FieldCount != previous.FieldCount
+            ? current.FieldCount - previous.FieldCount
+            : null;
+
+        return new BaselineTypeDiff
+        {
+            TypeName = previous.TypeName,
+            FieldCountDelta = fieldCountDelta,
+            AddedFields = addedFields,
+            RemovedFields = removedFields,
+            ChangedFields = changedFields,
+        };
+    }
+
+    private static void RunProcessors(GameData gameData)
+    {
+        IAssetProcessor[] processors =
+        [
+            new SceneDefinitionProcessor(),
+            new MainAssetProcessor(),
+            new AnimatorControllerProcessor(),
+            new PrefabProcessor(),
+        ];
+
+        foreach (var processor in processors)
+        {
+            processor.Process(gameData);
+        }
+    }
+}

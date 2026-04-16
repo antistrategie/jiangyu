@@ -11,6 +11,7 @@ public static class TemplatesCommand
             TemplatesIndexCommand.Create(),
             TemplatesListCommand.Create(),
             TemplatesInspectCommand.Create(),
+            TemplatesBaselineCommand.Create(),
         };
 
         return command;

@@ -1,0 +1,9 @@
+{
+  "templates": [
+    {
+      "typeName": "EntityTemplate",
+      "sampleNames": ["player_squad.darby", "enemy.pirate_scavengers"]
+    }
+  ],
+  "supportTypes": []
+}

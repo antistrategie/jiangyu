@@ -48,6 +48,9 @@ public sealed class EnvironmentContext
 
     public ObjectInspectionService CreateObjectInspectionService(IProgressSink progress, ILogSink log)
         => new(GameDataPath, CachePath, progress, log);
+
+    public StructuralBaselineService CreateStructuralBaselineService(IProgressSink progress, ILogSink log)
+        => new(GameDataPath, CachePath, progress, log);
 }
 
 public sealed class EnvironmentContextResolution
