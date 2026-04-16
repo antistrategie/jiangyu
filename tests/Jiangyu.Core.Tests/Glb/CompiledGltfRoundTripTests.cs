@@ -36,13 +36,30 @@ public sealed class CompiledGltfRoundTripTests : IDisposable
 
         var textures = new Dictionary<string, GlbMeshBundleCompiler.CompiledTexture>(StringComparer.Ordinal);
 
-        var found = GlbMeshBundleCompiler.TryExtractTexturesFromGltf(gltfPath, textures);
+        var found = GlbMeshBundleCompiler.TryExtractTexturesFromModelGraph(gltfPath, textures);
 
         Assert.True(found);
         Assert.True(GlbMeshBundleCompiler.IsCleanedExport(gltfPath));
-        Assert.Equal("soldier_BaseMap", GlbMeshBundleCompiler.InferTexturePrefix(gltfPath));
+        Assert.Equal("soldier", GlbMeshBundleCompiler.InferTexturePrefix(gltfPath));
         Assert.Contains("soldier_BaseMap", textures.Keys);
         Assert.Contains("soldier_MaskMap", textures.Keys);
+    }
+
+    [Fact]
+    public void SavedGlbPackage_RoundTripsCompilerTextureDiscovery_AndCleanedFlag()
+    {
+        var glbPath = Path.Combine(_tempDir, "model.glb");
+        WriteCompiledLikeGlbPackage(glbPath);
+
+        var textures = new Dictionary<string, GlbMeshBundleCompiler.CompiledTexture>(StringComparer.Ordinal);
+
+        var found = GlbMeshBundleCompiler.TryExtractTexturesFromModelGraph(glbPath, textures);
+
+        Assert.True(found);
+        Assert.True(GlbMeshBundleCompiler.IsCleanedExport(glbPath));
+        Assert.Equal("soldier", GlbMeshBundleCompiler.InferTexturePrefix(glbPath));
+        Assert.Contains("soldier_BaseMap", textures.Keys);
+        Assert.Contains("soldier_NormalMap", textures.Keys);
     }
 
     [Fact]
@@ -139,6 +156,60 @@ public sealed class CompiledGltfRoundTripTests : IDisposable
         };
 
         AssetPipelineService.SaveGltfPackage(scene, textures, gltfPath);
+    }
+
+    private static void WriteCompiledLikeGlbPackage(string glbPath)
+    {
+        var basePng = CreateTaggedPng(0x11);
+        var normalPng = CreateTaggedPng(0x22);
+        var material = new MaterialBuilder("body_mat");
+        material.Extras = new JsonObject
+        {
+            ["jiangyu"] = new JsonObject
+            {
+                ["sourceMaterial"] = new JsonObject
+                {
+                    ["collection"] = "level0",
+                    ["pathId"] = 999L,
+                },
+                ["textures"] = new JsonObject
+                {
+                    ["_MaskMap"] = "textures/soldier_MaskMap.png",
+                },
+            },
+        };
+        material.UseChannel("BaseColor")
+            .UseTexture()
+            .WithPrimaryImage(new MemoryImage(basePng));
+        material.UseChannel("Normal")
+            .UseTexture()
+            .WithPrimaryImage(new MemoryImage(normalPng));
+
+        var mesh = new MeshBuilder<VertexPositionNormal, VertexTexture1, VertexEmpty>("body_mesh");
+        var prim = mesh.UsePrimitive(material);
+        prim.AddTriangle(
+            (new VertexPositionNormal(Vector3.Zero, Vector3.UnitY), new VertexTexture1(Vector2.Zero), default),
+            (new VertexPositionNormal(Vector3.UnitX, Vector3.UnitY), new VertexTexture1(Vector2.UnitX), default),
+            (new VertexPositionNormal(Vector3.UnitY, Vector3.UnitY), new VertexTexture1(Vector2.UnitY), default));
+
+        var scene = new SceneBuilder();
+        var root = new NodeBuilder("Root");
+        scene.AddRigidMesh(mesh, root);
+        scene.AddNode(root);
+
+        var model = scene.ToGltf2();
+        model.Extras = new JsonObject
+        {
+            ["jiangyu"] = new JsonObject
+            {
+                ["cleaned"] = true,
+            },
+        };
+
+        AssignImageName(model, "body_mat", "BaseColor", "soldier_BaseMap");
+        AssignImageName(model, "body_mat", "Normal", "soldier_NormalMap");
+
+        model.SaveGLB(glbPath);
     }
 
     private static void WriteMaterialBindingsGltfPackage(string gltfPath)

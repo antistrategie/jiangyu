@@ -148,18 +148,18 @@ node's world transform for skinned meshes with direct skin bindings (`meshNode.S
 null` → `bakeNodeTransform = false`). So mesh-node parenting under Root is a structural
 concern but **not the direct cause** of the stringy deformation.
 
-The actual bug is in `DetermineVertexSpaceMode`: a .gltf source without the Jiangyu
-`extras.jiangyu.cleaned` flag but with direct skin bindings gets classified as
-`RawPrefabSkinned` (cm-space, mirror X only) instead of `CleanedSkinned` (metre-space,
-mirror X + 100x scale). This causes the compiled mesh to be 100x too small relative to
-the game's cm-space skeleton. Every vertex sits near the bone origins instead of being
-offset from them, and the skinning equation pulls all vertices to bone positions —
-producing exactly the observed "stringy" deformation.
+The actual bug is in `DetermineVertexSpaceMode`: an authored glTF-family source without
+the Jiangyu `extras.jiangyu.cleaned` flag but with direct skin bindings can be
+misclassified as `RawPrefabSkinned` (cm-space, mirror X only) instead of
+`CleanedSkinned` (metre-space, mirror X + 100x scale). This causes the compiled mesh to
+be 100x too small relative to the game's cm-space skeleton. Every vertex sits near the
+bone origins instead of being offset from them, and the skinning equation pulls all
+vertices to bone positions — producing exactly the observed "stringy" deformation.
 
-The fix: `.gltf` sources are always authored in metre-space (the modder-facing convention
-path expects `.gltf`; raw AssetRipper extraction produces `.glb`). The vertex space mode
-detection now uses source file extension as an additional signal, so `.gltf` files get
-`CleanedSkinned` mode even without the cleaned flag.
+The implemented fix does not rely on `.gltf` vs `.glb`. Vertex space detection now uses
+inspected mesh extents to distinguish authored metre-space models from raw
+centimeter-space prefab dumps, so Blender `.gltf` and `.glb` round-trips both take the
+proven `CleanedSkinned` path when their geometry matches authored scale.
 
 ## Remaining structural differences
 

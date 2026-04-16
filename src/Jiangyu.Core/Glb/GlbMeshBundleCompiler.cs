@@ -767,13 +767,14 @@ public static class GlbMeshBundleCompiler
         var result = new Dictionary<string, CompiledTexture>(StringComparer.Ordinal);
         foreach (var sourceFilePath in entries.Select(entry => entry.SourceFilePath).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            // Prefer glTF material graph (clean export)
-            if (TryExtractTexturesFromGltf(sourceFilePath, result))
+            // Prefer glTF-family material graph when available (.gltf or .glb)
+            if (TryExtractTexturesFromModelGraph(sourceFilePath, result))
             {
                 continue;
             }
 
-            // Fallback: prefix-based directory discovery (for non-.gltf sources)
+            // Fallback: prefix-based directory discovery when the source file does not
+            // carry readable image content/paths Jiangyu can use directly.
             var prefix = InferTexturePrefix(sourceFilePath);
             if (string.IsNullOrWhiteSpace(prefix))
                 continue;
@@ -797,13 +798,13 @@ public static class GlbMeshBundleCompiler
     }
 
     /// <summary>
-    /// Reads textures from a .gltf file's material graph.
+    /// Reads textures from a glTF-family file's material graph (.gltf or .glb).
     /// Only explicitly declared textures count:
     /// standard material channels plus Jiangyu material extras.
     /// </summary>
-    internal static bool TryExtractTexturesFromGltf(string sourceFilePath, Dictionary<string, CompiledTexture> result)
+    internal static bool TryExtractTexturesFromModelGraph(string sourceFilePath, Dictionary<string, CompiledTexture> result)
     {
-        if (!sourceFilePath.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+        if (!IsGltfFamilySource(sourceFilePath))
         {
             return false;
         }
@@ -918,19 +919,28 @@ public static class GlbMeshBundleCompiler
 
     internal static string? InferTexturePrefix(string sourceFilePath)
     {
-        // For .gltf files: derive from image names in the material graph
-        if (sourceFilePath.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+        // For glTF-family files: derive from image names in the material graph when possible.
+        if (IsGltfFamilySource(sourceFilePath))
         {
             try
             {
-                var model = ModelRoot.Load(sourceFilePath);
-                var imageNames = model.LogicalImages
-                    .Select(img => GetImageName(img))
-                    .Where(n => !n.StartsWith("image_", StringComparison.Ordinal))
-                    .ToList();
-                if (imageNames.Count > 0)
+                var textures = new Dictionary<string, CompiledTexture>(StringComparer.Ordinal);
+                if (TryExtractTexturesFromModelGraph(sourceFilePath, textures) && textures.Count > 0)
                 {
-                    return FindCommonPrefix(imageNames);
+                    var textureNames = textures.Keys
+                        .Where(name => !name.StartsWith("image_", StringComparison.Ordinal))
+                        .ToList();
+                    if (textureNames.Count == 0)
+                    {
+                        textureNames = [.. textures.Keys];
+                    }
+
+                    if (textureNames.Count == 1)
+                    {
+                        return NormalizeTexturePrefix(textureNames[0]);
+                    }
+
+                    return FindCommonPrefix(textureNames) ?? NormalizeTexturePrefix(textureNames[0]);
                 }
             }
             catch
@@ -978,12 +988,26 @@ public static class GlbMeshBundleCompiler
         return null;
     }
 
+    internal static string NormalizeTexturePrefix(string name)
+    {
+        foreach (var suffix in new[] { "_BaseMap", "_NormalMap", "_MaskMap", "_EffectMap" })
+        {
+            if (name.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                return name[..^suffix.Length];
+            }
+        }
+
+        return name;
+    }
+
     /// <summary>
-    /// Reads the cleaned flag from a .gltf root extras, or false if not a .gltf or no extras.
+    /// Reads the cleaned flag from a glTF-family root extras, or false if not a
+    /// readable glTF-family source or no extras are present.
     /// </summary>
     internal static bool IsCleanedExport(string sourceFilePath)
     {
-        if (!sourceFilePath.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+        if (!IsGltfFamilySource(sourceFilePath))
         {
             return false;
         }
@@ -1007,8 +1031,12 @@ public static class GlbMeshBundleCompiler
         return false;
     }
 
+    internal static bool IsGltfFamilySource(string sourceFilePath)
+        => string.Equals(Path.GetExtension(sourceFilePath), ".gltf", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(Path.GetExtension(sourceFilePath), ".glb", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
-    /// Fallback texture discovery for non-.gltf sources (prefix-based directory search).
+    /// Fallback texture discovery for non-glTF-family sources (prefix-based directory search).
     /// </summary>
     internal static IEnumerable<string> EnumerateSidecarTexturePaths(string sourceFilePath, string texturePrefix)
     {
