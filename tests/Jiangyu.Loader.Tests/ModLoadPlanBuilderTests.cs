@@ -1,4 +1,4 @@
-using Jiangyu.Loader.Bundles;
+using Jiangyu.Shared.Bundles;
 using Xunit;
 
 namespace Jiangyu.Loader.Tests;

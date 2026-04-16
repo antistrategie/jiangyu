@@ -1,4 +1,4 @@
-using Jiangyu.Loader.Replacements;
+using Jiangyu.Shared.Replacements;
 using Xunit;
 
 namespace Jiangyu.Loader.Tests;

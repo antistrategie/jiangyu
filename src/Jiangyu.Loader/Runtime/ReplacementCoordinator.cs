@@ -1,9 +1,10 @@
 using Il2CppInterop.Runtime;
+using Jiangyu.Shared.Replacements;
+using Jiangyu.Loader.Replacements;
 using MelonLoader;
 using UnityEngine;
 using UnityEngine.UI;
 using Jiangyu.Loader.Bundles;
-using Jiangyu.Loader.Replacements;
 
 namespace Jiangyu.Loader.Runtime;
 

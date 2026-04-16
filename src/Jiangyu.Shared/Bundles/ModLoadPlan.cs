@@ -1,82 +1,50 @@
-#nullable enable
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace Jiangyu.Loader.Bundles;
+namespace Jiangyu.Shared.Bundles;
 
-internal sealed class ModLoadPlan
+public sealed class ModLoadPlan(IReadOnlyList<DiscoveredMod> loadableMods, IReadOnlyList<BlockedMod> blockedMods)
 {
-    public static ModLoadPlan Empty { get; } = new(Array.Empty<DiscoveredMod>(), Array.Empty<BlockedMod>());
+    public static ModLoadPlan Empty { get; } = new([], []);
 
-    public IReadOnlyList<DiscoveredMod> LoadableMods { get; }
-    public IReadOnlyList<BlockedMod> BlockedMods { get; }
-
-    public ModLoadPlan(IReadOnlyList<DiscoveredMod> loadableMods, IReadOnlyList<BlockedMod> blockedMods)
-    {
-        LoadableMods = loadableMods;
-        BlockedMods = blockedMods;
-    }
+    public IReadOnlyList<DiscoveredMod> LoadableMods { get; } = loadableMods;
+    public IReadOnlyList<BlockedMod> BlockedMods { get; } = blockedMods;
 }
 
-internal sealed class DiscoveredMod
+public sealed class DiscoveredMod(
+    string name,
+    string directoryPath,
+    string relativeDirectoryPath,
+    string manifestPath,
+    IReadOnlyList<string> bundlePaths,
+    IReadOnlyList<ManifestDependency> dependencies)
 {
-    public string Name { get; }
-    public string DirectoryPath { get; }
-    public string RelativeDirectoryPath { get; }
-    public string ManifestPath { get; }
-    public IReadOnlyList<string> BundlePaths { get; }
-    public IReadOnlyList<ManifestDependency> Dependencies { get; }
-
-    public DiscoveredMod(
-        string name,
-        string directoryPath,
-        string relativeDirectoryPath,
-        string manifestPath,
-        IReadOnlyList<string> bundlePaths,
-        IReadOnlyList<ManifestDependency> dependencies)
-    {
-        Name = name;
-        DirectoryPath = directoryPath;
-        RelativeDirectoryPath = relativeDirectoryPath;
-        ManifestPath = manifestPath;
-        BundlePaths = bundlePaths;
-        Dependencies = dependencies;
-    }
+    public string Name { get; } = name;
+    public string DirectoryPath { get; } = directoryPath;
+    public string RelativeDirectoryPath { get; } = relativeDirectoryPath;
+    public string ManifestPath { get; } = manifestPath;
+    public IReadOnlyList<string> BundlePaths { get; } = bundlePaths;
+    public IReadOnlyList<ManifestDependency> Dependencies { get; } = dependencies;
 }
 
-internal sealed class BlockedMod
+public sealed class BlockedMod(string name, string directoryPath, string relativeDirectoryPath, string reason)
 {
-    public string Name { get; }
-    public string DirectoryPath { get; }
-    public string RelativeDirectoryPath { get; }
-    public string Reason { get; }
-
-    public BlockedMod(string name, string directoryPath, string relativeDirectoryPath, string reason)
-    {
-        Name = name;
-        DirectoryPath = directoryPath;
-        RelativeDirectoryPath = relativeDirectoryPath;
-        Reason = reason;
-    }
+    public string Name { get; } = name;
+    public string DirectoryPath { get; } = directoryPath;
+    public string RelativeDirectoryPath { get; } = relativeDirectoryPath;
+    public string Reason { get; } = reason;
 
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? RelativeDirectoryPath : Name;
 }
 
-internal sealed class ManifestDependency
+public sealed class ManifestDependency(string raw, string name, string? constraint)
 {
-    public string Raw { get; }
-    public string Name { get; }
-    public string? Constraint { get; }
-
-    public ManifestDependency(string raw, string name, string? constraint)
-    {
-        Raw = raw;
-        Name = name;
-        Constraint = constraint;
-    }
+    public string Raw { get; } = raw;
+    public string Name { get; } = name;
+    public string? Constraint { get; } = constraint;
 }
 
-internal static class ModLoadPlanBuilder
+public static class ModLoadPlanBuilder
 {
     private const string LoaderDependencyName = "Jiangyu";
 
@@ -104,7 +72,7 @@ internal static class ModLoadPlanBuilder
         {
             if (TryDiscoverMod(modsDir, manifestPath, out var mod, out var blockedMod))
                 discovered.Add(mod!);
-            else if (blockedMod != null)
+            else if (blockedMod is not null)
                 blocked.Add(blockedMod);
         }
 
@@ -165,7 +133,7 @@ internal static class ModLoadPlanBuilder
 
         return new ModLoadPlan(
             loadable,
-            blocked.OrderBy(mod => mod.RelativeDirectoryPath, StringComparer.Ordinal).ToArray());
+            [.. blocked.OrderBy(mod => mod.RelativeDirectoryPath, StringComparer.Ordinal)]);
     }
 
     private static bool TryDiscoverMod(string modsDir, string manifestPath, out DiscoveredMod? mod, out BlockedMod? blockedMod)
@@ -244,7 +212,7 @@ internal static class ModLoadPlanBuilder
         out IReadOnlyList<ManifestDependency> dependencies,
         out string? error)
     {
-        dependencies = Array.Empty<ManifestDependency>();
+        dependencies = [];
         error = null;
 
         if (rawDependencies == null || rawDependencies.Count == 0)

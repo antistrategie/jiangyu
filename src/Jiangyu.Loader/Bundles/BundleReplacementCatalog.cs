@@ -1,4 +1,5 @@
 using Il2CppInterop.Runtime;
+using Jiangyu.Shared.Bundles;
 using MelonLoader;
 using UnityEngine;
 using Jiangyu.Loader.Replacements;

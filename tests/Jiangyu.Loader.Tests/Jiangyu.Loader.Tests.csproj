@@ -15,8 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\src\Jiangyu.Loader\Bundles\ModLoadPlan.cs" Link="Bundles\ModLoadPlan.cs" />
-    <Compile Include="..\..\src\Jiangyu.Loader\Replacements\LodReplacementResolver.cs" Link="Replacements\LodReplacementResolver.cs" />
+    <ProjectReference Include="..\..\src\Jiangyu.Shared\Jiangyu.Shared.csproj" />
   </ItemGroup>
 
 </Project>

@@ -3,5 +3,6 @@
     <Project Path="src/Jiangyu.Core/Jiangyu.Core.csproj" />
     <Project Path="src/Jiangyu.Cli/Jiangyu.Cli.csproj" />
     <Project Path="src/Jiangyu.Loader/Jiangyu.Loader.csproj" />
+    <Project Path="src/Jiangyu.Shared/Jiangyu.Shared.csproj" />
   </Folder>
 </Solution>

@@ -14,10 +14,19 @@ obj/
 
 ## Build output
 publish/
+.jiangyu/
 
-## Local config (contributor-specific paths)
-local.props
+## Test / coverage output
+TestResults/
+*.trx
+coverage/
+coverage-*/
+*.coverage
+*.coveragexml
 
-!README.md
-docs/research
-*.md
+## OS junk
+.DS_Store
+Thumbs.db
+
+*TODO.md
+PROGRESS.md

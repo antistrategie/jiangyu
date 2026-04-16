@@ -1,7 +1,6 @@
-#nullable enable
-namespace Jiangyu.Loader.Replacements;
+namespace Jiangyu.Shared.Replacements;
 
-internal static class LodReplacementResolver
+public static class LodReplacementResolver
 {
     public static string? FindNearestAvailableTarget(IEnumerable<string> availableNames, string requestedName)
     {
@@ -33,7 +32,7 @@ internal static class LodReplacementResolver
         return candidates.FirstOrDefault()?.Name;
     }
 
-    internal static bool TryParseLodName(string meshName, out string baseName, out int lodIndex)
+    public static bool TryParseLodName(string meshName, out string baseName, out int lodIndex)
     {
         baseName = string.Empty;
         lodIndex = -1;
@@ -53,17 +52,10 @@ internal static class LodReplacementResolver
         return !string.IsNullOrWhiteSpace(baseName);
     }
 
-    private sealed class LodCandidate
+    private sealed class LodCandidate(string name, string baseName, int lodIndex)
     {
-        public string Name { get; }
-        public string BaseName { get; }
-        public int LodIndex { get; }
-
-        public LodCandidate(string name, string baseName, int lodIndex)
-        {
-            Name = name;
-            BaseName = baseName;
-            LodIndex = lodIndex;
-        }
+        public string Name { get; } = name;
+        public string BaseName { get; } = baseName;
+        public int LodIndex { get; } = lodIndex;
     }
 }
