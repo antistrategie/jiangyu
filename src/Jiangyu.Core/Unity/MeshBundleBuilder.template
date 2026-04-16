@@ -168,8 +168,8 @@ public static class MeshBundleBuilder
             mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
 
         mesh.vertices = data.Positions;
-        if (data.Normals != null) mesh.normals = data.Normals;
-        if (data.Tangents != null) mesh.tangents = data.Tangents;
+        if (data.Normals != null && data.Normals.Length > 0) mesh.normals = data.Normals;
+        if (data.Tangents != null && data.Tangents.Length > 0) mesh.tangents = data.Tangents;
         if (data.UV0 != null) mesh.uv = data.UV0;
         if (data.UV1 != null) mesh.uv2 = data.UV1;
         if (data.Colors != null) mesh.colors32 = data.Colors;
@@ -199,8 +199,10 @@ public static class MeshBundleBuilder
             mesh.bindposes = bindPoses;
 
         mesh.RecalculateBounds();
-        if (data.Normals == null)
+        if (data.Normals == null || data.Normals.Length == 0)
             mesh.RecalculateNormals();
+        if ((data.Tangents == null || data.Tangents.Length == 0) && data.UV0 != null)
+            mesh.RecalculateTangents();
 
         return mesh;
     }

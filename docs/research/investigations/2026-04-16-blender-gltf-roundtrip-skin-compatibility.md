@@ -184,3 +184,22 @@ These are real differences but did not cause the stringy deformation:
   code paths need them, but they are not blocking the current replacement workflow
 - consider whether the normalisation should also handle non-Blender DCC tools that
   exhibit similar topology patterns (e.g. Maya, 3ds Max glTF exporters)
+
+## Final resolution
+
+The Blender round-trip issue is now resolved for the current proven character-replacement
+path.
+
+The final working fix was not a single change but a compiler-side normalisation chain:
+
+- authored glTF-family sources (`.gltf` and `.glb`) are treated as the same authored
+  model category
+- skinned vertex-space mode is derived from inspected geometry scale rather than file
+  extension or Jiangyu metadata alone
+- texture extraction works for both `.gltf` and `.glb` material graphs
+- bind-pose retargeting runs in **source space** against auto-derived target reference
+  bind poses
+- normals and tangents are rebuilt after retarget so shading follows the corrected mesh
+
+This was validated end-to-end in game using a Blender-authored re-posed model that
+previously produced the stringy deformation and now deforms correctly.

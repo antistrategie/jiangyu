@@ -19,6 +19,7 @@ public static class GlbMeshBundleCompiler
     {
         public required string PrimaryName { get; init; }
         public required HashSet<string> Aliases { get; init; }
+        public required Node Node { get; init; }
         public required CompiledMesh Mesh { get; init; }
         public required List<CompiledMaterialBinding> MaterialBindings { get; init; }
     }
@@ -29,6 +30,7 @@ public static class GlbMeshBundleCompiler
         public required string BundleMeshName { get; init; }
         public required bool HasExplicitMeshName { get; init; }
         public string? SourceReference { get; init; }
+        public string? BindPoseReferencePath { get; init; }
     }
 
     internal sealed class CompiledMesh
@@ -52,6 +54,14 @@ public static class GlbMeshBundleCompiler
     {
         public required Matrix4x4[] BindPoses { get; init; }
         public required string[] BoneNames { get; init; }
+    }
+
+    private sealed class SkinBindingData
+    {
+        public required Matrix4x4[] SourceBindPoses { get; init; }
+        public required Matrix4x4[] CompiledBindPoses { get; init; }
+        public required string[] BoneNames { get; init; }
+        public required string?[] ParentNames { get; init; }
     }
 
     internal sealed class SubMeshInfo
@@ -229,7 +239,18 @@ public static class GlbMeshBundleCompiler
                         $"No matching mesh instance was found in '{group.Key}' for '{entry.BundleMeshName}'. Available names: {available}");
                 }
 
-                extracted.Add(CloneMeshWithName(match.Mesh, entry.BundleMeshName));
+                var mesh = match.Node.Mesh ?? throw new InvalidOperationException("Matched mesh candidate has no mesh.");
+                var compiled = ExtractMesh(
+                    mesh,
+                    model,
+                    match.Node,
+                    companionSkinData,
+                    isCleaned,
+                    entry.BindPoseReferencePath,
+                    entry.BundleMeshName)
+                    ?? throw new InvalidOperationException($"Matched mesh '{entry.BundleMeshName}' in '{group.Key}' could not be extracted.");
+
+                extracted.Add(CloneMeshWithName(compiled, entry.BundleMeshName));
             }
         }
 
@@ -273,7 +294,7 @@ public static class GlbMeshBundleCompiler
         if (mesh == null)
             return null;
 
-        var compiled = ExtractMesh(mesh, model, node, companionSkinData, isCleaned);
+        var compiled = ExtractMesh(mesh, model, node, companionSkinData, isCleaned, bindPoseReferencePath: null, bundleMeshName: mesh.Name ?? $"Mesh_{mesh.LogicalIndex}");
         if (compiled == null)
             return null;
 
@@ -298,6 +319,7 @@ public static class GlbMeshBundleCompiler
         {
             PrimaryName = primaryName,
             Aliases = aliases,
+            Node = node,
             Mesh = CloneMeshWithName(compiled, primaryName),
             MaterialBindings = ExtractMaterialBindings(node),
         };
@@ -453,11 +475,18 @@ public static class GlbMeshBundleCompiler
                !hasIdentityWorldTransform;
     }
 
-    private static CompiledMesh? ExtractMesh(SharpGLTF.Schema2.Mesh mesh, ModelRoot model, Node meshNode, CompanionSkinData? companionSkinData, bool isCleaned)
+    private static CompiledMesh? ExtractMesh(
+        SharpGLTF.Schema2.Mesh mesh,
+        ModelRoot model,
+        Node meshNode,
+        CompanionSkinData? companionSkinData,
+        bool isCleaned,
+        string? bindPoseReferencePath,
+        string bundleMeshName)
     {
-        var allVertices = new List<float>();
-        var allNormals = new List<float>();
-        var allTangents = new List<float>();
+        var sourceVertices = new List<Vector3>();
+        var sourceNormals = new List<Vector3>();
+        var sourceTangents = new List<Vector4>();
         var allUv0 = new List<float>();
         var allUv1 = new List<float>();
         var allColors = new List<float>();
@@ -518,6 +547,9 @@ public static class GlbMeshBundleCompiler
             if (positions == null)
                 continue;
 
+            var weights = primitive.GetVertexAccessor("WEIGHTS_0")?.AsVector4Array();
+            var joints = primitive.GetVertexAccessor("JOINTS_0")?.AsVector4Array();
+
             foreach (var pos in positions)
             {
                 var transformed = bakeNodeTransform ? Vector3.Transform(pos, worldTransform) : pos;
@@ -525,25 +557,7 @@ public static class GlbMeshBundleCompiler
                     transformed *= implicitSkinScale;
                 if (bakeMeshOnlyWeightScale)
                     transformed *= meshOnlyWeightScale;
-
-                switch (spaceMode)
-                {
-                    case VertexSpaceMode.RawPrefabSkinned:
-                        allVertices.Add(-transformed.X);
-                        allVertices.Add(transformed.Y);
-                        allVertices.Add(transformed.Z);
-                        break;
-                    case VertexSpaceMode.CleanedSkinned:
-                        allVertices.Add(-transformed.X * MenaceCharacterSpaceScale);
-                        allVertices.Add(transformed.Y * MenaceCharacterSpaceScale);
-                        allVertices.Add(transformed.Z * MenaceCharacterSpaceScale);
-                        break;
-                    case VertexSpaceMode.StaticMesh:
-                        allVertices.Add(transformed.X);
-                        allVertices.Add(transformed.Y);
-                        allVertices.Add(-transformed.Z);
-                        break;
-                }
+                sourceVertices.Add(transformed);
             }
 
             var normals = primitive.GetVertexAccessor("NORMAL")?.AsVector3Array();
@@ -552,18 +566,7 @@ public static class GlbMeshBundleCompiler
                 foreach (var normal in normals)
                 {
                     var transformed = bakeNodeTransform ? Vector3.Normalize(Vector3.TransformNormal(normal, normalTransform)) : normal;
-                    if (spaceMode != VertexSpaceMode.StaticMesh)
-                    {
-                        allNormals.Add(-transformed.X);
-                        allNormals.Add(transformed.Y);
-                        allNormals.Add(transformed.Z);
-                    }
-                    else
-                    {
-                        allNormals.Add(transformed.X);
-                        allNormals.Add(transformed.Y);
-                        allNormals.Add(-transformed.Z);
-                    }
+                    sourceNormals.Add(transformed);
                 }
             }
 
@@ -574,20 +577,7 @@ public static class GlbMeshBundleCompiler
                 {
                     var tangentVector = new Vector3(tangent.X, tangent.Y, tangent.Z);
                     var transformed = bakeNodeTransform ? Vector3.Normalize(Vector3.TransformNormal(tangentVector, normalTransform)) : tangentVector;
-                    if (spaceMode != VertexSpaceMode.StaticMesh)
-                    {
-                        allTangents.Add(-transformed.X);
-                        allTangents.Add(transformed.Y);
-                        allTangents.Add(transformed.Z);
-                        allTangents.Add(-tangent.W);
-                    }
-                    else
-                    {
-                        allTangents.Add(transformed.X);
-                        allTangents.Add(transformed.Y);
-                        allTangents.Add(-transformed.Z);
-                        allTangents.Add(-tangent.W);
-                    }
+                    sourceTangents.Add(new Vector4(transformed, tangent.W));
                 }
             }
 
@@ -623,8 +613,6 @@ public static class GlbMeshBundleCompiler
                 }
             }
 
-            var weights = primitive.GetVertexAccessor("WEIGHTS_0")?.AsVector4Array();
-            var joints = primitive.GetVertexAccessor("JOINTS_0")?.AsVector4Array();
             if (weights != null && joints != null)
             {
                 for (int i = 0; i < weights.Count; i++)
@@ -665,21 +653,138 @@ public static class GlbMeshBundleCompiler
 
         var bindPoses = Array.Empty<Matrix4x4>();
         var boneNames = Array.Empty<string>();
+        var parentNames = Array.Empty<string?>();
+        SkinBindingData? authoredSkinData = null;
         if (skin != null)
         {
-            bindPoses = new Matrix4x4[skin.JointsCount];
-            boneNames = new string[skin.JointsCount];
-            for (int i = 0; i < skin.JointsCount; i++)
-            {
-                var (joint, inverseBindMatrix) = skin.GetJoint(i);
-                bindPoses[i] = ConvertMatrix(inverseBindMatrix);
-                boneNames[i] = joint.Name ?? $"Bone_{i}";
-            }
+            authoredSkinData = BuildSkinBindingData(skin);
+            bindPoses = authoredSkinData.CompiledBindPoses;
+            boneNames = authoredSkinData.BoneNames;
+            parentNames = authoredSkinData.ParentNames;
         }
         else if (companionSkinData is not null && companionSkinData.BoneNames.Length > 0)
         {
             bindPoses = companionSkinData.BindPoses;
             boneNames = companionSkinData.BoneNames;
+            parentNames = new string?[boneNames.Length];
+        }
+
+        if (!string.IsNullOrWhiteSpace(bindPoseReferencePath))
+        {
+            if (skin == null)
+            {
+                throw new InvalidOperationException(
+                    $"Bind-pose retargeting for '{bundleMeshName}' requires a skinned authored model.");
+            }
+
+            if (spaceMode != VertexSpaceMode.CleanedSkinned)
+            {
+                throw new InvalidOperationException(
+                    $"Bind-pose retargeting for '{bundleMeshName}' only supports authored skinned replacement sources.");
+            }
+            if (authoredSkinData is null)
+            {
+                throw new InvalidOperationException(
+                    $"Bind-pose retargeting for '{bundleMeshName}' could not load authored skin binding data.");
+            }
+
+            var authoredContract = new BindPoseRetargetService.SkeletonContract
+            {
+                BoneNames = boneNames,
+                ParentNames = parentNames,
+                BindPoses = authoredSkinData.SourceBindPoses,
+            };
+            var referenceSkin = LoadReferenceSkinBindingData(bindPoseReferencePath!, bundleMeshName);
+            var referenceContract = new BindPoseRetargetService.SkeletonContract
+            {
+                BoneNames = referenceSkin.BoneNames,
+                ParentNames = referenceSkin.ParentNames,
+                BindPoses = referenceSkin.SourceBindPoses,
+            };
+
+            var alignedReferenceBindPoses = boneNames
+                .Select(name => referenceSkin.CompiledBindPoses[FindBoneIndex(referenceSkin.BoneNames, name)])
+                .ToArray();
+
+            if (BindPoseRetargetService.NeedsRetarget(authoredContract, referenceContract))
+            {
+                var retargeted = BindPoseRetargetService.Retarget(
+                    [.. sourceVertices],
+                    [.. sourceNormals],
+                    [.. sourceTangents],
+                    [.. allBoneWeights],
+                    [.. allBoneIndices],
+                    authoredContract,
+                    referenceContract);
+
+                sourceVertices = [.. retargeted.Positions];
+                // JIANGYU-CONTRACT: After bind-pose retargeting, authored normals/tangents are
+                // no longer trusted for the current proven Blender round-trip path. Rebuild them
+                // from the corrected geometry in Unity so shading follows the final compiled mesh.
+                sourceNormals = [];
+                sourceTangents = [];
+            }
+
+            bindPoses = alignedReferenceBindPoses;
+        }
+
+        var allVertices = new List<float>(sourceVertices.Count * 3);
+        foreach (var transformed in sourceVertices)
+        {
+            switch (spaceMode)
+            {
+                case VertexSpaceMode.RawPrefabSkinned:
+                    allVertices.Add(-transformed.X);
+                    allVertices.Add(transformed.Y);
+                    allVertices.Add(transformed.Z);
+                    break;
+                case VertexSpaceMode.CleanedSkinned:
+                    allVertices.Add(-transformed.X * MenaceCharacterSpaceScale);
+                    allVertices.Add(transformed.Y * MenaceCharacterSpaceScale);
+                    allVertices.Add(transformed.Z * MenaceCharacterSpaceScale);
+                    break;
+                case VertexSpaceMode.StaticMesh:
+                    allVertices.Add(transformed.X);
+                    allVertices.Add(transformed.Y);
+                    allVertices.Add(-transformed.Z);
+                    break;
+            }
+        }
+
+        var allNormals = new List<float>(sourceNormals.Count * 3);
+        foreach (var transformed in sourceNormals)
+        {
+            if (spaceMode != VertexSpaceMode.StaticMesh)
+            {
+                allNormals.Add(-transformed.X);
+                allNormals.Add(transformed.Y);
+                allNormals.Add(transformed.Z);
+            }
+            else
+            {
+                allNormals.Add(transformed.X);
+                allNormals.Add(transformed.Y);
+                allNormals.Add(-transformed.Z);
+            }
+        }
+
+        var allTangents = new List<float>(sourceTangents.Count * 4);
+        foreach (var tangent in sourceTangents)
+        {
+            if (spaceMode != VertexSpaceMode.StaticMesh)
+            {
+                allTangents.Add(-tangent.X);
+                allTangents.Add(tangent.Y);
+                allTangents.Add(tangent.Z);
+                allTangents.Add(-tangent.W);
+            }
+            else
+            {
+                allTangents.Add(tangent.X);
+                allTangents.Add(tangent.Y);
+                allTangents.Add(-tangent.Z);
+                allTangents.Add(-tangent.W);
+            }
         }
 
         return new CompiledMesh
@@ -698,6 +803,75 @@ public static class GlbMeshBundleCompiler
             BindPoses = bindPoses,
             BoneNames = boneNames,
         };
+    }
+
+    private static int FindBoneIndex(IReadOnlyList<string> boneNames, string boneName)
+    {
+        for (int i = 0; i < boneNames.Count; i++)
+        {
+            if (string.Equals(boneNames[i], boneName, StringComparison.Ordinal))
+                return i;
+        }
+
+        throw new InvalidOperationException($"Reference skeleton is missing bone '{boneName}'.");
+    }
+
+    private static SkinBindingData BuildSkinBindingData(Skin skin)
+    {
+        var sourceBindPoses = new Matrix4x4[skin.JointsCount];
+        var compiledBindPoses = new Matrix4x4[skin.JointsCount];
+        var boneNames = new string[skin.JointsCount];
+        var parentNames = new string?[skin.JointsCount];
+
+        for (int i = 0; i < skin.JointsCount; i++)
+        {
+            var (joint, inverseBindMatrix) = skin.GetJoint(i);
+            sourceBindPoses[i] = inverseBindMatrix;
+            compiledBindPoses[i] = ConvertMatrix(inverseBindMatrix);
+            boneNames[i] = joint.Name ?? $"Bone_{i}";
+            parentNames[i] = joint.VisualParent?.Name;
+        }
+
+        return new SkinBindingData
+        {
+            SourceBindPoses = sourceBindPoses,
+            CompiledBindPoses = compiledBindPoses,
+            BoneNames = boneNames,
+            ParentNames = parentNames,
+        };
+    }
+
+    private static SkinBindingData LoadReferenceSkinBindingData(string referencePath, string bundleMeshName)
+    {
+        var model = ModelRoot.Load(referencePath);
+        var candidates = model.LogicalNodes
+            .Where(node => node.Mesh != null)
+            .Select(node => ExtractMeshCandidate(node, model, companionSkinData: null, isCleaned: IsCleanedExport(referencePath)))
+            .Where(candidate => candidate != null)
+            .Cast<ExtractedMeshCandidate>()
+            .ToList();
+
+        if (candidates.Count == 0)
+            throw new InvalidOperationException($"Bind-pose reference '{referencePath}' contains no mesh nodes.");
+
+        var match = candidates.FirstOrDefault(candidate => candidate.Aliases.Contains(bundleMeshName));
+        if (match == null && candidates.Count == 1)
+            match = candidates[0];
+
+        if (match == null)
+        {
+            var available = string.Join(", ", candidates.SelectMany(c => c.Aliases).Distinct(StringComparer.Ordinal).OrderBy(n => n, StringComparer.Ordinal));
+            throw new InvalidOperationException(
+                $"Bind-pose reference '{referencePath}' has no mesh node matching '{bundleMeshName}'. Available names: {available}");
+        }
+
+        if (match.Node.Skin == null)
+        {
+            throw new InvalidOperationException(
+                $"Bind-pose reference '{referencePath}' mesh '{bundleMeshName}' is not skinned.");
+        }
+
+        return BuildSkinBindingData(match.Node.Skin);
     }
 
     private static bool IsIdentityMatrix(Matrix4x4 matrix)

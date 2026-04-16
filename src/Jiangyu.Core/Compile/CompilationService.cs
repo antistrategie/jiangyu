@@ -152,7 +152,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             }
             catch (Exception ex)
             {
-                return Fail($"Experimental GLB mesh pipeline failed: {ex.Message}");
+                return Fail($"Direct mesh replacement pipeline failed: {ex.Message}");
             }
         }
         else
@@ -255,6 +255,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         AssetIndex index = LoadAssetIndex(cachePath)
             ?? throw new InvalidOperationException(
                 $"Asset index not found or unreadable at '{Path.Combine(cachePath, AssetIndexFileName)}'. Run 'jiangyu assets index' first.");
+        var assetPipeline = new AssetPipelineService(gameDataPath, cachePath, _progress, _log);
 
         var entries = new List<GlbMeshBundleCompiler.MeshSourceEntry>();
         foreach (var targetDirectory in Directory.GetDirectories(modelsRoot))
@@ -280,6 +281,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             }
 
             var file = modelFiles[0];
+            var bindPoseReferencePath = EnsureBindPoseReferenceExport(projectDir, target, assetPipeline);
             var providedMeshNames = DiscoverReplacementMeshNames(file);
             var expectedMeshNames = AssetInspectionService.GetSkinnedMeshNamesForIndexedObject(gameDataPath, target.Collection, target.PathId);
             if (expectedMeshNames.Count == 0)
@@ -330,6 +332,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                     BundleMeshName = meshName,
                     HasExplicitMeshName = true,
                     SourceReference = BuildSourceReference(projectDir, file, meshName),
+                    BindPoseReferencePath = bindPoseReferencePath,
                 });
             }
         }
@@ -788,6 +791,26 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         if (!string.IsNullOrWhiteSpace(mesh.Name))
             return mesh.Name;
         return Path.GetFileNameWithoutExtension(filePath);
+    }
+
+    private static string EnsureBindPoseReferenceExport(string projectDir, ReplacementModelTarget target, AssetPipelineService assetPipeline)
+    {
+        var referenceDirectory = Path.Combine(projectDir, ".jiangyu", "bind-pose-references", BuildModelReplacementAlias(target.Name, target.PathId));
+        var referenceModelPath = Path.Combine(referenceDirectory, "model.gltf");
+        if (File.Exists(referenceModelPath))
+            return referenceModelPath;
+
+        if (Directory.Exists(referenceDirectory))
+            Directory.Delete(referenceDirectory, recursive: true);
+
+        assetPipeline.ExportModel(target.Name, referenceDirectory, clean: true, target.Collection, target.PathId);
+        if (!File.Exists(referenceModelPath))
+        {
+            throw new InvalidOperationException(
+                $"Failed to auto-export bind-pose reference model for target '{target.Name}--{target.PathId}'.");
+        }
+
+        return referenceModelPath;
     }
 
     private static string BuildSourceReference(string projectDir, string filePath, string meshName)
