@@ -32,9 +32,7 @@ Do **not** use this skill for:
 
 Those are deeper managed/runtime validation, not structural validation.
 
-## Required reading
-
-Read these first:
+## Read first
 
 - `AGENTS.md`
 - `docs/research/VALIDATION.md`
@@ -74,20 +72,9 @@ Before editing any files, report back with:
 
 Wait for approval before writing notes or editing files.
 
-## Standard workflow
+## Workflow source of truth
 
-Follow `docs/research/STRUCTURAL_VALIDATION_WORKFLOW.md` exactly.
-
-In practice:
-
-1. State the target narrowly.
-2. Pick real samples from Jiangyu's own inventory.
-3. Inspect with the built `jiangyu` CLI.
-4. Isolate the specific nested object/field.
-5. Compare across Jiangyu samples.
-6. Classify the result.
-7. State what was and was not validated.
-8. Record the next best target.
+Follow `docs/research/STRUCTURAL_VALIDATION_WORKFLOW.md` exactly. Do not restate or improvise a different validation procedure inside this skill.
 
 ## Commands
 
@@ -114,38 +101,3 @@ After approval to proceed, produce only what the pass needs:
 3. A `TODO.md` update only if the result changes what should be investigated next
 
 Do not rewrite unrelated docs.
-
-## Note shape
-
-Use this structure:
-
-```md
-# Support-Type Structural Spot-Check: <TypeName>
-
-Date: YYYY-MM-DD
-
-## Goal
-
-## Why This Type
-
-## Samples
-
-## Method
-
-## Results
-
-## Interpretation
-
-## Conclusion
-
-## Next Step
-```
-
-## Current examples
-
-Use these as style references:
-
-- `docs/research/investigations/2026-04-15-localized-support-type-spot-check.md`
-- `docs/research/investigations/2026-04-15-roledata-support-type-spot-check.md`
-- `docs/research/investigations/2026-04-15-entityproperties-support-type-spot-check.md`
-- `docs/research/investigations/2026-04-15-prefabattachment-support-type-spot-check.md`
