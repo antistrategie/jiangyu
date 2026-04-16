@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-04-16T01:58:21.4857074+00:00",
+  "generatedAt": "2026-04-16T05:33:22.3907044+00:00",
   "gameAssemblyHash": "d4e181a6dedcfa3753e5df4eecba1617d93ba7a8b9ba60057d27d7dcbad31063",
   "types": [
     {
@@ -688,7 +688,8 @@
           "name": "Tags",
           "kind": "array",
           "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tags.TagTemplate>",
-          "elementTypeName": "Menace.Tags.TagTemplate"
+          "elementTypeName": "Menace.Tags.TagTemplate",
+          "storage": "reference"
         },
         {
           "name": "ElementsMin",
@@ -804,7 +805,8 @@
           "name": "DefectGroups",
           "kind": "array",
           "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tactical.DefectGroup>",
-          "elementTypeName": "Menace.Tactical.DefectGroup"
+          "elementTypeName": "Menace.Tactical.DefectGroup",
+          "storage": "reference"
         },
         {
           "name": "AnimationSoundTemplate",
@@ -850,37 +852,43 @@
           "name": "Prefabs",
           "kind": "array",
           "fieldTypeName": "System.Collections.Generic.List`1<UnityEngine.GameObject>",
-          "elementTypeName": "UnityEngine.GameObject"
+          "elementTypeName": "UnityEngine.GameObject",
+          "storage": "reference"
         },
         {
           "name": "Decoration",
           "kind": "array",
           "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tools.PrefabListTemplate>",
-          "elementTypeName": "Menace.Tools.PrefabListTemplate"
+          "elementTypeName": "Menace.Tools.PrefabListTemplate",
+          "storage": "reference"
         },
         {
           "name": "SmallDecoration",
           "kind": "array",
           "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tools.PrefabListTemplate>",
-          "elementTypeName": "Menace.Tools.PrefabListTemplate"
+          "elementTypeName": "Menace.Tools.PrefabListTemplate",
+          "storage": "reference"
         },
         {
           "name": "DestroyedPrefabs",
           "kind": "array",
           "fieldTypeName": "System.Collections.Generic.List`1<UnityEngine.GameObject>",
-          "elementTypeName": "UnityEngine.GameObject"
+          "elementTypeName": "UnityEngine.GameObject",
+          "storage": "reference"
         },
         {
           "name": "DestroyedDecoration",
           "kind": "array",
           "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tools.PrefabListTemplate>",
-          "elementTypeName": "Menace.Tools.PrefabListTemplate"
+          "elementTypeName": "Menace.Tools.PrefabListTemplate",
+          "storage": "reference"
         },
         {
           "name": "DestroyedWalls",
           "kind": "array",
           "fieldTypeName": "System.Collections.Generic.List`1<UnityEngine.GameObject>",
-          "elementTypeName": "UnityEngine.GameObject"
+          "elementTypeName": "UnityEngine.GameObject",
+          "storage": "reference"
         },
         {
           "name": "Scale",
@@ -951,7 +959,8 @@
           "name": "AttachedPrefabs",
           "kind": "array",
           "fieldTypeName": "Menace.Tactical.PrefabAttachment[]",
-          "elementTypeName": "Menace.Tactical.PrefabAttachment"
+          "elementTypeName": "Menace.Tactical.PrefabAttachment",
+          "storage": "inline"
         },
         {
           "name": "FactionSpecificAnimation",
@@ -1157,13 +1166,15 @@
           "name": "Items",
           "kind": "array",
           "fieldTypeName": "System.Collections.Generic.List`1<Menace.Items.ItemTemplate>",
-          "elementTypeName": "Menace.Items.ItemTemplate"
+          "elementTypeName": "Menace.Items.ItemTemplate",
+          "storage": "reference"
         },
         {
           "name": "Loot",
           "kind": "array",
           "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tactical.EntityLootEntry>",
-          "elementTypeName": "Menace.Tactical.EntityLootEntry"
+          "elementTypeName": "Menace.Tactical.EntityLootEntry",
+          "storage": "inline"
         },
         {
           "name": "ModularVehicle",
@@ -1179,13 +1190,15 @@
           "name": "SkillGroups",
           "kind": "array",
           "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tactical.Skills.SkillGroup>",
-          "elementTypeName": "Menace.Tactical.Skills.SkillGroup"
+          "elementTypeName": "Menace.Tactical.Skills.SkillGroup",
+          "storage": "reference"
         },
         {
           "name": "Skills",
           "kind": "array",
           "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tactical.Skills.SkillTemplate>",
-          "elementTypeName": "Menace.Tactical.Skills.SkillTemplate"
+          "elementTypeName": "Menace.Tactical.Skills.SkillTemplate",
+          "storage": "reference"
         },
         {
           "name": "AIRole",

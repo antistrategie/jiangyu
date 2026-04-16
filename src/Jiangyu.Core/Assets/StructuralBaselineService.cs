@@ -1,10 +1,12 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AsmResolver.DotNet;
 using AssetRipper.Assets;
 using AssetRipper.Import.Configuration;
 using AssetRipper.Import.Logging;
 using AssetRipper.Import.Structure;
+using AssetRipper.Import.Structure.Assembly.Managers;
 using AssetRipper.IO.Files;
 using AssetRipper.Processing;
 using AssetRipper.Processing.AnimatorControllers;
@@ -304,7 +306,9 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
         foreach (ResolvedTemplateCandidate sample in samples)
         {
             List<InspectedFieldNode> inspectedFields = InspectStructureFields(sample, gameData);
-            List<BaselineFieldEntry> fields = ExtractFieldEntries(inspectedFields);
+            List<BaselineFieldEntry> fields = ExtractFieldEntries(
+                inspectedFields,
+                elementTypeName => InferStorageFromElementTypeName(gameData.AssemblyManager, elementTypeName));
 
             if (canonicalFields is null)
             {
@@ -348,7 +352,9 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
                     $"Support type '{source.TypeName}' in template '{sample.Name}' has no fields (may need deeper inspection depth).");
             }
 
-            List<BaselineFieldEntry> fields = ExtractFieldEntries(supportTypeNode.Fields);
+            List<BaselineFieldEntry> fields = ExtractFieldEntries(
+                supportTypeNode.Fields,
+                elementTypeName => InferStorageFromElementTypeName(gameData.AssemblyManager, elementTypeName));
 
             if (canonicalFields is null)
             {
@@ -413,6 +419,11 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
             if (!string.Equals(a.ElementTypeName, b.ElementTypeName, StringComparison.Ordinal))
             {
                 mismatches.Add($"  field '{name}' elementTypeName differs: '{a.ElementTypeName}' in '{canonicalSampleName}' vs '{b.ElementTypeName}' in '{otherSampleName}'");
+            }
+
+            if (!string.Equals(a.Storage, b.Storage, StringComparison.Ordinal))
+            {
+                mismatches.Add($"  field '{name}' storage differs: '{a.Storage}' in '{canonicalSampleName}' vs '{b.Storage}' in '{otherSampleName}'");
             }
         }
 
@@ -543,7 +554,9 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
         return lastDot >= 0 ? typeName[(lastDot + 1)..] : typeName;
     }
 
-    internal static List<BaselineFieldEntry> ExtractFieldEntries(List<InspectedFieldNode> fields)
+    internal static List<BaselineFieldEntry> ExtractFieldEntries(
+        List<InspectedFieldNode> fields,
+        Func<string, string?>? inferStorageFromElementTypeName = null)
     {
         return
         [
@@ -553,6 +566,7 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
                 Kind = f.Kind,
                 FieldTypeName = f.FieldTypeName,
                 ElementTypeName = ResolveElementTypeName(f),
+                Storage = ResolveStorage(f, inferStorageFromElementTypeName),
             }),
         ];
     }
@@ -576,6 +590,134 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
         }
 
         return null;
+    }
+
+    internal static string? ResolveStorage(
+        InspectedFieldNode field,
+        Func<string, string?>? inferStorageFromElementTypeName = null)
+    {
+        if (!string.Equals(field.Kind, "array", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (field.Elements is { Count: > 0 })
+        {
+            return string.Equals(field.Elements[0].Kind, "reference", StringComparison.Ordinal)
+                ? "reference"
+                : "inline";
+        }
+
+        string? elementTypeName = ResolveElementTypeName(field);
+        if (!string.IsNullOrWhiteSpace(elementTypeName) && inferStorageFromElementTypeName is not null)
+        {
+            return inferStorageFromElementTypeName(elementTypeName);
+        }
+
+        return null;
+    }
+
+    internal static string? InferStorageFromElementTypeName(IAssemblyManager assemblyManager, string? elementTypeName)
+    {
+        if (string.IsNullOrWhiteSpace(elementTypeName))
+        {
+            return null;
+        }
+
+        if (IsKnownInlineTypeName(elementTypeName))
+        {
+            return "inline";
+        }
+
+        TypeDefinition? typeDefinition = ResolveTypeDefinitionByName(assemblyManager, elementTypeName);
+        if (typeDefinition is null)
+        {
+            return null;
+        }
+
+        return DerivesFrom(typeDefinition, "UnityEngine.Object")
+            ? "reference"
+            : "inline";
+    }
+
+    private static bool IsKnownInlineTypeName(string typeName)
+    {
+        string simpleName = GetSimpleTypeName(typeName);
+        return simpleName switch
+        {
+            "Boolean" or
+            "Byte" or
+            "SByte" or
+            "Char" or
+            "Decimal" or
+            "Double" or
+            "Single" or
+            "Int16" or
+            "Int32" or
+            "Int64" or
+            "UInt16" or
+            "UInt32" or
+            "UInt64" or
+            "String" or
+            "DateTime" => true,
+            _ => false,
+        };
+    }
+
+    private static TypeDefinition? ResolveTypeDefinitionByName(IAssemblyManager assemblyManager, string typeName)
+    {
+        foreach (AssemblyDefinition assembly in assemblyManager.GetAssemblies())
+        {
+            foreach (ModuleDefinition module in assembly.Modules)
+            {
+                foreach (TypeDefinition type in EnumerateTypes(module.TopLevelTypes))
+                {
+                    if (string.Equals(type.FullName, typeName, StringComparison.Ordinal)
+                        || string.Equals(type.Name, typeName, StringComparison.Ordinal))
+                    {
+                        return type;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<TypeDefinition> EnumerateTypes(IEnumerable<TypeDefinition> types)
+    {
+        foreach (TypeDefinition type in types)
+        {
+            yield return type;
+
+            foreach (TypeDefinition nestedType in EnumerateTypes(type.NestedTypes))
+            {
+                yield return nestedType;
+            }
+        }
+    }
+
+    private static bool DerivesFrom(TypeDefinition typeDefinition, string fullName)
+    {
+        TypeDefinition? current = typeDefinition;
+        while (current is not null)
+        {
+            if (string.Equals(current.FullName, fullName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            try
+            {
+                current = current.BaseType?.Resolve();
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     internal static string? TryParseArrayElementTypeName(string? fieldTypeName)
@@ -649,8 +791,9 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
             bool kindChanged = !string.Equals(prevField!.Kind, currField!.Kind, StringComparison.Ordinal);
             bool typeChanged = !string.Equals(prevField.FieldTypeName, currField.FieldTypeName, StringComparison.Ordinal);
             bool elementTypeChanged = !string.Equals(prevField.ElementTypeName, currField.ElementTypeName, StringComparison.Ordinal);
+            bool storageChanged = !string.Equals(prevField.Storage, currField.Storage, StringComparison.Ordinal);
 
-            if (kindChanged || typeChanged || elementTypeChanged)
+            if (kindChanged || typeChanged || elementTypeChanged || storageChanged)
             {
                 changedFields.Add(new BaselineFieldDiff
                 {
@@ -661,6 +804,8 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
                     CurrentFieldTypeName = typeChanged ? currField.FieldTypeName : null,
                     PreviousElementTypeName = elementTypeChanged ? prevField.ElementTypeName : null,
                     CurrentElementTypeName = elementTypeChanged ? currField.ElementTypeName : null,
+                    PreviousStorage = storageChanged ? prevField.Storage : null,
+                    CurrentStorage = storageChanged ? currField.Storage : null,
                 });
             }
         }

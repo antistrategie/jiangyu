@@ -63,6 +63,9 @@ public sealed class BaselineFieldEntry
 
     [JsonPropertyName("elementTypeName")]
     public string? ElementTypeName { get; init; }
+
+    [JsonPropertyName("storage")]
+    public string? Storage { get; init; }
 }
 
 public sealed class BaselineDiff
@@ -123,4 +126,10 @@ public sealed class BaselineFieldDiff
 
     [JsonPropertyName("currentElementTypeName")]
     public string? CurrentElementTypeName { get; init; }
+
+    [JsonPropertyName("previousStorage")]
+    public string? PreviousStorage { get; init; }
+
+    [JsonPropertyName("currentStorage")]
+    public string? CurrentStorage { get; init; }
 }

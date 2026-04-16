@@ -256,6 +256,10 @@ For each field entry, include:
 - `kind`
 - `fieldTypeName`
 - `elementTypeName` when relevant for arrays
+- `storage` when derivable for arrays: `inline` (element data embedded in parent blob) or
+  `reference` (elements are PPtr references to separate assets). Derived from the sampled
+  element kind during baseline generation. Null when the array is empty across all curated
+  samples.
 
 Field order should be preserved by list order. `sampleNames` and type entries should be
 sorted deterministically.
@@ -292,6 +296,20 @@ The first version should stay simple:
           "name": "Properties",
           "kind": "object",
           "fieldTypeName": "Menace.Tactical.EntityProperties"
+        },
+        {
+          "name": "Items",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Items.ItemTemplate>",
+          "elementTypeName": "Menace.Items.ItemTemplate",
+          "storage": "reference"
+        },
+        {
+          "name": "Loot",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tactical.EntityLootEntry>",
+          "elementTypeName": "Menace.Tactical.EntityLootEntry",
+          "storage": "inline"
         }
       ]
     }
