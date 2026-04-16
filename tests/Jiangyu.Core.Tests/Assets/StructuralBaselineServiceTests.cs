@@ -1,5 +1,7 @@
 using Jiangyu.Core.Assets;
 using Jiangyu.Core.Models;
+using Jiangyu.Core.Tests.Helpers;
+using System.Text.Json;
 
 namespace Jiangyu.Core.Tests.Assets;
 
@@ -273,5 +275,111 @@ public class StructuralBaselineServiceTests
         bool actual = StructuralBaselineService.MatchesTypeName(observed, expected);
 
         Assert.Equal(matches, actual);
+    }
+
+    [Fact]
+    public void GetBaselineStatus_WhenHashMatches_ReturnsCurrent()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"jiangyu-baseline-status-{Guid.NewGuid()}");
+        var gameDir = Path.Combine(root, "Menace");
+        var dataDir = Path.Combine(gameDir, "Menace_Data");
+        var cacheDir = Path.Combine(root, "cache");
+
+        Directory.CreateDirectory(dataDir);
+        Directory.CreateDirectory(cacheDir);
+        File.WriteAllBytes(Path.Combine(gameDir, "GameAssembly.so"), [1, 2, 3, 4]);
+        File.WriteAllText(Path.Combine(cacheDir, "template-index.json"), """{"classification":{"ruleVersion":"v1","ruleDescription":"test"},"templateTypes":[],"instances":[]}""");
+
+        try
+        {
+            string hash = ComputeHash(Path.Combine(gameDir, "GameAssembly.so"));
+            var manifest = new TemplateIndexManifest
+            {
+                GameAssemblyHash = hash,
+                IndexedAt = DateTimeOffset.UtcNow,
+                GameDataPath = dataDir,
+                RuleVersion = TemplateClassifier.GetMetadata().RuleVersion,
+                RuleDescription = TemplateClassifier.GetMetadata().RuleDescription,
+                TemplateTypeCount = 0,
+                InstanceCount = 0,
+            };
+
+            File.WriteAllText(
+                Path.Combine(cacheDir, "template-index-manifest.json"),
+                JsonSerializer.Serialize(manifest));
+
+            var service = new StructuralBaselineService(dataDir, cacheDir, new NullProgressSink(), new NullLogSink());
+            var baseline = new StructuralBaseline
+            {
+                GeneratedAt = DateTimeOffset.UtcNow,
+                GameAssemblyHash = hash,
+                Types = [],
+            };
+
+            CachedIndexStatus status = service.GetBaselineStatus(baseline);
+
+            Assert.Equal(CachedIndexState.Current, status.State);
+            Assert.Null(status.Reason);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void GetBaselineStatus_WhenHashDiffers_ReturnsStale()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"jiangyu-baseline-status-{Guid.NewGuid()}");
+        var gameDir = Path.Combine(root, "Menace");
+        var dataDir = Path.Combine(gameDir, "Menace_Data");
+        var cacheDir = Path.Combine(root, "cache");
+
+        Directory.CreateDirectory(dataDir);
+        Directory.CreateDirectory(cacheDir);
+        File.WriteAllBytes(Path.Combine(gameDir, "GameAssembly.so"), [1, 2, 3, 4]);
+        File.WriteAllText(Path.Combine(cacheDir, "template-index.json"), """{"classification":{"ruleVersion":"v1","ruleDescription":"test"},"templateTypes":[],"instances":[]}""");
+
+        try
+        {
+            string hash = ComputeHash(Path.Combine(gameDir, "GameAssembly.so"));
+            var manifest = new TemplateIndexManifest
+            {
+                GameAssemblyHash = hash,
+                IndexedAt = DateTimeOffset.UtcNow,
+                GameDataPath = dataDir,
+                RuleVersion = TemplateClassifier.GetMetadata().RuleVersion,
+                RuleDescription = TemplateClassifier.GetMetadata().RuleDescription,
+                TemplateTypeCount = 0,
+                InstanceCount = 0,
+            };
+
+            File.WriteAllText(
+                Path.Combine(cacheDir, "template-index-manifest.json"),
+                JsonSerializer.Serialize(manifest));
+
+            var service = new StructuralBaselineService(dataDir, cacheDir, new NullProgressSink(), new NullLogSink());
+            var baseline = new StructuralBaseline
+            {
+                GeneratedAt = DateTimeOffset.UtcNow,
+                GameAssemblyHash = "different",
+                Types = [],
+            };
+
+            CachedIndexStatus status = service.GetBaselineStatus(baseline);
+
+            Assert.Equal(CachedIndexState.Stale, status.State);
+            Assert.Contains("baseline generate", status.Reason);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static string ComputeHash(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream)).ToLowerInvariant();
     }
 }

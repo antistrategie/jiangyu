@@ -175,6 +175,17 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         return JsonSerializer.Deserialize<AssetIndex>(File.ReadAllText(indexPath), JsonOptions);
     }
 
+    public IndexManifest? LoadManifest()
+    {
+        var manifestPath = Path.Combine(CachePath, ManifestFileName);
+        if (!File.Exists(manifestPath))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<IndexManifest>(File.ReadAllText(manifestPath), JsonOptions);
+    }
+
     /// <summary>
     /// Searches the asset index with optional query and type filter.
     /// Returns matching entries, up to the specified limit.

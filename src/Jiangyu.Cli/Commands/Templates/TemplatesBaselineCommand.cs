@@ -16,6 +16,7 @@ public static class TemplatesBaselineCommand
         WriteIndented = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
+    private const string DefaultBaselineRelativePath = "validation/template-structure-baseline.json";
 
     public static Command Create()
     {
@@ -38,7 +39,7 @@ public static class TemplatesBaselineCommand
         var outputOption = new Option<string>("--output")
         {
             Description = "Path to write the baseline JSON",
-            DefaultValueFactory = _ => "validation/template-structure-baseline.json",
+            DefaultValueFactory = _ => DefaultBaselineRelativePath,
         };
 
         var command = new Command("generate", "Generate a structural baseline from curated sources")
@@ -111,7 +112,7 @@ public static class TemplatesBaselineCommand
         var currentOption = new Option<string>("--current")
         {
             Description = "Path to the current baseline JSON",
-            DefaultValueFactory = _ => "validation/template-structure-baseline.json",
+            DefaultValueFactory = _ => DefaultBaselineRelativePath,
         };
 
         var command = new Command("diff", "Compare two structural baselines for drift")
@@ -153,6 +154,26 @@ public static class TemplatesBaselineCommand
             {
                 Console.Error.WriteLine($"Error: current baseline not found: {currentPath}");
                 return 1;
+            }
+
+            string defaultCurrentPath = Path.GetFullPath(DefaultBaselineRelativePath);
+            if (string.Equals(currentPath, defaultCurrentPath, StringComparison.Ordinal))
+            {
+                var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+                if (!resolution.Success)
+                {
+                    Console.Error.WriteLine(resolution.Error);
+                    return 1;
+                }
+
+                var context = resolution.Context!;
+                var service = context.CreateStructuralBaselineService(new ConsoleProgressSink(), new ConsoleLogSink());
+                CachedIndexStatus baselineStatus = service.GetBaselineStatus(current);
+                if (!baselineStatus.IsCurrent)
+                {
+                    Console.Error.WriteLine($"Error: {baselineStatus.Reason}");
+                    return 1;
+                }
             }
 
             BaselineDiff diff = StructuralBaselineService.DiffBaselines(previous, current);

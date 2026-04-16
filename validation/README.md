@@ -28,6 +28,12 @@ They do **not** define runtime truth for the compiler or loader.
 - regenerate the matching baseline with `jiangyu templates baseline generate`
 - review the diff before committing changes
 
+After a game update:
+
+- rerun `jiangyu templates index`
+- treat the committed `template-structure-baseline.json` as stale until you intentionally regenerate it
+- `jiangyu templates baseline diff` will refuse to use the committed current baseline if its `gameAssemblyHash` no longer matches the current game
+
 For the policy and promotion rules behind these files, see:
 
 - `docs/research/VALIDATION.md`

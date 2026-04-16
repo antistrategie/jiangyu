@@ -48,6 +48,8 @@ public sealed class CompilationResult
 public sealed class CompilationService(ILogSink log, IProgressSink progress)
 {
     private const string AssetIndexFileName = "asset-index.json";
+    private const string BindPoseReferenceManifestFileName = "reference-manifest.json";
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private readonly ILogSink _log = log;
     private readonly IProgressSink _progress = progress;
 
@@ -72,9 +74,14 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         if (!versionValidation.Success)
             return Fail(versionValidation.ErrorMessage ?? "Unity version validation failed.");
 
+        var assetPipeline = new AssetPipelineService(gameDataPath, config.GetCachePath(), _progress, _log);
+        var assetIndexStatus = assetPipeline.GetIndexStatus();
+        if (!assetIndexStatus.IsCurrent)
+            return Fail(assetIndexStatus.Reason ?? "Asset index is missing or stale. Run 'jiangyu assets index' first.");
+
         var replacementRoot = Path.Combine(projectDir, "assets", "replacements");
         var additionRoot = Path.Combine(projectDir, "assets", "additions");
-        var replacementEntries = DiscoverReplacementMeshEntries(projectDir, replacementRoot, config.GetCachePath(), gameDataPath);
+        var replacementEntries = DiscoverReplacementMeshEntries(projectDir, replacementRoot, config.GetCachePath(), gameDataPath, assetPipeline);
         var replacementTextures = DiscoverReplacementTextureEntries(projectDir, replacementRoot, config.GetCachePath());
         var replacementSprites = DiscoverReplacementSpriteEntries(projectDir, replacementRoot, config.GetCachePath());
         var replacementAudio = DiscoverReplacementAudioEntries(projectDir, replacementRoot, config.GetCachePath());
@@ -231,7 +238,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         return extension.StartsWith('.') ? extension : $".{extension}";
     }
 
-    private List<GlbMeshBundleCompiler.MeshSourceEntry> DiscoverReplacementMeshEntries(string projectDir, string replacementsRoot, string cachePath, string gameDataPath)
+    private List<GlbMeshBundleCompiler.MeshSourceEntry> DiscoverReplacementMeshEntries(string projectDir, string replacementsRoot, string cachePath, string gameDataPath, AssetPipelineService assetPipeline)
     {
         if (!Directory.Exists(replacementsRoot))
             return [];
@@ -255,7 +262,6 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         AssetIndex index = LoadAssetIndex(cachePath)
             ?? throw new InvalidOperationException(
                 $"Asset index not found or unreadable at '{Path.Combine(cachePath, AssetIndexFileName)}'. Run 'jiangyu assets index' first.");
-        var assetPipeline = new AssetPipelineService(gameDataPath, cachePath, _progress, _log);
 
         var entries = new List<GlbMeshBundleCompiler.MeshSourceEntry>();
         foreach (var targetDirectory in Directory.GetDirectories(modelsRoot))
@@ -797,8 +803,16 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
     {
         var referenceDirectory = Path.Combine(projectDir, ".jiangyu", "bind-pose-references", BuildModelReplacementAlias(target.Name, target.PathId));
         var referenceModelPath = Path.Combine(referenceDirectory, "model.gltf");
-        if (File.Exists(referenceModelPath))
+        var referenceManifestPath = Path.Combine(referenceDirectory, BindPoseReferenceManifestFileName);
+        var assetIndexManifest = assetPipeline.LoadManifest()
+            ?? throw new InvalidOperationException("Asset index manifest could not be loaded while preparing bind-pose references.");
+
+        if (File.Exists(referenceModelPath)
+            && TryLoadBindPoseReferenceManifest(referenceManifestPath, out var referenceManifest)
+            && string.Equals(referenceManifest.GameAssemblyHash, assetIndexManifest.GameAssemblyHash, StringComparison.Ordinal))
+        {
             return referenceModelPath;
+        }
 
         if (Directory.Exists(referenceDirectory))
             Directory.Delete(referenceDirectory, recursive: true);
@@ -810,7 +824,40 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 $"Failed to auto-export bind-pose reference model for target '{target.Name}--{target.PathId}'.");
         }
 
+        Directory.CreateDirectory(referenceDirectory);
+        File.WriteAllText(
+            referenceManifestPath,
+            JsonSerializer.Serialize(
+                new BindPoseReferenceManifest { GameAssemblyHash = assetIndexManifest.GameAssemblyHash },
+                JsonOptions));
+
         return referenceModelPath;
+    }
+
+    private static bool TryLoadBindPoseReferenceManifest(string path, out BindPoseReferenceManifest manifest)
+    {
+        manifest = new BindPoseReferenceManifest();
+        if (!File.Exists(path))
+            return false;
+
+        try
+        {
+            var loaded = JsonSerializer.Deserialize<BindPoseReferenceManifest>(File.ReadAllText(path), JsonOptions);
+            if (loaded is null || string.IsNullOrWhiteSpace(loaded.GameAssemblyHash))
+                return false;
+
+            manifest = loaded;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private sealed class BindPoseReferenceManifest
+    {
+        public string? GameAssemblyHash { get; init; }
     }
 
     private static string BuildSourceReference(string projectDir, string filePath, string meshName)

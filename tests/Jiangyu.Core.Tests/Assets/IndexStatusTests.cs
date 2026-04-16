@@ -70,6 +70,47 @@ public class IndexStatusTests
     }
 
     [Fact]
+    public void AssetIndexLoadManifest_WhenPresent_ReturnsManifest()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"jiangyu-asset-manifest-{Guid.NewGuid()}");
+        var gameDir = Path.Combine(root, "Menace");
+        var dataDir = Path.Combine(gameDir, "Menace_Data");
+        var cacheDir = Path.Combine(root, "cache");
+
+        Directory.CreateDirectory(dataDir);
+        Directory.CreateDirectory(cacheDir);
+        File.WriteAllBytes(Path.Combine(gameDir, "GameAssembly.so"), [1, 2, 3, 4]);
+
+        try
+        {
+            string hash = ComputeHash(Path.Combine(gameDir, "GameAssembly.so"));
+            var manifest = new IndexManifest
+            {
+                GameAssemblyHash = hash,
+                IndexedAt = DateTimeOffset.UtcNow,
+                GameDataPath = dataDir,
+                AssetCount = 42,
+            };
+
+            File.WriteAllText(
+                Path.Combine(cacheDir, "index-manifest.json"),
+                JsonSerializer.Serialize(manifest));
+
+            var service = new AssetPipelineService(dataDir, cacheDir, new NullProgressSink(), new NullLogSink());
+
+            IndexManifest? loaded = service.LoadManifest();
+
+            Assert.NotNull(loaded);
+            Assert.Equal(hash, loaded!.GameAssemblyHash);
+            Assert.Equal(42, loaded.AssetCount);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void TemplateIndexStatus_WhenRuleVersionDiffers_ReturnsStale()
     {
         var root = Path.Combine(Path.GetTempPath(), $"jiangyu-template-status-{Guid.NewGuid()}");

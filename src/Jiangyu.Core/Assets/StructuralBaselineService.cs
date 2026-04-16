@@ -38,6 +38,39 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
     /// </summary>
     private const int InspectionMaxArraySample = 1;
 
+    public CachedIndexStatus GetBaselineStatus(StructuralBaseline baseline)
+    {
+        ArgumentNullException.ThrowIfNull(baseline);
+
+        var indexService = new TemplateIndexService(gameDataPath, cachePath, progress, log);
+        CachedIndexStatus indexStatus = indexService.GetIndexStatus();
+        if (!indexStatus.IsCurrent)
+        {
+            return new CachedIndexStatus
+            {
+                State = indexStatus.State,
+                Reason = indexStatus.Reason,
+            };
+        }
+
+        TemplateIndexManifest manifest = indexService.LoadManifest()
+            ?? throw new InvalidOperationException("Template index manifest could not be loaded.");
+
+        if (!string.Equals(baseline.GameAssemblyHash, manifest.GameAssemblyHash, StringComparison.Ordinal))
+        {
+            return new CachedIndexStatus
+            {
+                State = CachedIndexState.Stale,
+                Reason = "Committed structural baseline is stale for the current game version. Run 'jiangyu templates baseline generate' and review the diff.",
+            };
+        }
+
+        return new CachedIndexStatus
+        {
+            State = CachedIndexState.Current,
+        };
+    }
+
     public StructuralBaseline GenerateBaseline(BaselineSources sources)
     {
         ArgumentNullException.ThrowIfNull(sources);
