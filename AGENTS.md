@@ -17,7 +17,7 @@ C# for everything — CLI compiler, MelonLoader loader, shared libraries. One la
 - `docs/research/STRUCTURAL_VALIDATION_WORKFLOW.md` — repeatable structural-audit procedure for edge cases and re-audits.
 - `docs/research/investigations/` — investigation notes and provenance for completed research work.
 - `docs/research/verified/` — promoted Jiangyu-owned findings that product work can rely on.
-- `validation/baselines/` — committed machine-readable structural baseline inputs and outputs.
+- `validation/` — committed machine-readable structural baseline inputs and outputs.
 
 If `PROGRESS.md` or `TODO.md` are absent, treat them as optional working docs rather than required repo inputs. Fall back to the committed docs, verified research, and git history.
 

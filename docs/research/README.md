@@ -29,7 +29,7 @@ This directory is the map for Jiangyu's reverse-engineering and validation work.
 - **Structural baseline tooling**
   - Status: established
   - See:
-    - [`validation/baselines/`](../../validation/baselines/)
+    - [`validation/`](../../validation/)
     - [`VALIDATION.md`](VALIDATION.md)
 
 - **Open areas**

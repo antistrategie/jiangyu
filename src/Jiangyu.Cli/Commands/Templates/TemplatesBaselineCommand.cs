@@ -33,12 +33,12 @@ public static class TemplatesBaselineCommand
         var sourcesOption = new Option<string>("--sources")
         {
             Description = "Path to baseline sources file",
-            DefaultValueFactory = _ => "validation/baselines/template-structure-baseline.sources.json",
+            DefaultValueFactory = _ => "validation/template-structure-baseline.sources.json",
         };
         var outputOption = new Option<string>("--output")
         {
             Description = "Path to write the baseline JSON",
-            DefaultValueFactory = _ => "validation/baselines/template-structure-baseline.json",
+            DefaultValueFactory = _ => "validation/template-structure-baseline.json",
         };
 
         var command = new Command("generate", "Generate a structural baseline from curated sources")
@@ -111,7 +111,7 @@ public static class TemplatesBaselineCommand
         var currentOption = new Option<string>("--current")
         {
             Description = "Path to the current baseline JSON",
-            DefaultValueFactory = _ => "validation/baselines/template-structure-baseline.json",
+            DefaultValueFactory = _ => "validation/template-structure-baseline.json",
         };
 
         var command = new Command("diff", "Compare two structural baselines for drift")

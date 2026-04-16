@@ -219,7 +219,7 @@ This baseline should:
 Current planned location:
 
 ```text
-validation/baselines/template-structure-baseline.json
+validation/template-structure-baseline.json
 ```
 
 ### What it is for
@@ -365,7 +365,7 @@ They may suggest hypotheses to test, but should not be treated as authoritative 
 final field meanings, proof of runtime behavior, or architectural direction.
 
 Jiangyu's own verified knowledge lives under `docs/research/verified/` and
-`validation/baselines/`.
+`validation/`.
 
 ## Desired long-term state
 
