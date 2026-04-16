@@ -11,7 +11,7 @@ Do a structural validation pass on `Menace.Tactical.EntityProperties`, the main 
 `EntityProperties` is the best next target because:
 
 - it appears inside every `EntityTemplate` as the `Properties` field
-- it is structurally the richest unvalidated nested support type (102 serialized fields)
+- it is structurally the richest unvalidated nested support type (102 serialised fields)
 - it contains multiple nested kinds: numeric stats (int/float), enums, embedded `ID` objects, and a reference
 - the legacy schema references it by name but does not define its internal field layout — only an `EntityPropertyType` runtime accessor enum (72 values) provides field-level legacy evidence
 
@@ -114,7 +114,7 @@ Comparison:
 
 ### Classification of 30 Jiangyu-only fields
 
-**Enum/flag fields (5) — legacy enum narrower than serialized contract:**
+**Enum/flag fields (5) — legacy enum narrower than serialised contract:**
 
 The legacy `EntityPropertyType` enum indexes only numeric stat properties for the `ChangeProperty` runtime system. Categorical and flag fields are not part of that accessor pattern.
 
@@ -124,7 +124,7 @@ The legacy `EntityPropertyType` enum indexes only numeric stat properties for th
 - `FatalityType` (enum: `Menace.Tactical.FatalityType`)
 - `DamageVisualizationType` (enum: `Menace.Tactical.DamageVisualizationType`)
 
-**Sound/reference fields (10) — legacy enum narrower than serialized contract:**
+**Sound/reference fields (10) — legacy enum narrower than serialised contract:**
 
 Object and reference fields are not numeric stats and would not be indexed by the property-modification system.
 
@@ -139,9 +139,9 @@ Object and reference fields are not numeric stats and would not be indexed by th
 - `SoundOnDeathFemale` (ID)
 - `SoundOnMovementStepOverrides2` (reference: `SurfaceSoundsTemplate`)
 
-**Additional numeric fields (15) — legacy enum narrower than serialized contract:**
+**Additional numeric fields (15) — legacy enum narrower than serialised contract:**
 
-These are real serialized int/float fields that the legacy `EntityPropertyType` enum does not cover. They could be fields added after the legacy schema was frozen, or fields the `ChangeProperty` system intentionally did not expose.
+These are real serialised int/float fields that the legacy `EntityPropertyType` enum does not cover. They could be fields added after the legacy schema was frozen, or fields the `ChangeProperty` system intentionally did not expose.
 
 - `ArmorSide` (int)
 - `ArmorBack` (int)
@@ -159,13 +159,13 @@ These are real serialized int/float fields that the legacy `EntityPropertyType` 
 - `DamagePctMaxHitpoints` (float)
 - `DamagePctMaxHitpointsMin` (float)
 
-No fields in this group suggest a serialization mismatch or Jiangyu extraction failure. The pattern is consistent: the legacy enum is a runtime property accessor, not a full field inventory.
+No fields in this group suggest a serialisation mismatch or Jiangyu extraction failure. The pattern is consistent: the legacy enum is a runtime property accessor, not a full field inventory.
 
 ## Interpretation
 
 What this validates:
 
-- Jiangyu independently reproduces the current serialized `EntityProperties` contract from live game data
+- Jiangyu independently reproduces the current serialised `EntityProperties` contract from live game data
 - the shape is completely stable across four meaningfully different entity categories (infantry, enemy, structure, vehicle)
 - all 72 legacy `EntityPropertyType` enum values map to real Jiangyu-observed fields
 - the 30 Jiangyu-only fields are structurally explained: 15 are non-numeric kinds (enums, objects, references) that the legacy enum was never designed to cover, and 15 are numeric fields the legacy enum does not index
@@ -187,8 +187,8 @@ This is a successful large-scale nested support-type structural validation pass.
 The main results are:
 
 - `EntityProperties` is Jiangyu's most structurally rich validated nested type so far (102 fields, stable across 4 entity categories)
-- the legacy `EntityPropertyType` enum is best understood as a **runtime accessor index for modifiable numeric stats**, not as a complete field inventory — it covers 72 of 102 serialized fields
-- every mismatch is classifiable as **legacy enum narrower than serialized contract** — no mismatches suggest a serialized discrepancy or a Jiangyu extraction failure
+- the legacy `EntityPropertyType` enum is best understood as a **runtime accessor index for modifiable numeric stats**, not as a complete field inventory — it covers 72 of 102 serialised fields
+- every mismatch is classifiable as **legacy enum narrower than serialised contract** — no mismatches suggest a serialised discrepancy or a Jiangyu extraction failure
 - the nested `ID` struct and all 5 enum types independently match their legacy definitions
 
 ## Also validated: OperationResources (trivial)

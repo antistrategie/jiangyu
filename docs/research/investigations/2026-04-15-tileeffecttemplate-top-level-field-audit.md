@@ -4,13 +4,13 @@ Date: 2026-04-15
 
 ## Goal
 
-Audit the `TileEffectTemplate` top-level serialized field set using Jiangyu-native inspection, and compare against the legacy schema's 16-field definition at `../MenaceAssetPacker/generated/schema.json`.
+Audit the `TileEffectTemplate` top-level serialised field set using Jiangyu-native inspection, and compare against the legacy schema's 16-field definition at `../MenaceAssetPacker/generated/schema.json`.
 
 ## Why This Target
 
 TileEffectTemplate is one of three template types listed in TODO as unaudited at the top level (alongside TagTemplate and DefectTemplate). All previous audits have been in the EntityTemplate, WeaponTemplate, SkillTemplate, PerkTemplate, or AnimationSoundTemplate families. Auditing a different family tests whether the standard delta patterns (base class exclusions, Odin container) are universal.
 
-The legacy schema marks TileEffectTemplate as `is_abstract: true` with `base_class: "DataTemplate"`. This is the first audit of an abstract template type — all previous targets had direct serialized instances discoverable via the template index.
+The legacy schema marks TileEffectTemplate as `is_abstract: true` with `base_class: "DataTemplate"`. This is the first audit of an abstract template type — all previous targets had direct serialised instances discoverable via the template index.
 
 ## Samples
 
@@ -161,14 +161,14 @@ What this validates:
 - **The standard delta pattern is universal.** TileEffectTemplate's 4 legacy-only fields and 1 Jiangyu-only field exactly match the DataTemplate base class exclusion + Odin container pattern seen in all 5 previously audited template families. No new delta categories.
 - **TileEffectTemplate's base field set is stable and correct.** 12 named fields confirmed across all 7 concrete subtypes and all 23 instances. The legacy schema's 16 fields reduce to these 12 after the standard delta classification.
 - **7 concrete subtypes exist** with 0–5 own fields each, all in the `Menace.Tactical.TileEffects` namespace. The legacy schema has no record of any of them.
-- **TileEffectTemplate is genuinely abstract** — no instances are serialized under the base class name. All 23 instances use concrete subtype class names.
+- **TileEffectTemplate is genuinely abstract** — no instances are serialised under the base class name. All 23 instances use concrete subtype class names.
 - **Odin container is present but empty** at the TileEffectTemplate base level (no interface/abstract-typed base fields). Concrete subtypes may carry their own Odin payloads but this was not verified.
 
 What this does **not** validate:
 
 - Odin blob contents or decoding on concrete subtypes
 - runtime behaviour of any tile effect
-- managed-only (non-serialized) fields on TileEffectTemplate or its subtypes
+- managed-only (non-serialised) fields on TileEffectTemplate or its subtypes
 - field types and semantics on concrete subtype own fields (only names and existence verified)
 - whether additional concrete subtypes exist that are not referenced by any SpawnTileEffect handler (discovery was via PPtr traversal, not exhaustive class enumeration)
 

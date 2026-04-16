@@ -6,6 +6,12 @@ General-purpose modkit for MENACE (Unity 6, IL2CPP). Named after Jiangyu, a Girl
 
 C# for everything — CLI compiler, MelonLoader loader, shared libraries. One language for the whole stack.
 
+## English
+
+- Use British English in repo-authored prose, code, comments, logs, and user-facing text.
+- If you touch existing repo-authored wording that uses non-British spelling, normalise it while you are there.
+- Do not rename or rewrite library/framework/API identifiers just to force British spelling.
+
 ## Project documents
 
 - `AGENTS.md` — this file. Architecture, constraints, conventions. Read by AI agents at session start.
@@ -27,15 +33,15 @@ If `PROGRESS.md` or `TODO.md` are absent, treat them as optional working docs ra
 
 ## Research policy
 
-- Jiangyu derives its own knowledge from the current game's serialized data, Jiangyu-native tooling, and controlled experiments.
-- Do not assume old schemas, field meanings, formulas, offsets, or runtime behavior claims are correct unless Jiangyu has reproduced them.
+- Jiangyu derives its own knowledge from the current game's serialised data, Jiangyu-native tooling, and controlled experiments.
+- Do not assume old schemas, field meanings, formulas, offsets, or runtime behaviour claims are correct unless Jiangyu has reproduced them.
 - Prefer re-deriving knowledge inside Jiangyu over porting conclusions from older tooling.
 - Production code should not depend on unverified research. Verified findings live under `docs/research/verified/`.
 
 ## Foundation correctness gate
 
 - Be strict about correctness for foundation-critical knowledge, not for every open research question at once.
-- Any assumption that becomes part of compiler output, runtime loader behavior, public mod format, canonical exported asset contract, or Jiangyu-trusted schema must be verified before production code depends on it.
+- Any assumption that becomes part of compiler output, runtime loader behaviour, public mod format, canonical exported asset contract, or Jiangyu-trusted schema must be verified before production code depends on it.
 - Research notes, hypotheses, and exploratory tooling may remain unverified as long as they are clearly labeled and do not become production truth.
 - Prefer validating one narrow vertical slice end to end over carrying many partially trusted assumptions forward.
 - Validate only the assumptions on the current critical path, but require those critical-path assumptions to be Jiangyu-verified before promotion.
@@ -43,7 +49,7 @@ If `PROGRESS.md` or `TODO.md` are absent, treat them as optional working docs ra
 ## Contract markers
 
 - When code depends on a discovered MENACE-specific convention that is acceptable for the current proven path but is not yet a general Jiangyu-wide contract, mark it with a grep-friendly comment starting with `JIANGYU-CONTRACT:`.
-- Use that marker for assumptions we may need to re-validate, generalize, or retire later.
+- Use that marker for assumptions we may need to re-validate, generalise, or retire later.
 - The marker comment should say what the assumption is, what scope it is valid for, and ideally what kind of validation justified it.
 - Do not use `JIANGYU-CONTRACT:` for ordinary constants or obvious implementation details. Reserve it for game-contract assumptions and scoped heuristics that matter architecturally.
 
@@ -81,7 +87,7 @@ Loader-side mod discovery currently works in two phases: discover/validate manif
 - Template/data patching uses runtime Harmony interception, NOT binary patching of `resources.assets`. Universal standard across IL2CPP modding communities.
 - Bundle loading uses `Il2CppAssetBundleManager.LoadFromMemory()` — proton-safe (managed I/O reads bytes, avoids Wine path translation issues with `LoadFromFile`).
 - The game uses Unity 6 (6000.0.63f1). Bundles must be built with the matching editor version.
-- The currently proven working 3D path is character mesh/material replacement through Unity-built AssetBundles plus Jiangyu-side normalization against MENACE's native asset contract.
+- The currently proven working 3D path is character mesh/material replacement through Unity-built AssetBundles plus Jiangyu-side normalisation against MENACE's native asset contract.
 - Raw runtime GLB skin construction and direct native asset patching were investigated and are not the active architecture.
 
 ## Config

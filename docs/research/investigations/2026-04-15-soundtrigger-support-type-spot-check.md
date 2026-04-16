@@ -114,13 +114,13 @@ The legacy schema has a naming mismatch for this type:
 - But the struct definition is keyed as `structs.AnimationSoundTemplate`, not `structs.AnimationSoundTemplate.SoundTrigger` or `structs.SoundTrigger`
 - Jiangyu surfaces the element `fieldTypeName` as just `SoundTrigger`
 
-This is a legacy schema naming inconsistency — the struct key does not match the element type name used in the template definition. Not a serialized contract mismatch.
+This is a legacy schema naming inconsistency — the struct key does not match the element type name used in the template definition. Not a serialised contract mismatch.
 
 ### Template-level delta (secondary context)
 
 The `AnimationSoundTemplate` template itself follows the same delta pattern seen in EntityTemplate, WeaponTemplate, and SkillTemplate:
 
-- Legacy lists `m_ID`, `m_IsGarbage`, `m_IsInitialized` as template-level fields — these are DataTemplate base class managed-only fields not present in serialized data
+- Legacy lists `m_ID`, `m_IsGarbage`, `m_IsInitialized` as template-level fields — these are DataTemplate base class managed-only fields not present in serialised data
 - Jiangyu has `serializationData` (Odin container, empty in all 4 samples) — legacy omits this
 - Both share `m_GameDesignComment`, `m_LocaState`, `SoundTriggers`
 
@@ -130,9 +130,9 @@ No real mismatches at the template level.
 
 What this validates:
 
-- Jiangyu independently reproduces the current serialized `SoundTrigger` contract from live game data
+- Jiangyu independently reproduces the current serialised `SoundTrigger` contract from live game data
 - the shape is stable across all 7 observed elements in 4 templates spanning alien, construct, weapon, and test data
-- the legacy struct definition is an exact match at the serialized field level
+- the legacy struct definition is an exact match at the serialised field level
 - `ID[]` arrays inside embedded struct elements work correctly (consistent with prior `ID` validation from SkillOnSurfaceDefinition)
 - this is the first validated support type from a non-EntityTemplate/non-SkillTemplate template family
 
@@ -149,7 +149,7 @@ This is a successful structural validation pass for the `SoundTrigger` array ele
 
 The main results are:
 
-- `SoundTrigger` is a compact 2-field embedded type (`Key: String`, `Sounds: ID[]`) with an exact serialized match to the legacy struct definition
+- `SoundTrigger` is a compact 2-field embedded type (`Key: String`, `Sounds: ID[]`) with an exact serialised match to the legacy struct definition
 - the field set is stable across 7 elements in 4 templates
 - the legacy schema has a naming inconsistency: the struct is keyed as `AnimationSoundTemplate` rather than `SoundTrigger` or `AnimationSoundTemplate.SoundTrigger`, despite the template definition referencing `AnimationSoundTemplate.SoundTrigger` as the element type
 - unlike the SkillOnSurfaceDefinition pass (where legacy miscategorised `SoundOnRicochet`/`SoundOnImpact` as `enum` when they're `ID` structs), here legacy correctly types `Sounds` as `ID[]`

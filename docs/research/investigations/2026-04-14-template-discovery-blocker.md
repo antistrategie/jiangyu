@@ -120,7 +120,7 @@ Likely options:
 
 1. Patch vendored AssetRipper or Jiangyu's import path to preserve enough MonoBehaviour script metadata for offline classification.
 2. Expose script identity explicitly in `assets inspect object` for `MonoBehaviour` assets so discovery debugging is not blind.
-3. Investigate serialized-file metadata (`ScriptTypeIndex`, type tree/script identifiers, dependency resolution for `m_Script`) as the likely offline bridge.
+3. Investigate serialised-file metadata (`ScriptTypeIndex`, type tree/script identifiers, dependency resolution for `m_Script`) as the likely offline bridge.
 4. Only use name-based MonoBehaviour heuristics as a temporary fallback if the low-level bridge proves too expensive.
 
 ## Status

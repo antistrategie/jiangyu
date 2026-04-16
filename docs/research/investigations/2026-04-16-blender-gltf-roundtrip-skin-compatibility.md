@@ -180,7 +180,7 @@ These are real differences but did not cause the stringy deformation:
   baked into authored replacements
 - implemented: near-unit skeleton scales are snapped more aggressively during cleanup to
   absorb Blender's float noise on bone nodes
-- mesh node parenting and shared skin normalization can still be revisited if future
+- mesh node parenting and shared skin normalisation can still be revisited if future
   code paths need them, but they are not blocking the current replacement workflow
-- consider whether the normalization should also handle non-Blender DCC tools that
+- consider whether the normalisation should also handle non-Blender DCC tools that
   exhibit similar topology patterns (e.g. Maya, 3ds Max glTF exporters)

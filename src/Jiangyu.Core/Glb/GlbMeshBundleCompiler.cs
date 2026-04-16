@@ -493,7 +493,7 @@ public static class GlbMeshBundleCompiler
         }
 
         // AssetRipper mesh-only GLBs can contain weighted vertices in centimeter-scale
-        // mesh space with no Skin object. In that case, bake a meter-scale correction.
+        // mesh space with no Skin object. In that case, bake a metre-scale correction.
         var meshOnlyWeightScale = new Vector3(MeshOnlyWeightedVertexScale, MeshOnlyWeightedVertexScale, MeshOnlyWeightedVertexScale);
         var bakeMeshOnlyWeightScale = skin == null &&
                                       hasSkinAttributes &&

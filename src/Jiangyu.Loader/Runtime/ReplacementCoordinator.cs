@@ -54,7 +54,7 @@ internal class ReplacementCoordinator
             // names are globally duplicated until Jiangyu has a stronger runtime asset identity.
             //
             // JIANGYU-CONTRACT: If Jiangyu later adds a more specific prefab-aware runtime
-            // identity, the current shared-mesh behavior must remain the fallback so one
+            // identity, the current shared-mesh behaviour must remain the fallback so one
             // replacement can still intentionally apply across multiple prefab variants that
             // share the same live mesh names. Per-variant replacement should be opt-in and win
             // only when explicitly defined.

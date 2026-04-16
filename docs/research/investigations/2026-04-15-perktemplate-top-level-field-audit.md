@@ -4,13 +4,13 @@ Date: 2026-04-15
 
 ## Goal
 
-Audit the `PerkTemplate` top-level serialized field set using Jiangyu-native inspection, and determine whether PerkTemplate adds any own serialized fields beyond the inherited `SkillTemplate` set.
+Audit the `PerkTemplate` top-level serialised field set using Jiangyu-native inspection, and determine whether PerkTemplate adds any own serialised fields beyond the inherited `SkillTemplate` set.
 
 ## Why This Target
 
 PerkTemplate is the first template type known to inherit from another template type (SkillTemplate), confirmed by the polymorphic reference array survey. The SkillTemplate top-level audit is already complete (120 vs 128, fully classified). This pass answers two questions:
 
-1. Does PerkTemplate's serialized contract add any fields beyond SkillTemplate's?
+1. Does PerkTemplate's serialised contract add any fields beyond SkillTemplate's?
 2. Does the standard delta pattern (base class exclusions + Odin container) hold for a derived template type?
 
 ## Samples
@@ -69,13 +69,13 @@ The data varies meaningfully across perk categories:
 
 PerkTemplate's first 120 fields (indices 0–119) are **identical** to SkillTemplate's 120 fields — same names, same order, same kinds, same type names.
 
-PerkTemplate adds exactly **1 own serialized field**:
+PerkTemplate adds exactly **1 own serialised field**:
 
 | Index | Name | Kind | Type |
 |---|---|---|---|
 | 120 | `PerkIcon` | reference | `UnityEngine.Sprite` |
 
-**PerkTemplate has no other perk-specific serialized fields.** The entire serialized contract is SkillTemplate + PerkIcon. There are no additional perk-only primitives, enums, objects, arrays, or references.
+**PerkTemplate has no other perk-specific serialised fields.** The entire serialised contract is SkillTemplate + PerkIcon. There are no additional perk-only primitives, enums, objects, arrays, or references.
 
 ### Jiangyu-vs-legacy: delta computation
 
@@ -103,7 +103,7 @@ The 120 shared fields appear in the same relative order in both Jiangyu and lega
 
 Same `NotSerialized` / non-`SerializeField` base class exclusions confirmed in EntityTemplate, WeaponTemplate, and SkillTemplate.
 
-#### Group 2: Odin-serialized (5 fields)
+#### Group 2: Odin-serialised (5 fields)
 
 | Field | Legacy type | Legacy category |
 |---|---|---|
@@ -113,7 +113,7 @@ Same `NotSerialized` / non-`SerializeField` base class exclusions confirmed in E
 | `SecondaryProjectileData` | BaseProjectileData | reference |
 | `AIConfig` | SkillBehavior | reference |
 
-Same interface/abstract-typed fields excluded by Unity's native serialization and routed through Odin, first classified in the SkillTemplate audit.
+Same interface/abstract-typed fields excluded by Unity's native serialisation and routed through Odin, first classified in the SkillTemplate audit.
 
 ### Jiangyu-only field (1) — inherited from SkillTemplate
 
@@ -121,7 +121,7 @@ Same interface/abstract-typed fields excluded by Unity's native serialization an
 |---|---|---|
 | `serializationData` | object | Sirenix.Serialization.SerializationData |
 
-Same Odin Serializer container. Non-empty on all 3 samples (456–585 bytes), confirming PerkTemplate instances do carry Odin-serialized data — but via the inherited SkillTemplate fields, not via any perk-specific Odin fields.
+Same Odin Serializer container. Non-empty on all 3 samples (456–585 bytes), confirming PerkTemplate instances do carry Odin-serialised data — but via the inherited SkillTemplate fields, not via any perk-specific Odin fields.
 
 ### Inheritance arithmetic
 
@@ -143,18 +143,18 @@ All 3 PerkTemplate samples have non-empty `SerializedBytes` (456–585 bytes) bu
 
 What this validates:
 
-- **PerkTemplate's serialized contract is exactly SkillTemplate + PerkIcon** — confirmed by direct Jiangyu-vs-Jiangyu field comparison, not just by counting
-- PerkTemplate has **no additional perk-specific serialized fields** beyond `PerkIcon`. This is a first-class conclusion: the inheritance is purely additive with a single field
+- **PerkTemplate's serialised contract is exactly SkillTemplate + PerkIcon** — confirmed by direct Jiangyu-vs-Jiangyu field comparison, not just by counting
+- PerkTemplate has **no additional perk-specific serialised fields** beyond `PerkIcon`. This is a first-class conclusion: the inheritance is purely additive with a single field
 - the entire 121 vs 129 legacy delta is inherited from SkillTemplate — no new delta categories, no perk-specific legacy-only or Jiangyu-only fields
 - the standard delta patterns (base class exclusions + Odin container) hold for a derived template type, not just for direct `DataTemplate` descendants
-- the Odin serialization container is present and active on PerkTemplate instances, carrying the same inherited interface/abstract-typed fields as SkillTemplate
-- legacy schema correctly records `base_class: "SkillTemplate"` and lists PerkIcon as the final field — the legacy inheritance claim matches observed serialized structure
+- the Odin serialisation container is present and active on PerkTemplate instances, carrying the same inherited interface/abstract-typed fields as SkillTemplate
+- legacy schema correctly records `base_class: "SkillTemplate"` and lists PerkIcon as the final field — the legacy inheritance claim matches observed serialised structure
 
 What this does **not** validate:
 
 - Odin blob contents or decoding
 - runtime behaviour of any perk
-- whether PerkTemplate has managed-only (non-serialized) fields beyond PerkIcon that affect gameplay
+- whether PerkTemplate has managed-only (non-serialised) fields beyond PerkIcon that affect gameplay
 - the full set of concrete EventHandler types used under PerkTemplate (only 3 types observed: ChangePropertyConditional, DisplayText, Regeneration, AddSkill)
 - semantics of PerkIcon vs the inherited Icon/IconDisabled fields
 
@@ -162,13 +162,13 @@ What this does **not** validate:
 
 PerkTemplate is the simplest top-level template audit so far. The entire result reduces to one statement:
 
-**PerkTemplate adds exactly one serialized field (`PerkIcon: Sprite`) to the SkillTemplate contract. Everything else — all 120 other fields, all 9 legacy-only delta fields, and the Odin container — is inherited unchanged from SkillTemplate.**
+**PerkTemplate adds exactly one serialised field (`PerkIcon: Sprite`) to the SkillTemplate contract. Everything else — all 120 other fields, all 9 legacy-only delta fields, and the Odin container — is inherited unchanged from SkillTemplate.**
 
 This is the first validated derived template type. It confirms that:
 
-- the SkillTemplate → PerkTemplate inheritance observed in the polymorphic reference array survey is faithfully reflected in the serialized contract
+- the SkillTemplate → PerkTemplate inheritance observed in the polymorphic reference array survey is faithfully reflected in the serialised contract
 - the standard delta classification (base class exclusions, Odin-routed fields, serializationData container) carries through inheritance without introducing new categories
-- template inheritance in MENACE follows standard Unity serialization rules: derived types append fields after the base type's serialized set
+- template inheritance in MENACE follows standard Unity serialisation rules: derived types append fields after the base type's serialised set
 
 The pass brings 4 template families to fully audited status at the top level: EntityTemplate, WeaponTemplate, SkillTemplate, PerkTemplate (plus AnimationSoundTemplate as a lighter validation). The remaining unaudited types from the TODO list are: `TileEffectTemplate`, `TagTemplate`, `DefectTemplate`.
 

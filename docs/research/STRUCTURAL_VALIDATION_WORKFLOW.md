@@ -7,9 +7,9 @@ Use this when you want to validate:
 - a template type
 - a nested support type
 - a field set
-- a claim about current serialized structure
+- a claim about current serialised structure
 
-This is narrower than full reverse engineering. The goal is to validate the **current serialized contract**, not runtime behavior or formulas.
+This is narrower than full reverse engineering. The goal is to validate the **current serialised contract**, not runtime behaviour or formulas.
 
 If you need the broader policy and evidence rules, read [VALIDATION.md](./VALIDATION.md) first. This document is the operational playbook.
 
@@ -18,14 +18,14 @@ If you need the broader policy and evidence rules, read [VALIDATION.md](./VALIDA
 Inside Jiangyu, call this:
 
 - **structural validation**
-- **serialized contract validation**
+- **serialised contract validation**
 - **schema spot-check**
 
 If you were searching for adjacent concepts, the closest terms would be:
 
-- Unity serialized data model validation
+- Unity serialised data model validation
 - Unity IL2CPP asset schema validation
-- reverse-engineering serialized contract validation
+- reverse-engineering serialised contract validation
 
 ## Inputs
 
@@ -54,12 +54,12 @@ Write down exactly what you are validating.
 Good examples:
 
 - `EntityTemplate` field set
-- `LocalizedLine` serialized wrapper shape
+- `LocalizedLine` serialised wrapper shape
 - `RoleData` nested support-type shape under `EntityTemplate`
 
 Bad examples:
 
-- localization
+- localisation
 - AI
 - templates in general
 
@@ -146,7 +146,7 @@ Every note should separate:
 
 For example, a support-type structural pass usually does **not** validate:
 
-- runtime behavior
+- runtime behaviour
 - formulas
 - full managed inheritance/base layout
 - memory offsets
@@ -168,7 +168,7 @@ That keeps the validation thread moving.
 
 Treat a structural pass as successful when:
 
-- Jiangyu independently reproduces the current serialized shape from live game data
+- Jiangyu independently reproduces the current serialised shape from live game data
 - the shape is stable enough across the chosen samples
 
 You do **not** need to prove runtime semantics for the pass to be useful.

@@ -196,9 +196,9 @@ public static class GlbCharacterContract
     private static string? GetPathSuffixFromHips(string path)
     {
         var marker = "/Hips";
-        // JIANGYU-CONTRACT: joint remap suffixes are currently normalized from the first
+        // JIANGYU-CONTRACT: joint remap suffixes are currently normalised from the first
         // "Hips" segment because that matches the proven MENACE character rigs Jiangyu was
-        // validated against. Keep this scoped to character-rig handling until generalized.
+        // validated against. Keep this scoped to character-rig handling until generalised.
         var index = path.IndexOf(marker, StringComparison.Ordinal);
         if (index < 0)
             return null;

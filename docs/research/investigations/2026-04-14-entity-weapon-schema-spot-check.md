@@ -50,7 +50,7 @@ Field present in Jiangyu but not in legacy schema:
 Interpretation:
 
 - the core structural field set is overwhelmingly aligned
-- the missing legacy-only fields look like base/serialization-framework fields rather than `EntityTemplate`-specific gameplay fields
+- the missing legacy-only fields look like base/serialisation-framework fields rather than `EntityTemplate`-specific gameplay fields
 - Jiangyu's extra `serializationData` field appears to come from the imported serializable object layer rather than gameplay-specific template schema
 
 ### WeaponTemplate
@@ -79,14 +79,14 @@ Follow-up investigation:
 - Jiangyu's `MonoScript -> TypeDefinition` chain for `Menace.Items.WeaponTemplate` still contains inherited `ItemTemplate.ItemType`
 - the generated AssetRipper `SerializableType` for `WeaponTemplate` does **not** include that field because `ItemTemplate.ItemType` is marked `NotSerialized` in the current managed metadata
 - `m_ID`, `m_IsGarbage`, and `m_IsInitialized` are also `NotSerialized`
-- `m_LocalizedStrings` is private and does not have a `SerializeField` attribute, so current Unity serialization rules also exclude it
+- `m_LocalizedStrings` is private and does not have a `SerializeField` attribute, so current Unity serialisation rules also exclude it
 
 Interpretation:
 
 - again, the core structural field set is strongly aligned
 - the `m_*` legacy-only fields look like base-layer metadata rather than gameplay-specific weapon fields
-- the legacy-only fields are explained by current serialization rules rather than a Jiangyu extraction failure
-- the legacy schema appears to include managed/in-editor fields that are not part of MENACE's current serialized asset contract
+- the legacy-only fields are explained by current serialisation rules rather than a Jiangyu extraction failure
+- the legacy schema appears to include managed/in-editor fields that are not part of MENACE's current serialised asset contract
 
 ## Confidence
 
@@ -94,13 +94,13 @@ Moderate for structural alignment of these two types.
 
 Why not higher:
 
-- this compares Jiangyu-imported structures, not yet raw serialized type-tree reconstruction
+- this compares Jiangyu-imported structures, not yet raw serialised type-tree reconstruction
 - this pass still checks top-level field presence only, not nested field details or semantics
 
 Note:
 
-- Jiangyu inspection was later improved to recover enum names from the managed type chain for fields that are present in the serialized structure
-- this helps validation readability while keeping the serialized field-set itself faithful to the current asset contract
+- Jiangyu inspection was later improved to recover enum names from the managed type chain for fields that are present in the serialised structure
+- this helps validation readability while keeping the serialised field-set itself faithful to the current asset contract
 
 ## Conclusion
 
@@ -111,14 +111,14 @@ What this validates:
 - legacy template names are real
 - legacy field sets are mostly real
 - Jiangyu can now reproduce those structures independently from game data
-- the first investigated legacy-only field mismatches are explained by current Unity serialization behavior, not by a remaining Jiangyu fidelity bug
+- the first investigated legacy-only field mismatches are explained by current Unity serialisation behaviour, not by a remaining Jiangyu fidelity bug
 
 What remains unverified:
 
 - nested support-type structure
 - enum/type precision
 - field semantics
-- formula/behavior claims
+- formula/behaviour claims
 
 ## Next Step
 

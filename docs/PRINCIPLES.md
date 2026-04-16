@@ -44,7 +44,7 @@ If a straightforward content change needs custom code or a full Unity authoring 
 Any assumption that becomes part of:
 
 - compiler output
-- loader behavior
+- loader behaviour
 - public mod format
 - trusted schema
 - canonical exported asset contract
@@ -73,7 +73,7 @@ If a mod can be expressed through assets, templates, patches, or declarative con
 
 Code should be reserved for:
 
-- genuinely new runtime behavior
+- genuinely new runtime behaviour
 - advanced hooks
 - UI/logic extensions
 - cases where the game itself is not sufficiently data-driven
@@ -94,9 +94,9 @@ A future GUI should help with browsing, inspection, validation, and management. 
 
 Jiangyu should keep these concerns distinct:
 
-- serialized asset truth
+- serialised asset truth
 - managed/code-side truth
-- runtime behavioral truth
+- runtime behavioural truth
 - research hypotheses and historical notes
 
 These layers inform each other, but they are not interchangeable.
@@ -108,7 +108,7 @@ When Jiangyu knows the real authored or compiled contract, prefer explicit mappi
 Examples:
 
 - explicit per-material texture bindings are better than mesh-wide texture-family guessing
-- explicit dependency/load behavior is better than accidental filesystem order
+- explicit dependency/load behaviour is better than accidental filesystem order
 
 Heuristics are acceptable as scoped bridges, not as invisible permanent truth.
 
@@ -144,7 +144,7 @@ Jiangyu should own:
 - runtime loading
 - mod format
 - dependency handling
-- conflict/load behavior
+- conflict/load behaviour
 - packaging/install ergonomics
 
 It should not prematurely expand into:

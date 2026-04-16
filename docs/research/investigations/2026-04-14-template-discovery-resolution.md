@@ -10,7 +10,7 @@ Finish Jiangyu-native offline template discovery so `templates index` and `templ
 
 The blocker turned out to be a dependency-resolution bug in vendored AssetRipper rather than a MENACE-specific lack of script metadata.
 
-Raw serialized metadata already preserved the needed bridge:
+Raw serialised metadata already preserved the needed bridge:
 
 - `ObjectInfo.ScriptTypeIndex` on MENACE `MonoBehaviour` objects
 - `SerializedFile.ScriptTypes[scriptTypeIndex]`

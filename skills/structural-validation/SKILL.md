@@ -1,6 +1,6 @@
 ---
 name: jiangyu-structural-validation
-description: Use when doing Jiangyu template/support-type structural validation passes against MENACE game data. Follows the repo validation workflow, stays in the serialized-contract lane, and writes the standard investigation/progress outputs.
+description: Use when doing Jiangyu template/support-type structural validation passes against MENACE game data. Follows the repo validation workflow, stays in the serialised-contract lane, and writes the standard investigation/progress outputs.
 ---
 
 # Jiangyu Structural Validation
@@ -19,11 +19,11 @@ This is for validating:
 - template field sets
 - nested support types
 - array element types
-- claims about the **current serialized contract**
+- claims about the **current serialised contract**
 
 Do **not** use this skill for:
 
-- runtime behavior
+- runtime behaviour
 - formulas
 - offsets
 - call chains
@@ -48,17 +48,17 @@ At minimum, check:
 
 ## Scope rules
 
-- Stay in the **serialized contract** lane.
+- Stay in the **serialised contract** lane.
 - Use Jiangyu-native evidence first.
 - Compare across multiple Jiangyu samples before drawing conclusions.
-- Do not broaden into semantics/runtime behavior unless explicitly recording that as **not validated**.
+- Do not broaden into semantics/runtime behaviour unless explicitly recording that as **not validated**.
 
 If the question depends on:
 
 - nonserialized fields
 - managed inheritance/base layout
 - offsets or call chains
-- runtime behavior or formulas
+- runtime behaviour or formulas
 
 stop and report that the task is trying to escalate out of structural validation.
 

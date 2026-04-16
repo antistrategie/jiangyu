@@ -5,7 +5,7 @@ Date: 2026-04-16
 ## Scope
 
 This note closes the remaining gap in the item hierarchy by documenting the shared
-`ItemTemplate`-level serialized contract now that `WeaponTemplate`, `ArmorTemplate`,
+`ItemTemplate`-level serialised contract now that `WeaponTemplate`, `ArmorTemplate`,
 and `AccessoryTemplate` have all been inspected through Jiangyu-native tooling.
 
 This pass is structural only. It does **not** validate gameplay semantics.
@@ -22,7 +22,7 @@ family.
 
 ## Jiangyu-observed shared item base contract
 
-Across all three concrete item subtypes, the shared serialized item base contains
+Across all three concrete item subtypes, the shared serialised item base contains
 **28 fields** before any subtype-specific additions:
 
 - `serializationData`
@@ -60,12 +60,12 @@ This base contract is stable across all three inspected concrete item families.
 
 ### AccessoryTemplate
 
-`AccessoryTemplate` adds **zero** own serialized fields beyond the 28-field shared
+`AccessoryTemplate` adds **zero** own serialised fields beyond the 28-field shared
 item base. It is the purest currently validated subclass in the item hierarchy.
 
 Observed count:
 
-- `AccessoryTemplate`: **28** Jiangyu-observed serialized fields
+- `AccessoryTemplate`: **28** Jiangyu-observed serialised fields
 
 ### WeaponTemplate
 
@@ -74,27 +74,27 @@ item base.
 
 Observed count:
 
-- `WeaponTemplate`: **50** Jiangyu-observed serialized fields
+- `WeaponTemplate`: **50** Jiangyu-observed serialised fields
 
 ### ArmorTemplate
 
-`ArmorTemplate` adds **45** armor-specific serialized fields on top of the shared
+`ArmorTemplate` adds **45** armor-specific serialised fields on top of the shared
 item base. The field family previously validated in the armor/accessory pass matches
 the prior schema structurally with zero gaps.
 
 Observed count:
 
-- `ArmorTemplate`: **73** Jiangyu-observed serialized fields
+- `ArmorTemplate`: **73** Jiangyu-observed serialised fields
 
 ### VehicleItemTemplate
 
-`VehicleItemTemplate` adds **2** own serialized fields beyond the shared item base:
+`VehicleItemTemplate` adds **2** own serialised fields beyond the shared item base:
 `EntityTemplate` (PPtr reference to a vehicle `EntityTemplate`) and `AccessorySlots`
 (`Int32`). This makes it the second-leanest ItemTemplate subtype after AccessoryTemplate.
 
 Observed count:
 
-- `VehicleItemTemplate`: **30** Jiangyu-observed serialized fields
+- `VehicleItemTemplate`: **30** Jiangyu-observed serialised fields
 
 ## Delta classification
 
@@ -102,9 +102,9 @@ The shared item hierarchy refines the broader structural rule already establishe
 `DataTemplate` descendants:
 
 - the standard `DataTemplate` base exclusions still apply
-- `serializationData` is present on the Unity-serialized side
+- `serializationData` is present on the Unity-serialised side
 - `ItemType` is a managed-only field on the `ItemTemplate` base and is absent from the
-  serialized contract across all three concrete subtypes
+  serialised contract across all three concrete subtypes
 
 So the item hierarchy follows a **4 + 1 + 1** explanation:
 
@@ -112,7 +112,7 @@ So the item hierarchy follows a **4 + 1 + 1** explanation:
 - 1 legacy-only managed `ItemTemplate.ItemType`
 - 1 Jiangyu-only `serializationData` field
 
-No real serialized mismatches were found.
+No real serialised mismatches were found.
 
 ## Odin
 
@@ -131,8 +131,8 @@ Jiangyu now has field-level coverage for all 4 observed concrete `ItemTemplate` 
 - `VehicleItemTemplate`
 - `AccessoryTemplate`
 
-The shared `ItemTemplate` base contract is a stable 28-field serialized structure.
-`AccessoryTemplate` adds no serialized fields of its own, while `WeaponTemplate` and
+The shared `ItemTemplate` base contract is a stable 28-field serialised structure.
+`AccessoryTemplate` adds no serialised fields of its own, while `WeaponTemplate` and
 `ArmorTemplate` extend that base with their validated subtype-specific fields.
 
 ## Provenance

@@ -4,7 +4,7 @@ Date: 2026-04-15
 
 ## Goal
 
-Determine whether any OperationTemplate instance has populated conversation arrays (`IntroConversations`, `VictoryConversations`, `FailureConversations`, `AbortConversations`). If populated instances exist, assess polymorphism. If not, classify them as currently unassessable from Jiangyu's serialized inventory.
+Determine whether any OperationTemplate instance has populated conversation arrays (`IntroConversations`, `VictoryConversations`, `FailureConversations`, `AbortConversations`). If populated instances exist, assess polymorphism. If not, classify them as currently unassessable from Jiangyu's serialised inventory.
 
 ## Why This Target
 
@@ -92,7 +92,7 @@ Empty on the other 6.
 
 ## Interpretation
 
-**OperationTemplate conversation arrays are structurally validated but content-empty in the current serialized inventory.**
+**OperationTemplate conversation arrays are structurally validated but content-empty in the current serialised inventory.**
 
 The 4 conversation array fields exist on every OperationTemplate instance with the correct type (`Menace.Conversations.ConversationTemplate[]`), matching the legacy schema exactly. However, no array contains any elements across the entire 8-instance inventory. This means:
 
@@ -104,7 +104,7 @@ The single-reference event fields (`VictoryEvent`, `FailureEvent`, `AbortEvent`)
 
 ## Conclusion
 
-This pass resolves the first priority from the next-support-type-candidates list. The answer is definitive: **no populated conversation arrays exist anywhere in the current OperationTemplate serialized inventory**. The structural shape is confirmed and matches legacy exactly, but content-level and polymorphism questions cannot be answered from this data.
+This pass resolves the first priority from the next-support-type-candidates list. The answer is definitive: **no populated conversation arrays exist anywhere in the current OperationTemplate serialised inventory**. The structural shape is confirmed and matches legacy exactly, but content-level and polymorphism questions cannot be answered from this data.
 
 This is a valid structural result. The empty state is itself useful knowledge — it tells us that operation-conversation wiring in MENACE likely does not go through these array fields in the current game build, despite the fields being declared.
 

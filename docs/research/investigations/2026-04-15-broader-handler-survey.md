@@ -379,7 +379,7 @@ The Odin substitution pattern is confirmed in **3 additional types** (AddSkill, 
 
 - legacy lists an interface-typed field (`ITacticalCondition` or `IValueProvider`)
 - Jiangyu excludes that field from the Unity-native type tree
-- `serializationData` contains the Odin-serialized payload for it
+- `serializationData` contains the Odin-serialised payload for it
 
 Two distinct interface types are now confirmed as Odin-routed: `ITacticalCondition` (5 instances across handlers) and `IValueProvider` (1 instance in ChangeProperty). The remaining 9 types have no interface-typed fields and `serializationData` is present but presumably empty or minimal.
 
@@ -388,7 +388,7 @@ Two distinct interface types are now confirmed as Odin-routed: `ITacticalConditi
 The legacy schema is narrower than observed reality in **two distinct ways**:
 
 - **Type-level**: `SynchronizeItemUses` exists in game data but is absent from the legacy 119-type inventory (initial pass finding, still the only known case)
-- **Field-level**: `Scanner.AIEffectToEnemies` is a serialized `PPtr<SkillTemplate>` reference present in live game data but absent from the legacy `Scanner` definition. This is a new category of legacy gap — a real serialized field the legacy extraction missed.
+- **Field-level**: `Scanner.AIEffectToEnemies` is a serialised `PPtr<SkillTemplate>` reference present in live game data but absent from the legacy `Scanner` definition. This is a new category of legacy gap — a real serialised field the legacy extraction missed.
 
 ### 3. Field-count/field-set alignment
 
@@ -396,7 +396,7 @@ Across all 10 new types, every legacy field was found in Jiangyu output. The onl
 
 - **Odin-routed fields**: legacy lists the interface field, Jiangyu replaces it with `serializationData` (3 types)
 - **`serializationData` inherited**: present in Jiangyu but not legacy, no corresponding interface field (7 types)
-- **Extra Jiangyu field**: `Scanner.AIEffectToEnemies` is real serialized data the legacy schema missed (1 type)
+- **Extra Jiangyu field**: `Scanner.AIEffectToEnemies` is real serialised data the legacy schema missed (1 type)
 
 Zero real mismatches across all 10 types.
 
@@ -426,7 +426,7 @@ The main results are:
 
 - **Zero real mismatches** across 10 newly validated concrete handler types, spanning all size bands and 8 gameplay domains
 - **Odin substitution pattern is broad and consistent**: confirmed in 6 of 15 validated types, applying to both `ITacticalCondition` and `IValueProvider` interfaces. Types without interface fields simply have an inherited `serializationData` with presumably empty payload.
-- **Legacy schema has field-level gaps**: `Scanner.AIEffectToEnemies` is a real serialized field absent from legacy, a new category beyond the type-level gap (`SynchronizeItemUses`) found in the initial pass
+- **Legacy schema has field-level gaps**: `Scanner.AIEffectToEnemies` is a real serialised field absent from legacy, a new category beyond the type-level gap (`SynchronizeItemUses`) found in the initial pass
 - **`serializationData` is universal**: the only field shared across all 15 validated concrete types, confirming SerializedScriptableObject inheritance as the single structural invariant of the handler family
 - **Within-type stability confirmed** for ChangeProperty and AttackProc, consistent with the initial pass's Attack stability finding
 

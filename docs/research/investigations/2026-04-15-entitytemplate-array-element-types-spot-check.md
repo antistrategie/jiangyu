@@ -160,11 +160,11 @@ Legacy `embedded_classes.EntityLootEntry`:
 | `OverrideDefaultDropChance` | bool / `Boolean` | bool / primitive | **matches** |
 | `DropChance` | int / `Int32` | int / primitive | **matches** |
 
-All 4 fields match in name, type, and order. Exact serialized-field match.
+All 4 fields match in name, type, and order. Exact serialised-field match.
 
-Legacy `base_class: "2809"` is a managed base class identifier, not a serialized field. Its absence from Jiangyu output is expected.
+Legacy `base_class: "2809"` is a managed base class identifier, not a serialised field. Its absence from Jiangyu output is expected.
 
-Classification: **legacy broader than serialized contract** — the only legacy-only detail is managed metadata.
+Classification: **legacy broader than serialised contract** — the only legacy-only detail is managed metadata.
 
 ### SkillGroup
 
@@ -224,11 +224,11 @@ All three parent fields match in name and declared element type.
 
 What this validates:
 
-- Jiangyu independently reproduces the current serialized contract for all three array element types from live game data
-- **EntityLootEntry** is the second validated inline embedded array element type (after `PrefabAttachment`). 4 fields, stable across 10 elements in 3 templates spanning pirate, alien, and construct entity categories. Exact serialized match to legacy.
+- Jiangyu independently reproduces the current serialised contract for all three array element types from live game data
+- **EntityLootEntry** is the second validated inline embedded array element type (after `PrefabAttachment`). 4 fields, stable across 10 elements in 3 templates spanning pirate, alien, and construct entity categories. Exact serialised match to legacy.
 - **SkillGroup** and **DefectGroup** are not inline embedded types — they are ScriptableObject reference arrays. Each element is a PPtr to a separate MonoBehaviour asset. This is the same structural category as `SkillTemplate.EventHandlers`, but simpler: no polymorphism, each group is a thin wrapper around a single homogeneous reference list.
 - The reference-array pattern now generalises beyond `SkillTemplate.EventHandlers` to at least two more fields (`SkillGroups`, `DefectGroups`) under `EntityTemplate`. The pattern is: parent template holds `List<T>` where T is ScriptableObject-derived, and each array element is a PPtr, not an inline struct.
-- Legacy `embedded_classes` definitions are accurate for all three types at the serialized field level. Zero mismatches.
+- Legacy `embedded_classes` definitions are accurate for all three types at the serialised field level. Zero mismatches.
 
 What this does **not** validate:
 
@@ -247,7 +247,7 @@ All three EntityTemplate array element types are now structurally validated:
 - **DefectGroup**: ScriptableObject reference array, 1 field (`Defects: List<DefectTemplate>`), exact legacy match. Same structural pattern as SkillGroup. Sparse in practice (vehicle entities only).
 
 The structural distinction matters for template-patching design:
-- inline types (EntityLootEntry, PrefabAttachment) have their data embedded directly in the parent template's serialized blob
+- inline types (EntityLootEntry, PrefabAttachment) have their data embedded directly in the parent template's serialised blob
 - reference types (SkillGroup, DefectGroup, EventHandlers) are separate assets linked by PPtr — patching them means patching independent MonoBehaviour objects, not fields within the parent
 
 ## Next Step

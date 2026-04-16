@@ -4,7 +4,7 @@ Date: 2026-04-15
 
 ## Goal
 
-Audit the `DefectTemplate` top-level serialized field set using Jiangyu-native inspection, and compare against the legacy schema's 5-field definition at `../MenaceAssetPacker/generated/schema.json`.
+Audit the `DefectTemplate` top-level serialised field set using Jiangyu-native inspection, and compare against the legacy schema's 5-field definition at `../MenaceAssetPacker/generated/schema.json`.
 
 ## Why This Target
 
@@ -46,7 +46,7 @@ All 5 detailed samples plus `defect.fuel_leak`, `defect.walker_knocked_over`, `d
 
 ### Jiangyu-vs-Jiangyu: field set stability
 
-All 10 surveyed instances show **4 serialized fields** under `m_Structure` with an identical field set (names, kinds, type names):
+All 10 surveyed instances show **4 serialised fields** under `m_Structure` with an identical field set (names, kinds, type names):
 
 | # | Name | Kind | Type |
 |---|---|---|---|

@@ -8,7 +8,7 @@ Do a richer nested support-type structural validation pass using Jiangyu-native 
 
 ## Why This Type
 
-`RoleData` is a better next target than the already-validated localization wrappers because:
+`RoleData` is a better next target than the already-validated localisation wrappers because:
 
 - it appears in `EntityTemplate` as a named nested support object (`AIRole`)
 - it is structurally richer than `LocalizedLine` / `LocalizedMultiLine`
@@ -19,7 +19,7 @@ Related legacy evidence:
 - the old schema records `EntityTemplate.AIRole` as type `RoleData`
 - the old tactical AI reverse-engineering work treats role/weighting data as a real AI configuration surface
 
-This pass validates serialized nested structure only, not tactical AI behavior or formulas.
+This pass validates serialised nested structure only, not tactical AI behaviour or formulas.
 
 ## Samples
 
@@ -89,15 +89,15 @@ Primitive kinds were also stable across both samples:
 
 What this validates:
 
-- Jiangyu is consistently surfacing `AIRole` as a nested serialized `RoleData` object under `EntityTemplate`
-- across the sampled entity types, the current serialized field set is stable
-- the old schema was directionally correct that `AIRole` is backed by `RoleData`, even though it did not provide the nested serialized field layout directly
+- Jiangyu is consistently surfacing `AIRole` as a nested serialised `RoleData` object under `EntityTemplate`
+- across the sampled entity types, the current serialised field set is stable
+- the old schema was directionally correct that `AIRole` is backed by `RoleData`, even though it did not provide the nested serialised field layout directly
 
 What this does **not** validate:
 
 - the tactical AI formulas or how these values are consumed at runtime
 - the full managed inheritance/base layout for `RoleData`
-- whether additional managed-only fields exist but are not serialized
+- whether additional managed-only fields exist but are not serialised
 - whether old offset/memory-layout claims about AI settings are fully correct
 
 ## Conclusion
@@ -106,7 +106,7 @@ This is a successful richer nested support-type structural validation pass.
 
 The main result is:
 
-- Jiangyu can independently reproduce the current serialized `RoleData` contract exposed through `EntityTemplate.AIRole`
+- Jiangyu can independently reproduce the current serialised `RoleData` contract exposed through `EntityTemplate.AIRole`
 - the shape appears stable across at least two meaningfully different `EntityTemplate` samples
 
 This gives Jiangyu a better foundation for future tactical AI research without overclaiming runtime semantics.

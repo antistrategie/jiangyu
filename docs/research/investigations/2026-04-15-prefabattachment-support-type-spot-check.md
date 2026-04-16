@@ -113,18 +113,18 @@ Comparison:
 
 All 3 fields match in name, type, and order.
 
-The legacy schema also records `base_class: "2763"` — this is a managed base class identifier from the decompiled metadata, not a serialized field. Its absence from Jiangyu's output is expected (Jiangyu surfaces the serialized contract, not managed type hierarchy metadata).
+The legacy schema also records `base_class: "2763"` — this is a managed base class identifier from the decompiled metadata, not a serialised field. Its absence from Jiangyu's output is expected (Jiangyu surfaces the serialised contract, not managed type hierarchy metadata).
 
-Classification: **legacy broader than serialized contract** — the only legacy-only detail (`base_class`) is managed metadata, not a serialized field. The serialized field set itself is an exact match.
+Classification: **legacy broader than serialised contract** — the only legacy-only detail (`base_class`) is managed metadata, not a serialised field. The serialised field set itself is an exact match.
 
 ## Interpretation
 
 What this validates:
 
-- Jiangyu independently reproduces the current serialized `PrefabAttachment` contract from live game data
+- Jiangyu independently reproduces the current serialised `PrefabAttachment` contract from live game data
 - the shape is stable across all 3 observed array elements in 2 templates
 - Jiangyu correctly surfaces `PrefabAttachment[]` array elements with their individual field values
-- the legacy `embedded_classes` definition is an exact match at the serialized field level
+- the legacy `embedded_classes` definition is an exact match at the serialised field level
 - `PrefabAttachment` is the first validated array element type — previous passes covered only direct nested objects
 
 What this does **not** validate:
@@ -141,7 +141,7 @@ This is a successful structural validation pass for the first array element type
 
 The main results are:
 
-- `PrefabAttachment` is a compact 3-field embedded type with an exact serialized match to the legacy definition
+- `PrefabAttachment` is a compact 3-field embedded type with an exact serialised match to the legacy definition
 - the field set is stable across all observed elements
 - this pass proves that Jiangyu's template inspection correctly surfaces populated array element structures, not just direct nested objects
 - the type is sparse in practice (2 of 16+ templates inspected had populated arrays), which limits sample diversity but does not invalidate the structural finding

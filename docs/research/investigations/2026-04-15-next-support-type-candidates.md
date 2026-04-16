@@ -19,7 +19,7 @@ Context:
 - polymorphic reference array cross-template survey is complete: 3 new polymorphic fields confirmed, 10 monomorphic fields classified, pattern confirmed as cross-cutting
 - `SkillOnSurfaceDefinition` has been structurally spot-checked under `SkillTemplate.ImpactOnSurface`
 - `SkillTemplate` top-level field audit is complete: 120 vs 128 delta fully classified, no real mismatches
-- new classification discovered: Odin-serialized interface/abstract-typed fields (5 fields routed through `serializationData` blob)
+- new classification discovered: Odin-serialised interface/abstract-typed fields (5 fields routed through `serializationData` blob)
 
 ## Completed
 
@@ -53,7 +53,7 @@ Context:
 
 - 120 Jiangyu fields vs 128 legacy fields: 119 shared, 9 legacy-only, 1 Jiangyu-only, 0 real mismatches
 - 4 legacy-only fields are the same base class / managed-only pattern as EntityTemplate/WeaponTemplate
-- 5 legacy-only fields are a new classification: Odin-serialized interface/abstract-typed fields (`CustomAoEShape`, `AoEFilter`, `ProjectileData`, `SecondaryProjectileData`, `AIConfig`) routed through the `serializationData` blob
+- 5 legacy-only fields are a new classification: Odin-serialised interface/abstract-typed fields (`CustomAoEShape`, `AoEFilter`, `ProjectileData`, `SecondaryProjectileData`, `AIConfig`) routed through the `serializationData` blob
 - `serializationData` is the 1 Jiangyu-only field — the Odin container the legacy schema does not list
 - first template type where the delta includes Odin-routed fields, not just base class exclusions
 - see `2026-04-15-skilltemplate-top-level-field-audit.md`
@@ -108,14 +108,14 @@ Context:
 - surveyed 31 template instances across 6 template types, all reference array fields flagged as polymorphic in the legacy schema
 - **3 new polymorphic fields confirmed**: `PerkTemplate.EventHandlers` (same SkillEventHandlerTemplate pattern, 8 distinct handler types), `EntityTemplate.Items` (ArmorTemplate + WeaponTemplate + AccessoryTemplate in same array), `EntityTemplate.Skills` (PerkTemplate + SkillTemplate in same array)
 - **10 monomorphic fields classified**: Tags, Decoration variants, faction references, equipment SkillsGranted, operation Durations — all same-concrete-type in sampled data, though declared types permit wider polymorphism (currently observed monomorphic, not universally monomorphic)
-- **PerkTemplate inherits from SkillTemplate**: first direct evidence from serialized data
+- **PerkTemplate inherits from SkillTemplate**: first direct evidence from serialised data
 - 4 OperationTemplate conversation arrays empty on all checked operations — not assessable
 - pattern confirmed as cross-cutting, not SkillTemplate-specific
 - see `2026-04-15-polymorphic-reference-arrays-cross-template-survey.md`
 
 ### `PerkTemplate` top-level field audit
 
-- PerkTemplate adds exactly 1 serialized field (`PerkIcon: Sprite`) to the SkillTemplate contract — no other perk-specific serialized fields exist
+- PerkTemplate adds exactly 1 serialised field (`PerkIcon: Sprite`) to the SkillTemplate contract — no other perk-specific serialised fields exist
 - 121 Jiangyu fields vs 129 legacy fields: 120 shared, 9 legacy-only, 1 Jiangyu-only — identical delta to SkillTemplate, entirely inherited
 - first validated derived template type; confirms standard delta patterns carry through Unity inheritance
 - field set stable across 3 perk categories (passive combat, active utility, unique character-specific)

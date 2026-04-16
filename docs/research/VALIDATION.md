@@ -25,7 +25,7 @@ So Jiangyu needs a consistent promotion path:
 
 ### Observation
 
-A raw fact seen in data, code, assets, or runtime behavior.
+A raw fact seen in data, code, assets, or runtime behaviour.
 
 Examples:
 
@@ -42,7 +42,7 @@ A proposed meaning or rule derived from observations.
 Examples:
 
 - offset `0x58` is probably `Damage`
-- `_Effect_Map` likely controls emissive behavior
+- `_Effect_Map` likely controls emissive behaviour
 - this handler fires on kill
 
 Hypotheses are allowed in research notes, but not as production truth.
@@ -64,9 +64,9 @@ Use stronger evidence over weaker evidence.
 
 From strongest to weakest:
 
-1. Reproducible in-game behavior from a minimal isolated test
+1. Reproducible in-game behaviour from a minimal isolated test
 2. Jiangyu-native extraction / inspection output against live game data
-3. Direct serialized asset inspection
+3. Direct serialised asset inspection
 4. IL2CPP metadata and decompiled code
 5. External extraction tool output
 6. Legacy project notes, schemas, and generated artifacts
@@ -94,7 +94,7 @@ Preferred validation:
 
 - Jiangyu search / inspect commands
 - direct extraction output
-- serialized asset inspection
+- serialised asset inspection
 
 ### Layout claims
 
@@ -106,7 +106,7 @@ Examples:
 
 Preferred validation:
 
-- serialized asset structure
+- serialised asset structure
 - typetree or equivalent metadata
 - multiple examples from live data
 
@@ -229,7 +229,7 @@ The structural baseline is for:
 - post-update drift detection
 - structural diffing
 - audit tooling
-- preserving the currently validated serialized contract in a reproducible form
+- preserving the currently validated serialised contract in a reproducible form
 
 It is **not** meant to become the runtime or compiler source of truth.
 Jiangyu should continue to derive truth from live game data whenever possible.
@@ -380,7 +380,7 @@ Do not do these:
 Artifacts from older tooling or external projects are not source of truth for Jiangyu.
 
 They may suggest hypotheses to test, but should not be treated as authoritative schemas,
-final field meanings, proof of runtime behavior, or architectural direction.
+final field meanings, proof of runtime behaviour, or architectural direction.
 
 Jiangyu's own verified knowledge lives under `docs/research/verified/` and
 `validation/`.

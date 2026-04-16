@@ -12,13 +12,13 @@ Do the first nested support-type structural validation pass using Jiangyu-native
 
 - they appear directly inside both `EntityTemplate` and `WeaponTemplate`
 - the old legacy research clearly treats them as real wrapper objects, not plain strings
-- Jiangyu is already surfacing them as nested serialized structures rather than opaque blobs
+- Jiangyu is already surfacing them as nested serialised structures rather than opaque blobs
 
 Related legacy evidence:
 
 - `schema.json` references `LocalizedLine`, `LocalizedMultiLine`, and `LocaState` throughout template definitions
-- `docs/reverse-engineering/localization-system.md` in the old modkit describes `LocalizedLine` and `LocalizedMultiLine` as wrappers over a common localization base type
-- `docs/reverse-engineering/localization-patterns.md` documents `m_LocaState`, `LocalizedLine`, and `LocalizedMultiLine` as core localization patterns across many template types
+- `docs/reverse-engineering/localization-system.md` in the old modkit describes `LocalizedLine` and `LocalizedMultiLine` as wrappers over a common localisation base type
+- `docs/reverse-engineering/localization-patterns.md` documents `m_LocaState`, `LocalizedLine`, and `LocalizedMultiLine` as core localisation patterns across many template types
 
 ## Samples
 
@@ -37,14 +37,14 @@ For each sample:
 
 1. run `jiangyu templates inspect`
 2. inspect `m_Structure`
-3. find nested localization fields:
+3. find nested localisation fields:
    - `Title`
    - `ShortName`
    - `Description`
    - `m_LocaState`
 4. compare Jiangyu-observed nested field shape against legacy expectations
 
-This pass validates serialized structure only, not localization runtime behavior.
+This pass validates serialised structure only, not localisation runtime behaviour.
 
 ## Results
 
@@ -113,8 +113,8 @@ So the observed values are consistent with the legacy enum definition.
 
 What this validates:
 
-- Jiangyu is consistently surfacing `LocalizedLine` and `LocalizedMultiLine` as nested serialized wrapper objects, not plain strings
-- across the sampled entity and weapon types, the current serialized field shape is stable:
+- Jiangyu is consistently surfacing `LocalizedLine` and `LocalizedMultiLine` as nested serialised wrapper objects, not plain strings
+- across the sampled entity and weapon types, the current serialised field shape is stable:
   - `m_DefaultTranslation`
   - `m_Placeholders`
 - Jiangyu's observed `LocaState` enum identity also aligns with the legacy enum definition
@@ -122,8 +122,8 @@ What this validates:
 What this does **not** validate:
 
 - the full managed base-class layout described by the old reverse-engineering docs
-- whether additional managed-only fields exist but are not serialized
-- runtime translation lookup behavior
+- whether additional managed-only fields exist but are not serialised
+- runtime translation lookup behaviour
 - whether old offset/memory-layout claims are fully correct
 
 ## Conclusion
@@ -132,9 +132,9 @@ This is a successful first nested support-type structural validation pass.
 
 The main result is:
 
-- Jiangyu can independently reproduce the current serialized contract for `LocalizedLine` and `LocalizedMultiLine`
-- the old modkit's localization research appears directionally correct about these being wrapper objects, but should still be treated as broader managed/runtime interpretation rather than exact serialized schema
+- Jiangyu can independently reproduce the current serialised contract for `LocalizedLine` and `LocalizedMultiLine`
+- the old modkit's localisation research appears directionally correct about these being wrapper objects, but should still be treated as broader managed/runtime interpretation rather than exact serialised schema
 
 ## Next Step
 
-Repeat the same style of nested support-type validation for another high-leverage shared support type observed under `EntityTemplate` / `WeaponTemplate`, preferably one that is structurally richer than the localization wrappers.
+Repeat the same style of nested support-type validation for another high-leverage shared support type observed under `EntityTemplate` / `WeaponTemplate`, preferably one that is structurally richer than the localisation wrappers.

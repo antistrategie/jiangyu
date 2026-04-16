@@ -128,19 +128,19 @@ Comparison:
 
 All 6 fields match in name, type, and order.
 
-The legacy schema also records `base_class: "3259"` — this is a managed base class identifier from decompiled metadata, not a serialized field. Its absence from Jiangyu's output is expected.
+The legacy schema also records `base_class: "3259"` — this is a managed base class identifier from decompiled metadata, not a serialised field. Its absence from Jiangyu's output is expected.
 
 The legacy schema categorises `SoundOnRicochet` and `SoundOnImpact` as `enum`, but `ID` is actually a 2-field struct (`bankId`, `itemId`). Jiangyu correctly surfaces these as `object` with nested fields. This is a legacy category error, not a structural mismatch.
 
-Classification: **matches** — the serialized field set is an exact match. The only legacy-only detail (`base_class`) is managed metadata, and the category mismatch (`enum` vs `object` for `ID`) is a legacy labelling error.
+Classification: **matches** — the serialised field set is an exact match. The only legacy-only detail (`base_class`) is managed metadata, and the category mismatch (`enum` vs `object` for `ID`) is a legacy labelling error.
 
 ## Interpretation
 
 What this validates:
 
-- Jiangyu independently reproduces the current serialized `SkillOnSurfaceDefinition` contract from live game data
+- Jiangyu independently reproduces the current serialised `SkillOnSurfaceDefinition` contract from live game data
 - the shape is stable across all 24 observed array elements in 3 templates spanning 3 distinct skill categories (active combat, active utility, passive)
-- the legacy `embedded_classes` definition is an exact match at the serialized field level
+- the legacy `embedded_classes` definition is an exact match at the serialised field level
 - this is the first nested support type validated under `SkillTemplate`, extending structural validation coverage beyond `EntityTemplate`/`WeaponTemplate`
 - all inspected `SkillTemplate` instances have exactly 14 `ImpactOnSurface` elements, suggesting the array is keyed by a fixed surface type index (probably matching the number of surface types in the game)
 
@@ -154,7 +154,7 @@ What this does **not** validate:
 
 ## Side finding: SkillTemplate top-level field stability
 
-All 3 samples show **120 serialized fields** under `m_Structure` with an identical field set (names, kinds, type names). The legacy schema lists **128 fields**. The 8-field delta is a candidate for a future `SkillTemplate` top-level field audit pass. This does not affect the `SkillOnSurfaceDefinition` result.
+All 3 samples show **120 serialised fields** under `m_Structure` with an identical field set (names, kinds, type names). The legacy schema lists **128 fields**. The 8-field delta is a candidate for a future `SkillTemplate` top-level field audit pass. This does not affect the `SkillOnSurfaceDefinition` result.
 
 ## Conclusion
 
@@ -162,7 +162,7 @@ This is a successful structural validation pass for the first `SkillTemplate` ne
 
 The main results are:
 
-- `SkillOnSurfaceDefinition` is a 6-field embedded type with an exact serialized match to the legacy `embedded_classes` definition
+- `SkillOnSurfaceDefinition` is a 6-field embedded type with an exact serialised match to the legacy `embedded_classes` definition
 - the field set is stable across all 24 observed elements in 3 templates
 - the legacy category error (`enum` for `ID`-type fields) is now documented — Jiangyu's `object` categorisation is correct
 - this pass extends structural validation beyond `EntityTemplate`/`WeaponTemplate` into `SkillTemplate` for the first time

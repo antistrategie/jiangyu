@@ -113,7 +113,7 @@ Concrete types verified:
 - `perk.deploy_vehicle` → PerkTemplate (pathId 114358)
 - `active.stance.walker.get_up` → SkillTemplate (pathId 114509)
 
-This establishes that **PerkTemplate inherits from SkillTemplate** at the serialized level. The `Skills` field is typed as `List<SkillTemplate>` but can hold PerkTemplate instances because PerkTemplate is a subclass.
+This establishes that **PerkTemplate inherits from SkillTemplate** at the serialised level. The `Skills` field is typed as `List<SkillTemplate>` but can hold PerkTemplate instances because PerkTemplate is a subclass.
 
 Sparse: only 2 of 11 checked EntityTemplates have populated `Skills` arrays. This field appears to be used primarily for vehicle-specific direct skill grants, while infantry entities get their skills via `SkillGroups` instead.
 
@@ -169,7 +169,7 @@ The legacy schema (`../MenaceAssetPacker/generated/schema.json`) declares 62 arr
 What this validates:
 
 - The polymorphic ScriptableObject reference array pattern is **cross-cutting**, not SkillTemplate-specific. It appears in at least 3 distinct field families: `EventHandlers` (SkillEventHandlerTemplate subtypes), `Items` (ItemTemplate subtypes), and `Skills` (SkillTemplate + PerkTemplate).
-- **PerkTemplate inherits from SkillTemplate** at the serialized level. This is established by the `EntityTemplate.Skills` field containing both PerkTemplate and SkillTemplate instances, and by `PerkTemplate.EventHandlers` sharing the same `List<SkillEventHandlerTemplate>` field type.
+- **PerkTemplate inherits from SkillTemplate** at the serialised level. This is established by the `EntityTemplate.Skills` field containing both PerkTemplate and SkillTemplate instances, and by `PerkTemplate.EventHandlers` sharing the same `List<SkillEventHandlerTemplate>` field type.
 - `PerkTemplate.EventHandlers` introduces 2 new concrete handler types not previously seen in the SkillTemplate-side validation (`DisplayText`, `SetEntityFlag`), bringing the total known handler type inventory to 17.
 - `EntityTemplate.Items` is the widest polymorphic array observed: at least 3 distinct concrete subtypes (ArmorTemplate, WeaponTemplate, AccessoryTemplate) in a single entity's 4-element array.
 - Most legacy-declared polymorphic fields are **monomorphic in practice** across sampled data. The `List<TagTemplate>` pattern (24 legacy fields) showed no mixed types, nor did decoration, faction, or equipment skill grant arrays. However, this is a sample-based observation — wider polymorphism may exist in unsampled instances.
@@ -191,7 +191,7 @@ The main results are:
 
 - **3 new polymorphic reference array fields confirmed** beyond the already-validated `SkillTemplate.EventHandlers`: `PerkTemplate.EventHandlers`, `EntityTemplate.Items`, `EntityTemplate.Skills`
 - **The polymorphic reference array is a cross-cutting pattern** used across entity composition (Items, Skills), skill/perk behaviour (EventHandlers), and potentially other template families
-- **PerkTemplate inherits from SkillTemplate**: first direct evidence from serialized data
+- **PerkTemplate inherits from SkillTemplate**: first direct evidence from serialised data
 - **10 monomorphic reference array fields classified**: Tags, Decoration, faction references, equipment grants, operation durations — all observed as same-concrete-type in sampled data, though declared types permit wider polymorphism
 - **4 fields not assessable** (OperationTemplate conversation arrays, all empty)
 - Zero mismatches between Jiangyu observations and legacy inheritance declarations. Every observed polymorphic field matches a legacy-declared polymorphic type. Every observed monomorphic field is consistent with (but narrower than) its legacy inheritance hierarchy.

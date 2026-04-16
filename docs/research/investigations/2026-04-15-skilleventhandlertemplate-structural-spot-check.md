@@ -270,6 +270,6 @@ The main results are:
 Good next targets:
 
 1. Array element types under EntityTemplate (`DefectGroup`, `EntityLootEntry`, `SkillGroup`) — still need samples with populated arrays
-2. WeaponTemplate deeper nested types — explore what nested types exist beyond the already-validated localization wrappers
+2. WeaponTemplate deeper nested types — explore what nested types exist beyond the already-validated localisation wrappers
 3. Broader concrete handler survey — spot-check a few more of the 119 legacy handler types to confirm the Odin substitution pattern holds across the family, and identify any additional legacy-absent types
 4. Check other template types for the polymorphic reference array pattern — do any other template fields use the same abstract ScriptableObject reference list?
