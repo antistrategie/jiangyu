@@ -51,14 +51,24 @@ public static class BindPoseRetargetService
 
         ValidateContracts(authored, target);
 
+        // Per-bone recovery: IBM_auth * BP_target in row-vec form. This is the exact
+        // transform that takes an authored-space vertex to target-space assuming full
+        // weight on that one bone. We blend these recoveries per vertex via standard
+        // LBS weighting — blending *forwards* and inverting afterwards explodes at
+        // joints where authored and target bone orientations differ, because the
+        // blended forward matrix can be near-singular.
         var targetBindPoses = AlignTargetBindPoses(target, authored);
-        var forwardReposeMatrices = new Matrix4x4[targetBindPoses.Length];
+        var recoveryMatrices = new Matrix4x4[targetBindPoses.Length];
         for (int i = 0; i < targetBindPoses.Length; i++)
         {
             if (!Matrix4x4.Invert(authored.BindPoses[i], out var authoredRest))
                 throw new InvalidOperationException($"Authored bind pose for bone '{authored.BoneNames[i]}' is not invertible.");
 
-            forwardReposeMatrices[i] = targetBindPoses[i] * authoredRest;
+            var forward = targetBindPoses[i] * authoredRest;
+            if (!Matrix4x4.Invert(forward, out var recovery))
+                throw new InvalidOperationException($"Bind-pose retargeting produced a non-invertible per-bone repose matrix for bone '{authored.BoneNames[i]}'.");
+
+            recoveryMatrices[i] = recovery;
         }
 
         var retargetedPositions = new Vector3[positions.Length];
@@ -67,15 +77,13 @@ public static class BindPoseRetargetService
 
         for (int vertexIndex = 0; vertexIndex < positions.Length; vertexIndex++)
         {
-            var blendedForward = BlendWeightedMatrix(forwardReposeMatrices, boneWeights, boneIndices, vertexIndex);
-            if (!Matrix4x4.Invert(blendedForward, out var recoveryMatrix))
-                throw new InvalidOperationException($"Bind-pose retargeting produced a non-invertible blended repose matrix at vertex {vertexIndex}.");
+            var blendedRecovery = BlendWeightedMatrix(recoveryMatrices, boneWeights, boneIndices, vertexIndex);
 
-            retargetedPositions[vertexIndex] = Vector3.Transform(positions[vertexIndex], recoveryMatrix);
+            retargetedPositions[vertexIndex] = Vector3.Transform(positions[vertexIndex], blendedRecovery);
 
             if (normals.Length != 0)
             {
-                var normalMatrix = BuildNormalMatrix(recoveryMatrix);
+                var normalMatrix = BuildNormalMatrix(blendedRecovery);
                 retargetedNormals[vertexIndex] = Vector3.Normalize(Vector3.TransformNormal(normals[vertexIndex], normalMatrix));
             }
 
@@ -83,7 +91,7 @@ public static class BindPoseRetargetService
             {
                 var tangent = tangents[vertexIndex];
                 var tangentDir = new Vector3(tangent.X, tangent.Y, tangent.Z);
-                var tangentMatrix = BuildNormalMatrix(recoveryMatrix);
+                var tangentMatrix = BuildNormalMatrix(blendedRecovery);
                 var retargetedDir = Vector3.Normalize(Vector3.TransformNormal(tangentDir, tangentMatrix));
                 retargetedTangents[vertexIndex] = new Vector4(retargetedDir, tangent.W);
             }

@@ -295,6 +295,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                     $"Replacement target '{targetAlias}' [{target.CanonicalPath ?? $"{target.Collection}:{target.PathId}"}] has no skinned mesh names to replace.");
 
             ValidateUniqueRuntimeMeshNames(index, target, expectedMeshNames);
+            ValidateReplacementMeshPrimitiveContract(file, bindPoseReferencePath, expectedMeshNames);
 
             var unexpectedMeshNames = providedMeshNames
                 .Where(name => !expectedMeshNames.Contains(name, StringComparer.Ordinal))
@@ -768,6 +769,42 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         throw new InvalidOperationException(
             $"Replacement target '{target.Alias}' cannot be compiled safely because audio clip name '{target.Name}' is ambiguous at runtime. " +
             $"The loader currently matches live audio by clip.name. Ambiguous audio assets: {string.Join(", ", canonicalPaths)}");
+    }
+
+    private static void ValidateReplacementMeshPrimitiveContract(string replacementFilePath, string referenceFilePath, IReadOnlyList<string> expectedMeshNames)
+    {
+        var replacementPrimitiveCounts = DiscoverReplacementMeshPrimitiveCounts(replacementFilePath);
+        var referencePrimitiveCounts = DiscoverReplacementMeshPrimitiveCounts(referenceFilePath);
+
+        var mismatches = expectedMeshNames
+            .Where(name => replacementPrimitiveCounts.TryGetValue(name, out var replacementCount)
+                        && referencePrimitiveCounts.TryGetValue(name, out var referenceCount)
+                        && replacementCount != referenceCount)
+            .Select(name => $"{name} (replacement {replacementPrimitiveCounts[name]}, target {referencePrimitiveCounts[name]})")
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        if (mismatches.Length == 0)
+            return;
+
+        throw new InvalidOperationException(
+            $"Replacement model '{replacementFilePath}' does not match the target mesh primitive/material-slot contract. " +
+            $"Direct mesh replacement currently requires the same primitive count per target mesh as the target export. " +
+            $"Mismatches: {string.Join(", ", mismatches)}");
+    }
+
+    internal static IReadOnlyDictionary<string, int> DiscoverReplacementMeshPrimitiveCounts(string filePath)
+    {
+        var model = ModelRoot.Load(filePath);
+        var result = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        foreach (var node in model.LogicalNodes.Where(node => node.Mesh != null))
+        {
+            var name = GetReplacementMeshName(node, filePath);
+            result[name] = node.Mesh!.Primitives.Count;
+        }
+
+        return result;
     }
 
     private static IReadOnlyList<string> DiscoverReplacementMeshNames(string filePath)

@@ -307,3 +307,56 @@ public class UnityVersionValidationServiceTests
 
     private static UnityVersion ParseVersion(string value) => UnityVersion.Parse(value);
 }
+using SharpGLTF.Schema2;
+
+public class ReplacementMeshPrimitiveContractTests
+{
+    [Fact]
+    public void DiscoverReplacementMeshPrimitiveCounts_ReadsPrimitiveCountsPerNamedMesh()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"jiangyu-primitive-counts-{Guid.NewGuid()}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var path = Path.Combine(dir, "model.gltf");
+            WriteNamedMeshContractGltf(path, [("mesh_a", 1), ("mesh_b", 2)]);
+
+            var counts = CompilationService.DiscoverReplacementMeshPrimitiveCounts(path);
+
+            Assert.Equal(1, counts["mesh_a"]);
+            Assert.Equal(2, counts["mesh_b"]);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    private static void WriteNamedMeshContractGltf(string path, IReadOnlyList<(string Name, int PrimitiveCount)> meshes)
+    {
+        var model = ModelRoot.CreateModel();
+        var scene = model.UseScene("Scene");
+
+        foreach (var item in meshes)
+        {
+            var mesh = model.CreateMesh(item.Name);
+            for (int i = 0; i < item.PrimitiveCount; i++)
+            {
+                var prim = mesh.CreatePrimitive();
+                var positions = model.CreateAccessor();
+                positions.SetData(new[]
+                {
+                    new System.Numerics.Vector3(0, 0, 0),
+                    new System.Numerics.Vector3(1, 0, 0),
+                    new System.Numerics.Vector3(0, 1, 0),
+                });
+                prim.SetVertexAccessor("POSITION", positions);
+                prim.WithIndicesAccessor(PrimitiveType.TRIANGLES, new[] { 0, 1, 2 });
+            }
+
+            scene.CreateNode(item.Name).Mesh = mesh;
+        }
+
+        model.SaveGLTF(path);
+    }
+}
