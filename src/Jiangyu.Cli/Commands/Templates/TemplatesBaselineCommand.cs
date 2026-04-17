@@ -24,7 +24,105 @@ public static class TemplatesBaselineCommand
         {
             CreateGenerateCommand(),
             CreateDiffCommand(),
+            CreateAuditCommand(),
         };
+
+        return command;
+    }
+
+    private static Command CreateAuditCommand()
+    {
+        var sourcesOption = new Option<string>("--sources")
+        {
+            Description = "Path to baseline sources file",
+            DefaultValueFactory = _ => "validation/template-structure-baseline.sources.json",
+        };
+        var committedOption = new Option<string>("--committed")
+        {
+            Description = "Path to the committed baseline JSON to audit against",
+            DefaultValueFactory = _ => DefaultBaselineRelativePath,
+        };
+        var jsonOption = new Option<bool>("--json")
+        {
+            Description = "Emit the raw diff JSON instead of the human-readable report",
+            DefaultValueFactory = _ => false,
+        };
+
+        var command = new Command("audit", "Regenerate a fresh baseline from live game data, diff against the committed baseline, and flag types for revalidation")
+        {
+            sourcesOption,
+            committedOption,
+            jsonOption,
+        };
+
+        command.SetAction(parseResult =>
+        {
+            string sourcesPath = parseResult.GetValue(sourcesOption)!;
+            string committedPath = parseResult.GetValue(committedOption)!;
+            bool json = parseResult.GetValue(jsonOption);
+
+            if (!Path.IsPathRooted(sourcesPath))
+            {
+                sourcesPath = Path.GetFullPath(sourcesPath);
+            }
+
+            if (!Path.IsPathRooted(committedPath))
+            {
+                committedPath = Path.GetFullPath(committedPath);
+            }
+
+            BaselineSources? sources = StructuralBaselineService.LoadSources(sourcesPath);
+            if (sources is null)
+            {
+                Console.Error.WriteLine($"Error: sources file not found: {sourcesPath}");
+                return 1;
+            }
+
+            StructuralBaseline? committed = StructuralBaselineService.LoadBaseline(committedPath);
+            if (committed is null)
+            {
+                Console.Error.WriteLine($"Error: committed baseline not found: {committedPath}");
+                return 1;
+            }
+
+            var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+            if (!resolution.Success)
+            {
+                Console.Error.WriteLine(resolution.Error);
+                return 1;
+            }
+
+            var context = resolution.Context!;
+            var service = context.CreateStructuralBaselineService(new ConsoleProgressSink(), new ConsoleLogSink());
+
+            StructuralBaseline fresh;
+            try
+            {
+                fresh = service.GenerateBaseline(sources);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Error: baseline regeneration failed: {ex.Message}");
+                return 1;
+            }
+
+            BaselineDiff diff = StructuralBaselineService.DiffBaselines(committed, fresh);
+
+            if (json)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(diff, PrettyJsonOptions));
+            }
+            else
+            {
+                Console.WriteLine(StructuralBaselineService.FormatAuditReport(diff));
+            }
+
+            bool hasDrift = diff.AddedTypes.Count > 0
+                || diff.RemovedTypes.Count > 0
+                || diff.ChangedTypes.Count > 0;
+
+            return hasDrift ? 1 : 0;
+        });
 
         return command;
     }

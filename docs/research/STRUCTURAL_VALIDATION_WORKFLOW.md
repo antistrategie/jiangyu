@@ -199,6 +199,43 @@ Date: YYYY-MM-DD
 ## Next Step
 ```
 
+## Re-audit after a game update
+
+Use this flow when the game updates and the committed baseline may no longer reflect the current serialised contract.
+
+1. Refresh the template index against the new game data:
+
+   ```bash
+   dotnet src/Jiangyu.Cli/bin/Debug/net10.0/jiangyu.dll templates index
+   ```
+
+2. Run the audit:
+
+   ```bash
+   dotnet src/Jiangyu.Cli/bin/Debug/net10.0/jiangyu.dll templates baseline audit
+   ```
+
+   The audit regenerates a fresh baseline from the committed sources, diffs it against the committed baseline, and prints a human-readable report listing:
+
+   - **ADDED** types — new types that appeared in the fresh baseline
+   - **REMOVED** types — types that disappeared from the current game
+   - **CHANGED** types — types whose field set or field shape drifted, with per-field detail
+
+   Exit code is non-zero when any drift is detected.
+
+3. For each flagged type, re-run the structural spot-check per the workflow above. Record the pass in `docs/research/investigations/` using the standard note shape.
+
+4. Once every flagged type is re-verified (or the baseline sources are updated to reflect an intentional change), regenerate and commit the baseline:
+
+   ```bash
+   dotnet src/Jiangyu.Cli/bin/Debug/net10.0/jiangyu.dll templates baseline generate
+   git diff validation/template-structure-baseline.json
+   ```
+
+   Review the diff before committing. The committed baseline is the record of what Jiangyu considers re-verified.
+
+Pass `--json` to `audit` when you want the raw machine-readable diff (for scripting or CI) instead of the human-readable report.
+
 ## Current examples
 
 Reference examples already in the repo:

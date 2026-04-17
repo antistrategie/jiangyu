@@ -170,6 +170,98 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
         return JsonSerializer.Deserialize<StructuralBaseline>(File.ReadAllText(path), JsonOptions);
     }
 
+    public static string FormatAuditReport(BaselineDiff diff)
+    {
+        ArgumentNullException.ThrowIfNull(diff);
+
+        int flagged = diff.AddedTypes.Count + diff.RemovedTypes.Count + diff.ChangedTypes.Count;
+        if (flagged == 0)
+        {
+            return "Baseline audit: no drift detected.";
+        }
+
+        var lines = new List<string>
+        {
+            $"Baseline audit: {flagged} type(s) flagged for revalidation.",
+            string.Empty,
+        };
+
+        if (diff.AddedTypes.Count > 0)
+        {
+            lines.Add($"ADDED ({diff.AddedTypes.Count}):");
+            foreach (string typeName in diff.AddedTypes.OrderBy(n => n, StringComparer.Ordinal))
+            {
+                lines.Add($"  {typeName}");
+            }
+            lines.Add(string.Empty);
+        }
+
+        if (diff.RemovedTypes.Count > 0)
+        {
+            lines.Add($"REMOVED ({diff.RemovedTypes.Count}):");
+            foreach (string typeName in diff.RemovedTypes.OrderBy(n => n, StringComparer.Ordinal))
+            {
+                lines.Add($"  {typeName}");
+            }
+            lines.Add(string.Empty);
+        }
+
+        if (diff.ChangedTypes.Count > 0)
+        {
+            lines.Add($"CHANGED ({diff.ChangedTypes.Count}):");
+            foreach (BaselineTypeDiff typeDiff in diff.ChangedTypes.OrderBy(t => t.TypeName, StringComparer.Ordinal))
+            {
+                var summary = new List<string>();
+                if (typeDiff.AddedFields.Count > 0) summary.Add($"{typeDiff.AddedFields.Count} added");
+                if (typeDiff.RemovedFields.Count > 0) summary.Add($"{typeDiff.RemovedFields.Count} removed");
+                if (typeDiff.ChangedFields.Count > 0) summary.Add($"{typeDiff.ChangedFields.Count} changed");
+                lines.Add($"  {typeDiff.TypeName} — {string.Join(", ", summary)}");
+
+                foreach (string name in typeDiff.AddedFields.OrderBy(n => n, StringComparer.Ordinal))
+                {
+                    lines.Add($"    + {name}");
+                }
+                foreach (string name in typeDiff.RemovedFields.OrderBy(n => n, StringComparer.Ordinal))
+                {
+                    lines.Add($"    - {name}");
+                }
+                foreach (BaselineFieldDiff fieldDiff in typeDiff.ChangedFields.OrderBy(f => f.Name, StringComparer.Ordinal))
+                {
+                    lines.Add($"    ~ {fieldDiff.Name}{FormatFieldDiffDetails(fieldDiff)}");
+                }
+            }
+            lines.Add(string.Empty);
+        }
+
+        lines.Add("Next step: re-run structural spot-checks per docs/research/STRUCTURAL_VALIDATION_WORKFLOW.md for each flagged type.");
+        lines.Add("Once verified, run 'jiangyu templates baseline generate' and commit the updated baseline.");
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string FormatFieldDiffDetails(BaselineFieldDiff fieldDiff)
+    {
+        var parts = new List<string>();
+        if (fieldDiff.PreviousKind is not null || fieldDiff.CurrentKind is not null)
+        {
+            parts.Add($"kind: {fieldDiff.PreviousKind ?? "(none)"} → {fieldDiff.CurrentKind ?? "(none)"}");
+        }
+        if (fieldDiff.PreviousFieldTypeName is not null || fieldDiff.CurrentFieldTypeName is not null)
+        {
+            parts.Add($"type: {fieldDiff.PreviousFieldTypeName ?? "(none)"} → {fieldDiff.CurrentFieldTypeName ?? "(none)"}");
+        }
+        if (fieldDiff.PreviousElementTypeName is not null || fieldDiff.CurrentElementTypeName is not null)
+        {
+            parts.Add($"elementType: {fieldDiff.PreviousElementTypeName ?? "(none)"} → {fieldDiff.CurrentElementTypeName ?? "(none)"}");
+        }
+        if (fieldDiff.PreviousStorage is not null || fieldDiff.CurrentStorage is not null)
+        {
+            parts.Add($"storage: {fieldDiff.PreviousStorage ?? "(none)"} → {fieldDiff.CurrentStorage ?? "(none)"}");
+        }
+
+        return parts.Count == 0 ? string.Empty : $" ({string.Join(", ", parts)})";
+    }
+
     public static BaselineDiff DiffBaselines(StructuralBaseline previous, StructuralBaseline current)
     {
         ArgumentNullException.ThrowIfNull(previous);

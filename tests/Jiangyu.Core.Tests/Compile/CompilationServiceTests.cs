@@ -2,6 +2,10 @@ using Jiangyu.Core.Compile;
 using Jiangyu.Core.Unity;
 using Jiangyu.Core.Tests.Helpers;
 using AssetRipper.Primitives;
+using SharpGLTF.Geometry;
+using SharpGLTF.Geometry.VertexTypes;
+using SharpGLTF.Materials;
+using SharpGLTF.Scenes;
 
 namespace Jiangyu.Core.Tests.Compile;
 
@@ -307,7 +311,6 @@ public class UnityVersionValidationServiceTests
 
     private static UnityVersion ParseVersion(string value) => UnityVersion.Parse(value);
 }
-using SharpGLTF.Schema2;
 
 public class ReplacementMeshPrimitiveContractTests
 {
@@ -334,29 +337,24 @@ public class ReplacementMeshPrimitiveContractTests
 
     private static void WriteNamedMeshContractGltf(string path, IReadOnlyList<(string Name, int PrimitiveCount)> meshes)
     {
-        var model = ModelRoot.CreateModel();
-        var scene = model.UseScene("Scene");
+        var scene = new SceneBuilder();
 
         foreach (var item in meshes)
         {
-            var mesh = model.CreateMesh(item.Name);
+            var mesh = new MeshBuilder<VertexPosition>(item.Name);
             for (int i = 0; i < item.PrimitiveCount; i++)
             {
-                var prim = mesh.CreatePrimitive();
-                var positions = model.CreateAccessor();
-                positions.SetData(new[]
-                {
-                    new System.Numerics.Vector3(0, 0, 0),
-                    new System.Numerics.Vector3(1, 0, 0),
-                    new System.Numerics.Vector3(0, 1, 0),
-                });
-                prim.SetVertexAccessor("POSITION", positions);
-                prim.WithIndicesAccessor(PrimitiveType.TRIANGLES, new[] { 0, 1, 2 });
+                var material = new MaterialBuilder($"{item.Name}_mat_{i}");
+                var prim = mesh.UsePrimitive(material);
+                prim.AddTriangle(
+                    new VertexBuilder<VertexPosition, VertexEmpty, VertexEmpty>(new VertexPosition(0, 0, 0)),
+                    new VertexBuilder<VertexPosition, VertexEmpty, VertexEmpty>(new VertexPosition(1, 0, 0)),
+                    new VertexBuilder<VertexPosition, VertexEmpty, VertexEmpty>(new VertexPosition(0, 1, 0)));
             }
 
-            scene.CreateNode(item.Name).Mesh = mesh;
+            scene.AddRigidMesh(mesh, System.Numerics.Matrix4x4.Identity);
         }
 
-        model.SaveGLTF(path);
+        scene.ToGltf2().SaveGLTF(path);
     }
 }

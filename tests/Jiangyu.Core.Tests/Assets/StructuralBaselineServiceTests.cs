@@ -377,6 +377,146 @@ public class StructuralBaselineServiceTests
         }
     }
 
+    [Fact]
+    public void FormatAuditReport_NoDrift_ReturnsSingleLine()
+    {
+        var diff = new BaselineDiff
+        {
+            AddedTypes = [],
+            RemovedTypes = [],
+            ChangedTypes = [],
+        };
+
+        string report = StructuralBaselineService.FormatAuditReport(diff);
+
+        Assert.Equal("Baseline audit: no drift detected.", report);
+    }
+
+    [Fact]
+    public void FormatAuditReport_AddedRemovedChangedTypes_AllSectionsPresent()
+    {
+        var diff = new BaselineDiff
+        {
+            AddedTypes = ["Menace.Tactical.NewSupport"],
+            RemovedTypes = ["Menace.Tactical.OldSupport"],
+            ChangedTypes =
+            [
+                new BaselineTypeDiff
+                {
+                    TypeName = "Menace.Tactical.EntityProperties",
+                    FieldCountDelta = 1,
+                    AddedFields = ["NewField"],
+                    RemovedFields = ["OldField"],
+                    ChangedFields =
+                    [
+                        new BaselineFieldDiff
+                        {
+                            Name = "DropChance",
+                            PreviousKind = "int",
+                            CurrentKind = "float",
+                        },
+                    ],
+                },
+            ],
+        };
+
+        string report = StructuralBaselineService.FormatAuditReport(diff);
+
+        Assert.Contains("3 type(s) flagged for revalidation.", report);
+        Assert.Contains("ADDED (1):", report);
+        Assert.Contains("  Menace.Tactical.NewSupport", report);
+        Assert.Contains("REMOVED (1):", report);
+        Assert.Contains("  Menace.Tactical.OldSupport", report);
+        Assert.Contains("CHANGED (1):", report);
+        Assert.Contains("Menace.Tactical.EntityProperties — 1 added, 1 removed, 1 changed", report);
+        Assert.Contains("    + NewField", report);
+        Assert.Contains("    - OldField", report);
+        Assert.Contains("    ~ DropChance (kind: int → float)", report);
+        Assert.Contains("STRUCTURAL_VALIDATION_WORKFLOW.md", report);
+        Assert.Contains("jiangyu templates baseline generate", report);
+    }
+
+    [Fact]
+    public void FormatAuditReport_ChangedFieldWithMultipleAttributes_JoinsAttributesWithCommas()
+    {
+        var diff = new BaselineDiff
+        {
+            AddedTypes = [],
+            RemovedTypes = [],
+            ChangedTypes =
+            [
+                new BaselineTypeDiff
+                {
+                    TypeName = "T",
+                    AddedFields = [],
+                    RemovedFields = [],
+                    ChangedFields =
+                    [
+                        new BaselineFieldDiff
+                        {
+                            Name = "Items",
+                            PreviousKind = "array",
+                            CurrentKind = "array",
+                            PreviousElementTypeName = "OldElement",
+                            CurrentElementTypeName = "NewElement",
+                            PreviousStorage = "inline",
+                            CurrentStorage = "reference",
+                        },
+                    ],
+                },
+            ],
+        };
+
+        string report = StructuralBaselineService.FormatAuditReport(diff);
+
+        Assert.Contains("~ Items (kind: array → array, elementType: OldElement → NewElement, storage: inline → reference)", report);
+    }
+
+    [Fact]
+    public void FormatAuditReport_SortsTypesAndFieldsDeterministically()
+    {
+        var diff = new BaselineDiff
+        {
+            AddedTypes = ["Zeta", "Alpha"],
+            RemovedTypes = ["Yankee", "Bravo"],
+            ChangedTypes =
+            [
+                new BaselineTypeDiff
+                {
+                    TypeName = "Delta",
+                    AddedFields = ["Zoo", "Ant"],
+                    RemovedFields = [],
+                    ChangedFields = [],
+                },
+                new BaselineTypeDiff
+                {
+                    TypeName = "Charlie",
+                    AddedFields = [],
+                    RemovedFields = [],
+                    ChangedFields = [],
+                },
+            ],
+        };
+
+        string report = StructuralBaselineService.FormatAuditReport(diff);
+
+        int alphaIdx = report.IndexOf("Alpha", StringComparison.Ordinal);
+        int zetaIdx = report.IndexOf("Zeta", StringComparison.Ordinal);
+        Assert.True(alphaIdx < zetaIdx, "Added types should be sorted ordinally.");
+
+        int bravoIdx = report.IndexOf("Bravo", StringComparison.Ordinal);
+        int yankeeIdx = report.IndexOf("Yankee", StringComparison.Ordinal);
+        Assert.True(bravoIdx < yankeeIdx, "Removed types should be sorted ordinally.");
+
+        int charlieIdx = report.IndexOf("Charlie", StringComparison.Ordinal);
+        int deltaIdx = report.IndexOf("Delta", StringComparison.Ordinal);
+        Assert.True(charlieIdx < deltaIdx, "Changed types should be sorted ordinally.");
+
+        int antIdx = report.IndexOf("+ Ant", StringComparison.Ordinal);
+        int zooIdx = report.IndexOf("+ Zoo", StringComparison.Ordinal);
+        Assert.True(antIdx < zooIdx, "Added fields should be sorted ordinally.");
+    }
+
     private static string ComputeHash(string path)
     {
         using var stream = File.OpenRead(path);
