@@ -144,6 +144,22 @@ internal static class RuntimeInspector
             });
         }
 
+        foreach (var obj in UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<SkinnedMeshRenderer>(), true))
+        {
+            var smr = obj?.TryCast<SkinnedMeshRenderer>();
+            if (smr == null)
+                continue;
+            dump.SkinnedMeshRenderers.Add(new SkinnedMeshRendererInfo
+            {
+                GameObjectPath = GameObjectPath(smr.gameObject),
+                MeshName = smr.sharedMesh?.name,
+                BoneCount = smr.bones?.Length ?? 0,
+                RootBoneName = smr.rootBone?.name,
+                HideFlags = smr.hideFlags.ToString(),
+                SceneLoaded = smr.gameObject != null && smr.gameObject.scene.isLoaded,
+            });
+        }
+
         foreach (var obj in UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<AudioSource>(), true))
         {
             var source = obj.Cast<AudioSource>();
@@ -219,8 +235,19 @@ internal static class RuntimeInspector
         public List<UiImageInfo> UiImages { get; } = new();
         public List<SpriteAssetInfo> SpriteAssets { get; } = new();
         public List<TextureAssetInfo> TextureAssets { get; } = new();
+        public List<SkinnedMeshRendererInfo> SkinnedMeshRenderers { get; } = new();
         public List<AudioSourceInfo> AudioSources { get; } = new();
         public List<AudioClipAssetInfo> AudioClipAssets { get; } = new();
+    }
+
+    private sealed class SkinnedMeshRendererInfo
+    {
+        public string GameObjectPath { get; set; }
+        public string MeshName { get; set; }
+        public int BoneCount { get; set; }
+        public string RootBoneName { get; set; }
+        public string HideFlags { get; set; }
+        public bool SceneLoaded { get; set; }
     }
 
     private sealed class TextureAssetInfo

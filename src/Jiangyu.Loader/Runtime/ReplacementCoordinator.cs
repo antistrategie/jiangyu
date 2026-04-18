@@ -1,11 +1,9 @@
 using Il2CppInterop.Runtime;
 using Jiangyu.Loader.Bundles;
-using Jiangyu.Loader.Diagnostics;
 using Jiangyu.Loader.Replacements;
 using Jiangyu.Shared.Replacements;
 using MelonLoader;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace Jiangyu.Loader.Runtime;
 
@@ -18,6 +16,13 @@ internal class ReplacementCoordinator
     private readonly MeshPreparationService _meshPreparation;
     private readonly DirectMeshReplacementApplier _directReplacements;
     private readonly DrivenPrefabReplacementManager _drivenReplacements;
+    // Tracks SMRs we've already processed in this session. The mesh-name-based
+    // IsAlreadyProcessedMesh check isn't sufficient because the "direct use"
+    // swap path assigns the bundle's mesh verbatim (no " [jiangyu]" suffix
+    // added), so subsequent sweeps can't tell the SMR apart from an un-swapped
+    // one. Without this, the continuous spawn monitor re-swaps every already-
+    // handled SMR every tick, which scales badly with unit count.
+    private readonly HashSet<int> _processedSmrInstanceIds = new();
 
     public ReplacementCoordinator()
     {
@@ -32,7 +37,24 @@ internal class ReplacementCoordinator
     public BundleLoadSummary LoadBundles(string modsDir, MelonLogger.Instance log)
         => _catalog.LoadBundles(modsDir, log);
 
-    public void ApplyReplacements(MelonLogger.Instance log)
+    public void InstallHarmonyPatches(HarmonyLib.Harmony harmony, MelonLogger.Instance log)
+    {
+        AudioReplacementPatch.Install(harmony, _catalog.ReplacementAudioClips, log);
+    }
+
+    public bool HasMeshOrPrefabReplacements =>
+        _catalog.Meshes.Count > 0 || _catalog.Prefabs.Count > 0;
+
+    public void OnSceneUnloaded()
+    {
+        // SMR instance IDs are scene-scoped; SMRs destroyed with the scene take
+        // their IDs with them. Clearing avoids slowly accumulating dead entries
+        // across scenes and avoids (theoretical) ID-recycling false-negatives
+        // on later-scene SMRs that happen to reuse a destroyed ID.
+        _processedSmrInstanceIds.Clear();
+    }
+
+    public void ApplyReplacements(MelonLogger.Instance log, bool includeTextures = true)
     {
         if (_catalog.Meshes.Count == 0 &&
             _catalog.Prefabs.Count == 0 &&
@@ -47,6 +69,13 @@ internal class ReplacementCoordinator
         foreach (var obj in skinnedRenderers)
         {
             var smr = obj.Cast<SkinnedMeshRenderer>();
+            if (smr == null)
+                continue;
+
+            var smrInstanceId = smr.GetInstanceID();
+            if (_processedSmrInstanceIds.Contains(smrInstanceId))
+                continue;
+
             if (!IsLiveSceneRenderer(smr) || IsAlreadyProcessedMesh(smr.sharedMesh))
                 continue;
 
@@ -69,6 +98,7 @@ internal class ReplacementCoordinator
                     _drivenReplacements.TryCreate(log, entityRoot, smr, prefabReplacement))
                 {
                     visualReplacements++;
+                    _processedSmrInstanceIds.Add(smrInstanceId);
                 }
 
                 continue;
@@ -84,86 +114,15 @@ internal class ReplacementCoordinator
                 if (_directReplacements.Apply(log, smr, meshReplacement))
                 {
                     visualReplacements++;
+                    _processedSmrInstanceIds.Add(smrInstanceId);
                 }
             }
         }
 
-        // JIANGYU-CONTRACT: Texture replacement is performed by in-place Texture2D
-        // mutation on the game texture object. Matching is by texture.name against
-        // the registered replacement catalogue, with ambiguous names rejected at
-        // compile time. Every consumer inherits the mutation because Unity texture
-        // references are identity-based. See docs/research/verified/texture-replacement.md
-        // for the scoped contract.
-        var textureMutations = _textureMutation.ApplyPending(log);
+        var textureMutations = includeTextures ? _textureMutation.ApplyPending(log) : 0;
 
-        var spriteReplacements = 0;
-        if (_catalog.ReplacementSprites.Count > 0)
-        {
-            var spriteRenderers = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<SpriteRenderer>(), true);
-            foreach (var obj in spriteRenderers)
-            {
-                var spriteRenderer = obj.Cast<SpriteRenderer>();
-                if (!IsLiveSceneObject(spriteRenderer?.gameObject))
-                    continue;
-
-                var sprite = spriteRenderer.sprite;
-                if (sprite == null || !_catalog.ReplacementSprites.TryGetValue(sprite.name, out var replacementSprite))
-                    continue;
-
-                // JIANGYU-CONTRACT: Pending retirement. Sprite replacement lands
-                // via in-place mutation of the sprite's backing Texture2D; this
-                // UGUI SpriteRenderer sweep is retained only as a fallback for
-                // consumers we haven't confirmed are fully covered by the mutation
-                // path. See docs/research/verified/sprite-replacement.md.
-                spriteRenderer.sprite = replacementSprite;
-                spriteReplacements++;
-            }
-
-            var images = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<Image>(), true);
-            foreach (var obj in images)
-            {
-                var image = obj.Cast<Image>();
-                if (!IsLiveSceneObject(image?.gameObject))
-                    continue;
-
-                var sprite = image.sprite;
-                if (sprite == null || !_catalog.ReplacementSprites.TryGetValue(sprite.name, out var replacementSprite))
-                    continue;
-
-                // JIANGYU-CONTRACT: Pending retirement, same reason as the SpriteRenderer block
-                // above.
-                image.sprite = replacementSprite;
-                spriteReplacements++;
-            }
-        }
-
-        var audioReplacements = 0;
-        if (_catalog.ReplacementAudioClips.Count > 0)
-        {
-            var audioSources = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<AudioSource>(), true);
-            foreach (var obj in audioSources)
-            {
-                var audioSource = obj.Cast<AudioSource>();
-                if (!IsLiveSceneObject(audioSource?.gameObject))
-                    continue;
-
-                var clip = audioSource.clip;
-                if (clip == null || !_catalog.ReplacementAudioClips.TryGetValue(clip.name, out var replacementClip))
-                    continue;
-
-                // JIANGYU-CONTRACT: Pending retirement. AudioSource.clip swap is a
-                // narrow direct-reference sweep, not a general AudioClip replacement
-                // contract — cached clips held off-scene (audio manager singletons,
-                // PlayOneShot argument paths) are not reached. The long-term direction
-                // is in-place AudioClip sample mutation, gated on an Il2CppInterop
-                // fix tracked in TODO.md.
-                audioSource.clip = replacementClip;
-                audioReplacements++;
-            }
-        }
-
-        if (visualReplacements > 0 || textureMutations > 0 || spriteReplacements > 0 || audioReplacements > 0)
-            log.Msg($"Applied {visualReplacements} visual replacement(s), {textureMutations} texture mutation(s), {spriteReplacements} sprite replacement(s), and {audioReplacements} audio replacement(s).");
+        if (visualReplacements > 0 || textureMutations > 0)
+            log.Msg($"Applied {visualReplacements} visual replacement(s) and {textureMutations} texture mutation(s).");
     }
 
     public bool HasReplacementTargets()
@@ -191,48 +150,6 @@ internal class ReplacementCoordinator
 
         if (_textureMutation.HasPendingTargets())
             return true;
-
-        if (_catalog.ReplacementSprites.Count > 0)
-        {
-            var spriteRenderers = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<SpriteRenderer>(), true);
-            foreach (var obj in spriteRenderers)
-            {
-                var spriteRenderer = obj.Cast<SpriteRenderer>();
-                if (!IsLiveSceneObject(spriteRenderer?.gameObject))
-                    continue;
-
-                var sprite = spriteRenderer.sprite;
-                if (sprite != null && _catalog.ReplacementSprites.ContainsKey(sprite.name))
-                    return true;
-            }
-
-            var images = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<Image>(), true);
-            foreach (var obj in images)
-            {
-                var image = obj.Cast<Image>();
-                if (!IsLiveSceneObject(image?.gameObject))
-                    continue;
-
-                var sprite = image.sprite;
-                if (sprite != null && _catalog.ReplacementSprites.ContainsKey(sprite.name))
-                    return true;
-            }
-        }
-
-        if (_catalog.ReplacementAudioClips.Count > 0)
-        {
-            var audioSources = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<AudioSource>(), true);
-            foreach (var obj in audioSources)
-            {
-                var audioSource = obj.Cast<AudioSource>();
-                if (!IsLiveSceneObject(audioSource?.gameObject))
-                    continue;
-
-                var clip = audioSource.clip;
-                if (clip != null && _catalog.ReplacementAudioClips.ContainsKey(clip.name))
-                    return true;
-            }
-        }
 
         return false;
     }

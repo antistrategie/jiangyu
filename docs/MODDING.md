@@ -119,13 +119,17 @@ Example:
 assets/replacements/audio/sfx_rifle_fire--4321.wav
 ```
 
-Jiangyu applies these replacements to matching `AudioSource.clip` references when the runtime clip name is unique.
+At runtime the loader installs Harmony prefixes on `AudioSource`'s playback
+methods (`Play`, `PlayOneShot`, `PlayDelayed`, `PlayScheduled`, and the static
+`PlayClipAtPoint`). When one of those fires with a clip whose `.name` matches
+a registered replacement target, the prefix substitutes the modder's clip
+before the original method proceeds. This catches every playback path
+including clips cached on audio-manager singletons and `PlayOneShot(clip)`
+argument paths that older consumer-walk approaches miss. See
+[`docs/research/verified/audio-replacement.md`](research/verified/audio-replacement.md)
+for the full contract.
 
-**Current runtime limit.** MENACE caches UI `AudioClip` references outside
-scene-resident `AudioSource.clip` fields — typical audio-manager pattern with
-`PlayOneShot(clip)`, which ignores `AudioSource.clip`. The current sweep over
-`AudioSource.clip` therefore cannot land UI audio. In-place `AudioClip` sample
-mutation would cover the audio-manager case, but is blocked by an
-Il2CppInterop marshalling bug on this MelonLoader + Unity 6 combination that
-needs a hand-written ICall wrapper to work around. Tracked in `TODO.md`
-"Runtime Replacement Strategy — Validated, Ready To Implement".
+**Match frequency and channels.** Unity resamples mismatched audio at runtime
+which pitch-shifts the sound. Check the target's frequency and channel count
+with `jiangyu assets search <name> --type AudioClip` and author the
+replacement at the same rate and channel layout.

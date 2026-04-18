@@ -21,5 +21,6 @@ just the local index for promoted findings.
 
 - [Texture2D replacement](texture-replacement.md) — convention-first `Texture2D` replacement via in-place mutation, inherited by every consumer (materials, UGUI, UI Toolkit, caches)
 - [Sprite replacement](sprite-replacement.md) — convention-first `Sprite` replacement for unique-texture-backed sprites; atlas-backed sprites rejected at compile time
+- [AudioClip replacement](audio-replacement.md) — convention-first `AudioClip` replacement via playback-time substitution hooked on `AudioSource` play entry points
 
 Each doc lists the investigation notes it draws from.

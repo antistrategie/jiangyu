@@ -23,6 +23,10 @@
       <HintPath>$(MelonLoaderDir)/MelonLoader.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(MelonLoaderDir)/0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Il2CppInterop.Runtime">
       <HintPath>$(MelonLoaderDir)/Il2CppInterop.Runtime.dll</HintPath>
       <Private>false</Private>
