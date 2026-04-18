@@ -719,6 +719,13 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
                         entry.SpriteBackingTextureName = backing.GetBestName();
                     }
                 }
+                else if (asset is AssetRipper.SourceGenerated.Classes.ClassID_83.IAudioClip audioClip)
+                {
+                    if (audioClip.Has_Frequency())
+                        entry.AudioFrequency = audioClip.Frequency;
+                    if (audioClip.Has_Channels())
+                        entry.AudioChannels = audioClip.Channels;
+                }
 
                 entries.Add(entry);
             }

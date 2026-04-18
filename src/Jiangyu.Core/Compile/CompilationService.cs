@@ -501,8 +501,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                     $"Replacement audio '{Path.GetRelativePath(projectDir, file)}' must be named '<target-name>--<pathId>.<ext>'.");
             }
 
-            var target = ResolveReplacementAudioTarget(index, alias, targetName, targetPathId);
-            ValidateUniqueRuntimeAudioNames(index, target);
+            var target = ResolveAndValidateAudioTarget(index, alias, targetName, targetPathId, file);
 
             entries.Add(new GlbMeshBundleCompiler.ImportedAudioAsset
             {
@@ -815,6 +814,96 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         throw new InvalidOperationException(
             $"Replacement target '{target.Alias}' cannot be compiled safely because audio clip name '{target.Name}' is ambiguous at runtime. " +
             $"The loader currently matches live audio by clip.name. Ambiguous audio assets: {string.Join(", ", canonicalPaths)}");
+    }
+
+    /// <summary>
+    /// Rejects WAV replacements whose header sample rate or channel count differ
+    /// from the indexed target. Unity resamples mismatches at playback time,
+    /// which pitch-shifts the sound; a compile-time rejection is more useful to
+    /// a modder than silent pitch distortion. Non-WAV formats (OGG, MP3) are
+    /// not inspected here and the check is skipped with no error — those
+    /// modders get Unity's runtime resampling if they mismatch.
+    /// </summary>
+    internal static void ValidateAudioFileMatchesTarget(AssetIndex index, ReplacementAudioTarget target, string filePath)
+    {
+        var targetEntry = index.Assets?.FirstOrDefault(entry =>
+            string.Equals(entry.ClassName, "AudioClip", StringComparison.Ordinal) &&
+            string.Equals(entry.Name, target.Name, StringComparison.Ordinal) &&
+            entry.PathId == target.PathId);
+
+        if (targetEntry is null) return;
+        if (targetEntry.AudioFrequency is null || targetEntry.AudioChannels is null) return;
+
+        var ext = Path.GetExtension(filePath).ToLowerInvariant();
+        if (ext != ".wav") return;
+
+        if (!TryReadWavHeader(filePath, out var sourceFrequency, out var sourceChannels))
+            return;
+
+        if (sourceFrequency == targetEntry.AudioFrequency.Value && sourceChannels == targetEntry.AudioChannels.Value)
+            return;
+
+        throw new InvalidOperationException(
+            $"Replacement audio target '{target.Alias}' has a WAV source at {sourceFrequency}Hz {sourceChannels}ch, " +
+            $"but the target AudioClip is {targetEntry.AudioFrequency.Value}Hz {targetEntry.AudioChannels.Value}ch. " +
+            "Unity would resample the mismatch at runtime, which pitch-shifts the sound. " +
+            "Re-export the source at the target's rate and channel layout, or ship a format Jiangyu doesn't validate (OGG/MP3) if runtime resampling is acceptable.");
+    }
+
+    internal static ReplacementAudioTarget ResolveAndValidateAudioTarget(
+        AssetIndex index,
+        string alias,
+        string targetName,
+        long targetPathId,
+        string filePath)
+    {
+        var target = ResolveReplacementAudioTarget(index, alias, targetName, targetPathId);
+        ValidateUniqueRuntimeAudioNames(index, target);
+        ValidateAudioFileMatchesTarget(index, target, filePath);
+        return target;
+    }
+
+    private static bool TryReadWavHeader(string path, out int sampleRate, out int channels)
+    {
+        sampleRate = 0;
+        channels = 0;
+        try
+        {
+            using var stream = File.OpenRead(path);
+            using var reader = new BinaryReader(stream);
+
+            // RIFF header: "RIFF" (4) + size (4) + "WAVE" (4).
+            if (reader.ReadUInt32() != 0x46464952u) return false; // "RIFF"
+            reader.ReadUInt32();
+            if (reader.ReadUInt32() != 0x45564157u) return false; // "WAVE"
+
+            // Walk chunks until we find "fmt ".
+            while (stream.Position + 8 <= stream.Length)
+            {
+                var chunkId = reader.ReadUInt32();
+                var chunkSize = reader.ReadUInt32();
+
+                if (chunkId == 0x20746d66u) // "fmt "
+                {
+                    if (chunkSize < 16) return false;
+                    reader.ReadUInt16(); // audio format
+                    channels = reader.ReadUInt16();
+                    sampleRate = (int)reader.ReadUInt32();
+                    return channels > 0 && sampleRate > 0;
+                }
+
+                // Skip this chunk. Chunks are word-aligned.
+                var skip = chunkSize + (chunkSize % 2);
+                if (stream.Position + skip > stream.Length) return false;
+                stream.Seek(skip, SeekOrigin.Current);
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static void ValidateReplacementMeshPrimitiveContract(string replacementFilePath, string referenceFilePath, IReadOnlyList<string> expectedMeshNames)

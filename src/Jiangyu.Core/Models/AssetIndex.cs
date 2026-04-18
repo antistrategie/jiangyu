@@ -43,6 +43,12 @@ public sealed class AssetEntry
 
     [JsonPropertyName("spriteBackingTextureName")]
     public string? SpriteBackingTextureName { get; set; }
+
+    [JsonPropertyName("audioFrequency")]
+    public int? AudioFrequency { get; set; }
+
+    [JsonPropertyName("audioChannels")]
+    public int? AudioChannels { get; set; }
 }
 
 public sealed class IndexManifest
