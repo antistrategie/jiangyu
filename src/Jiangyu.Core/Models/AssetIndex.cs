@@ -27,6 +27,22 @@ public sealed class AssetEntry
 
     [JsonPropertyName("collection")]
     public string? Collection { get; set; }
+
+    /// <summary>
+    /// For Sprite entries, identifies the backing Texture2D the sprite is cut from.
+    /// Present only when the indexer could resolve the reference; null for older indexes
+    /// or for non-Sprite entries. Used by compile-time atlas detection — a sprite whose
+    /// backing texture is shared by multiple indexed Sprites is atlas-backed and cannot
+    /// be individually replaced via in-place Texture2D mutation.
+    /// </summary>
+    [JsonPropertyName("spriteBackingTexturePathId")]
+    public long? SpriteBackingTexturePathId { get; set; }
+
+    [JsonPropertyName("spriteBackingTextureCollection")]
+    public string? SpriteBackingTextureCollection { get; set; }
+
+    [JsonPropertyName("spriteBackingTextureName")]
+    public string? SpriteBackingTextureName { get; set; }
 }
 
 public sealed class IndexManifest

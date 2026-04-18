@@ -1,0 +1,38 @@
+<Project>
+
+  <!--
+    Overrides the default AfterBuild target in ILRepack.Lib.MSBuild.Task (its targets
+    file skips its own default when this file is present).
+
+    Merges Jiangyu.Shared + System.Text.Json + System.Text.Encodings.Web into
+    Jiangyu.Loader.dll so the shipped loader is always a single file. See AGENTS.md
+    ("the shipped loader is always a single DLL") for why this matters.
+
+    LibraryPath is required so ILRepack can resolve references to MelonLoader,
+    Il2CppInterop.Runtime, and the Unity assemblies, which live outside the project
+    output directory (Private=false).
+  -->
+  <Target Name="JiangyuLoaderILRepack" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <ItemGroup>
+      <ILRepackInputAssemblies Include="$(OutputPath)Jiangyu.Loader.dll" />
+      <ILRepackInputAssemblies Include="$(OutputPath)Jiangyu.Shared.dll" />
+      <ILRepackInputAssemblies Include="$(OutputPath)System.Text.Json.dll" />
+      <ILRepackInputAssemblies Include="$(OutputPath)System.Text.Encodings.Web.dll" />
+    </ItemGroup>
+
+    <ILRepack
+      Parallel="true"
+      Internalize="true"
+      InputAssemblies="@(ILRepackInputAssemblies)"
+      OutputFile="$(OutputPath)Jiangyu.Loader.dll"
+      LibraryPath="$(MelonLoaderDir);$(GameAssembliesDir)" />
+
+    <!-- After merge, delete the now-redundant sidecar DLLs and the runtimes/ tree
+         (carried by the System.Text.* packages for platform-specific variants we
+         don't ship) so nothing in bin/ can accidentally be picked up as a
+         separate assembly. -->
+    <Delete Files="$(OutputPath)Jiangyu.Shared.dll;$(OutputPath)Jiangyu.Shared.pdb;$(OutputPath)System.Text.Json.dll;$(OutputPath)System.Text.Encodings.Web.dll" />
+    <RemoveDir Directories="$(OutputPath)runtimes" />
+  </Target>
+
+</Project>

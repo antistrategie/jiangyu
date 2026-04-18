@@ -9,6 +9,8 @@
 //    in Il2CppInterop. Avoid calling game assembly methods with string params directly.
 //    (MelonLoader alpha commit 96c78935)
 
+using System.Collections;
+using Jiangyu.Loader.Diagnostics;
 using MelonLoader;
 using MelonLoader.Utils;
 
@@ -19,8 +21,20 @@ namespace Jiangyu.Loader.Runtime;
 
 public class JiangyuMod : MelonMod
 {
+    // Post-scene-load poll schedule (frame offsets from OnSceneWasLoaded). Dense
+    // every-5-frames window up to t=100 keeps visible popin under ~83ms across
+    // the active load window MENACE uses for its scene-start asset streaming.
+    // Exponential tail past t=100 catches late stragglers up to ~10s. Sweeps
+    // are idempotent via TextureMutationService, so repeat polls only do work
+    // when something new has appeared.
+    private static readonly int[] PostSceneLoadPollFrames =
+    {
+        5, 10, 15, 20, 25, 30, 35, 40, 45, 50,
+        55, 60, 65, 70, 75, 80, 85, 90, 95, 100,
+        150, 250, 400, 600,
+    };
+
     private readonly ReplacementCoordinator _replacementCoordinator = new();
-    private bool _autoApplied;
 
     public override void OnInitializeMelon()
     {
@@ -35,27 +49,47 @@ public class JiangyuMod : MelonMod
 
     public override void OnSceneWasLoaded(int buildIndex, string sceneName)
     {
-        _autoApplied = false;
         LoggerInstance.Msg($"Scene loaded: {sceneName} ({buildIndex})");
+
+        if (RuntimeInspector.IsEnabled())
+        {
+            RuntimeInspector.Dump(sceneName, buildIndex, LoggerInstance);
+        }
+
+        TryApply();
+        MelonCoroutines.Start(FollowUpPoll());
     }
 
     public override void OnUpdate()
     {
-        if (!_autoApplied && _replacementCoordinator.HasReplacementTargets())
+        _replacementCoordinator.UpdateDrivenReplacements(LoggerInstance);
+    }
+
+    private IEnumerator FollowUpPoll()
+    {
+        var frame = 0;
+        var scheduleIndex = 0;
+        while (scheduleIndex < PostSceneLoadPollFrames.Length)
         {
-            try
+            yield return null;
+            frame++;
+            if (frame >= PostSceneLoadPollFrames[scheduleIndex])
             {
-                LoggerInstance.Msg("Detected matching runtime replacement targets — applying replacements...");
-                _replacementCoordinator.ApplyReplacements(LoggerInstance);
-                _autoApplied = true;
-            }
-            catch (Exception ex)
-            {
-                LoggerInstance.Error($"Auto-apply failed: {ex}");
-                _autoApplied = true;
+                TryApply();
+                scheduleIndex++;
             }
         }
+    }
 
-        _replacementCoordinator.UpdateDrivenReplacements(LoggerInstance);
+    private void TryApply()
+    {
+        try
+        {
+            _replacementCoordinator.ApplyReplacements(LoggerInstance);
+        }
+        catch (Exception ex)
+        {
+            LoggerInstance.Error($"Apply failed: {ex}");
+        }
     }
 }

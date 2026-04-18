@@ -19,6 +19,7 @@ just the local index for promoted findings.
 
 ## Verified runtime paths
 
-- [Texture2D replacement](texture-replacement.md) — convention-first `Texture2D` replacement validated end-to-end on `SkinnedMeshRenderer.sharedMaterials` texture bindings
+- [Texture2D replacement](texture-replacement.md) — convention-first `Texture2D` replacement via in-place mutation, inherited by every consumer (materials, UGUI, UI Toolkit, caches)
+- [Sprite replacement](sprite-replacement.md) — convention-first `Sprite` replacement for unique-texture-backed sprites; atlas-backed sprites rejected at compile time
 
 Each doc lists the investigation notes it draws from.

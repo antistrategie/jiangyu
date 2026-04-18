@@ -699,7 +699,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
 
             foreach (IUnityObjectBase asset in collection)
             {
-                entries.Add(new AssetEntry
+                var entry = new AssetEntry
                 {
                     Name = asset.GetBestName(),
                     CanonicalPath = BuildCanonicalAssetPath(collectionName, asset.ClassName, asset.GetBestName(), asset.PathID),
@@ -707,7 +707,20 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
                     ClassId = asset.ClassID,
                     PathId = asset.PathID,
                     Collection = collectionName,
-                });
+                };
+
+                if (asset is AssetRipper.SourceGenerated.Classes.ClassID_213.ISprite sprite)
+                {
+                    var backing = ResolveSpriteBackingTexture(sprite);
+                    if (backing is not null)
+                    {
+                        entry.SpriteBackingTexturePathId = backing.PathID;
+                        entry.SpriteBackingTextureCollection = backing.Collection.Name;
+                        entry.SpriteBackingTextureName = backing.GetBestName();
+                    }
+                }
+
+                entries.Add(entry);
             }
         }
 
@@ -740,6 +753,30 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         }
 
         return index == 0 ? "_" : new string(buffer[..index]);
+    }
+
+    private static AssetRipper.SourceGenerated.Classes.ClassID_28.ITexture2D? ResolveSpriteBackingTexture(
+        AssetRipper.SourceGenerated.Classes.ClassID_213.ISprite sprite)
+    {
+        // Non-atlas sprites carry the texture reference directly on sprite.RD.
+        var direct = sprite.RD.Texture.TryGetAsset(sprite.Collection);
+        if (direct is not null)
+            return direct;
+
+        // Atlas-packed sprites carry a SpriteAtlas pointer; the backing texture lives
+        // in the atlas's RenderDataMap, keyed by the sprite's RenderDataKey. This
+        // mirrors AssetRipper.Processing.Textures.SpriteProcessor.ProcessSprite, which
+        // we intentionally don't run as a processor here because it mutates sprite.Rect
+        // /Pivot/Border and clears SpriteAtlasP, side-effects we don't want to apply to
+        // the indexed game data.
+        var atlas = sprite.SpriteAtlasP;
+        if (atlas is null || !sprite.Has_RenderDataKey())
+            return null;
+
+        if (!atlas.RenderDataMap.TryGetValue(sprite.RenderDataKey, out var atlasData))
+            return null;
+
+        return atlasData.Texture.TryGetAsset(atlas.Collection);
     }
 
     private static void RunProcessors(GameData gameData)

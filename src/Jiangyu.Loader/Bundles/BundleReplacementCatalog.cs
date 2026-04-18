@@ -271,6 +271,21 @@ internal sealed class BundleReplacementCatalog
         RegisterSpriteOverride(loadedSprite.name, loadedSprite, ownerLabel, log);
         _pinned.Add(loadedSprite);
         log.Msg($"  Registered sprite asset: {loadedSprite.name}");
+
+        // JIANGYU-CONTRACT: Sprite replacement lands via in-place mutation of
+        // the backing Texture2D. Registering the bundle sprite's backing texture
+        // under the sprite's name lets TextureMutationService find it during
+        // its sweep (game Sprites carry the same .name as their backing texture
+        // for the unique-texture-backed case, which compile-time validation
+        // ensures is the only case we accept). Explicit texture replacements
+        // take precedence if both are registered under the same name.
+        var backingTexture = loadedSprite.texture;
+        if (backingTexture != null && !ReplacementTextures.ContainsKey(loadedSprite.name))
+        {
+            backingTexture.hideFlags = HideFlags.DontUnloadUnusedAsset;
+            RegisterTextureOverride(loadedSprite.name, backingTexture, ownerLabel + " (sprite backing)", log);
+            _pinned.Add(backingTexture);
+        }
     }
 
     private void RegisterMeshAsset(

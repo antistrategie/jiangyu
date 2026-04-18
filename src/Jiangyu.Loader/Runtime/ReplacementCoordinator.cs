@@ -1,10 +1,11 @@
 using Il2CppInterop.Runtime;
-using Jiangyu.Shared.Replacements;
+using Jiangyu.Loader.Bundles;
+using Jiangyu.Loader.Diagnostics;
 using Jiangyu.Loader.Replacements;
+using Jiangyu.Shared.Replacements;
 using MelonLoader;
 using UnityEngine;
 using UnityEngine.UI;
-using Jiangyu.Loader.Bundles;
 
 namespace Jiangyu.Loader.Runtime;
 
@@ -13,6 +14,7 @@ internal class ReplacementCoordinator
     private readonly List<UnityEngine.Object> _pinned = new();
     private readonly BundleReplacementCatalog _catalog;
     private readonly MaterialReplacementService _materialReplacements;
+    private readonly TextureMutationService _textureMutation;
     private readonly MeshPreparationService _meshPreparation;
     private readonly DirectMeshReplacementApplier _directReplacements;
     private readonly DrivenPrefabReplacementManager _drivenReplacements;
@@ -21,6 +23,7 @@ internal class ReplacementCoordinator
     {
         _catalog = new BundleReplacementCatalog(_pinned);
         _materialReplacements = new MaterialReplacementService(_catalog.ReplacementTextures, _pinned);
+        _textureMutation = new TextureMutationService(_catalog.ReplacementTextures);
         _meshPreparation = new MeshPreparationService(_pinned);
         _directReplacements = new DirectMeshReplacementApplier(_materialReplacements, _meshPreparation);
         _drivenReplacements = new DrivenPrefabReplacementManager(_pinned);
@@ -82,45 +85,16 @@ internal class ReplacementCoordinator
                 {
                     visualReplacements++;
                 }
-
-                continue;
-            }
-
-            if (_materialReplacements.HasReplacementTextures &&
-                smr.sharedMaterials != null &&
-                smr.sharedMaterials.Length > 0 &&
-                _materialReplacements.HasDirectTextureReplacementTargets(smr.sharedMaterials))
-            {
-                // JIANGYU-CONTRACT: Direct texture replacement currently resolves live targets by the
-                // existing Material texture object's name on known texture properties. This is valid for
-                // the current proven Texture2D replacement path when the target texture name is unique at
-                // runtime. Compile-time convention-first replacement must reject ambiguous Texture2D
-                // targets until Jiangyu has a stronger live texture identity.
-                smr.sharedMaterials = _materialReplacements.GetOrCreateDirectTextureReplacementMaterials(smr.sharedMaterials);
-                visualReplacements++;
             }
         }
 
-        if (_catalog.ReplacementTextures.Count > 0)
-        {
-            var renderers = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<Renderer>(), true);
-            foreach (var obj in renderers)
-            {
-                var renderer = obj.Cast<Renderer>();
-                if (renderer is SkinnedMeshRenderer || !IsLiveSceneObject(renderer?.gameObject))
-                    continue;
-
-                if (renderer.sharedMaterials == null ||
-                    renderer.sharedMaterials.Length == 0 ||
-                    !_materialReplacements.HasDirectTextureReplacementTargets(renderer.sharedMaterials))
-                {
-                    continue;
-                }
-
-                renderer.sharedMaterials = _materialReplacements.GetOrCreateDirectTextureReplacementMaterials(renderer.sharedMaterials);
-                visualReplacements++;
-            }
-        }
+        // JIANGYU-CONTRACT: Texture replacement is performed by in-place Texture2D
+        // mutation on the game texture object. Matching is by texture.name against
+        // the registered replacement catalogue, with ambiguous names rejected at
+        // compile time. Every consumer inherits the mutation because Unity texture
+        // references are identity-based. See docs/research/verified/texture-replacement.md
+        // for the scoped contract.
+        var textureMutations = _textureMutation.ApplyPending(log);
 
         var spriteReplacements = 0;
         if (_catalog.ReplacementSprites.Count > 0)
@@ -136,12 +110,11 @@ internal class ReplacementCoordinator
                 if (sprite == null || !_catalog.ReplacementSprites.TryGetValue(sprite.name, out var replacementSprite))
                     continue;
 
-                // JIANGYU-CONTRACT: Scoped direct sprite sweep on SpriteRenderer.sprite.name.
-                // Not a general Sprite replacement contract. In-game smoke test (2026-04-18,
-                // icon_hitpoints) found zero matches even with a unique target name, because
-                // live UI sprites are routed through sprite atlases and/or ScriptableObject
-                // references that this sweep does not reach. See
-                // docs/research/investigations/2026-04-18-sprite-audio-runtime-routing.md.
+                // JIANGYU-CONTRACT: Pending retirement. Sprite replacement lands
+                // via in-place mutation of the sprite's backing Texture2D; this
+                // UGUI SpriteRenderer sweep is retained only as a fallback for
+                // consumers we haven't confirmed are fully covered by the mutation
+                // path. See docs/research/verified/sprite-replacement.md.
                 spriteRenderer.sprite = replacementSprite;
                 spriteReplacements++;
             }
@@ -157,9 +130,8 @@ internal class ReplacementCoordinator
                 if (sprite == null || !_catalog.ReplacementSprites.TryGetValue(sprite.name, out var replacementSprite))
                     continue;
 
-                // JIANGYU-CONTRACT: Scoped direct sprite sweep on UnityEngine.UI.Image.sprite.name.
-                // Not a general Sprite replacement contract. See the SpriteRenderer block above and
-                // the 2026-04-18 investigation note for why UI sprites often bypass this surface.
+                // JIANGYU-CONTRACT: Pending retirement, same reason as the SpriteRenderer block
+                // above.
                 image.sprite = replacementSprite;
                 spriteReplacements++;
             }
@@ -179,20 +151,19 @@ internal class ReplacementCoordinator
                 if (clip == null || !_catalog.ReplacementAudioClips.TryGetValue(clip.name, out var replacementClip))
                     continue;
 
-                // JIANGYU-CONTRACT: Scoped direct audio sweep on AudioSource.clip.name.
-                // Not a general AudioClip replacement contract. In-game smoke test (2026-04-18,
-                // button_click_01) swapped one AudioSource.clip but the UI click was still
-                // audibly unchanged, because MENACE routes UI SFX through an audio manager
-                // that caches AudioClip references outside any scene-resident AudioSource.clip
-                // field. PlayOneShot uses its argument clip, ignoring AudioSource.clip. See
-                // docs/research/investigations/2026-04-18-sprite-audio-runtime-routing.md.
+                // JIANGYU-CONTRACT: Pending retirement. AudioSource.clip swap is a
+                // narrow direct-reference sweep, not a general AudioClip replacement
+                // contract — cached clips held off-scene (audio manager singletons,
+                // PlayOneShot argument paths) are not reached. The long-term direction
+                // is in-place AudioClip sample mutation, gated on an Il2CppInterop
+                // fix tracked in TODO.md.
                 audioSource.clip = replacementClip;
                 audioReplacements++;
             }
         }
 
-        if (visualReplacements > 0 || spriteReplacements > 0 || audioReplacements > 0)
-            log.Msg($"Applied {visualReplacements} visual replacement(s), {spriteReplacements} sprite replacement(s), and {audioReplacements} audio replacement(s).");
+        if (visualReplacements > 0 || textureMutations > 0 || spriteReplacements > 0 || audioReplacements > 0)
+            log.Msg($"Applied {visualReplacements} visual replacement(s), {textureMutations} texture mutation(s), {spriteReplacements} sprite replacement(s), and {audioReplacements} audio replacement(s).");
     }
 
     public bool HasReplacementTargets()
@@ -204,7 +175,7 @@ internal class ReplacementCoordinator
             _catalog.ReplacementAudioClips.Count == 0)
             return false;
 
-        if (_catalog.Meshes.Count > 0 || _catalog.Prefabs.Count > 0 || _catalog.ReplacementTextures.Count > 0)
+        if (_catalog.Meshes.Count > 0 || _catalog.Prefabs.Count > 0)
         {
             var skinnedRenderers = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<SkinnedMeshRenderer>(), true);
             foreach (var obj in skinnedRenderers)
@@ -215,34 +186,11 @@ internal class ReplacementCoordinator
 
                 if (_catalog.Prefabs.ContainsKey(smr.sharedMesh.name) || TryGetReplacementMesh(smr.sharedMesh.name, out _, out _))
                     return true;
-
-                if (_catalog.ReplacementTextures.Count > 0 &&
-                    smr.sharedMaterials != null &&
-                    smr.sharedMaterials.Length > 0 &&
-                    _materialReplacements.HasDirectTextureReplacementTargets(smr.sharedMaterials))
-                {
-                    return true;
-                }
-            }
-
-            if (_catalog.ReplacementTextures.Count > 0)
-            {
-                var renderers = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<Renderer>(), true);
-                foreach (var obj in renderers)
-                {
-                    var renderer = obj.Cast<Renderer>();
-                    if (renderer is SkinnedMeshRenderer || !IsLiveSceneObject(renderer?.gameObject))
-                        continue;
-
-                    if (renderer.sharedMaterials != null &&
-                        renderer.sharedMaterials.Length > 0 &&
-                        _materialReplacements.HasDirectTextureReplacementTargets(renderer.sharedMaterials))
-                    {
-                        return true;
-                    }
-                }
             }
         }
+
+        if (_textureMutation.HasPendingTargets())
+            return true;
 
         if (_catalog.ReplacementSprites.Count > 0)
         {

@@ -445,15 +445,19 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                     $"Replacement sprite '{Path.GetRelativePath(projectDir, file)}' must be named '<target-name>--<pathId>.<ext>'.");
             }
 
-            var target = ResolveReplacementSpriteTarget(index, alias, targetName, targetPathId);
-            ValidateUniqueRuntimeSpriteNames(index, target);
+            var target = ResolveAndValidateSpriteTarget(index, alias, targetName, targetPathId);
 
             entries.Add(new GlbMeshBundleCompiler.ImportedSpriteAsset
             {
                 Name = target.Name,
                 SourceFilePath = file,
                 Extension = Path.GetExtension(file),
-                StagingName = $"sprite_source__{alias}",
+                // Staging filename carries the clean target name so the Unity-side
+                // template (which strips the "sprite_source__" prefix) recovers
+                // exactly the runtime sprite.name the loader will look up. Using
+                // the alias (target--pathId) would bake the pathId into the bundled
+                // sprite.name and break catalog lookups.
+                StagingName = $"sprite_source__{target.Name}",
             });
         }
 
@@ -717,6 +721,79 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             $"Current target: {target.CanonicalPath ?? $"{target.Collection}/Sprite/{target.Name}--{target.PathId}"}. " +
             $"Conflicts: {string.Join(", ", collisions)}. " +
             "Jiangyu currently resolves live sprite replacements by sprite name at runtime, so ambiguous sprite targets must be rejected until a stronger runtime identity exists.");
+    }
+
+    /// <summary>
+    /// Rejects sprite targets whose backing Texture2D is shared by more than one indexed Sprite.
+    /// Sprite replacement lands via in-place mutation of the sprite's backing Texture2D (see
+    /// docs/research/verified/sprite-replacement.md); an atlas-backed sprite cannot be
+    /// individually replaced without corrupting every other sprite drawn from the same atlas.
+    /// </summary>
+    internal static void ValidateSpriteBackingTextureIsUnique(AssetIndex index, ReplacementSpriteTarget target)
+    {
+        var targetEntry = index.Assets?.FirstOrDefault(entry =>
+            string.Equals(entry.ClassName, "Sprite", StringComparison.Ordinal) &&
+            string.Equals(entry.Name, target.Name, StringComparison.Ordinal) &&
+            entry.PathId == target.PathId);
+
+        if (targetEntry is null)
+            return;
+
+        if (targetEntry.SpriteBackingTexturePathId is null)
+        {
+            throw new InvalidOperationException(
+                $"Replacement sprite target '{target.Alias}' is missing backing-texture information in the asset index. " +
+                "Rebuild the index with 'jiangyu assets index' so the compiler can verify that the sprite is not atlas-backed. " +
+                "Sprite replacement now requires backing-texture identity to reject atlas-backed targets safely.");
+        }
+
+        var backingPathId = targetEntry.SpriteBackingTexturePathId.Value;
+        var backingCollection = targetEntry.SpriteBackingTextureCollection;
+
+        var coTenants = index.Assets?
+            .Where(entry =>
+                string.Equals(entry.ClassName, "Sprite", StringComparison.Ordinal) &&
+                entry.SpriteBackingTexturePathId == backingPathId &&
+                string.Equals(entry.SpriteBackingTextureCollection, backingCollection, StringComparison.Ordinal) &&
+                !(entry.PathId == target.PathId &&
+                  string.Equals(entry.Collection, target.Collection, StringComparison.Ordinal)))
+            .OrderBy(entry => entry.Name, StringComparer.Ordinal)
+            .ThenBy(entry => entry.PathId)
+            .ToList()
+            ?? [];
+
+        if (coTenants.Count == 0)
+            return;
+
+        const int previewCount = 5;
+        var previewNames = coTenants
+            .Take(previewCount)
+            .Select(entry => entry.Name ?? $"pathId={entry.PathId}")
+            .ToArray();
+        var preview = string.Join(", ", previewNames);
+        if (coTenants.Count > previewCount)
+            preview += $", and {coTenants.Count - previewCount} more";
+
+        var backingLabel = !string.IsNullOrWhiteSpace(targetEntry.SpriteBackingTextureName)
+            ? $"{targetEntry.SpriteBackingTextureName} (pathId={backingPathId})"
+            : $"pathId={backingPathId}";
+
+        throw new InvalidOperationException(
+            $"Replacement sprite target '{target.Alias}' is backed by Texture2D '{backingLabel}', which is also the backing texture for {coTenants.Count} other indexed Sprite(s): {preview}. " +
+            $"This texture is a shared atlas, so mutating it to replace '{target.Name}' would corrupt the other sprites. " +
+            "Atlas-backed sprites cannot be individually replaced — only sprites backed by a unique Texture2D can be replaced via in-place mutation.");
+    }
+
+    internal static ReplacementSpriteTarget ResolveAndValidateSpriteTarget(
+        AssetIndex index,
+        string alias,
+        string targetName,
+        long targetPathId)
+    {
+        var target = ResolveReplacementSpriteTarget(index, alias, targetName, targetPathId);
+        ValidateUniqueRuntimeSpriteNames(index, target);
+        ValidateSpriteBackingTextureIsUnique(index, target);
+        return target;
     }
 
     private static void ValidateUniqueRuntimeAudioNames(AssetIndex index, ReplacementAudioTarget target)

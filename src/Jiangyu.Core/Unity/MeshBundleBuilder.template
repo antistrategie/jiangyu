@@ -69,34 +69,54 @@ public static class MeshBundleBuilder
         }
 
         var spriteAssetCount = 0;
-        var spriteSourceGuids = AssetDatabase.FindAssets("t:Texture2D", new[] { "Assets/SpriteSources" });
-        foreach (var guid in spriteSourceGuids)
+        // Decode the source PNG directly into an explicit RGBA32 Texture2D
+        // instead of going through AssetDatabase.LoadAssetAtPath. The importer
+        // path applies format auto-selection that strips the alpha channel for
+        // solid-colour inputs, which then breaks the runtime mutation when the
+        // destination game texture relies on alpha.
+        if (Directory.Exists("Assets/SpriteSources"))
         {
-            var sourceTexturePath = AssetDatabase.GUIDToAssetPath(guid);
-            if (string.IsNullOrEmpty(sourceTexturePath))
-                continue;
+            foreach (var pngFile in Directory.GetFiles("Assets/SpriteSources", "*.*", SearchOption.TopDirectoryOnly))
+            {
+                var ext = Path.GetExtension(pngFile).ToLowerInvariant();
+                if (ext != ".png" && ext != ".jpg" && ext != ".jpeg")
+                    continue;
 
-            var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(sourceTexturePath);
-            if (texture == null)
-                continue;
+                var spriteName = Path.GetFileNameWithoutExtension(pngFile);
+                const string prefix = "sprite_source__";
+                if (spriteName.StartsWith(prefix, StringComparison.Ordinal))
+                    spriteName = spriteName.Substring(prefix.Length);
 
-            var spriteName = Path.GetFileNameWithoutExtension(sourceTexturePath);
-            const string prefix = "sprite_source__";
-            if (spriteName.StartsWith(prefix, StringComparison.Ordinal))
-                spriteName = spriteName.Substring(prefix.Length);
+                var sourceTexture = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: false, linear: false);
+                sourceTexture.name = prefix + spriteName;
+                if (!ImageConversion.LoadImage(sourceTexture, File.ReadAllBytes(pngFile), markNonReadable: false))
+                    throw new InvalidDataException($"Failed to decode sprite source '{pngFile}'");
+                sourceTexture.wrapMode = TextureWrapMode.Clamp;
+                sourceTexture.filterMode = FilterMode.Bilinear;
+                sourceTexture.Apply(updateMipmaps: false, makeNoLongerReadable: false);
 
-            var sprite = Sprite.Create(
-                texture,
-                new Rect(0f, 0f, texture.width, texture.height),
-                new Vector2(0.5f, 0.5f),
-                pixelsPerUnit: 100f);
-            sprite.name = spriteName;
+                var textureAssetPath = $"{generatedDir}/{sourceTexture.name}.asset";
+                AssetDatabase.CreateAsset(sourceTexture, textureAssetPath);
+                AssetImporter.GetAtPath(textureAssetPath).assetBundleName = bundleName;
+                assetPaths.Add(textureAssetPath);
 
-            var assetPath = $"{generatedDir}/{sprite.name}.sprite.asset";
-            AssetDatabase.CreateAsset(sprite, assetPath);
-            AssetImporter.GetAtPath(assetPath).assetBundleName = bundleName;
-            assetPaths.Add(assetPath);
-            spriteAssetCount++;
+                var sprite = Sprite.Create(
+                    sourceTexture,
+                    new Rect(0f, 0f, sourceTexture.width, sourceTexture.height),
+                    new Vector2(0.5f, 0.5f),
+                    pixelsPerUnit: 100f);
+                sprite.name = spriteName;
+
+                // Use plain .asset (matching textures) rather than .sprite.asset.
+                // The .sprite.asset suffix bakes ".sprite" into the runtime
+                // sprite.name, which would break catalog lookups against the
+                // game's live sprite name.
+                var assetPath = $"{generatedDir}/{sprite.name}.asset";
+                AssetDatabase.CreateAsset(sprite, assetPath);
+                AssetImporter.GetAtPath(assetPath).assetBundleName = bundleName;
+                assetPaths.Add(assetPath);
+                spriteAssetCount++;
+            }
         }
 
         var audioAssetCount = 0;

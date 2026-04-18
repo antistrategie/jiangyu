@@ -72,7 +72,7 @@ Example:
 assets/replacements/textures/local_forces_basic_soldier_BaseMap--1234.png
 ```
 
-This replaces the matching `Texture2D` asset when Jiangyu can prove the runtime texture name is unique. Validated end-to-end for textures bound on `SkinnedMeshRenderer.sharedMaterials`; see [`docs/research/verified/texture-replacement.md`](research/verified/texture-replacement.md) for the full scope.
+This replaces the matching `Texture2D` asset when Jiangyu can prove the runtime texture name is unique. At runtime the loader mutates the game's `Texture2D` in place via `Graphics.ConvertTexture` + `Graphics.CopyTexture`, so every consumer — materials, UGUI, UI Toolkit, caches, template references — inherits the new pixels. See [`docs/research/verified/texture-replacement.md`](research/verified/texture-replacement.md) for the full contract.
 
 ## Sprite Replacement Path
 
@@ -88,23 +88,22 @@ Example:
 assets/replacements/sprites/MenaceFontIcons_0--9316.png
 ```
 
-Jiangyu compiles these image files into real `Sprite` assets and the loader scans the following live surfaces for a matching `sprite.name`:
+Sprite replacement piggybacks on texture replacement: every `Sprite` references a
+backing `Texture2D`, so mutating that texture updates the sprite for every
+consumer (UGUI, UI Toolkit, `SpriteRenderer`, cached references) automatically.
 
-- `SpriteRenderer.sprite`
-- `UnityEngine.UI.Image.sprite`
+**Only sprites backed by a unique `Texture2D` can be replaced.** The compiler
+rejects any sprite target whose backing texture backs more than one indexed
+sprite (i.e. a packed atlas); the error names the atlas texture and lists
+co-tenant sprites. This is a principle-7 compile-time check — Jiangyu refuses
+to mutate a shared atlas and silently corrupt unrelated UI elements. Use
+`jiangyu assets search <name> --type Sprite` to find candidates; if the
+resulting compile fails with an atlas error, that sprite is not replaceable in
+the current contract. See [`docs/research/verified/sprite-replacement.md`](research/verified/sprite-replacement.md) for the full contract.
 
-This is separate from `Texture2D` replacement. UI icons should be treated as sprite
-targets, not raw textures.
-
-**Current runtime limit.** This is a scoped direct-reference sweep, not a general
-`Sprite` replacement contract. UI sprites routed through sprite atlases
-(`SpriteAtlas.GetSprite`), pre-resolved packed `Sprite` references baked into prefabs
-at build time, or `ScriptableObject` `Sprite` fields are not yet covered. A first
-in-game smoke test on 2026-04-18 showed a unique `icon_hitpoints` sprite replacement
-that compiled and registered cleanly but produced zero runtime applications — see
-`docs/research/investigations/2026-04-18-sprite-audio-runtime-routing.md`. Expect
-sprite replacement to land only when the target's `sprite.name` is the visible
-`SpriteRenderer`/`Image` reference at apply time.
+**Re-index after upgrading Jiangyu** (`jiangyu assets index`) so the atlas
+check has backing-texture identity to work with. The compiler will tell you if
+the current index is too old.
 
 ## Audio Replacement Path
 
@@ -122,10 +121,11 @@ assets/replacements/audio/sfx_rifle_fire--4321.wav
 
 Jiangyu applies these replacements to matching `AudioSource.clip` references when the runtime clip name is unique.
 
-**Current runtime limit.** This is a scoped direct-reference sweep, not a general
-`AudioClip` replacement contract. UI sounds and other SFX routed through audio
-managers that cache `AudioClip` references and fire them via `PlayOneShot(clip)` do
-not land — `PlayOneShot` uses its argument clip and ignores `AudioSource.clip`. A
-first in-game smoke test on 2026-04-18 swapped `button_click_01` on one
-`AudioSource.clip` without audibly changing UI button clicks. See
-`docs/research/investigations/2026-04-18-sprite-audio-runtime-routing.md`.
+**Current runtime limit.** MENACE caches UI `AudioClip` references outside
+scene-resident `AudioSource.clip` fields — typical audio-manager pattern with
+`PlayOneShot(clip)`, which ignores `AudioSource.clip`. The current sweep over
+`AudioSource.clip` therefore cannot land UI audio. In-place `AudioClip` sample
+mutation would cover the audio-manager case, but is blocked by an
+Il2CppInterop marshalling bug on this MelonLoader + Unity 6 combination that
+needs a hand-written ICall wrapper to work around. Tracked in `TODO.md`
+"Runtime Replacement Strategy — Validated, Ready To Implement".
