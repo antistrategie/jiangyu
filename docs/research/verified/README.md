@@ -17,4 +17,8 @@ just the local index for promoted findings.
 - [EntityProperties](entityproperties-contract.md) — 102-field gameplay-stat support contract nested inside every EntityTemplate
 - [Array element contracts](array-element-contracts.md) — PrefabAttachment, EntityLootEntry, and SkillOnSurfaceDefinition as validated inline embedded types
 
+## Verified runtime paths
+
+- [Texture2D replacement](texture-replacement.md) — convention-first `Texture2D` replacement validated end-to-end on `SkinnedMeshRenderer.sharedMaterials` texture bindings
+
 Each doc lists the investigation notes it draws from.

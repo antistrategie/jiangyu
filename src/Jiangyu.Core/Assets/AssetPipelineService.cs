@@ -226,6 +226,73 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
     }
 
     /// <summary>
+    /// Returns every asset matching the given name and any of the specified class names,
+    /// optionally narrowed to a specific collection and/or pathId. Caller decides how to
+    /// handle zero / one / many matches.
+    /// </summary>
+    public IReadOnlyList<AssetEntry> FindAssets(
+        string assetName,
+        IReadOnlyList<string> classNames,
+        string? collection = null,
+        long? pathId = null)
+    {
+        var index = LoadIndex();
+        if (index?.Assets is null)
+        {
+            return [];
+        }
+
+        return [.. index.Assets.Where(a =>
+            string.Equals(a.Name, assetName, StringComparison.OrdinalIgnoreCase)
+            && classNames.Any(cn => string.Equals(a.ClassName, cn, StringComparison.OrdinalIgnoreCase))
+            && (collection is null || string.Equals(a.Collection, collection, StringComparison.OrdinalIgnoreCase))
+            && (!pathId.HasValue || a.PathId == pathId.Value))];
+    }
+
+    // JIANGYU-CONTRACT: PrefabHierarchyObject is the preferred modder-facing model target.
+    // Both compile-time target resolution and CLI model export collapse a PHO to the single
+    // same-named GameObject via the asset index, then work against that GameObject. Valid for
+    // the current proven export/replacement path; ambiguity is a hard error rather than a guess.
+    /// <summary>
+    /// If <paramref name="target"/> is a PrefabHierarchyObject, returns the single
+    /// same-named GameObject from <paramref name="index"/> that backs it. Otherwise returns
+    /// <paramref name="target"/> unchanged. Throws when the backing GameObject is missing
+    /// or ambiguous.
+    /// </summary>
+    public static AssetEntry ResolveGameObjectBacking(AssetIndex index, AssetEntry target)
+    {
+        if (!string.Equals(target.ClassName, "PrefabHierarchyObject", StringComparison.Ordinal))
+        {
+            return target;
+        }
+
+        var name = target.Name ?? string.Empty;
+        var backing = index.Assets?
+            .Where(entry =>
+                string.Equals(entry.ClassName, "GameObject", StringComparison.Ordinal) &&
+                string.Equals(entry.Name, name, StringComparison.Ordinal))
+            .ToList()
+            ?? [];
+
+        if (backing.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"PrefabHierarchyObject '{name}' has no backing GameObject of the same name in the asset index.");
+        }
+
+        if (backing.Count > 1)
+        {
+            var matches = backing
+                .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/{entry.Name}--{entry.PathId}")
+                .OrderBy(path => path, StringComparer.Ordinal);
+            throw new InvalidOperationException(
+                $"PrefabHierarchyObject '{name}' has multiple backing GameObjects: {string.Join(", ", matches)}");
+        }
+
+        return backing[0];
+    }
+
+    /// <summary>
     /// Loads game data, finds the named asset, and exports a self-contained model package.
     /// Clean export layout:
     ///   {packageDir}/model.gltf          (references textures via standard glTF material channels)

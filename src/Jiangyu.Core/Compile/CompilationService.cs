@@ -559,39 +559,8 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         }
 
         var candidate = candidates[0];
-        if (string.Equals(candidate.ClassName, "GameObject", StringComparison.Ordinal))
-        {
-            return new ReplacementModelTarget(alias, candidate.Name ?? targetName, candidate.PathId, candidate.Collection ?? string.Empty, candidate.CanonicalPath);
-        }
-
-        // JIANGYU-CONTRACT: PrefabHierarchyObject is the preferred modder-facing model target. Compile-time mesh
-        // discovery resolves it back to a single same-named GameObject, then inspects that object through the
-        // AssetRipper-processed game view. This is valid for the current proven export/replacement path and must
-        // fail on ambiguity rather than guess.
-        var backingGameObjects = index.Assets?
-            .Where(entry =>
-                string.Equals(entry.ClassName, "GameObject", StringComparison.Ordinal) &&
-                string.Equals(entry.Name, targetName, StringComparison.Ordinal))
-            .ToList()
-            ?? [];
-
-        if (backingGameObjects.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Replacement target '{alias}' resolves to PrefabHierarchyObject '{candidate.CanonicalPath}', but no matching GameObject named '{targetName}' exists in the asset index.");
-        }
-
-        if (backingGameObjects.Count > 1)
-        {
-            var matches = backingGameObjects
-                .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/{entry.Name}--{entry.PathId}")
-                .OrderBy(path => path, StringComparer.Ordinal);
-            throw new InvalidOperationException(
-                $"Replacement target '{alias}' resolves to PrefabHierarchyObject '{candidate.CanonicalPath}', but the backing GameObject is ambiguous. Matches: {string.Join(", ", matches)}");
-        }
-
-        var backingGameObject = backingGameObjects[0];
-        return new ReplacementModelTarget(alias, backingGameObject.Name ?? targetName, backingGameObject.PathId, backingGameObject.Collection ?? string.Empty, backingGameObject.CanonicalPath);
+        var resolved = AssetPipelineService.ResolveGameObjectBacking(index, candidate);
+        return new ReplacementModelTarget(alias, resolved.Name ?? targetName, resolved.PathId, resolved.Collection ?? string.Empty, resolved.CanonicalPath);
     }
 
     private static ReplacementTextureTarget ResolveReplacementTextureTarget(AssetIndex index, string alias, string targetName, long targetPathId)
@@ -1074,7 +1043,8 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             $"-bundleName {bundleName}",
             $"-bundleOutputPath \"{bundleOutputDir}\"");
 
-        _log.Info("  Invoking Unity...");
+        _log.Info("  Invoking Unity to build bundle...");
+        _log.Info("  (First run can take several minutes while Unity imports the staging project. Subsequent runs are incremental.)");
 
         var process = new Process
         {

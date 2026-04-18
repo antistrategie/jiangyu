@@ -136,11 +136,12 @@ internal class ReplacementCoordinator
                 if (sprite == null || !_catalog.ReplacementSprites.TryGetValue(sprite.name, out var replacementSprite))
                     continue;
 
-                // JIANGYU-CONTRACT: Direct sprite replacement currently resolves live targets by
-                // SpriteRenderer.sprite.name. This is valid for the current proven Sprite replacement
-                // path when the target sprite name is unique at runtime. Compile-time convention-first
-                // replacement must reject ambiguous Sprite targets until Jiangyu has a stronger live
-                // sprite identity.
+                // JIANGYU-CONTRACT: Scoped direct sprite sweep on SpriteRenderer.sprite.name.
+                // Not a general Sprite replacement contract. In-game smoke test (2026-04-18,
+                // icon_hitpoints) found zero matches even with a unique target name, because
+                // live UI sprites are routed through sprite atlases and/or ScriptableObject
+                // references that this sweep does not reach. See
+                // docs/research/investigations/2026-04-18-sprite-audio-runtime-routing.md.
                 spriteRenderer.sprite = replacementSprite;
                 spriteReplacements++;
             }
@@ -156,11 +157,9 @@ internal class ReplacementCoordinator
                 if (sprite == null || !_catalog.ReplacementSprites.TryGetValue(sprite.name, out var replacementSprite))
                     continue;
 
-                // JIANGYU-CONTRACT: Direct sprite replacement currently resolves live targets by
-                // UnityEngine.UI.Image.sprite.name. This is valid for the current proven Sprite
-                // replacement path when the target sprite name is unique at runtime. Compile-time
-                // convention-first replacement must reject ambiguous Sprite targets until Jiangyu
-                // has a stronger live sprite identity.
+                // JIANGYU-CONTRACT: Scoped direct sprite sweep on UnityEngine.UI.Image.sprite.name.
+                // Not a general Sprite replacement contract. See the SpriteRenderer block above and
+                // the 2026-04-18 investigation note for why UI sprites often bypass this surface.
                 image.sprite = replacementSprite;
                 spriteReplacements++;
             }
@@ -180,11 +179,13 @@ internal class ReplacementCoordinator
                 if (clip == null || !_catalog.ReplacementAudioClips.TryGetValue(clip.name, out var replacementClip))
                     continue;
 
-                // JIANGYU-CONTRACT: Direct audio replacement currently resolves live targets by
-                // AudioSource.clip.name. This is valid for the current proven AudioClip replacement path
-                // when the target clip name is unique at runtime. Compile-time convention-first
-                // replacement must reject ambiguous AudioClip targets until Jiangyu has a stronger live
-                // audio identity.
+                // JIANGYU-CONTRACT: Scoped direct audio sweep on AudioSource.clip.name.
+                // Not a general AudioClip replacement contract. In-game smoke test (2026-04-18,
+                // button_click_01) swapped one AudioSource.clip but the UI click was still
+                // audibly unchanged, because MENACE routes UI SFX through an audio manager
+                // that caches AudioClip references outside any scene-resident AudioSource.clip
+                // field. PlayOneShot uses its argument clip, ignoring AudioSource.clip. See
+                // docs/research/investigations/2026-04-18-sprite-audio-runtime-routing.md.
                 audioSource.clip = replacementClip;
                 audioReplacements++;
             }

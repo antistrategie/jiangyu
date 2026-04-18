@@ -58,7 +58,7 @@ If `PROGRESS.md` or `TODO.md` are absent, treat them as optional working docs ra
 - **Shared** (`Jiangyu.Shared`) — small framework-agnostic library for pure logic that must compile in both the real loader and normal SDK/test contexts. Keep this narrow. Use it for code that should not live behind IL2CPP/game reference constraints.
 - **Core** (`Jiangyu.Core`) — shared library. All reusable logic: asset pipeline (index, search, export), compilation orchestration, model cleanup, mesh compilation, inspection services, config, models. No console I/O. Both CLI and future GUI call this.
 - **CLI** (`Jiangyu.Cli`) — .NET CLI tool. Thin frontend over Core: parses commands via `System.CommandLine` 2.0.5, formats console output. Assembly name is `jiangyu`.
-- **Loader** (`Jiangyu.Loader`) — MelonLoader mod. Shared framework installed once. Scans `Mods/` for bundles and patch files, loads via `Il2CppAssetBundleManager`, swaps assets at runtime. Runs in-game.
+- **Loader** (`Jiangyu.Loader`) — MelonLoader mod. Shared framework installed once. Scans `Mods/` for bundles and patch files, loads via `Il2CppAssetBundleManager`, swaps assets at runtime. Runs in-game. The shipped loader is **always a single DLL** — `Jiangyu.Shared` and any managed dependencies that MelonLoader's net6 runtime does not already provide (currently `System.Text.Json` + `System.Text.Encodings.Web`) must be merged in (ILRepack or equivalent) before distribution. Never ship loose sidecar DLLs next to `Jiangyu.Loader.dll`; modders drop one file into `Mods/`.
 
 If logic must compile in both the real IL2CPP/game-reference loader context and a normal SDK/test context, put it in `Jiangyu.Shared` instead of linking the same source file into multiple projects.
 
@@ -88,6 +88,8 @@ Loader-side mod discovery currently works in two phases: discover/validate manif
 - Bundle loading uses `Il2CppAssetBundleManager.LoadFromMemory()` — proton-safe (managed I/O reads bytes, avoids Wine path translation issues with `LoadFromFile`).
 - The game uses Unity 6 (6000.0.63f1). Bundles must be built with the matching editor version.
 - The currently proven working 3D path is character mesh/material replacement through Unity-built AssetBundles plus Jiangyu-side normalisation against MENACE's native asset contract.
+- Convention-first `Texture2D` replacement is also validated end-to-end on the `SkinnedMeshRenderer.sharedMaterials` surface. See `docs/research/verified/texture-replacement.md` for the scoped contract and `docs/research/investigations/2026-04-18-sprite-audio-runtime-routing.md` for the parallel sprite and audio results that remain unverified.
+- Convention-first `Sprite` and `AudioClip` replacement compiles, bundles, loads, and registers correctly, but the loader's runtime-apply scanner only covers direct `SpriteRenderer.sprite` / `Image.sprite` / `AudioSource.clip` references — which is not how MENACE routes UI icons (sprite atlases / packed prefab references) or UI SFX (audio manager + `PlayOneShot`). Do not claim sprite/audio as proven paths in user-facing docs or production code without first resolving the research items in `TODO.md` under "Sprite and Audio Runtime Routing". Do not add speculative continuous-rescan or atlas-patching code without investigation-led evidence.
 - Raw runtime GLB skin construction and direct native asset patching were investigated and are not the active architecture.
 
 ## Config
@@ -117,6 +119,7 @@ Source project manifests should stay ergonomic for modders. Compiled manifests a
   - audio: `assets/replacements/audio/<target-name>--<pathId>.<ext>`
   where `<target-name>--<pathId>` is the short Jiangyu replacement alias surfaced by `assets search`. Model mesh names inside the file must match the target mesh contract. Explicit manifest replacement mappings are not part of the primary project shape anymore.
 - For model-replacement UX, prefer `PrefabHierarchyObject` as the modder-facing target when both `PrefabHierarchyObject` and `GameObject` exist for the same effective model. Treat `GameObject` as the lower-level/internal identity used for inspection and runtime resolution unless there is no prefab-hierarchy view.
+- PHO→GameObject collapse is shared infrastructure: `AssetPipelineService.ResolveGameObjectBacking(index, target)` takes any index entry and, if it is a `PrefabHierarchyObject`, returns its single same-named `GameObject`. Both compile-time target resolution (`CompilationService.ResolveReplacementModelTarget`) and CLI model export (`assets export model`) route through this helper, so a PHO pathId is accepted anywhere a model target is expected. Missing/ambiguous backing `GameObject`s are hard errors, not heuristics.
 - `assets/additions/` is for additional bundled assets preserved under their own names. It is created only when a mod needs it.
 - `depends` — loader currently enforces required mod presence only. Matching is against manifest `name` for now (provisional until Jiangyu has a stable mod `id`). Version text such as `>= 1.0.0` is preserved in the manifest but not enforced yet.
 - `templates/` and `localisation/` remain reserved/planned areas. Template patching and localisation patching are not current modder-facing contracts yet.
@@ -127,6 +130,7 @@ Source project manifests should stay ergonomic for modders. Compiled manifests a
 - `jiangyu assets index` builds the searchable catalogue Jiangyu uses for discovery.
 - `jiangyu assets search` is the normal way to find replacement targets and their suggested paths.
 - `jiangyu assets export model` and `jiangyu assets inspect ...` cover export and advanced inspection. Use CLI help for the current command surface.
+- `assets export model` takes `--path-id` (and optional `--collection`) to disambiguate duplicate names. Accepts `GameObject`, `Mesh`, or `PrefabHierarchyObject` pathIds; PHOs are collapsed to their backing `GameObject` before extraction. Ambiguity is surfaced to the user with a candidate list, never silently resolved.
 
 ### Model package layout
 

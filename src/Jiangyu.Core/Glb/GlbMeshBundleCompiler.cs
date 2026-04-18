@@ -1607,7 +1607,7 @@ public static class GlbMeshBundleCompiler
         }
 
         throw new InvalidOperationException(
-            $"Unity mesh build failed (exit code {process.ExitCode}). {errorOutput}{Environment.NewLine}{logTail}".Trim());
+            $"Unity mesh build failed (exit code {process.ExitCode}). Log: {logFile}{Environment.NewLine}{errorOutput}{Environment.NewLine}{logTail}".Trim());
     }
 
     private static void WriteMeshContracts(string path, IReadOnlyList<MeshBuildContract> contracts)

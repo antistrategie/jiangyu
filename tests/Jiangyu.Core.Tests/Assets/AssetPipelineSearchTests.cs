@@ -193,4 +193,102 @@ public class AssetPipelineSearchTests : IDisposable
         Assert.Equal("level0", go.Collection);
         Assert.Equal("level0/GameObject/Soldier_Body--101", go.CanonicalPath);
     }
+
+    [Fact]
+    public void FindAssets_NameAndClass_ReturnsAllCandidates()
+    {
+        var results = _service.FindAssets("Soldier_Body", new[] { "GameObject", "Mesh" });
+
+        Assert.Equal(2, results.Count);
+        Assert.Contains(results, r => r.PathId == 100 && r.ClassName == "Mesh");
+        Assert.Contains(results, r => r.PathId == 101 && r.ClassName == "GameObject");
+    }
+
+    [Fact]
+    public void FindAssets_WithPathId_NarrowsToOne()
+    {
+        var results = _service.FindAssets("Soldier_Body", new[] { "GameObject", "Mesh" }, pathId: 101);
+
+        Assert.Single(results);
+        Assert.Equal("GameObject", results[0].ClassName);
+    }
+
+    [Fact]
+    public void FindAssets_WithCollection_FiltersByCollection()
+    {
+        var results = _service.FindAssets("Soldier_Body", new[] { "GameObject", "Mesh" }, collection: "level0");
+
+        Assert.Equal(2, results.Count);
+        Assert.All(results, r => Assert.Equal("level0", r.Collection));
+    }
+
+    [Fact]
+    public void FindAssets_UnknownPathId_ReturnsEmpty()
+    {
+        var results = _service.FindAssets("Soldier_Body", new[] { "GameObject", "Mesh" }, pathId: 9999);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void ResolveGameObjectBacking_GameObject_ReturnsItself()
+    {
+        var index = _service.LoadIndex();
+        var go = index!.Assets!.Single(a => a.PathId == 101);
+
+        var resolved = AssetPipelineService.ResolveGameObjectBacking(index, go);
+
+        Assert.Same(go, resolved);
+    }
+
+    [Fact]
+    public void ResolveGameObjectBacking_PrefabHierarchyObject_ResolvesToSameNamedGameObject()
+    {
+        var index = new AssetIndex
+        {
+            Assets =
+            [
+                new AssetEntry { Name = "el.local_forces_basic_soldier", ClassName = "PrefabHierarchyObject", PathId = 519, Collection = "level0" },
+                new AssetEntry { Name = "el.local_forces_basic_soldier", ClassName = "GameObject", PathId = 42, Collection = "level0" },
+            ],
+        };
+
+        var pho = index.Assets![0];
+        var resolved = AssetPipelineService.ResolveGameObjectBacking(index, pho);
+
+        Assert.Equal("GameObject", resolved.ClassName);
+        Assert.Equal(42, resolved.PathId);
+    }
+
+    [Fact]
+    public void ResolveGameObjectBacking_NoBackingGameObject_Throws()
+    {
+        var index = new AssetIndex
+        {
+            Assets =
+            [
+                new AssetEntry { Name = "lonely_pho", ClassName = "PrefabHierarchyObject", PathId = 1, Collection = "level0" },
+            ],
+        };
+
+        Assert.Throws<InvalidOperationException>(
+            () => AssetPipelineService.ResolveGameObjectBacking(index, index.Assets![0]));
+    }
+
+    [Fact]
+    public void ResolveGameObjectBacking_AmbiguousBacking_Throws()
+    {
+        var index = new AssetIndex
+        {
+            Assets =
+            [
+                new AssetEntry { Name = "duplicate", ClassName = "PrefabHierarchyObject", PathId = 1, Collection = "level0" },
+                new AssetEntry { Name = "duplicate", ClassName = "GameObject", PathId = 2, Collection = "level0" },
+                new AssetEntry { Name = "duplicate", ClassName = "GameObject", PathId = 3, Collection = "level1" },
+            ],
+        };
+
+        Assert.Throws<InvalidOperationException>(
+            () => AssetPipelineService.ResolveGameObjectBacking(index, index.Assets![0]));
+    }
 }

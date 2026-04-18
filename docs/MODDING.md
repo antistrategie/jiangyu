@@ -72,7 +72,7 @@ Example:
 assets/replacements/textures/local_forces_basic_soldier_BaseMap--1234.png
 ```
 
-This replaces the matching `Texture2D` asset when Jiangyu can prove the runtime texture name is unique.
+This replaces the matching `Texture2D` asset when Jiangyu can prove the runtime texture name is unique. Validated end-to-end for textures bound on `SkinnedMeshRenderer.sharedMaterials`; see [`docs/research/verified/texture-replacement.md`](research/verified/texture-replacement.md) for the full scope.
 
 ## Sprite Replacement Path
 
@@ -88,13 +88,23 @@ Example:
 assets/replacements/sprites/MenaceFontIcons_0--9316.png
 ```
 
-Jiangyu compiles these image files into real `Sprite` assets and applies them to the current supported sprite targets:
+Jiangyu compiles these image files into real `Sprite` assets and the loader scans the following live surfaces for a matching `sprite.name`:
 
 - `SpriteRenderer.sprite`
 - `UnityEngine.UI.Image.sprite`
 
 This is separate from `Texture2D` replacement. UI icons should be treated as sprite
 targets, not raw textures.
+
+**Current runtime limit.** This is a scoped direct-reference sweep, not a general
+`Sprite` replacement contract. UI sprites routed through sprite atlases
+(`SpriteAtlas.GetSprite`), pre-resolved packed `Sprite` references baked into prefabs
+at build time, or `ScriptableObject` `Sprite` fields are not yet covered. A first
+in-game smoke test on 2026-04-18 showed a unique `icon_hitpoints` sprite replacement
+that compiled and registered cleanly but produced zero runtime applications — see
+`docs/research/investigations/2026-04-18-sprite-audio-runtime-routing.md`. Expect
+sprite replacement to land only when the target's `sprite.name` is the visible
+`SpriteRenderer`/`Image` reference at apply time.
 
 ## Audio Replacement Path
 
@@ -111,3 +121,11 @@ assets/replacements/audio/sfx_rifle_fire--4321.wav
 ```
 
 Jiangyu applies these replacements to matching `AudioSource.clip` references when the runtime clip name is unique.
+
+**Current runtime limit.** This is a scoped direct-reference sweep, not a general
+`AudioClip` replacement contract. UI sounds and other SFX routed through audio
+managers that cache `AudioClip` references and fire them via `PlayOneShot(clip)` do
+not land — `PlayOneShot` uses its argument clip and ignores `AudioSource.clip`. A
+first in-game smoke test on 2026-04-18 swapped `button_click_01` on one
+`AudioSource.clip` without audibly changing UI button clicks. See
+`docs/research/investigations/2026-04-18-sprite-audio-runtime-routing.md`.

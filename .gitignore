@@ -14,6 +14,7 @@ obj/
 
 ## Build output
 publish/
+dist/
 .jiangyu/
 
 ## Test / coverage output
