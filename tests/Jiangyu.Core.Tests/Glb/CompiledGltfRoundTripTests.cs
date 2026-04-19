@@ -74,6 +74,8 @@ public sealed class CompiledGltfRoundTripTests : IDisposable
                 {
                     SourceFilePath = gltfPath,
                     BundleMeshName = "body_mesh",
+                    TargetMeshName = "body_mesh",
+                    TargetRendererPath = "body_mesh",
                     HasExplicitMeshName = true,
                 },
             ]);

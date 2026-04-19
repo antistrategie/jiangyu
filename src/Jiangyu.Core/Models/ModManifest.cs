@@ -29,7 +29,7 @@ public sealed class ModManifest
     public List<string>? Depends { get; set; }
 
     /// <summary>
-    /// Mesh replacement mappings. Key = game mesh name to replace.
+    /// Mesh replacement mappings. Key = target skinned-renderer path under the entity root.
     /// </summary>
     [JsonPropertyName("meshes")]
     public Dictionary<string, MeshManifestEntry>? Meshes { get; set; }
@@ -56,6 +56,18 @@ public sealed class CompiledMeshMetadata
 
     [JsonPropertyName("materials")]
     public List<CompiledMaterialBinding>? Materials { get; set; }
+
+    [JsonPropertyName("targetRendererPath")]
+    public string? TargetRendererPath { get; set; }
+
+    [JsonPropertyName("targetMeshName")]
+    public string? TargetMeshName { get; set; }
+
+    [JsonPropertyName("targetEntityName")]
+    public string? TargetEntityName { get; set; }
+
+    [JsonPropertyName("targetEntityPathId")]
+    public long? TargetEntityPathId { get; set; }
 }
 
 public sealed class CompiledMaterialBinding

@@ -1,113 +1,102 @@
+using Il2CppInterop.Runtime;
+using MelonLoader;
 using UnityEngine;
 
 namespace Jiangyu.Loader.Replacements;
 
+/// <summary>
+/// Applies compiled per-material texture bindings by mutating the game's existing
+/// material textures in place, rather than cloning <see cref="Material"/> and
+/// swapping <c>sharedMaterials</c>. Cloning via <c>Object.Instantiate</c> captures
+/// shader-keyword state at clone time, which mismatches rendering when the clone
+/// was created in one scene and consumed in another (observed as pink vehicles
+/// after opening the squad viewer then entering a mission). Mutating the texture
+/// content that the game material already references preserves every shader
+/// variant the game's own material setup established.
+/// </summary>
 internal sealed class MaterialReplacementService
 {
     private readonly Dictionary<string, Texture2D> _replacementTextures;
-    private readonly Dictionary<string, Material[]> _materialCache = new(StringComparer.Ordinal);
-    private readonly List<UnityEngine.Object> _pinned;
+    private readonly HashSet<int> _mutatedInstanceIds = new();
+    private readonly HashSet<int> _failedInstanceIds = new();
 
     public bool HasReplacementTextures => _replacementTextures.Count > 0;
 
-    public MaterialReplacementService(Dictionary<string, Texture2D> replacementTextures, List<UnityEngine.Object> pinned)
+    public MaterialReplacementService(Dictionary<string, Texture2D> replacementTextures)
     {
         _replacementTextures = replacementTextures;
-        _pinned = pinned;
     }
 
-    public Material[] GetOrCreateReplacementMaterials(Material[] sourceMaterials, CompiledMaterialBindingRecord[] materialBindings)
+    public void ApplyBindings(
+        MelonLogger.Instance log,
+        Material[] sourceMaterials,
+        CompiledMaterialBindingRecord[] materialBindings)
     {
-        if (sourceMaterials == null || sourceMaterials.Length == 0 || materialBindings == null || materialBindings.Length == 0)
-            return sourceMaterials;
+        if (sourceMaterials == null || sourceMaterials.Length == 0)
+            return;
+        if (materialBindings == null || materialBindings.Length == 0)
+            return;
 
-        var bindingsBySlot = materialBindings
-            .GroupBy(binding => binding.Slot)
-            .ToDictionary(group => group.Key, group => group.First());
-
-        var keyParts = new List<string> { sourceMaterials.Length.ToString() };
-        foreach (var binding in materialBindings.OrderBy(binding => binding.Slot))
+        foreach (var binding in materialBindings)
         {
-            keyParts.Add(binding.Slot.ToString());
-            keyParts.Add(binding.Name ?? string.Empty);
-            foreach (var texture in binding.Textures.OrderBy(kvp => kvp.Key, StringComparer.Ordinal))
-            {
-                keyParts.Add(texture.Key);
-                keyParts.Add(texture.Value);
-            }
-        }
+            if (binding == null || binding.Textures == null || binding.Textures.Count == 0)
+                continue;
+            if (binding.Slot < 0 || binding.Slot >= sourceMaterials.Length)
+                continue;
 
-        for (int i = 0; i < sourceMaterials.Length; i++)
-        {
-            var material = sourceMaterials[i];
-            keyParts.Add(material != null ? material.GetInstanceID().ToString() : "null");
-            keyParts.Add(GetTextureName(material, "_BaseColorMap"));
-            keyParts.Add(GetTextureName(material, "_MaskMap"));
-            keyParts.Add(GetTextureName(material, "_NormalMap"));
-            keyParts.Add(GetTextureName(material, "_Effect_Map"));
-        }
-
-        var cacheKey = string.Join("|", keyParts);
-        if (_materialCache.TryGetValue(cacheKey, out var cached))
-            return cached;
-
-        var clones = new Material[sourceMaterials.Length];
-        for (int i = 0; i < sourceMaterials.Length; i++)
-        {
-            var sourceMaterial = sourceMaterials[i];
+            var sourceMaterial = sourceMaterials[binding.Slot];
             if (sourceMaterial == null)
                 continue;
 
-            if (!bindingsBySlot.TryGetValue(i, out var binding) || binding.Textures == null || binding.Textures.Count == 0)
-            {
-                clones[i] = sourceMaterial;
-                continue;
-            }
-
-            Material clone = null;
             foreach (var texture in binding.Textures)
             {
-                if (!TryApplyReplacementTexture(ref clone, sourceMaterial, texture.Key, texture.Value, binding.Name))
-                    continue;
+                ApplyPropertyBinding(log, sourceMaterial, binding.Name, texture.Key, texture.Value);
             }
-
-            clones[i] = clone ?? sourceMaterial;
         }
-
-        _materialCache[cacheKey] = clones;
-        return clones;
     }
 
-    private bool TryApplyReplacementTexture(ref Material clone, Material sourceMaterial, string propertyName, string replacementTextureName, string materialName)
+    private void ApplyPropertyBinding(
+        MelonLogger.Instance log,
+        Material sourceMaterial,
+        string materialName,
+        string propertyName,
+        string replacementTextureName)
     {
-        if (sourceMaterial == null ||
-            string.IsNullOrWhiteSpace(propertyName) ||
+        if (string.IsNullOrWhiteSpace(propertyName) ||
             string.IsNullOrWhiteSpace(replacementTextureName) ||
-            !sourceMaterial.HasProperty(propertyName) ||
-            !_replacementTextures.TryGetValue(replacementTextureName, out var replacementTexture))
+            !sourceMaterial.HasProperty(propertyName))
         {
-            return false;
+            return;
         }
 
-        clone ??= CreateMaterialClone(sourceMaterial, materialName);
-        clone.SetTexture(propertyName, replacementTexture);
-        return true;
-    }
+        if (!_replacementTextures.TryGetValue(replacementTextureName, out var replacement) || replacement == null)
+            return;
 
-    private Material CreateMaterialClone(Material sourceMaterial, string materialName)
-    {
-        var clone = UnityEngine.Object.Instantiate(sourceMaterial);
-        var bindingLabel = string.IsNullOrWhiteSpace(materialName) ? sourceMaterial.name : materialName;
-        clone.name = $"{sourceMaterial.name} [jiangyu:{bindingLabel}]";
-        _pinned.Add(clone);
-        return clone;
-    }
+        var destinationTexture = sourceMaterial.GetTexture(propertyName);
+        var destination = destinationTexture?.TryCast<Texture2D>();
+        if (destination == null)
+        {
+            log.Warning(
+                $"  [DIAG] material '{materialName ?? sourceMaterial.name}' has no Texture2D at property '{propertyName}' to mutate; cannot apply replacement '{replacementTextureName}'.");
+            return;
+        }
 
-    private static string GetTextureName(Material material, string propertyName)
-    {
-        if (material == null || !material.HasProperty(propertyName))
-            return string.Empty;
+        if (destination.GetInstanceID() == replacement.GetInstanceID())
+            return;
 
-        return material.GetTexture(propertyName)?.name ?? string.Empty;
+        var instanceId = destination.GetInstanceID();
+        if (_mutatedInstanceIds.Contains(instanceId) || _failedInstanceIds.Contains(instanceId))
+            return;
+
+        if (TextureMutationHelpers.MutateInPlace(replacement, destination, log))
+        {
+            _mutatedInstanceIds.Add(instanceId);
+            log.Msg(
+                $"  Bound replacement '{replacementTextureName}' -> '{destination.name}' on material '{materialName ?? sourceMaterial.name}' property '{propertyName}' ({destination.width}x{destination.height}, {destination.format})");
+        }
+        else
+        {
+            _failedInstanceIds.Add(instanceId);
+        }
     }
 }

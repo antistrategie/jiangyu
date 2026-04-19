@@ -1,4 +1,6 @@
 using System.Numerics;
+using System.Text.Json.Nodes;
+using Jiangyu.Core.Assets;
 using Jiangyu.Core.Glb;
 using SharpGLTF.Geometry;
 using SharpGLTF.Geometry.VertexTypes;
@@ -127,6 +129,97 @@ public class ModelCleanupSceneTests : IDisposable
                 Assert.Equal(1f, scale.Z);
             }
         }
+    }
+
+    [Fact]
+    public void WeightedMeshWithoutSkin_RecoveryAddsSkin()
+    {
+        var glbPath = CreateWeightedMeshWithoutSkinModel();
+
+        var cleanScene = ModelCleanupService.BuildCleanScene(glbPath);
+        var cleanModel = cleanScene.ToGltf2();
+        Assert.Empty(cleanModel.LogicalSkins);
+
+        var recovered = AssetPipelineService.FindMissingSkinBindings(cleanModel);
+        Assert.NotEmpty(recovered);
+        var assignments = AssetPipelineService.CreateRecoveredSkinAssignments(cleanModel, recovered);
+        Assert.NotEmpty(assignments);
+        Assert.NotEmpty(cleanModel.LogicalSkins);
+
+        var gltfPath = Path.Combine(_tempDir, "recovered_skin_test.gltf");
+        cleanModel.SaveGLTF(gltfPath);
+        AssetPipelineService.ApplyRecoveredSkinAssignmentsToGltf(gltfPath, assignments);
+
+        var root = JsonNode.Parse(File.ReadAllText(gltfPath))!.AsObject();
+        Assert.True((root["skins"] as JsonArray)?.Count > 0);
+        Assert.Contains((JsonArray)root["skins"]!, skin => skin is JsonObject obj && obj["inverseBindMatrices"] is not null);
+        var nodes = (JsonArray)root["nodes"]!;
+        Assert.Contains(nodes, node => node is JsonObject obj && obj["skin"] is not null);
+    }
+
+    [Fact]
+    public void MissingSkinRecovery_UsesSourceBoneOrderWhenProvided()
+    {
+        var glbPath = CreateWeightedMeshWithoutSkinModel();
+
+        var cleanScene = ModelCleanupService.BuildCleanScene(glbPath);
+        var cleanModel = cleanScene.ToGltf2();
+        string RelativePath(Node node)
+        {
+            var parts = new List<string>();
+            var current = node;
+            while (current.VisualParent is not null)
+            {
+                parts.Add(current.Name ?? string.Empty);
+                current = current.VisualParent;
+            }
+
+            parts.Reverse();
+            return string.Join("/", parts);
+        }
+
+        var meshNodePath = RelativePath(cleanModel.LogicalNodes.Single(n => n.Mesh?.Name == "weighted_no_skin"));
+        var sourceBindings = new[]
+        {
+            new AssetPipelineService.SourceSkinBinding(
+                "weighted_no_skin",
+                meshNodePath,
+                [
+                    RelativePath(cleanModel.LogicalNodes.Single(n => n.Name == "bone2")),
+                    RelativePath(cleanModel.LogicalNodes.Single(n => n.Name == "root")),
+                    RelativePath(cleanModel.LogicalNodes.Single(n => n.Name == "bone0")),
+                ])
+        };
+
+        var recovered = AssetPipelineService.FindMissingSkinBindings(cleanModel, sourceBindings);
+        Assert.NotEmpty(recovered);
+
+        var first = recovered[0];
+        Assert.Equal(3, first.JointNodeIndices.Length);
+        var names = first.JointNodeIndices
+            .Select(index => cleanModel.LogicalNodes[index].Name)
+            .ToArray();
+
+        Assert.Equal(["bone2", "root", "bone0"], names);
+    }
+
+    [Fact]
+    public void Schema2SkinBinding_AllowsBranchingJointSet()
+    {
+        var glbPath = CreateWeightedMeshWithoutSkinModel();
+        var model = ModelRoot.Load(glbPath);
+
+        var meshNode = model.LogicalNodes.Single(n => n.Name == "WeightedMeshNode");
+        var skeletonRoot = model.LogicalNodes.Single(n => n.Name == "root");
+        var joints = new List<Node> { skeletonRoot };
+        joints.AddRange(EnumerateNodesDepthFirst(skeletonRoot).Where(n => n.LogicalIndex != skeletonRoot.LogicalIndex).Take(12));
+
+        var skin = model.CreateSkin();
+        skin.BindJoints(joints.ToArray());
+        meshNode.Skin = skin;
+
+        Assert.True(model.LogicalSkins.Count > 0);
+        Assert.NotNull(meshNode.Skin);
     }
 
     // -- Fixture builders --
@@ -267,6 +360,60 @@ public class ModelCleanupSceneTests : IDisposable
         return path;
     }
 
+    private string CreateWeightedMeshWithoutSkinModel()
+    {
+        var model = ModelRoot.CreateModel();
+        var modelScene = model.UseScene("default");
+
+        var root = modelScene.CreateNode("PrefabRoot");
+        var meshParent = root.CreateNode("MeshParent");
+        var skeletonRoot = meshParent.CreateNode("root");
+        var bone0 = skeletonRoot.CreateNode("bone0");
+        var bone1 = bone0.CreateNode("bone1");
+        var bone2 = bone1.CreateNode("bone2");
+
+        bone0.LocalTransform = new AffineTransform(Vector3.One, Quaternion.Identity, new Vector3(0, 1, 0));
+        bone1.LocalTransform = new AffineTransform(Vector3.One, Quaternion.Identity, new Vector3(0, 0.5f, 0));
+        bone2.LocalTransform = new AffineTransform(Vector3.One, Quaternion.Identity, new Vector3(0, 0.3f, 0));
+
+        var mesh = model.CreateMesh("weighted_no_skin");
+        var prim = mesh.CreatePrimitive();
+        prim.WithVertexAccessor("POSITION", new[]
+        {
+            new Vector3(0, 0, 0),
+            new Vector3(1, 0, 0),
+            new Vector3(0, 1, 0),
+        });
+        prim.WithVertexAccessor("NORMAL", new[]
+        {
+            Vector3.UnitZ, Vector3.UnitZ, Vector3.UnitZ,
+        });
+        prim.WithVertexAccessor("TEXCOORD_0", new[]
+        {
+            Vector2.Zero, Vector2.UnitX, Vector2.UnitY,
+        });
+        prim.WithVertexAccessor("JOINTS_0", new[]
+        {
+            new Vector4(0, 1, 2, 0),
+            new Vector4(1, 2, 0, 0),
+            new Vector4(2, 1, 0, 0),
+        });
+        prim.WithVertexAccessor("WEIGHTS_0", new[]
+        {
+            new Vector4(0.6f, 0.3f, 0.1f, 0f),
+            new Vector4(0.5f, 0.5f, 0f, 0f),
+            new Vector4(0.7f, 0.3f, 0f, 0f),
+        });
+        prim.WithIndicesAccessor(SharpGLTF.Schema2.PrimitiveType.TRIANGLES, [0, 1, 2]);
+
+        var meshNode = meshParent.CreateNode("WeightedMeshNode");
+        meshNode.Mesh = mesh;
+
+        var path = Path.Combine(_tempDir, "weighted_no_skin.glb");
+        model.SaveGLB(path);
+        return path;
+    }
+
     private static MeshBuilder<VertexPositionNormal, VertexTexture1, VertexEmpty> BuildTriangleMesh(
         string name, Vector3 scale)
     {
@@ -280,5 +427,17 @@ public class ModelCleanupSceneTests : IDisposable
             (new VertexPositionNormal(Vector3.UnitY * scale, Vector3.UnitY), new VertexTexture1(Vector2.UnitY), default));
 
         return mesh;
+    }
+
+    private static IEnumerable<Node> EnumerateNodesDepthFirst(Node root)
+    {
+        yield return root;
+        foreach (var child in root.VisualChildren)
+        {
+            foreach (var descendant in EnumerateNodesDepthFirst(child))
+            {
+                yield return descendant;
+            }
+        }
     }
 }

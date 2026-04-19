@@ -18,6 +18,9 @@ internal readonly record struct ReplacementModelTarget(string Alias, string Name
 internal readonly record struct ReplacementTextureTarget(string Alias, string Name, long PathId, string Collection, string? CanonicalPath);
 internal readonly record struct ReplacementSpriteTarget(string Alias, string Name, long PathId, string Collection, string? CanonicalPath);
 internal readonly record struct ReplacementAudioTarget(string Alias, string Name, long PathId, string Collection, string? CanonicalPath);
+internal readonly record struct ResolvedReplacementMeshName(string TargetMeshName, string SourceMeshName);
+internal readonly record struct ResolvedReplacementRendererTarget(string TargetRendererPath, string TargetMeshName, string SourceSelector, float TargetMeshMaxHalfExtent);
+internal readonly record struct ReplacementMeshPathCandidate(string PathSelector, string MatchPath);
 
 /// <summary>
 /// Input to <see cref="CompilationService.CompileAsync"/>.
@@ -49,6 +52,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 {
     private const string AssetIndexFileName = "asset-index.json";
     private const string BindPoseReferenceManifestFileName = "reference-manifest.json";
+    private const string MeshDiagnosticsEnvVar = "JIANGYU_MESH_DISCOVERY_DIAGNOSTICS";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private readonly ILogSink _log = log;
     private readonly IProgressSink _progress = progress;
@@ -123,7 +127,8 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             var bundleOutputPath = Path.Combine(unityProjectDir, "AssetBundles", bundleName);
             Directory.CreateDirectory(Path.GetDirectoryName(bundleOutputPath)!);
             var targetMeshNamesByBundleMesh = replacementEntries
-                .ToDictionary(entry => entry.BundleMeshName, entry => entry.BundleMeshName, StringComparer.Ordinal);
+                .Where(entry => !entry.SuppressMeshContract)
+                .ToDictionary(entry => entry.BundleMeshName, entry => entry.TargetMeshName, StringComparer.Ordinal);
 
             try
             {
@@ -146,20 +151,24 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                     if (!buildResult.MeshBoneNames.TryGetValue(bundleMeshName, out var boneNames))
                         continue;
 
-                    compiledManifest.Meshes[bundleMeshName] = new MeshManifestEntry
+                    compiledManifest.Meshes[entry.TargetRendererPath] = new MeshManifestEntry
                     {
                         Source = entry.SourceReference ?? bundleMeshName,
                         Compiled = new CompiledMeshMetadata
                         {
                             BoneNames = boneNames,
                             Materials = buildResult.MeshMaterialBindings.GetValueOrDefault(bundleMeshName),
+                            TargetRendererPath = entry.TargetRendererPath,
+                            TargetMeshName = entry.TargetMeshName,
+                            TargetEntityName = entry.TargetEntityName,
+                            TargetEntityPathId = entry.TargetEntityPathId,
                         }
                     };
                 }
             }
             catch (Exception ex)
             {
-                return Fail($"Direct mesh replacement pipeline failed: {ex.Message}");
+                return Fail($"Direct mesh replacement pipeline failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
             }
         }
         else
@@ -288,58 +297,60 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
             var file = modelFiles[0];
             var bindPoseReferencePath = EnsureBindPoseReferenceExport(projectDir, target, assetPipeline);
-            var providedMeshNames = DiscoverReplacementMeshNames(file);
-            var expectedMeshNames = AssetInspectionService.GetSkinnedMeshNamesForIndexedObject(gameDataPath, target.Collection, target.PathId);
-            if (expectedMeshNames.Count == 0)
+            var providedMeshCandidates = DiscoverReplacementMeshPathCandidates(file);
+            var expectedTargets = AssetInspectionService.GetSkinnedMeshTargetsForIndexedObject(gameDataPath, target.Collection, target.PathId);
+            if (expectedTargets.Count == 0)
                 throw new InvalidOperationException(
-                    $"Replacement target '{targetAlias}' [{target.CanonicalPath ?? $"{target.Collection}:{target.PathId}"}] has no skinned mesh names to replace.");
+                    $"Replacement target '{targetAlias}' [{target.CanonicalPath ?? $"{target.Collection}:{target.PathId}"}] has no skinned mesh renderer targets to replace.");
+            var emitMeshDiscoveryDiagnostics = IsMeshDiscoveryDiagnosticsEnabled();
+            var ambiguousRuntimeMeshNames = GetAmbiguousRuntimeMeshNames(
+                index,
+                [.. expectedTargets
+                    .Select(x => x.MeshName)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Distinct(StringComparer.Ordinal)]);
 
-            ValidateUniqueRuntimeMeshNames(index, target, expectedMeshNames);
-            ValidateReplacementMeshPrimitiveContract(file, bindPoseReferencePath, expectedMeshNames);
-
-            var unexpectedMeshNames = providedMeshNames
-                .Where(name => !expectedMeshNames.Contains(name, StringComparer.Ordinal))
-                .ToArray();
-            if (unexpectedMeshNames.Length > 0)
+            var resolvedTargets = ResolveReplacementRendererTargets(expectedTargets, providedMeshCandidates, out var missingTargetPaths);
+            if (resolvedTargets.Count == 0)
             {
                 throw new InvalidOperationException(
-                    $"Replacement model '{Path.GetRelativePath(projectDir, file)}' contains mesh names that do not belong to target '{targetAlias}': " +
-                    $"{string.Join(", ", unexpectedMeshNames.OrderBy(name => name, StringComparer.Ordinal))}. " +
-                    $"Expected: {string.Join(", ", expectedMeshNames)}");
+                    $"Replacement model '{Path.GetRelativePath(projectDir, file)}' does not contain any renderer paths that match target '{targetAlias}'. " +
+                    $"Expected at least one of: {FormatNameListPreview(expectedTargets.Select(x => x.RendererPath), 16)}");
             }
 
-            var missingMeshNames = expectedMeshNames
-                .Where(name => !providedMeshNames.Contains(name, StringComparer.Ordinal))
-                .ToArray();
-            if (missingMeshNames.Length > 0)
+            ValidateReplacementMeshPrimitiveContract(file, bindPoseReferencePath, resolvedTargets);
+
+            if (emitMeshDiscoveryDiagnostics && missingTargetPaths.Length > 0)
             {
-                foreach (var warning in BuildIncompleteLodWarnings(targetAlias, expectedMeshNames, providedMeshNames))
-                {
-                    _log.Warning(warning);
-                }
-
-                var lodMissingMeshNames = GetLodMissingMeshNames(expectedMeshNames, providedMeshNames);
-                var genericMissingMeshNames = missingMeshNames
-                    .Except(lodMissingMeshNames, StringComparer.Ordinal)
-                    .ToArray();
-
-                if (genericMissingMeshNames.Length > 0)
-                {
-                    _log.Warning(
-                        $"Replacement target '{targetAlias}' is missing expected mesh names: {string.Join(", ", genericMissingMeshNames)}. " +
-                        "Only provided meshes will be replaced.");
-                }
+                _log.Warning(
+                    $"Replacement target '{targetAlias}' has renderer paths with no replacement in '{Path.GetRelativePath(projectDir, file)}'. " +
+                    $"Original game meshes will be kept for: {FormatNameListPreview(missingTargetPaths, 24)}");
             }
 
-            foreach (var meshName in providedMeshNames)
+            if (emitMeshDiscoveryDiagnostics && ambiguousRuntimeMeshNames.Count > 0)
             {
+                _log.Warning(
+                    $"Replacement target '{targetAlias}' includes runtime-ambiguous mesh name(s): {FormatNameListPreview(ambiguousRuntimeMeshNames, 24)}. " +
+                    "Jiangyu will skip mesh-contract injection for those meshes and rely on runtime live-skeleton binding.");
+            }
+
+            foreach (var resolved in resolvedTargets)
+            {
+                var bundleMeshName = BuildBundleMeshName(resolved.TargetRendererPath, resolved.TargetMeshName);
                 entries.Add(new GlbMeshBundleCompiler.MeshSourceEntry
                 {
                     SourceFilePath = file,
-                    BundleMeshName = meshName,
+                    BundleMeshName = bundleMeshName,
+                    SourceMeshName = resolved.SourceSelector,
+                    TargetMeshName = resolved.TargetMeshName,
+                    TargetRendererPath = resolved.TargetRendererPath,
+                    TargetMeshMaxHalfExtent = resolved.TargetMeshMaxHalfExtent,
                     HasExplicitMeshName = true,
-                    SourceReference = BuildSourceReference(projectDir, file, meshName),
+                    SourceReference = BuildSourceReference(projectDir, file, bundleMeshName),
                     BindPoseReferencePath = bindPoseReferencePath,
+                    TargetEntityName = target.Name,
+                    TargetEntityPathId = target.PathId,
+                    SuppressMeshContract = ambiguousRuntimeMeshNames.Contains(resolved.TargetMeshName),
                 });
             }
         }
@@ -361,7 +372,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             });
 
             throw new InvalidOperationException(
-                "Multiple replacement meshes resolve to the same target name under assets/replacements/: " +
+                "Multiple replacement meshes resolve to the same compiled bundle mesh under assets/replacements/: " +
                 string.Join("; ", messages));
         }
 
@@ -647,36 +658,19 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         return new ReplacementSpriteTarget(alias, candidate.Name ?? targetName, candidate.PathId, candidate.Collection ?? string.Empty, candidate.CanonicalPath);
     }
 
-    private static void ValidateUniqueRuntimeMeshNames(AssetIndex index, ReplacementModelTarget target, IReadOnlyList<string> expectedMeshNames)
+    private static HashSet<string> GetAmbiguousRuntimeMeshNames(AssetIndex index, IReadOnlyList<string> expectedMeshNames)
     {
-        var duplicateRuntimeTargets = expectedMeshNames
-            .Select(name => new
+        return [.. expectedMeshNames
+            .Where(name =>
             {
-                Name = name,
-                Matches = index.Assets?
-                    .Where(entry =>
+                var matchCount = index.Assets?
+                    .Count(entry =>
                         string.Equals(entry.ClassName, "Mesh", StringComparison.Ordinal) &&
                         string.Equals(entry.Name, name, StringComparison.Ordinal))
-                    .ToList()
-                    ?? []
+                    ?? 0;
+                return matchCount > 1;
             })
-            .Where(x => x.Matches.Count > 1)
-            .ToList();
-
-        if (duplicateRuntimeTargets.Count == 0)
-            return;
-
-        var details = duplicateRuntimeTargets.Select(duplicate =>
-        {
-            var canonicalPaths = duplicate.Matches
-                .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/Mesh/{entry.Name}--{entry.PathId}")
-                .OrderBy(path => path, StringComparer.Ordinal);
-            return $"{duplicate.Name}: {string.Join(", ", canonicalPaths)}";
-        });
-
-        throw new InvalidOperationException(
-            $"Replacement target '{target.Alias}' cannot be compiled safely because one or more target mesh names are ambiguous at runtime. " +
-            $"The loader still matches live meshes by sharedMesh.name. Ambiguous mesh names: {string.Join("; ", details)}");
+            .Distinct(StringComparer.Ordinal)];
     }
 
     private static void ValidateUniqueRuntimeTextureNames(AssetIndex index, ReplacementTextureTarget target)
@@ -863,6 +857,320 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         return target;
     }
 
+    internal static IReadOnlyList<ResolvedReplacementMeshName> ResolveReplacementMeshNames(
+        IReadOnlyList<string> expectedMeshNames,
+        IReadOnlyList<string> providedMeshNames,
+        out string[] unexpectedMeshNames,
+        out string[] collapsedDuplicateMeshNames)
+    {
+        var expectedSet = new HashSet<string>(expectedMeshNames, StringComparer.Ordinal);
+        var candidatesByTarget = expectedMeshNames.ToDictionary(name => name, _ => new List<string>(), StringComparer.Ordinal);
+        var unresolved = new List<string>();
+
+        foreach (var provided in providedMeshNames)
+        {
+            if (TryResolveTargetMeshNameFromProvided(provided, expectedSet, out var targetName))
+            {
+                candidatesByTarget[targetName].Add(provided);
+                continue;
+            }
+
+            unresolved.Add(provided);
+        }
+
+        var resolved = new List<ResolvedReplacementMeshName>();
+        var collapsedDuplicates = new List<string>();
+        foreach (var targetName in expectedMeshNames)
+        {
+            if (!candidatesByTarget.TryGetValue(targetName, out var candidates) || candidates.Count == 0)
+                continue;
+
+            var selected = candidates
+                .OrderBy(candidate => GetResolvedMeshNameSortKey(candidate, targetName))
+                .ThenBy(candidate => candidate, StringComparer.Ordinal)
+                .First();
+
+            foreach (var candidate in candidates.Where(candidate => !candidate.Equals(selected, StringComparison.Ordinal)))
+            {
+                collapsedDuplicates.Add(candidate);
+            }
+
+            resolved.Add(new ResolvedReplacementMeshName(targetName, selected));
+        }
+
+        unexpectedMeshNames = [.. unresolved.OrderBy(name => name, StringComparer.Ordinal)];
+        collapsedDuplicateMeshNames = [.. collapsedDuplicates.Distinct(StringComparer.Ordinal).OrderBy(name => name, StringComparer.Ordinal)];
+        return resolved;
+    }
+
+    private static IReadOnlyList<ReplacementMeshPathCandidate> DiscoverReplacementMeshPathCandidates(string filePath)
+    {
+        var model = ModelRoot.Load(filePath);
+        var candidates = model.LogicalNodes
+            .Where(node => node.Mesh != null)
+            .SelectMany(node => BuildPathCandidates(node, filePath))
+            .Distinct()
+            .OrderBy(candidate => candidate.PathSelector, StringComparer.Ordinal)
+            .ToArray();
+
+        if (candidates.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"No mesh nodes were found in replacement file '{filePath}'.");
+        }
+
+        return candidates;
+    }
+
+    private static IReadOnlyList<ResolvedReplacementRendererTarget> ResolveReplacementRendererTargets(
+        IReadOnlyList<SkinnedMeshTarget> expectedTargets,
+        IReadOnlyList<ReplacementMeshPathCandidate> providedCandidates,
+        out string[] missingTargetPaths)
+    {
+        var byNormalisedPath = providedCandidates
+            .GroupBy(candidate => candidate.MatchPath, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .Select(candidate => candidate.PathSelector)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(path => path, StringComparer.Ordinal)
+                    .ToList(),
+                StringComparer.Ordinal);
+
+        var usedSourceSelectors = new HashSet<string>(StringComparer.Ordinal);
+        var resolved = new List<ResolvedReplacementRendererTarget>();
+        var missing = new List<string>();
+
+        foreach (var target in expectedTargets.OrderBy(target => target.RendererPath, StringComparer.Ordinal))
+        {
+            var normalisedTargetPath = NormaliseRendererPath(target.RendererPath);
+            if (!byNormalisedPath.TryGetValue(normalisedTargetPath, out var selectors))
+            {
+                missing.Add(target.RendererPath);
+                continue;
+            }
+
+            var sourceSelector = selectors.FirstOrDefault(selector => !usedSourceSelectors.Contains(selector));
+            if (string.IsNullOrWhiteSpace(sourceSelector))
+            {
+                missing.Add(target.RendererPath);
+                continue;
+            }
+
+            usedSourceSelectors.Add(sourceSelector);
+            resolved.Add(new ResolvedReplacementRendererTarget(target.RendererPath, target.MeshName, sourceSelector, target.TargetMeshMaxHalfExtent));
+        }
+
+        missingTargetPaths = [.. missing.Distinct(StringComparer.Ordinal).OrderBy(path => path, StringComparer.Ordinal)];
+        return resolved;
+    }
+
+    private static IEnumerable<ReplacementMeshPathCandidate> BuildPathCandidates(Node node, string filePath)
+    {
+        foreach (var path in BuildNodePathAliases(node))
+        {
+            var normalisedPath = NormaliseRendererPath(path);
+            if (!string.IsNullOrWhiteSpace(path) && !string.IsNullOrWhiteSpace(normalisedPath))
+                yield return new ReplacementMeshPathCandidate(path, normalisedPath);
+        }
+
+        foreach (var fallbackAlias in GetReplacementMeshAliases(node, filePath))
+        {
+            var normalisedAlias = NormaliseRendererPath(fallbackAlias);
+            if (!string.IsNullOrWhiteSpace(fallbackAlias) && !string.IsNullOrWhiteSpace(normalisedAlias))
+                yield return new ReplacementMeshPathCandidate(fallbackAlias, normalisedAlias);
+        }
+    }
+
+    private static IEnumerable<string> BuildNodePathAliases(Node node)
+    {
+        var withRoot = BuildNodePath(node, includeRoot: true);
+        if (!string.IsNullOrWhiteSpace(withRoot))
+            yield return withRoot;
+
+        var withoutRoot = BuildNodePath(node, includeRoot: false);
+        if (!string.IsNullOrWhiteSpace(withoutRoot))
+            yield return withoutRoot;
+    }
+
+    private static string BuildNodePath(Node node, bool includeRoot)
+    {
+        var segments = new List<string>();
+        var current = node;
+
+        while (current != null)
+        {
+            if (current.VisualParent == null && !includeRoot)
+                break;
+
+            if (string.IsNullOrWhiteSpace(current.Name))
+                return string.Empty;
+
+            segments.Add(current.Name);
+            current = current.VisualParent;
+        }
+
+        segments.Reverse();
+        return string.Join("/", segments);
+    }
+
+    private static string NormaliseRendererPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return string.Empty;
+
+        var segments = path
+            .Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Select(segment =>
+            {
+                var normalised = segment;
+                if (TryStripBlenderNumericSuffix(segment, out var strippedSegment, out _))
+                    normalised = strippedSegment;
+
+                if (TryStripContainerPathSuffix(normalised, out var strippedContainerSegment))
+                    normalised = strippedContainerSegment;
+
+                return normalised;
+            });
+
+        return string.Join("/", segments);
+    }
+
+    private static bool TryStripContainerPathSuffix(string segment, out string strippedSegment)
+    {
+        const string containerSuffix = "_container";
+
+        strippedSegment = segment;
+        if (string.IsNullOrWhiteSpace(segment) ||
+            !segment.EndsWith(containerSuffix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        strippedSegment = segment[..^containerSuffix.Length];
+        return !string.IsNullOrWhiteSpace(strippedSegment);
+    }
+
+    private static string BuildBundleMeshName(string targetRendererPath, string targetMeshName)
+    {
+        var safeMeshName = SanitizeBundleNameToken(targetMeshName);
+        var pathHash = ComputeStableShortHash(targetRendererPath);
+        return $"{safeMeshName}__{pathHash}";
+    }
+
+    private static string SanitizeBundleNameToken(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "mesh";
+
+        var chars = value.Select(c =>
+        {
+            if (char.IsLetterOrDigit(c))
+                return c;
+
+            return c switch
+            {
+                '_' => '_',
+                '-' => '-',
+                _ => '_',
+            };
+        }).ToArray();
+
+        return new string(chars);
+    }
+
+    private static string ComputeStableShortHash(string value)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(value ?? string.Empty);
+        var hash = System.Security.Cryptography.SHA1.HashData(bytes);
+        return string.Concat(hash.Take(6).Select(b => b.ToString("x2")));
+    }
+
+    internal static bool TryStripBlenderNumericSuffix(string name, out string strippedName, out int suffixValue)
+    {
+        strippedName = name;
+        suffixValue = -1;
+
+        if (string.IsNullOrWhiteSpace(name))
+            return false;
+
+        var dotIndex = name.LastIndexOf('.');
+        if (dotIndex <= 0 || dotIndex >= name.Length - 1)
+            return false;
+
+        var suffix = name[(dotIndex + 1)..];
+        if (suffix.Length < 3 || !suffix.All(char.IsDigit))
+            return false;
+
+        if (!int.TryParse(suffix, out suffixValue))
+            return false;
+
+        strippedName = name[..dotIndex];
+        return !string.IsNullOrEmpty(strippedName);
+    }
+
+    private static bool TryResolveTargetMeshNameFromProvided(string providedName, HashSet<string> expectedSet, out string targetName)
+    {
+        targetName = string.Empty;
+
+        if (expectedSet.Contains(providedName))
+        {
+            targetName = providedName;
+            return true;
+        }
+
+        if (TryStripBlenderNumericSuffix(providedName, out var stripped, out _) &&
+            expectedSet.Contains(stripped))
+        {
+            targetName = stripped;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static int GetResolvedMeshNameSortKey(string providedName, string targetName)
+    {
+        if (providedName.Equals(targetName, StringComparison.Ordinal))
+            return 0;
+
+        if (TryStripBlenderNumericSuffix(providedName, out var strippedTargetCandidate, out var targetSuffixValue) &&
+            strippedTargetCandidate.Equals(targetName, StringComparison.Ordinal))
+        {
+            return 100 + targetSuffixValue;
+        }
+
+        return int.MaxValue;
+    }
+
+    private static bool IsMeshDiscoveryDiagnosticsEnabled()
+    {
+        var raw = Environment.GetEnvironmentVariable(MeshDiagnosticsEnvVar);
+        if (string.IsNullOrWhiteSpace(raw))
+            return false;
+
+        return raw.Equals("1", StringComparison.Ordinal) ||
+               raw.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+               raw.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+               raw.Equals("on", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatNameListPreview(IEnumerable<string> names, int maxItems)
+    {
+        var ordered = names
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        if (ordered.Length <= maxItems)
+            return string.Join(", ", ordered);
+
+        var preview = ordered.Take(maxItems);
+        return $"{string.Join(", ", preview)} (+{ordered.Length - maxItems} more)";
+    }
+
     private static bool TryReadWavHeader(string path, out int sampleRate, out int channels)
     {
         sampleRate = 0;
@@ -906,16 +1214,20 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         }
     }
 
-    private static void ValidateReplacementMeshPrimitiveContract(string replacementFilePath, string referenceFilePath, IReadOnlyList<string> expectedMeshNames)
+    private static void ValidateReplacementMeshPrimitiveContract(
+        string replacementFilePath,
+        string referenceFilePath,
+        IReadOnlyList<ResolvedReplacementRendererTarget> resolvedTargets)
     {
         var replacementPrimitiveCounts = DiscoverReplacementMeshPrimitiveCounts(replacementFilePath);
         var referencePrimitiveCounts = DiscoverReplacementMeshPrimitiveCounts(referenceFilePath);
 
-        var mismatches = expectedMeshNames
-            .Where(name => replacementPrimitiveCounts.TryGetValue(name, out var replacementCount)
-                        && referencePrimitiveCounts.TryGetValue(name, out var referenceCount)
-                        && replacementCount != referenceCount)
-            .Select(name => $"{name} (replacement {replacementPrimitiveCounts[name]}, target {referencePrimitiveCounts[name]})")
+        var mismatches = resolvedTargets
+            .Where(resolved =>
+                replacementPrimitiveCounts.TryGetValue(resolved.SourceSelector, out var replacementCount) &&
+                referencePrimitiveCounts.TryGetValue(resolved.TargetRendererPath, out var referenceCount) &&
+                replacementCount != referenceCount)
+            .Select(resolved => $"{resolved.TargetRendererPath} (replacement {replacementPrimitiveCounts[resolved.SourceSelector]}, target {referencePrimitiveCounts[resolved.TargetRendererPath]})")
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
 
@@ -935,8 +1247,17 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         foreach (var node in model.LogicalNodes.Where(node => node.Mesh != null))
         {
-            var name = GetReplacementMeshName(node, filePath);
-            result[name] = node.Mesh!.Primitives.Count;
+            var primitiveCount = node.Mesh!.Primitives.Count;
+            foreach (var alias in GetReplacementMeshAliases(node, filePath))
+            {
+                if (result.TryGetValue(alias, out var existingCount) && existingCount != primitiveCount)
+                {
+                    throw new InvalidOperationException(
+                        $"Replacement file '{filePath}' maps alias '{alias}' to multiple mesh primitive counts ({existingCount} and {primitiveCount}).");
+                }
+
+                result[alias] = primitiveCount;
+            }
         }
 
         return result;
@@ -947,7 +1268,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var model = ModelRoot.Load(filePath);
         var meshNames = model.LogicalNodes
             .Where(node => node.Mesh != null)
-            .Select(node => GetReplacementMeshName(node, filePath))
+            .SelectMany(node => GetReplacementMeshAliases(node, filePath))
             .Distinct(StringComparer.Ordinal)
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToList();
@@ -961,16 +1282,44 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         return meshNames;
     }
 
-    private static string GetReplacementMeshName(Node node, string filePath)
+    private static IReadOnlyList<string> GetReplacementMeshAliases(Node node, string filePath)
     {
         var mesh = node.Mesh ?? throw new InvalidOperationException("Replacement mesh discovery expected a node with a mesh.");
-        if (!string.IsNullOrWhiteSpace(node.Name))
-            return node.Name;
+        var aliases = new List<string>();
+
+        foreach (var pathAlias in BuildNodePathAliases(node))
+        {
+            if (!aliases.Contains(pathAlias, StringComparer.Ordinal))
+                aliases.Add(pathAlias);
+        }
+
         if (!string.IsNullOrWhiteSpace(mesh.Name))
-            return mesh.Name;
-        return Path.GetFileNameWithoutExtension(filePath);
+            aliases.Add(mesh.Name);
+
+        if (!string.IsNullOrWhiteSpace(node.Name) &&
+            !aliases.Contains(node.Name, StringComparer.Ordinal))
+        {
+            aliases.Add(node.Name);
+        }
+
+        if (aliases.Count == 0)
+            aliases.Add(Path.GetFileNameWithoutExtension(filePath));
+
+        return aliases;
     }
 
+    // JIANGYU-CONTRACT: the bind-pose retargeting reference is the cleaned authoring
+    // export (ModelCleanupService-normalised, metre-space, no LOD containers). Retarget
+    // correction is expressed relative to the modder's authoring space, and modders
+    // start from the same cleaned export — so authored and reference bindposes live
+    // in the same coordinate system. Using raw game-native bindposes as the reference
+    // breaks retargeting across the board because authored vertices are in cleaned
+    // space while reference bindposes would be in raw centimetre-scale. Pass-2 of
+    // the Unity build (MeshContractExtractor + MeshBundleBuilder) separately stamps
+    // the final mesh bindposes back to game-native values; the drift between cleaned
+    // and game-native bindposes currently shows as wheel scale/orbit on vehicle rigs
+    // and is tracked as a separate correctness work item. Scope: proven skinned
+    // replacement path.
     private static string EnsureBindPoseReferenceExport(string projectDir, ReplacementModelTarget target, AssetPipelineService assetPipeline)
     {
         var referenceDirectory = Path.Combine(projectDir, ".jiangyu", "bind-pose-references", BuildModelReplacementAlias(target.Name, target.PathId));

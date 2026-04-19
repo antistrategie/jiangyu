@@ -8,6 +8,7 @@ using AssetRipper.Processing.AnimatorControllers;
 using AssetRipper.Processing.Prefabs;
 using AssetRipper.Processing.Scenes;
 using AssetRipper.SourceGenerated.Classes.ClassID_1;
+using AssetRipper.SourceGenerated.Classes.ClassID_4;
 using AssetRipper.SourceGenerated.Classes.ClassID_137;
 using AssetRipper.SourceGenerated.Extensions;
 using AssetRipper.IO.Files;
@@ -64,6 +65,66 @@ public sealed class AssetInspectionService
     }
 
     /// <summary>
+    /// Inspects a specific indexed object via the AssetRipper-processed game view and returns
+    /// skinned-mesh replacement targets keyed by renderer hierarchy path under the object's root.
+    /// </summary>
+    public static IReadOnlyList<SkinnedMeshTarget> GetSkinnedMeshTargetsForIndexedObject(string gameDataPath, string collectionName, long pathId)
+    {
+        var settings = new CoreConfiguration();
+        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level0;
+
+        var gameStructure = GameStructure.Load([gameDataPath], LocalFileSystem.Instance, settings);
+        var gameData = GameData.FromGameStructure(gameStructure);
+        RunProcessors(gameData);
+
+        IUnityObjectBase? found = null;
+        foreach (var collection in gameData.GameBundle.FetchAssetCollections())
+        {
+            if (!string.Equals(collection.Name, collectionName, StringComparison.Ordinal))
+                continue;
+
+            found = collection.FirstOrDefault(asset => asset.PathID == pathId);
+            break;
+        }
+
+        if (found is not IGameObject gameObject)
+        {
+            throw new InvalidOperationException(
+                $"Failed to read indexed object {pathId} from collection '{collectionName}' as a GameObject hierarchy.");
+        }
+
+        var root = gameObject.GetRoot();
+        var rootTransform = root.GetTransform();
+        var results = new List<SkinnedMeshTarget>();
+        foreach (var go in root.FetchHierarchy().OfType<IGameObject>())
+        {
+            if (!go.TryGetComponent(out ISkinnedMeshRenderer? smr))
+                continue;
+
+            var meshName = smr?.MeshP?.Name?.ToString();
+            if (string.IsNullOrWhiteSpace(meshName))
+                continue;
+
+            var transform = go.GetTransform();
+            var rendererPath = BuildRelativeTransformPath(transform, rootTransform);
+            if (string.IsNullOrWhiteSpace(rendererPath))
+                continue;
+
+            // Read the target mesh's authoritative local AABB half-extent magnitude.
+            // This drives compile-time vertex-space derivation: replacements authored
+            // in a different scale than the target can be routed through a scale-up
+            // or pass-through path based on the extent ratio rather than guessing
+            // from bone-name conventions.
+            var targetExtent = ResolveMeshMaxHalfExtent(smr!.MeshP);
+            results.Add(new SkinnedMeshTarget(rendererPath, meshName, targetExtent));
+        }
+
+        return [.. results
+            .Distinct()
+            .OrderBy(target => target.RendererPath, StringComparer.Ordinal)];
+    }
+
+    /// <summary>
     /// Inspects a specific indexed object via the AssetRipper-processed game view and returns the distinct
     /// mesh names referenced by SkinnedMeshRenderers in its hierarchy. Supports both raw GameObject assets
     /// and processed prefab hierarchy objects that AssetRipper exposes as IGameObject roots.
@@ -106,6 +167,41 @@ public sealed class AssetInspectionService
             .Distinct(StringComparer.Ordinal)
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray()!;
+    }
+
+    private static float ResolveMeshMaxHalfExtent(AssetRipper.SourceGenerated.Classes.ClassID_43.IMesh? mesh)
+    {
+        if (mesh?.LocalAABB is not { } aabb)
+            return 0f;
+        var x = Math.Abs(aabb.Extent.X);
+        var y = Math.Abs(aabb.Extent.Y);
+        var z = Math.Abs(aabb.Extent.Z);
+        return Math.Max(x, Math.Max(y, z));
+    }
+
+    private static string BuildRelativeTransformPath(ITransform transform, ITransform rootTransform)
+    {
+        if (transform == null || rootTransform == null)
+            return string.Empty;
+
+        var segments = new List<string>();
+        var current = transform;
+
+        while (current != null && current != rootTransform)
+        {
+            var gameObject = current.GameObject_C4P;
+            if (gameObject == null || string.IsNullOrWhiteSpace(gameObject.Name))
+                return string.Empty;
+
+            segments.Add(gameObject.Name);
+            current = current.Father_C4P;
+        }
+
+        if (current != rootTransform || segments.Count == 0)
+            return string.Empty;
+
+        segments.Reverse();
+        return string.Join("/", segments);
     }
 
     /// <summary>
@@ -712,4 +808,15 @@ public sealed class LodInfo
 {
     public float? ScreenRelativeHeight { get; set; }
     public List<long> RendererPathIds { get; set; } = [];
+}
+
+public readonly record struct SkinnedMeshTarget(string RendererPath, string MeshName, float TargetMeshMaxHalfExtent);
+
+public sealed class BindPoseReferenceEntry
+{
+    public required string RendererPath { get; init; }
+    public required string MeshName { get; init; }
+    public required string[] BoneNames { get; init; }
+    public required string?[] ParentNames { get; init; }
+    public required float[][] BindPoses { get; init; }
 }

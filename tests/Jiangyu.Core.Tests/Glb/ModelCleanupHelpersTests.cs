@@ -91,7 +91,8 @@ public class DetermineVertexSpaceModeTests
     public void StaticMesh_NotSkinned()
     {
         var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
-            isSkinnedPath: false, isCleaned: false, hasDirectSkinBinding: false, appearsCentimeterScale: false);
+            isSkinnedPath: false, isCleaned: false, hasDirectSkinBinding: false, appearsCentimeterScale: false,
+            authoredMaxHalfExtent: 0f, targetMaxHalfExtent: 0f);
 
         Assert.Equal(VertexSpaceMode.StaticMesh, mode);
     }
@@ -100,7 +101,8 @@ public class DetermineVertexSpaceModeTests
     public void RawPrefab_CentimeterScaleWithDirectSkin()
     {
         var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
-            isSkinnedPath: true, isCleaned: false, hasDirectSkinBinding: true, appearsCentimeterScale: true);
+            isSkinnedPath: true, isCleaned: false, hasDirectSkinBinding: true, appearsCentimeterScale: true,
+            authoredMaxHalfExtent: 0f, targetMaxHalfExtent: 0f);
 
         Assert.Equal(VertexSpaceMode.RawPrefabSkinned, mode);
     }
@@ -109,7 +111,8 @@ public class DetermineVertexSpaceModeTests
     public void CleanedExport_SkinnedPath()
     {
         var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
-            isSkinnedPath: true, isCleaned: true, hasDirectSkinBinding: true, appearsCentimeterScale: true);
+            isSkinnedPath: true, isCleaned: true, hasDirectSkinBinding: true, appearsCentimeterScale: true,
+            authoredMaxHalfExtent: 0f, targetMaxHalfExtent: 0f);
 
         Assert.Equal(VertexSpaceMode.CleanedSkinned, mode);
     }
@@ -118,7 +121,8 @@ public class DetermineVertexSpaceModeTests
     public void MeshOnlyGlb_SkinnedButNoDirectBinding()
     {
         var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
-            isSkinnedPath: true, isCleaned: false, hasDirectSkinBinding: false, appearsCentimeterScale: true);
+            isSkinnedPath: true, isCleaned: false, hasDirectSkinBinding: false, appearsCentimeterScale: true,
+            authoredMaxHalfExtent: 0f, targetMaxHalfExtent: 0f);
 
         Assert.Equal(VertexSpaceMode.CleanedSkinned, mode);
     }
@@ -127,7 +131,8 @@ public class DetermineVertexSpaceModeTests
     public void CleanedStaticMesh_StillStatic()
     {
         var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
-            isSkinnedPath: false, isCleaned: true, hasDirectSkinBinding: false, appearsCentimeterScale: true);
+            isSkinnedPath: false, isCleaned: true, hasDirectSkinBinding: false, appearsCentimeterScale: true,
+            authoredMaxHalfExtent: 0f, targetMaxHalfExtent: 0f);
 
         Assert.Equal(VertexSpaceMode.StaticMesh, mode);
     }
@@ -140,7 +145,8 @@ public class DetermineVertexSpaceModeTests
     public void AuthoredMetreSpace_UncleanedWithDirectSkin_TreatedAsMetreSpace()
     {
         var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
-            isSkinnedPath: true, isCleaned: false, hasDirectSkinBinding: true, appearsCentimeterScale: false);
+            isSkinnedPath: true, isCleaned: false, hasDirectSkinBinding: true, appearsCentimeterScale: false,
+            authoredMaxHalfExtent: 0f, targetMaxHalfExtent: 0f);
 
         Assert.Equal(VertexSpaceMode.CleanedSkinned, mode);
     }
@@ -149,7 +155,8 @@ public class DetermineVertexSpaceModeTests
     public void UncleanedStaticMesh_StillStatic()
     {
         var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
-            isSkinnedPath: false, isCleaned: false, hasDirectSkinBinding: false, appearsCentimeterScale: false);
+            isSkinnedPath: false, isCleaned: false, hasDirectSkinBinding: false, appearsCentimeterScale: false,
+            authoredMaxHalfExtent: 0f, targetMaxHalfExtent: 0f);
 
         Assert.Equal(VertexSpaceMode.StaticMesh, mode);
     }
@@ -158,7 +165,38 @@ public class DetermineVertexSpaceModeTests
     public void AuthoredGlb_UncleanedWithDirectSkin_TreatedAsMetreSpace()
     {
         var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
-            isSkinnedPath: true, isCleaned: false, hasDirectSkinBinding: true, appearsCentimeterScale: false);
+            isSkinnedPath: true, isCleaned: false, hasDirectSkinBinding: true, appearsCentimeterScale: false,
+            authoredMaxHalfExtent: 0f, targetMaxHalfExtent: 0f);
+
+        Assert.Equal(VertexSpaceMode.CleanedSkinned, mode);
+    }
+
+    /// <summary>
+    /// When the authored mesh extent matches the vanilla target mesh extent (ratio ≈ 1),
+    /// the replacement is already in the same coordinate space as the target and must
+    /// pass through without the character-scale 100× adjustment. Replaces the older
+    /// bone-name-based vehicle detection.
+    /// </summary>
+    [Fact]
+    public void SameScaleAsTarget_PassesThroughAsRawPrefab()
+    {
+        var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
+            isSkinnedPath: true, isCleaned: true, hasDirectSkinBinding: true, appearsCentimeterScale: false,
+            authoredMaxHalfExtent: 3f, targetMaxHalfExtent: 3f);
+
+        Assert.Equal(VertexSpaceMode.RawPrefabSkinned, mode);
+    }
+
+    /// <summary>
+    /// When the authored mesh extent is ~100× smaller than the vanilla target
+    /// (authored in metres, target stored in cm), apply the 100× scale-up path.
+    /// </summary>
+    [Fact]
+    public void AuthoredHundredTimesSmaller_AppliesScaleUp()
+    {
+        var mode = GlbMeshBundleCompiler.DetermineVertexSpaceMode(
+            isSkinnedPath: true, isCleaned: true, hasDirectSkinBinding: true, appearsCentimeterScale: false,
+            authoredMaxHalfExtent: 1f, targetMaxHalfExtent: 100f);
 
         Assert.Equal(VertexSpaceMode.CleanedSkinned, mode);
     }

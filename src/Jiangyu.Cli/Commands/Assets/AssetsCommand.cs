@@ -192,17 +192,21 @@ public static class AssetsCommand
             }
 
             var match = candidates[0];
-            AssetEntry exportTarget;
-            try
+            AssetEntry exportTarget = match;
+
+            if (!string.Equals(match.ClassName, "PrefabHierarchyObject", StringComparison.Ordinal))
             {
-                var index = service.LoadIndex()
-                    ?? throw new InvalidOperationException("Asset index could not be loaded.");
-                exportTarget = AssetPipelineService.ResolveGameObjectBacking(index, match);
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"Error: {ex.Message}");
-                return 1;
+                try
+                {
+                    var index = service.LoadIndex()
+                        ?? throw new InvalidOperationException("Asset index could not be loaded.");
+                    exportTarget = AssetPipelineService.ResolveGameObjectBacking(index, match);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Error: {ex.Message}");
+                    return 1;
+                }
             }
 
             var collection = exportTarget.Collection ?? "";

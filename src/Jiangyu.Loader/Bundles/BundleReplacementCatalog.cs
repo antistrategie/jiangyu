@@ -188,7 +188,8 @@ internal sealed class BundleReplacementCatalog
                 return;
             }
 
-            var mappedTargetNames = new HashSet<string>(StringComparer.Ordinal);
+            var mappedTargetKeys = new HashSet<string>(StringComparer.Ordinal);
+            var metadataByTargetKey = new Dictionary<string, CompiledMeshMetadataRecord>(StringComparer.Ordinal);
             foreach (var smr in renderers)
             {
                 if (smr.sharedMesh == null)
@@ -199,39 +200,68 @@ internal sealed class BundleReplacementCatalog
                 _pinned.Add(mesh);
 
                 var bundleMeshName = mesh.name;
-                var targetName = ResolveTargetMeshName(bundleMeshName, bundleToGame);
-                if (targetName == null)
+                var targetKey = ResolveTargetMeshName(bundleMeshName, bundleToGame);
+                if (targetKey == null)
                     continue;
 
                 var materialBindings = Array.Empty<CompiledMaterialBindingRecord>();
+                var targetRendererPath = targetKey;
+                string targetEntityName = null;
+                long targetEntityPathId = 0;
+                var hasTargetEntityPathId = false;
                 if (meshMetadata != null && meshMetadata.TryGetValue(bundleMeshName, out var prefabMetadata))
+                {
                     materialBindings = prefabMetadata.MaterialBindings ?? Array.Empty<CompiledMaterialBindingRecord>();
+                    targetRendererPath = string.IsNullOrWhiteSpace(prefabMetadata.TargetRendererPath)
+                        ? targetKey
+                        : prefabMetadata.TargetRendererPath;
+                    targetEntityName = prefabMetadata.TargetEntityName;
+                    targetEntityPathId = prefabMetadata.TargetEntityPathId;
+                    hasTargetEntityPathId = prefabMetadata.HasTargetEntityPathId;
+                    metadataByTargetKey[targetKey] = prefabMetadata;
+                }
 
                 RegisterMeshOverride(
-                    targetName,
-                    new ReplacementMesh(mesh, GetBoneNames(smr.bones), materialBindings),
+                    targetKey,
+                    new ReplacementMesh(mesh, GetBoneNames(smr.bones), materialBindings, targetRendererPath, targetEntityName, targetEntityPathId, hasTargetEntityPathId),
                     ownerLabel,
                     log);
-                mappedTargetNames.Add(targetName);
-                log.Msg($"  Registered: {bundleMeshName} -> {targetName} ({smr.bones.Length} bones, materialBindings={materialBindings.Length})");
+                mappedTargetKeys.Add(targetKey);
+                log.Msg($"  Registered: {bundleMeshName} -> {targetKey} ({smr.bones.Length} bones, materialBindings={materialBindings.Length})");
             }
 
-            if (mappedTargetNames.Count == 0)
+            if (mappedTargetKeys.Count == 0)
                 return;
 
             var prefabBoneNames = CollectPrefabBoneNames(instance);
-            foreach (var targetName in mappedTargetNames)
+            foreach (var targetKey in mappedTargetKeys)
+            {
+                var targetRendererPath = targetKey;
+                string targetEntityName = null;
+                long targetEntityPathId = 0;
+                var hasTargetEntityPathId = false;
+                if (metadataByTargetKey.TryGetValue(targetKey, out var prefabMetadata))
+                {
+                    targetRendererPath = string.IsNullOrWhiteSpace(prefabMetadata.TargetRendererPath)
+                        ? targetKey
+                        : prefabMetadata.TargetRendererPath;
+                    targetEntityName = prefabMetadata.TargetEntityName;
+                    targetEntityPathId = prefabMetadata.TargetEntityPathId;
+                    hasTargetEntityPathId = prefabMetadata.HasTargetEntityPathId;
+                }
+
                 RegisterPrefabOverride(
-                    targetName,
-                    new ReplacementPrefab(instance, prefab.name, prefabBoneNames),
+                    targetKey,
+                    new ReplacementPrefab(instance, prefab.name, prefabBoneNames, targetRendererPath, targetEntityName, targetEntityPathId, hasTargetEntityPathId),
                     ownerLabel,
                     log);
+            }
 
             instance.transform.position = HiddenTemplateInstancePosition;
             instance.SetActive(false);
             _pinned.Add(instance);
             keepTemplateInstance = true;
-            log.Msg($"  Registered prefab: {prefab.name} -> {mappedTargetNames.Count} target mesh name(s) ({prefabBoneNames.Length} bones)");
+            log.Msg($"  Registered prefab: {prefab.name} -> {mappedTargetKeys.Count} target renderer path(s) ({prefabBoneNames.Length} bones)");
         }
         finally
         {
@@ -302,16 +332,26 @@ internal sealed class BundleReplacementCatalog
         loadedMesh.hideFlags = HideFlags.DontUnloadUnusedAsset;
         _pinned.Add(loadedMesh);
 
-        var targetMeshName = ResolveTargetMeshName(loadedMesh.name, bundleToGame);
-        if (targetMeshName == null)
+        var targetKey = ResolveTargetMeshName(loadedMesh.name, bundleToGame);
+        if (targetKey == null)
             return;
 
+        var targetRendererPath = string.IsNullOrWhiteSpace(metadataForMesh.TargetRendererPath)
+            ? targetKey
+            : metadataForMesh.TargetRendererPath;
         RegisterMeshOverride(
-            targetMeshName,
-            new ReplacementMesh(loadedMesh, metadataForMesh.BoneNames, metadataForMesh.MaterialBindings ?? Array.Empty<CompiledMaterialBindingRecord>()),
+            targetKey,
+            new ReplacementMesh(
+                loadedMesh,
+                metadataForMesh.BoneNames,
+                metadataForMesh.MaterialBindings ?? Array.Empty<CompiledMaterialBindingRecord>(),
+                targetRendererPath,
+                metadataForMesh.TargetEntityName,
+                metadataForMesh.TargetEntityPathId,
+                metadataForMesh.HasTargetEntityPathId),
             ownerLabel,
             log);
-        log.Msg($"  Registered mesh asset: {loadedMesh.name} -> {targetMeshName} ({metadataForMesh.BoneNames.Length} bones, materialBindings={metadataForMesh.MaterialBindings?.Length ?? 0})");
+        log.Msg($"  Registered mesh asset: {loadedMesh.name} -> {targetKey} ({metadataForMesh.BoneNames.Length} bones, materialBindings={metadataForMesh.MaterialBindings?.Length ?? 0})");
     }
 
     private void RegisterMeshOverride(string targetName, ReplacementMesh mesh, string ownerLabel, MelonLogger.Instance log)
@@ -442,10 +482,43 @@ internal sealed class BundleReplacementCatalog
                     .Select(e => e.GetString() ?? string.Empty)
                     .ToArray();
 
+                string targetRendererPath = null;
+                string targetMeshName = null;
+                string targetEntityName = null;
+                long targetEntityPathId = 0;
+                var hasTargetEntityPathId = false;
+                if (compiledElement.TryGetProperty("targetRendererPath", out var targetRendererPathElement) &&
+                    targetRendererPathElement.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    targetRendererPath = targetRendererPathElement.GetString();
+                }
+                if (compiledElement.TryGetProperty("targetMeshName", out var targetMeshNameElement) &&
+                    targetMeshNameElement.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    targetMeshName = targetMeshNameElement.GetString();
+                }
+                if (compiledElement.TryGetProperty("targetEntityName", out var targetEntityNameElement) &&
+                    targetEntityNameElement.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    targetEntityName = targetEntityNameElement.GetString();
+                }
+                if (compiledElement.TryGetProperty("targetEntityPathId", out var targetEntityPathIdElement) &&
+                    targetEntityPathIdElement.ValueKind == System.Text.Json.JsonValueKind.Number &&
+                    targetEntityPathIdElement.TryGetInt64(out var parsedTargetEntityPathId))
+                {
+                    targetEntityPathId = parsedTargetEntityPathId;
+                    hasTargetEntityPathId = true;
+                }
+
                 result[bundleMeshName] = new CompiledMeshMetadataRecord
                 {
                     BoneNames = boneNames,
                     MaterialBindings = LoadCompiledMaterialBindings(compiledElement),
+                    TargetRendererPath = targetRendererPath,
+                    TargetMeshName = targetMeshName,
+                    TargetEntityName = targetEntityName,
+                    TargetEntityPathId = targetEntityPathId,
+                    HasTargetEntityPathId = hasTargetEntityPathId,
                 };
             }
 

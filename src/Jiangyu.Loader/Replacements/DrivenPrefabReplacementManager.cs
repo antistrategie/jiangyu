@@ -44,7 +44,10 @@ internal sealed class DrivenPrefabReplacementManager
         if (sourceSkeletonRoot == null)
             return false;
 
-        var hiddenRenderers = entityRoot.GetComponentsInChildren<Renderer>(true);
+        var hiddenSkinnedRenderers = entityRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        var hiddenRenderers = new Renderer[hiddenSkinnedRenderers.Length];
+        for (int i = 0; i < hiddenSkinnedRenderers.Length; i++)
+            hiddenRenderers[i] = hiddenSkinnedRenderers[i];
 
         var replacementRoot = UnityEngine.Object.Instantiate(replacementPrefab.Template);
         replacementRoot.name = $"{replacementPrefab.PrefabName} [jiangyu-driven]";

@@ -52,6 +52,24 @@ For changed rest poses or moderate proportion drift, Jiangyu automatically expor
 
 If a replacement only provides part of an LOD family, Jiangyu warns at compile time and the loader uses the nearest available replacement within that family at runtime. Complete LOD sets are still preferred.
 
+### Skinning weights
+
+Jiangyu's exporter emits vertex weights that match the vanilla source's skinning layout:
+
+- Rigid-skinned vanilla meshes (every vertex 100% bound to a single bone — typical of mechanical rigs like vehicle chassis, where each wheel vert follows its own wheel bone) export as rigid weights in the glTF.
+- Blended-skinned vanilla meshes (vertices influenced by multiple bones — typical of character rigs where joints need smooth deformation) export with the full per-vertex weight mix preserved.
+
+The compiler does not rewrite weights. Whatever the authored glTF ships is what goes into the bundle. Author normally in Blender on top of the exported baseline; avoid re-rigging mechanical parts with "parent with automatic weights" since that introduces blended influence on parts the game expects to be rigid, which shows up as linear-blend-skinning scaling artefacts (e.g. wheels visibly growing and shrinking while rotating).
+
+### Vertex space
+
+The compiler derives the replacement's vertex-space transform from the ratio between the authored mesh's bounds and the vanilla target's local AABB:
+
+- Authored extent ≈ target extent → pass through unchanged.
+- Authored extent ≈ target extent × 0.01 → apply a 100× scale-up (authored in metres, target stored in centimetres).
+
+No bone-name conventions, naming prefixes, or vehicle-vs-character hints are required. If the ratio is neither close to 1 nor close to 100, Jiangyu falls back to the `extras.jiangyu.cleaned` flag to pick a space.
+
 ## Current Limitation
 
 At runtime, Jiangyu still resolves live mesh replacements by `sharedMesh.name`.

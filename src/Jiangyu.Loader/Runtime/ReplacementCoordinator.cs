@@ -1,7 +1,6 @@
 using Il2CppInterop.Runtime;
 using Jiangyu.Loader.Bundles;
 using Jiangyu.Loader.Replacements;
-using Jiangyu.Shared.Replacements;
 using MelonLoader;
 using UnityEngine;
 
@@ -27,7 +26,7 @@ internal class ReplacementCoordinator
     public ReplacementCoordinator()
     {
         _catalog = new BundleReplacementCatalog(_pinned);
-        _materialReplacements = new MaterialReplacementService(_catalog.ReplacementTextures, _pinned);
+        _materialReplacements = new MaterialReplacementService(_catalog.ReplacementTextures);
         _textureMutation = new TextureMutationService(_catalog.ReplacementTextures);
         _meshPreparation = new MeshPreparationService(_pinned);
         _directReplacements = new DirectMeshReplacementApplier(_materialReplacements, _meshPreparation);
@@ -52,6 +51,7 @@ internal class ReplacementCoordinator
         // across scenes and avoids (theoretical) ID-recycling false-negatives
         // on later-scene SMRs that happen to reuse a destroyed ID.
         _processedSmrInstanceIds.Clear();
+        _meshPreparation.ClearPreparedAssignments();
     }
 
     public void ApplyReplacements(MelonLogger.Instance log, bool includeTextures = true)
@@ -79,23 +79,12 @@ internal class ReplacementCoordinator
             if (!IsLiveSceneRenderer(smr) || IsAlreadyProcessedMesh(smr.sharedMesh))
                 continue;
 
-            // JIANGYU-CONTRACT: Runtime mesh replacement currently resolves live targets by
-            // SkinnedMeshRenderer.sharedMesh.name only. This is valid for the current proven
-            // replacement path where target mesh names are unique for the selected model target.
-            // Compile-time convention-first replacement must reject targets whose expected mesh
-            // names are globally duplicated until Jiangyu has a stronger runtime asset identity.
-            //
-            // JIANGYU-CONTRACT: If Jiangyu later adds a more specific prefab-aware runtime
-            // identity, the current shared-mesh behaviour must remain the fallback so one
-            // replacement can still intentionally apply across multiple prefab variants that
-            // share the same live mesh names. Per-variant replacement should be opt-in and win
-            // only when explicitly defined.
-            if (_catalog.Prefabs.TryGetValue(smr.sharedMesh.name, out var prefabReplacement))
+            if (!TryResolveRendererTarget(smr, out var entityRoot, out var targetRendererPath))
+                continue;
+
+            if (TryGetReplacementMesh(smr, entityRoot, targetRendererPath, out var meshReplacement))
             {
-                var entityRoot = FindEntityRoot(smr);
-                if (entityRoot != null &&
-                    !_drivenReplacements.HasReplacementFor(entityRoot) &&
-                    _drivenReplacements.TryCreate(log, entityRoot, smr, prefabReplacement))
+                if (_directReplacements.Apply(log, smr, meshReplacement))
                 {
                     visualReplacements++;
                     _processedSmrInstanceIds.Add(smrInstanceId);
@@ -104,14 +93,11 @@ internal class ReplacementCoordinator
                 continue;
             }
 
-            if (TryGetReplacementMesh(smr.sharedMesh.name, out var resolvedMeshName, out var meshReplacement))
+            if (_catalog.Prefabs.TryGetValue(targetRendererPath, out var prefabReplacement) &&
+                IsReplacementScopeMatch(smr, entityRoot, prefabReplacement.TargetEntityName))
             {
-                if (!string.Equals(resolvedMeshName, smr.sharedMesh.name, StringComparison.Ordinal))
-                {
-                    log.Msg($"  LOD fallback: {smr.sharedMesh.name} -> {resolvedMeshName}");
-                }
-
-                if (_directReplacements.Apply(log, smr, meshReplacement))
+                if (!_drivenReplacements.HasReplacementFor(entityRoot) &&
+                    _drivenReplacements.TryCreate(log, entityRoot, smr, prefabReplacement))
                 {
                     visualReplacements++;
                     _processedSmrInstanceIds.Add(smrInstanceId);
@@ -143,7 +129,12 @@ internal class ReplacementCoordinator
                 if (!IsLiveSceneRenderer(smr) || IsAlreadyProcessedMesh(smr.sharedMesh))
                     continue;
 
-                if (_catalog.Prefabs.ContainsKey(smr.sharedMesh.name) || TryGetReplacementMesh(smr.sharedMesh.name, out _, out _))
+                if (!TryResolveRendererTarget(smr, out var entityRoot, out var targetRendererPath))
+                    continue;
+
+                if (TryGetReplacementMesh(smr, entityRoot, targetRendererPath, out _) ||
+                    (_catalog.Prefabs.TryGetValue(targetRendererPath, out var prefabReplacement) &&
+                     IsReplacementScopeMatch(smr, entityRoot, prefabReplacement.TargetEntityName)))
                     return true;
             }
         }
@@ -180,21 +171,249 @@ internal class ReplacementCoordinator
     private static bool IsAlreadyProcessedMesh(Mesh mesh)
         => mesh != null && mesh.name.EndsWith(" [jiangyu]", StringComparison.Ordinal);
 
-    private bool TryGetReplacementMesh(string requestedMeshName, out string resolvedMeshName, out ReplacementMesh replacement)
+    private bool TryGetReplacementMesh(SkinnedMeshRenderer smr, GameObject entityRoot, string targetRendererPath, out ReplacementMesh replacement)
     {
-        resolvedMeshName = string.Empty;
-        if (_catalog.Meshes.TryGetValue(requestedMeshName, out replacement))
+        if (_catalog.Meshes.TryGetValue(targetRendererPath, out replacement) &&
+            IsReplacementScopeMatch(smr, entityRoot, replacement.TargetEntityName))
         {
-            resolvedMeshName = requestedMeshName;
             return true;
         }
 
-        var fallbackName = LodReplacementResolver.FindNearestAvailableTarget(_catalog.Meshes.Keys, requestedMeshName);
-        if (fallbackName is null || !_catalog.Meshes.TryGetValue(fallbackName, out replacement))
+        return false;
+    }
+
+    private static bool IsReplacementScopeMatch(SkinnedMeshRenderer smr, GameObject resolvedEntityRoot, string targetEntityName)
+    {
+        if (string.IsNullOrWhiteSpace(targetEntityName))
+            return true;
+
+        var expected = NormaliseSceneObjectName(targetEntityName);
+        if (string.IsNullOrEmpty(expected))
+            return true;
+
+        if (resolvedEntityRoot != null &&
+            IsEntityNameMatch(expected, NormaliseSceneObjectName(resolvedEntityRoot.name)))
+            return true;
+
+        var entityRoot = FindEntityRoot(smr);
+        if (entityRoot != null &&
+            IsEntityNameMatch(expected, NormaliseSceneObjectName(entityRoot.name)))
+            return true;
+
+        var sceneRoot = smr.transform?.root;
+        if (sceneRoot != null &&
+            IsEntityNameMatch(expected, NormaliseSceneObjectName(sceneRoot.name)))
+            return true;
+
+        var current = smr.transform;
+        while (current != null)
+        {
+            if (IsEntityNameMatch(expected, NormaliseSceneObjectName(current.name)))
+                return true;
+
+            current = current.parent;
+        }
+
+        return false;
+    }
+
+    private bool TryResolveRendererTarget(SkinnedMeshRenderer smr, out GameObject entityRoot, out string targetRendererPath)
+    {
+        entityRoot = null;
+        targetRendererPath = string.Empty;
+        if (smr == null || smr.transform == null)
             return false;
 
-        resolvedMeshName = fallbackName;
+        var candidateRoots = new List<Transform>();
+        AddCandidateRoot(candidateRoots, FindEntityRoot(smr)?.transform);
+        AddCandidateRoot(candidateRoots, smr.transform.root);
+
+        var current = smr.transform.parent;
+        while (current != null)
+        {
+            AddCandidateRoot(candidateRoots, current);
+            current = current.parent;
+        }
+
+        GameObject bestRoot = null;
+        string bestPath = string.Empty;
+        var bestScore = -1;
+
+        foreach (var root in candidateRoots)
+        {
+            var rawPath = BuildRelativeTransformPath(root, smr.transform);
+            if (string.IsNullOrWhiteSpace(rawPath))
+                continue;
+
+            if (!TryResolveCatalogPath(rawPath, out var resolvedPath))
+                continue;
+
+            var score = resolvedPath.Count(c => c == '/');
+            if (score <= bestScore)
+                continue;
+
+            bestScore = score;
+            bestRoot = root.gameObject;
+            bestPath = resolvedPath;
+        }
+
+        if (bestRoot != null && !string.IsNullOrWhiteSpace(bestPath))
+        {
+            entityRoot = bestRoot;
+            targetRendererPath = bestPath;
+            return true;
+        }
+
+        var fallbackRoot = FindEntityRoot(smr);
+        if (fallbackRoot == null)
+            return false;
+
+        var fallbackRawPath = BuildRelativeTransformPath(fallbackRoot.transform, smr.transform);
+        if (string.IsNullOrWhiteSpace(fallbackRawPath))
+            return false;
+
+        if (!TryResolveCatalogPath(fallbackRawPath, out var fallbackPath))
+            return false;
+
+        entityRoot = fallbackRoot;
+        targetRendererPath = fallbackPath;
         return true;
+    }
+
+    private bool TryResolveCatalogPath(string rawPath, out string resolvedPath)
+    {
+        resolvedPath = string.Empty;
+        if (string.IsNullOrWhiteSpace(rawPath))
+            return false;
+
+        if (_catalog.Meshes.ContainsKey(rawPath) || _catalog.Prefabs.ContainsKey(rawPath))
+        {
+            resolvedPath = rawPath;
+            return true;
+        }
+
+        var normalised = NormaliseRendererPath(rawPath);
+        if (string.IsNullOrWhiteSpace(normalised))
+            return false;
+
+        if (_catalog.Meshes.ContainsKey(normalised) || _catalog.Prefabs.ContainsKey(normalised))
+        {
+            resolvedPath = normalised;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string NormaliseRendererPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return string.Empty;
+
+        var segments = path
+            .Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Select(NormaliseRendererPathSegment);
+
+        return string.Join("/", segments);
+    }
+
+    private static string NormaliseRendererPathSegment(string segment)
+    {
+        if (string.IsNullOrWhiteSpace(segment))
+            return string.Empty;
+
+        var normalised = segment;
+        if (TryStripBlenderNumericSuffix(normalised, out var strippedSegment))
+            normalised = strippedSegment;
+
+        const string containerSuffix = "_container";
+        if (normalised.EndsWith(containerSuffix, StringComparison.Ordinal))
+            normalised = normalised[..^containerSuffix.Length];
+
+        return normalised;
+    }
+
+    private static bool TryStripBlenderNumericSuffix(string value, out string stripped)
+    {
+        stripped = value;
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        var dotIndex = value.LastIndexOf('.');
+        if (dotIndex <= 0 || dotIndex >= value.Length - 1)
+            return false;
+
+        var suffix = value[(dotIndex + 1)..];
+        if (suffix.Length < 3 || !suffix.All(char.IsDigit))
+            return false;
+
+        stripped = value[..dotIndex];
+        return !string.IsNullOrWhiteSpace(stripped);
+    }
+
+    private static void AddCandidateRoot(List<Transform> roots, Transform candidate)
+    {
+        if (candidate == null)
+            return;
+
+        if (roots.Contains(candidate))
+            return;
+
+        roots.Add(candidate);
+    }
+
+    private static string NormaliseSceneObjectName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return string.Empty;
+
+        const string cloneSuffix = "(Clone)";
+        var normalised = name.Trim();
+        if (normalised.EndsWith(cloneSuffix, StringComparison.Ordinal))
+            normalised = normalised[..^cloneSuffix.Length].TrimEnd();
+
+        return normalised;
+    }
+
+    private static bool IsEntityNameMatch(string expected, string actual)
+    {
+        if (string.IsNullOrWhiteSpace(expected) || string.IsNullOrWhiteSpace(actual))
+            return false;
+
+        if (string.Equals(actual, expected, StringComparison.Ordinal))
+            return true;
+
+        // Treat variant suffixes as the same entity family (e.g. *_black, *_white).
+        if (actual.StartsWith(expected + "_", StringComparison.Ordinal))
+            return true;
+        if (expected.StartsWith(actual + "_", StringComparison.Ordinal))
+            return true;
+
+        return false;
+    }
+
+    private static string BuildRelativeTransformPath(Transform root, Transform leaf)
+    {
+        if (root == null || leaf == null)
+            return string.Empty;
+
+        var segments = new List<string>();
+        var current = leaf;
+
+        while (current != null && current != root)
+        {
+            if (string.IsNullOrWhiteSpace(current.name))
+                return string.Empty;
+
+            segments.Add(current.name);
+            current = current.parent;
+        }
+
+        if (current != root || segments.Count == 0)
+            return string.Empty;
+
+        segments.Reverse();
+        return string.Join("/", segments);
     }
 
     private static GameObject FindEntityRoot(SkinnedMeshRenderer smr)

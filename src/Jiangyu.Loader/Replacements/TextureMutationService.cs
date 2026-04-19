@@ -80,7 +80,7 @@ internal sealed class TextureMutationService
             var replacement = _replacementTextures[gameTexture.name];
             var instanceId = gameTexture.GetInstanceID();
 
-            if (TryMutateInPlace(replacement, gameTexture, log))
+            if (TextureMutationHelpers.MutateInPlace(replacement, gameTexture, log))
             {
                 _mutatedInstanceIds.Add(instanceId);
                 mutated++;
@@ -117,7 +117,7 @@ internal sealed class TextureMutationService
             if (_mutatedInstanceIds.Contains(instanceId) || _failedInstanceIds.Contains(instanceId))
                 continue;
 
-            if (TryMutateInPlace(replacement, gameTexture, log))
+            if (TextureMutationHelpers.MutateInPlace(replacement, gameTexture, log))
             {
                 _mutatedInstanceIds.Add(instanceId);
                 mutated++;
@@ -160,69 +160,4 @@ internal sealed class TextureMutationService
         return true;
     }
 
-    private static bool TryMutateInPlace(Texture2D source, Texture2D destination, MelonLogger.Instance log)
-    {
-        // Blit into an RGBA32 RenderTexture (handles resize + mipmap generation
-        // via autoGenerateMips), ReadPixels into a readable RGBA32 staging
-        // Texture2D, Compress() to the destination's compressed format via
-        // Unity's managed compressor, then CopyTexture into the game texture.
-        // Uses managed compression rather than Graphics.ConvertTexture because
-        // ConvertTexture's compressed-destination path relies on GPU hardware
-        // encoder support, which isn't reliable across consumer GPUs and Proton.
-        RenderTexture rt = null;
-        RenderTexture previousActive = null;
-        Texture2D staging = null;
-        try
-        {
-            rt = RenderTexture.GetTemporary(
-                destination.width,
-                destination.height,
-                0,
-                RenderTextureFormat.ARGB32,
-                RenderTextureReadWrite.sRGB);
-            rt.useMipMap = destination.mipmapCount > 1;
-            rt.autoGenerateMips = destination.mipmapCount > 1;
-            rt.wrapMode = TextureWrapMode.Clamp;
-            rt.filterMode = FilterMode.Bilinear;
-
-            Graphics.Blit(source, rt);
-
-            previousActive = RenderTexture.active;
-            RenderTexture.active = rt;
-            staging = new Texture2D(
-                destination.width,
-                destination.height,
-                TextureFormat.RGBA32,
-                mipChain: destination.mipmapCount > 1,
-                linear: false);
-            staging.ReadPixels(new Rect(0, 0, destination.width, destination.height), 0, 0, recalculateMipMaps: false);
-            staging.Apply(updateMipmaps: destination.mipmapCount > 1, makeNoLongerReadable: false);
-            RenderTexture.active = previousActive;
-            previousActive = null;
-
-            staging.Compress(highQuality: true);
-            if (staging.format != destination.format)
-            {
-                log.Warning($"  Compressed staging format {staging.format} does not match destination {destination.format} for '{destination.name}'; skipping CopyTexture.");
-                return false;
-            }
-
-            Graphics.CopyTexture(staging, destination);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            log.Error($"  Texture mutation failed for '{destination.name}' (dst {destination.width}x{destination.height} {destination.format} mips={destination.mipmapCount}, src {source.width}x{source.height} {source.format}): {ex.Message}");
-            return false;
-        }
-        finally
-        {
-            if (previousActive != null)
-                RenderTexture.active = previousActive;
-            if (staging != null)
-                UnityEngine.Object.Destroy(staging);
-            if (rt != null)
-                RenderTexture.ReleaseTemporary(rt);
-        }
-    }
 }

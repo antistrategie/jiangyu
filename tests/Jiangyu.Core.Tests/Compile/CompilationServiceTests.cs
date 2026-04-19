@@ -178,6 +178,82 @@ public class LodNamingTests
     }
 }
 
+public class BlenderMeshNameNormalisationTests
+{
+    [Fact]
+    public void TryStripBlenderNumericSuffix_StripsDotNumericSuffix()
+    {
+        var success = CompilationService.TryStripBlenderNumericSuffix("rmc_default_female_soldier_LOD0.001", out var stripped, out var suffix);
+
+        Assert.True(success);
+        Assert.Equal("rmc_default_female_soldier_LOD0", stripped);
+        Assert.Equal(1, suffix);
+    }
+
+    [Fact]
+    public void TryStripBlenderNumericSuffix_RejectsNonBlenderSuffix()
+    {
+        var success = CompilationService.TryStripBlenderNumericSuffix("carrier_light_bag_LOD0.alpha", out var stripped, out var suffix);
+
+        Assert.False(success);
+        Assert.Equal("carrier_light_bag_LOD0.alpha", stripped);
+        Assert.Equal(-1, suffix);
+    }
+
+    [Fact]
+    public void ResolveReplacementMeshNames_PrefersExactAndCollapsesSuffixedDuplicates()
+    {
+        var expected =
+            new[]
+            {
+                "carrier_chassis_LOD0",
+                "carrier_chassis_LOD1",
+            };
+        var provided =
+            new[]
+            {
+                "carrier_chassis_LOD0",
+                "carrier_chassis_LOD0.001",
+                "carrier_chassis_LOD1.003",
+            };
+
+        var resolved = CompilationService.ResolveReplacementMeshNames(expected, provided, out var unexpected, out var collapsed);
+
+        Assert.Empty(unexpected);
+        Assert.Equal(["carrier_chassis_LOD0.001"], collapsed);
+        Assert.Contains(resolved, x => x.TargetMeshName == "carrier_chassis_LOD0" && x.SourceMeshName == "carrier_chassis_LOD0");
+        Assert.Contains(resolved, x => x.TargetMeshName == "carrier_chassis_LOD1" && x.SourceMeshName == "carrier_chassis_LOD1.003");
+    }
+
+    [Fact]
+    public void ResolveReplacementMeshNames_TreatsContainerAliasesAsUnexpected()
+    {
+        var expected = new[] { "carrier_chassis_LOD0" };
+        var provided = new[] { "carrier_chassis_LOD0_container", "carrier_chassis_LOD0" };
+
+        var resolved = CompilationService.ResolveReplacementMeshNames(expected, provided, out var unexpected, out var collapsed);
+
+        Assert.Equal(["carrier_chassis_LOD0_container"], unexpected);
+        Assert.Empty(collapsed);
+        Assert.Single(resolved);
+        Assert.Equal("carrier_chassis_LOD0", resolved[0].TargetMeshName);
+        Assert.Equal("carrier_chassis_LOD0", resolved[0].SourceMeshName);
+    }
+
+    [Fact]
+    public void ResolveReplacementMeshNames_DoesNotMapContainerSuffixVariants()
+    {
+        var expected = new[] { "carrier_chassis_LOD0" };
+        var provided = new[] { "carrier_chassis_LOD0_container.004" };
+
+        var resolved = CompilationService.ResolveReplacementMeshNames(expected, provided, out var unexpected, out var collapsed);
+
+        Assert.Equal(["carrier_chassis_LOD0_container.004"], unexpected);
+        Assert.Empty(collapsed);
+        Assert.Empty(resolved);
+    }
+}
+
 public class IsGlbPathTests
 {
     [Theory]

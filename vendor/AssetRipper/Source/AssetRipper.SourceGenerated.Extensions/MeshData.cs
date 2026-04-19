@@ -135,7 +135,10 @@ public readonly record struct MeshData(
 		if (s == default || s.AnyWeightsNegative)
 		{
 			//Invalid bone weights, set to a valid default.
-			return new BoneWeight4(.25f, .25f, .25f, .25f, 0, 0, 0, 0);
+			//Rigid-to-bone-0 rather than uniform 0.25/0.25/0.25/0.25 — the old fallback
+			//survived SparseWeight8 dedupe only for bone-0 vertices, leaving every other
+			//vertex as a 25%/75% blend that introduced LBS scaling artefacts downstream.
+			return new BoneWeight4(1f, 0f, 0f, 0f, 0, 0, 0, 0);
 		}
 		else if (s.Sum != 1)
 		{

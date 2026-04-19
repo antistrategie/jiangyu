@@ -7,8 +7,13 @@ Convention-first `Texture2D` replacement is validated end-to-end against live ME
 - Modder drops a replacement image at `assets/replacements/textures/<target-name>--<pathId>.<ext>` in a mod project.
 - `<target-name>--<pathId>` identifies a `Texture2D` asset in the Jiangyu asset index.
 - Jiangyu compiles that image into the mod's AssetBundle as a `Texture2D` asset named `<target-name>`.
-- At runtime, the loader finds every loaded game `Texture2D` whose `name` equals `<target-name>` and mutates its pixel data in place via `Graphics.ConvertTexture` into an intermediate of the destination's format, dimensions, and mipmap chain, then `Graphics.CopyTexture` from that intermediate into the game texture.
+- At runtime, the loader finds every loaded game `Texture2D` whose `name` equals `<target-name>` and mutates its pixel data in place. The mutation path:
+  1. `Graphics.Blit` the replacement into an sRGB `ARGB32` `RenderTexture` sized to the destination, with mipmap auto-generation matching the destination's chain.
+  2. `ReadPixels` into a readable staging `Texture2D` whose format matches the destination's alpha-presence (`RGB24` for `DXT1`/`BC1` no-alpha targets, `RGBA32` for `DXT5`/`BC3` with-alpha targets). Alpha-matched staging is what steers Unity's managed compressor to produce the right compressed family on the next step.
+  3. `Texture2D.Compress(highQuality: true)` — managed compression rather than `Graphics.ConvertTexture`'s GPU encoder, which is unreliable across consumer GPUs and Proton.
+  4. `Graphics.CopyTexture` from staging into the game texture when formats match. Fall back to `Graphics.ConvertTexture` only for compressed formats that managed `Compress` can't produce (BC7, ASTC, BC4/5/6H).
 - Every consumer of the game texture — materials (`_BaseColorMap`, `_MaskMap`, `_NormalMap`, `_EffectMap`, etc.), UGUI, UI Toolkit, template references, manager-cached references — inherits the mutation automatically because Unity texture references are identity-based.
+- Per-material texture bindings compiled alongside skinned mesh replacements follow the same in-place path: the loader mutates the Texture2D that the existing game material already references, keeping the game's shader-variant and keyword state intact. This avoids the "pink vehicle after squad screen" regression where `Object.Instantiate(material)` captured HDRP keyword state at clone time and mismatched in the destination scene.
 - The mutation is idempotent per `Texture2D` instance per session: once mutated, an instance is skipped on later apply passes.
 
 ## Surfaces covered

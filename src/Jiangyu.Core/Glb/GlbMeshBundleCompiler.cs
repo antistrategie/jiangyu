@@ -3,6 +3,7 @@ using System.Numerics;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using Jiangyu.Core.Compile;
 using Jiangyu.Core.Models;
 using SharpGLTF.Schema2;
 
@@ -28,9 +29,21 @@ public static class GlbMeshBundleCompiler
     {
         public required string SourceFilePath { get; init; }
         public required string BundleMeshName { get; init; }
+        public string? SourceMeshName { get; init; }
+        public required string TargetMeshName { get; init; }
+        public required string TargetRendererPath { get; init; }
         public required bool HasExplicitMeshName { get; init; }
         public string? SourceReference { get; init; }
         public string? BindPoseReferencePath { get; init; }
+        public string? TargetEntityName { get; init; }
+        public long? TargetEntityPathId { get; init; }
+        public bool SuppressMeshContract { get; init; }
+        // Max half-extent of the vanilla game target mesh's local AABB. Used to derive
+        // authored-vs-target scale ratio, which drives the vertex-space decision:
+        // authored-scale ≈ target-scale → pass through; authored-scale ≈ target-scale × 0.01
+        // → apply 100× scale-up. Zero indicates the target extent is unknown and the
+        // caller should fall back to the isCleaned flag.
+        public float TargetMeshMaxHalfExtent { get; init; }
     }
 
     internal sealed class CompiledMesh
@@ -144,42 +157,45 @@ public static class GlbMeshBundleCompiler
         var contractPath = Path.Combine(unityProjectDir, "meshcontract.bin");
         var firstPassOutputPath = outputBundlePath;
 
-        if (!string.IsNullOrWhiteSpace(gameDataPath) &&
-            Directory.Exists(gameDataPath) &&
-            targetMeshNamesByBundleMesh.Count > 0)
-        {
+        var allTargetMeshNames = entries
+            .Select(entry => entry.TargetMeshName)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        var needsSecondPass = !string.IsNullOrWhiteSpace(gameDataPath) &&
+                              Directory.Exists(gameDataPath) &&
+                              allTargetMeshNames.Length > 0;
+        if (needsSecondPass)
             firstPassOutputPath = outputBundlePath + ".pass1";
-        }
 
         await InvokeUnityBuildAsync(unityEditor, unityProjectDir, firstPassOutputPath, bundleName, meshDataPath, textureDataPath, diagnosticsPath, meshContractPath: null);
 
-        if (!string.IsNullOrWhiteSpace(gameDataPath) &&
-            Directory.Exists(gameDataPath) &&
-            targetMeshNamesByBundleMesh.Count > 0)
+        if (needsSecondPass)
         {
-            var requiredTargetMeshes = entries
-                .Select(entry => targetMeshNamesByBundleMesh.GetValueOrDefault(entry.BundleMeshName))
-                .Where(name => !string.IsNullOrWhiteSpace(name))
-                .Distinct(StringComparer.Ordinal)
-                .Cast<string>()
-                .ToArray();
+            var extractedContracts = MeshContractExtractor.Extract(firstPassOutputPath, gameDataPath!, allTargetMeshNames);
 
-            var extractedContracts = MeshContractExtractor.Extract(firstPassOutputPath, gameDataPath!, requiredTargetMeshes);
+            // Contract stamping (bone name hashes, bindposes) only fires for non-ambiguous
+            // target mesh names — those that identify a single game asset unambiguously.
             var contracts = new List<MeshBuildContract>();
             foreach (var entry in entries)
             {
-                if (!targetMeshNamesByBundleMesh.TryGetValue(entry.BundleMeshName, out var targetMeshName))
+                if (string.IsNullOrWhiteSpace(entry.TargetMeshName))
                     continue;
-                if (!extractedContracts.TryGetValue(targetMeshName, out var contract))
+                if (!extractedContracts.TryGetValue(entry.TargetMeshName, out var contract))
                     continue;
 
-                contracts.Add(new MeshBuildContract
+                if (targetMeshNamesByBundleMesh.TryGetValue(entry.BundleMeshName, out var nonAmbiguousTarget) &&
+                    string.Equals(nonAmbiguousTarget, entry.TargetMeshName, StringComparison.Ordinal))
                 {
-                    MeshName = entry.BundleMeshName,
-                    BoneNameHashes = contract.BoneNameHashes,
-                    RootBoneNameHash = contract.RootBoneNameHash,
-                    BindPoses = contract.BindPoses,
-                });
+                    contracts.Add(new MeshBuildContract
+                    {
+                        MeshName = entry.BundleMeshName,
+                        BoneNameHashes = contract.BoneNameHashes,
+                        RootBoneNameHash = contract.RootBoneNameHash,
+                        BindPoses = contract.BindPoses,
+                    });
+                }
             }
 
             if (contracts.Count > 0)
@@ -228,7 +244,8 @@ public static class GlbMeshBundleCompiler
 
             foreach (var entry in group)
             {
-                var match = extractedCandidates.FirstOrDefault(candidate => candidate.Aliases.Contains(entry.BundleMeshName));
+                var sourceMeshName = entry.SourceMeshName ?? entry.BundleMeshName;
+                var match = extractedCandidates.FirstOrDefault(candidate => candidate.Aliases.Contains(sourceMeshName));
                 if (match == null && extractedCandidates.Count == 1)
                     match = extractedCandidates[0];
 
@@ -236,7 +253,7 @@ public static class GlbMeshBundleCompiler
                 {
                     var available = string.Join(", ", extractedCandidates.SelectMany(c => c.Aliases).Distinct(StringComparer.Ordinal).OrderBy(n => n, StringComparer.Ordinal));
                     throw new InvalidOperationException(
-                        $"No matching mesh instance was found in '{group.Key}' for '{entry.BundleMeshName}'. Available names: {available}");
+                        $"No matching mesh instance was found in '{group.Key}' for '{sourceMeshName}'. Available names: {available}");
                 }
 
                 var mesh = match.Node.Mesh ?? throw new InvalidOperationException("Matched mesh candidate has no mesh.");
@@ -247,7 +264,9 @@ public static class GlbMeshBundleCompiler
                     companionSkinData,
                     isCleaned,
                     entry.BindPoseReferencePath,
-                    entry.BundleMeshName)
+                    entry.BundleMeshName,
+                    entry.TargetRendererPath,
+                    entry.TargetMeshMaxHalfExtent)
                     ?? throw new InvalidOperationException($"Matched mesh '{entry.BundleMeshName}' in '{group.Key}' could not be extracted.");
 
                 extracted.Add(CloneMeshWithName(compiled, entry.BundleMeshName));
@@ -277,7 +296,8 @@ public static class GlbMeshBundleCompiler
 
             foreach (var entry in group)
             {
-                var match = extractedCandidates.FirstOrDefault(candidate => candidate.Aliases.Contains(entry.BundleMeshName));
+                var sourceMeshName = entry.SourceMeshName ?? entry.BundleMeshName;
+                var match = extractedCandidates.FirstOrDefault(candidate => candidate.Aliases.Contains(sourceMeshName));
                 if (match == null && extractedCandidates.Count == 1)
                     match = extractedCandidates[0];
 
@@ -302,6 +322,8 @@ public static class GlbMeshBundleCompiler
         var nodeName = node.Name;
         var meshName = mesh.Name;
         var fallbackName = $"Mesh_{mesh.LogicalIndex}";
+        foreach (var pathAlias in GetNodePathAliases(node))
+            aliases.Add(pathAlias);
 
         if (!string.IsNullOrWhiteSpace(nodeName))
             aliases.Add(nodeName);
@@ -323,6 +345,38 @@ public static class GlbMeshBundleCompiler
             Mesh = CloneMeshWithName(compiled, primaryName),
             MaterialBindings = ExtractMaterialBindings(node),
         };
+    }
+
+    private static IEnumerable<string> GetNodePathAliases(Node node)
+    {
+        var withRoot = BuildNodePath(node, includeRoot: true);
+        if (!string.IsNullOrWhiteSpace(withRoot))
+            yield return withRoot;
+
+        var withoutRoot = BuildNodePath(node, includeRoot: false);
+        if (!string.IsNullOrWhiteSpace(withoutRoot))
+            yield return withoutRoot;
+    }
+
+    private static string BuildNodePath(Node node, bool includeRoot)
+    {
+        var segments = new List<string>();
+        var current = node;
+
+        while (current != null)
+        {
+            if (current.VisualParent == null && !includeRoot)
+                break;
+
+            if (string.IsNullOrWhiteSpace(current.Name))
+                return string.Empty;
+
+            segments.Add(current.Name);
+            current = current.VisualParent;
+        }
+
+        segments.Reverse();
+        return string.Join("/", segments);
     }
 
     private static CompiledMesh CloneMeshWithName(CompiledMesh mesh, string name)
@@ -445,10 +499,37 @@ public static class GlbMeshBundleCompiler
     /// character exports.
     /// Scope: proven skinned-model replacement path for authored character swaps.
     /// </summary>
-    internal static VertexSpaceMode DetermineVertexSpaceMode(bool isSkinnedPath, bool isCleaned, bool hasDirectSkinBinding, bool appearsCentimeterScale)
+    internal static VertexSpaceMode DetermineVertexSpaceMode(
+        bool isSkinnedPath,
+        bool isCleaned,
+        bool hasDirectSkinBinding,
+        bool appearsCentimeterScale,
+        float authoredMaxHalfExtent,
+        float targetMaxHalfExtent)
     {
         if (!isSkinnedPath)
             return VertexSpaceMode.StaticMesh;
+
+        // When both the vanilla target mesh's half-extent and the authored source
+        // mesh's half-extent are known, derive vertex space from their ratio rather
+        // than relying on naming heuristics. The game's internal scale for a given
+        // mesh asset is authoritative — if authored-scale ≈ target-scale, the
+        // replacement is already in the same space as the target and must pass
+        // through untouched; if authored-scale ≈ target-scale × 0.01, the source
+        // is in metre-space and needs the 100× scale-up to reach the target's space.
+        if (targetMaxHalfExtent > 1e-3f && authoredMaxHalfExtent > 1e-6f)
+        {
+            var ratio = targetMaxHalfExtent / authoredMaxHalfExtent;
+            const float sameScaleMin = 0.5f;
+            const float sameScaleMax = 2f;
+            const float centimetreToMetreMin = 50f;
+            const float centimetreToMetreMax = 200f;
+
+            if (ratio >= sameScaleMin && ratio <= sameScaleMax)
+                return VertexSpaceMode.RawPrefabSkinned;
+            if (ratio >= centimetreToMetreMin && ratio <= centimetreToMetreMax)
+                return VertexSpaceMode.CleanedSkinned;
+        }
 
         if (isCleaned)
             return VertexSpaceMode.CleanedSkinned;
@@ -482,7 +563,9 @@ public static class GlbMeshBundleCompiler
         CompanionSkinData? companionSkinData,
         bool isCleaned,
         string? bindPoseReferencePath,
-        string bundleMeshName)
+        string bundleMeshName,
+        string? bindPoseReferenceSelector = null,
+        float targetMeshMaxHalfExtent = 0f)
     {
         var sourceVertices = new List<Vector3>();
         var sourceNormals = new List<Vector3>();
@@ -534,11 +617,14 @@ public static class GlbMeshBundleCompiler
         var normalTransform = Matrix4x4.Transpose(inverseWorldTransform);
 
         bool isSkinnedPath = skin != null || (companionSkinData is not null && companionSkinData.BoneNames.Length > 0);
+        var authoredMaxHalfExtent = ComputeMaxHalfExtent(mesh);
         var spaceMode = DetermineVertexSpaceMode(
             isSkinnedPath,
             isCleaned,
             hasDirectSkinBinding: meshNode.Skin != null,
-            appearsCentimeterScale: IsLikelyCentimeterScale(mesh));
+            appearsCentimeterScale: IsLikelyCentimeterScale(mesh),
+            authoredMaxHalfExtent: authoredMaxHalfExtent,
+            targetMaxHalfExtent: targetMeshMaxHalfExtent);
 
         var vertexOffset = 0;
         foreach (var primitive in mesh.Primitives)
@@ -601,15 +687,31 @@ public static class GlbMeshBundleCompiler
                 }
             }
 
-            var colors = primitive.GetVertexAccessor("COLOR_0")?.AsVector4Array();
-            if (colors != null)
+            var colorAccessor = primitive.GetVertexAccessor("COLOR_0");
+            if (colorAccessor != null)
             {
-                foreach (var color in colors)
+                // Blender exports COLOR_0 as VEC3 (RGB) when the source mesh has no alpha.
+                // SharpGLTF's AsVector4Array() rejects VEC3 accessors; read as VEC3 and
+                // default alpha to 1.0 so round-tripped colour channels survive compilation.
+                if (colorAccessor.Dimensions == SharpGLTF.Schema2.DimensionType.VEC4)
                 {
-                    allColors.Add(color.X);
-                    allColors.Add(color.Y);
-                    allColors.Add(color.Z);
-                    allColors.Add(color.W);
+                    foreach (var color in colorAccessor.AsVector4Array())
+                    {
+                        allColors.Add(color.X);
+                        allColors.Add(color.Y);
+                        allColors.Add(color.Z);
+                        allColors.Add(color.W);
+                    }
+                }
+                else if (colorAccessor.Dimensions == SharpGLTF.Schema2.DimensionType.VEC3)
+                {
+                    foreach (var color in colorAccessor.AsVector3Array())
+                    {
+                        allColors.Add(color.X);
+                        allColors.Add(color.Y);
+                        allColors.Add(color.Z);
+                        allColors.Add(1f);
+                    }
                 }
             }
 
@@ -677,7 +779,7 @@ public static class GlbMeshBundleCompiler
                     $"Bind-pose retargeting for '{bundleMeshName}' requires a skinned authored model.");
             }
 
-            if (spaceMode != VertexSpaceMode.CleanedSkinned)
+            if (spaceMode == VertexSpaceMode.StaticMesh)
             {
                 throw new InvalidOperationException(
                     $"Bind-pose retargeting for '{bundleMeshName}' only supports authored skinned replacement sources.");
@@ -694,7 +796,10 @@ public static class GlbMeshBundleCompiler
                 ParentNames = parentNames,
                 BindPoses = authoredSkinData.SourceBindPoses,
             };
-            var referenceSkin = LoadReferenceSkinBindingData(bindPoseReferencePath!, bundleMeshName);
+            var referenceMeshSelector = string.IsNullOrWhiteSpace(bindPoseReferenceSelector)
+                ? bundleMeshName
+                : bindPoseReferenceSelector;
+            var referenceSkin = LoadReferenceSkinBindingData(bindPoseReferencePath!, referenceMeshSelector);
             var referenceContract = new BindPoseRetargetService.SkeletonContract
             {
                 BoneNames = referenceSkin.BoneNames,
@@ -841,7 +946,7 @@ public static class GlbMeshBundleCompiler
         };
     }
 
-    private static SkinBindingData LoadReferenceSkinBindingData(string referencePath, string bundleMeshName)
+    private static SkinBindingData LoadReferenceSkinBindingData(string referencePath, string referenceMeshSelector)
     {
         var model = ModelRoot.Load(referencePath);
         var candidates = model.LogicalNodes
@@ -854,7 +959,10 @@ public static class GlbMeshBundleCompiler
         if (candidates.Count == 0)
             throw new InvalidOperationException($"Bind-pose reference '{referencePath}' contains no mesh nodes.");
 
-        var match = candidates.FirstOrDefault(candidate => candidate.Aliases.Contains(bundleMeshName));
+        var normalisedSelector = NormaliseReferenceAlias(referenceMeshSelector);
+        var match = candidates.FirstOrDefault(candidate =>
+            candidate.Aliases.Contains(referenceMeshSelector) ||
+            candidate.Aliases.Any(alias => string.Equals(NormaliseReferenceAlias(alias), normalisedSelector, StringComparison.Ordinal)));
         if (match == null && candidates.Count == 1)
             match = candidates[0];
 
@@ -862,16 +970,39 @@ public static class GlbMeshBundleCompiler
         {
             var available = string.Join(", ", candidates.SelectMany(c => c.Aliases).Distinct(StringComparer.Ordinal).OrderBy(n => n, StringComparer.Ordinal));
             throw new InvalidOperationException(
-                $"Bind-pose reference '{referencePath}' has no mesh node matching '{bundleMeshName}'. Available names: {available}");
+                $"Bind-pose reference '{referencePath}' has no mesh node matching '{referenceMeshSelector}'. Available names: {available}");
         }
 
         if (match.Node.Skin == null)
         {
             throw new InvalidOperationException(
-                $"Bind-pose reference '{referencePath}' mesh '{bundleMeshName}' is not skinned.");
+                $"Bind-pose reference '{referencePath}' mesh '{referenceMeshSelector}' is not skinned.");
         }
 
         return BuildSkinBindingData(match.Node.Skin);
+    }
+
+    private static string NormaliseReferenceAlias(string alias)
+    {
+        if (string.IsNullOrWhiteSpace(alias))
+            return string.Empty;
+
+        var segments = alias
+            .Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Select(segment =>
+            {
+                var normalised = segment;
+                if (CompilationService.TryStripBlenderNumericSuffix(normalised, out var strippedBlender, out _))
+                    normalised = strippedBlender;
+
+                const string containerSuffix = "_container";
+                if (normalised.EndsWith(containerSuffix, StringComparison.Ordinal))
+                    normalised = normalised[..^containerSuffix.Length];
+
+                return normalised;
+            });
+
+        return string.Join("/", segments);
     }
 
     private static bool IsIdentityMatrix(Matrix4x4 matrix)
@@ -935,6 +1066,31 @@ public static class GlbMeshBundleCompiler
 
     private static bool NeedsMeshOnlyWeightScale(SharpGLTF.Schema2.Mesh mesh)
         => IsLikelyCentimeterScale(mesh);
+
+    private static float ComputeMaxHalfExtent(SharpGLTF.Schema2.Mesh mesh)
+    {
+        var min = new Vector3(float.PositiveInfinity);
+        var max = new Vector3(float.NegativeInfinity);
+        var seenAny = false;
+        foreach (var primitive in mesh.Primitives)
+        {
+            var positions = primitive.GetVertexAccessor("POSITION")?.AsVector3Array();
+            if (positions == null)
+                continue;
+            foreach (var position in positions)
+            {
+                min = Vector3.Min(min, position);
+                max = Vector3.Max(max, position);
+                seenAny = true;
+            }
+        }
+
+        if (!seenAny)
+            return 0f;
+
+        var extent = (max - min) * 0.5f;
+        return Math.Max(Math.Abs(extent.X), Math.Max(Math.Abs(extent.Y), Math.Abs(extent.Z)));
+    }
 
     private static List<CompiledTexture> ExtractTextures(IReadOnlyList<MeshSourceEntry> entries)
     {

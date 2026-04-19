@@ -80,7 +80,13 @@ public record struct BoneWeight4
 		float sum = Sum;
 		if (sum == 0f)
 		{
-			return new BoneWeight4(.25f, .25f, .25f, .25f, Index0, Index1, Index2, Index3);
+			// Sum=0 arises when a mesh has BlendIndices (dim>0) but no BlendWeight channel
+			// (dim=0) — Unity's rigid-skinning layout where each vertex is implicitly 100%
+			// bound to its indexed bone. The historic 0.25/0.25/0.25/0.25 fallback corrupts
+			// this: after downstream dedupe it produces 25% target + 75% bone-0, introducing
+			// blended skinning under animation (visible as LBS scaling on rotating joints).
+			// Treat sum=0 as rigid and emit 1.0 on Index0 to preserve the source contract.
+			return new BoneWeight4(1f, 0f, 0f, 0f, Index0, 0, 0, 0);
 		}
 		else
 		{

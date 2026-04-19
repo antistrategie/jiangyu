@@ -5,8 +5,10 @@ namespace Jiangyu.Loader.Replacements;
 
 internal sealed class MeshPreparationService
 {
+    private readonly record struct PreparedMeshKey(int OriginalMeshId, int ReplacementMeshId);
+
     private readonly List<UnityEngine.Object> _pinned;
-    private readonly Dictionary<int, PreparedMeshAssignment> _preparedAssignments = new();
+    private readonly Dictionary<PreparedMeshKey, PreparedMeshAssignment> _preparedAssignments = new();
 
     public MeshPreparationService(List<UnityEngine.Object> pinned)
     {
@@ -19,11 +21,14 @@ internal sealed class MeshPreparationService
         ReplacementMesh replacement,
         string[] targetBoneNames,
         string[] replacementBoneNames,
+        Transform[] targetBones,
         Transform[] newBones)
     {
         var originalMesh = smr.sharedMesh;
-        var originalMeshId = originalMesh.GetInstanceID();
-        if (_preparedAssignments.TryGetValue(originalMeshId, out var prepared))
+        var key = new PreparedMeshKey(
+            originalMesh.GetInstanceID(),
+            replacement.Mesh?.GetInstanceID() ?? 0);
+        if (_preparedAssignments.TryGetValue(key, out var prepared))
             return prepared;
 
         prepared = new PreparedMeshAssignment
@@ -31,13 +36,15 @@ internal sealed class MeshPreparationService
             UpdateWhenOffscreen = true,
         };
 
+        var effectiveReplacementMesh = replacement.Mesh;
+
         var replacementHasSkinningMetadata = replacement.BoneNames != null && replacement.BoneNames.Length > 0;
-        if (!replacementHasSkinningMetadata && MeshPreparationUtilities.TargetMeshVertexCountMatches(originalMesh, replacement.Mesh))
+        if (!replacementHasSkinningMetadata && MeshPreparationUtilities.TargetMeshVertexCountMatches(originalMesh, effectiveReplacementMesh))
         {
             var runtimeMesh = MeshPreparationUtilities.InstantiateMeshClone(originalMesh);
             _pinned.Add(runtimeMesh);
 
-            if (MeshPreparationUtilities.TryCopyGeometryOntoExistingMesh(log, runtimeMesh, replacement.Mesh))
+            if (MeshPreparationUtilities.TryCopyGeometryOntoExistingMesh(log, runtimeMesh, effectiveReplacementMesh))
             {
                 prepared.Mesh = runtimeMesh;
                 prepared.Bounds = runtimeMesh.bounds;
@@ -45,16 +52,18 @@ internal sealed class MeshPreparationService
             }
         }
 
-        if (prepared.Mesh == null &&
-            MeshPreparationUtilities.TryUseReplacementMeshDirectly(log, originalMesh, replacement.Mesh, targetBoneNames, replacementBoneNames))
-        {
-            prepared.Mesh = replacement.Mesh;
-            prepared.Bounds = replacement.Mesh.bounds;
-        }
-
         if (prepared.Mesh == null)
         {
-            if (MeshPreparationUtilities.TryPrepareReplacementMeshForLiveBones(log, smr, originalMesh, replacement.Mesh, newBones, out var preparedReplacementMesh))
+            if (MeshPreparationUtilities.TryPrepareReplacementMeshForLiveBones(
+                log,
+                smr,
+                originalMesh,
+                effectiveReplacementMesh,
+                targetBoneNames,
+                replacementBoneNames,
+                targetBones,
+                newBones,
+                out var preparedReplacementMesh))
             {
                 _pinned.Add(preparedReplacementMesh);
                 prepared.Mesh = preparedReplacementMesh;
@@ -62,12 +71,15 @@ internal sealed class MeshPreparationService
             }
             else
             {
-                prepared.Mesh = replacement.Mesh;
-                prepared.Bounds = replacement.Mesh.bounds;
+                prepared.Mesh = effectiveReplacementMesh;
+                prepared.Bounds = effectiveReplacementMesh.bounds;
             }
         }
 
-        _preparedAssignments[originalMeshId] = prepared;
+        _preparedAssignments[key] = prepared;
         return prepared;
     }
+
+    public void ClearPreparedAssignments()
+        => _preparedAssignments.Clear();
 }
