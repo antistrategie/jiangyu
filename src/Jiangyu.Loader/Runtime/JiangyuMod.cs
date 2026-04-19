@@ -45,6 +45,13 @@ public class JiangyuMod : MelonMod
     private const int SpawnMonitorIntervalFrames = 10;
 
     private static readonly int[] DelayedInspectFrames = { 60, 180, 600 };
+    private static readonly int[] EntityTemplateInspectFrames = { 180, 600 };
+    private static readonly HashSet<string> EntityTemplateInspectScenes = new(StringComparer.Ordinal)
+    {
+        "Strategy",
+        "MissionPreparation",
+        "Tactical",
+    };
     private const int PeriodicInspectIntervalFrames = 300; // ~5s; dumps continue indefinitely while flag set
 
     private readonly ReplacementCoordinator _replacementCoordinator = new();
@@ -53,6 +60,8 @@ public class JiangyuMod : MelonMod
     private int _frameOfLastSpawnMonitor;
     private string _currentScene;
     private readonly HashSet<int> _inspectedFrames = new();
+    private readonly HashSet<int> _entityTemplateInspectAttempts = new();
+    private bool _entityTemplateDumpSucceededThisScene;
 
     public override void OnInitializeMelon()
     {
@@ -74,6 +83,8 @@ public class JiangyuMod : MelonMod
         _frameOfLastPeriodicDump = 0;
         _frameOfLastSpawnMonitor = 0;
         _inspectedFrames.Clear();
+        _entityTemplateInspectAttempts.Clear();
+        _entityTemplateDumpSucceededThisScene = false;
         _replacementCoordinator.OnSceneUnloaded();
 
         LoggerInstance.Msg($"Scene loaded: {sceneName} ({buildIndex})");
@@ -98,6 +109,19 @@ public class JiangyuMod : MelonMod
                 if (_frameInScene == markFrame && _inspectedFrames.Add(markFrame))
                 {
                     RuntimeInspector.Dump($"{_currentScene}-t{markFrame}f", 0, LoggerInstance);
+                }
+            }
+
+            if (!_entityTemplateDumpSucceededThisScene &&
+                EntityTemplateInspectScenes.Contains(_currentScene))
+            {
+                foreach (var markFrame in EntityTemplateInspectFrames)
+                {
+                    if (_frameInScene == markFrame && _entityTemplateInspectAttempts.Add(markFrame))
+                    {
+                        _entityTemplateDumpSucceededThisScene =
+                            RuntimeInspector.TryDumpEntityTemplatesFromLoader($"{_currentScene}-t{markFrame}f", LoggerInstance);
+                    }
                 }
             }
 

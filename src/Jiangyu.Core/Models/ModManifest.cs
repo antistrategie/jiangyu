@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Jiangyu.Shared.Templates;
 
 namespace Jiangyu.Core.Models;
 
@@ -33,6 +34,14 @@ public sealed class ModManifest
     /// </summary>
     [JsonPropertyName("meshes")]
     public Dictionary<string, MeshManifestEntry>? Meshes { get; set; }
+
+    /// <summary>
+    /// Compiler-owned internal template patch payload. Each entry targets a
+    /// named DataTemplate subtype (EntityTemplate by default when templateType
+    /// is omitted). Not a stable modder-facing authoring contract.
+    /// </summary>
+    [JsonPropertyName("templatePatches")]
+    public List<CompiledTemplatePatch>? TemplatePatches { get; set; }
 
     public static ModManifest CreateDefault(string name) => new()
     {

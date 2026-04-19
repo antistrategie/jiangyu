@@ -1,6 +1,8 @@
 using Il2CppInterop.Runtime;
 using Jiangyu.Loader.Bundles;
 using Jiangyu.Loader.Replacements;
+using Jiangyu.Loader.Templates;
+using Jiangyu.Shared.Bundles;
 using MelonLoader;
 using UnityEngine;
 
@@ -15,6 +17,8 @@ internal class ReplacementCoordinator
     private readonly MeshPreparationService _meshPreparation;
     private readonly DirectMeshReplacementApplier _directReplacements;
     private readonly DrivenPrefabReplacementManager _drivenReplacements;
+    private readonly TemplatePatchCatalog _templatePatches;
+    private readonly TemplatePatchApplier _templatePatchApplier;
     // Tracks SMRs we've already processed in this session. The mesh-name-based
     // IsAlreadyProcessedMesh check isn't sufficient because the "direct use"
     // swap path assigns the bundle's mesh verbatim (no " [jiangyu]" suffix
@@ -31,10 +35,20 @@ internal class ReplacementCoordinator
         _meshPreparation = new MeshPreparationService(_pinned);
         _directReplacements = new DirectMeshReplacementApplier(_materialReplacements, _meshPreparation);
         _drivenReplacements = new DrivenPrefabReplacementManager(_pinned);
+        _templatePatches = new TemplatePatchCatalog();
+        _templatePatchApplier = new TemplatePatchApplier(_templatePatches);
     }
 
     public BundleLoadSummary LoadBundles(string modsDir, MelonLogger.Instance log)
-        => _catalog.LoadBundles(modsDir, log);
+    {
+        if (!Directory.Exists(modsDir))
+            return new BundleLoadSummary(0, 0, 0);
+
+        var plan = ModLoadPlanBuilder.Build(modsDir);
+        var summary = _catalog.LoadBundles(plan, log);
+        _templatePatches.Load(plan.LoadableMods, log);
+        return summary;
+    }
 
     public void InstallHarmonyPatches(HarmonyLib.Harmony harmony, MelonLogger.Instance log)
     {
@@ -60,7 +74,8 @@ internal class ReplacementCoordinator
             _catalog.Prefabs.Count == 0 &&
             _catalog.ReplacementTextures.Count == 0 &&
             _catalog.ReplacementSprites.Count == 0 &&
-            _catalog.ReplacementAudioClips.Count == 0)
+            _catalog.ReplacementAudioClips.Count == 0 &&
+            !_templatePatchApplier.HasPendingPatches)
             return;
 
         var visualReplacements = 0;
@@ -109,10 +124,15 @@ internal class ReplacementCoordinator
 
         if (visualReplacements > 0 || textureMutations > 0)
             log.Msg($"Applied {visualReplacements} visual replacement(s) and {textureMutations} texture mutation(s).");
+
+        _templatePatchApplier.TryApply(log);
     }
 
     public bool HasReplacementTargets()
     {
+        if (_templatePatchApplier.HasPendingPatches)
+            return true;
+
         if (_catalog.Meshes.Count == 0 &&
             _catalog.Prefabs.Count == 0 &&
             _catalog.ReplacementTextures.Count == 0 &&

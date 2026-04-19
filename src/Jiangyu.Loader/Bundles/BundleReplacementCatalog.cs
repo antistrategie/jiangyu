@@ -28,15 +28,11 @@ internal sealed class BundleReplacementCatalog
         _pinned = pinned;
     }
 
-    public BundleLoadSummary LoadBundles(string modsDir, MelonLogger.Instance log)
+    public BundleLoadSummary LoadBundles(ModLoadPlan plan, MelonLogger.Instance log)
     {
         var bundleCount = 0;
         var loadableModCount = 0;
 
-        if (!Directory.Exists(modsDir))
-            return new BundleLoadSummary(0, 0, 0);
-
-        var plan = ModLoadPlanBuilder.Build(modsDir);
         foreach (var blockedMod in plan.BlockedMods)
         {
             log.Error($"Skipping mod '{blockedMod.DisplayName}' [{blockedMod.RelativeDirectoryPath}]: {blockedMod.Reason}");
