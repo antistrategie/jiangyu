@@ -14,6 +14,7 @@ using AssetRipper.Processing;
 using AssetRipper.Processing.AnimatorControllers;
 using AssetRipper.Processing.Prefabs;
 using AssetRipper.Processing.Scenes;
+using AssetRipper.Export.Modules.Audio;
 using AssetRipper.Export.Modules.Textures;
 using AssetRipper.SourceGenerated.Classes.ClassID_1;
 using AssetRipper.SourceGenerated.Classes.ClassID_21;
@@ -21,7 +22,9 @@ using AssetRipper.SourceGenerated.Classes.ClassID_25;
 using AssetRipper.SourceGenerated.Classes.ClassID_28;
 using AssetRipper.SourceGenerated.Classes.ClassID_4;
 using AssetRipper.SourceGenerated.Classes.ClassID_43;
+using AssetRipper.SourceGenerated.Classes.ClassID_83;
 using AssetRipper.SourceGenerated.Classes.ClassID_137;
+using AssetRipper.SourceGenerated.Classes.ClassID_213;
 using AssetRipper.SourceGenerated.Extensions;
 using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Glb;
@@ -371,6 +374,141 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
             }
 
             _log.Error($"No GameObject or Mesh named '{assetName}' found.");
+        }
+        finally
+        {
+            Logger.Remove(adapter);
+        }
+    }
+
+    /// <summary>
+    /// Decodes the indexed Texture2D asset to a PNG at <paramref name="outputFilePath"/>.
+    /// The image reflects the game's current runtime pixels for that texture instance.
+    /// </summary>
+    public bool ExportTexture(string assetName, string outputFilePath, string collection, long pathId)
+    {
+        return ExportAssetFromIndexed<ITexture2D>(assetName, collection, pathId, "Texture2D", (texture) =>
+        {
+            if (!TextureConverter.TryConvertToBitmap(texture, out DirectBitmap bitmap) || bitmap.IsEmpty)
+            {
+                _log.Error($"Failed to decode Texture2D '{texture.Name}'.");
+                return false;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(outputFilePath)!);
+            using var stream = File.Create(outputFilePath);
+            bitmap.SaveAsPng(stream);
+            _log.Info($"  -> {outputFilePath} ({bitmap.Width}x{bitmap.Height})");
+            return true;
+        });
+    }
+
+    /// <summary>
+    /// Decodes the indexed Sprite asset to a PNG at <paramref name="outputFilePath"/>. Produces
+    /// the sprite's framed rect (not the full atlas backing texture); atlas-backed sprites still
+    /// decode to just their own region.
+    /// </summary>
+    public bool ExportSprite(string assetName, string outputFilePath, string collection, long pathId)
+    {
+        return ExportAssetFromIndexed<ISprite>(assetName, collection, pathId, "Sprite", (sprite) =>
+        {
+            if (!SpriteConverter.TryConvertToBitmap(sprite, out DirectBitmap bitmap) || bitmap.IsEmpty)
+            {
+                _log.Error($"Failed to decode Sprite '{sprite.Name}'.");
+                return false;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(outputFilePath)!);
+            using var stream = File.Create(outputFilePath);
+            bitmap.SaveAsPng(stream);
+            _log.Info($"  -> {outputFilePath} ({bitmap.Width}x{bitmap.Height})");
+            return true;
+        });
+    }
+
+    /// <summary>
+    /// Decodes the indexed AudioClip asset. Writes to <paramref name="outputDirectory"/>; the
+    /// file extension is chosen by the decoder (usually <c>.ogg</c> or <c>.wav</c> for PCM
+    /// Fmod samples, occasionally module formats like <c>.it</c>/<c>.xm</c>). Returns the
+    /// written path.
+    /// </summary>
+    public bool ExportAudio(string assetName, string outputDirectory, string collection, long pathId)
+    {
+        return ExportAssetFromIndexed<IAudioClip>(assetName, collection, pathId, "AudioClip", (audioClip) =>
+        {
+            if (!AudioClipDecoder.TryDecode(audioClip, out var decodedData, out var fileExtension, out var message))
+            {
+                _log.Error($"Failed to decode AudioClip '{audioClip.Name}': {message}");
+                return false;
+            }
+
+            // AssetRipper's AudioClipDecoder returns extensions without a leading dot
+            // (e.g. "ogg", "wav"); normalise so we produce "<name>.<ext>" rather than
+            // "<name><ext>" which reads as "nameogg".
+            if (!fileExtension.StartsWith('.'))
+                fileExtension = "." + fileExtension;
+
+            Directory.CreateDirectory(outputDirectory);
+            var outputFilePath = Path.Combine(outputDirectory, $"{assetName}{fileExtension}");
+            File.WriteAllBytes(outputFilePath, decodedData);
+            _log.Info($"  -> {outputFilePath} ({decodedData.Length} bytes)");
+            return true;
+        });
+    }
+
+    private bool ExportAssetFromIndexed<T>(
+        string assetName,
+        string collection,
+        long pathId,
+        string expectedTypeLabel,
+        Func<T, bool> exporter)
+        where T : class, IUnityObjectBase
+    {
+        _log.Info($"Loading game data from: {GameDataPath}");
+
+        var settings = new CoreConfiguration();
+        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level0;
+
+        var adapter = new AssetRipperProgressAdapter(_progress);
+        Logger.Add(adapter);
+
+        try
+        {
+            _progress.SetPhase("Loading assets");
+            var gameStructure = GameStructure.Load([GameDataPath], LocalFileSystem.Instance, settings);
+            var gameData = GameData.FromGameStructure(gameStructure);
+
+            if (!gameData.GameBundle.HasAnyAssetCollections())
+            {
+                _progress.Finish();
+                _log.Error("No asset collections found in game data.");
+                return false;
+            }
+
+            _progress.Finish();
+            _progress.SetPhase("Processing");
+            RunProcessors(gameData);
+            _progress.Finish();
+
+            IUnityObjectBase? found = null;
+            foreach (var col in gameData.GameBundle.FetchAssetCollections())
+            {
+                if (col.Name != collection)
+                    continue;
+
+                found = col.FirstOrDefault(a => a.PathID == pathId);
+                break;
+            }
+
+            if (found is not T typed)
+            {
+                _log.Error(
+                    $"No {expectedTypeLabel} named '{assetName}' found in collection '{collection}' at pathId={pathId} " +
+                    $"(found={found?.GetType().Name ?? "null"}).");
+                return false;
+            }
+
+            return exporter(typed);
         }
         finally
         {

@@ -226,7 +226,115 @@ public static class AssetsCommand
         });
 
         exportCommand.Add(modelCommand);
+        exportCommand.Add(CreateSimpleAssetExportCommand(
+            commandName: "texture",
+            description: "Export a game texture as PNG",
+            className: "Texture2D",
+            defaultFileName: (name) => $"{name}.png",
+            invoke: (service, name, output, collection, pathId) => service.ExportTexture(name, output, collection, pathId)));
+        exportCommand.Add(CreateSimpleAssetExportCommand(
+            commandName: "sprite",
+            description: "Export a game sprite as PNG",
+            className: "Sprite",
+            defaultFileName: (name) => $"{name}.png",
+            invoke: (service, name, output, collection, pathId) => service.ExportSprite(name, output, collection, pathId)));
+        exportCommand.Add(CreateSimpleAssetExportCommand(
+            commandName: "audio",
+            description: "Export a game audio clip (format decided by the source — usually .ogg or .wav)",
+            className: "AudioClip",
+            // Audio is written into a directory; the decoder picks the file extension.
+            defaultFileName: null,
+            invoke: (service, name, output, collection, pathId) => service.ExportAudio(name, output, collection, pathId)));
+
         return exportCommand;
+    }
+
+    private static Command CreateSimpleAssetExportCommand(
+        string commandName,
+        string description,
+        string className,
+        Func<string, string>? defaultFileName,
+        Func<AssetPipelineService, string, string, string, long, bool> invoke)
+    {
+        var nameArg = new Argument<string>("name") { Description = "Asset name to export" };
+        var outputOption = new Option<string?>("--output") { Description = defaultFileName is null ? "Output directory" : "Output file path" };
+        var pathIdOption = new Option<long?>("--path-id") { Description = "Asset path ID (from 'assets search'). Required when the name matches more than one asset." };
+        var collectionOption = new Option<string?>("--collection") { Description = "Asset collection (from 'assets search'). Optional narrowing filter." };
+
+        var command = new Command(commandName, description)
+        {
+            nameArg,
+            outputOption,
+            pathIdOption,
+            collectionOption
+        };
+
+        command.SetAction((parseResult) =>
+        {
+            var assetName = parseResult.GetRequiredValue(nameArg);
+            var output = parseResult.GetValue(outputOption);
+            var pathIdFilter = parseResult.GetValue(pathIdOption);
+            var collectionFilter = parseResult.GetValue(collectionOption);
+
+            var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+            if (!resolution.Success)
+            {
+                Console.Error.WriteLine(resolution.Error);
+                return 1;
+            }
+
+            var service = resolution.Context!.CreateAssetPipelineService(new ConsoleProgressSink(), new ConsoleLogSink());
+            CachedIndexStatus indexStatus = service.GetIndexStatus();
+            if (!indexStatus.IsCurrent)
+            {
+                Console.Error.WriteLine($"Error: {indexStatus.Reason}");
+                return 1;
+            }
+
+            var candidates = service.FindAssets(assetName, [className], collectionFilter, pathIdFilter);
+            if (candidates.Count == 0)
+            {
+                Console.Error.WriteLine($"Error: no {className} named '{assetName}' in the index" +
+                    (pathIdFilter.HasValue ? $" with pathId={pathIdFilter.Value}" : "") +
+                    (collectionFilter is not null ? $" in collection '{collectionFilter}'" : "") +
+                    ".");
+                Console.Error.WriteLine($"Run 'jiangyu assets search <name> --type {className}' to find available assets.");
+                return 1;
+            }
+
+            if (candidates.Count > 1)
+            {
+                Console.Error.WriteLine($"Error: '{assetName}' matches {candidates.Count} assets. Pass --path-id to pick one:");
+                foreach (var candidate in candidates)
+                    Console.Error.WriteLine($"  {candidate.Name} in {candidate.Collection} [pathId={candidate.PathId}]");
+                return 1;
+            }
+
+            var match = candidates[0];
+            var collection = match.Collection ?? "";
+            Console.WriteLine($"Found in index: {match.Name} ({match.ClassName}) in {collection} [pathId={match.PathId}]");
+
+            string resolvedOutput;
+            if (defaultFileName is not null)
+            {
+                // File output: --output can be a directory (we append default filename) or a full path.
+                var fallback = Path.Combine(service.CachePath, "exports", defaultFileName(assetName));
+                var target = output ?? fallback;
+                if (Directory.Exists(target) || target.EndsWith(Path.DirectorySeparatorChar) || target.EndsWith(Path.AltDirectorySeparatorChar))
+                    resolvedOutput = Path.Combine(target, defaultFileName(assetName));
+                else
+                    resolvedOutput = target;
+            }
+            else
+            {
+                // Directory output (audio): decoder picks extension.
+                resolvedOutput = output ?? Path.Combine(service.CachePath, "exports");
+            }
+
+            return invoke(service, assetName, resolvedOutput, collection, match.PathId) ? 0 : 1;
+        });
+
+        return command;
     }
 
     private static Command CreateInspectCommand()

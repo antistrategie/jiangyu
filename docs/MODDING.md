@@ -11,6 +11,19 @@ Current supported replacement categories:
 
 Use `assets search` to find the target and the suggested replacement path for each supported asset type.
 
+## Exporting vanilla assets
+
+For iterative authoring (recolour a base map, retouch a sprite, see a rigged mesh in Blender before modifying), export the vanilla asset first:
+
+```bash
+jiangyu assets export model <name> --path-id <id> [--output <dir>]
+jiangyu assets export texture <name> --path-id <id> [--output <file-or-dir>]
+jiangyu assets export sprite <name> --path-id <id> [--output <file-or-dir>]
+jiangyu assets export audio <name> --path-id <id> [--output <dir>]
+```
+
+`--path-id` is required only when the name resolves to multiple assets (the command lists them for you). Output defaults live under the Jiangyu cache at `<cache>/exports/`. Textures and sprites are written as PNG; audio is written at whatever format Unity embedded (typically `.ogg`; module formats like `.it`/`.xm`/`.mod` pass through unchanged).
+
 ## 3D Model Targets
 
 For **3D model replacements**, the preferred modder-facing target is a **`PrefabHierarchyObject`**, not a raw `GameObject`.
