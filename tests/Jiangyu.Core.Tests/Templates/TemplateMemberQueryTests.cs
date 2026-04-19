@@ -63,7 +63,7 @@ public class TemplateMemberQueryTests
 
         Assert.Equal(QueryResultKind.Leaf, result.Kind);
         Assert.Equal("Int32", result.CurrentType!.Name);
-        Assert.Equal(CompiledTemplateScalarValueKind.Int32, result.PatchScalarKind);
+        Assert.Equal(CompiledTemplateValueKind.Int32, result.PatchScalarKind);
         Assert.True(result.IsWritable);
     }
 
@@ -74,7 +74,7 @@ public class TemplateMemberQueryTests
         var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.HudYOffsetScale");
 
         Assert.Equal(QueryResultKind.Leaf, result.Kind);
-        Assert.Equal(CompiledTemplateScalarValueKind.Single, result.PatchScalarKind);
+        Assert.Equal(CompiledTemplateValueKind.Single, result.PatchScalarKind);
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public class TemplateMemberQueryTests
         var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.Properties.DamageType");
 
         Assert.Equal(QueryResultKind.Leaf, result.Kind);
-        Assert.Equal(CompiledTemplateScalarValueKind.Enum, result.PatchScalarKind);
+        Assert.Equal(CompiledTemplateValueKind.Enum, result.PatchScalarKind);
     }
 
     [Fact]
@@ -94,7 +94,7 @@ public class TemplateMemberQueryTests
         var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.Properties.DisplayName");
 
         Assert.Equal(QueryResultKind.Leaf, result.Kind);
-        Assert.Equal(CompiledTemplateScalarValueKind.String, result.PatchScalarKind);
+        Assert.Equal(CompiledTemplateValueKind.String, result.PatchScalarKind);
     }
 
     [Fact]
@@ -104,7 +104,7 @@ public class TemplateMemberQueryTests
         var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.IsEnabled");
 
         Assert.Equal(QueryResultKind.Leaf, result.Kind);
-        Assert.Equal(CompiledTemplateScalarValueKind.Boolean, result.PatchScalarKind);
+        Assert.Equal(CompiledTemplateValueKind.Boolean, result.PatchScalarKind);
     }
 
     [Fact]
@@ -114,7 +114,7 @@ public class TemplateMemberQueryTests
         var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.Skills[0].Uses");
 
         Assert.Equal(QueryResultKind.Leaf, result.Kind);
-        Assert.Equal(CompiledTemplateScalarValueKind.Int32, result.PatchScalarKind);
+        Assert.Equal(CompiledTemplateValueKind.Int32, result.PatchScalarKind);
         Assert.Equal("FixtureEntity.Skills[0].Uses", result.ResolvedPath);
     }
 
@@ -128,7 +128,7 @@ public class TemplateMemberQueryTests
         var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.BoneIndices[0]");
 
         Assert.Equal(QueryResultKind.Leaf, result.Kind);
-        Assert.Equal(CompiledTemplateScalarValueKind.Int32, result.PatchScalarKind);
+        Assert.Equal(CompiledTemplateValueKind.Int32, result.PatchScalarKind);
         Assert.Equal("FixtureEntity.BoneIndices[0]", result.ResolvedPath);
     }
 
@@ -141,7 +141,7 @@ public class TemplateMemberQueryTests
             "Jiangyu.Core.Tests.Templates.Fixtures.Gameplay.FixtureEntity.Properties.Accuracy");
 
         Assert.Equal(QueryResultKind.Leaf, result.Kind);
-        Assert.Equal(CompiledTemplateScalarValueKind.Int32, result.PatchScalarKind);
+        Assert.Equal(CompiledTemplateValueKind.Int32, result.PatchScalarKind);
     }
 
     [Fact]

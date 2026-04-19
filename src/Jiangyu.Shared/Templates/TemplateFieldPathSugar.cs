@@ -10,9 +10,8 @@ namespace Jiangyu.Shared.Templates;
 /// The mapping for <c>UnitLeaderTemplate.InitialAttributes</c> is seeded from
 /// the <c>UnitLeaderAttribute</c> enum in Assembly-CSharp (Agility=0 through
 /// Positioning=6). See
-/// <c>docs/research/investigations/2026-04-19-unitleader-initial-attributes.md</c>
-/// for source citations and the verification gate this mapping is still
-/// pending.
+/// <c>docs/research/verified/unitleader-initial-attributes.md</c> for source
+/// citations and the live-verification record.
 /// </summary>
 public static class TemplateFieldPathSugar
 {

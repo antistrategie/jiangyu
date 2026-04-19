@@ -173,7 +173,12 @@ internal sealed class TemplatePatchApplier
     private static ApplyOutcome TryApplyOperation(
         object template, string templateTypeName, string templateId, LoadedPatchOperation op, MelonLogger.Instance log)
     {
-        var segments = ParsePath(op.FieldPath);
+        if (!TryParsePath(op.FieldPath, out var segments, out var parseError))
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op) + parseError);
+            return ApplyOutcome.MemberMissing;
+        }
+
         var chain = new List<ChainEntry>(segments.Length);
         object current = template;
 
@@ -200,7 +205,6 @@ internal sealed class TemplatePatchApplier
             {
                 Parent = current,
                 Name = segment.Name,
-                DeclaredType = memberType,
                 ValueIsStruct = memberType.IsValueType,
             };
 
@@ -385,30 +389,42 @@ internal sealed class TemplatePatchApplier
     {
         public object Parent { get; set; }
         public string Name { get; set; }
-        public Type DeclaredType { get; set; }
         public bool ValueIsStruct { get; set; }
     }
 
-    private static PathSegment[] ParsePath(string fieldPath)
+    // The validator at load time rejects non-digit indexers and Int32
+    // overflows, so in practice we never reach a failing TryParse here. The
+    // defensive branch is kept so a bypassed validation path fails loudly
+    // rather than crashing the entire apply cycle.
+    private static bool TryParsePath(string fieldPath, out PathSegment[] segments, out string error)
     {
         var raw = fieldPath.Split('.');
-        var result = new PathSegment[raw.Length];
+        segments = new PathSegment[raw.Length];
+        error = null;
+
         for (var i = 0; i < raw.Length; i++)
         {
             var segment = raw[i];
             var bracket = segment.IndexOf('[');
             if (bracket < 0)
             {
-                result[i] = new PathSegment(segment, null);
+                segments[i] = new PathSegment(segment, null);
                 continue;
             }
 
             var name = segment[..bracket];
             var indexText = segment.Substring(bracket + 1, segment.Length - bracket - 2);
-            result[i] = new PathSegment(name, int.Parse(indexText));
+            if (!int.TryParse(indexText, out var index))
+            {
+                segments = null;
+                error = $"unparseable indexer '[{indexText}]' in segment '{segment}'.";
+                return false;
+            }
+
+            segments[i] = new PathSegment(name, index);
         }
 
-        return result;
+        return true;
     }
 
     private static bool TryReadMember(
@@ -541,27 +557,10 @@ internal sealed class TemplatePatchApplier
         {
             elementType = indexer.PropertyType;
 
-            var lengthMember = collectionType.GetProperty(
-                "Length",
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                ?? collectionType.GetProperty(
-                    "Count",
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (lengthMember != null && lengthMember.GetIndexParameters().Length == 0)
+            if (!WithinCollectionBounds(collection, collectionType, index, out var boundsError))
             {
-                try
-                {
-                    var lengthBoxed = lengthMember.GetValue(collection);
-                    if (lengthBoxed is int length && index >= length)
-                    {
-                        error = $"index {index} out of bounds (length={length}).";
-                        return false;
-                    }
-                }
-                catch
-                {
-                    // Proceed without a bounds check; the indexer will throw.
-                }
+                error = boundsError;
+                return false;
             }
 
             try
@@ -580,10 +579,12 @@ internal sealed class TemplatePatchApplier
         return false;
     }
 
-    // Terminal indexer writes target a scalar array element (today: byte[] for
-    // UnitLeaderTemplate.InitialAttributes). The setter/getter closures carry
-    // the array + index so ApplyAndVerify can do its read-write-readback loop
-    // without caring whether it's writing a member or an element.
+    // Terminal indexer writes target an array/list element — scalar types
+    // (byte, int, float, bool, enum, string) or DataTemplate references
+    // resolved via CompiledTemplateValueKind.TemplateReference. The
+    // setter/getter closures carry the collection + index so ApplyAndVerify
+    // can do its read-write-readback loop without caring whether it's writing
+    // a member or an element.
     private static bool TryBindArrayElement(
         object collection, int index, out Type elementType, out Action<object> setter, out Func<object> getter, out string error)
     {
@@ -616,27 +617,10 @@ internal sealed class TemplatePatchApplier
             return false;
         }
 
-        var lengthMember = collectionType.GetProperty(
-            "Length",
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-            ?? collectionType.GetProperty(
-                "Count",
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        if (lengthMember != null && lengthMember.GetIndexParameters().Length == 0)
+        if (!WithinCollectionBounds(collection, collectionType, index, out var boundsError))
         {
-            try
-            {
-                var lengthBoxed = lengthMember.GetValue(collection);
-                if (lengthBoxed is int length && (index < 0 || index >= length))
-                {
-                    error = $"index {index} out of bounds (length={length}).";
-                    return false;
-                }
-            }
-            catch
-            {
-                // Skip the pre-check; the setter will throw.
-            }
+            error = boundsError;
+            return false;
         }
 
         elementType = indexer.PropertyType;
@@ -645,6 +629,39 @@ internal sealed class TemplatePatchApplier
         var indexArg = new object[] { index };
         setter = value => indexerLocal.SetValue(collectionLocal, value, indexArg);
         getter = () => indexerLocal.GetValue(collectionLocal, indexArg);
+        return true;
+    }
+
+    // Soft bounds check via reflection on Length/Count. Returns true when the
+    // index is known-in-range OR when we couldn't read a length (in which case
+    // the indexer itself will throw). False only on a confirmed overflow.
+    private static bool WithinCollectionBounds(object collection, Type collectionType, int index, out string error)
+    {
+        error = null;
+
+        var lengthMember = collectionType.GetProperty(
+            "Length",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            ?? collectionType.GetProperty(
+                "Count",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+        if (lengthMember == null || lengthMember.GetIndexParameters().Length != 0)
+            return true;
+
+        try
+        {
+            if (lengthMember.GetValue(collection) is int length && (index < 0 || index >= length))
+            {
+                error = $"index {index} out of bounds (length={length}).";
+                return false;
+            }
+        }
+        catch
+        {
+            // Proceed without a pre-check; the indexer will throw.
+        }
+
         return true;
     }
 
@@ -681,14 +698,14 @@ internal sealed class TemplatePatchApplier
     }
 
     private static bool TryConvertScalar(
-        CompiledTemplateScalarValue value, Type targetType, out object converted, out string error)
+        CompiledTemplateValue value, Type targetType, out object converted, out string error)
     {
         converted = null;
         error = null;
 
         switch (value.Kind)
         {
-            case CompiledTemplateScalarValueKind.Boolean:
+            case CompiledTemplateValueKind.Boolean:
                 if (targetType != typeof(bool))
                 {
                     error = $"value kind Boolean but member type is {targetType.FullName}.";
@@ -697,7 +714,7 @@ internal sealed class TemplatePatchApplier
                 converted = value.Boolean.Value;
                 return true;
 
-            case CompiledTemplateScalarValueKind.Byte:
+            case CompiledTemplateValueKind.Byte:
                 if (targetType != typeof(byte))
                 {
                     error = $"value kind Byte but member type is {targetType.FullName}.";
@@ -706,7 +723,7 @@ internal sealed class TemplatePatchApplier
                 converted = value.Byte.Value;
                 return true;
 
-            case CompiledTemplateScalarValueKind.Int32:
+            case CompiledTemplateValueKind.Int32:
                 if (targetType != typeof(int))
                 {
                     error = $"value kind Int32 but member type is {targetType.FullName}.";
@@ -715,7 +732,7 @@ internal sealed class TemplatePatchApplier
                 converted = value.Int32.Value;
                 return true;
 
-            case CompiledTemplateScalarValueKind.Single:
+            case CompiledTemplateValueKind.Single:
                 if (targetType != typeof(float))
                 {
                     error = $"value kind Single but member type is {targetType.FullName}.";
@@ -724,7 +741,7 @@ internal sealed class TemplatePatchApplier
                 converted = value.Single.Value;
                 return true;
 
-            case CompiledTemplateScalarValueKind.String:
+            case CompiledTemplateValueKind.String:
                 if (targetType != typeof(string))
                 {
                     error = $"value kind String but member type is {targetType.FullName}.";
@@ -733,7 +750,7 @@ internal sealed class TemplatePatchApplier
                 converted = value.String;
                 return true;
 
-            case CompiledTemplateScalarValueKind.Enum:
+            case CompiledTemplateValueKind.Enum:
                 if (!targetType.IsEnum)
                 {
                     error = $"value kind Enum but member type {targetType.FullName} is not an enum.";
@@ -756,7 +773,7 @@ internal sealed class TemplatePatchApplier
                     return false;
                 }
 
-            case CompiledTemplateScalarValueKind.TemplateReference:
+            case CompiledTemplateValueKind.TemplateReference:
                 return TryResolveTemplateReference(value.Reference, targetType, out converted, out error);
 
             default:

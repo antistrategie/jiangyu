@@ -39,23 +39,25 @@ public static class TemplatePatchPathValidator
     }
 
     /// <summary>
-    /// Returns true when <paramref name="value"/> is a fully-populated
-    /// scalar-kind entry (the expected typed field for the kind is non-null).
+    /// Returns true when <paramref name="value"/> is fully populated for its
+    /// declared <see cref="CompiledTemplateValueKind"/> — the matching
+    /// typed field is non-null (scalar kinds) or the <c>Reference</c> payload
+    /// has both templateType and templateId (TemplateReference kind).
     /// </summary>
-    public static bool IsSupportedScalarValue(CompiledTemplateScalarValue value)
+    public static bool IsSupportedValue(CompiledTemplateValue value)
     {
         if (value == null)
             return false;
 
         return value.Kind switch
         {
-            CompiledTemplateScalarValueKind.Boolean => value.Boolean.HasValue,
-            CompiledTemplateScalarValueKind.Byte => value.Byte.HasValue,
-            CompiledTemplateScalarValueKind.Int32 => value.Int32.HasValue,
-            CompiledTemplateScalarValueKind.Single => value.Single.HasValue,
-            CompiledTemplateScalarValueKind.String => value.String != null,
-            CompiledTemplateScalarValueKind.Enum => !string.IsNullOrWhiteSpace(value.EnumValue),
-            CompiledTemplateScalarValueKind.TemplateReference =>
+            CompiledTemplateValueKind.Boolean => value.Boolean.HasValue,
+            CompiledTemplateValueKind.Byte => value.Byte.HasValue,
+            CompiledTemplateValueKind.Int32 => value.Int32.HasValue,
+            CompiledTemplateValueKind.Single => value.Single.HasValue,
+            CompiledTemplateValueKind.String => value.String != null,
+            CompiledTemplateValueKind.Enum => !string.IsNullOrWhiteSpace(value.EnumValue),
+            CompiledTemplateValueKind.TemplateReference =>
                 value.Reference != null
                 && !string.IsNullOrWhiteSpace(value.Reference.TemplateType)
                 && !string.IsNullOrWhiteSpace(value.Reference.TemplateId),
@@ -87,7 +89,10 @@ public static class TemplatePatchPathValidator
                 return false;
         }
 
-        return true;
+        // Reject indices that overflow Int32 at the validator, not at apply
+        // time — the applier parses via int.TryParse for defence, but catching
+        // it here gives modders a load-time warning instead of a runtime crash.
+        return int.TryParse(indexText, out _);
     }
 
     private static bool IsValidIdentifier(string name)

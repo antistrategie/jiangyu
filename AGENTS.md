@@ -90,7 +90,7 @@ Loader-side mod discovery currently works in two phases: discover/validate manif
 ## Key constraints
 
 - AssetBundles are built via `Unity -batchmode -executeMethod Build` using the Unity Editor. No hand-written Unity serialisation. No AssetsTools.NET for meshes.
-- Template/data patching uses runtime Harmony interception, NOT binary patching of `resources.assets`. Universal standard across IL2CPP modding communities.
+- Template/data patching operates on the live IL2CPP wrapper objects at runtime, NOT binary patching of `resources.assets`. The applier reflects on `DataTemplateLoader.GetAll<T>()`, matches instances by their serialised `m_ID`, and writes scalar values / `TemplateReference` resolutions into the matched template via the wrapper's own writable members and indexers. No Harmony hooks are needed on this path; Harmony is reserved for playback-time substitution (e.g. audio) where the game's own method is the natural interception point.
 - Bundle loading uses `Il2CppAssetBundleManager.LoadFromMemory()` — proton-safe (managed I/O reads bytes, avoids Wine path translation issues with `LoadFromFile`).
 - The game uses Unity 6 (6000.0.63f1). Bundles must be built with the matching editor version.
 - Each replacement category uses a strategy matched to the asset type's runtime representation. Verified contracts live in `docs/research/verified/`:
@@ -132,7 +132,7 @@ Source project manifests should stay ergonomic for modders. Compiled manifests a
 - PHO→GameObject collapse is shared infrastructure: `AssetPipelineService.ResolveGameObjectBacking(index, target)` takes any index entry and, if it is a `PrefabHierarchyObject`, returns its single same-named `GameObject`. Both compile-time target resolution (`CompilationService.ResolveReplacementModelTarget`) and CLI model export (`assets export model`) route through this helper, so a PHO pathId is accepted anywhere a model target is expected. Missing/ambiguous backing `GameObject`s are hard errors, not heuristics.
 - `assets/additions/` is for additional bundled assets preserved under their own names. It is created only when a mod needs it.
 - `depends` — loader currently enforces required mod presence only. Matching is against manifest `name` for now (provisional until Jiangyu has a stable mod `id`). Version text such as `>= 1.0.0` is preserved in the manifest but not enforced yet.
-- `templates/` and `localisation/` remain reserved/planned areas. Template patching and localisation patching are not current modder-facing contracts yet.
+- Template patching is a current modder-facing contract via a top-level `templatePatches` field in `jiangyu.json`. Each entry targets a `DataTemplate` subtype by name + `m_ID` and carries a list of `set` operations against dotted/indexed field paths. Value kinds: `Boolean`, `Byte`, `Int32`, `Single`, `String`, `Enum`, and `TemplateReference` (resolves an existing live template by `(templateType, templateId)`). `UnitLeaderTemplate.InitialAttributes.<AttributeName>` is sugar for the byte-offset form. See `docs/MODDING.md` for the modder-facing shape and `docs/research/verified/unitleader-initial-attributes.md` for the verified offset contract. `templates/` (KDL authoring surface) and `localisation/` patching remain planned, not shipped.
 - `compiled/jiangyu.json` is compiler-owned output. Modders should not author fields inside it by hand.
 
 ### Asset commands

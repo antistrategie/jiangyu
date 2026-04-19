@@ -183,18 +183,18 @@ public static class TemplateMemberQuery
         };
     }
 
-    private static CompiledTemplateScalarValueKind? MapScalarKind(Type type)
+    private static CompiledTemplateValueKind? MapScalarKind(Type type)
     {
         if (type.IsEnum)
-            return CompiledTemplateScalarValueKind.Enum;
+            return CompiledTemplateValueKind.Enum;
 
         return type.FullName switch
         {
-            "System.Boolean" => CompiledTemplateScalarValueKind.Boolean,
-            "System.Byte" => CompiledTemplateScalarValueKind.Byte,
-            "System.Int32" => CompiledTemplateScalarValueKind.Int32,
-            "System.Single" => CompiledTemplateScalarValueKind.Single,
-            "System.String" => CompiledTemplateScalarValueKind.String,
+            "System.Boolean" => CompiledTemplateValueKind.Boolean,
+            "System.Byte" => CompiledTemplateValueKind.Byte,
+            "System.Int32" => CompiledTemplateValueKind.Int32,
+            "System.Single" => CompiledTemplateValueKind.Single,
+            "System.String" => CompiledTemplateValueKind.String,
             _ => null,
         };
     }
@@ -214,7 +214,7 @@ public sealed class QueryResult
     public Type? CurrentType { get; init; }
     public IReadOnlyList<MemberShape>? Members { get; init; }
     public bool IsWritable { get; init; } = true;
-    public CompiledTemplateScalarValueKind? PatchScalarKind { get; init; }
+    public CompiledTemplateValueKind? PatchScalarKind { get; init; }
     public Type? UnwrappedFrom { get; init; }
     public string? ErrorMessage { get; init; }
 

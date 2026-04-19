@@ -32,14 +32,14 @@ public sealed class CompiledTemplateSetOperation
     public string FieldPath { get; set; } = string.Empty;
 
     [JsonPropertyName("value")]
-    public CompiledTemplateScalarValue? Value { get; set; }
+    public CompiledTemplateValue? Value { get; set; }
 }
 
-public sealed class CompiledTemplateScalarValue
+public sealed class CompiledTemplateValue
 {
     [JsonPropertyName("kind")]
     [JsonConverter(typeof(JsonStringEnumConverter))]
-    public CompiledTemplateScalarValueKind Kind { get; set; }
+    public CompiledTemplateValueKind Kind { get; set; }
 
     [JsonPropertyName("boolean")]
     public bool? Boolean { get; set; }
@@ -67,7 +67,7 @@ public sealed class CompiledTemplateScalarValue
 }
 
 /// <summary>
-/// Payload for a <see cref="CompiledTemplateScalarValueKind.TemplateReference"/>
+/// Payload for a <see cref="CompiledTemplateValueKind.TemplateReference"/>
 /// value — identifies an existing live DataTemplate by
 /// <c>(templateType, templateId)</c>. The applier resolves this to an Il2Cpp
 /// wrapper at apply time via <c>TemplateRuntimeAccess</c>; unknown types and
@@ -84,7 +84,7 @@ public sealed class CompiledTemplateReference
     public string TemplateId { get; set; } = string.Empty;
 }
 
-public enum CompiledTemplateScalarValueKind
+public enum CompiledTemplateValueKind
 {
     Boolean,
     Byte,

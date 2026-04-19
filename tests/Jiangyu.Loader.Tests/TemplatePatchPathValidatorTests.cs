@@ -40,6 +40,8 @@ public class TemplatePatchPathValidatorTests
     [InlineData("Skills[-1]")]
     [InlineData("Skills[0xA]")]
     [InlineData("Skills[ 0 ]")]
+    [InlineData("Skills[9999999999]")]
+    [InlineData("Skills[99999999999999999999]")]
     [InlineData("Skills[0]extra")]
     [InlineData("Skills[0][1]")]
     [InlineData("2InvalidStart")]
@@ -59,29 +61,29 @@ public class TemplatePatchPathValidatorTests
 
     [Theory]
     [MemberData(nameof(SupportedScalarValues))]
-    public void Accepts_FullyPopulatedScalarValues(CompiledTemplateScalarValue value)
+    public void Accepts_FullyPopulatedScalarValues(CompiledTemplateValue value)
     {
-        Assert.True(TemplatePatchPathValidator.IsSupportedScalarValue(value));
+        Assert.True(TemplatePatchPathValidator.IsSupportedValue(value));
     }
 
-    public static TheoryData<CompiledTemplateScalarValue> SupportedScalarValues =>
+    public static TheoryData<CompiledTemplateValue> SupportedScalarValues =>
         new()
         {
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Boolean, Boolean = true },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Boolean, Boolean = false },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Byte, Byte = 0 },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Byte, Byte = 255 },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Int32, Int32 = 0 },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Int32, Int32 = -1 },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Single, Single = 0f },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Single, Single = 3.14f },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.String, String = "" },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.String, String = "hello" },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Enum, EnumValue = "SomeMember" },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Enum, EnumType = "SomeEnum", EnumValue = "SomeMember" },
-            new CompiledTemplateScalarValue
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Boolean, Boolean = true },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Boolean, Boolean = false },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Byte, Byte = 0 },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Byte, Byte = 255 },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 0 },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = -1 },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Single, Single = 0f },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Single, Single = 3.14f },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.String, String = "" },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.String, String = "hello" },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Enum, EnumValue = "SomeMember" },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Enum, EnumType = "SomeEnum", EnumValue = "SomeMember" },
+            new CompiledTemplateValue
             {
-                Kind = CompiledTemplateScalarValueKind.TemplateReference,
+                Kind = CompiledTemplateValueKind.TemplateReference,
                 Reference = new CompiledTemplateReference
                 {
                     TemplateType = "SkillTemplate",
@@ -92,36 +94,36 @@ public class TemplatePatchPathValidatorTests
 
     [Theory]
     [MemberData(nameof(UnsupportedScalarValues))]
-    public void Rejects_IncompleteScalarValues(CompiledTemplateScalarValue value)
+    public void Rejects_IncompleteScalarValues(CompiledTemplateValue value)
     {
-        Assert.False(TemplatePatchPathValidator.IsSupportedScalarValue(value));
+        Assert.False(TemplatePatchPathValidator.IsSupportedValue(value));
     }
 
-    public static TheoryData<CompiledTemplateScalarValue> UnsupportedScalarValues =>
+    public static TheoryData<CompiledTemplateValue> UnsupportedScalarValues =>
         new()
         {
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Boolean, Boolean = null },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Byte, Byte = null },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Int32, Int32 = null },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Single, Single = null },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.String, String = null },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Enum, EnumValue = null },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Enum, EnumValue = "" },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Enum, EnumValue = "  " },
-            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.TemplateReference, Reference = null },
-            new CompiledTemplateScalarValue
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Boolean, Boolean = null },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Byte, Byte = null },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = null },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Single, Single = null },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.String, String = null },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Enum, EnumValue = null },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Enum, EnumValue = "" },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Enum, EnumValue = "  " },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.TemplateReference, Reference = null },
+            new CompiledTemplateValue
             {
-                Kind = CompiledTemplateScalarValueKind.TemplateReference,
+                Kind = CompiledTemplateValueKind.TemplateReference,
                 Reference = new CompiledTemplateReference { TemplateType = "", TemplateId = "skill.foo" },
             },
-            new CompiledTemplateScalarValue
+            new CompiledTemplateValue
             {
-                Kind = CompiledTemplateScalarValueKind.TemplateReference,
+                Kind = CompiledTemplateValueKind.TemplateReference,
                 Reference = new CompiledTemplateReference { TemplateType = "SkillTemplate", TemplateId = "" },
             },
-            new CompiledTemplateScalarValue
+            new CompiledTemplateValue
             {
-                Kind = CompiledTemplateScalarValueKind.TemplateReference,
+                Kind = CompiledTemplateValueKind.TemplateReference,
                 Reference = new CompiledTemplateReference { TemplateType = " ", TemplateId = "   " },
             },
         };
@@ -129,7 +131,7 @@ public class TemplatePatchPathValidatorTests
     [Fact]
     public void Rejects_NullScalarValue()
     {
-        Assert.False(TemplatePatchPathValidator.IsSupportedScalarValue(null!));
+        Assert.False(TemplatePatchPathValidator.IsSupportedValue(null!));
     }
 
     [Fact]
@@ -137,11 +139,11 @@ public class TemplatePatchPathValidatorTests
     {
         // Only the field matching Kind is consulted; a filled non-matching
         // field doesn't count as populated.
-        var value = new CompiledTemplateScalarValue
+        var value = new CompiledTemplateValue
         {
-            Kind = CompiledTemplateScalarValueKind.Int32,
+            Kind = CompiledTemplateValueKind.Int32,
             Single = 3.14f,
         };
-        Assert.False(TemplatePatchPathValidator.IsSupportedScalarValue(value));
+        Assert.False(TemplatePatchPathValidator.IsSupportedValue(value));
     }
 }

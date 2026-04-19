@@ -33,17 +33,13 @@ public sealed class TemplateTypeCatalog : IDisposable
     };
 
     private readonly MetadataLoadContext _context;
-    private readonly Assembly _assembly;
     private readonly Type[] _allTypes;
 
-    private TemplateTypeCatalog(MetadataLoadContext context, Assembly assembly, Type[] allTypes)
+    private TemplateTypeCatalog(MetadataLoadContext context, Type[] allTypes)
     {
         _context = context;
-        _assembly = assembly;
         _allTypes = allTypes;
     }
-
-    public IReadOnlyList<Type> AllTypes => _allTypes;
 
     public static TemplateTypeCatalog Load(string assemblyPath, IEnumerable<string>? additionalSearchDirectories = null)
     {
@@ -84,7 +80,7 @@ public sealed class TemplateTypeCatalog : IDisposable
             allTypes = ex.Types.Where(t => t != null).ToArray()!;
         }
 
-        return new TemplateTypeCatalog(context, assembly, allTypes);
+        return new TemplateTypeCatalog(context, allTypes);
     }
 
     /// <summary>

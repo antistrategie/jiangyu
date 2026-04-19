@@ -18,6 +18,7 @@ This directory is the map for Jiangyu's reverse-engineering and validation work.
   - See:
     - [`verified/entityproperties-contract.md`](verified/entityproperties-contract.md)
     - [`verified/array-element-contracts.md`](verified/array-element-contracts.md)
+    - [`verified/unitleader-initial-attributes.md`](verified/unitleader-initial-attributes.md) — 7-byte save-frozen starting-attribute layout, readback-verified
 
 - **Structural rules and cross-cutting patterns**
   - Status: verified

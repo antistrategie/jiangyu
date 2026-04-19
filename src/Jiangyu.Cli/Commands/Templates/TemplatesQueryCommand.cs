@@ -114,7 +114,7 @@ public static class TemplatesQueryCommand
                     QueryResultKind.Error => WriteError(result.ErrorMessage ?? "unknown error"),
                     QueryResultKind.TypeNode when emitJson => WriteTypeNodeJson(catalog, result, includeReadOnly),
                     QueryResultKind.TypeNode => WriteTypeNodeText(catalog, result, includeReadOnly),
-                    QueryResultKind.Leaf when emitJson => WriteLeafJson(catalog, result),
+                    QueryResultKind.Leaf when emitJson => WriteLeafJson(result),
                     QueryResultKind.Leaf => WriteLeafText(catalog, result),
                     _ => WriteError($"unexpected result kind: {result.Kind}"),
                 };
@@ -230,7 +230,7 @@ public static class TemplatesQueryCommand
         return 0;
     }
 
-    private static int WriteLeafJson(TemplateTypeCatalog catalog, QueryResult result)
+    private static int WriteLeafJson(QueryResult result)
     {
         var type = result.CurrentType!;
         var payload = new
@@ -264,12 +264,12 @@ public static class TemplatesQueryCommand
         var sampleValue = SampleValueFor(result.PatchScalarKind.Value);
         var valueJson = result.PatchScalarKind.Value switch
         {
-            CompiledTemplateScalarValueKind.Boolean => $"{{ \"kind\": \"Boolean\", \"boolean\": {sampleValue} }}",
-            CompiledTemplateScalarValueKind.Byte => $"{{ \"kind\": \"Byte\", \"byte\": {sampleValue} }}",
-            CompiledTemplateScalarValueKind.Int32 => $"{{ \"kind\": \"Int32\", \"int32\": {sampleValue} }}",
-            CompiledTemplateScalarValueKind.Single => $"{{ \"kind\": \"Single\", \"single\": {sampleValue} }}",
-            CompiledTemplateScalarValueKind.String => $"{{ \"kind\": \"String\", \"string\": {sampleValue} }}",
-            CompiledTemplateScalarValueKind.Enum => $"{{ \"kind\": \"Enum\", \"enumValue\": {sampleValue} }}",
+            CompiledTemplateValueKind.Boolean => $"{{ \"kind\": \"Boolean\", \"boolean\": {sampleValue} }}",
+            CompiledTemplateValueKind.Byte => $"{{ \"kind\": \"Byte\", \"byte\": {sampleValue} }}",
+            CompiledTemplateValueKind.Int32 => $"{{ \"kind\": \"Int32\", \"int32\": {sampleValue} }}",
+            CompiledTemplateValueKind.Single => $"{{ \"kind\": \"Single\", \"single\": {sampleValue} }}",
+            CompiledTemplateValueKind.String => $"{{ \"kind\": \"String\", \"string\": {sampleValue} }}",
+            CompiledTemplateValueKind.Enum => $"{{ \"kind\": \"Enum\", \"enumValue\": {sampleValue} }}",
             _ => null,
         };
         if (valueJson == null)
@@ -280,7 +280,7 @@ public static class TemplatesQueryCommand
         sb.AppendLine("  {");
         sb.AppendLine($"    \"templateType\": \"{typeName}\",");
         sb.AppendLine("    \"templateId\":   \"<id>\",");
-        sb.AppendLine("    \"sets\": [");
+        sb.AppendLine("    \"set\": [");
         sb.AppendLine($"      {{ \"fieldPath\": \"{fieldPath}\", \"value\": {valueJson} }}");
         sb.AppendLine("    ]");
         sb.AppendLine("  }");
@@ -288,14 +288,14 @@ public static class TemplatesQueryCommand
         return sb.ToString();
     }
 
-    private static string SampleValueFor(CompiledTemplateScalarValueKind kind) => kind switch
+    private static string SampleValueFor(CompiledTemplateValueKind kind) => kind switch
     {
-        CompiledTemplateScalarValueKind.Boolean => "true",
-        CompiledTemplateScalarValueKind.Byte => "50",
-        CompiledTemplateScalarValueKind.Int32 => "100",
-        CompiledTemplateScalarValueKind.Single => "1.0",
-        CompiledTemplateScalarValueKind.String => "\"example\"",
-        CompiledTemplateScalarValueKind.Enum => "\"EnumMember\"",
+        CompiledTemplateValueKind.Boolean => "true",
+        CompiledTemplateValueKind.Byte => "50",
+        CompiledTemplateValueKind.Int32 => "100",
+        CompiledTemplateValueKind.Single => "1.0",
+        CompiledTemplateValueKind.String => "\"example\"",
+        CompiledTemplateValueKind.Enum => "\"EnumMember\"",
         _ => "null",
     };
 }

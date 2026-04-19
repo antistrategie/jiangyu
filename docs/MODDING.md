@@ -164,3 +164,124 @@ for the full contract.
 which pitch-shifts the sound. Check the target's frequency and channel count
 with `jiangyu assets search <name> --type AudioClip` and author the
 replacement at the same rate and channel layout.
+
+## Template Patching
+
+Jiangyu can write into MENACE's live `DataTemplate` instances — player-squad
+stats, skill parameters, unit leader loadouts — without binary-patching
+`resources.assets`. Patches live in the mod's top-level `jiangyu.json` under
+`templatePatches` and apply once per scene load when the target template cache
+is materialised.
+
+### Shape
+
+```json
+{
+  "name": "MyMod",
+  "templatePatches": [
+    {
+      "templateType": "EntityTemplate",
+      "templateId": "player_squad.darby",
+      "set": [
+        { "fieldPath": "HudYOffsetScale", "value": { "kind": "Single", "single": 5.0 } }
+      ]
+    },
+    {
+      "templateType": "UnitLeaderTemplate",
+      "templateId": "squad_leader.darby",
+      "set": [
+        { "fieldPath": "InitialAttributes.Agility", "value": { "kind": "Byte", "byte": 100 } },
+        {
+          "fieldPath": "PerkTrees[0]",
+          "value": {
+            "kind": "TemplateReference",
+            "reference": { "templateType": "PerkTreeTemplate", "templateId": "perk_tree.greifinger" }
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+- `templateType` — a `DataTemplate` subtype name (`EntityTemplate`,
+  `UnitLeaderTemplate`, `SkillTemplate`, etc.). Omit to default to
+  `EntityTemplate`.
+- `templateId` — the template's serialised `m_ID`. Find candidates with
+  `jiangyu templates list --type <TypeName>`.
+- `fieldPath` — dotted member navigation with optional `[N]` indexers
+  (`Properties.Accuracy`, `Skills[0].Uses`, `InitialAttributes[0]`). Later-
+  loaded mods override earlier ones with a warning.
+
+### Value kinds
+
+| `kind`              | typed field       | notes                                                                   |
+|---------------------|-------------------|-------------------------------------------------------------------------|
+| `Boolean`           | `boolean`         |                                                                         |
+| `Byte`              | `byte`            | 0–255 storage; gameplay ranges vary per field                           |
+| `Int32`             | `int32`           |                                                                         |
+| `Single`            | `single`          |                                                                         |
+| `String`            | `string`          | Targets `System.String` fields; Il2CppSystem.String not yet supported   |
+| `Enum`              | `enumValue`       | Optional `enumType` to assert the target enum name                      |
+| `TemplateReference` | `reference`       | Object with `templateType` + `templateId` — resolves a live wrapper     |
+
+A patch fails loudly at load or apply when a path is malformed, a target
+template doesn't exist, a member is missing, or a value kind doesn't match the
+member type. Check `MelonLoader/Latest.log` for the `Template patch ...` line
+per operation.
+
+### Discovering patch targets
+
+`jiangyu templates query` is a jq-like navigator over `Assembly-CSharp.dll`.
+It uses the same path syntax as `fieldPath` and emits a copy-pasteable
+`templatePatches` snippet for leaf fields:
+
+```bash
+jiangyu templates query EntityTemplate.Properties.Accuracy
+jiangyu templates query 'UnitLeaderTemplate.InitialAttributes[0]'
+jiangyu templates query EntityTemplate.Skills   # auto-unwraps to SkillTemplate
+```
+
+Combine with `jiangyu templates list --type <TypeName>` and
+`jiangyu templates inspect --type <TypeName> --name <id>` to find valid
+template IDs and their current field values.
+
+### UnitLeader attribute sugar
+
+`UnitLeaderTemplate.InitialAttributes` is a 7-byte array where each offset is
+one of the `UnitLeaderAttribute` enum values. Jiangyu accepts either form:
+
+```json
+{ "fieldPath": "InitialAttributes.Agility", "value": { "kind": "Byte", "byte": 100 } }
+{ "fieldPath": "InitialAttributes[0]",      "value": { "kind": "Byte", "byte": 100 } }
+```
+
+The sugar rewrites the named form to `InitialAttributes[N]` at mod-ingestion;
+unknown attribute names fail loudly with a listing of valid names. See
+[`research/verified/unitleader-initial-attributes.md`](research/verified/unitleader-initial-attributes.md)
+for the verified offset table and source citations.
+
+### Save-frozen vs render-per-frame
+
+MENACE snapshots most player-visible gameplay stats into the save at campaign
+init and only reads the template again on a **new campaign**. Examples that
+are **save-frozen**: `UnitLeaderTemplate.InitialAttributes`, `PerkTrees`,
+`EntityTemplate.Properties.Accuracy`, most combat stats. A patch lands at
+runtime but its effect won't appear in an existing save.
+
+Fields the game re-reads per frame (e.g. `EntityTemplate.HudYOffsetScale`)
+update live on existing saves, so those are convenient smoke-test targets.
+
+If you're changing a stat and not seeing it in an existing save, start a new
+campaign before investigating whether the patch applied — the log will tell
+you if the write landed.
+
+### Not yet supported
+
+- Collection appends/inserts and full template cloning (blocked on new IL2CPP
+  object construction — the "cloning problem").
+- Localisation patching (`LocalizedLine` / `LocalizedMultiLine`) — planned but
+  not shipped.
+- A stable KDL-like authoring surface under `templates/`. The current
+  `templatePatches` shape is the compiled form; it works but is not the
+  long-term modder-facing contract. Treat it as provisional.

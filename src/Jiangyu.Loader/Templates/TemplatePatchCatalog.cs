@@ -8,9 +8,9 @@ namespace Jiangyu.Loader.Templates;
 /// <summary>
 /// Reads compiled template patch payloads out of each loadable mod's
 /// jiangyu.json, validates against the current slice contract (dotted or
-/// indexed member paths, typed scalar or enum value), and merges by
-/// (templateType, templateId, fieldPath) so later-loaded mods override
-/// earlier ones with a warning. The merged catalogue is handed to
+/// indexed member paths, typed scalar/enum/template-reference value), and
+/// merges by (templateType, templateId, fieldPath) so later-loaded mods
+/// override earlier ones with a warning. The merged catalogue is handed to
 /// <see cref="TemplatePatchApplier"/> at runtime.
 /// </summary>
 internal sealed class TemplatePatchCatalog
@@ -143,7 +143,7 @@ internal sealed class TemplatePatchCatalog
             return;
         }
 
-        if (!TemplatePatchPathValidator.IsSupportedScalarValue(op.Value))
+        if (!TemplatePatchPathValidator.IsSupportedValue(op.Value))
         {
             log.Warning(
                 $"Mod '{mod.Name}': template patch '{templateType}:{templateId}.{effectivePath}' has unsupported or "
@@ -174,12 +174,11 @@ internal sealed class TemplatePatchCatalog
         operationsForTemplate[effectivePath] = new LoadedPatchOperation(effectivePath, op.Value, mod.Name);
         PatchCount++;
     }
-
 }
 
 internal sealed class LoadedPatchOperation
 {
-    public LoadedPatchOperation(string fieldPath, CompiledTemplateScalarValue value, string ownerLabel)
+    public LoadedPatchOperation(string fieldPath, CompiledTemplateValue value, string ownerLabel)
     {
         FieldPath = fieldPath;
         Value = value;
@@ -187,6 +186,6 @@ internal sealed class LoadedPatchOperation
     }
 
     public string FieldPath { get; }
-    public CompiledTemplateScalarValue Value { get; }
+    public CompiledTemplateValue Value { get; }
     public string OwnerLabel { get; }
 }

@@ -69,45 +69,45 @@ public class ModManifestTests
                         new CompiledTemplateSetOperation
                         {
                             FieldPath = "CanBeDowned",
-                            Value = new CompiledTemplateScalarValue
+                            Value = new CompiledTemplateValue
                             {
-                                Kind = CompiledTemplateScalarValueKind.Boolean,
+                                Kind = CompiledTemplateValueKind.Boolean,
                                 Boolean = true,
                             },
                         },
                         new CompiledTemplateSetOperation
                         {
                             FieldPath = "DeploymentCost",
-                            Value = new CompiledTemplateScalarValue
+                            Value = new CompiledTemplateValue
                             {
-                                Kind = CompiledTemplateScalarValueKind.Int32,
+                                Kind = CompiledTemplateValueKind.Int32,
                                 Int32 = 7,
                             },
                         },
                         new CompiledTemplateSetOperation
                         {
                             FieldPath = "CharacterHeight",
-                            Value = new CompiledTemplateScalarValue
+                            Value = new CompiledTemplateValue
                             {
-                                Kind = CompiledTemplateScalarValueKind.Single,
+                                Kind = CompiledTemplateValueKind.Single,
                                 Single = 1.25f,
                             },
                         },
                         new CompiledTemplateSetOperation
                         {
                             FieldPath = "DebugName",
-                            Value = new CompiledTemplateScalarValue
+                            Value = new CompiledTemplateValue
                             {
-                                Kind = CompiledTemplateScalarValueKind.String,
+                                Kind = CompiledTemplateValueKind.String,
                                 String = "patched",
                             },
                         },
                         new CompiledTemplateSetOperation
                         {
                             FieldPath = "ActorType",
-                            Value = new CompiledTemplateScalarValue
+                            Value = new CompiledTemplateValue
                             {
-                                Kind = CompiledTemplateScalarValueKind.Enum,
+                                Kind = CompiledTemplateValueKind.Enum,
                                 EnumType = "EntityTemplateActorType",
                                 EnumValue = "Human",
                             },
@@ -125,19 +125,19 @@ public class ModManifestTests
         Assert.Equal("local_forces_basic_soldier", patch.TemplateId);
         Assert.Equal(5, patch.Set.Count);
 
-        Assert.Equal(CompiledTemplateScalarValueKind.Boolean, patch.Set[0].Value!.Kind);
+        Assert.Equal(CompiledTemplateValueKind.Boolean, patch.Set[0].Value!.Kind);
         Assert.True(patch.Set[0].Value!.Boolean);
 
-        Assert.Equal(CompiledTemplateScalarValueKind.Int32, patch.Set[1].Value!.Kind);
+        Assert.Equal(CompiledTemplateValueKind.Int32, patch.Set[1].Value!.Kind);
         Assert.Equal(7, patch.Set[1].Value!.Int32);
 
-        Assert.Equal(CompiledTemplateScalarValueKind.Single, patch.Set[2].Value!.Kind);
+        Assert.Equal(CompiledTemplateValueKind.Single, patch.Set[2].Value!.Kind);
         Assert.Equal(1.25f, patch.Set[2].Value!.Single);
 
-        Assert.Equal(CompiledTemplateScalarValueKind.String, patch.Set[3].Value!.Kind);
+        Assert.Equal(CompiledTemplateValueKind.String, patch.Set[3].Value!.Kind);
         Assert.Equal("patched", patch.Set[3].Value!.String);
 
-        Assert.Equal(CompiledTemplateScalarValueKind.Enum, patch.Set[4].Value!.Kind);
+        Assert.Equal(CompiledTemplateValueKind.Enum, patch.Set[4].Value!.Kind);
         Assert.Equal("EntityTemplateActorType", patch.Set[4].Value!.EnumType);
         Assert.Equal("Human", patch.Set[4].Value!.EnumValue);
     }
@@ -159,9 +159,9 @@ public class ModManifestTests
                         new CompiledTemplateSetOperation
                         {
                             FieldPath = "HudYOffsetScale",
-                            Value = new CompiledTemplateScalarValue
+                            Value = new CompiledTemplateValue
                             {
-                                Kind = CompiledTemplateScalarValueKind.Single,
+                                Kind = CompiledTemplateValueKind.Single,
                                 Single = 5.0f,
                             },
                         },
@@ -176,9 +176,9 @@ public class ModManifestTests
                         new CompiledTemplateSetOperation
                         {
                             FieldPath = "PromotionTax",
-                            Value = new CompiledTemplateScalarValue
+                            Value = new CompiledTemplateValue
                             {
-                                Kind = CompiledTemplateScalarValueKind.Int32,
+                                Kind = CompiledTemplateValueKind.Int32,
                                 Int32 = 1,
                             },
                         },
