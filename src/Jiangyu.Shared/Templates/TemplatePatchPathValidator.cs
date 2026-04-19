@@ -55,6 +55,10 @@ public static class TemplatePatchPathValidator
             CompiledTemplateScalarValueKind.Single => value.Single.HasValue,
             CompiledTemplateScalarValueKind.String => value.String != null,
             CompiledTemplateScalarValueKind.Enum => !string.IsNullOrWhiteSpace(value.EnumValue),
+            CompiledTemplateScalarValueKind.TemplateReference =>
+                value.Reference != null
+                && !string.IsNullOrWhiteSpace(value.Reference.TemplateType)
+                && !string.IsNullOrWhiteSpace(value.Reference.TemplateId),
             _ => false,
         };
     }

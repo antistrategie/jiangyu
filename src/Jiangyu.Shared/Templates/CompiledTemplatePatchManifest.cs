@@ -61,6 +61,27 @@ public sealed class CompiledTemplateScalarValue
 
     [JsonPropertyName("enumValue")]
     public string? EnumValue { get; set; }
+
+    [JsonPropertyName("reference")]
+    public CompiledTemplateReference? Reference { get; set; }
+}
+
+/// <summary>
+/// Payload for a <see cref="CompiledTemplateScalarValueKind.TemplateReference"/>
+/// value — identifies an existing live DataTemplate by
+/// <c>(templateType, templateId)</c>. The applier resolves this to an Il2Cpp
+/// wrapper at apply time via <c>TemplateRuntimeAccess</c>; unknown types and
+/// missing IDs fail loudly. Used for ref-typed element replacements into
+/// arrays/lists of templates (e.g. swap a <c>SkillTemplate</c> in
+/// <c>EntityTemplate.Skills</c>).
+/// </summary>
+public sealed class CompiledTemplateReference
+{
+    [JsonPropertyName("templateType")]
+    public string TemplateType { get; set; } = string.Empty;
+
+    [JsonPropertyName("templateId")]
+    public string TemplateId { get; set; } = string.Empty;
 }
 
 public enum CompiledTemplateScalarValueKind
@@ -71,4 +92,5 @@ public enum CompiledTemplateScalarValueKind
     Single,
     String,
     Enum,
+    TemplateReference,
 }

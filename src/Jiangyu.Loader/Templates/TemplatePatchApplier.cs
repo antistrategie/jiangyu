@@ -756,10 +756,59 @@ internal sealed class TemplatePatchApplier
                     return false;
                 }
 
+            case CompiledTemplateScalarValueKind.TemplateReference:
+                return TryResolveTemplateReference(value.Reference, targetType, out converted, out error);
+
             default:
                 error = $"unknown value kind {value.Kind}.";
                 return false;
         }
+    }
+
+    // Resolves a modder-authored (templateType, templateId) pair to the live
+    // Il2Cpp wrapper of the matching DataTemplate instance. Used for ref-typed
+    // element replacements into arrays/lists of templates — the primary target
+    // today is swapping entries in EntityTemplate.Skills, EntityTemplate.Items,
+    // etc. with existing templates of the right kind.
+    private static bool TryResolveTemplateReference(
+        CompiledTemplateReference reference, Type targetType, out object converted, out string error)
+    {
+        converted = null;
+
+        if (reference == null)
+        {
+            error = "value kind TemplateReference but reference is null.";
+            return false;
+        }
+
+        var liveTemplates = TemplateRuntimeAccess.GetAllTemplates(
+            reference.TemplateType, out var resolvedType, out var resolveError);
+
+        if (resolvedType == null)
+        {
+            error = $"TemplateReference '{reference.TemplateType}:{reference.TemplateId}' — {resolveError}";
+            return false;
+        }
+
+        if (!targetType.IsAssignableFrom(resolvedType))
+        {
+            error = $"TemplateReference targets {resolvedType.FullName} but member expects {targetType.FullName}.";
+            return false;
+        }
+
+        foreach (var candidate in liveTemplates)
+        {
+            var id = TemplateRuntimeAccess.ReadTemplateId(candidate);
+            if (string.Equals(id, reference.TemplateId, StringComparison.Ordinal))
+            {
+                converted = candidate;
+                error = null;
+                return true;
+            }
+        }
+
+        error = $"TemplateReference: no live {reference.TemplateType} with m_ID '{reference.TemplateId}' found.";
+        return false;
     }
 
     private enum ApplyOutcome

@@ -119,6 +119,20 @@ public class TemplateMemberQueryTests
     }
 
     [Fact]
+    public void TerminalIndexedArrayElement_ResolvesToScalarLeaf()
+    {
+        // Direct terminal write into a non-byte scalar array element — the
+        // applier binds via TryBindArrayElement, and the CLI surface must
+        // label the scalar kind so modders see the right patch shape.
+        using var catalog = Load();
+        var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.BoneIndices[0]");
+
+        Assert.Equal(QueryResultKind.Leaf, result.Kind);
+        Assert.Equal(CompiledTemplateScalarValueKind.Int32, result.PatchScalarKind);
+        Assert.Equal("FixtureEntity.BoneIndices[0]", result.ResolvedPath);
+    }
+
+    [Fact]
     public void FullyQualifiedPrefix_Resolves()
     {
         using var catalog = Load();

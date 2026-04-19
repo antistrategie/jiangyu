@@ -79,6 +79,15 @@ public class TemplatePatchPathValidatorTests
             new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.String, String = "hello" },
             new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Enum, EnumValue = "SomeMember" },
             new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Enum, EnumType = "SomeEnum", EnumValue = "SomeMember" },
+            new CompiledTemplateScalarValue
+            {
+                Kind = CompiledTemplateScalarValueKind.TemplateReference,
+                Reference = new CompiledTemplateReference
+                {
+                    TemplateType = "SkillTemplate",
+                    TemplateId = "skill.some_skill",
+                },
+            },
         };
 
     [Theory]
@@ -99,6 +108,22 @@ public class TemplatePatchPathValidatorTests
             new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Enum, EnumValue = null },
             new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Enum, EnumValue = "" },
             new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Enum, EnumValue = "  " },
+            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.TemplateReference, Reference = null },
+            new CompiledTemplateScalarValue
+            {
+                Kind = CompiledTemplateScalarValueKind.TemplateReference,
+                Reference = new CompiledTemplateReference { TemplateType = "", TemplateId = "skill.foo" },
+            },
+            new CompiledTemplateScalarValue
+            {
+                Kind = CompiledTemplateScalarValueKind.TemplateReference,
+                Reference = new CompiledTemplateReference { TemplateType = "SkillTemplate", TemplateId = "" },
+            },
+            new CompiledTemplateScalarValue
+            {
+                Kind = CompiledTemplateScalarValueKind.TemplateReference,
+                Reference = new CompiledTemplateReference { TemplateType = " ", TemplateId = "   " },
+            },
         };
 
     [Fact]
