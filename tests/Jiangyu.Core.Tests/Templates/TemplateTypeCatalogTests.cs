@@ -59,7 +59,7 @@ public class TemplateTypeCatalogTests
     {
         using var catalog = Load();
         var type = catalog.ResolveType("FixtureEntity", out _, out _)!;
-        var members = catalog.GetMembers(type);
+        var members = TemplateTypeCatalog.GetMembers(type);
 
         Assert.All(members, m => Assert.True(m.IsWritable));
         Assert.Contains(members, m => m.Name == "Properties");
@@ -73,7 +73,7 @@ public class TemplateTypeCatalogTests
     {
         using var catalog = Load();
         var type = catalog.ResolveType("FixtureEntity", out _, out _)!;
-        var members = catalog.GetMembers(type, includeReadOnly: true);
+        var members = TemplateTypeCatalog.GetMembers(type, includeReadOnly: true);
 
         Assert.Contains(members, m => m.Name == "ReadOnlyCount" && !m.IsWritable);
     }
@@ -83,7 +83,7 @@ public class TemplateTypeCatalogTests
     {
         using var catalog = Load();
         var type = catalog.ResolveType("FixtureEntity", out _, out _)!;
-        var members = catalog.GetMembers(type);
+        var members = TemplateTypeCatalog.GetMembers(type);
 
         // m_ID comes from FixtureBaseEntity
         var inheritedId = members.FirstOrDefault(m => m.Name == "m_ID");
@@ -97,10 +97,10 @@ public class TemplateTypeCatalogTests
     {
         using var catalog = Load();
         var type = catalog.ResolveType("FixtureEntity", out _, out _)!;
-        var members = catalog.GetMembers(type);
+        var members = TemplateTypeCatalog.GetMembers(type);
         var skills = members.Single(m => m.Name == "Skills");
 
-        var element = catalog.GetElementType(skills.MemberType);
+        var element = TemplateTypeCatalog.GetElementType(skills.MemberType);
         Assert.NotNull(element);
         Assert.Equal("FixtureSkill", element!.Name);
     }
@@ -110,10 +110,10 @@ public class TemplateTypeCatalogTests
     {
         using var catalog = Load();
         var type = catalog.ResolveType("FixtureEntity", out _, out _)!;
-        var members = catalog.GetMembers(type);
+        var members = TemplateTypeCatalog.GetMembers(type);
         var bones = members.Single(m => m.Name == "BoneIndices");
 
-        var element = catalog.GetElementType(bones.MemberType);
+        var element = TemplateTypeCatalog.GetElementType(bones.MemberType);
         Assert.NotNull(element);
         Assert.Equal("Int32", element!.Name);
     }
@@ -123,10 +123,10 @@ public class TemplateTypeCatalogTests
     {
         using var catalog = Load();
         var type = catalog.ResolveType("FixtureEntity", out _, out _)!;
-        var members = catalog.GetMembers(type);
+        var members = TemplateTypeCatalog.GetMembers(type);
         var properties = members.Single(m => m.Name == "Properties");
 
-        Assert.Null(catalog.GetElementType(properties.MemberType));
+        Assert.Null(TemplateTypeCatalog.GetElementType(properties.MemberType));
     }
 
     [Fact]
@@ -136,17 +136,17 @@ public class TemplateTypeCatalogTests
         var entity = catalog.ResolveType("FixtureEntity", out _, out _)!;
         var props = catalog.ResolveType("FixtureProperties", out _, out _)!;
 
-        var entityMembers = catalog.GetMembers(entity);
-        var propsMembers = catalog.GetMembers(props);
+        var entityMembers = TemplateTypeCatalog.GetMembers(entity);
+        var propsMembers = TemplateTypeCatalog.GetMembers(props);
 
-        Assert.True(catalog.IsScalar(entityMembers.Single(m => m.Name == "IsEnabled").MemberType));
-        Assert.True(catalog.IsScalar(entityMembers.Single(m => m.Name == "HudYOffsetScale").MemberType));
-        Assert.True(catalog.IsScalar(propsMembers.Single(m => m.Name == "Accuracy").MemberType));
-        Assert.True(catalog.IsScalar(propsMembers.Single(m => m.Name == "DisplayName").MemberType));
-        Assert.True(catalog.IsScalar(propsMembers.Single(m => m.Name == "DamageType").MemberType));
+        Assert.True(TemplateTypeCatalog.IsScalar(entityMembers.Single(m => m.Name == "IsEnabled").MemberType));
+        Assert.True(TemplateTypeCatalog.IsScalar(entityMembers.Single(m => m.Name == "HudYOffsetScale").MemberType));
+        Assert.True(TemplateTypeCatalog.IsScalar(propsMembers.Single(m => m.Name == "Accuracy").MemberType));
+        Assert.True(TemplateTypeCatalog.IsScalar(propsMembers.Single(m => m.Name == "DisplayName").MemberType));
+        Assert.True(TemplateTypeCatalog.IsScalar(propsMembers.Single(m => m.Name == "DamageType").MemberType));
 
-        Assert.False(catalog.IsScalar(entityMembers.Single(m => m.Name == "Properties").MemberType));
-        Assert.False(catalog.IsScalar(entityMembers.Single(m => m.Name == "Skills").MemberType));
+        Assert.False(TemplateTypeCatalog.IsScalar(entityMembers.Single(m => m.Name == "Properties").MemberType));
+        Assert.False(TemplateTypeCatalog.IsScalar(entityMembers.Single(m => m.Name == "Skills").MemberType));
     }
 
     [Fact]
@@ -154,7 +154,7 @@ public class TemplateTypeCatalogTests
     {
         using var catalog = Load();
         var type = catalog.ResolveType("FixtureEntity", out _, out _)!;
-        var members = catalog.GetMembers(type);
+        var members = TemplateTypeCatalog.GetMembers(type);
 
         Assert.Equal("List<FixtureSkill>", catalog.FriendlyName(members.Single(m => m.Name == "Skills").MemberType));
         Assert.Equal("Int32[]", catalog.FriendlyName(members.Single(m => m.Name == "BoneIndices").MemberType));

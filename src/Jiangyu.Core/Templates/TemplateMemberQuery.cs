@@ -191,6 +191,7 @@ public static class TemplateMemberQuery
         return type.FullName switch
         {
             "System.Boolean" => CompiledTemplateScalarValueKind.Boolean,
+            "System.Byte" => CompiledTemplateScalarValueKind.Byte,
             "System.Int32" => CompiledTemplateScalarValueKind.Int32,
             "System.Single" => CompiledTemplateScalarValueKind.Single,
             "System.String" => CompiledTemplateScalarValueKind.String,

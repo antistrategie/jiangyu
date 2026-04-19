@@ -16,6 +16,7 @@ just the local index for promoted findings.
 - [EntityTemplate](entitytemplate-contract.md) — top-level template contract (109 serialised fields), including inline vs reference array classification
 - [EntityProperties](entityproperties-contract.md) — 102-field gameplay-stat support contract nested inside every EntityTemplate
 - [Array element contracts](array-element-contracts.md) — PrefabAttachment, EntityLootEntry, and SkillOnSurfaceDefinition as validated inline embedded types
+- [UnitLeaderTemplate.InitialAttributes](unitleader-initial-attributes.md) — 7-byte save-frozen starting stats, enum-ordered offset table, readback-verified
 
 ## Verified runtime paths
 

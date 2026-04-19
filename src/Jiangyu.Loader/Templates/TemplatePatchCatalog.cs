@@ -113,10 +113,25 @@ internal sealed class TemplatePatchCatalog
             return;
         }
 
-        if (!TemplatePatchPathValidator.IsSupportedFieldPath(op.FieldPath))
+        var rewrite = TemplateFieldPathSugar.Rewrite(templateType, op.FieldPath);
+        if (rewrite.Error != null)
         {
             log.Warning(
-                $"Mod '{mod.Name}': template patch '{templateType}:{templateId}.{op.FieldPath}' has unsupported "
+                $"Mod '{mod.Name}': template patch '{templateType}:{templateId}.{op.FieldPath}' — {rewrite.Error}");
+            return;
+        }
+
+        var effectivePath = rewrite.Path!;
+        if (rewrite.Rewritten)
+        {
+            log.Msg(
+                $"Mod '{mod.Name}': template patch '{templateType}:{templateId}.{op.FieldPath}' rewritten to '{effectivePath}'.");
+        }
+
+        if (!TemplatePatchPathValidator.IsSupportedFieldPath(effectivePath))
+        {
+            log.Warning(
+                $"Mod '{mod.Name}': template patch '{templateType}:{templateId}.{effectivePath}' has unsupported "
                 + "path syntax. Supported: dotted names (a.b.c) and indexers (name[N]). Parentheses are rejected.");
             return;
         }
@@ -124,14 +139,14 @@ internal sealed class TemplatePatchCatalog
         if (op.Value == null)
         {
             log.Warning(
-                $"Mod '{mod.Name}': template patch '{templateType}:{templateId}.{op.FieldPath}' has no value.");
+                $"Mod '{mod.Name}': template patch '{templateType}:{templateId}.{effectivePath}' has no value.");
             return;
         }
 
         if (!TemplatePatchPathValidator.IsSupportedScalarValue(op.Value))
         {
             log.Warning(
-                $"Mod '{mod.Name}': template patch '{templateType}:{templateId}.{op.FieldPath}' has unsupported or "
+                $"Mod '{mod.Name}': template patch '{templateType}:{templateId}.{effectivePath}' has unsupported or "
                 + $"incomplete value (kind={op.Value.Kind}).");
             return;
         }
@@ -148,15 +163,15 @@ internal sealed class TemplatePatchCatalog
             patchesForType[templateId] = operationsForTemplate;
         }
 
-        if (operationsForTemplate.TryGetValue(op.FieldPath, out var existing))
+        if (operationsForTemplate.TryGetValue(effectivePath, out var existing))
         {
             log.Warning(
-                $"Override template patch '{templateType}:{templateId}.{op.FieldPath}': "
+                $"Override template patch '{templateType}:{templateId}.{effectivePath}': "
                 + $"later-loaded mod '{mod.Name}' replaces '{existing.OwnerLabel}'.");
             PatchCount--;
         }
 
-        operationsForTemplate[op.FieldPath] = new LoadedPatchOperation(op.FieldPath, op.Value, mod.Name);
+        operationsForTemplate[effectivePath] = new LoadedPatchOperation(effectivePath, op.Value, mod.Name);
         PatchCount++;
     }
 

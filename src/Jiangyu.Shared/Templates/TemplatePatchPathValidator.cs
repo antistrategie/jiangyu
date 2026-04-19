@@ -50,6 +50,7 @@ public static class TemplatePatchPathValidator
         return value.Kind switch
         {
             CompiledTemplateScalarValueKind.Boolean => value.Boolean.HasValue,
+            CompiledTemplateScalarValueKind.Byte => value.Byte.HasValue,
             CompiledTemplateScalarValueKind.Int32 => value.Int32.HasValue,
             CompiledTemplateScalarValueKind.Single => value.Single.HasValue,
             CompiledTemplateScalarValueKind.String => value.String != null,

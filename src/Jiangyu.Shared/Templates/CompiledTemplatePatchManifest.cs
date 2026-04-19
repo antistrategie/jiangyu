@@ -44,6 +44,9 @@ public sealed class CompiledTemplateScalarValue
     [JsonPropertyName("boolean")]
     public bool? Boolean { get; set; }
 
+    [JsonPropertyName("byte")]
+    public byte? Byte { get; set; }
+
     [JsonPropertyName("int32")]
     public int? Int32 { get; set; }
 
@@ -63,6 +66,7 @@ public sealed class CompiledTemplateScalarValue
 public enum CompiledTemplateScalarValueKind
 {
     Boolean,
+    Byte,
     Int32,
     Single,
     String,

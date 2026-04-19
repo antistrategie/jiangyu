@@ -265,6 +265,7 @@ public static class TemplatesQueryCommand
         var valueJson = result.PatchScalarKind.Value switch
         {
             CompiledTemplateScalarValueKind.Boolean => $"{{ \"kind\": \"Boolean\", \"boolean\": {sampleValue} }}",
+            CompiledTemplateScalarValueKind.Byte => $"{{ \"kind\": \"Byte\", \"byte\": {sampleValue} }}",
             CompiledTemplateScalarValueKind.Int32 => $"{{ \"kind\": \"Int32\", \"int32\": {sampleValue} }}",
             CompiledTemplateScalarValueKind.Single => $"{{ \"kind\": \"Single\", \"single\": {sampleValue} }}",
             CompiledTemplateScalarValueKind.String => $"{{ \"kind\": \"String\", \"string\": {sampleValue} }}",
@@ -290,6 +291,7 @@ public static class TemplatesQueryCommand
     private static string SampleValueFor(CompiledTemplateScalarValueKind kind) => kind switch
     {
         CompiledTemplateScalarValueKind.Boolean => "true",
+        CompiledTemplateScalarValueKind.Byte => "50",
         CompiledTemplateScalarValueKind.Int32 => "100",
         CompiledTemplateScalarValueKind.Single => "1.0",
         CompiledTemplateScalarValueKind.String => "\"example\"",

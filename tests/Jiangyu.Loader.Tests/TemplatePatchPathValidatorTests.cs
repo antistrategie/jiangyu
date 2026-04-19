@@ -69,6 +69,8 @@ public class TemplatePatchPathValidatorTests
         {
             new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Boolean, Boolean = true },
             new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Boolean, Boolean = false },
+            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Byte, Byte = 0 },
+            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Byte, Byte = 255 },
             new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Int32, Int32 = 0 },
             new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Int32, Int32 = -1 },
             new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Single, Single = 0f },
@@ -90,6 +92,7 @@ public class TemplatePatchPathValidatorTests
         new()
         {
             new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Boolean, Boolean = null },
+            new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Byte, Byte = null },
             new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Int32, Int32 = null },
             new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.Single, Single = null },
             new CompiledTemplateScalarValue { Kind = CompiledTemplateScalarValueKind.String, String = null },

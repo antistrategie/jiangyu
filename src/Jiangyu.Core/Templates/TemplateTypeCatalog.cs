@@ -21,6 +21,17 @@ public sealed class TemplateTypeCatalog : IDisposable
     private const string Il2CppSystemListFullName = "Il2CppSystem.Collections.Generic.List`1";
     private const string BclListFullName = "System.Collections.Generic.List`1";
 
+    // Il2CppInterop-generated wrappers for native Il2Cpp arrays. Both expose
+    // a writable int indexer on the element type, so callers (query nav + the
+    // runtime applier) can treat them the same as a managed T[].
+    private static readonly HashSet<string> Il2CppArrayDefinitionFullNames = new(StringComparer.Ordinal)
+    {
+        "Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray`1",
+        "Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray`1",
+        "Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppArrayBase`1",
+        "Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStringArray",
+    };
+
     private readonly MetadataLoadContext _context;
     private readonly Assembly _assembly;
     private readonly Type[] _allTypes;
@@ -197,11 +208,21 @@ public sealed class TemplateTypeCatalog : IDisposable
         if (type.IsArray)
             return type.GetElementType();
 
-        if (type.IsGenericType)
+        // Walk the base chain so Il2CppStructArray<T> / Il2CppReferenceArray<T>
+        // (and any future subclass of Il2CppArrayBase<T>) unwrap to T without
+        // having to enumerate every leaf wrapper here.
+        for (var current = type; current != null; current = current.BaseType)
         {
-            var definitionName = type.GetGenericTypeDefinition().FullName;
-            if (definitionName == Il2CppSystemListFullName || definitionName == BclListFullName)
-                return type.GenericTypeArguments.FirstOrDefault();
+            if (!current.IsGenericType)
+                continue;
+
+            var definitionName = current.GetGenericTypeDefinition().FullName;
+            if (definitionName == Il2CppSystemListFullName
+                || definitionName == BclListFullName
+                || Il2CppArrayDefinitionFullNames.Contains(definitionName ?? string.Empty))
+            {
+                return current.GenericTypeArguments.FirstOrDefault();
+            }
         }
 
         return null;
@@ -242,6 +263,8 @@ public sealed class TemplateTypeCatalog : IDisposable
 
             if (definition.FullName == Il2CppSystemListFullName || definition.FullName == BclListFullName)
                 baseName = "List";
+            else if (Il2CppArrayDefinitionFullNames.Contains(definition.FullName ?? string.Empty))
+                baseName = "Il2CppArray";
 
             var args = string.Join(", ", type.GenericTypeArguments.Select(FriendlyName));
             return $"{baseName}<{args}>";

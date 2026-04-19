@@ -243,18 +243,41 @@ internal sealed class TemplatePatchApplier
         }
 
         var terminal = segments[^1];
+        Action<object> setter;
+        Func<object> getter;
+        Type terminalType;
+
         if (terminal.Index.HasValue)
         {
-            log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                + "terminal segment cannot be an indexer - point the path at the scalar member inside the element.");
-            return ApplyOutcome.MemberMissing;
-        }
+            if (!TryReadMember(current, terminal.Name, out var arrayValue, out var arrayType, out var readError))
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"cannot read terminal array member '{terminal.Name}': {readError}");
+                return ApplyOutcome.MemberMissing;
+            }
 
-        if (!TryGetWritableMember(current, terminal.Name, out var terminalType, out var setter, out var getter))
+            if (arrayValue == null)
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"terminal array '{terminal.Name}' ({arrayType.FullName}) is null on this template.");
+                return ApplyOutcome.MemberMissing;
+            }
+
+            if (!TryBindArrayElement(arrayValue, terminal.Index.Value, out terminalType, out setter, out getter, out var elementError))
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"cannot bind '{terminal.Name}[{terminal.Index.Value}]': {elementError}");
+                return ApplyOutcome.MemberMissing;
+            }
+        }
+        else
         {
-            log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                + $"no writable field or property '{terminal.Name}' found on {current.GetType().FullName}.");
-            return ApplyOutcome.MemberMissing;
+            if (!TryGetWritableMember(current, terminal.Name, out terminalType, out setter, out getter))
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"no writable field or property '{terminal.Name}' found on {current.GetType().FullName}.");
+                return ApplyOutcome.MemberMissing;
+            }
         }
 
         var outcome = ApplyAndVerify(templateTypeName, templateId, op, terminalType, setter, getter, log);
@@ -557,6 +580,90 @@ internal sealed class TemplatePatchApplier
         return false;
     }
 
+    // Terminal indexer writes target a scalar array element (today: byte[] for
+    // UnitLeaderTemplate.InitialAttributes). The setter/getter closures carry
+    // the array + index so ApplyAndVerify can do its read-write-readback loop
+    // without caring whether it's writing a member or an element.
+    private static bool TryBindArrayElement(
+        object collection, int index, out Type elementType, out Action<object> setter, out Func<object> getter, out string error)
+    {
+        elementType = null;
+        setter = null;
+        getter = null;
+        error = null;
+
+        if (collection is Array managedArray)
+        {
+            if (index < 0 || index >= managedArray.Length)
+            {
+                error = $"index {index} out of bounds (length={managedArray.Length}).";
+                return false;
+            }
+
+            elementType = managedArray.GetType().GetElementType();
+            var arrayLocal = managedArray;
+            var indexLocal = index;
+            setter = value => arrayLocal.SetValue(value, indexLocal);
+            getter = () => arrayLocal.GetValue(indexLocal);
+            return true;
+        }
+
+        var collectionType = collection.GetType();
+        var indexer = FindWritableIndexer(collectionType);
+        if (indexer == null)
+        {
+            error = $"collection type {collectionType.FullName} exposes no writable int indexer.";
+            return false;
+        }
+
+        var lengthMember = collectionType.GetProperty(
+            "Length",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            ?? collectionType.GetProperty(
+                "Count",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (lengthMember != null && lengthMember.GetIndexParameters().Length == 0)
+        {
+            try
+            {
+                var lengthBoxed = lengthMember.GetValue(collection);
+                if (lengthBoxed is int length && (index < 0 || index >= length))
+                {
+                    error = $"index {index} out of bounds (length={length}).";
+                    return false;
+                }
+            }
+            catch
+            {
+                // Skip the pre-check; the setter will throw.
+            }
+        }
+
+        elementType = indexer.PropertyType;
+        var collectionLocal = collection;
+        var indexerLocal = indexer;
+        var indexArg = new object[] { index };
+        setter = value => indexerLocal.SetValue(collectionLocal, value, indexArg);
+        getter = () => indexerLocal.GetValue(collectionLocal, indexArg);
+        return true;
+    }
+
+    private static PropertyInfo FindWritableIndexer(Type collectionType)
+    {
+        for (var current = collectionType; current != null; current = current.BaseType)
+        {
+            foreach (var property in current.GetProperties(
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+            {
+                var parameters = property.GetIndexParameters();
+                if (parameters.Length == 1 && parameters[0].ParameterType == typeof(int) && property.CanWrite && property.CanRead)
+                    return property;
+            }
+        }
+
+        return null;
+    }
+
     private static PropertyInfo FindIndexer(Type collectionType)
     {
         for (var current = collectionType; current != null; current = current.BaseType)
@@ -588,6 +695,15 @@ internal sealed class TemplatePatchApplier
                     return false;
                 }
                 converted = value.Boolean.Value;
+                return true;
+
+            case CompiledTemplateScalarValueKind.Byte:
+                if (targetType != typeof(byte))
+                {
+                    error = $"value kind Byte but member type is {targetType.FullName}.";
+                    return false;
+                }
+                converted = value.Byte.Value;
                 return true;
 
             case CompiledTemplateScalarValueKind.Int32:
