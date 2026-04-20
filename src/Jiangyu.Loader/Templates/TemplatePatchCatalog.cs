@@ -113,21 +113,7 @@ internal sealed class TemplatePatchCatalog
             return;
         }
 
-        var rewrite = TemplateFieldPathSugar.Rewrite(templateType, op.FieldPath);
-        if (rewrite.Error != null)
-        {
-            log.Warning(
-                $"Mod '{mod.Name}': template patch '{templateType}:{templateId}.{op.FieldPath}' — {rewrite.Error}");
-            return;
-        }
-
-        var effectivePath = rewrite.Path!;
-        if (rewrite.Rewritten)
-        {
-            log.Msg(
-                $"Mod '{mod.Name}': template patch '{templateType}:{templateId}.{op.FieldPath}' rewritten to '{effectivePath}'.");
-        }
-
+        var effectivePath = op.FieldPath;
         if (!TemplatePatchPathValidator.IsSupportedFieldPath(effectivePath))
         {
             log.Warning(

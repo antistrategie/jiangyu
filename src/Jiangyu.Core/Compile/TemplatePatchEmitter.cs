@@ -1,0 +1,156 @@
+using Jiangyu.Core.Abstractions;
+using Jiangyu.Shared.Templates;
+
+namespace Jiangyu.Core.Compile;
+
+/// <summary>
+/// Compile-time emitter for the <c>templatePatches</c> block of
+/// <c>compiled/jiangyu.json</c>. Runs authored patches through
+/// <see cref="TemplateFieldPathSugar"/>, validates path syntax and value
+/// completeness via <see cref="TemplatePatchPathValidator"/>, and returns a
+/// list that is guaranteed to be in canonical indexed form. Errors escalate
+/// to compile failures so modders fix malformed patches at compile time
+/// rather than discovering silent drops at load time.
+/// </summary>
+public static class TemplatePatchEmitter
+{
+    public readonly record struct EmitResult(
+        List<CompiledTemplatePatch>? Patches,
+        int RewriteCount,
+        int ErrorCount)
+    {
+        public bool Success => ErrorCount == 0;
+    }
+
+    public static EmitResult Emit(List<CompiledTemplatePatch>? patches, ILogSink log)
+    {
+        if (patches is null || patches.Count == 0)
+            return new EmitResult(patches, 0, 0);
+
+        var emitted = new List<CompiledTemplatePatch>(patches.Count);
+        var rewriteCount = 0;
+        var errorCount = 0;
+
+        foreach (var patch in patches)
+        {
+            if (patch is null)
+            {
+                log.Error("Template patch is null.");
+                errorCount++;
+                continue;
+            }
+
+            var templateType = string.IsNullOrWhiteSpace(patch.TemplateType)
+                ? null
+                : patch.TemplateType!.Trim();
+            var templateLabel = templateType ?? "<unspecified>";
+
+            if (string.IsNullOrWhiteSpace(patch.TemplateId))
+            {
+                log.Error($"Template patch '{templateLabel}': templateId is empty.");
+                errorCount++;
+                continue;
+            }
+
+            if (patch.Set is null || patch.Set.Count == 0)
+            {
+                log.Error(
+                    $"Template patch '{templateLabel}:{patch.TemplateId}' has no 'set' operations.");
+                errorCount++;
+                continue;
+            }
+
+            var emittedOps = new List<CompiledTemplateSetOperation>(patch.Set.Count);
+            foreach (var op in patch.Set)
+            {
+                if (!TryEmitOperation(templateLabel, patch.TemplateId, templateType, op, log, out var emittedOp, out var rewritten))
+                {
+                    errorCount++;
+                    continue;
+                }
+
+                if (rewritten)
+                    rewriteCount++;
+                emittedOps.Add(emittedOp);
+            }
+
+            if (emittedOps.Count == 0)
+                continue;
+
+            emitted.Add(new CompiledTemplatePatch
+            {
+                TemplateType = patch.TemplateType,
+                TemplateId = patch.TemplateId,
+                Set = emittedOps,
+            });
+        }
+
+        return new EmitResult(emitted, rewriteCount, errorCount);
+    }
+
+    private static bool TryEmitOperation(
+        string templateLabel,
+        string templateId,
+        string? templateTypeForSugar,
+        CompiledTemplateSetOperation? op,
+        ILogSink log,
+        out CompiledTemplateSetOperation emitted,
+        out bool rewritten)
+    {
+        emitted = default!;
+        rewritten = false;
+
+        if (op is null)
+        {
+            log.Error($"Template patch '{templateLabel}:{templateId}' has a null set operation.");
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(op.FieldPath))
+        {
+            log.Error($"Template patch '{templateLabel}:{templateId}' has an empty fieldPath.");
+            return false;
+        }
+
+        var rewrite = TemplateFieldPathSugar.Rewrite(templateTypeForSugar, op.FieldPath);
+        if (rewrite.Error != null)
+        {
+            log.Error(
+                $"Template patch '{templateLabel}:{templateId}.{op.FieldPath}' — {rewrite.Error}");
+            return false;
+        }
+
+        var effectivePath = rewrite.Path!;
+        rewritten = rewrite.Rewritten;
+
+        if (!TemplatePatchPathValidator.IsSupportedFieldPath(effectivePath))
+        {
+            log.Error(
+                $"Template patch '{templateLabel}:{templateId}.{effectivePath}' has unsupported path syntax. "
+                + "Supported: dotted names (a.b.c) and indexers (name[N]). Parentheses are rejected.");
+            return false;
+        }
+
+        if (op.Value is null)
+        {
+            log.Error(
+                $"Template patch '{templateLabel}:{templateId}.{effectivePath}' has no value.");
+            return false;
+        }
+
+        if (!TemplatePatchPathValidator.IsSupportedValue(op.Value))
+        {
+            log.Error(
+                $"Template patch '{templateLabel}:{templateId}.{effectivePath}' has unsupported or incomplete "
+                + $"value (kind={op.Value.Kind}).");
+            return false;
+        }
+
+        emitted = new CompiledTemplateSetOperation
+        {
+            FieldPath = effectivePath,
+            Value = op.Value,
+        };
+        return true;
+    }
+}

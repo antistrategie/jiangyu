@@ -256,7 +256,7 @@ one of the `UnitLeaderAttribute` enum values. Jiangyu accepts either form:
 { "fieldPath": "InitialAttributes[0]",      "value": { "kind": "Byte", "byte": 100 } }
 ```
 
-The sugar rewrites the named form to `InitialAttributes[N]` at mod-ingestion;
+The sugar rewrites the named form to `InitialAttributes[N]` at compile time;
 unknown attribute names fail loudly with a listing of valid names. See
 [`research/verified/unitleader-initial-attributes.md`](research/verified/unitleader-initial-attributes.md)
 for the verified offset table and source citations.
