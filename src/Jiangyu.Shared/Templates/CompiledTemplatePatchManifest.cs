@@ -143,7 +143,7 @@ public sealed class CompiledTemplateComposite
     public string TypeName { get; set; } = string.Empty;
 
     [JsonPropertyName("fields")]
-    public Dictionary<string, CompiledTemplateValue> Fields { get; set; } = new();
+    public Dictionary<string, CompiledTemplateValue> Fields { get; set; } = [];
 }
 
 /// <summary>

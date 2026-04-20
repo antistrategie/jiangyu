@@ -167,7 +167,8 @@ public sealed class TemplateTypeCatalog : IDisposable
                     MemberType: property.PropertyType,
                     DeclaringTypeFullName: current.FullName ?? current.Name,
                     IsInherited: !ReferenceEquals(current, type),
-                    IsWritable: writable));
+                    IsWritable: writable,
+                    IsLikelyOdinOnly: IsLikelyOdinOnly(property)));
             }
 
             foreach (var field in current.GetFields(flags))
@@ -185,7 +186,8 @@ public sealed class TemplateTypeCatalog : IDisposable
                     MemberType: field.FieldType,
                     DeclaringTypeFullName: current.FullName ?? current.Name,
                     IsInherited: !ReferenceEquals(current, type),
-                    IsWritable: writable));
+                    IsWritable: writable,
+                    IsLikelyOdinOnly: IsLikelyOdinOnly(field)));
             }
         }
 
@@ -237,6 +239,37 @@ public sealed class TemplateTypeCatalog : IDisposable
         if (type.FullName == "System.String")
             return true;
         return false;
+    }
+
+    public static bool IsTemplateReferenceTarget(Type type)
+    {
+        for (var current = type; current != null; current = current.BaseType)
+        {
+            if (string.Equals(current.FullName, "UnityEngine.ScriptableObject", StringComparison.Ordinal)
+                || string.Equals(current.FullName, "Menace.Tools.DataTemplate", StringComparison.Ordinal)
+                || string.Equals(current.Name, "DataTemplate", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static IReadOnlyList<string> GetEnumMemberNames(Type type)
+    {
+        if (!type.IsEnum)
+        {
+            return [];
+        }
+
+        return
+        [
+            .. type
+                .GetFields(BindingFlags.Public | BindingFlags.Static)
+                .Select(field => field.Name)
+                .OrderBy(name => name, StringComparer.Ordinal),
+        ];
     }
 
     /// <summary>
@@ -296,6 +329,22 @@ public sealed class TemplateTypeCatalog : IDisposable
             return true;
         return false;
     }
+
+    private static bool IsLikelyOdinOnly(MemberInfo member)
+    {
+        try
+        {
+            return CustomAttributeData
+                .GetCustomAttributes(member)
+                .Any(attribute =>
+                    string.Equals(attribute.AttributeType.FullName, "Sirenix.Serialization.OdinSerializeAttribute", StringComparison.Ordinal)
+                    || string.Equals(attribute.AttributeType.FullName, "Sirenix.OdinInspector.OdinSerializeAttribute", StringComparison.Ordinal));
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }
 
 public enum MemberKind
@@ -310,4 +359,5 @@ public sealed record MemberShape(
     Type MemberType,
     string DeclaringTypeFullName,
     bool IsInherited,
-    bool IsWritable);
+    bool IsWritable,
+    bool IsLikelyOdinOnly = false);

@@ -40,9 +40,11 @@ public class TemplateMemberQueryTests
         var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.Skills");
 
         Assert.Equal(QueryResultKind.TypeNode, result.Kind);
-        Assert.Equal("FixtureSkill", result.CurrentType!.Name);
+        Assert.Equal("FixtureSkillTemplate", result.CurrentType!.Name);
         Assert.NotNull(result.UnwrappedFrom);
         Assert.Contains(result.Members!, m => m.Name == "Uses");
+        Assert.Equal(CompiledTemplateValueKind.TemplateReference, result.PatchScalarKind);
+        Assert.Equal("FixtureSkillTemplate", result.ReferenceTargetTypeName);
     }
 
     [Fact]
@@ -51,8 +53,9 @@ public class TemplateMemberQueryTests
         using var catalog = Load();
         var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.Skills[0]");
 
-        Assert.Equal(QueryResultKind.TypeNode, result.Kind);
-        Assert.Equal("FixtureSkill", result.CurrentType!.Name);
+        Assert.Equal(QueryResultKind.Leaf, result.Kind);
+        Assert.Equal("FixtureSkillTemplate", result.CurrentType!.Name);
+        Assert.Equal(CompiledTemplateValueKind.TemplateReference, result.PatchScalarKind);
     }
 
     [Fact]
@@ -85,6 +88,7 @@ public class TemplateMemberQueryTests
 
         Assert.Equal(QueryResultKind.Leaf, result.Kind);
         Assert.Equal(CompiledTemplateValueKind.Enum, result.PatchScalarKind);
+        Assert.Equal(["Ballistic", "Blunt", "Plasma"], result.EnumMemberNames);
     }
 
     [Fact]
@@ -133,6 +137,18 @@ public class TemplateMemberQueryTests
     }
 
     [Fact]
+    public void DirectTemplateReferenceField_RetainsTypeNavigation_AndPatchValueKind()
+    {
+        using var catalog = Load();
+        var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.InitialSkill");
+
+        Assert.Equal(QueryResultKind.TypeNode, result.Kind);
+        Assert.Equal("FixtureSkillTemplate", result.CurrentType!.Name);
+        Assert.Equal(CompiledTemplateValueKind.TemplateReference, result.PatchScalarKind);
+        Assert.Equal("FixtureSkillTemplate", result.ReferenceTargetTypeName);
+    }
+
+    [Fact]
     public void FullyQualifiedPrefix_Resolves()
     {
         using var catalog = Load();
@@ -158,7 +174,7 @@ public class TemplateMemberQueryTests
     public void AmbiguousShortName_Errors()
     {
         using var catalog = Load();
-        var result = TemplateMemberQuery.Run(catalog, "FixtureSkill");
+        var result = TemplateMemberQuery.Run(catalog, "FixtureSkillTemplate");
 
         Assert.Equal(QueryResultKind.Error, result.Kind);
         Assert.Contains("ambiguous", result.ErrorMessage!);
@@ -208,7 +224,17 @@ public class TemplateMemberQueryTests
         using var catalog = Load();
         var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.Skills[3]");
 
-        Assert.Equal(QueryResultKind.TypeNode, result.Kind);
+        Assert.Equal(QueryResultKind.Leaf, result.Kind);
         Assert.Equal("FixtureEntity.Skills[3]", result.ResolvedPath);
+    }
+
+    [Fact]
+    public void OdinAnnotatedMember_IsFlagged()
+    {
+        using var catalog = Load();
+        var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.CustomCondition");
+
+        Assert.Equal(QueryResultKind.TypeNode, result.Kind);
+        Assert.True(result.IsLikelyOdinOnly);
     }
 }

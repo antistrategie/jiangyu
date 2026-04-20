@@ -37,7 +37,7 @@ public static class TemplateMemberQuery
         var fieldSegments = segments.Skip(typeCutoff).ToArray();
 
         if (fieldSegments.Length == 0)
-            return TypeNodeFor(catalog, resolvedType, typeName);
+            return TypeNodeFor(resolvedType, typeName);
 
         var fieldPath = string.Join('.', fieldSegments);
         if (!TemplatePatchPathValidator.IsSupportedFieldPath(fieldPath))
@@ -89,7 +89,7 @@ public static class TemplateMemberQuery
         return bestLen;
     }
 
-    private static QueryResult TypeNodeFor(TemplateTypeCatalog catalog, Type type, string resolvedPath)
+    private static QueryResult TypeNodeFor(Type type, string resolvedPath)
     {
         return new QueryResult
         {
@@ -111,6 +111,8 @@ public static class TemplateMemberQuery
         Type? lastMemberType = null;
         Type? unwrappedFrom = null;
         bool lastWritable = true;
+        bool lastOdinOnly = false;
+        bool lastSegmentHadIndexer = false;
 
         for (var i = 0; i < fieldSegments.Length; i++)
         {
@@ -118,6 +120,7 @@ public static class TemplateMemberQuery
             var bracketIndex = segment.IndexOf('[');
             var memberName = bracketIndex == -1 ? segment : segment[..bracketIndex];
             var hasIndexer = bracketIndex != -1;
+            lastSegmentHadIndexer = hasIndexer;
 
             var members = TemplateTypeCatalog.GetMembers(currentType, includeReadOnly: true);
             var member = members.FirstOrDefault(m => m.Name == memberName);
@@ -131,6 +134,7 @@ public static class TemplateMemberQuery
             resolvedPathParts.Add(segment);
             lastMemberType = member.MemberType;
             lastWritable = member.IsWritable;
+            lastOdinOnly = member.IsLikelyOdinOnly;
             unwrappedFrom = null;
 
             var memberType = member.MemberType;
@@ -169,6 +173,24 @@ public static class TemplateMemberQuery
                 CurrentType = lastMemberType,
                 IsWritable = lastWritable,
                 PatchScalarKind = MapScalarKind(lastMemberType),
+                EnumMemberNames = TemplateTypeCatalog.GetEnumMemberNames(lastMemberType),
+                IsLikelyOdinOnly = lastOdinOnly,
+            };
+        }
+
+        if (lastMemberType != null
+            && TemplateTypeCatalog.IsTemplateReferenceTarget(lastMemberType)
+            && lastSegmentHadIndexer)
+        {
+            return new QueryResult
+            {
+                Kind = QueryResultKind.Leaf,
+                ResolvedPath = resolvedPath,
+                CurrentType = lastMemberType,
+                IsWritable = lastWritable,
+                PatchScalarKind = CompiledTemplateValueKind.TemplateReference,
+                ReferenceTargetTypeName = catalog.FriendlyName(lastMemberType),
+                IsLikelyOdinOnly = lastOdinOnly,
             };
         }
 
@@ -180,6 +202,17 @@ public static class TemplateMemberQuery
             Members = TemplateTypeCatalog.GetMembers(currentType),
             IsWritable = lastWritable,
             UnwrappedFrom = unwrappedFrom,
+            PatchScalarKind = lastMemberType != null
+                && TemplateTypeCatalog.IsTemplateReferenceTarget(lastMemberType)
+                && !lastSegmentHadIndexer
+                ? CompiledTemplateValueKind.TemplateReference
+                : null,
+            ReferenceTargetTypeName = lastMemberType != null
+                && TemplateTypeCatalog.IsTemplateReferenceTarget(lastMemberType)
+                && !lastSegmentHadIndexer
+                ? catalog.FriendlyName(lastMemberType)
+                : null,
+            IsLikelyOdinOnly = lastOdinOnly,
         };
     }
 
@@ -216,6 +249,9 @@ public sealed class QueryResult
     public bool IsWritable { get; init; } = true;
     public CompiledTemplateValueKind? PatchScalarKind { get; init; }
     public Type? UnwrappedFrom { get; init; }
+    public IReadOnlyList<string> EnumMemberNames { get; init; } = [];
+    public string? ReferenceTargetTypeName { get; init; }
+    public bool IsLikelyOdinOnly { get; init; }
     public string? ErrorMessage { get; init; }
 
     public static QueryResult FromError(string message) => new()

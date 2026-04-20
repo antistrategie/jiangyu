@@ -66,6 +66,33 @@ public static class TemplateFieldPathSugar
         return new RewriteResult($"InitialAttributes[{offset}]{tail}", null, true);
     }
 
+    public static IReadOnlyList<string> GetNamedArrayElementNames(string? templateType, string? fieldPath)
+    {
+        if (!string.Equals(templateType, UnitLeaderTemplateName, StringComparison.Ordinal))
+            return [];
+
+        if (!string.Equals(fieldPath, "InitialAttributes", StringComparison.Ordinal))
+            return [];
+
+        return
+        [
+            .. UnitLeaderAttributeOffsets
+                .OrderBy(entry => entry.Value)
+                .Select(entry => entry.Key),
+        ];
+    }
+
+    public static bool TryGetNamedArrayElementName(
+        string? templateType,
+        string? fieldPath,
+        int index,
+        out string? name)
+    {
+        name = GetNamedArrayElementNames(templateType, fieldPath)
+            .ElementAtOrDefault(index);
+        return name is not null;
+    }
+
     public readonly struct RewriteResult(string? path, string? error, bool rewritten)
     {
         public string? Path { get; } = path;

@@ -147,6 +147,10 @@ public static class TemplatesQueryCommand
             Console.WriteLine($"  path: {result.ResolvedPath}");
         if (result.UnwrappedFrom != null)
             Console.WriteLine($"  (unwrapped element type of {catalog.FriendlyName(result.UnwrappedFrom)})");
+        if (result.PatchScalarKind == CompiledTemplateValueKind.TemplateReference)
+            Console.WriteLine($"  patch value: TemplateReference ({result.ReferenceTargetTypeName})");
+        if (result.IsLikelyOdinOnly)
+            Console.WriteLine("  warning: likely Odin-only; Jiangyu's current template applier will not write this member.");
         Console.WriteLine();
 
         if (members.Count == 0)
@@ -164,6 +168,8 @@ public static class TemplatesQueryCommand
                 tags.Add("inherited");
             if (!member.IsWritable)
                 tags.Add("read-only");
+            if (member.IsLikelyOdinOnly)
+                tags.Add("odin-only");
 
             var suffix = tags.Count == 0 ? "" : "  [" + string.Join(", ", tags) + "]";
             Console.WriteLine($"  {member.Name.PadRight(nameWidth)}  {typeDisplay}{suffix}");
@@ -204,7 +210,11 @@ public static class TemplatesQueryCommand
                 declaringTypeFullName = m.DeclaringTypeFullName,
                 isInherited = m.IsInherited,
                 isWritable = m.IsWritable,
+                isLikelyOdinOnly = m.IsLikelyOdinOnly,
             }),
+            patchValueKind = result.PatchScalarKind?.ToString(),
+            referenceTargetTypeName = result.ReferenceTargetTypeName,
+            isLikelyOdinOnly = result.IsLikelyOdinOnly,
         };
         Console.WriteLine(JsonSerializer.Serialize(payload, JsonOptions));
         return 0;
@@ -216,6 +226,14 @@ public static class TemplatesQueryCommand
         Console.WriteLine($"{result.ResolvedPath}");
         Console.WriteLine($"  type:      {catalog.FriendlyName(type)}");
         Console.WriteLine($"  writable:  {(result.IsWritable ? "yes" : "no")}");
+        if (result.PatchScalarKind != null)
+            Console.WriteLine($"  value:     {result.PatchScalarKind}");
+        if (!string.IsNullOrWhiteSpace(result.ReferenceTargetTypeName))
+            Console.WriteLine($"  target:    {result.ReferenceTargetTypeName}");
+        if (result.EnumMemberNames.Count > 0)
+            Console.WriteLine($"  enum:      {string.Join(", ", result.EnumMemberNames)}");
+        if (result.IsLikelyOdinOnly)
+            Console.WriteLine("  warning:   likely Odin-only; Jiangyu's current template applier will not write this member.");
 
         var example = BuildPatchExample(result);
         if (example != null)
@@ -244,6 +262,9 @@ public static class TemplatesQueryCommand
             },
             isWritable = result.IsWritable,
             patchScalarKind = result.PatchScalarKind?.ToString(),
+            enumMemberNames = result.EnumMemberNames,
+            referenceTargetTypeName = result.ReferenceTargetTypeName,
+            isLikelyOdinOnly = result.IsLikelyOdinOnly,
         };
         Console.WriteLine(JsonSerializer.Serialize(payload, JsonOptions));
         return 0;
@@ -270,6 +291,7 @@ public static class TemplatesQueryCommand
             CompiledTemplateValueKind.Single => $"{{ \"kind\": \"Single\", \"single\": {sampleValue} }}",
             CompiledTemplateValueKind.String => $"{{ \"kind\": \"String\", \"string\": {sampleValue} }}",
             CompiledTemplateValueKind.Enum => $"{{ \"kind\": \"Enum\", \"enumValue\": {sampleValue} }}",
+            CompiledTemplateValueKind.TemplateReference => $"{{ \"kind\": \"TemplateReference\", \"reference\": {{ \"templateType\": \"{result.ReferenceTargetTypeName ?? "TemplateType"}\", \"templateId\": \"<target-id>\" }} }}",
             _ => null,
         };
         if (valueJson == null)

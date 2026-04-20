@@ -45,8 +45,8 @@ public class JiangyuMod : MelonMod
     private const int SpawnMonitorIntervalFrames = 10;
 
     private static readonly int[] DelayedInspectFrames = { 60, 180, 600 };
-    private static readonly int[] EntityTemplateInspectFrames = { 180, 600 };
-    private static readonly HashSet<string> EntityTemplateInspectScenes = new(StringComparer.Ordinal)
+    private static readonly int[] TemplatesInspectFrames = { 180, 600 };
+    private static readonly HashSet<string> TemplatesInspectScenes = new(StringComparer.Ordinal)
     {
         "Strategy",
         "MissionPreparation",
@@ -60,8 +60,8 @@ public class JiangyuMod : MelonMod
     private int _frameOfLastSpawnMonitor;
     private string _currentScene;
     private readonly HashSet<int> _inspectedFrames = new();
-    private readonly HashSet<int> _entityTemplateInspectAttempts = new();
-    private bool _entityTemplateDumpSucceededThisScene;
+    private readonly HashSet<int> _templatesInspectAttempts = new();
+    private bool _templatesDumpSucceededThisScene;
 
     public override void OnInitializeMelon()
     {
@@ -83,8 +83,8 @@ public class JiangyuMod : MelonMod
         _frameOfLastPeriodicDump = 0;
         _frameOfLastSpawnMonitor = 0;
         _inspectedFrames.Clear();
-        _entityTemplateInspectAttempts.Clear();
-        _entityTemplateDumpSucceededThisScene = false;
+        _templatesInspectAttempts.Clear();
+        _templatesDumpSucceededThisScene = false;
         _replacementCoordinator.OnSceneUnloaded();
 
         LoggerInstance.Msg($"Scene loaded: {sceneName} ({buildIndex})");
@@ -112,15 +112,15 @@ public class JiangyuMod : MelonMod
                 }
             }
 
-            if (!_entityTemplateDumpSucceededThisScene &&
-                EntityTemplateInspectScenes.Contains(_currentScene))
+            if (!_templatesDumpSucceededThisScene &&
+                TemplatesInspectScenes.Contains(_currentScene))
             {
-                foreach (var markFrame in EntityTemplateInspectFrames)
+                foreach (var markFrame in TemplatesInspectFrames)
                 {
-                    if (_frameInScene == markFrame && _entityTemplateInspectAttempts.Add(markFrame))
+                    if (_frameInScene == markFrame && _templatesInspectAttempts.Add(markFrame))
                     {
-                        _entityTemplateDumpSucceededThisScene =
-                            RuntimeInspector.TryDumpEntityTemplatesFromLoader($"{_currentScene}-t{markFrame}f", LoggerInstance);
+                        _templatesDumpSucceededThisScene =
+                            RuntimeInspector.TryDumpTemplatesFromLoader($"{_currentScene}-t{markFrame}f", LoggerInstance);
                     }
                 }
             }

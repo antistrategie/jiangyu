@@ -98,4 +98,25 @@ public class TemplateFieldPathSugarTests
         Assert.NotNull(result.Error);
         Assert.Contains("agility", result.Error);
     }
+
+    [Fact]
+    public void GetNamedArrayElementNames_ReturnsUnitLeaderAttributeOrder()
+    {
+        Assert.Equal(
+            ["Agility", "WeaponSkill", "Valour", "Toughness", "Vitality", "Precision", "Positioning"],
+            TemplateFieldPathSugar.GetNamedArrayElementNames("UnitLeaderTemplate", "InitialAttributes"));
+    }
+
+    [Fact]
+    public void TryGetNamedArrayElementName_ResolvesKnownIndex()
+    {
+        var success = TemplateFieldPathSugar.TryGetNamedArrayElementName(
+            "UnitLeaderTemplate",
+            "InitialAttributes",
+            4,
+            out var name);
+
+        Assert.True(success);
+        Assert.Equal("Vitality", name);
+    }
 }

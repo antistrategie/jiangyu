@@ -10,6 +10,7 @@ public static class TemplatesCommand
         {
             TemplatesIndexCommand.Create(),
             TemplatesListCommand.Create(),
+            TemplatesSearchCommand.Create(),
             TemplatesInspectCommand.Create(),
             TemplatesQueryCommand.Create(),
             TemplatesBaselineCommand.Create(),

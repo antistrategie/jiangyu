@@ -3,11 +3,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
+using Jiangyu.Loader.Templates;
 using DataTemplateLoader = Il2CppMenace.Tools.DataTemplateLoader;
 using DataTemplate = Il2CppMenace.Tools.DataTemplate;
-using EntityTemplate = Il2CppMenace.Tactical.EntityTemplate;
-using Il2CppEnumerable = Il2CppSystem.Collections.IEnumerable;
-using Il2CppEnumerator = Il2CppSystem.Collections.IEnumerator;
 using Il2CppDictionary = Il2CppSystem.Collections.Generic.Dictionary<string, Il2CppMenace.Tools.DataTemplate>;
 using MelonLoader;
 using MelonLoader.Utils;
@@ -21,12 +19,13 @@ namespace Jiangyu.Loader.Diagnostics;
 /// template snapshots to disk for investigation of why a replacement or future
 /// template patch is or isn't landing.
 ///
-/// Enabled by the presence of <c>&lt;UserData&gt;/jiangyu-inspect.flag</c>
-/// (any contents; empty is fine). Remove the flag to disable. While enabled,
-/// a JSON dump is written to
-/// <c>&lt;UserData&gt;/jiangyu-inspect/&lt;timestamp&gt;-&lt;scene&gt;.json</c>
-/// on each scene load, and template probes may emit additional JSON files into
-/// the same directory.
+/// Enabled by a flag file in <c>&lt;UserData&gt;</c>:
+/// <list type="bullet">
+///   <item><c>jiangyu-inspect.flag</c> — unlimited retention (dumps accumulate forever).</item>
+///   <item><c>jiangyu-inspect.&lt;N&gt;.flag</c> — rolling retention, keep at most N files
+///     in <c>&lt;UserData&gt;/jiangyu-inspect/</c>; oldest are deleted after each write.</item>
+/// </list>
+/// File contents are ignored. Remove the flag to disable. Numbered flag wins if both exist.
 ///
 /// Not a replacement mechanism - observation only. Dumps both scene-scoped
 /// components and Resources.FindObjectsOfTypeAll asset lists, so atlas-packed
@@ -35,9 +34,12 @@ namespace Jiangyu.Loader.Diagnostics;
 /// </summary>
 internal static class RuntimeInspector
 {
-    private const string FlagFileName = "jiangyu-inspect.flag";
+    private const string PlainFlagFileName = "jiangyu-inspect.flag";
+    private const string NumberedFlagPattern = "jiangyu-inspect.*.flag";
     private const string OutputDirectoryName = "jiangyu-inspect";
-    private static int _entityTemplateDumpSequence;
+    private const int MaxByteArrayElements = 64;
+    private const int MaxCollectionElementSummaries = 16;
+    private static int _templatesDumpSequence;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -45,20 +47,127 @@ internal static class RuntimeInspector
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    public static bool IsEnabled()
+    public static bool IsEnabled() => ResolveFlag().Enabled;
+
+    // Numbered flag wins when both are present. A non-positive or unparseable
+    // N is silently ignored so a stray `jiangyu-inspect.ignored.flag` does not
+    // disable the plain flag.
+    private static FlagState ResolveFlag()
     {
         try
         {
-            return File.Exists(Path.Combine(MelonEnvironment.UserDataDirectory, FlagFileName));
+            var userData = MelonEnvironment.UserDataDirectory;
+            var numbered = Directory.GetFiles(userData, NumberedFlagPattern);
+            foreach (var path in numbered)
+            {
+                var name = Path.GetFileName(path);
+                if (string.Equals(name, PlainFlagFileName, StringComparison.Ordinal))
+                    continue;
+                if (TryParseRetention(name, out var cap))
+                    return new FlagState(true, cap);
+            }
+
+            if (File.Exists(Path.Combine(userData, PlainFlagFileName)))
+                return new FlagState(true, null);
+
+            return new FlagState(false, null);
         }
         catch
         {
-            return false;
+            return new FlagState(false, null);
         }
+    }
+
+    private static bool TryParseRetention(string fileName, out int cap)
+    {
+        cap = 0;
+        const string prefix = "jiangyu-inspect.";
+        const string suffix = ".flag";
+        if (!fileName.StartsWith(prefix, StringComparison.Ordinal)
+            || !fileName.EndsWith(suffix, StringComparison.Ordinal))
+            return false;
+        var middle = fileName.Substring(prefix.Length, fileName.Length - prefix.Length - suffix.Length);
+        return int.TryParse(middle, out cap) && cap > 0;
+    }
+
+    private readonly struct FlagState
+    {
+        public FlagState(bool enabled, int? retentionCap)
+        {
+            Enabled = enabled;
+            RetentionCap = retentionCap;
+        }
+
+        public bool Enabled { get; }
+        public int? RetentionCap { get; }
+    }
+
+    // Per-kind LRU-by-name sweep. Files are bucketed by filename suffix so a
+    // frequent kind (the periodic runtime sweep fires every 300 frames after
+    // t=600) cannot evict a rare kind (templates dump, once per scene load).
+    // Filenames are UTC timestamp-prefixed, so alphanumeric ordering within a
+    // bucket equals chronological ordering. Called once per write, after the
+    // new file lands, so cap=N means "at most N files per kind survive".
+    private static void EnforceRetention(int? cap, MelonLogger.Instance log)
+    {
+        if (!cap.HasValue)
+            return;
+
+        try
+        {
+            var outDir = GetOutputDirectory();
+            var files = new DirectoryInfo(outDir).GetFiles();
+            if (files.Length == 0)
+                return;
+
+            var buckets = new Dictionary<string, List<FileInfo>>(StringComparer.Ordinal);
+            foreach (var file in files)
+            {
+                var kind = ClassifyDumpKind(file.Name);
+                if (!buckets.TryGetValue(kind, out var bucket))
+                {
+                    bucket = new List<FileInfo>();
+                    buckets[kind] = bucket;
+                }
+                bucket.Add(file);
+            }
+
+            foreach (var bucket in buckets.Values)
+            {
+                if (bucket.Count <= cap.Value)
+                    continue;
+
+                bucket.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
+                var toDelete = bucket.Count - cap.Value;
+                for (var i = 0; i < toDelete; i++)
+                {
+                    try { bucket[i].Delete(); }
+                    catch (Exception ex)
+                    {
+                        log.Warning($"[inspect] rotation: could not delete {bucket[i].Name}: {ex.Message}");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"[inspect] rotation sweep failed: {ex.Message}");
+        }
+    }
+
+    private static string ClassifyDumpKind(string fileName)
+    {
+        if (fileName.Contains("-templates-", StringComparison.Ordinal))
+            return "templates";
+        return "runtime";
     }
 
     public static void Dump(string sceneName, int buildIndex, MelonLogger.Instance log)
     {
+        var flag = ResolveFlag();
+        if (!flag.Enabled)
+            return;
+
         try
         {
             var timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd-HH-mm-ss");
@@ -75,6 +184,8 @@ internal static class RuntimeInspector
                 $"sprite assets={dump.SpriteAssets.Count}  " +
                 $"audio sources={dump.AudioSources.Count}  " +
                 $"audio clips={dump.AudioClipAssets.Count})");
+
+            EnforceRetention(flag.RetentionCap, log);
         }
         catch (Exception ex)
         {
@@ -82,191 +193,555 @@ internal static class RuntimeInspector
         }
     }
 
-    public static bool TryDumpEntityTemplatesFromLoader(string sceneName, MelonLogger.Instance log)
+    /// <summary>
+    /// Dumps the full state of every DataTemplate subtype registered in
+    /// <c>DataTemplateLoader.m_TemplateMaps</c>. Captures identity (m_ID, map
+    /// key, Unity name, hideFlags, native pointer), flags likely Jiangyu clones
+    /// via <c>hideFlags</c>, and snapshots each serialised member as a
+    /// classified summary (scalar / bytes / reference / collection / odinBlob /
+    /// null / unreadable). One JSON file per call, named
+    /// <c>&lt;timestamp&gt;-&lt;scene&gt;-templates-&lt;seq&gt;.json</c>.
+    /// Returns <c>false</c> when the loader's <c>m_TemplateMaps</c> singleton or
+    /// entries aren't ready yet (caller can retry later in-scene).
+    /// </summary>
+    public static bool TryDumpTemplatesFromLoader(string sceneName, MelonLogger.Instance log)
     {
-        if (!IsEnabled())
+        var flag = ResolveFlag();
+        if (!flag.Enabled)
             return false;
 
         try
         {
-            var templateCollection = GetAllEntityTemplateCollection();
-            if (templateCollection == null)
+            var singleton = DataTemplateLoader.GetSingleton();
+            if (singleton == null)
             {
-                log.Warning("[inspect] EntityTemplate probe: DataTemplateLoader.GetAll<EntityTemplate>() returned null.");
+                log.Warning("[inspect] templates: DataTemplateLoader.GetSingleton() returned null.");
                 return false;
             }
 
-            var materialisedTemplates = MaterialiseEntityTemplates(templateCollection);
-
-            if (materialisedTemplates.Count == 0)
+            var templateMaps = singleton.m_TemplateMaps;
+            if (templateMaps == null || templateMaps.Count == 0)
             {
-                var reportedCount = TryReadCollectionCount(templateCollection);
-                log.Warning(
-                    $"[inspect] EntityTemplate probe: DataTemplateLoader.GetAll<EntityTemplate>() materialised 0 templates (reported count={reportedCount?.ToString() ?? "unknown"}).");
+                log.Warning("[inspect] templates: DataTemplateLoader.m_TemplateMaps is null/empty (cache not ready).");
                 return false;
             }
 
-            var sequence = Interlocked.Increment(ref _entityTemplateDumpSequence);
+            var dump = BuildTemplatesDump(sceneName, templateMaps);
+            if (dump.TypeCount == 0)
+            {
+                log.Warning("[inspect] templates: materialised 0 types.");
+                return false;
+            }
+
+            var sequence = Interlocked.Increment(ref _templatesDumpSequence);
             var timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd-HH-mm-ss-fff");
             var safeSceneName = SanitiseForFileName(sceneName);
-            var filePath = Path.Combine(GetOutputDirectory(), $"{timestamp}-{safeSceneName}-entity-templates-{sequence:D2}.json");
+            var filePath = Path.Combine(GetOutputDirectory(), $"{timestamp}-{safeSceneName}-templates-{sequence:D2}.json");
 
-            var dump = BuildEntityTemplateDump(sceneName, materialisedTemplates, null);
             File.WriteAllText(filePath, JsonSerializer.Serialize(dump, JsonOptions));
 
             log.Msg(
-                $"[inspect] Wrote entity-template dump: {filePath}  " +
-                $"(templates={dump.TemplateCount}  mapEntries={dump.MapCount}  withId={dump.TemplatesWithId}  " +
-                $"withCollection={dump.TemplatesWithCollection}  withPathId={dump.TemplatesWithPathId})");
+                $"[inspect] Wrote templates dump: {filePath}  " +
+                $"(types={dump.TypeCount}  templates={dump.TemplateCount}  " +
+                $"likelyClones={dump.LikelyCloneCount}  odinFields={dump.OdinFieldCount})");
 
+            EnforceRetention(flag.RetentionCap, log);
             return true;
         }
         catch (Exception ex)
         {
-            log.Error($"[inspect] entity-template dump failed: {ex}");
+            log.Error($"[inspect] templates dump failed: {ex}");
             return false;
         }
     }
 
-    private static object GetAllEntityTemplateCollection()
+    private static TemplatesDump BuildTemplatesDump(
+        string sceneName,
+        Il2CppSystem.Collections.Generic.Dictionary<Il2CppSystem.Type, Il2CppDictionary> templateMaps)
     {
-        var loaderType = typeof(DataTemplateLoader);
-        var entityTemplateType = loaderType.Assembly.GetTypes()
-            .FirstOrDefault(type => type.Name == nameof(EntityTemplate) && !type.IsAbstract) ?? typeof(EntityTemplate);
+        var dump = new TemplatesDump
+        {
+            Timestamp = DateTimeOffset.UtcNow,
+            SceneName = sceneName,
+        };
 
-        var getAllMethod = loaderType
-            .GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .Single(method => method.Name == "GetAll" &&
-                              method.IsGenericMethodDefinition &&
-                              method.GetParameters().Length == 0);
+        foreach (var pair in templateMaps)
+        {
+            var il2CppType = pair.Key;
+            var innerMap = pair.Value;
+            if (il2CppType == null || innerMap == null)
+                continue;
 
-        return getAllMethod.MakeGenericMethod(entityTemplateType).Invoke(null, null);
+            // Dict values come out declared as DataTemplate, so template.GetType()
+            // returns the base class and reflection misses the subtype-declared
+            // members. Resolve the concrete managed wrapper for this map bucket
+            // and TryCast each value to it so GetType() returns the real type.
+            var managedType = TemplateRuntimeAccess.ResolveTemplateType(il2CppType.Name, out _);
+            var tryCastGeneric = managedType != null
+                ? BuildTryCastMethod(managedType)
+                : null;
+
+            var typeDump = new TemplateTypeDump
+            {
+                TypeFullName = il2CppType.FullName,
+                TypeName = il2CppType.Name,
+                MapEntryCount = innerMap.Count,
+            };
+
+            foreach (var entry in innerMap)
+            {
+                var template = CastToConcreteType(entry.Value, tryCastGeneric);
+                var info = BuildTemplateStateInfo(entry.Key, template);
+                if (info == null)
+                    continue;
+
+                typeDump.Templates.Add(info);
+                if (info.IsLikelyClone)
+                    dump.LikelyCloneCount++;
+                dump.OdinFieldCount += info.OdinFieldCount;
+            }
+
+            typeDump.Templates.Sort((a, b) => string.CompareOrdinal(a.Id ?? a.MapKey, b.Id ?? b.MapKey));
+            dump.Types.Add(typeDump);
+            dump.TemplateCount += typeDump.Templates.Count;
+        }
+
+        dump.Types.Sort((a, b) => string.CompareOrdinal(a.TypeFullName, b.TypeFullName));
+        dump.TypeCount = dump.Types.Count;
+        return dump;
     }
 
-    private static List<EntityTemplate> MaterialiseEntityTemplates(object templateCollection)
+    private static MethodInfo BuildTryCastMethod(Type concreteType)
     {
-        var results = new List<EntityTemplate>();
+        try
+        {
+            var method = typeof(Il2CppObjectBase)
+                .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+                .FirstOrDefault(m => m.Name == "TryCast"
+                    && m.IsGenericMethodDefinition
+                    && m.GetParameters().Length == 0);
+            return method?.MakeGenericMethod(concreteType);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
-        if (templateCollection is Il2CppObjectBase il2CppCollection)
+    private static DataTemplate CastToConcreteType(DataTemplate template, MethodInfo tryCastGeneric)
+    {
+        if (template == null || tryCastGeneric == null)
+            return template;
+
+        try
+        {
+            return tryCastGeneric.Invoke(template, null) as DataTemplate ?? template;
+        }
+        catch
+        {
+            return template;
+        }
+    }
+
+    private static TemplateStateInfo BuildTemplateStateInfo(string mapKey, DataTemplate template)
+    {
+        if (template == null)
+            return null;
+
+        var info = new TemplateStateInfo
+        {
+            MapKey = mapKey,
+        };
+
+        try
+        {
+            var runtimeType = template.GetType();
+            info.RuntimeType = runtimeType.FullName;
+            info.Id = TemplateRuntimeAccess.ReadTemplateId(template);
+
+            try { info.Name = template.name; } catch { }
+            try { info.HideFlags = template.hideFlags.ToString(); } catch { }
+            info.IsLikelyClone = !string.IsNullOrEmpty(info.HideFlags)
+                && info.HideFlags!.Contains("DontUnloadUnusedAsset", StringComparison.Ordinal);
+
+            var pointer = GetNativePointer(template);
+            info.NativePointer = pointer == IntPtr.Zero ? null : $"0x{pointer.ToInt64():X}";
+
+            EnumerateMembers(template, runtimeType, info);
+        }
+        catch (Exception ex)
+        {
+            info.EnumerationError = ex.Message;
+        }
+
+        return info;
+    }
+
+    // Enumerate the flattened member surface of the runtime wrapper. Without
+    // DeclaredOnly, managed reflection returns the full set including inherited
+    // members, so we don't need to walk the hierarchy ourselves. Property reads
+    // come first because that's how Il2CppInterop surfaces most serialised
+    // Unity members (the `TryReadMember` path in TemplatePatchApplier, verified
+    // in-game, tries property first, then field). Reads are guarded individually
+    // so one throwing proxy getter doesn't abort the whole enumeration.
+    private static void EnumerateMembers(object template, Type runtimeType, TemplateStateInfo info)
+    {
+        const BindingFlags flags = BindingFlags.Instance
+            | BindingFlags.Public
+            | BindingFlags.NonPublic
+            | BindingFlags.FlattenHierarchy;
+
+        var seenNames = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var property in runtimeType.GetProperties(flags))
+        {
+            if (property.GetIndexParameters().Length != 0)
+                continue;
+            if (!property.CanRead)
+                continue;
+            if (!seenNames.Add(property.Name))
+                continue;
+            if (property.Name == "m_ID")
+                continue;
+
+            info.Fields.Add(BuildMemberSnapshot(
+                property.Name, property.PropertyType,
+                () => property.GetValue(template), info));
+        }
+
+        // Instance fields do not honour FlattenHierarchy (that flag only
+        // affects static members), so walk the hierarchy explicitly for
+        // fields. Fields declared on inherited non-Il2CppObjectBase base
+        // types still need to surface (e.g. DataTemplate-level m_IsInitialized).
+        for (var current = runtimeType;
+             current != null && current != typeof(Il2CppObjectBase) && current != typeof(object);
+             current = current.BaseType)
+        {
+            foreach (var field in current.GetFields(
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+            {
+                if (!seenNames.Add(field.Name))
+                    continue;
+                if (field.Name == "m_ID")
+                    continue;
+
+                info.Fields.Add(BuildMemberSnapshot(
+                    field.Name, field.FieldType,
+                    () => field.GetValue(template), info));
+            }
+        }
+
+        info.Fields.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
+    }
+
+    private static TemplateFieldSnapshot BuildMemberSnapshot(
+        string memberName, Type memberType, Func<object> read, TemplateStateInfo info)
+    {
+        var snapshot = new TemplateFieldSnapshot
+        {
+            Name = memberName,
+            DeclaredType = memberType.FullName ?? memberType.Name,
+        };
+
+        object value;
+        try
+        {
+            value = read();
+        }
+        catch (Exception ex)
+        {
+            snapshot.Kind = "Unreadable";
+            snapshot.Error = ex.Message;
+            return snapshot;
+        }
+
+        if (value == null)
+        {
+            snapshot.Kind = "Null";
+            return snapshot;
+        }
+
+        // Odin / Sirenix serialised blob. Presence alone answers "does this
+        // template carry Odin-only fields that our reflection-based applier
+        // won't touch." Capture byte length when we can reach a managed byte
+        // array behind it without deep probing.
+        if (IsOdinSerializationData(memberName, memberType))
+        {
+            snapshot.Kind = "OdinBlob";
+            snapshot.OdinSerializedByteLength = TryReadOdinByteLength(value);
+            info.OdinFieldCount++;
+            return snapshot;
+        }
+
+        if (memberType == typeof(string))
+        {
+            snapshot.Kind = "Scalar";
+            snapshot.ScalarValue = (string)value;
+            return snapshot;
+        }
+
+        if (memberType.IsEnum)
+        {
+            snapshot.Kind = "Scalar";
+            try { snapshot.ScalarValue = value.ToString(); } catch { }
+            return snapshot;
+        }
+
+        if (memberType.IsPrimitive)
+        {
+            snapshot.Kind = "Scalar";
+            try { snapshot.ScalarValue = Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture); } catch { }
+            return snapshot;
+        }
+
+        if (TryAsByteArray(value, out var bytes))
+        {
+            snapshot.Kind = "Bytes";
+            snapshot.ByteLength = bytes.Length;
+            var sample = bytes.Length <= MaxByteArrayElements ? bytes : bytes[..MaxByteArrayElements];
+            snapshot.Bytes = new List<byte>(sample);
+            return snapshot;
+        }
+
+        if (TryAsCollection(value, out var shape, out var count, out var elementSummaries))
+        {
+            snapshot.Kind = "Collection";
+            snapshot.CollectionShape = shape;
+            snapshot.CollectionCount = count;
+            if (elementSummaries != null)
+                snapshot.ElementSummaries = elementSummaries;
+            return snapshot;
+        }
+
+        if (value is Il2CppObjectBase il2CppObject)
+        {
+            snapshot.Kind = "Reference";
+            snapshot.ReferenceSummary = BuildReferenceSummary(il2CppObject);
+            return snapshot;
+        }
+
+        snapshot.Kind = "Other";
+        try { snapshot.ScalarValue = value.ToString(); } catch { }
+        return snapshot;
+    }
+
+    private static bool IsOdinSerializationData(string memberName, Type memberType)
+    {
+        if (string.Equals(memberName, "serializationData", StringComparison.Ordinal))
+            return true;
+        var typeName = memberType.FullName ?? string.Empty;
+        return typeName.Contains("Sirenix.Serialization.SerializationData", StringComparison.Ordinal)
+            || typeName.Contains("SerializationData", StringComparison.Ordinal);
+    }
+
+    private static int? TryReadOdinByteLength(object serializationData)
+    {
+        try
+        {
+            var type = serializationData.GetType();
+            for (var current = type; current != null; current = current.BaseType)
+            {
+                var bytesField = current.GetField(
+                    "SerializedBytes",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+                if (bytesField != null)
+                {
+                    var bytes = bytesField.GetValue(serializationData);
+                    if (bytes == null)
+                        return 0;
+                    if (TryAsByteArray(bytes, out var managed))
+                        return managed.Length;
+                    return null;
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
+    private static bool TryAsByteArray(object value, out byte[] bytes)
+    {
+        bytes = null;
+        if (value == null)
+            return false;
+
+        if (value is byte[] direct)
+        {
+            bytes = direct;
+            return true;
+        }
+
+        var type = value.GetType();
+        if (!type.IsGenericType)
+            return false;
+
+        var openName = type.GetGenericTypeDefinition().FullName;
+        if (!string.Equals(openName, "Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray`1", StringComparison.Ordinal))
+            return false;
+
+        if (type.GetGenericArguments()[0] != typeof(byte))
+            return false;
+
+        try
+        {
+            var lengthProperty = type.GetProperty("Length", BindingFlags.Instance | BindingFlags.Public);
+            var indexer = type.GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                .FirstOrDefault(p =>
+                {
+                    var parameters = p.GetIndexParameters();
+                    return parameters.Length == 1 && parameters[0].ParameterType == typeof(int);
+                });
+            if (lengthProperty == null || indexer == null)
+                return false;
+
+            var length = (int)lengthProperty.GetValue(value)!;
+            var copy = new byte[length];
+            var args = new object[1];
+            for (var i = 0; i < length; i++)
+            {
+                args[0] = i;
+                copy[i] = (byte)indexer.GetValue(value, args)!;
+            }
+            bytes = copy;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TryAsCollection(
+        object value, out string shape, out int count, out List<string> elementSummaries)
+    {
+        shape = null;
+        count = 0;
+        elementSummaries = null;
+
+        var type = value.GetType();
+
+        if (value is Array managedArray)
+        {
+            shape = "ManagedArray";
+            count = managedArray.Length;
+            elementSummaries = SummariseElements(i => managedArray.GetValue(i), count);
+            return true;
+        }
+
+        if (type.IsGenericType)
+        {
+            var openName = type.GetGenericTypeDefinition().FullName ?? string.Empty;
+            if (openName == "Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray`1"
+                || openName == "Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray`1")
+            {
+                if (TryReadCollection(value, type, "Length", out count, out elementSummaries))
+                {
+                    shape = openName.Contains("Il2CppReferenceArray", StringComparison.Ordinal)
+                        ? "Il2CppReferenceArray"
+                        : "Il2CppStructArray";
+                    return true;
+                }
+            }
+        }
+
+        // Generic List (Il2Cpp-generated or managed): has Count + Item[int].
+        var countProperty = type.GetProperty(
+            "Count", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (countProperty != null && countProperty.GetIndexParameters().Length == 0)
+        {
+            if (TryReadCollection(value, type, "Count", out count, out elementSummaries))
+            {
+                shape = "List";
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryReadCollection(
+        object collection, Type type, string lengthPropertyName,
+        out int count, out List<string> elementSummaries)
+    {
+        count = 0;
+        elementSummaries = null;
+
+        try
+        {
+            var lengthProperty = type.GetProperty(
+                lengthPropertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            var indexer = type.GetProperties(
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                .FirstOrDefault(p =>
+                {
+                    var parameters = p.GetIndexParameters();
+                    return parameters.Length == 1 && parameters[0].ParameterType == typeof(int) && p.CanRead;
+                });
+            if (lengthProperty == null || indexer == null)
+                return false;
+
+            count = (int)lengthProperty.GetValue(collection)!;
+            var args = new object[1];
+            elementSummaries = SummariseElements(
+                i =>
+                {
+                    args[0] = i;
+                    return indexer.GetValue(collection, args);
+                },
+                count);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static List<string> SummariseElements(Func<int, object> reader, int count)
+    {
+        var take = Math.Min(count, MaxCollectionElementSummaries);
+        var list = new List<string>(take);
+        for (var i = 0; i < take; i++)
         {
             try
             {
-                var il2CppEnumerable = il2CppCollection.TryCast<Il2CppEnumerable>();
-                if (il2CppEnumerable != null)
-                {
-                    MaterialiseEntityTemplates(il2CppEnumerable.GetEnumerator(), results);
-                    if (results.Count > 0)
-                        return results;
-                }
+                var element = reader(i);
+                list.Add(element == null ? "null" : SummariseElement(element));
             }
-            catch
+            catch (Exception ex)
             {
+                list.Add($"<error: {ex.Message}>");
             }
         }
-
-        try
-        {
-            var getEnumeratorMethod = templateCollection.GetType()
-                .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                .FirstOrDefault(method => method.Name == "GetEnumerator" && method.GetParameters().Length == 0);
-
-            if (getEnumeratorMethod != null)
-            {
-                var enumerator = getEnumeratorMethod.Invoke(templateCollection, null);
-                if (enumerator != null)
-                {
-                    var enumeratorType = enumerator.GetType();
-                    var moveNextMethod = enumeratorType.GetMethod("MoveNext", BindingFlags.Public | BindingFlags.Instance);
-                    var currentProperty = enumeratorType.GetProperty("Current", BindingFlags.Public | BindingFlags.Instance);
-
-                    if (moveNextMethod != null && currentProperty != null)
-                    {
-                        while ((bool)moveNextMethod.Invoke(enumerator, null))
-                        {
-                            AddAsEntityTemplate(results, currentProperty.GetValue(enumerator));
-                        }
-
-                        if (results.Count > 0)
-                            return results;
-                    }
-                }
-            }
-        }
-        catch
-        {
-        }
-
-        try
-        {
-            if (templateCollection is System.Collections.IEnumerable managedEnumerable)
-            {
-                foreach (var item in managedEnumerable)
-                {
-                    AddAsEntityTemplate(results, item);
-                }
-
-                if (results.Count > 0)
-                    return results;
-            }
-        }
-        catch
-        {
-        }
-
-        return results;
+        return list;
     }
 
-    private static void AddAsEntityTemplate(List<EntityTemplate> destination, object item)
+    private static string SummariseElement(object element)
     {
-        if (item == null)
-            return;
-
-        if (item is EntityTemplate template)
-        {
-            destination.Add(template);
-            return;
-        }
-
-        if (item is Il2CppObjectBase il2CppItem)
-        {
-            var cast = il2CppItem.TryCast<EntityTemplate>();
-            if (cast != null)
-                destination.Add(cast);
-        }
+        if (element is Il2CppObjectBase il2Cpp)
+            return BuildReferenceSummary(il2Cpp);
+        if (element is string s)
+            return s;
+        try { return Convert.ToString(element, System.Globalization.CultureInfo.InvariantCulture); }
+        catch { return element.GetType().Name; }
     }
 
-    private static int? TryReadCollectionCount(object collection)
+    private static string BuildReferenceSummary(Il2CppObjectBase il2CppObject)
     {
-        if (collection == null)
-            return null;
+        var typeName = il2CppObject.GetType().Name;
 
-        try
+        string identity = null;
+        if (typeof(DataTemplate).IsAssignableFrom(il2CppObject.GetType()))
+            identity = TemplateRuntimeAccess.ReadTemplateId(il2CppObject);
+        else if (il2CppObject is UnityEngine.Object unityObject)
         {
-            var countProperty = collection.GetType().GetProperty("Count", BindingFlags.Public | BindingFlags.Instance);
-            if (countProperty == null)
-                return null;
-
-            var countValue = countProperty.GetValue(collection);
-            return countValue == null ? null : Convert.ToInt32(countValue);
+            try { identity = unityObject.name; } catch { }
         }
-        catch
-        {
-            return null;
-        }
-    }
 
-    private static void MaterialiseEntityTemplates(Il2CppEnumerator enumerator, List<EntityTemplate> destination)
-    {
-        if (enumerator == null)
-            return;
-
-        while (enumerator.MoveNext())
-        {
-            var current = enumerator.Current;
-            var template = current?.TryCast<EntityTemplate>();
-            if (template != null)
-                destination.Add(template);
-        }
+        return string.IsNullOrWhiteSpace(identity) ? typeName : $"{typeName}:{identity}";
     }
 
     private static RuntimeDump BuildDump(string sceneName, int buildIndex)
@@ -380,228 +855,6 @@ internal static class RuntimeInspector
         return dump;
     }
 
-    private static EntityTemplateDump BuildEntityTemplateDump(
-        string sceneName,
-        IReadOnlyCollection<EntityTemplate> templates,
-        Il2CppDictionary templateMap)
-    {
-        var dump = new EntityTemplateDump
-        {
-            Timestamp = DateTimeOffset.UtcNow,
-            SceneName = sceneName,
-            TemplateCount = templates?.Count ?? 0,
-            MapCount = templateMap?.Count ?? 0,
-        };
-
-        var keysByPointer = BuildMapKeysByPointer(templateMap);
-        if (templates == null)
-            return dump;
-
-        var seenTypes = new HashSet<Type>();
-
-        foreach (var template in templates)
-        {
-            if (template == null)
-                continue;
-
-            var templateType = template.GetType();
-            if (seenTypes.Add(templateType))
-                dump.RuntimeTypes.Add(BuildRuntimeTypeShape(templateType));
-
-            var nativePointer = GetNativePointer(template);
-            var info = new EntityTemplateInfo
-            {
-                NativePointer = nativePointer == IntPtr.Zero ? null : $"0x{nativePointer.ToInt64():X}",
-                RuntimeType = templateType.FullName,
-                Id = TryReadStringMember(template, out var idMember, "ID", "m_ID", "Id", "id"),
-                IdMember = idMember,
-                Name = TryReadStringMember(template, out var nameMember, "Name", "m_Name", "name"),
-                NameMember = nameMember,
-                EntityType = template.Type.ToString(),
-                ActorType = template.ActorType.ToString(),
-                StructureType = template.StructureType.ToString(),
-                Collection = TryReadStringMember(template, out var collectionMember, "Collection", "m_Collection", "collection"),
-                CollectionMember = collectionMember,
-                PathId = TryReadLongMember(template, out var pathIdMember, "PathId", "m_PathId", "pathId"),
-                PathIdMember = pathIdMember,
-            };
-
-            if (nativePointer != IntPtr.Zero && keysByPointer.TryGetValue(nativePointer, out var keys))
-            {
-                info.MapKeys.AddRange(keys);
-            }
-
-            if (!string.IsNullOrWhiteSpace(info.Id))
-                dump.TemplatesWithId++;
-            if (!string.IsNullOrWhiteSpace(info.Collection))
-                dump.TemplatesWithCollection++;
-            if (info.PathId.HasValue)
-                dump.TemplatesWithPathId++;
-            if (!string.IsNullOrWhiteSpace(info.Name))
-                dump.TemplatesWithName++;
-            if (info.MapKeys.Count > 0)
-                dump.TemplatesWithMapKeyMatch++;
-
-            dump.Templates.Add(info);
-        }
-
-        return dump;
-    }
-
-    // Shape-only (no value reads) so we don't trip Il2Cpp proxy accessors. Walks
-    // the runtime wrapper up to (but not including) Il2CppObjectBase, which
-    // filters interop-base members like `Pointer`/`WasCollected` out of the
-    // modder-facing view while keeping the actual MENACE template surface.
-    private static RuntimeTypeShape BuildRuntimeTypeShape(Type templateType)
-    {
-        var shape = new RuntimeTypeShape
-        {
-            TypeFullName = templateType.FullName,
-        };
-
-        var seenMembers = new HashSet<string>(StringComparer.Ordinal);
-        const BindingFlags flags = BindingFlags.Instance
-            | BindingFlags.Public
-            | BindingFlags.NonPublic
-            | BindingFlags.DeclaredOnly;
-
-        for (var current = templateType; current != null && current != typeof(Il2CppObjectBase) && current != typeof(object); current = current.BaseType)
-        {
-            foreach (var property in current.GetProperties(flags))
-            {
-                if (property.GetIndexParameters().Length != 0)
-                    continue;
-
-                var key = "P:" + property.Name;
-                if (!seenMembers.Add(key))
-                    continue;
-
-                shape.Members.Add(new RuntimeTypeMemberShape
-                {
-                    Name = property.Name,
-                    Kind = "Property",
-                    TypeName = property.PropertyType.FullName ?? property.PropertyType.Name,
-                    IsWritable = property.CanWrite,
-                });
-            }
-
-            foreach (var field in current.GetFields(flags))
-            {
-                var key = "F:" + field.Name;
-                if (!seenMembers.Add(key))
-                    continue;
-
-                shape.Members.Add(new RuntimeTypeMemberShape
-                {
-                    Name = field.Name,
-                    Kind = "Field",
-                    TypeName = field.FieldType.FullName ?? field.FieldType.Name,
-                    IsWritable = !field.IsInitOnly,
-                });
-            }
-        }
-
-        shape.Members.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
-        return shape;
-    }
-
-    private static Dictionary<IntPtr, List<string>> BuildMapKeysByPointer(Il2CppDictionary templateMap)
-    {
-        var result = new Dictionary<IntPtr, List<string>>();
-        if (templateMap == null)
-            return result;
-
-        foreach (var pair in templateMap)
-        {
-            if (pair.Value == null)
-                continue;
-
-            var pointer = GetNativePointer(pair.Value);
-            if (pointer == IntPtr.Zero)
-                continue;
-
-            if (!result.TryGetValue(pointer, out var keys))
-            {
-                keys = new List<string>();
-                result[pointer] = keys;
-            }
-
-            keys.Add(pair.Key);
-        }
-
-        return result;
-    }
-
-    private static string TryReadStringMember(object instance, out string memberName, params string[] candidates)
-    {
-        var value = TryReadMemberValue(instance, out memberName, candidates);
-        return value?.ToString();
-    }
-
-    private static long? TryReadLongMember(object instance, out string memberName, params string[] candidates)
-    {
-        var value = TryReadMemberValue(instance, out memberName, candidates);
-        if (value == null)
-            return null;
-
-        try
-        {
-            return Convert.ToInt64(value);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static object TryReadMemberValue(object instance, out string memberName, params string[] candidates)
-    {
-        memberName = null;
-        if (instance == null || candidates == null || candidates.Length == 0)
-            return null;
-
-        var type = instance.GetType();
-        foreach (var candidate in candidates)
-        {
-            for (var current = type; current != null; current = current.BaseType)
-            {
-                var property = current.GetProperty(
-                    candidate,
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
-                if (property != null && property.GetIndexParameters().Length == 0)
-                {
-                    try
-                    {
-                        memberName = property.Name;
-                        return property.GetValue(instance);
-                    }
-                    catch
-                    {
-                        return null;
-                    }
-                }
-
-                var field = current.GetField(
-                    candidate,
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
-                if (field != null)
-                {
-                    try
-                    {
-                        memberName = field.Name;
-                        return field.GetValue(instance);
-                    }
-                    catch
-                    {
-                        return null;
-                    }
-                }
-            }
-        }
-
-        return null;
-    }
-
     private static IntPtr GetNativePointer(object instance)
     {
         if (instance is not Il2CppObjectBase il2CppObject)
@@ -671,53 +924,6 @@ internal static class RuntimeInspector
         public List<AudioClipAssetInfo> AudioClipAssets { get; } = new();
     }
 
-    private sealed class EntityTemplateDump
-    {
-        public DateTimeOffset Timestamp { get; set; }
-        public string SceneName { get; set; }
-        public int TemplateCount { get; set; }
-        public int MapCount { get; set; }
-        public int TemplatesWithId { get; set; }
-        public int TemplatesWithName { get; set; }
-        public int TemplatesWithCollection { get; set; }
-        public int TemplatesWithPathId { get; set; }
-        public int TemplatesWithMapKeyMatch { get; set; }
-        public List<RuntimeTypeShape> RuntimeTypes { get; } = new();
-        public List<EntityTemplateInfo> Templates { get; } = new();
-    }
-
-    private sealed class RuntimeTypeShape
-    {
-        public string TypeFullName { get; set; }
-        public List<RuntimeTypeMemberShape> Members { get; } = new();
-    }
-
-    private sealed class RuntimeTypeMemberShape
-    {
-        public string Name { get; set; }
-        public string Kind { get; set; }
-        public string TypeName { get; set; }
-        public bool IsWritable { get; set; }
-    }
-
-    private sealed class EntityTemplateInfo
-    {
-        public string RuntimeType { get; set; }
-        public string NativePointer { get; set; }
-        public string Id { get; set; }
-        public string IdMember { get; set; }
-        public string Name { get; set; }
-        public string NameMember { get; set; }
-        public string EntityType { get; set; }
-        public string ActorType { get; set; }
-        public string StructureType { get; set; }
-        public string Collection { get; set; }
-        public string CollectionMember { get; set; }
-        public long? PathId { get; set; }
-        public string PathIdMember { get; set; }
-        public List<string> MapKeys { get; } = new();
-    }
-
     private sealed class SkinnedMeshRendererInfo
     {
         public string GameObjectPath { get; set; }
@@ -777,5 +983,54 @@ internal static class RuntimeInspector
     {
         public string Name { get; set; }
         public float LengthSeconds { get; set; }
+    }
+
+    private sealed class TemplatesDump
+    {
+        public DateTimeOffset Timestamp { get; set; }
+        public string SceneName { get; set; }
+        public int TypeCount { get; set; }
+        public int TemplateCount { get; set; }
+        public int LikelyCloneCount { get; set; }
+        public int OdinFieldCount { get; set; }
+        public List<TemplateTypeDump> Types { get; } = new();
+    }
+
+    private sealed class TemplateTypeDump
+    {
+        public string TypeFullName { get; set; }
+        public string TypeName { get; set; }
+        public int MapEntryCount { get; set; }
+        public List<TemplateStateInfo> Templates { get; } = new();
+    }
+
+    private sealed class TemplateStateInfo
+    {
+        public string MapKey { get; set; }
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string RuntimeType { get; set; }
+        public string NativePointer { get; set; }
+        public string HideFlags { get; set; }
+        public bool IsLikelyClone { get; set; }
+        public int OdinFieldCount { get; set; }
+        public string EnumerationError { get; set; }
+        public List<TemplateFieldSnapshot> Fields { get; } = new();
+    }
+
+    private sealed class TemplateFieldSnapshot
+    {
+        public string Name { get; set; }
+        public string DeclaredType { get; set; }
+        public string Kind { get; set; }
+        public string ScalarValue { get; set; }
+        public int? ByteLength { get; set; }
+        public List<byte> Bytes { get; set; }
+        public string CollectionShape { get; set; }
+        public int? CollectionCount { get; set; }
+        public List<string> ElementSummaries { get; set; }
+        public string ReferenceSummary { get; set; }
+        public int? OdinSerializedByteLength { get; set; }
+        public string Error { get; set; }
     }
 }

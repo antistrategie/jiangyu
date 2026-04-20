@@ -3,6 +3,28 @@
 // MetadataLoadContext and reflect on these controlled shapes without relying
 // on MENACE's Il2Cpp wrappers.
 
+namespace Sirenix.Serialization
+{
+    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
+    public sealed class OdinSerializeAttribute : Attribute
+    {
+    }
+}
+
+namespace UnityEngine
+{
+    public class ScriptableObject
+    {
+    }
+}
+
+namespace Menace.Tools
+{
+    public class DataTemplate
+    {
+    }
+}
+
 namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
 {
     public enum FixtureDamageType
@@ -22,10 +44,15 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
         public int ReadOnlyField { get; } = 0;
     }
 
-    public class FixtureSkill
+    public class FixtureSkillTemplate : Menace.Tools.DataTemplate
     {
         public int Uses { get; set; }
         public float Cooldown { get; set; }
+    }
+
+    public abstract class FixtureCondition
+    {
+        public string? Label { get; set; }
     }
 
     public class FixtureBaseEntity
@@ -37,19 +64,22 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
     public class FixtureEntity : FixtureBaseEntity
     {
         public FixtureProperties Properties { get; set; } = new();
-        public List<FixtureSkill> Skills { get; set; } = new();
+        public List<FixtureSkillTemplate> Skills { get; set; } = new();
+        public FixtureSkillTemplate InitialSkill { get; set; } = new();
         public int[] BoneIndices { get; set; } = [];
         public bool IsEnabled { get; set; }
         public float HudYOffsetScale { get; set; }
+        [Sirenix.Serialization.OdinSerialize]
+        public FixtureCondition? CustomCondition { get; set; }
         public int ReadOnlyCount { get; } = 0;
     }
 }
 
 namespace Jiangyu.Core.Tests.Templates.Fixtures.Other
 {
-    // Same short name as Gameplay.FixtureSkill to exercise ambiguous-short-name
-    // resolution. The FQN form stays unambiguous.
-    public class FixtureSkill
+    // Same short name as Gameplay.FixtureSkillTemplate to exercise
+    // ambiguous-short-name resolution. The FQN form stays unambiguous.
+    public class FixtureSkillTemplate
     {
         public int Placeholder { get; set; }
     }

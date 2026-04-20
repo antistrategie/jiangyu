@@ -37,7 +37,7 @@ public class TemplateTypeCatalogTests
     public void ResolveType_ReportsAmbiguousShortName()
     {
         using var catalog = Load();
-        var type = catalog.ResolveType("FixtureSkill", out var candidates, out var error);
+        var type = catalog.ResolveType("FixtureSkillTemplate", out var candidates, out var error);
         Assert.Null(type);
         Assert.NotNull(error);
         Assert.Contains("ambiguous", error);
@@ -102,7 +102,8 @@ public class TemplateTypeCatalogTests
 
         var element = TemplateTypeCatalog.GetElementType(skills.MemberType);
         Assert.NotNull(element);
-        Assert.Equal("FixtureSkill", element!.Name);
+        Assert.Equal("FixtureSkillTemplate", element!.Name);
+        Assert.True(TemplateTypeCatalog.IsTemplateReferenceTarget(element));
     }
 
     [Fact]
@@ -156,8 +157,28 @@ public class TemplateTypeCatalogTests
         var type = catalog.ResolveType("FixtureEntity", out _, out _)!;
         var members = TemplateTypeCatalog.GetMembers(type);
 
-        Assert.Equal("List<FixtureSkill>", catalog.FriendlyName(members.Single(m => m.Name == "Skills").MemberType));
+        Assert.Equal("List<FixtureSkillTemplate>", catalog.FriendlyName(members.Single(m => m.Name == "Skills").MemberType));
         Assert.Equal("Int32[]", catalog.FriendlyName(members.Single(m => m.Name == "BoneIndices").MemberType));
         Assert.Equal("Single", catalog.FriendlyName(members.Single(m => m.Name == "HudYOffsetScale").MemberType));
+    }
+
+    [Fact]
+    public void GetMembers_FlagsLikelyOdinOnlyMembers()
+    {
+        using var catalog = Load();
+        var type = catalog.ResolveType("FixtureEntity", out _, out _)!;
+        var members = TemplateTypeCatalog.GetMembers(type, includeReadOnly: true);
+
+        Assert.Contains(members, member => member.Name == "CustomCondition" && member.IsLikelyOdinOnly);
+        Assert.DoesNotContain(members, member => member.Name == "InitialSkill" && member.IsLikelyOdinOnly);
+    }
+
+    [Fact]
+    public void GetEnumMemberNames_ReturnsStableNames()
+    {
+        using var catalog = Load();
+        var type = catalog.ResolveType("FixtureDamageType", out _, out _)!;
+
+        Assert.Equal(["Ballistic", "Blunt", "Plasma"], TemplateTypeCatalog.GetEnumMemberNames(type));
     }
 }

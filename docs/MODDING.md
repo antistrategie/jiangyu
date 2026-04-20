@@ -169,9 +169,9 @@ replacement at the same rate and channel layout.
 
 Jiangyu can write into MENACE's live `DataTemplate` instances — player-squad
 stats, skill parameters, unit leader loadouts — without binary-patching
-`resources.assets`. Patches live in the mod's top-level `jiangyu.json` under
-`templatePatches` and apply once per scene load when the target template cache
-is materialised.
+`resources.assets`. Template edits live in the mod's top-level `jiangyu.json`
+under `templatePatches` and `templateClones`; clones run first, then patches
+apply once per scene load when the target template cache is materialised.
 
 ### Shape
 
@@ -242,9 +242,23 @@ jiangyu templates query 'UnitLeaderTemplate.InitialAttributes[0]'
 jiangyu templates query EntityTemplate.Skills   # auto-unwraps to SkillTemplate
 ```
 
-Combine with `jiangyu templates list --type <TypeName>` and
-`jiangyu templates inspect --type <TypeName> --name <id>` to find valid
-template IDs and their current field values.
+Start with the `jiangyu templates` workflow:
+
+- `jiangyu templates list` — list available template types
+- `jiangyu templates search <query>` — substring search across type names,
+  template IDs, and collections when you do not remember the exact name
+- `jiangyu templates list --type <TypeName>` — list valid `m_ID` values for
+  one type
+- `jiangyu templates inspect --type <TypeName> --name <id> --output text` —
+  read the current value shape in a scan-friendly form
+- `jiangyu templates inspect --type <TypeName> --name <id> --with-mod <path> --output text`
+  — preview the effective state after this mod's `templateClones` and
+  `templatePatches` apply, before launching MENACE
+
+Keep the default JSON output from `templates inspect` for scripting. Use the
+text view for authoring. If the text view flags a member as Odin-only, that
+member is not patchable through Jiangyu's current reflection-based template
+applier.
 
 ### UnitLeader attribute sugar
 
@@ -279,10 +293,8 @@ you if the write landed.
 
 ### Not yet supported
 
-- Collection appends/inserts and full template cloning (blocked on new IL2CPP
-  object construction — the "cloning problem").
 - Localisation patching (`LocalizedLine` / `LocalizedMultiLine`) — planned but
   not shipped.
 - A stable KDL-like authoring surface under `templates/`. The current
-  `templatePatches` shape is the compiled form; it works but is not the
-  long-term modder-facing contract. Treat it as provisional.
+  `templatePatches` / `templateClones` shape works, but it is still a
+  provisional authoring contract rather than the long-term modder-facing one.
