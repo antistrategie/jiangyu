@@ -21,15 +21,18 @@ internal sealed class TemplatePatchCatalog
     };
 
     // Outer key: template type name (e.g. "EntityTemplate").
-    // Inner map: templateId -> (fieldPath -> LoadedPatchOperation).
-    private readonly Dictionary<string, Dictionary<string, Dictionary<string, LoadedPatchOperation>>> _patches
+    // Middle key: templateId. Inner list: operations in applied order. Set
+    // ops dedup on fieldPath within the inner list (later replaces earlier);
+    // Append ops always add a new entry so N appends on the same field apply
+    // N new elements in authored/load order.
+    private readonly Dictionary<string, Dictionary<string, List<LoadedPatchOperation>>> _patches
         = new(StringComparer.Ordinal);
 
     public int PatchCount { get; private set; }
 
     public bool HasPatches => _patches.Count > 0;
 
-    public IEnumerable<KeyValuePair<string, Dictionary<string, Dictionary<string, LoadedPatchOperation>>>> EnumerateByType()
+    public IEnumerable<KeyValuePair<string, Dictionary<string, List<LoadedPatchOperation>>>> EnumerateByType()
         => _patches;
 
     public void Load(IReadOnlyList<DiscoveredMod> loadableMods, MelonLogger.Instance log)
@@ -136,56 +139,72 @@ internal sealed class TemplatePatchCatalog
             return;
         }
 
-        if (op.Value == null)
+        var opForValidation = new CompiledTemplateSetOperation
+        {
+            Op = op.Op,
+            FieldPath = effectivePath,
+            Index = op.Index,
+            Value = op.Value,
+        };
+        if (!TemplatePatchPathValidator.TryValidateOpShape(opForValidation, effectivePath, out var opShapeError))
         {
             log.Warning(
-                $"Mod '{mod.Name}': template patch '{templateType}:{templateId}.{effectivePath}' has no value.");
-            return;
-        }
-
-        if (!TemplatePatchPathValidator.IsSupportedValue(op.Value))
-        {
-            log.Warning(
-                $"Mod '{mod.Name}': template patch '{templateType}:{templateId}.{effectivePath}' has unsupported or "
-                + $"incomplete value (kind={op.Value.Kind}).");
+                $"Mod '{mod.Name}': template patch '{templateType}:{templateId}.{effectivePath}' — {opShapeError}");
             return;
         }
 
         if (!_patches.TryGetValue(templateType, out var patchesForType))
         {
-            patchesForType = new Dictionary<string, Dictionary<string, LoadedPatchOperation>>(StringComparer.Ordinal);
+            patchesForType = new Dictionary<string, List<LoadedPatchOperation>>(StringComparer.Ordinal);
             _patches[templateType] = patchesForType;
         }
 
         if (!patchesForType.TryGetValue(templateId, out var operationsForTemplate))
         {
-            operationsForTemplate = new Dictionary<string, LoadedPatchOperation>(StringComparer.Ordinal);
+            operationsForTemplate = new List<LoadedPatchOperation>();
             patchesForType[templateId] = operationsForTemplate;
         }
 
-        if (operationsForTemplate.TryGetValue(effectivePath, out var existing))
+        // Set ops dedup by fieldPath — later replaces earlier, whether from the
+        // same mod or a later-loaded mod. Append ops never dedup, so two
+        // appends on the same collection apply as two additions in order.
+        if (op.Op == CompiledTemplateOp.Set)
         {
-            log.Warning(
-                $"Override template patch '{templateType}:{templateId}.{effectivePath}': "
-                + $"later-loaded mod '{mod.Name}' replaces '{existing.OwnerLabel}'.");
-            PatchCount--;
+            for (var i = 0; i < operationsForTemplate.Count; i++)
+            {
+                var existing = operationsForTemplate[i];
+                if (existing.Op == CompiledTemplateOp.Set
+                    && string.Equals(existing.FieldPath, effectivePath, StringComparison.Ordinal))
+                {
+                    log.Warning(
+                        $"Override template patch '{templateType}:{templateId}.{effectivePath}': "
+                        + $"later-loaded mod '{mod.Name}' replaces '{existing.OwnerLabel}'.");
+                    operationsForTemplate.RemoveAt(i);
+                    PatchCount--;
+                    break;
+                }
+            }
         }
 
-        operationsForTemplate[effectivePath] = new LoadedPatchOperation(effectivePath, op.Value, mod.Name);
+        operationsForTemplate.Add(new LoadedPatchOperation(op.Op, effectivePath, op.Index, op.Value, mod.Name));
         PatchCount++;
     }
 }
 
 internal sealed class LoadedPatchOperation
 {
-    public LoadedPatchOperation(string fieldPath, CompiledTemplateValue value, string ownerLabel)
+    public LoadedPatchOperation(CompiledTemplateOp op, string fieldPath, int? index, CompiledTemplateValue value, string ownerLabel)
     {
+        Op = op;
         FieldPath = fieldPath;
+        Index = index;
         Value = value;
         OwnerLabel = ownerLabel;
     }
 
+    public CompiledTemplateOp Op { get; }
     public string FieldPath { get; }
+    public int? Index { get; }
     public CompiledTemplateValue Value { get; }
     public string OwnerLabel { get; }
 }

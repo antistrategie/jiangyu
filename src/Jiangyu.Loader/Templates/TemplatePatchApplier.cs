@@ -71,7 +71,7 @@ internal sealed class TemplatePatchApplier
 
     private int TryApplyType(
         string templateTypeName,
-        Dictionary<string, Dictionary<string, LoadedPatchOperation>> patchesForType,
+        Dictionary<string, List<LoadedPatchOperation>> patchesForType,
         MelonLogger.Instance log)
     {
         // Use GetAllTemplates once only to trigger materialisation and detect
@@ -113,7 +113,7 @@ internal sealed class TemplatePatchApplier
                 continue;
             }
 
-            foreach (var op in templateEntry.Value.Values)
+            foreach (var op in templateEntry.Value)
             {
                 switch (TryApplyOperation(template, templateTypeName, templateEntry.Key, op, log))
                 {
@@ -219,7 +219,29 @@ internal sealed class TemplatePatchApplier
         Func<object> getter;
         Type terminalType;
 
-        if (terminal.Index.HasValue)
+        if (op.Op == CompiledTemplateOp.Remove)
+            return TryApplyRemove(current, terminal, templateTypeName, templateId, op, log);
+
+        if (op.Op == CompiledTemplateOp.Append || op.Op == CompiledTemplateOp.InsertAt)
+        {
+            if (!TryReadMember(current, terminal.Name, out var collection, out var collectionType, out var readError))
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"cannot read terminal collection '{terminal.Name}': {readError}");
+                return ApplyOutcome.MemberMissing;
+            }
+
+            int? insertIndex = op.Op == CompiledTemplateOp.InsertAt ? op.Index : null;
+            if (!TryBindCollectionMutation(
+                    current, terminal.Name, collection, collectionType, insertIndex,
+                    out terminalType, out setter, out getter, out var bindError))
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"cannot bind {op.Op} on '{terminal.Name}': {bindError}");
+                return ApplyOutcome.MemberMissing;
+            }
+        }
+        else if (terminal.Index.HasValue)
         {
             if (!TryReadMember(current, terminal.Name, out var arrayValue, out var arrayType, out var readError))
             {
@@ -323,15 +345,22 @@ internal sealed class TemplatePatchApplier
                 return ApplyOutcome.Applied;
             }
 
-            if (!object.Equals(readback, converted))
+            var matches = ReadbackMatches(converted, readback);
+            var verb = op.Op switch
+            {
+                CompiledTemplateOp.Append => "appended",
+                CompiledTemplateOp.InsertAt => $"inserted at [{op.Index}]",
+                _ => "set to",
+            };
+            if (!matches)
             {
                 log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                    + $"wrote {converted}, read back {readback ?? "null"} - the wrapper setter did not propagate to the live template.");
+                    + $"wrote {converted}, read back {readback ?? "null"} - the write did not propagate to the live template.");
             }
             else
             {
                 log.Msg(FormatPrefix(templateTypeName, templateId, op)
-                    + $"set to {converted}, readback matches.");
+                    + $"{verb} {FormatValue(converted)}, readback matches.");
             }
         }
 
@@ -340,6 +369,41 @@ internal sealed class TemplatePatchApplier
 
     private static string FormatPrefix(string templateTypeName, string templateId, LoadedPatchOperation op)
         => $"Template patch '{templateTypeName}:{templateId}.{op.FieldPath}' (mod '{op.OwnerLabel}'): ";
+
+    // For Il2Cpp wrappers, identity is the native object pointer, not
+    // Il2CppObjectBase.Equals (which compares per-wrapper GC handles and so
+    // returns false for two wrappers pooled over the same native object).
+    // Everything else — scalar boxed values, strings, enums — goes through
+    // object.Equals as normal.
+    private static bool ReadbackMatches(object written, object readback)
+    {
+        if (written is Il2CppObjectBase writtenObj && readback is Il2CppObjectBase readbackObj)
+            return writtenObj.Pointer == readbackObj.Pointer;
+        return object.Equals(written, readback);
+    }
+
+    // Identity formatter for log lines. Each template base class has a
+    // different identity field, so dispatch by type rather than probe-then-
+    // guess. DataTemplate subtypes expose `m_ID`; non-DataTemplate
+    // ScriptableObjects expose `Object.name`; freshly-constructed composite
+    // support types (e.g. a new `Perk`) have no identity — log the wrapper
+    // type name alone, which is accurate (it's a brand-new object).
+    private static string FormatValue(object value)
+    {
+        if (value is not Il2CppObjectBase il2Cpp)
+            return value?.ToString() ?? "null";
+
+        var typeName = value.GetType().Name;
+        string id;
+        if (typeof(Il2CppMenace.Tools.DataTemplate).IsAssignableFrom(value.GetType()))
+            id = TemplateRuntimeAccess.ReadTemplateId(il2Cpp);
+        else if (il2Cpp is UnityEngine.Object unityObj)
+            id = unityObj.name;
+        else
+            id = null;
+
+        return string.IsNullOrWhiteSpace(id) ? typeName : $"{typeName} '{id}'";
+    }
 
     private readonly struct PathSegment
     {
@@ -600,6 +664,387 @@ internal sealed class TemplatePatchApplier
         return true;
     }
 
+    // Collection-mutation binder for Append and InsertAt. Dispatches on shape:
+    //   - List-like (has instance Add(T)): mutate live collection in place via
+    //     Add / Insert, unless the field is null in which case we construct
+    //     via the parameterless ctor and writeback.
+    //   - Il2CppReferenceArray<T> / Il2CppStructArray<T>: rebuild a fresh
+    //     native array of length+1 and writeback; null field yields a
+    //     1-element array. Writing the whole new array through the generated
+    //     property setter uses Il2CppInterop's GC write barrier.
+    //
+    // insertIndex=null means Append; non-null means InsertAt at that position.
+    private static bool TryBindCollectionMutation(
+        object parent, string fieldName, object collection, Type collectionType,
+        int? insertIndex,
+        out Type elementType, out Action<object> setter, out Func<object> getter, out string error)
+    {
+        elementType = null;
+        setter = null;
+        getter = null;
+        error = null;
+
+        if (collection != null)
+            collectionType = collection.GetType();
+
+        if (!TryGetCollectionShape(collectionType, out var shape, out elementType))
+        {
+            error = $"collection type {collectionType.FullName} is not a supported shape "
+                + "(List<T>, Il2CppReferenceArray<T>, or Il2CppStructArray<T>).";
+            return false;
+        }
+
+        if (!TryGetWritableMember(parent, fieldName, out _, out var fieldSetter, out _))
+        {
+            error = $"parent {parent.GetType().FullName} has no writable '{fieldName}' for collection write-back.";
+            return false;
+        }
+
+        switch (shape)
+        {
+            case CollectionShape.List:
+                return BindListMutation(
+                    parent, fieldName, collection, collectionType, elementType, fieldSetter, insertIndex,
+                    out setter, out getter, out error);
+
+            case CollectionShape.ReferenceArray:
+            case CollectionShape.StructArray:
+                return BindArrayMutation(
+                    parent, fieldName, collection, collectionType, elementType, fieldSetter, insertIndex,
+                    out setter, out getter, out error);
+
+            default:
+                error = "internal: unhandled collection shape.";
+                return false;
+        }
+    }
+
+    private enum CollectionShape { List, ReferenceArray, StructArray }
+
+    private static bool TryGetCollectionShape(Type collectionType, out CollectionShape shape, out Type elementType)
+    {
+        var addMethod = FindInstanceAddMethod(collectionType);
+        if (addMethod != null)
+        {
+            shape = CollectionShape.List;
+            elementType = addMethod.GetParameters()[0].ParameterType;
+            return true;
+        }
+
+        if (IsIl2CppArrayOf(collectionType, "Il2CppReferenceArray"))
+        {
+            shape = CollectionShape.ReferenceArray;
+            elementType = collectionType.GetGenericArguments()[0];
+            return true;
+        }
+
+        if (IsIl2CppArrayOf(collectionType, "Il2CppStructArray"))
+        {
+            shape = CollectionShape.StructArray;
+            elementType = collectionType.GetGenericArguments()[0];
+            return true;
+        }
+
+        shape = default;
+        elementType = null;
+        return false;
+    }
+
+    private static MethodInfo FindInstanceAddMethod(Type collectionType)
+    {
+        for (var current = collectionType; current != null; current = current.BaseType)
+        {
+            foreach (var method in current.GetMethods(
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+            {
+                if (method.Name == "Add" && method.GetParameters().Length == 1)
+                    return method;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsIl2CppArrayOf(Type type, string simpleName)
+    {
+        if (!type.IsGenericType)
+            return false;
+        var fullName = type.GetGenericTypeDefinition().FullName;
+        return string.Equals(
+            fullName,
+            "Il2CppInterop.Runtime.InteropTypes.Arrays." + simpleName + "`1",
+            StringComparison.Ordinal);
+    }
+
+    private static bool BindListMutation(
+        object parent, string fieldName, object liveCollection, Type collectionType, Type elementType,
+        Action<object> fieldSetter, int? insertIndex,
+        out Action<object> setter, out Func<object> getter, out string error)
+    {
+        setter = null;
+        getter = null;
+        error = null;
+
+        var addMethod = FindInstanceAddMethod(collectionType);
+        var insertMethod = insertIndex.HasValue
+            ? collectionType.GetMethod("Insert",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                binder: null,
+                types: new[] { typeof(int), elementType },
+                modifiers: null)
+            : null;
+
+        if (insertIndex.HasValue && insertMethod == null)
+        {
+            error = $"{collectionType.FullName} exposes no Insert(int, {elementType.Name}) method.";
+            return false;
+        }
+
+        var listCtor = collectionType.GetConstructor(Type.EmptyTypes);
+        var countProperty = collectionType.GetProperty(
+            "Count", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        var indexer = FindIndexer(collectionType);
+        var addArgs = new object[1];
+        var insertArgs = insertIndex.HasValue ? new object[2] : null;
+
+        setter = value =>
+        {
+            var live = TryReadField(parent, fieldName);
+            if (live == null)
+            {
+                if (listCtor == null)
+                    throw new InvalidOperationException(
+                        $"cannot construct {collectionType.FullName}: no parameterless ctor.");
+                if (insertIndex.HasValue && insertIndex.Value > 0)
+                    throw new InvalidOperationException(
+                        $"InsertAt index {insertIndex.Value} out of range for empty collection.");
+
+                live = listCtor.Invoke(null);
+                fieldSetter(live);
+            }
+
+            if (insertIndex.HasValue)
+            {
+                insertArgs![0] = insertIndex.Value;
+                insertArgs[1] = value;
+                insertMethod!.Invoke(live, insertArgs);
+            }
+            else
+            {
+                addArgs[0] = value;
+                addMethod!.Invoke(live, addArgs);
+            }
+        };
+
+        if (countProperty != null && indexer != null)
+        {
+            var getterArgs = new object[1];
+            getter = () =>
+            {
+                var live = TryReadField(parent, fieldName);
+                if (live == null || countProperty.GetValue(live) is not int count || count <= 0)
+                    return null;
+                var readIndex = insertIndex ?? count - 1;
+                if (readIndex < 0 || readIndex >= count)
+                    return null;
+                getterArgs[0] = readIndex;
+                return indexer.GetValue(live, getterArgs);
+            };
+        }
+
+        return true;
+    }
+
+    private static bool BindArrayMutation(
+        object parent, string fieldName, object liveCollection, Type collectionType, Type elementType,
+        Action<object> fieldSetter, int? insertIndex,
+        out Action<object> setter, out Func<object> getter, out string error)
+    {
+        setter = null;
+        getter = null;
+        error = null;
+
+        var lengthProperty = collectionType.GetProperty(
+            "Length", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        var indexer = FindIndexer(collectionType);
+        var managedArrayType = elementType.MakeArrayType();
+        var arrayCtor = collectionType.GetConstructor(new[] { managedArrayType });
+        if (lengthProperty == null || indexer == null || arrayCtor == null)
+        {
+            error = $"{collectionType.FullName} missing Length/indexer/managed-array ctor.";
+            return false;
+        }
+
+        var readArgs = new object[1];
+
+        setter = value =>
+        {
+            var live = TryReadField(parent, fieldName);
+            int oldLength;
+            object[] old;
+            if (live == null)
+            {
+                if (insertIndex.HasValue && insertIndex.Value > 0)
+                    throw new InvalidOperationException(
+                        $"InsertAt index {insertIndex.Value} out of range for empty array.");
+                oldLength = 0;
+                old = Array.Empty<object>();
+            }
+            else
+            {
+                oldLength = (int)lengthProperty.GetValue(live)!;
+                old = new object[oldLength];
+                for (var i = 0; i < oldLength; i++)
+                {
+                    readArgs[0] = i;
+                    old[i] = indexer.GetValue(live, readArgs);
+                }
+            }
+
+            var newLength = oldLength + 1;
+            var targetIndex = insertIndex ?? oldLength;
+            if (targetIndex < 0 || targetIndex > oldLength)
+                throw new InvalidOperationException(
+                    $"InsertAt index {targetIndex} out of range 0..{oldLength} (inclusive).");
+
+            var managed = Array.CreateInstance(elementType, newLength);
+            for (var i = 0; i < targetIndex; i++)
+                managed.SetValue(old[i], i);
+            managed.SetValue(value, targetIndex);
+            for (var i = targetIndex; i < oldLength; i++)
+                managed.SetValue(old[i], i + 1);
+
+            var rebuilt = arrayCtor.Invoke(new[] { managed });
+            fieldSetter(rebuilt);
+        };
+
+        getter = () =>
+        {
+            var live = TryReadField(parent, fieldName);
+            if (live == null)
+                return null;
+            var length = (int)lengthProperty.GetValue(live)!;
+            if (length <= 0)
+                return null;
+            var readIndex = insertIndex ?? length - 1;
+            if (readIndex < 0 || readIndex >= length)
+                return null;
+            readArgs[0] = readIndex;
+            return indexer.GetValue(live, readArgs);
+        };
+
+        return true;
+    }
+
+    // Remove dispatch is separate from Set/Append/InsertAt because it takes
+    // no value — no conversion, no readback-compare. The terminal is the
+    // indexed element to delete.
+    private static ApplyOutcome TryApplyRemove(
+        object current, PathSegment terminal, string templateTypeName, string templateId,
+        LoadedPatchOperation op, MelonLogger.Instance log)
+    {
+        if (!TryReadMember(current, terminal.Name, out var collection, out var collectionType, out var readError))
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"cannot read terminal collection '{terminal.Name}': {readError}");
+            return ApplyOutcome.MemberMissing;
+        }
+
+        if (collection == null)
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"terminal collection '{terminal.Name}' ({collectionType.FullName}) is null; nothing to remove.");
+            return ApplyOutcome.MemberMissing;
+        }
+
+        if (!TryGetCollectionShape(collectionType, out var shape, out var elementType))
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"collection type {collectionType.FullName} is not supported for Remove.");
+            return ApplyOutcome.MemberMissing;
+        }
+
+        if (!TryGetWritableMember(current, terminal.Name, out _, out var fieldSetter, out _))
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"parent {current.GetType().FullName} has no writable '{terminal.Name}' for remove.");
+            return ApplyOutcome.MemberMissing;
+        }
+
+        var removeIndex = terminal.Index!.Value;
+
+        try
+        {
+            switch (shape)
+            {
+                case CollectionShape.List:
+                    RemoveFromList(collection, collectionType, removeIndex);
+                    break;
+
+                case CollectionShape.ReferenceArray:
+                case CollectionShape.StructArray:
+                    var rebuilt = RemoveFromArray(collection, collectionType, elementType, removeIndex);
+                    fieldSetter(rebuilt);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"remove threw: {ex.Message}");
+            return ApplyOutcome.ConversionFailed;
+        }
+
+        log.Msg(FormatPrefix(templateTypeName, templateId, op)
+            + $"removed element at {removeIndex} from {collectionType.Name}.");
+        return ApplyOutcome.Applied;
+    }
+
+    private static void RemoveFromList(object list, Type listType, int index)
+    {
+        var removeAt = listType.GetMethod(
+            "RemoveAt",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+            binder: null, types: new[] { typeof(int) }, modifiers: null)
+            ?? throw new InvalidOperationException(
+                $"{listType.FullName} has no RemoveAt(int) method.");
+        removeAt.Invoke(list, new object[] { index });
+    }
+
+    private static object RemoveFromArray(object array, Type arrayType, Type elementType, int index)
+    {
+        var lengthProperty = arrayType.GetProperty(
+            "Length", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        var indexer = FindIndexer(arrayType);
+        var ctor = arrayType.GetConstructor(new[] { elementType.MakeArrayType() });
+        if (lengthProperty == null || indexer == null || ctor == null)
+            throw new InvalidOperationException(
+                $"{arrayType.FullName} missing Length/indexer/managed-array ctor for remove.");
+
+        var oldLength = (int)lengthProperty.GetValue(array)!;
+        if (index < 0 || index >= oldLength)
+            throw new IndexOutOfRangeException(
+                $"Remove index {index} out of range 0..{oldLength - 1}.");
+
+        var managed = Array.CreateInstance(elementType, oldLength - 1);
+        var readArgs = new object[1];
+        for (var i = 0; i < index; i++)
+        {
+            readArgs[0] = i;
+            managed.SetValue(indexer.GetValue(array, readArgs), i);
+        }
+        for (var i = index + 1; i < oldLength; i++)
+        {
+            readArgs[0] = i;
+            managed.SetValue(indexer.GetValue(array, readArgs), i - 1);
+        }
+
+        return ctor.Invoke(new[] { managed });
+    }
+
+    private static object TryReadField(object parent, string fieldName)
+        => TryReadMember(parent, fieldName, out var value, out _, out _) ? value : null;
+
     // Soft bounds check via reflection on Length/Count. Returns true when the
     // index is known-in-range OR when we couldn't read a length (in which case
     // the indexer itself will throw). False only on a confirmed overflow.
@@ -744,17 +1189,95 @@ internal sealed class TemplatePatchApplier
             case CompiledTemplateValueKind.TemplateReference:
                 return TryResolveTemplateReference(value.Reference, targetType, out converted, out error);
 
+            case CompiledTemplateValueKind.Composite:
+                return TryConstructComposite(value.Composite, targetType, out converted, out error);
+
             default:
                 error = $"unknown value kind {value.Kind}.";
                 return false;
         }
     }
 
+    // Constructs a fresh instance of the composite's typeName and recursively
+    // writes each authored field via the same TryConvertScalar conversion.
+    // Dispatches construction by base class: ScriptableObject subtypes use
+    // ScriptableObject.CreateInstance (runs Unity's OnEnable etc.); plain
+    // support types use the wrapper's parameterless ctor via Activator.
+    private static bool TryConstructComposite(
+        CompiledTemplateComposite composite, Type targetType, out object converted, out string error)
+    {
+        converted = null;
+
+        if (composite == null || string.IsNullOrWhiteSpace(composite.TypeName))
+        {
+            error = "value kind Composite but payload is missing typeName.";
+            return false;
+        }
+
+        var resolvedType = TemplateRuntimeAccess.ResolveTemplateType(composite.TypeName, out var resolveError);
+        if (resolvedType == null)
+        {
+            error = $"Composite: cannot resolve typeName '{composite.TypeName}' — {resolveError}";
+            return false;
+        }
+
+        if (!targetType.IsAssignableFrom(resolvedType))
+        {
+            error = $"Composite typeName '{composite.TypeName}' ({resolvedType.FullName}) is not assignable to member type {targetType.FullName}.";
+            return false;
+        }
+
+        object instance;
+        try
+        {
+            instance = typeof(UnityEngine.ScriptableObject).IsAssignableFrom(resolvedType)
+                ? UnityEngine.ScriptableObject.CreateInstance(Il2CppInterop.Runtime.Il2CppType.From(resolvedType))
+                : Activator.CreateInstance(resolvedType)!;
+        }
+        catch (Exception ex)
+        {
+            error = $"Composite: construction of {resolvedType.FullName} threw: {ex.Message}";
+            return false;
+        }
+
+        if (composite.Fields != null)
+        {
+            foreach (var (fieldName, fieldValue) in composite.Fields)
+            {
+                if (!TryGetWritableMember(instance, fieldName, out var memberType, out var setter, out _))
+                {
+                    error = $"Composite {resolvedType.Name}: no writable member '{fieldName}'.";
+                    return false;
+                }
+
+                if (!TryConvertScalar(fieldValue, memberType, out var fieldConverted, out var fieldError))
+                {
+                    error = $"Composite {resolvedType.Name}.{fieldName}: {fieldError}";
+                    return false;
+                }
+
+                try
+                {
+                    setter(fieldConverted);
+                }
+                catch (Exception ex)
+                {
+                    error = $"Composite {resolvedType.Name}.{fieldName} setter threw: {ex.Message}";
+                    return false;
+                }
+            }
+        }
+
+        converted = instance;
+        error = null;
+        return true;
+    }
+
     // Resolves a modder-authored (templateType, templateId) pair to the live
-    // Il2Cpp wrapper of the matching DataTemplate instance. Used for ref-typed
-    // element replacements into arrays/lists of templates — the primary target
-    // today is swapping entries in EntityTemplate.Skills, EntityTemplate.Items,
-    // etc. with existing templates of the right kind.
+    // Il2Cpp wrapper. TryGetTemplateById dispatches by base class:
+    // DataTemplate subtypes resolve via DataTemplateLoader.TryGet<T>(m_ID);
+    // other ScriptableObject subtypes (e.g. PerkTreeTemplate) resolve via
+    // Resources.FindObjectsOfTypeAll by Object.name.
     private static bool TryResolveTemplateReference(
         CompiledTemplateReference reference, Type targetType, out object converted, out string error)
     {
@@ -766,12 +1289,13 @@ internal sealed class TemplatePatchApplier
             return false;
         }
 
-        var liveTemplates = TemplateRuntimeAccess.GetAllTemplates(
-            reference.TemplateType, out var resolvedType, out var resolveError);
-
-        if (resolvedType == null)
+        if (!TemplateRuntimeAccess.TryGetTemplateById(
+                reference.TemplateType, reference.TemplateId,
+                out var resolvedTemplate, out var resolvedType, out var resolveError))
         {
-            error = $"TemplateReference '{reference.TemplateType}:{reference.TemplateId}' — {resolveError}";
+            error = resolvedType == null
+                ? $"TemplateReference '{reference.TemplateType}:{reference.TemplateId}' — {resolveError}"
+                : $"TemplateReference: no live {reference.TemplateType} with id '{reference.TemplateId}' found.";
             return false;
         }
 
@@ -781,19 +1305,9 @@ internal sealed class TemplatePatchApplier
             return false;
         }
 
-        foreach (var candidate in liveTemplates)
-        {
-            var id = TemplateRuntimeAccess.ReadTemplateId(candidate);
-            if (string.Equals(id, reference.TemplateId, StringComparison.Ordinal))
-            {
-                converted = candidate;
-                error = null;
-                return true;
-            }
-        }
-
-        error = $"TemplateReference: no live {reference.TemplateType} with m_ID '{reference.TemplateId}' found.";
-        return false;
+        converted = resolvedTemplate;
+        error = null;
+        return true;
     }
 
     private enum ApplyOutcome

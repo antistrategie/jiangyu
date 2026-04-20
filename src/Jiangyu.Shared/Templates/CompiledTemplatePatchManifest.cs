@@ -49,11 +49,48 @@ public sealed class CompiledTemplatePatch
 
 public sealed class CompiledTemplateSetOperation
 {
+    [JsonPropertyName("op")]
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public CompiledTemplateOp Op { get; set; } = CompiledTemplateOp.Set;
+
     [JsonPropertyName("fieldPath")]
     public string FieldPath { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Insert position for <see cref="CompiledTemplateOp.InsertAt"/>. Must be
+    /// non-negative and no greater than the current collection length. Ignored
+    /// for other ops.
+    /// </summary>
+    [JsonPropertyName("index")]
+    public int? Index { get; set; }
+
     [JsonPropertyName("value")]
     public CompiledTemplateValue? Value { get; set; }
+}
+
+public enum CompiledTemplateOp
+{
+    /// <summary>Write the value at the (optionally indexed) fieldPath.</summary>
+    Set,
+
+    /// <summary>
+    /// Append the value as a new element at the end of the collection at
+    /// fieldPath. Supports <c>List&lt;T&gt;</c> (via Add), reference-type
+    /// arrays (rebuild + replace field), and struct-type arrays.
+    /// </summary>
+    Append,
+
+    /// <summary>
+    /// Insert the value at <see cref="CompiledTemplateSetOperation.Index"/>
+    /// in the collection at fieldPath. Same collection shapes as Append.
+    /// </summary>
+    InsertAt,
+
+    /// <summary>
+    /// Remove the element identified by an indexed terminal fieldPath (e.g.
+    /// <c>Skills[2]</c>). No value is required.
+    /// </summary>
+    Remove,
 }
 
 public sealed class CompiledTemplateValue
@@ -85,6 +122,28 @@ public sealed class CompiledTemplateValue
 
     [JsonPropertyName("reference")]
     public CompiledTemplateReference? Reference { get; set; }
+
+    [JsonPropertyName("composite")]
+    public CompiledTemplateComposite? Composite { get; set; }
+}
+
+/// <summary>
+/// Payload for a <see cref="CompiledTemplateValueKind.Composite"/> value —
+/// constructs a new instance of <see cref="TypeName"/> (resolved via the same
+/// dispatch as <see cref="CompiledTemplateReference"/>: DataTemplate subtype
+/// or ScriptableObject subtype or plain support type) and recursively writes
+/// each entry in <see cref="Fields"/> to the named member of the new instance.
+/// Used to append/insert a freshly-constructed support-type element (e.g. a
+/// new <c>Perk</c>) into a collection rather than referencing an existing
+/// one via <see cref="CompiledTemplateReference"/>.
+/// </summary>
+public sealed class CompiledTemplateComposite
+{
+    [JsonPropertyName("typeName")]
+    public string TypeName { get; set; } = string.Empty;
+
+    [JsonPropertyName("fields")]
+    public Dictionary<string, CompiledTemplateValue> Fields { get; set; } = new();
 }
 
 /// <summary>
@@ -114,4 +173,5 @@ public enum CompiledTemplateValueKind
     String,
     Enum,
     TemplateReference,
+    Composite,
 }

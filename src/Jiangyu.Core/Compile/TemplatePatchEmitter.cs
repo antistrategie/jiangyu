@@ -208,26 +208,20 @@ public static class TemplatePatchEmitter
             return false;
         }
 
-        if (op.Value is null)
+        if (!TemplatePatchPathValidator.TryValidateOpShape(op, effectivePath, out var opShapeError))
         {
-            log.Error(
-                $"Template patch '{templateLabel}:{templateId}.{effectivePath}' has no value.");
-            return false;
-        }
-
-        if (!TemplatePatchPathValidator.IsSupportedValue(op.Value))
-        {
-            log.Error(
-                $"Template patch '{templateLabel}:{templateId}.{effectivePath}' has unsupported or incomplete "
-                + $"value (kind={op.Value.Kind}).");
+            log.Error($"Template patch '{templateLabel}:{templateId}.{effectivePath}' — {opShapeError}");
             return false;
         }
 
         emitted = new CompiledTemplateSetOperation
         {
+            Op = op.Op,
             FieldPath = effectivePath,
+            Index = op.Index,
             Value = op.Value,
         };
         return true;
     }
+
 }

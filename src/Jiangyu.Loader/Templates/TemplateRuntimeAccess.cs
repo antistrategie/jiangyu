@@ -1,5 +1,8 @@
 using System.Reflection;
+using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
+using UnityEngine;
+using DataTemplate = Il2CppMenace.Tools.DataTemplate;
 using DataTemplateLoader = Il2CppMenace.Tools.DataTemplateLoader;
 using EntityTemplate = Il2CppMenace.Tactical.EntityTemplate;
 using Il2CppEnumerable = Il2CppSystem.Collections.IEnumerable;
@@ -26,11 +29,20 @@ internal static class TemplateRuntimeAccess
     public const string DefaultTemplateTypeName = nameof(EntityTemplate);
 
     /// <summary>
-    /// Looks up a single live template by its serialised <c>m_ID</c>, using
-    /// <c>DataTemplateLoader.TryGet&lt;T&gt;</c>. Resolves templates registered
-    /// via Jiangyu's template-clone applier as well as game-native templates,
-    /// because both end up in the same <c>m_TemplateMaps</c> name-lookup
-    /// dictionary the game's <c>TryGet</c> reads from.
+    /// Looks up a single live template by its identity string. Dispatches by
+    /// base class:
+    /// <list type="bullet">
+    ///   <item><term>DataTemplate subtypes</term><description>
+    ///     Resolve via <c>DataTemplateLoader.TryGet&lt;T&gt;(m_ID)</c>. Sees
+    ///     both game-native templates and Jiangyu-registered clones (both
+    ///     live in <c>m_TemplateMaps</c>). The identity is the template's
+    ///     serialised <c>m_ID</c>.</description></item>
+    ///   <item><term>Other ScriptableObject subtypes</term><description>
+    ///     Resolve via <c>Resources.FindObjectsOfTypeAll</c> filtered by
+    ///     <c>Object.name</c>. Identity for these is the asset's
+    ///     <c>m_Name</c> — they don't inherit from <c>DataTemplate</c> and
+    ///     aren't in <c>DataTemplateLoader</c>'s registry.</description></item>
+    /// </list>
     /// </summary>
     public static bool TryGetTemplateById(
         string templateTypeName, string templateId,
@@ -55,6 +67,20 @@ internal static class TemplateRuntimeAccess
         if (resolvedType == null)
             return false;
 
+        if (typeof(DataTemplate).IsAssignableFrom(resolvedType))
+            return TryResolveDataTemplate(templateId, resolvedType, out template, out error);
+
+        if (typeof(UnityEngine.ScriptableObject).IsAssignableFrom(resolvedType))
+            return TryResolveScriptableObjectByName(templateId, resolvedType, out template, out error);
+
+        error = $"template type {resolvedType.FullName} is neither DataTemplate nor ScriptableObject.";
+        return false;
+    }
+
+    private static bool TryResolveDataTemplate(
+        string templateId, Type resolvedType, out Il2CppObjectBase template, out string error)
+    {
+        template = null;
         var tryGet = typeof(DataTemplateLoader)
             .GetMethods(BindingFlags.Public | BindingFlags.Static)
             .FirstOrDefault(m => m.Name == "TryGet"
@@ -90,11 +116,61 @@ internal static class TemplateRuntimeAccess
         return true;
     }
 
+    private static bool TryResolveScriptableObjectByName(
+        string templateId, Type resolvedType, out Il2CppObjectBase template, out string error)
+    {
+        template = null;
+        error = null;
+        var il2CppType = Il2CppType.From(resolvedType);
+        var candidates = Resources.FindObjectsOfTypeAll(il2CppType);
+        if (candidates == null || candidates.Length == 0)
+            return false;
+
+        // FindObjectsOfTypeAll returns UnityEngine.Object base wrappers; cast
+        // to the specific resolved type so consumers storing into a typed
+        // array (e.g. Il2CppReferenceArray<PerkTreeTemplate>) get a wrapper
+        // of the correct element type.
+        var tryCast = TryCastTemplate(resolvedType);
+        foreach (var candidate in candidates)
+        {
+            if (candidate == null)
+                continue;
+            if (!string.Equals(candidate.name, templateId, StringComparison.Ordinal))
+                continue;
+
+            template = tryCast.Invoke(candidate, null) as Il2CppObjectBase;
+            return template != null;
+        }
+
+        return false;
+    }
+
+    // Resolves Il2CppObjectBase.TryCast<T>(). This method is part of the
+    // Il2CppInterop runtime and always exists on Il2CppObjectBase; missing
+    // means a fundamental runtime setup failure, so we throw rather than
+    // silently return a less-specific wrapper.
+    private static MethodInfo TryCastTemplate(Type resolvedType)
+    {
+        var method = typeof(Il2CppObjectBase)
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .FirstOrDefault(m => m.Name == "TryCast" && m.IsGenericMethodDefinition && m.GetParameters().Length == 0)
+            ?? throw new InvalidOperationException(
+                "Il2CppObjectBase.TryCast<T>() not found — Il2CppInterop runtime missing or mismatched.");
+        return method.MakeGenericMethod(resolvedType);
+    }
+
     /// <summary>
-    /// Returns all live templates of the given type (passed as either a simple
-    /// name like "EntityTemplate" or a full name like
-    /// "Il2CppMenace.Tactical.EntityTemplate"), or an empty list if the
-    /// collection has not yet been populated. Callers retry on empty.
+    /// Returns all live templates of the given type, dispatching by base class:
+    /// <list type="bullet">
+    ///   <item><description>DataTemplate subtypes: enumerated via
+    ///     <c>DataTemplateLoader.GetAll&lt;T&gt;()</c>. Materialises the cache
+    ///     on first call. Empty return means "not ready yet" — callers retry.</description></item>
+    ///   <item><description>Other ScriptableObject subtypes (e.g.
+    ///     PerkTreeTemplate): enumerated via
+    ///     <c>Resources.FindObjectsOfTypeAll</c>. Always returns the current
+    ///     set immediately; an empty return means no assets of this type are
+    ///     loaded (not "not ready yet").</description></item>
+    /// </list>
     /// </summary>
     public static IReadOnlyList<Il2CppObjectBase> GetAllTemplates(string templateTypeName, out Type resolvedType, out string resolveError)
     {
@@ -111,10 +187,38 @@ internal static class TemplateRuntimeAccess
 
         resolvedType = type;
 
-        var collection = TryInvokeGetAll(type);
-        return collection == null
-            ? Array.Empty<Il2CppObjectBase>()
-            : MaterialiseTemplates(collection, type);
+        if (typeof(DataTemplate).IsAssignableFrom(type))
+        {
+            var collection = TryInvokeGetAll(type);
+            return collection == null
+                ? Array.Empty<Il2CppObjectBase>()
+                : MaterialiseTemplates(collection, type);
+        }
+
+        if (typeof(UnityEngine.ScriptableObject).IsAssignableFrom(type))
+            return EnumerateScriptableObjects(type);
+
+        return Array.Empty<Il2CppObjectBase>();
+    }
+
+    private static IReadOnlyList<Il2CppObjectBase> EnumerateScriptableObjects(Type resolvedType)
+    {
+        var il2CppType = Il2CppType.From(resolvedType);
+        var candidates = Resources.FindObjectsOfTypeAll(il2CppType);
+        if (candidates == null || candidates.Length == 0)
+            return Array.Empty<Il2CppObjectBase>();
+
+        var tryCast = TryCastTemplate(resolvedType);
+        var results = new List<Il2CppObjectBase>(candidates.Length);
+        foreach (var candidate in candidates)
+        {
+            if (candidate == null)
+                continue;
+            if (tryCast.Invoke(candidate, null) is Il2CppObjectBase cast)
+                results.Add(cast);
+        }
+
+        return results;
     }
 
     /// <summary>

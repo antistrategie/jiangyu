@@ -123,7 +123,7 @@ public class TemplatePatchEmitterTests
         var result = TemplatePatchEmitter.Emit(patches, log);
 
         Assert.False(result.Success);
-        Assert.Contains("incomplete value", log.Errors[0]);
+        Assert.Contains("unsupported or incomplete", log.Errors[0]);
     }
 
     [Fact]
@@ -309,6 +309,320 @@ public class TemplatePatchEmitterTests
         Assert.True(result.Success);
         Assert.Equal(2, result.Clones!.Count);
     }
+
+    [Fact]
+    public void AppendOp_OnSimpleFieldPath_PassesThrough()
+    {
+        var log = new RecordingLogSink();
+        var patches = new List<CompiledTemplatePatch>
+        {
+            new()
+            {
+                TemplateType = "EntityTemplate",
+                TemplateId = "unit.marine",
+                Set = [new() { Op = CompiledTemplateOp.Append, FieldPath = "Skills", Value = Int32(10) }],
+            },
+        };
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.True(result.Success);
+        var emittedOp = result.Patches!.Single().Set.Single();
+        Assert.Equal(CompiledTemplateOp.Append, emittedOp.Op);
+        Assert.Equal("Skills", emittedOp.FieldPath);
+    }
+
+    [Fact]
+    public void AppendOp_WithIndexedTerminal_Errors()
+    {
+        var log = new RecordingLogSink();
+        var patches = new List<CompiledTemplatePatch>
+        {
+            new()
+            {
+                TemplateType = "EntityTemplate",
+                TemplateId = "unit.marine",
+                Set = [new() { Op = CompiledTemplateOp.Append, FieldPath = "Skills[3]", Value = Int32(10) }],
+            },
+        };
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.False(result.Success);
+        Assert.Contains("op=Append", log.Errors[0]);
+        Assert.Contains("indexed terminal", log.Errors[0]);
+    }
+
+    [Fact]
+    public void AppendOp_WithNestedNonTerminalIndex_IsAllowed()
+    {
+        var log = new RecordingLogSink();
+        var patches = new List<CompiledTemplatePatch>
+        {
+            new()
+            {
+                TemplateType = "EntityTemplate",
+                TemplateId = "unit.marine",
+                Set = [new() { Op = CompiledTemplateOp.Append, FieldPath = "Groups[0].Skills", Value = Int32(10) }],
+            },
+        };
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.True(result.Success);
+        Assert.Equal("Groups[0].Skills", result.Patches!.Single().Set.Single().FieldPath);
+    }
+
+    [Fact]
+    public void SetOp_WithIndexField_Errors()
+    {
+        var log = new RecordingLogSink();
+        var patches = SinglePatch("EntityTemplate", "unit.marine",
+            new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Set, FieldPath = "Skills", Index = 1, Value = Int32(10) });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.False(result.Success);
+        Assert.Contains("op=Set cannot carry an 'index'", log.Errors[0]);
+    }
+
+    [Fact]
+    public void InsertAtOp_HappyPath_PassesThrough()
+    {
+        var log = new RecordingLogSink();
+        var patches = SinglePatch("EntityTemplate", "unit.marine",
+            new CompiledTemplateSetOperation { Op = CompiledTemplateOp.InsertAt, FieldPath = "Skills", Index = 2, Value = Int32(10) });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.True(result.Success);
+        var op = result.Patches!.Single().Set.Single();
+        Assert.Equal(CompiledTemplateOp.InsertAt, op.Op);
+        Assert.Equal(2, op.Index);
+    }
+
+    [Fact]
+    public void InsertAtOp_MissingIndex_Errors()
+    {
+        var log = new RecordingLogSink();
+        var patches = SinglePatch("EntityTemplate", "unit.marine",
+            new CompiledTemplateSetOperation { Op = CompiledTemplateOp.InsertAt, FieldPath = "Skills", Value = Int32(10) });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.False(result.Success);
+        Assert.Contains("op=InsertAt requires an 'index'", log.Errors[0]);
+    }
+
+    [Fact]
+    public void InsertAtOp_NegativeIndex_Errors()
+    {
+        var log = new RecordingLogSink();
+        var patches = SinglePatch("EntityTemplate", "unit.marine",
+            new CompiledTemplateSetOperation { Op = CompiledTemplateOp.InsertAt, FieldPath = "Skills", Index = -1, Value = Int32(10) });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.False(result.Success);
+        Assert.Contains("negative index", log.Errors[0]);
+    }
+
+    [Fact]
+    public void InsertAtOp_IndexedTerminal_Errors()
+    {
+        var log = new RecordingLogSink();
+        var patches = SinglePatch("EntityTemplate", "unit.marine",
+            new CompiledTemplateSetOperation { Op = CompiledTemplateOp.InsertAt, FieldPath = "Skills[0]", Index = 1, Value = Int32(10) });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.False(result.Success);
+        Assert.Contains("op=InsertAt cannot have an indexed terminal", log.Errors[0]);
+    }
+
+    [Fact]
+    public void RemoveOp_HappyPath_PassesThrough()
+    {
+        var log = new RecordingLogSink();
+        var patches = SinglePatch("EntityTemplate", "unit.marine",
+            new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Remove, FieldPath = "Skills[2]" });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.True(result.Success);
+        var op = result.Patches!.Single().Set.Single();
+        Assert.Equal(CompiledTemplateOp.Remove, op.Op);
+        Assert.Equal("Skills[2]", op.FieldPath);
+    }
+
+    [Fact]
+    public void RemoveOp_NonIndexedTerminal_Errors()
+    {
+        var log = new RecordingLogSink();
+        var patches = SinglePatch("EntityTemplate", "unit.marine",
+            new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Remove, FieldPath = "Skills" });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.False(result.Success);
+        Assert.Contains("op=Remove requires an indexed terminal", log.Errors[0]);
+    }
+
+    [Fact]
+    public void RemoveOp_WithValue_Errors()
+    {
+        var log = new RecordingLogSink();
+        var patches = SinglePatch("EntityTemplate", "unit.marine",
+            new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Remove, FieldPath = "Skills[2]", Value = Int32(10) });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.False(result.Success);
+        Assert.Contains("op=Remove cannot carry a value", log.Errors[0]);
+    }
+
+    [Fact]
+    public void RemoveOp_WithIndexField_Errors()
+    {
+        var log = new RecordingLogSink();
+        var patches = SinglePatch("EntityTemplate", "unit.marine",
+            new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Remove, FieldPath = "Skills[2]", Index = 2 });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.False(result.Success);
+        Assert.Contains("op=Remove cannot carry an 'index'", log.Errors[0]);
+    }
+
+    [Fact]
+    public void CompositeValue_Minimal_PassesThrough()
+    {
+        var log = new RecordingLogSink();
+        var patches = SinglePatch("UnitLeaderTemplate", "hero.elena",
+            new CompiledTemplateSetOperation
+            {
+                Op = CompiledTemplateOp.Append,
+                FieldPath = "PerkTrees[0].Perks",
+                Value = new CompiledTemplateValue
+                {
+                    Kind = CompiledTemplateValueKind.Composite,
+                    Composite = new CompiledTemplateComposite
+                    {
+                        TypeName = "Perk",
+                        Fields = new Dictionary<string, CompiledTemplateValue>
+                        {
+                            ["Tier"] = Int32(3),
+                            ["Skill"] = new CompiledTemplateValue
+                            {
+                                Kind = CompiledTemplateValueKind.TemplateReference,
+                                Reference = new CompiledTemplateReference
+                                {
+                                    TemplateType = "PerkTemplate",
+                                    TemplateId = "perk.athletic",
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.True(result.Success);
+        Assert.Empty(log.Errors);
+    }
+
+    [Fact]
+    public void CompositeValue_MissingTypeName_Errors()
+    {
+        var log = new RecordingLogSink();
+        var patches = SinglePatch("UnitLeaderTemplate", "hero.elena",
+            new CompiledTemplateSetOperation
+            {
+                Op = CompiledTemplateOp.Append,
+                FieldPath = "PerkTrees[0].Perks",
+                Value = new CompiledTemplateValue
+                {
+                    Kind = CompiledTemplateValueKind.Composite,
+                    Composite = new CompiledTemplateComposite
+                    {
+                        TypeName = "",
+                        Fields = new Dictionary<string, CompiledTemplateValue> { ["Tier"] = Int32(3) },
+                    },
+                },
+            });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.False(result.Success);
+        Assert.Contains("unsupported or incomplete", log.Errors[0]);
+    }
+
+    [Fact]
+    public void CompositeValue_EmptyFields_Errors()
+    {
+        var log = new RecordingLogSink();
+        var patches = SinglePatch("UnitLeaderTemplate", "hero.elena",
+            new CompiledTemplateSetOperation
+            {
+                Op = CompiledTemplateOp.Append,
+                FieldPath = "PerkTrees[0].Perks",
+                Value = new CompiledTemplateValue
+                {
+                    Kind = CompiledTemplateValueKind.Composite,
+                    Composite = new CompiledTemplateComposite { TypeName = "Perk", Fields = new() },
+                },
+            });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.False(result.Success);
+    }
+
+    [Fact]
+    public void CompositeValue_NestedComposite_PassesThrough()
+    {
+        var log = new RecordingLogSink();
+        var inner = new CompiledTemplateValue
+        {
+            Kind = CompiledTemplateValueKind.Composite,
+            Composite = new CompiledTemplateComposite
+            {
+                TypeName = "InnerType",
+                Fields = new() { ["Leaf"] = Int32(1) },
+            },
+        };
+        var patches = SinglePatch("EntityTemplate", "unit.marine",
+            new CompiledTemplateSetOperation
+            {
+                Op = CompiledTemplateOp.Set,
+                FieldPath = "Nested",
+                Value = new CompiledTemplateValue
+                {
+                    Kind = CompiledTemplateValueKind.Composite,
+                    Composite = new CompiledTemplateComposite
+                    {
+                        TypeName = "OuterType",
+                        Fields = new() { ["Child"] = inner },
+                    },
+                },
+            });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.True(result.Success);
+    }
+
+    private static List<CompiledTemplatePatch> SinglePatch(string templateType, string templateId, CompiledTemplateSetOperation op)
+        => new()
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = templateType,
+                TemplateId = templateId,
+                Set = [op],
+            },
+        };
 
     private static CompiledTemplatePatch BuildPatch(string templateType, string templateId, string fieldPath, CompiledTemplateValue value)
         => new()

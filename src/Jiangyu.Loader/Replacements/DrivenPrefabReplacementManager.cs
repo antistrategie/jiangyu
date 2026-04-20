@@ -145,13 +145,13 @@ internal sealed class DrivenPrefabReplacementManager
             if (!driven.LoggedInitialSync)
             {
                 driven.LoggedInitialSync = true;
-                foreach (var sampleName in new[] { "Hips", "Spine", "Head", "Hand_R", "Foot_R" })
+                const int sampleCount = 5;
+                foreach (var sample in driven.BonePairs.Take(sampleCount))
                 {
-                    var sample = driven.BonePairs.FirstOrDefault(p => string.Equals(p.Name, sampleName, StringComparison.Ordinal));
-                    if (sample?.Source == null || sample.Target == null)
+                    if (sample.Source == null || sample.Target == null)
                         continue;
 
-                    log.Msg($"  [DRIVE] sample {sampleName} sourcePos={FormatVector3(sample.Source.position)} targetPos={FormatVector3(sample.Target.position)}");
+                    log.Msg($"  [DRIVE] sample {sample.Name} sourcePos={FormatVector3(sample.Source.position)} targetPos={FormatVector3(sample.Target.position)}");
                 }
             }
         }

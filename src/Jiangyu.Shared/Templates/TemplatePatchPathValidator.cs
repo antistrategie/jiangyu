@@ -39,14 +39,137 @@ public static class TemplatePatchPathValidator
     }
 
     /// <summary>
+    /// Returns true when the terminal segment of <paramref name="fieldPath"/>
+    /// carries an <c>[N]</c> indexer. Append ops target a collection as a
+    /// whole, so an indexed terminal is invalid authoring regardless of whether
+    /// the check runs at compile time or load time.
+    /// </summary>
+    public static bool TerminalSegmentIsIndexed(string fieldPath)
+    {
+        if (string.IsNullOrEmpty(fieldPath))
+            return false;
+        var lastDot = fieldPath.LastIndexOf('.');
+        var terminal = lastDot < 0 ? fieldPath : fieldPath[(lastDot + 1)..];
+        return terminal.Contains('[');
+    }
+
+    /// <summary>
+    /// Op-shape invariants. Shared by the compile-time emitter and the
+    /// loader-side catalogue so hand-authored mods that skip compilation get
+    /// the same checks as compiled bundles.
+    /// <list type="bullet">
+    ///   <item><description><c>Set</c>: no <c>index</c> field; value required.</description></item>
+    ///   <item><description><c>Append</c>: no <c>index</c> field; terminal not indexed; value required.</description></item>
+    ///   <item><description><c>InsertAt</c>: <c>index</c> required and non-negative; terminal not indexed; value required.</description></item>
+    ///   <item><description><c>Remove</c>: no <c>index</c> field; terminal must be indexed; no value.</description></item>
+    /// </list>
+    /// </summary>
+    public static bool TryValidateOpShape(
+        CompiledTemplateSetOperation op, string effectivePath, out string? error)
+    {
+        if (op == null)
+        {
+            error = "operation is null.";
+            return false;
+        }
+
+        var terminalIndexed = TerminalSegmentIsIndexed(effectivePath);
+        switch (op.Op)
+        {
+            case CompiledTemplateOp.Set:
+                if (op.Index.HasValue)
+                {
+                    error = "op=Set cannot carry an 'index' field; index is only valid for InsertAt.";
+                    return false;
+                }
+                return RequireValue(op.Value, out error);
+
+            case CompiledTemplateOp.Append:
+                if (op.Index.HasValue)
+                {
+                    error = "op=Append cannot carry an 'index' field; Append writes to the tail.";
+                    return false;
+                }
+                if (terminalIndexed)
+                {
+                    error = "op=Append cannot have an indexed terminal segment; drop the [N] suffix.";
+                    return false;
+                }
+                return RequireValue(op.Value, out error);
+
+            case CompiledTemplateOp.InsertAt:
+                if (!op.Index.HasValue)
+                {
+                    error = "op=InsertAt requires an 'index' field.";
+                    return false;
+                }
+                if (op.Index.Value < 0)
+                {
+                    error = $"op=InsertAt has negative index {op.Index.Value}.";
+                    return false;
+                }
+                if (terminalIndexed)
+                {
+                    error = "op=InsertAt cannot have an indexed terminal segment; the position comes from the 'index' field.";
+                    return false;
+                }
+                return RequireValue(op.Value, out error);
+
+            case CompiledTemplateOp.Remove:
+                if (op.Index.HasValue)
+                {
+                    error = "op=Remove cannot carry an 'index' field; encode the position in the terminal (e.g. Skills[2]).";
+                    return false;
+                }
+                if (!terminalIndexed)
+                {
+                    error = "op=Remove requires an indexed terminal segment; encode the position in the path.";
+                    return false;
+                }
+                if (op.Value != null)
+                {
+                    error = "op=Remove cannot carry a value; Remove takes no value.";
+                    return false;
+                }
+                error = null;
+                return true;
+
+            default:
+                error = $"unknown op '{op.Op}'.";
+                return false;
+        }
+    }
+
+    private static bool RequireValue(CompiledTemplateValue? value, out string? error)
+    {
+        if (value == null)
+        {
+            error = "value is required.";
+            return false;
+        }
+        if (!IsSupportedValue(value))
+        {
+            error = $"value is unsupported or incomplete (kind={value.Kind}).";
+            return false;
+        }
+        error = null;
+        return true;
+    }
+
+    /// <summary>
     /// Returns true when <paramref name="value"/> is fully populated for its
     /// declared <see cref="CompiledTemplateValueKind"/> — the matching
     /// typed field is non-null (scalar kinds) or the <c>Reference</c> payload
     /// has both templateType and templateId (TemplateReference kind).
     /// </summary>
     public static bool IsSupportedValue(CompiledTemplateValue value)
+        => IsSupportedValue(value, depth: 0);
+
+    private const int MaxCompositeDepth = 8;
+
+    private static bool IsSupportedValue(CompiledTemplateValue value, int depth)
     {
-        if (value == null)
+        if (value == null || depth > MaxCompositeDepth)
             return false;
 
         return value.Kind switch
@@ -61,8 +184,27 @@ public static class TemplatePatchPathValidator
                 value.Reference != null
                 && !string.IsNullOrWhiteSpace(value.Reference.TemplateType)
                 && !string.IsNullOrWhiteSpace(value.Reference.TemplateId),
+            CompiledTemplateValueKind.Composite => IsSupportedComposite(value.Composite, depth),
             _ => false,
         };
+    }
+
+    private static bool IsSupportedComposite(CompiledTemplateComposite? composite, int depth)
+    {
+        if (composite == null || string.IsNullOrWhiteSpace(composite.TypeName))
+            return false;
+        if (composite.Fields == null || composite.Fields.Count == 0)
+            return false;
+
+        foreach (var (fieldName, fieldValue) in composite.Fields)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+                return false;
+            if (!IsSupportedValue(fieldValue, depth + 1))
+                return false;
+        }
+
+        return true;
     }
 
     private static bool IsValidSegment(string segment)
