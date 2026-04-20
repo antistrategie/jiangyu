@@ -3,6 +3,25 @@
     {
       "typeName": "EntityTemplate",
       "sampleNames": ["player_squad.darby", "enemy.pirate_scavengers"]
+    },
+    {
+      "typeName": "UnitLeaderTemplate",
+      "sampleNames": ["squad_leader.darby", "pilot.achilleas"]
+    },
+    {
+      "typeName": "WeaponTemplate",
+      "sampleNames": [
+        "weapon.generic_assault_rifle_tier1_ARC_762",
+        "construct.weapon.skirmisher_anti_tank_rifle"
+      ]
+    },
+    {
+      "typeName": "SkillTemplate",
+      "sampleNames": ["active.change_plates", "passive.ammo_armor_piercing"]
+    },
+    {
+      "typeName": "PerkTreeTemplate",
+      "sampleNames": ["perk_tree.darby", "perk_tree.achilleas_vehicle"]
     }
   ],
   "supportTypes": [

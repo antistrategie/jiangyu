@@ -5,6 +5,7 @@ using MelonLoader;
 using UnityEngine;
 using DataTemplate = Il2CppMenace.Tools.DataTemplate;
 using DataTemplateLoader = Il2CppMenace.Tools.DataTemplateLoader;
+using Il2CppDictionary = Il2CppSystem.Collections.Generic.Dictionary<string, Il2CppMenace.Tools.DataTemplate>;
 
 namespace Jiangyu.Loader.Templates;
 
@@ -52,6 +53,10 @@ internal sealed class TemplateCloneApplier
         }
     }
 
+    public bool HasConfiguredClones => _catalog.HasClones;
+
+    public void ResetApplyState() => _appliedTypes.Clear();
+
     public int TryApply(MelonLogger.Instance log)
     {
         if (!_catalog.HasClones)
@@ -94,19 +99,22 @@ internal sealed class TemplateCloneApplier
         if (liveTemplates.Count == 0)
             return 0;
 
-        var singleton = DataTemplateLoader.GetSingleton();
-        var innerMap = singleton.m_TemplateMaps[Il2CppType.From(resolvedType)];
+        if (!TryGetTemplateMap(resolvedType, out var innerMap))
+            return 0;
 
         var applied = 0;
         foreach (var directive in directives.Values)
         {
-            if (!TemplateRuntimeAccess.TryGetTemplateById(
-                    templateTypeName, directive.SourceId, out var source, out _, out var sourceError))
+            if (innerMap.ContainsKey(directive.CloneId))
             {
-                var reason = string.IsNullOrEmpty(sourceError) ? "not found" : sourceError;
+                continue;
+            }
+
+            if (!innerMap.TryGetValue(directive.SourceId, out var source))
+            {
                 log.Warning(
                     $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
-                    + $"source template {reason}.");
+                    + "source template not found in DataTemplateLoader.");
                 continue;
             }
 
@@ -122,6 +130,28 @@ internal sealed class TemplateCloneApplier
 
         _appliedTypes.Add(templateTypeName);
         return applied;
+    }
+
+    private static bool TryGetTemplateMap(Type resolvedType, out Il2CppDictionary templateMap)
+    {
+        templateMap = null;
+
+        if (resolvedType == null)
+            return false;
+
+        var singleton = DataTemplateLoader.GetSingleton();
+        if (singleton == null)
+            return false;
+
+        var templateMaps = singleton.m_TemplateMaps;
+        if (templateMaps == null)
+            return false;
+
+        var il2CppType = Il2CppType.From(resolvedType);
+        if (il2CppType == null)
+            return false;
+
+        return templateMaps.TryGetValue(il2CppType, out templateMap) && templateMap != null;
     }
 
     private static bool TryCloneTemplate(

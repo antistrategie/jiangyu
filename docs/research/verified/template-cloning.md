@@ -1,7 +1,7 @@
 # Template Cloning
 
-Status: **verified** (Jiangyu in-game readback confirmed via EntityPatchSmoke,
-2026-04-20).
+Status: **verified** (Jiangyu in-game readback plus cold-restart save/load
+confirmed via EntityPatchSmoke + ClonePersistenceSmoke, 2026-04-20).
 
 ## Contract
 
@@ -24,6 +24,12 @@ the newly registered `cloneId`. Compile-time validation in
 `sourceId`/`cloneId`, `sourceId == cloneId`, and batch-internal duplicate
 cloneIds.
 
+Clone-backed saves are supported by re-registering configured clones on every
+session before MENACE's save-slot discovery and save-load paths touch template
+IDs. The save does not persist the clone object itself; it persists the
+`cloneId`, and Jiangyu restores that ID-to-template registration from the
+manifest on the next launch.
+
 ## Runtime steps
 
 Implemented in `src/Jiangyu.Loader/Templates/TemplateCloneApplier.cs`:
@@ -32,10 +38,10 @@ Implemented in `src/Jiangyu.Loader/Templates/TemplateCloneApplier.cs`:
    `DataTemplateLoader.GetAll<T>()` to materialise the per-type cache. An
    empty result means the cache isn't ready yet and the scheduled apply
    coroutine retries later.
-2. Locate the source template via
-   `TemplateRuntimeAccess.TryGetTemplateById(templateType, sourceId)`,
-   which invokes `DataTemplateLoader.TryGet<T>(id)` through a
-   reflection-resolved generic method.
+2. Read the source template directly from
+   `DataTemplateLoader.GetSingleton().m_TemplateMaps[type][sourceId]`. Jiangyu
+   uses the already-materialised per-type lookup map instead of a second
+   reflective `TryGet<T>` call.
 3. `UnityEngine.Object.Instantiate(source.Cast<UnityEngine.Object>())` —
    deep-copies all serialised fields. `m_ID` is `[NonSerialized]` and is not
    propagated by `Instantiate`, so it is written separately.
@@ -50,6 +56,29 @@ Implemented in `src/Jiangyu.Loader/Templates/TemplateCloneApplier.cs`:
    via direct typed property access on the Il2CppInterop-generated wrapper.
    Only `m_TemplateMaps` (the name-lookup store) is written; see "Scope
    limits" for why `m_TemplateArrays` is not touched.
+
+## Session re-registration
+
+Implemented in `src/Jiangyu.Loader/Templates/TemplateCloneEarlyInjectionPatch.cs`.
+
+Jiangyu installs Harmony prefixes on the earliest validated startup/load
+surfaces in the current MENACE build:
+
+- `SceneStateSettings.Awake`
+- `GameStartConfig.InitializeGame`
+- `SaveSystem.TryGetLatestSaveState`
+- `SaveSystem.TryGetSaveState`
+- `SaveSystem.GetSortedSaveStates`
+- `SaveSystem.Load`
+- `SaveSystem.ExecLoad`
+- `SaveSystem.LoadSaveGameCoroutine`
+- `StrategyState.CreateNewGame` when present
+
+Each prefix clears the per-type "already applied" set and re-runs
+`TemplateCloneApplier.TryApply(log)`. The important verified boundary is
+`SceneStateSettings.Awake`: on the 2026-04-20 cold-restart smoke run it fired
+before save-slot discovery and before the later save-load path, so the clone
+IDs referenced by the save were already present in `m_TemplateMaps`.
 
 ## Patch applier switch to TryGet
 
@@ -80,6 +109,30 @@ Confirmed by Jiangyu against the live game, 2026-04-20:
 4. Apply summary reported `Applied 2 UnitLeaderTemplate patch op(s). [skipped: missingTemplate=0 …]` — the clone was resolvable by `TryGet<UnitLeaderTemplate>("squad_leader.darby_jiangyu_clone")`.
 5. Scene transitioned cleanly from Splash → Title → gameplay without crash
    or hang.
+
+Save/reload persistence was then confirmed with a separate smoke case:
+
+1. ClonePersistenceSmoke cloned `EntityTemplate:player_squad.darby` to
+   `player_squad.darby_jiangyu_save_clone` and patched
+   `UnitLeaderTemplate:squad_leader.darby.InfantryUnitTemplate` to reference
+   that clone.
+2. A new campaign was started, saved as `clean_smoke`, the game was fully
+   closed, then the save was loaded from a fresh launch.
+3. `clean_smoke.save` contained the clone-backed IDs, so the reload path was
+   forced to resolve them after restart.
+4. `MelonLoader/Latest.log` showed:
+   `Template clone registered: EntityTemplate:player_squad.darby -> player_squad.darby_jiangyu_save_clone`
+   and
+   `Template clone early injection via SceneStateSettings.Awake: applied 2 clone registration(s).`
+5. `Player.log` contained no
+   `Failed to get DataTemplate ... player_squad.darby_jiangyu_save_clone`
+   or
+   `Failed to get DataTemplate ... squad_leader.darby_jiangyu_clone`
+   lines on the final validated run.
+
+That proves Jiangyu's shipped clone contract is not "new game only": clone IDs
+referenced by a save survive a cold restart because the loader restores the
+`m_TemplateMaps` entries before MENACE consumes them.
 
 ## Reference cross-check
 
@@ -131,6 +184,8 @@ Jiangyu diverges by:
   `src/Jiangyu.Loader/Templates/TemplateCloneCatalog.cs`.
 - Runtime applier:
   `src/Jiangyu.Loader/Templates/TemplateCloneApplier.cs`.
+- Session re-registration hooks:
+  `src/Jiangyu.Loader/Templates/TemplateCloneEarlyInjectionPatch.cs`.
 - Direct-lookup helper:
   `src/Jiangyu.Loader/Templates/TemplateRuntimeAccess.cs:TryGetTemplateById`.
 - Apply ordering: clones run before patches in

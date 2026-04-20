@@ -1,4 +1,5 @@
 using HarmonyLib;
+using Jiangyu.Loader.Runtime.Patching;
 using MelonLoader;
 using UnityEngine;
 
@@ -10,19 +11,23 @@ namespace Jiangyu.Loader.Replacements;
 /// whose name is in the replacement catalogue, the prefix substitutes the
 /// modder's replacement clip before the original method proceeds.
 /// </summary>
-internal static class AudioReplacementPatch
+internal sealed class AudioReplacementPatch : IHarmonyPatchModule
 {
     private static Dictionary<string, AudioClip> _replacementClips;
     private static MelonLogger.Instance _log;
     private static readonly HashSet<string> _mismatchWarningsEmitted = new(StringComparer.Ordinal);
 
-    public static void Install(
-        HarmonyLib.Harmony harmony,
-        Dictionary<string, AudioClip> replacementClips,
-        MelonLogger.Instance log)
+    private readonly Dictionary<string, AudioClip> _replacementClipsSource;
+
+    public AudioReplacementPatch(Dictionary<string, AudioClip> replacementClips)
     {
-        _replacementClips = replacementClips;
-        _log = log;
+        _replacementClipsSource = replacementClips;
+    }
+
+    public void Install(HarmonyLib.Harmony harmony, LoaderHarmonyPatchContext context)
+    {
+        _replacementClips = _replacementClipsSource;
+        _log = context.Log;
 
         PatchInstance(harmony, nameof(PlayOneShotPrefix), "PlayOneShot", typeof(AudioClip));
         PatchInstance(harmony, nameof(PlayOneShot2Prefix), "PlayOneShot", typeof(AudioClip), typeof(float));

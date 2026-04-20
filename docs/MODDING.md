@@ -170,8 +170,10 @@ replacement at the same rate and channel layout.
 Jiangyu can write into MENACE's live `DataTemplate` instances — player-squad
 stats, skill parameters, unit leader loadouts — without binary-patching
 `resources.assets`. Template edits live in the mod's top-level `jiangyu.json`
-under `templatePatches` and `templateClones`; clones run first, then patches
-apply once per scene load when the target template cache is materialised.
+under `templatePatches` and `templateClones`; clones run first, Jiangyu
+re-registers them on session startup before clone-backed saves reload, and
+patches apply once per scene load when the target template cache is
+materialised.
 
 ### Shape
 
@@ -278,18 +280,18 @@ for the verified offset table and source citations.
 
 ### Save-frozen vs render-per-frame
 
-MENACE snapshots most player-visible gameplay stats into the save at campaign
-init and only reads the template again on a **new campaign**. Examples that
-are **save-frozen**: `UnitLeaderTemplate.InitialAttributes`, `PerkTrees`,
-`EntityTemplate.Properties.Accuracy`, most combat stats. A patch lands at
-runtime but its effect won't appear in an existing save.
+Jiangyu has only one fully verified save-frozen template field family today:
+`UnitLeaderTemplate.InitialAttributes`. Other fields may be save-frozen,
+live-read, or mixed; do not assume the game will re-read a template field on
+an existing save unless Jiangyu has verified that specific contract.
 
 Fields the game re-reads per frame (e.g. `EntityTemplate.HudYOffsetScale`)
 update live on existing saves, so those are convenient smoke-test targets.
 
 If you're changing a stat and not seeing it in an existing save, start a new
 campaign before investigating whether the patch applied — the log will tell
-you if the write landed.
+you if the write landed. Treat "works on a new campaign" as triage only, not
+as proof of the field's long-term contract.
 
 ### Not yet supported
 

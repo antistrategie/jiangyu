@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-04-16T05:33:22.3907044+00:00",
-  "gameAssemblyHash": "d4e181a6dedcfa3753e5df4eecba1617d93ba7a8b9ba60057d27d7dcbad31063",
+  "generatedAt": "2026-04-20T13:39:22.1413549+00:00",
+  "gameAssemblyHash": "8acb29df07efcd543a4bf74e34c931b71459db5d683af9ba2e9da7083540a509",
   "types": [
     {
       "typeName": "Menace.Tactical.EntityLootEntry",
@@ -1204,6 +1204,1173 @@
           "name": "AIRole",
           "kind": "object",
           "fieldTypeName": "Menace.Tactical.AI.Data.RoleData"
+        }
+      ]
+    },
+    {
+      "typeName": "PerkTreeTemplate",
+      "category": "template",
+      "fieldCount": 1,
+      "sampleNames": [
+        "perk_tree.achilleas_vehicle",
+        "perk_tree.darby"
+      ],
+      "fields": [
+        {
+          "name": "Perks",
+          "kind": "array",
+          "fieldTypeName": "Menace.Strategy.Perk[]",
+          "elementTypeName": "Menace.Strategy.Perk",
+          "storage": "inline"
+        }
+      ]
+    },
+    {
+      "typeName": "SkillTemplate",
+      "category": "template",
+      "fieldCount": 120,
+      "sampleNames": [
+        "active.change_plates",
+        "passive.ammo_armor_piercing"
+      ],
+      "fields": [
+        {
+          "name": "serializationData",
+          "kind": "object",
+          "fieldTypeName": "Sirenix.Serialization.SerializationData"
+        },
+        {
+          "name": "m_GameDesignComment",
+          "kind": "string",
+          "fieldTypeName": "String"
+        },
+        {
+          "name": "m_LocaState",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tools.LocaState"
+        },
+        {
+          "name": "Title",
+          "kind": "object",
+          "fieldTypeName": "Menace.Tools.LocalizedLine"
+        },
+        {
+          "name": "Description",
+          "kind": "object",
+          "fieldTypeName": "Menace.Tools.LocalizedMultiLine"
+        },
+        {
+          "name": "ShortDescription",
+          "kind": "object",
+          "fieldTypeName": "Menace.Tools.LocalizedMultiLine"
+        },
+        {
+          "name": "Icon",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "IconDisabled",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "Type",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.Skills.SkillType"
+        },
+        {
+          "name": "Tags",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tags.TagTemplate>",
+          "elementTypeName": "Menace.Tags.TagTemplate",
+          "storage": "reference"
+        },
+        {
+          "name": "Order",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.Skills.SkillOrder"
+        },
+        {
+          "name": "ActionPointCost",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "IsLimitedUses",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "Uses",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "UsesDisplayTemplate",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.Skills.SkillUsesDisplayTemplate"
+        },
+        {
+          "name": "IsActive",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "HideApCosts",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "KeyBind",
+          "kind": "enum",
+          "fieldTypeName": "Menace.PlayerSettings.KeyBindPlayerSetting"
+        },
+        {
+          "name": "ExecutingElement",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.ExecutingElementType"
+        },
+        {
+          "name": "AnimationType",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.AnimationType"
+        },
+        {
+          "name": "AimingType",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.AimingType"
+        },
+        {
+          "name": "IsOverrideAimSlot",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "OverrideAimSlot",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Items.VisualAlterationSlot"
+        },
+        {
+          "name": "IsTargeted",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "TargetingCursor",
+          "kind": "enum",
+          "fieldTypeName": "Menace.UI.CursorType"
+        },
+        {
+          "name": "TargetsAllowed",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.Skills.SkillTarget"
+        },
+        {
+          "name": "KeepSelectedIfStillUsable",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsLineOfFireNeeded",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsAttack",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsAlwaysHitting",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "CanHitAnotherTile",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsUsedInBackground",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "OverrideBackgroundUseWithSkill",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.Skills.SkillTemplate"
+        },
+        {
+          "name": "IsIgnoringCover",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IgnoreCoverInside",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.Skills.IgnoreCoverType"
+        },
+        {
+          "name": "IgnoreCoverInsideSpecific",
+          "kind": "array",
+          "fieldTypeName": "Menace.Tactical.EntityContainerType[]",
+          "elementTypeName": "Menace.Tactical.EntityContainerType",
+          "storage": "inline"
+        },
+        {
+          "name": "IsSilent",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IgnoreMalfunctionChance",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsDeploymentRequired",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsWeaponSetupRequired",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsUsableWhileContained",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsUsableWhilePinnedDown",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "ApplyToEntityInsideStructure",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsStacking",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsRemovedAfterCombat",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsRemovedAfterOperation",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsHidden",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "Shape",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.Skills.RangeShape"
+        },
+        {
+          "name": "ConeAngle",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "IsOverridingRanges",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "MinRange",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "IdealRange",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "MaxRange",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "MinElementDelay",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "MaxElementDelay",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "ElementDelayBetween",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "MinDelayBeforeSkillUse",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DelayAfterAnimationTrigger",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DelayAfterLastRepetition",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DelayAfterSkillUse",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "IgnoreCameraFocusDelay",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "Repetitions",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "RepetitionDelay",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "SkipDelayForLastRepetition",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsPlayingAnimationForEachRepetition",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "UseCustomAoEShape",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "AoEType",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.Skills.SkillAoEType"
+        },
+        {
+          "name": "TargetFaction",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.FactionType"
+        },
+        {
+          "name": "AoEChanceToHitCenter",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "SelectableTiles",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "ScatterMode",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.Skills.ScatterMode"
+        },
+        {
+          "name": "Scatter",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "ScatterChance",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "ScatterHitEachTileOnlyOnce",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "ScatterHitOnlyValidTiles",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "MuzzleType",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.Skills.MuzzleType"
+        },
+        {
+          "name": "MuzzleSelection",
+          "kind": "array",
+          "fieldTypeName": "Menace.Tactical.Skills.MuzzleType[]",
+          "elementTypeName": "Menace.Tactical.Skills.MuzzleType",
+          "storage": "inline"
+        },
+        {
+          "name": "MuzzleEffect",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "MuzzleEffectOverrides2",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.SurfaceEffectsTemplate"
+        },
+        {
+          "name": "IsSpawningMuzzleForEachRepetition",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsAttachingMuzzleToTransform",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "CameraEffectOnFire",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.CameraEffectType"
+        },
+        {
+          "name": "ProjectileSpawnPositionOffset",
+          "kind": "object",
+          "fieldTypeName": "UnityEngine.Vector3"
+        },
+        {
+          "name": "DefaultImpactEffect",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "DefaultImpactDecals",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.DecalCollection"
+        },
+        {
+          "name": "DefaultSoundOnRicochet",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        },
+        {
+          "name": "DefaultSoundOnImpact",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        },
+        {
+          "name": "ImpactOnSurface",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tactical.Skills.SkillOnSurfaceDefinition>",
+          "elementTypeName": "Menace.Tactical.Skills.SkillOnSurfaceDefinition",
+          "storage": "inline"
+        },
+        {
+          "name": "ImpactEffectDelay",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "ImpactDecalDelay",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "EffectDelayAfterImpact",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "IsImpactShownOnHit",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsImpactCenteredOnTile",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsImpactOnlyOnAOECenterTile",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsDecalOnlyOnAOECenterTile",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsImpactCenteredOnExecutingElement",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IsImpactAlignedToInfantry",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "CameraEffectOnImpact",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.CameraEffectType"
+        },
+        {
+          "name": "CameraEffectOnPlayerHit",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.CameraEffectType"
+        },
+        {
+          "name": "IsTriggeringHeavyDamagedReceivedEffect",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "RagdollImpactMult",
+          "kind": "object",
+          "fieldTypeName": "UnityEngine.Vector2"
+        },
+        {
+          "name": "VerticalRagdollImpactMult",
+          "kind": "object",
+          "fieldTypeName": "UnityEngine.Vector2"
+        },
+        {
+          "name": "RagdollHitArea",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.RagdollHitArea"
+        },
+        {
+          "name": "MalfunctionChance",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "MalfunctionEffect",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "SoundOnMalfunction",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        },
+        {
+          "name": "IsAudibleWhenNotVisible",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "SoundsOnBeforeUse",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<ID>",
+          "elementTypeName": "ID",
+          "storage": "inline"
+        },
+        {
+          "name": "SoundsOnUse",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<ID>",
+          "elementTypeName": "ID",
+          "storage": "inline"
+        },
+        {
+          "name": "SoundsOnAttackPerElement",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<ID>",
+          "elementTypeName": "ID",
+          "storage": "inline"
+        },
+        {
+          "name": "IsSoundOnAttackPerElementPlayingAfterAnimationDelay",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "SoundsOnAttack",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<ID>",
+          "elementTypeName": "ID",
+          "storage": "inline"
+        },
+        {
+          "name": "SoundsOnHit",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<ID>",
+          "elementTypeName": "ID",
+          "storage": "inline"
+        },
+        {
+          "name": "SoundsOnElementDestroyed",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<ID>",
+          "elementTypeName": "ID",
+          "storage": "inline"
+        },
+        {
+          "name": "SoundsOnBeforeUseFar",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<ID>",
+          "elementTypeName": "ID",
+          "storage": "inline"
+        },
+        {
+          "name": "SoundsOnUseFar",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<ID>",
+          "elementTypeName": "ID",
+          "storage": "inline"
+        },
+        {
+          "name": "SoundsOnAttackPerElementFar",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<ID>",
+          "elementTypeName": "ID",
+          "storage": "inline"
+        },
+        {
+          "name": "IsSoundOnAttackPerElementFarPlayingAfterAnimationDelay",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "SoundsOnAttackFar",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<ID>",
+          "elementTypeName": "ID",
+          "storage": "inline"
+        },
+        {
+          "name": "EventHandlers",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tactical.Skills.SkillEventHandlerTemplate>",
+          "elementTypeName": "Menace.Tactical.Skills.SkillEventHandlerTemplate",
+          "storage": "reference"
+        }
+      ]
+    },
+    {
+      "typeName": "UnitLeaderTemplate",
+      "category": "template",
+      "fieldCount": 44,
+      "sampleNames": [
+        "pilot.achilleas",
+        "squad_leader.darby"
+      ],
+      "fields": [
+        {
+          "name": "serializationData",
+          "kind": "object",
+          "fieldTypeName": "Sirenix.Serialization.SerializationData"
+        },
+        {
+          "name": "m_GameDesignComment",
+          "kind": "string",
+          "fieldTypeName": "String"
+        },
+        {
+          "name": "m_LocaState",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tools.LocaState"
+        },
+        {
+          "name": "m_Guid",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "SpeakerTemplate",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Conversations.SpeakerTemplate"
+        },
+        {
+          "name": "UnitTitle",
+          "kind": "object",
+          "fieldTypeName": "Menace.Tools.LocalizedLine"
+        },
+        {
+          "name": "UnitDescription",
+          "kind": "object",
+          "fieldTypeName": "Menace.Tools.LocalizedMultiLine"
+        },
+        {
+          "name": "HiringCosts",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "HiringSelectBarkSound",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        },
+        {
+          "name": "HiredBarkSound",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        },
+        {
+          "name": "PromotedBarkSound",
+          "kind": "object",
+          "fieldTypeName": "ID"
+        },
+        {
+          "name": "Gender",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.Gender"
+        },
+        {
+          "name": "SkinColor",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.SkinColor"
+        },
+        {
+          "name": "CustomHead",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "UnitActorType",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.ActorType"
+        },
+        {
+          "name": "QualityLevel",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "InitialAttributes",
+          "kind": "array",
+          "fieldTypeName": "Byte[]",
+          "elementTypeName": "Byte",
+          "storage": "inline"
+        },
+        {
+          "name": "GrowthPotential",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "FixedSupplyCost",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "PromotionTax",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "SquaddieTax",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "InfantryUnitTemplate",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tactical.EntityTemplate"
+        },
+        {
+          "name": "PilotInventoryTemplate",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Items.InventoryType"
+        },
+        {
+          "name": "InitialVehicleItem",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Items.VehicleItemTemplate"
+        },
+        {
+          "name": "Slot",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "SlotInactive",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "SlotInjured",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "SlotFactionBackground",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Texture2D"
+        },
+        {
+          "name": "SlotBadge",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "BigBackground",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Texture2D"
+        },
+        {
+          "name": "FactionBackground",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Texture2D"
+        },
+        {
+          "name": "BadgeMini",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "BadgeDragged",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "BadgeUnitWindow",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "Badge",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "BadgeWhite",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "BigBadge",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "Rarity",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "MinCampaignProgress",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "InitialPerk",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Strategy.PerkTemplate"
+        },
+        {
+          "name": "PerkTrees",
+          "kind": "array",
+          "fieldTypeName": "Menace.Strategy.PerkTreeTemplate[]",
+          "elementTypeName": "Menace.Strategy.PerkTreeTemplate",
+          "storage": "reference"
+        },
+        {
+          "name": "EmotionalTriggerReactions",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Strategy.EmotionalTriggerReaction>",
+          "elementTypeName": "Menace.Strategy.EmotionalTriggerReaction",
+          "storage": "inline"
+        },
+        {
+          "name": "EmotionalStateResponses",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Strategy.EmotionalStateResponse>",
+          "elementTypeName": "Menace.Strategy.EmotionalStateResponse",
+          "storage": "inline"
+        },
+        {
+          "name": "FavorablePlanets",
+          "kind": "array",
+          "fieldTypeName": "Menace.Strategy.PlanetTemplate[]",
+          "elementTypeName": "Menace.Strategy.PlanetTemplate",
+          "storage": "reference"
+        }
+      ]
+    },
+    {
+      "typeName": "WeaponTemplate",
+      "category": "template",
+      "fieldCount": 50,
+      "sampleNames": [
+        "construct.weapon.skirmisher_anti_tank_rifle",
+        "weapon.generic_assault_rifle_tier1_ARC_762"
+      ],
+      "fields": [
+        {
+          "name": "serializationData",
+          "kind": "object",
+          "fieldTypeName": "Sirenix.Serialization.SerializationData"
+        },
+        {
+          "name": "m_GameDesignComment",
+          "kind": "string",
+          "fieldTypeName": "String"
+        },
+        {
+          "name": "m_LocaState",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tools.LocaState"
+        },
+        {
+          "name": "Title",
+          "kind": "object",
+          "fieldTypeName": "Menace.Tools.LocalizedLine"
+        },
+        {
+          "name": "ShortName",
+          "kind": "object",
+          "fieldTypeName": "Menace.Tools.LocalizedLine"
+        },
+        {
+          "name": "Description",
+          "kind": "object",
+          "fieldTypeName": "Menace.Tools.LocalizedMultiLine"
+        },
+        {
+          "name": "Icon",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "Tags",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tags.TagTemplate>",
+          "elementTypeName": "Menace.Tags.TagTemplate",
+          "storage": "reference"
+        },
+        {
+          "name": "Rarity",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "MinCampaignProgress",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "TradeValue",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "BlackMarketMaxQuantity",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "IconEquipment",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "IconEquipmentDisabled",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "IconSkillBar",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "IconSkillBarDisabled",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "IconSkillBarAlternative",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "IconSkillBarAlternativeDisabled",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.Sprite"
+        },
+        {
+          "name": "SlotType",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Items.ItemSlot"
+        },
+        {
+          "name": "OnlyEquipableBy",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tags.TagTemplate>",
+          "elementTypeName": "Menace.Tags.TagTemplate",
+          "storage": "reference"
+        },
+        {
+          "name": "ExclusiveCategory",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Items.ExclusiveItemCategory"
+        },
+        {
+          "name": "DeployCosts",
+          "kind": "object",
+          "fieldTypeName": "Menace.Strategy.OperationResources"
+        },
+        {
+          "name": "SkillsGranted",
+          "kind": "array",
+          "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tactical.Skills.SkillTemplate>",
+          "elementTypeName": "Menace.Tactical.Skills.SkillTemplate",
+          "storage": "reference"
+        },
+        {
+          "name": "Model",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "VisualAlterationSlot",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Items.VisualAlterationSlot"
+        },
+        {
+          "name": "ModelSecondary",
+          "kind": "reference",
+          "fieldTypeName": "UnityEngine.GameObject"
+        },
+        {
+          "name": "VisualAlterationSlotSecondary",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Items.VisualAlterationSlot"
+        },
+        {
+          "name": "AttachLightAtNight",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "AnimType",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Items.WeaponAnimType"
+        },
+        {
+          "name": "AnimSize",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.AnimWeaponSize"
+        },
+        {
+          "name": "AnimGrip",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.AnimWeaponGrip"
+        },
+        {
+          "name": "AnimationSoundTemplate",
+          "kind": "reference",
+          "fieldTypeName": "Menace.Tools.AnimationSoundTemplate"
+        },
+        {
+          "name": "MinRange",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "IdealRange",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "MaxRange",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
+        {
+          "name": "AccuracyBonus",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "AccuracyDropoff",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "Damage",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamageDropoff",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamagePctCurrentHitpoints",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamagePctCurrentHitpointsMin",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamagePctMaxHitpoints",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamagePctMaxHitpointsMin",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "ArmorPenetration",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "ArmorPenetrationDropoff",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamageToArmorDurability",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamageToArmorDurabilityMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamageToArmorDurabilityDropoff",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "DamageToArmorDurabilityDropoffMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "Suppression",
+          "kind": "float",
+          "fieldTypeName": "Single"
         }
       ]
     }

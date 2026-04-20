@@ -1,6 +1,7 @@
 using Il2CppInterop.Runtime;
 using Jiangyu.Loader.Bundles;
 using Jiangyu.Loader.Replacements;
+using Jiangyu.Loader.Runtime.Patching;
 using Jiangyu.Loader.Templates;
 using Jiangyu.Shared.Bundles;
 using MelonLoader;
@@ -21,6 +22,7 @@ internal class ReplacementCoordinator
     private readonly TemplatePatchApplier _templatePatchApplier;
     private readonly TemplateCloneCatalog _templateClones;
     private readonly TemplateCloneApplier _templateCloneApplier;
+    private readonly LoaderHarmonyPatchInstaller _harmonyPatchInstaller;
     // Tracks SMRs we've already processed in this session. The mesh-name-based
     // IsAlreadyProcessedMesh check isn't sufficient because the "direct use"
     // swap path assigns the bundle's mesh verbatim (no " [jiangyu]" suffix
@@ -41,6 +43,12 @@ internal class ReplacementCoordinator
         _templatePatchApplier = new TemplatePatchApplier(_templatePatches);
         _templateClones = new TemplateCloneCatalog();
         _templateCloneApplier = new TemplateCloneApplier(_templateClones);
+        _harmonyPatchInstaller = new LoaderHarmonyPatchInstaller(
+            new IHarmonyPatchModule[]
+            {
+                new TemplateCloneEarlyInjectionPatch(_templateCloneApplier),
+                new AudioReplacementPatch(_catalog.ReplacementAudioClips),
+            });
     }
 
     public BundleLoadSummary LoadBundles(string modsDir, MelonLogger.Instance log)
@@ -57,7 +65,7 @@ internal class ReplacementCoordinator
 
     public void InstallHarmonyPatches(HarmonyLib.Harmony harmony, MelonLogger.Instance log)
     {
-        AudioReplacementPatch.Install(harmony, _catalog.ReplacementAudioClips, log);
+        _harmonyPatchInstaller.Install(harmony, new LoaderHarmonyPatchContext(log));
     }
 
     public bool HasMeshOrPrefabReplacements =>
