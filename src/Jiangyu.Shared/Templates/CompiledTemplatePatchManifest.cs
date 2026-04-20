@@ -6,6 +6,27 @@ public sealed class CompiledTemplatePatchManifest
 {
     [JsonPropertyName("templatePatches")]
     public List<CompiledTemplatePatch>? TemplatePatches { get; set; }
+
+    [JsonPropertyName("templateClones")]
+    public List<CompiledTemplateClone>? TemplateClones { get; set; }
+}
+
+/// <summary>
+/// Directive to deep-copy an existing live template of <see cref="TemplateType"/>
+/// identified by <see cref="SourceId"/> and register the copy under
+/// <see cref="CloneId"/>. Clones run before patches apply so subsequent
+/// <see cref="CompiledTemplatePatch"/> entries can target the new ID.
+/// </summary>
+public sealed class CompiledTemplateClone
+{
+    [JsonPropertyName("templateType")]
+    public string? TemplateType { get; set; }
+
+    [JsonPropertyName("sourceId")]
+    public string SourceId { get; set; } = string.Empty;
+
+    [JsonPropertyName("cloneId")]
+    public string CloneId { get; set; } = string.Empty;
 }
 
 public sealed class CompiledTemplatePatch

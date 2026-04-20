@@ -200,6 +200,116 @@ public class TemplatePatchEmitterTests
         Assert.Equal(2, log.Errors.Count);
     }
 
+    [Fact]
+    public void EmitClones_NullOrEmpty_ReturnsSuccess()
+    {
+        var log = new RecordingLogSink();
+
+        var forNull = TemplatePatchEmitter.EmitClones(null, log);
+        var forEmpty = TemplatePatchEmitter.EmitClones([], log);
+
+        Assert.True(forNull.Success);
+        Assert.True(forEmpty.Success);
+        Assert.Empty(log.Errors);
+    }
+
+    [Fact]
+    public void EmitClones_HappyPath_TrimsTemplateType()
+    {
+        var log = new RecordingLogSink();
+        var clones = new List<CompiledTemplateClone>
+        {
+            new() { TemplateType = "  EntityTemplate  ", SourceId = "a", CloneId = "b" },
+        };
+
+        var result = TemplatePatchEmitter.EmitClones(clones, log);
+
+        Assert.True(result.Success);
+        var emitted = Assert.Single(result.Clones!);
+        Assert.Equal("EntityTemplate", emitted.TemplateType);
+        Assert.Equal("a", emitted.SourceId);
+        Assert.Equal("b", emitted.CloneId);
+    }
+
+    [Fact]
+    public void EmitClones_MissingTemplateType_Errors()
+    {
+        var log = new RecordingLogSink();
+        var clones = new List<CompiledTemplateClone>
+        {
+            new() { TemplateType = null, SourceId = "a", CloneId = "b" },
+        };
+
+        var result = TemplatePatchEmitter.EmitClones(clones, log);
+
+        Assert.False(result.Success);
+        Assert.Contains("templateType is required", log.Errors[0]);
+    }
+
+    [Fact]
+    public void EmitClones_EmptySourceOrCloneId_Errors()
+    {
+        var log = new RecordingLogSink();
+        var clones = new List<CompiledTemplateClone>
+        {
+            new() { TemplateType = "EntityTemplate", SourceId = "", CloneId = "b" },
+            new() { TemplateType = "EntityTemplate", SourceId = "a", CloneId = "" },
+        };
+
+        var result = TemplatePatchEmitter.EmitClones(clones, log);
+
+        Assert.Equal(2, result.ErrorCount);
+        Assert.Contains("sourceId is empty", log.Errors[0]);
+        Assert.Contains("cloneId is empty", log.Errors[1]);
+    }
+
+    [Fact]
+    public void EmitClones_SourceEqualsClone_Errors()
+    {
+        var log = new RecordingLogSink();
+        var clones = new List<CompiledTemplateClone>
+        {
+            new() { TemplateType = "EntityTemplate", SourceId = "a", CloneId = "a" },
+        };
+
+        var result = TemplatePatchEmitter.EmitClones(clones, log);
+
+        Assert.False(result.Success);
+        Assert.Contains("must differ from sourceId", log.Errors[0]);
+    }
+
+    [Fact]
+    public void EmitClones_DuplicateCloneIdWithinBatch_Errors()
+    {
+        var log = new RecordingLogSink();
+        var clones = new List<CompiledTemplateClone>
+        {
+            new() { TemplateType = "EntityTemplate", SourceId = "a", CloneId = "c" },
+            new() { TemplateType = "EntityTemplate", SourceId = "b", CloneId = "c" },
+        };
+
+        var result = TemplatePatchEmitter.EmitClones(clones, log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains("duplicate cloneId", log.Errors[0]);
+    }
+
+    [Fact]
+    public void EmitClones_SameCloneIdDifferentTemplateType_IsAllowed()
+    {
+        var log = new RecordingLogSink();
+        var clones = new List<CompiledTemplateClone>
+        {
+            new() { TemplateType = "EntityTemplate", SourceId = "a", CloneId = "c" },
+            new() { TemplateType = "UnitLeaderTemplate", SourceId = "b", CloneId = "c" },
+        };
+
+        var result = TemplatePatchEmitter.EmitClones(clones, log);
+
+        Assert.True(result.Success);
+        Assert.Equal(2, result.Clones!.Count);
+    }
+
     private static CompiledTemplatePatch BuildPatch(string templateType, string templateId, string fieldPath, CompiledTemplateValue value)
         => new()
         {

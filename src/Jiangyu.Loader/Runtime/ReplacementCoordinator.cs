@@ -19,6 +19,8 @@ internal class ReplacementCoordinator
     private readonly DrivenPrefabReplacementManager _drivenReplacements;
     private readonly TemplatePatchCatalog _templatePatches;
     private readonly TemplatePatchApplier _templatePatchApplier;
+    private readonly TemplateCloneCatalog _templateClones;
+    private readonly TemplateCloneApplier _templateCloneApplier;
     // Tracks SMRs we've already processed in this session. The mesh-name-based
     // IsAlreadyProcessedMesh check isn't sufficient because the "direct use"
     // swap path assigns the bundle's mesh verbatim (no " [jiangyu]" suffix
@@ -37,6 +39,8 @@ internal class ReplacementCoordinator
         _drivenReplacements = new DrivenPrefabReplacementManager(_pinned);
         _templatePatches = new TemplatePatchCatalog();
         _templatePatchApplier = new TemplatePatchApplier(_templatePatches);
+        _templateClones = new TemplateCloneCatalog();
+        _templateCloneApplier = new TemplateCloneApplier(_templateClones);
     }
 
     public BundleLoadSummary LoadBundles(string modsDir, MelonLogger.Instance log)
@@ -46,6 +50,7 @@ internal class ReplacementCoordinator
 
         var plan = ModLoadPlanBuilder.Build(modsDir);
         var summary = _catalog.LoadBundles(plan, log);
+        _templateClones.Load(plan.LoadableMods, log);
         _templatePatches.Load(plan.LoadableMods, log);
         return summary;
     }
@@ -75,7 +80,8 @@ internal class ReplacementCoordinator
             _catalog.ReplacementTextures.Count == 0 &&
             _catalog.ReplacementSprites.Count == 0 &&
             _catalog.ReplacementAudioClips.Count == 0 &&
-            !_templatePatchApplier.HasPendingPatches)
+            !_templatePatchApplier.HasPendingPatches &&
+            !_templateCloneApplier.HasPendingClones)
             return;
 
         var visualReplacements = 0;
@@ -125,12 +131,14 @@ internal class ReplacementCoordinator
         if (visualReplacements > 0 || textureMutations > 0)
             log.Msg($"Applied {visualReplacements} visual replacement(s) and {textureMutations} texture mutation(s).");
 
+        // Clones first: patches may target the newly registered cloneIds.
+        _templateCloneApplier.TryApply(log);
         _templatePatchApplier.TryApply(log);
     }
 
     public bool HasReplacementTargets()
     {
-        if (_templatePatchApplier.HasPendingPatches)
+        if (_templatePatchApplier.HasPendingPatches || _templateCloneApplier.HasPendingClones)
             return true;
 
         if (_catalog.Meshes.Count == 0 &&

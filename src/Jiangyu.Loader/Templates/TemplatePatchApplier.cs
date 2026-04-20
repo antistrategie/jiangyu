@@ -74,12 +74,15 @@ internal sealed class TemplatePatchApplier
         Dictionary<string, Dictionary<string, LoadedPatchOperation>> patchesForType,
         MelonLogger.Instance log)
     {
+        // Use GetAllTemplates once only to trigger materialisation and detect
+        // "templates not ready yet" (return 0, retry next scene) vs terminal
+        // type-resolution failure. Per-template lookups below go through
+        // DataTemplateLoader.TryGet<T> directly, which reads m_TemplateMaps and
+        // therefore sees both game-native templates and Jiangyu clones.
         var liveTemplates = TemplateRuntimeAccess.GetAllTemplates(templateTypeName, out var resolvedType, out var resolveError);
 
         if (resolvedType == null)
         {
-            // Resolution failures are terminal for this type - log once and latch
-            // so we don't re-resolve every scene.
             var expectedOps = patchesForType.Values.Sum(inner => inner.Count);
             log.Warning(
                 $"Template patch: cannot resolve type '{templateTypeName}' ({resolveError}); "
@@ -91,8 +94,6 @@ internal sealed class TemplatePatchApplier
         if (liveTemplates.Count == 0)
             return 0;
 
-        var templatesById = BuildTemplatesById(liveTemplates, templateTypeName, log);
-
         var applied = 0;
         var missingTemplate = 0;
         var missingMember = 0;
@@ -100,11 +101,14 @@ internal sealed class TemplatePatchApplier
 
         foreach (var templateEntry in patchesForType)
         {
-            if (!templatesById.TryGetValue(templateEntry.Key, out var template))
+            if (!TemplateRuntimeAccess.TryGetTemplateById(
+                    templateTypeName, templateEntry.Key,
+                    out var template, out _, out var lookupError))
             {
                 missingTemplate += templateEntry.Value.Count;
+                var reason = string.IsNullOrEmpty(lookupError) ? "not found" : lookupError;
                 log.Warning(
-                    $"Template patch: no live {templateTypeName} with m_ID '{templateEntry.Key}'; "
+                    $"Template patch: no live {templateTypeName} with m_ID '{templateEntry.Key}' ({reason}); "
                     + $"skipping {templateEntry.Value.Count} op(s).");
                 continue;
             }
@@ -132,42 +136,6 @@ internal sealed class TemplatePatchApplier
             + $"[skipped: missingTemplate={missingTemplate} missingMember={missingMember} "
             + $"conversion={conversionFailed}]");
         return applied;
-    }
-
-    private static Dictionary<string, Il2CppObjectBase> BuildTemplatesById(
-        IReadOnlyList<Il2CppObjectBase> liveTemplates, string templateTypeName, MelonLogger.Instance log)
-    {
-        var byId = new Dictionary<string, Il2CppObjectBase>(StringComparer.Ordinal);
-        var withoutId = 0;
-
-        foreach (var template in liveTemplates)
-        {
-            var id = TemplateRuntimeAccess.ReadTemplateId(template);
-            if (string.IsNullOrWhiteSpace(id))
-            {
-                withoutId++;
-                continue;
-            }
-
-            if (byId.ContainsKey(id))
-            {
-                log.Warning(
-                    $"Template patch: duplicate live m_ID '{id}' in the {templateTypeName} cache; "
-                    + "keeping the first materialised instance for matching.");
-                continue;
-            }
-
-            byId[id] = template;
-        }
-
-        if (withoutId > 0)
-        {
-            log.Warning(
-                $"Template patch: {withoutId} live {templateTypeName} instance(s) have no readable m_ID "
-                + "and cannot be targeted by patches on this slice.");
-        }
-
-        return byId;
     }
 
     private static ApplyOutcome TryApplyOperation(

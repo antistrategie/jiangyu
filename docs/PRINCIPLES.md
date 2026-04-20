@@ -118,25 +118,7 @@ For common replacement workflows, Jiangyu should still prefer convention over re
 - `jiangyu.json` should describe metadata and exceptional cases, not force modders to enumerate every routine replacement by hand
 - explicit manifest mappings should remain available as the escape hatch for ambiguous or nonstandard cases
 
-### 8. Grow by Real Workflow Pressure
-
-Jiangyu should not try to fully design every future system in the abstract.
-
-Instead:
-
-- solve the current proven path cleanly
-- validate the next critical contract
-- let real modding workflows reveal where the boundaries should move
-
-This applies especially to:
-
-- Unity Editor integration
-- GUI scope
-- prefab cloning
-- animation workflows
-- future SDK boundaries
-
-### 9. Be a Modkit, Not a Platform
+### 8. Be a Modkit, Not a Platform
 
 Jiangyu should own:
 

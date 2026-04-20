@@ -26,6 +26,71 @@ internal static class TemplateRuntimeAccess
     public const string DefaultTemplateTypeName = nameof(EntityTemplate);
 
     /// <summary>
+    /// Looks up a single live template by its serialised <c>m_ID</c>, using
+    /// <c>DataTemplateLoader.TryGet&lt;T&gt;</c>. Resolves templates registered
+    /// via Jiangyu's template-clone applier as well as game-native templates,
+    /// because both end up in the same <c>m_TemplateMaps</c> name-lookup
+    /// dictionary the game's <c>TryGet</c> reads from.
+    /// </summary>
+    public static bool TryGetTemplateById(
+        string templateTypeName, string templateId,
+        out Il2CppObjectBase template, out Type resolvedType, out string error)
+    {
+        template = null;
+        resolvedType = null;
+
+        if (string.IsNullOrWhiteSpace(templateTypeName))
+        {
+            error = "template type name is empty.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(templateId))
+        {
+            error = "template id is empty.";
+            return false;
+        }
+
+        resolvedType = ResolveTemplateType(templateTypeName, out error);
+        if (resolvedType == null)
+            return false;
+
+        var tryGet = typeof(DataTemplateLoader)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .FirstOrDefault(m => m.Name == "TryGet"
+                                 && m.IsGenericMethodDefinition
+                                 && m.GetParameters().Length == 2);
+
+        if (tryGet == null)
+        {
+            error = "DataTemplateLoader.TryGet<T>(string, out T) not found.";
+            return false;
+        }
+
+        var args = new object[] { templateId, null };
+        bool found;
+        try
+        {
+            found = (bool)tryGet.MakeGenericMethod(resolvedType).Invoke(null, args);
+        }
+        catch (Exception ex)
+        {
+            error = $"TryGet<{resolvedType.Name}> threw: {ex.Message}";
+            return false;
+        }
+
+        if (!found || args[1] is not Il2CppObjectBase resolved)
+        {
+            error = null;
+            return false;
+        }
+
+        template = resolved;
+        error = null;
+        return true;
+    }
+
+    /// <summary>
     /// Returns all live templates of the given type (passed as either a simple
     /// name like "EntityTemplate" or a full name like
     /// "Il2CppMenace.Tactical.EntityTemplate"), or an empty list if the

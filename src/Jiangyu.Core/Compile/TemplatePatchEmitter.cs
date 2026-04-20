@@ -4,19 +4,26 @@ using Jiangyu.Shared.Templates;
 namespace Jiangyu.Core.Compile;
 
 /// <summary>
-/// Compile-time emitter for the <c>templatePatches</c> block of
+/// Compile-time emitter for the template payload blocks of
 /// <c>compiled/jiangyu.json</c>. Runs authored patches through
 /// <see cref="TemplateFieldPathSugar"/>, validates path syntax and value
-/// completeness via <see cref="TemplatePatchPathValidator"/>, and returns a
-/// list that is guaranteed to be in canonical indexed form. Errors escalate
-/// to compile failures so modders fix malformed patches at compile time
-/// rather than discovering silent drops at load time.
+/// completeness via <see cref="TemplatePatchPathValidator"/>, and validates
+/// clone directives for required fields and batch-internal uniqueness.
+/// Errors escalate to compile failures so modders fix malformed inputs at
+/// compile time rather than discovering silent drops at load time.
 /// </summary>
 public static class TemplatePatchEmitter
 {
     public readonly record struct EmitResult(
         List<CompiledTemplatePatch>? Patches,
         int RewriteCount,
+        int ErrorCount)
+    {
+        public bool Success => ErrorCount == 0;
+    }
+
+    public readonly record struct CloneEmitResult(
+        List<CompiledTemplateClone>? Clones,
         int ErrorCount)
     {
         public bool Success => ErrorCount == 0;
@@ -86,6 +93,76 @@ public static class TemplatePatchEmitter
         }
 
         return new EmitResult(emitted, rewriteCount, errorCount);
+    }
+
+    public static CloneEmitResult EmitClones(List<CompiledTemplateClone>? clones, ILogSink log)
+    {
+        if (clones is null || clones.Count == 0)
+            return new CloneEmitResult(clones, 0);
+
+        var emitted = new List<CompiledTemplateClone>(clones.Count);
+        var errorCount = 0;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var clone in clones)
+        {
+            if (clone is null)
+            {
+                log.Error("Template clone directive is null.");
+                errorCount++;
+                continue;
+            }
+
+            var templateType = clone.TemplateType?.Trim();
+            if (string.IsNullOrWhiteSpace(templateType))
+            {
+                log.Error(
+                    $"Template clone '{clone.SourceId} -> {clone.CloneId}': templateType is required.");
+                errorCount++;
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(clone.SourceId))
+            {
+                log.Error($"Template clone '{templateType}': sourceId is empty.");
+                errorCount++;
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(clone.CloneId))
+            {
+                log.Error(
+                    $"Template clone '{templateType}:{clone.SourceId}': cloneId is empty.");
+                errorCount++;
+                continue;
+            }
+
+            if (string.Equals(clone.SourceId, clone.CloneId, StringComparison.Ordinal))
+            {
+                log.Error(
+                    $"Template clone '{templateType}:{clone.SourceId}': cloneId must differ from sourceId.");
+                errorCount++;
+                continue;
+            }
+
+            var key = templateType + "\0" + clone.CloneId;
+            if (!seen.Add(key))
+            {
+                log.Error(
+                    $"Template clone '{templateType}:{clone.CloneId}': duplicate cloneId within this mod.");
+                errorCount++;
+                continue;
+            }
+
+            emitted.Add(new CompiledTemplateClone
+            {
+                TemplateType = templateType,
+                SourceId = clone.SourceId,
+                CloneId = clone.CloneId,
+            });
+        }
+
+        return new CloneEmitResult(emitted, errorCount);
     }
 
     private static bool TryEmitOperation(

@@ -43,6 +43,15 @@ public sealed class ModManifest
     [JsonPropertyName("templatePatches")]
     public List<CompiledTemplatePatch>? TemplatePatches { get; set; }
 
+    /// <summary>
+    /// Template clone directives. Each entry deep-copies a live template by
+    /// (templateType, sourceId) and registers the copy under cloneId. Clones
+    /// run before patches apply so the cloneId is targetable by subsequent
+    /// <see cref="CompiledTemplatePatch"/> entries.
+    /// </summary>
+    [JsonPropertyName("templateClones")]
+    public List<CompiledTemplateClone>? TemplateClones { get; set; }
+
     public static ModManifest CreateDefault(string name) => new()
     {
         Name = name,

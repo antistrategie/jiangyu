@@ -120,17 +120,21 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         var useRawGlbPipeline = replacementAssetCount > 0;
 
-        // Emit templatePatches: sugar rewrite + path/value validation. Runs
-        // before the Unity build so malformed patches fail fast instead of
-        // surfacing as loader-time drops after a slow build succeeded.
+        // Emit templatePatches + templateClones: sugar rewrite, path/value
+        // validation, clone field checks. Runs before the Unity build so
+        // malformed inputs fail fast instead of surfacing as loader-time drops
+        // after a slow build succeeded.
         var templatePatchResult = TemplatePatchEmitter.Emit(manifest.TemplatePatches, _log);
-        if (!templatePatchResult.Success)
-            return Fail($"Template patch compilation failed with {templatePatchResult.ErrorCount} error(s). See errors above.");
+        var templateCloneResult = TemplatePatchEmitter.EmitClones(manifest.TemplateClones, _log);
+        var totalEmitErrors = templatePatchResult.ErrorCount + templateCloneResult.ErrorCount;
+        if (totalEmitErrors > 0)
+            return Fail($"Template compilation failed with {totalEmitErrors} error(s). See errors above.");
         if (templatePatchResult.RewriteCount > 0)
             _log.Info($"  Rewrote {templatePatchResult.RewriteCount} template patch path(s) to canonical indexed form.");
 
         var compiledManifest = ModManifest.FromJson(manifest.ToJson());
         compiledManifest.TemplatePatches = templatePatchResult.Patches;
+        compiledManifest.TemplateClones = templateCloneResult.Clones;
         if (useRawGlbPipeline)
         {
             _log.Info("  Using direct mesh replacement pipeline...");
