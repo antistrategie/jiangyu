@@ -5,7 +5,9 @@ using Jiangyu.Core.Assets;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Glb;
 using Jiangyu.Core.Models;
+using Jiangyu.Core.Templates;
 using Jiangyu.Core.Unity;
+using Jiangyu.Shared.Templates;
 using SharpGLTF.Schema2;
 
 namespace Jiangyu.Core.Compile;
@@ -102,9 +104,14 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var replacementAssetCount = replacementEntries.Count + replacementTextures.Count + replacementSprites.Count + replacementAudio.Count;
         var totalCompileInputCount = modelFiles.Count + replacementTextures.Count + replacementSprites.Count + replacementAudio.Count;
 
-        if (totalCompileInputCount == 0)
+        // Discover KDL template authoring files
+        var templatesDir = Path.Combine(projectDir, "templates");
+        var hasKdlTemplates = Directory.Exists(templatesDir)
+            && Directory.EnumerateFiles(templatesDir, "*.kdl", SearchOption.AllDirectories).Any();
+
+        if (totalCompileInputCount == 0 && !hasKdlTemplates)
         {
-            _log.Info("No replacement assets found. Nothing to compile.");
+            _log.Info("No replacement assets or template patches found. Nothing to compile.");
             return new CompilationResult { Success = true };
         }
 
@@ -120,12 +127,25 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         var useRawGlbPipeline = replacementAssetCount > 0;
 
-        // Emit templatePatches + templateClones: sugar rewrite, path/value
+        // Emit templatePatches + templateClones from KDL: sugar rewrite, path/value
         // validation, clone field checks. Runs before the Unity build so
         // malformed inputs fail fast instead of surfacing as loader-time drops
         // after a slow build succeeded.
-        var templatePatchResult = TemplatePatchEmitter.Emit(manifest.TemplatePatches, _log);
-        var templateCloneResult = TemplatePatchEmitter.EmitClones(manifest.TemplateClones, _log);
+        List<CompiledTemplatePatch>? patchSource = null;
+        List<CompiledTemplateClone>? cloneSource = null;
+
+        if (hasKdlTemplates)
+        {
+            var kdlResult = KdlTemplateParser.ParseAll(templatesDir, _log);
+            if (kdlResult.ErrorCount > 0)
+                return Fail($"KDL template parsing failed with {kdlResult.ErrorCount} error(s). See errors above.");
+            _log.Info($"  Parsed {kdlResult.Patches.Count} template patch(es) and {kdlResult.Clones.Count} clone(s) from KDL.");
+            patchSource = kdlResult.Patches;
+            cloneSource = kdlResult.Clones;
+        }
+
+        var templatePatchResult = TemplatePatchEmitter.Emit(patchSource, _log);
+        var templateCloneResult = TemplatePatchEmitter.EmitClones(cloneSource, _log);
         var totalEmitErrors = templatePatchResult.ErrorCount + templateCloneResult.ErrorCount;
         if (totalEmitErrors > 0)
             return Fail($"Template compilation failed with {totalEmitErrors} error(s). See errors above.");
@@ -135,6 +155,16 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var compiledManifest = ModManifest.FromJson(manifest.ToJson());
         compiledManifest.TemplatePatches = templatePatchResult.Patches;
         compiledManifest.TemplateClones = templateCloneResult.Clones;
+
+        // Template-only compile: no asset replacements, just emit the compiled manifest.
+        if (totalCompileInputCount == 0)
+        {
+            await File.WriteAllTextAsync(Path.Combine(outputDir, ModManifest.FileName), compiledManifest.ToJson());
+            _log.Info($"  -> {Path.Combine(outputDir, ModManifest.FileName)} (template-only, no bundle)");
+            _log.Info("Done.");
+            return new CompilationResult { Success = true };
+        }
+
         if (useRawGlbPipeline)
         {
             _log.Info("  Using direct mesh replacement pipeline...");
@@ -1276,25 +1306,6 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         return result;
     }
 
-    private static IReadOnlyList<string> DiscoverReplacementMeshNames(string filePath)
-    {
-        var model = ModelRoot.Load(filePath);
-        var meshNames = model.LogicalNodes
-            .Where(node => node.Mesh != null)
-            .SelectMany(node => GetReplacementMeshAliases(node, filePath))
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToList();
-
-        if (meshNames.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"No mesh nodes were found in replacement file '{filePath}'.");
-        }
-
-        return meshNames;
-    }
-
     private static IReadOnlyList<string> GetReplacementMeshAliases(Node node, string filePath)
     {
         var mesh = node.Mesh ?? throw new InvalidOperationException("Replacement mesh discovery expected a node with a mesh.");
@@ -1464,32 +1475,6 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         }
 
         return warnings;
-    }
-
-    private static IReadOnlyCollection<string> GetLodMissingMeshNames(
-        IReadOnlyList<string> expectedMeshNames,
-        IReadOnlyList<string> providedMeshNames)
-    {
-        var expectedFamilies = BuildLodFamilies(expectedMeshNames);
-        if (expectedFamilies.Count == 0)
-            return [];
-
-        var providedSet = new HashSet<string>(providedMeshNames, StringComparer.Ordinal);
-        var lodMissingMeshNames = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var family in expectedFamilies.Values)
-        {
-            var providedCount = family.Count(providedSet.Contains);
-            if (providedCount == 0 || providedCount == family.Count)
-                continue;
-
-            foreach (var meshName in family.Where(name => !providedSet.Contains(name)))
-            {
-                lodMissingMeshNames.Add(meshName);
-            }
-        }
-
-        return lodMissingMeshNames;
     }
 
     private static Dictionary<string, List<string>> BuildLodFamilies(IReadOnlyList<string> meshNames)

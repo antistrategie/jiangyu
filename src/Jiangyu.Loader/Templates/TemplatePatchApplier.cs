@@ -1137,13 +1137,29 @@ internal sealed class TemplatePatchApplier
                 return true;
 
             case CompiledTemplateValueKind.Int32:
-                if (targetType != typeof(int))
+                if (targetType == typeof(int))
                 {
-                    error = $"value kind Int32 but member type is {targetType.FullName}.";
-                    return false;
+                    converted = value.Int32.Value;
+                    return true;
                 }
-                converted = value.Int32.Value;
-                return true;
+
+                // Coerce Int32 → Byte for KDL authoring convenience (KDL emits
+                // all integers as Int32; the runtime narrows when the target is byte).
+                if (targetType == typeof(byte))
+                {
+                    var raw = value.Int32.Value;
+                    if (raw is < 0 or > 255)
+                    {
+                        error = $"value {raw} is out of Byte range (0–255).";
+                        return false;
+                    }
+
+                    converted = (byte)raw;
+                    return true;
+                }
+
+                error = $"value kind Int32 but member type is {targetType.FullName}.";
+                return false;
 
             case CompiledTemplateValueKind.Single:
                 if (targetType != typeof(float))
