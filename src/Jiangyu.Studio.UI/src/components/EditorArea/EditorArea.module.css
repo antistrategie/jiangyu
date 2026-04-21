@@ -1,27 +1,195 @@
-.editor {
+.grid {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   flex: 1;
   min-height: 0;
   min-width: 0;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.colResizer {
+  flex: 0 0 4px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 1;
+}
+
+.colResizer::before {
+  content: "";
+  position: absolute;
+  inset: 0 1px;
+  background: var(--rule);
+}
+
+.colResizer:hover::before {
+  background: var(--cinnabar-1);
+}
+
+.paneResizer {
+  flex: 0 0 4px;
+  cursor: row-resize;
+  background: transparent;
+  position: relative;
+  z-index: 1;
+}
+
+.paneResizer::before {
+  content: "";
+  position: absolute;
+  inset: 1px 0;
+  background: var(--rule);
+}
+
+.paneResizer:hover::before {
+  background: var(--cinnabar-1);
+}
+
+.dropOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+}
+
+.dropZone {
+  position: absolute;
+  background: var(--cinnabar-1);
+  opacity: 0.18;
+  pointer-events: none;
+  transition: inset 80ms ease;
+}
+
+.dropZone_left {
+  inset: 0 50% 0 0;
+}
+
+.dropZone_right {
+  inset: 0 0 0 50%;
+}
+
+.dropZone_top {
+  inset: 0 0 50% 0;
+}
+
+.dropZone_bottom {
+  inset: 50% 0 0 0;
+}
+
+.dropZone_centre {
+  inset: 0;
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
   background: var(--bg-raised);
+  position: relative;
+}
+
+/* Inactive panes dim the tabbar so the active pane stands out by contrast. */
+.editor:not(.editorActive) .tabbar {
+  background: var(--bg-sunken);
+}
+
+.tabbarDrop {
+  background: var(--paper-2) !important;
+}
+
+.tabbarButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: 0 2px;
+  align-self: center;
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.tabbarButton:hover {
+  color: var(--fg);
+  background: var(--bg-sunken);
+}
+
+.paneHeaderItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 26px;
+  padding: 0 var(--space-3);
+  flex-shrink: 0;
+}
+
+.paneHeaderLabel {
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg);
+}
+
+.paneHeaderClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 2px;
+  cursor: pointer;
+  opacity: 0.5;
+  background: transparent;
+  border: none;
+  color: inherit;
+}
+
+.paneHeaderClose:hover {
+  opacity: 1;
+  background: var(--bg-sunken);
 }
 
 .tabbar {
   display: flex;
-  align-items: flex-end;
-  margin-top: var(--space-1);
+  align-items: stretch;
   padding: 0 var(--space-2);
   background: var(--bg);
-  border-bottom: 1px solid var(--rule);
   flex-shrink: 0;
   user-select: none;
+  min-height: 26px;
+}
+
+.tabScroll {
+  display: flex;
+  align-items: flex-end;
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
 
-.tabbar::-webkit-scrollbar {
+.tabScroll::-webkit-scrollbar {
   display: none;
+}
+
+.tabActions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding-left: var(--space-1);
 }
 
 .tabPlaceholder {
@@ -52,13 +220,17 @@
   flex-shrink: 0;
 }
 
+.tab + .tab {
+  border-left: 1px solid var(--rule-faint, var(--rule));
+}
+
 .tab:hover {
   color: var(--fg);
 }
 
 .tabActive {
   color: var(--fg);
-  border-bottom-color: var(--cinnabar-1);
+  background: var(--bg-raised);
 }
 
 .tabName {
@@ -97,6 +269,7 @@
   display: flex;
   min-height: 0;
   background: var(--bg-raised);
+  position: relative;
 }
 
 .editorHost {
@@ -112,6 +285,52 @@
   font-size: var(--fs-md);
   color: var(--fg-muted);
   margin: auto;
+}
+
+.emptyStack {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.emptyStack .empty {
+  margin: 0;
+}
+
+.emptySeparator {
+  font-family: var(--font-editorial);
+  font-style: italic;
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+  margin: 0;
+}
+
+.emptyActions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.emptyAction {
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--cinnabar-1);
+  background: transparent;
+  border: none;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.emptyAction:hover {
+  color: var(--fg-strong);
 }
 
 .banner {

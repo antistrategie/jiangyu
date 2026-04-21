@@ -11,6 +11,7 @@ import {
 
 export const PALETTE_SCOPE = {
   Project: "PROJECT · 项目",
+  View: "VIEW · 视图",
   File: "FILE · 文件",
   Editor: "EDITOR · 编辑",
   GoToFile: "GO TO FILE · 跳转",

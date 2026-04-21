@@ -1,5 +1,5 @@
 import type { ContextMenuEntry } from "../ContextMenu/ContextMenu.tsx";
-import type { OpenFile } from "../../App.tsx";
+import type { Tab } from "../../lib/layout.ts";
 import { fileTargetCommands, type FileCommand } from "../../lib/fileCommands.ts";
 
 function entryFor(cmd: FileCommand): ContextMenuEntry {
@@ -10,16 +10,16 @@ function entryFor(cmd: FileCommand): ContextMenuEntry {
 
 export function buildTabMenu(
   targetPath: string,
-  openFiles: OpenFile[],
+  paneTabs: readonly Tab[],
   projectPath: string,
   onCloseFiles: (paths: string[]) => void,
 ): ContextMenuEntry[] {
   const [closeCmd, ...fileOps] = fileTargetCommands(targetPath, projectPath, onCloseFiles);
 
-  const targetIndex = openFiles.findIndex((f) => f.path === targetPath);
-  const others = openFiles.filter((f) => f.path !== targetPath).map((f) => f.path);
-  const toRight = targetIndex >= 0 ? openFiles.slice(targetIndex + 1).map((f) => f.path) : [];
-  const all = openFiles.map((f) => f.path);
+  const targetIndex = paneTabs.findIndex((f) => f.path === targetPath);
+  const others = paneTabs.filter((f) => f.path !== targetPath).map((f) => f.path);
+  const toRight = targetIndex >= 0 ? paneTabs.slice(targetIndex + 1).map((f) => f.path) : [];
+  const all = paneTabs.map((f) => f.path);
 
   return [
     entryFor(closeCmd!),

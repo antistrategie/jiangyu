@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PaletteAction } from "../../lib/actions.tsx";
+import { PALETTE_SCOPE, type PaletteAction } from "../../lib/actions.tsx";
 import {
   FILES_SCOPE,
   MAX_RESULTS,
@@ -100,11 +100,31 @@ describe("groupByScope", () => {
   it("pins the files scope to the bottom regardless of insertion order", () => {
     const actions: readonly PaletteAction[] = [
       action({ id: "f1", label: "a.ts", scope: FILES_SCOPE }),
-      action({ id: "1", label: "cmd", scope: "EDIT · 编辑" }),
+      action({ id: "1", label: "cmd", scope: PALETTE_SCOPE.Editor }),
       action({ id: "f2", label: "b.ts", scope: FILES_SCOPE }),
-      action({ id: "2", label: "other", scope: "FILE · 文件" }),
+      action({ id: "2", label: "other", scope: PALETTE_SCOPE.File }),
     ];
     const groups = groupByScope(actions);
-    expect(groups.map(([scope]) => scope)).toEqual(["EDIT · 编辑", "FILE · 文件", FILES_SCOPE]);
+    expect(groups.map(([scope]) => scope)).toEqual([
+      PALETTE_SCOPE.File,
+      PALETTE_SCOPE.Editor,
+      FILES_SCOPE,
+    ]);
+  });
+
+  it("orders known scopes Project → View → File → Editor regardless of insertion order", () => {
+    const actions: readonly PaletteAction[] = [
+      action({ id: "1", label: "ed", scope: PALETTE_SCOPE.Editor }),
+      action({ id: "2", label: "f", scope: PALETTE_SCOPE.File }),
+      action({ id: "3", label: "v", scope: PALETTE_SCOPE.View }),
+      action({ id: "4", label: "p", scope: PALETTE_SCOPE.Project }),
+    ];
+    const groups = groupByScope(actions);
+    expect(groups.map(([scope]) => scope)).toEqual([
+      PALETTE_SCOPE.Project,
+      PALETTE_SCOPE.View,
+      PALETTE_SCOPE.File,
+      PALETTE_SCOPE.Editor,
+    ]);
   });
 });

@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { buildTabMenu } from "./tabMenu.ts";
 import type { ContextMenuEntry, ContextMenuItem } from "../ContextMenu/ContextMenu";
-import type { OpenFile } from "../../App";
+import type { Tab } from "../../lib/layout.ts";
 
-const files: OpenFile[] = [
+const files: Tab[] = [
   { path: "/p/a.txt", name: "a.txt" },
   { path: "/p/b.txt", name: "b.txt" },
   { path: "/p/c.txt", name: "c.txt" },
@@ -68,7 +68,7 @@ describe("buildTabMenu", () => {
   });
 
   it("disables Close Others when the target is the only tab", () => {
-    const only: OpenFile[] = [{ path: "/p/a.txt", name: "a.txt" }];
+    const only: Tab[] = [{ path: "/p/a.txt", name: "a.txt" }];
     const menu = buildTabMenu("/p/a.txt", only, "/p", () => {});
     expect(find(menu, "Close Others").disabled).toBe(true);
   });

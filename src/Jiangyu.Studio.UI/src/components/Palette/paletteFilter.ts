@@ -35,10 +35,20 @@ export function filterActions(
   return fuse.search(query, { limit: MAX_RESULTS }).map((r) => r.item);
 }
 
+// Known scopes are ordered explicitly so the palette layout doesn't depend on
+// React effect timing (parent vs. child registration order). Unknown scopes
+// keep their first-seen order between the known head and the FILES_SCOPE tail.
+const SCOPE_ORDER: readonly string[] = [
+  PALETTE_SCOPE.Project,
+  PALETTE_SCOPE.View,
+  PALETTE_SCOPE.File,
+  PALETTE_SCOPE.Editor,
+];
+
 /**
- * Group actions by scope, preserving the order scopes first appear — except
- * FILES_SCOPE, which is always pinned to the bottom so file results don't
- * break up the more action-like groups above them.
+ * Group actions by scope. Known scopes follow `SCOPE_ORDER`; unknown scopes
+ * trail in first-seen order; FILES_SCOPE is always pinned to the bottom so
+ * file results don't break up the action groups above them.
  */
 export function groupByScope(
   actions: readonly PaletteAction[],
@@ -53,10 +63,12 @@ export function groupByScope(
     bucket.push(a);
   }
   const entries = [...map.entries()];
-  const filesIdx = entries.findIndex(([scope]) => scope === FILES_SCOPE);
-  if (filesIdx >= 0 && filesIdx !== entries.length - 1) {
-    const [filesEntry] = entries.splice(filesIdx, 1);
-    entries.push(filesEntry!);
-  }
+  entries.sort(([a], [b]) => scopeRank(a) - scopeRank(b));
   return entries;
+}
+
+function scopeRank(scope: string): number {
+  if (scope === FILES_SCOPE) return 1_000_000;
+  const idx = SCOPE_ORDER.indexOf(scope);
+  return idx >= 0 ? idx : 1000;
 }
