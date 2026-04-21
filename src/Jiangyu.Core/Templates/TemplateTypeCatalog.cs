@@ -332,6 +332,21 @@ public sealed class TemplateTypeCatalog : IDisposable
 
     private static bool IsLikelyOdinOnly(MemberInfo member)
     {
+        if (HasOdinSerializeAttribute(member))
+            return true;
+
+        Type? memberType = member switch
+        {
+            PropertyInfo p => p.PropertyType,
+            FieldInfo f => f.FieldType,
+            _ => null,
+        };
+
+        return memberType != null && IsNotUnitySerialisable(memberType);
+    }
+
+    private static bool HasOdinSerializeAttribute(MemberInfo member)
+    {
         try
         {
             return CustomAttributeData
@@ -344,6 +359,65 @@ public sealed class TemplateTypeCatalog : IDisposable
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Detects member types that Unity's native serialiser cannot handle.
+    /// These are routed through Odin Serializer (Sirenix) via the
+    /// <c>serializationData</c> blob. The field exists at runtime (Odin
+    /// populates it on load) but is absent from Unity asset data.
+    /// </summary>
+    private static bool IsNotUnitySerialisable(Type type)
+    {
+        if (type.IsInterface)
+            return true;
+
+        if (type.IsAbstract && !DescendsFromUnityObject(type))
+            return true;
+
+        if (IsNonUnitySerialisableCollection(type))
+            return true;
+
+        var elementType = GetElementType(type);
+        if (elementType != null)
+            return IsNotUnitySerialisable(elementType);
+
+        return false;
+    }
+
+    private static bool DescendsFromUnityObject(Type type)
+    {
+        for (var current = type.BaseType; current != null; current = current.BaseType)
+        {
+            var fullName = current.FullName;
+            if (string.Equals(fullName, "UnityEngine.Object", StringComparison.Ordinal)
+                || string.Equals(fullName, "UnityEngine.ScriptableObject", StringComparison.Ordinal)
+                || string.Equals(fullName, "UnityEngine.MonoBehaviour", StringComparison.Ordinal)
+                || string.Equals(fullName, "UnityEngine.Component", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static readonly HashSet<string> NonUnitySerialisableGenericDefinitions =
+        new(StringComparer.Ordinal)
+        {
+            "System.Collections.Generic.HashSet`1",
+            "System.Collections.Generic.Dictionary`2",
+            "Il2CppSystem.Collections.Generic.HashSet`1",
+            "Il2CppSystem.Collections.Generic.Dictionary`2",
+        };
+
+    private static bool IsNonUnitySerialisableCollection(Type type)
+    {
+        if (!type.IsGenericType)
+            return false;
+
+        var definitionName = type.GetGenericTypeDefinition().FullName;
+        return NonUnitySerialisableGenericDefinitions.Contains(definitionName ?? string.Empty);
     }
 }
 

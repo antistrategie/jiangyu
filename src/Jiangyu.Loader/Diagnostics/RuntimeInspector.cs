@@ -461,10 +461,10 @@ internal static class RuntimeInspector
             return snapshot;
         }
 
-        // Odin / Sirenix serialised blob. Presence alone answers "does this
-        // template carry Odin-only fields that our reflection-based applier
-        // won't touch." Capture byte length when we can reach a managed byte
-        // array behind it without deep probing.
+        // Odin / Sirenix serialised blob. Presence indicates this template
+        // carries Odin-routed fields whose data lives in the blob at rest but
+        // is accessible via normal Il2Cpp properties at runtime (Odin populates
+        // the fields on load). Capture byte length when reachable.
         if (IsOdinSerializationData(memberName, memberType))
         {
             snapshot.Kind = "OdinBlob";

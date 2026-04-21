@@ -50,9 +50,24 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
         public float Cooldown { get; set; }
     }
 
+    public interface IFixtureAoEShape
+    {
+        int Radius { get; }
+    }
+
     public abstract class FixtureCondition
     {
         public string? Label { get; set; }
+    }
+
+    public abstract class FixtureProjectileData
+    {
+        public float Speed { get; set; }
+    }
+
+    public abstract class FixtureScriptableAbstract : UnityEngine.ScriptableObject
+    {
+        public string? AssetName { get; set; }
     }
 
     public class FixtureBaseEntity
@@ -72,6 +87,15 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
         [Sirenix.Serialization.OdinSerialize]
         public FixtureCondition? CustomCondition { get; set; }
         public int ReadOnlyCount { get; } = 0;
+
+        // Type-based Odin detection targets (no [OdinSerialize] attribute):
+        public IFixtureAoEShape? AoEShape { get; set; }
+        public FixtureProjectileData? Projectile { get; set; }
+        public HashSet<FixtureSkillTemplate>? SkillsRemoved { get; set; }
+        public IFixtureAoEShape[]? AoEShapes { get; set; }
+
+        // Should NOT be flagged — abstract but descends from ScriptableObject:
+        public FixtureScriptableAbstract? ScriptableRef { get; set; }
     }
 }
 

@@ -150,7 +150,7 @@ public static class TemplatesQueryCommand
         if (result.PatchScalarKind == CompiledTemplateValueKind.TemplateReference)
             Console.WriteLine($"  patch value: TemplateReference ({result.ReferenceTargetTypeName})");
         if (result.IsLikelyOdinOnly)
-            Console.WriteLine("  warning: likely Odin-only; Jiangyu's current template applier will not write this member.");
+            Console.WriteLine("  warning: likely Odin-routed; not in Unity asset data. Runtime writes may work; verify in-game.");
         Console.WriteLine();
 
         if (members.Count == 0)
@@ -233,7 +233,7 @@ public static class TemplatesQueryCommand
         if (result.EnumMemberNames.Count > 0)
             Console.WriteLine($"  enum:      {string.Join(", ", result.EnumMemberNames)}");
         if (result.IsLikelyOdinOnly)
-            Console.WriteLine("  warning:   likely Odin-only; Jiangyu's current template applier will not write this member.");
+            Console.WriteLine("  warning:   likely Odin-routed; not in Unity asset data. Runtime writes may work; verify in-game.");
 
         var example = BuildPatchExample(result);
         if (example != null)

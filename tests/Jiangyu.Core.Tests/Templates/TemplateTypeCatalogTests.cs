@@ -169,8 +169,24 @@ public class TemplateTypeCatalogTests
         var type = catalog.ResolveType("FixtureEntity", out _, out _)!;
         var members = TemplateTypeCatalog.GetMembers(type, includeReadOnly: true);
 
+        // Attribute-based detection (existing)
         Assert.Contains(members, member => member.Name == "CustomCondition" && member.IsLikelyOdinOnly);
         Assert.DoesNotContain(members, member => member.Name == "InitialSkill" && member.IsLikelyOdinOnly);
+
+        // Type-based detection: interface member
+        Assert.Contains(members, member => member.Name == "AoEShape" && member.IsLikelyOdinOnly);
+
+        // Type-based detection: abstract non-Unity class
+        Assert.Contains(members, member => member.Name == "Projectile" && member.IsLikelyOdinOnly);
+
+        // Type-based detection: non-Unity-serialisable collection (HashSet)
+        Assert.Contains(members, member => member.Name == "SkillsRemoved" && member.IsLikelyOdinOnly);
+
+        // Type-based detection: array of interface
+        Assert.Contains(members, member => member.Name == "AoEShapes" && member.IsLikelyOdinOnly);
+
+        // Abstract ScriptableObject subclass — Unity CAN serialise this as a reference
+        Assert.DoesNotContain(members, member => member.Name == "ScriptableRef" && member.IsLikelyOdinOnly);
     }
 
     [Fact]
