@@ -1,3 +1,14 @@
+/** True if `p` is absolute on any platform (POSIX `/...` or Windows `C:\...` / `C:/...`). */
+export function isAbsolute(p: string): boolean {
+  if (p.startsWith("/")) return true;
+  return /^[A-Za-z]:[\\/]/.test(p);
+}
+
+/** Normalise path separators to forward slashes (idempotent on POSIX paths). */
+export function normalise(p: string): string {
+  return p.replaceAll("\\", "/");
+}
+
 /** Return the parent directory of a POSIX path. */
 export function dirname(p: string): string {
   const idx = p.lastIndexOf("/");

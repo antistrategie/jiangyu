@@ -1,6 +1,6 @@
 using Jiangyu.Core.Assets;
 using Jiangyu.Core.Models;
-using Jiangyu.Core.Tests.Helpers;
+using Jiangyu.Core.Abstractions;
 using System.Text.Json;
 
 namespace Jiangyu.Core.Tests.Assets;
@@ -308,7 +308,7 @@ public class StructuralBaselineServiceTests
                 Path.Combine(cacheDir, "template-index-manifest.json"),
                 JsonSerializer.Serialize(manifest));
 
-            var service = new StructuralBaselineService(dataDir, cacheDir, new NullProgressSink(), new NullLogSink());
+            var service = new StructuralBaselineService(dataDir, cacheDir, NullProgressSink.Instance, NullLogSink.Instance);
             var baseline = new StructuralBaseline
             {
                 GeneratedAt = DateTimeOffset.UtcNow,
@@ -358,7 +358,7 @@ public class StructuralBaselineServiceTests
                 Path.Combine(cacheDir, "template-index-manifest.json"),
                 JsonSerializer.Serialize(manifest));
 
-            var service = new StructuralBaselineService(dataDir, cacheDir, new NullProgressSink(), new NullLogSink());
+            var service = new StructuralBaselineService(dataDir, cacheDir, NullProgressSink.Instance, NullLogSink.Instance);
             var baseline = new StructuralBaseline
             {
                 GeneratedAt = DateTimeOffset.UtcNow,

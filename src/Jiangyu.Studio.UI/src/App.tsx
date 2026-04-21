@@ -52,6 +52,7 @@ export function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [fileEntries, setFileEntries] = useState<readonly string[]>([]);
   const [recentProjects, setRecentProjects] = useState<readonly string[]>([]);
+  const [fullscreenPaneId, setFullscreenPaneId] = useState<string | null>(null);
 
   const handleOpenFile = useCallback((path: string) => {
     setLayout((prev) => openFileInLayout(prev, path));
@@ -130,9 +131,16 @@ export function App() {
     });
   }, []);
 
-  // Fullscreen pane is wired to be a no-op for now; the pane-chrome button
-  // just lives in the UI until we add a proper modal overlay.
-  const handleToggleFullscreen = useCallback((_paneId: string) => {}, []);
+  const handleToggleFullscreen = useCallback((paneId: string) => {
+    setFullscreenPaneId((prev) => (prev === paneId ? null : paneId));
+  }, []);
+
+  // Clear fullscreen when the target pane leaves the layout (closed / pruned).
+  useEffect(() => {
+    if (fullscreenPaneId !== null && !getAllPanes(layout).some((p) => p.id === fullscreenPaneId)) {
+      setFullscreenPaneId(null);
+    }
+  }, [fullscreenPaneId, layout]);
 
   const handleMarkDirty = useCallback((path: string, isDirty: boolean) => {
     setDirtyFiles((prev) => {
@@ -284,7 +292,10 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
-      if (mod && e.shiftKey && key === "p") {
+      if (e.key === "Escape" && fullscreenPaneId !== null) {
+        e.preventDefault();
+        setFullscreenPaneId(null);
+      } else if (mod && e.shiftKey && key === "p") {
         e.preventDefault();
         setPaletteOpen((o) => !o);
       } else if (mod && !e.shiftKey && !e.altKey && key === "k") {
@@ -327,6 +338,7 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [
+    fullscreenPaneId,
     handleCloseTabsInPane,
     handleClosePane,
     handleSplitRight,
@@ -466,6 +478,7 @@ export function App() {
             <EditorGrid
               projectPath={projectPath}
               layout={layout}
+              fullscreenPaneId={fullscreenPaneId}
               dirtyFiles={dirtyFiles}
               onSelectTab={handleSelectTab}
               onSetActivePane={handleSetActivePane}

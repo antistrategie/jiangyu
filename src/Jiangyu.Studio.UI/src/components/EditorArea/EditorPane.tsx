@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { Maximize2, SplitSquareHorizontal, SplitSquareVertical, X } from "lucide-react";
+import { Maximize2, Minimize2, SplitSquareHorizontal, SplitSquareVertical, X } from "lucide-react";
 import Editor, { type OnChange, type OnMount } from "@monaco-editor/react";
 import type { editor as monacoEditor } from "monaco-editor";
 import { jiangyuTheme } from "./jiangyuTheme.ts";
@@ -104,6 +104,7 @@ function buildEditorMenu(editor: monacoEditor.IStandaloneCodeEditor): ContextMen
 interface EditorPaneProps {
   pane: CodePane;
   isActive: boolean;
+  isFullscreen: boolean;
   flex: number;
   registerEl: (paneId: string, el: HTMLElement | null) => void;
   dragActive: boolean;
@@ -132,6 +133,7 @@ interface EditorPaneProps {
 export function EditorPane({
   pane,
   isActive,
+  isFullscreen,
   flex,
   registerEl,
   dragActive,
@@ -236,7 +238,7 @@ export function EditorPane({
   return (
     <div
       ref={(el) => registerEl(pane.id, el)}
-      className={`${styles.editor} ${isActive ? styles.editorActive : ""}`}
+      className={`${styles.editor} ${isActive ? styles.editorActive : ""} ${isFullscreen ? styles.editorFullscreen : ""}`}
       style={{ flex }}
       onMouseDown={() => {
         if (!isActive) onSetActive(pane.id);
@@ -312,9 +314,9 @@ export function EditorPane({
             type="button"
             className={styles.tabbarButton}
             onClick={() => onToggleFullscreen(pane.id)}
-            title="Fullscreen pane"
+            title={isFullscreen ? "Exit fullscreen (Esc)" : "Fullscreen pane"}
           >
-            <Maximize2 size={12} />
+            {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
           </button>
           <button
             type="button"

@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Jiangyu.Core.Assets;
 using Jiangyu.Core.Models;
-using Jiangyu.Core.Tests.Helpers;
+using Jiangyu.Core.Abstractions;
 
 namespace Jiangyu.Core.Tests.Assets;
 
@@ -15,7 +15,7 @@ public class IndexStatusTests
 
         try
         {
-            var service = new AssetPipelineService("/tmp/fake-game-data", tempDir, new NullProgressSink(), new NullLogSink());
+            var service = new AssetPipelineService("/tmp/fake-game-data", tempDir, NullProgressSink.Instance, NullLogSink.Instance);
 
             CachedIndexStatus status = service.GetIndexStatus();
 
@@ -56,7 +56,7 @@ public class IndexStatusTests
                 Path.Combine(cacheDir, "index-manifest.json"),
                 JsonSerializer.Serialize(manifest));
 
-            var service = new AssetPipelineService(dataDir, cacheDir, new NullProgressSink(), new NullLogSink());
+            var service = new AssetPipelineService(dataDir, cacheDir, NullProgressSink.Instance, NullLogSink.Instance);
 
             CachedIndexStatus status = service.GetIndexStatus();
 
@@ -96,7 +96,7 @@ public class IndexStatusTests
                 Path.Combine(cacheDir, "index-manifest.json"),
                 JsonSerializer.Serialize(manifest));
 
-            var service = new AssetPipelineService(dataDir, cacheDir, new NullProgressSink(), new NullLogSink());
+            var service = new AssetPipelineService(dataDir, cacheDir, NullProgressSink.Instance, NullLogSink.Instance);
 
             IndexManifest? loaded = service.LoadManifest();
 
@@ -150,7 +150,7 @@ public class IndexStatusTests
                 Path.Combine(cacheDir, "template-index-manifest.json"),
                 JsonSerializer.Serialize(manifest));
 
-            var service = new TemplateIndexService(dataDir, cacheDir, new NullProgressSink(), new NullLogSink());
+            var service = new TemplateIndexService(dataDir, cacheDir, NullProgressSink.Instance, NullLogSink.Instance);
 
             CachedIndexStatus status = service.GetIndexStatus();
 

@@ -1,6 +1,6 @@
 using Jiangyu.Core.Compile;
 using Jiangyu.Core.Unity;
-using Jiangyu.Core.Tests.Helpers;
+using Jiangyu.Core.Abstractions;
 using AssetRipper.Primitives;
 using SharpGLTF.Geometry;
 using SharpGLTF.Geometry.VertexTypes;
@@ -357,7 +357,7 @@ public class UnityVersionValidationServiceTests
     public async Task ValidateAsync_FailsWhenEditorDoesNotMatchGame()
     {
         var service = new UnityVersionValidationService(
-            new NullLogSink(),
+            NullLogSink.Instance,
             _ => ParseVersion("6000.0.63f1"),
             _ => Task.FromResult<UnityVersion?>(ParseVersion("6000.0.55f1")));
 
@@ -373,7 +373,7 @@ public class UnityVersionValidationServiceTests
     public async Task ValidateAsync_SucceedsWhenEditorMatchesGame()
     {
         var service = new UnityVersionValidationService(
-            new NullLogSink(),
+            NullLogSink.Instance,
             _ => ParseVersion("6000.0.63f1"),
             _ => Task.FromResult<UnityVersion?>(ParseVersion("6000.0.63f1")));
 

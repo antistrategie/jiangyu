@@ -3,7 +3,7 @@ import { PALETTE_SCOPE, type PaletteAction } from "../../lib/actions.tsx";
 import {
   FILES_SCOPE,
   MAX_RESULTS,
-  buildFuse,
+  buildSearchIndex,
   filterActions,
   groupByScope,
 } from "./paletteFilter.ts";
@@ -34,28 +34,28 @@ describe("filterActions", () => {
   const all = [...commands, ...files];
 
   it("returns commands only when query is empty", () => {
-    const result = filterActions("", all, buildFuse(all));
+    const result = filterActions("", all, buildSearchIndex(all));
     expect(result).toHaveLength(commands.length);
     expect(result.every((a) => a.scope !== FILES_SCOPE)).toBe(true);
   });
 
   it("matches label substrings", () => {
-    const result = filterActions("save", all, buildFuse(all));
+    const result = filterActions("save", all, buildSearchIndex(all));
     expect(result.some((a) => a.id === "a.save")).toBe(true);
   });
 
   it("matches CJK labels via the cn key", () => {
-    const result = filterActions("关闭", all, buildFuse(all));
+    const result = filterActions("关闭", all, buildSearchIndex(all));
     expect(result.some((a) => a.id === "a.close")).toBe(true);
   });
 
   it("matches files by path", () => {
-    const result = filterActions("main", all, buildFuse(all));
+    const result = filterActions("main", all, buildSearchIndex(all));
     expect(result.some((a) => a.id === "file:src/main.tsx")).toBe(true);
   });
 
   it("tolerates typos via fuzzy matching", () => {
-    const result = filterActions("formt", all, buildFuse(all));
+    const result = filterActions("formt", all, buildSearchIndex(all));
     expect(result.some((a) => a.id === "a.format")).toBe(true);
   });
 
@@ -64,7 +64,7 @@ describe("filterActions", () => {
     for (let i = 0; i < MAX_RESULTS + 20; i++) {
       many.push(action({ id: `cmd.${i}`, label: `command ${i}`, scope: "TEST" }));
     }
-    const result = filterActions("command", many, buildFuse(many));
+    const result = filterActions("command", many, buildSearchIndex(many));
     expect(result.length).toBeLessThanOrEqual(MAX_RESULTS);
   });
 
@@ -74,7 +74,7 @@ describe("filterActions", () => {
       action({ id: "file:a", label: "a", scope: FILES_SCOPE }),
       action({ id: "file:b", label: "b", scope: FILES_SCOPE }),
     ];
-    const result = filterActions("", sparse, buildFuse(sparse));
+    const result = filterActions("", sparse, buildSearchIndex(sparse));
     expect(result).toHaveLength(1);
     expect(result[0]!.id).toBe("only.cmd");
   });

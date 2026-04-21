@@ -1,5 +1,52 @@
 import { describe, it, expect } from "vitest";
-import { dirname, basename, join, relative, isDescendant, remapPath } from "./path.ts";
+import {
+  dirname,
+  basename,
+  join,
+  relative,
+  isDescendant,
+  remapPath,
+  isAbsolute,
+  normalise,
+} from "./path.ts";
+
+describe("isAbsolute", () => {
+  it("returns true for POSIX absolute paths", () => {
+    expect(isAbsolute("/home/user/project")).toBe(true);
+  });
+
+  it("returns true for Windows drive paths with backslash", () => {
+    expect(isAbsolute("C:\\Users\\me")).toBe(true);
+  });
+
+  it("returns true for Windows drive paths with forward slash", () => {
+    expect(isAbsolute("D:/Games/MENACE")).toBe(true);
+  });
+
+  it("returns false for relative paths", () => {
+    expect(isAbsolute("src/lib/path.ts")).toBe(false);
+    expect(isAbsolute("./relative")).toBe(false);
+    expect(isAbsolute("")).toBe(false);
+  });
+});
+
+describe("normalise", () => {
+  it("converts backslashes to forward slashes", () => {
+    expect(normalise("C:\\Users\\me\\project")).toBe("C:/Users/me/project");
+  });
+
+  it("leaves POSIX paths unchanged", () => {
+    expect(normalise("/home/user/project")).toBe("/home/user/project");
+  });
+
+  it("handles mixed separators", () => {
+    expect(normalise("C:\\foo/bar\\baz")).toBe("C:/foo/bar/baz");
+  });
+
+  it("handles empty string", () => {
+    expect(normalise("")).toBe("");
+  });
+});
 
 describe("dirname", () => {
   it("returns parent of a nested path", () => {

@@ -1,7 +1,7 @@
 using Jiangyu.Core.Assets;
 using Jiangyu.Core.Models;
 using Jiangyu.Core.Templates;
-using Jiangyu.Core.Tests.Helpers;
+using Jiangyu.Core.Abstractions;
 using Jiangyu.Shared.Templates;
 
 namespace Jiangyu.Core.Tests.Templates;
@@ -36,7 +36,7 @@ public sealed class TemplateInspectionPreviewTests : IDisposable
             }
             """);
 
-        TemplateModPreviewPlan plan = TemplateModPreviewPlan.Load(_tempRoot, new NullLogSink());
+        TemplateModPreviewPlan plan = TemplateModPreviewPlan.Load(_tempRoot, NullLogSink.Instance);
 
         Assert.Equal(
             new TemplatePreviewKey("UnitLeaderTemplate", "base.alpha"),

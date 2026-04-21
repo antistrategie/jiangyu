@@ -31,6 +31,7 @@ type ConflictKind = FileChangeKind;
 interface EditorGridProps {
   projectPath: string;
   layout: Layout;
+  fullscreenPaneId: string | null;
   dirtyFiles: Set<string>;
   onSelectTab: (paneId: string, path: string) => void;
   onSetActivePane: (paneId: string) => void;
@@ -56,6 +57,7 @@ interface EditorGridProps {
 export function EditorGrid({
   projectPath,
   layout,
+  fullscreenPaneId,
   dirtyFiles,
   onSelectTab,
   onSetActivePane,
@@ -239,6 +241,17 @@ export function EditorGrid({
     },
     [setContent],
   );
+
+  // Monaco's automaticLayout ResizeObserver misses some sibling-column removals
+  // (probably because flex redistribution happens in the same frame as the
+  // DOM mutation). Force each live editor to re-measure after any layout
+  // topology / weight change so the editor fills the grown pane.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      for (const editor of editors.values()) editor.layout();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [layout, editors, fullscreenPaneId]);
 
   // Lazy-load any path that is an active tab somewhere and isn't already cached.
   const activePaths = useMemo(() => {
@@ -441,11 +454,13 @@ export function EditorGrid({
           >
             {col.panes.map((pane, pi) => {
               const isActive = pane.id === layout.activePaneId;
+              const isFullscreen = fullscreenPaneId === pane.id;
               const paneNode =
                 pane.kind === "code" ? (
                   <EditorPane
                     pane={pane}
                     isActive={isActive}
+                    isFullscreen={isFullscreen}
                     flex={paneWeight(pane)}
                     registerEl={registerPaneEl}
                     dragActive={dragActive}
@@ -473,7 +488,9 @@ export function EditorGrid({
                 ) : (
                   <BrowserPane
                     pane={pane}
+                    projectPath={projectPath}
                     isActive={isActive}
+                    isFullscreen={isFullscreen}
                     flex={paneWeight(pane)}
                     registerEl={registerPaneEl}
                     dragActive={dragActive}

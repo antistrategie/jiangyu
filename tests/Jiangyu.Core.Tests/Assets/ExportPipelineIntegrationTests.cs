@@ -2,7 +2,7 @@ using System.Numerics;
 using System.Text.Json.Nodes;
 using Jiangyu.Core.Assets;
 using Jiangyu.Core.Glb;
-using Jiangyu.Core.Tests.Helpers;
+using Jiangyu.Core.Abstractions;
 using SharpGLTF.Geometry;
 using SharpGLTF.Geometry.VertexTypes;
 using SharpGLTF.Materials;
@@ -41,7 +41,7 @@ public sealed class ExportPipelineIntegrationTests : IDisposable
             ],
         };
 
-        var cleanScene = ModelCleanupService.BuildCleanScene(rawGlbPath, new NullLogSink(), materialTextures);
+        var cleanScene = ModelCleanupService.BuildCleanScene(rawGlbPath, NullLogSink.Instance, materialTextures);
         var gltfPath = Path.Combine(_tempDir, "model.gltf");
         var nonStandardTextures = new List<AssetPipelineService.DiscoveredTexture>
         {

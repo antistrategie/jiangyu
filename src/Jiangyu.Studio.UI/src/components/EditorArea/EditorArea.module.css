@@ -96,6 +96,14 @@
   position: relative;
 }
 
+/* Overlay the fullscreened pane on top of everything (including Topbar/Sidebar)
+   without unmounting the underlying grid, so Monaco keeps its editor state. */
+.editorFullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+}
+
 /* Inactive panes dim the tabbar so the active pane stands out by contrast. */
 .editor:not(.editorActive) .tabbar {
   background: var(--bg-sunken);

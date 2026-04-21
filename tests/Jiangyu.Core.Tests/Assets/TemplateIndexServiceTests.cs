@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Jiangyu.Core.Assets;
 using Jiangyu.Core.Models;
-using Jiangyu.Core.Tests.Helpers;
+using Jiangyu.Core.Abstractions;
 
 namespace Jiangyu.Core.Tests.Assets;
 
@@ -28,7 +28,7 @@ public sealed class TemplateIndexServiceTests : IDisposable
 
         File.WriteAllBytes(Path.Combine(_gameRoot, "GameAssembly.so"), [1, 2, 3, 4]);
 
-        _service = new TemplateIndexService(_gameDataPath, _cacheDir, new NullProgressSink(), new NullLogSink());
+        _service = new TemplateIndexService(_gameDataPath, _cacheDir, NullProgressSink.Instance, NullLogSink.Instance);
     }
 
     public void Dispose()

@@ -1,22 +1,33 @@
-import Fuse, { type IFuseOptions } from "fuse.js";
+import uFuzzy from "@leeoniya/ufuzzy";
 import { PALETTE_SCOPE, type PaletteAction } from "../../lib/actions.tsx";
 
 export const FILES_SCOPE = PALETTE_SCOPE.GoToFile;
 export const MAX_RESULTS = 60;
 
-export const fuseOptions: IFuseOptions<PaletteAction> = {
-  keys: [
-    { name: "label", weight: 2 },
-    { name: "cn", weight: 1.2 },
-    { name: "desc", weight: 0.8 },
-    { name: "scope", weight: 0.3 },
-  ],
-  threshold: 0.4,
-  ignoreLocation: true,
-};
+export interface PaletteSearchIndex {
+  readonly actions: readonly PaletteAction[];
+  readonly haystack: string[];
+  readonly uf: uFuzzy;
+}
 
-export function buildFuse(actions: readonly PaletteAction[]): Fuse<PaletteAction> {
-  return new Fuse(actions, fuseOptions);
+// Each action's searchable fields are concatenated into one haystack string,
+// with `label` first so position-sensitive scoring ranks label matches highest.
+// Empty strings keep the join shape stable when `cn`/`desc` are absent.
+function toSearchString(a: PaletteAction): string {
+  return `${a.label} ${a.cn ?? ""} ${a.desc ?? ""} ${a.scope}`;
+}
+
+export function buildSearchIndex(actions: readonly PaletteAction[]): PaletteSearchIndex {
+  return {
+    actions,
+    haystack: actions.map(toSearchString),
+    // interSplit \s+ keeps CJK clusters intact as a single term (default regex
+    // [^A-Za-z\d']+ would split on every CJK char). intraMode 1 (SingleError)
+    // tolerates a single typo inside a term — matches how palette users search
+    // ("formt" → "Format Document"), where MultiInsert would require all chars
+    // in order.
+    uf: new uFuzzy({ interSplit: "\\s+", intraMode: 1 }),
+  };
 }
 
 /**
@@ -27,12 +38,27 @@ export function buildFuse(actions: readonly PaletteAction[]): Fuse<PaletteAction
 export function filterActions(
   query: string,
   actions: readonly PaletteAction[],
-  fuse: Fuse<PaletteAction>,
+  index: PaletteSearchIndex,
 ): readonly PaletteAction[] {
   if (query.length === 0) {
     return actions.filter((a) => a.scope !== FILES_SCOPE);
   }
-  return fuse.search(query, { limit: MAX_RESULTS }).map((r) => r.item);
+  const [idxs, info, order] = index.uf.search(index.haystack, query);
+  if (idxs === null) return [];
+  const out: PaletteAction[] = [];
+  if (info !== null && order !== null) {
+    for (const oi of order) {
+      const i = info.idx[oi]!;
+      out.push(index.actions[i]!);
+      if (out.length >= MAX_RESULTS) break;
+    }
+  } else {
+    for (const i of idxs) {
+      out.push(index.actions[i]!);
+      if (out.length >= MAX_RESULTS) break;
+    }
+  }
+  return out;
 }
 
 // Known scopes are ordered explicitly so the palette layout doesn't depend on

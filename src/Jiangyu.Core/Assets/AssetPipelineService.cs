@@ -1313,7 +1313,12 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         return $"{collectionSegment}/{classSegment}/{nameSegment}--{pathId}";
     }
 
-    private static string SanitizeAssetPathSegment(string value)
+    /// <summary>
+    /// Replaces every character outside <c>[A-Za-z0-9._-]</c> with <c>_</c>. Used for
+    /// building canonical asset paths and any filename derived from an asset name.
+    /// Empty input collapses to <c>"_"</c> so callers always get a usable segment.
+    /// </summary>
+    public static string SanitizeAssetPathSegment(string value)
     {
         Span<char> buffer = stackalloc char[value.Length];
         int index = 0;

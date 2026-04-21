@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { PaletteAction } from "../../lib/actions.tsx";
-import { buildFuse, filterActions, groupByScope } from "./paletteFilter.ts";
+import { buildSearchIndex, filterActions, groupByScope } from "./paletteFilter.ts";
 import styles from "./Palette.module.css";
 
 interface PaletteProps {
@@ -26,10 +26,10 @@ function PaletteDialog({ onClose, actions }: PaletteDialogProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const resultsRef = useRef<HTMLDivElement | null>(null);
 
-  // Fuse is only built while the dialog is mounted; with 10k+ entries this
-  // index is expensive and pointless to maintain when the palette is closed.
-  const fuse = useMemo(() => buildFuse(actions), [actions]);
-  const filtered = useMemo(() => filterActions(query, actions, fuse), [query, actions, fuse]);
+  // Search index is only built while the dialog is mounted; with 10k+ entries
+  // the haystack prep is pointless to maintain when the palette is closed.
+  const index = useMemo(() => buildSearchIndex(actions), [actions]);
+  const filtered = useMemo(() => filterActions(query, actions, index), [query, actions, index]);
   const groups = useMemo(() => groupByScope(filtered), [filtered]);
   const indexOf = useMemo(() => {
     const m = new Map<PaletteAction, number>();

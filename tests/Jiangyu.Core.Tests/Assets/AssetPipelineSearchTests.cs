@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Jiangyu.Core.Assets;
 using Jiangyu.Core.Models;
-using Jiangyu.Core.Tests.Helpers;
+using Jiangyu.Core.Abstractions;
 
 namespace Jiangyu.Core.Tests.Assets;
 
@@ -33,7 +33,7 @@ public class AssetPipelineSearchTests : IDisposable
             Path.Combine(_cacheDir, "asset-index.json"),
             JsonSerializer.Serialize(index, new JsonSerializerOptions { WriteIndented = true }));
 
-        _service = new AssetPipelineService("/fake/game/path", _cacheDir, new NullProgressSink(), new NullLogSink());
+        _service = new AssetPipelineService("/fake/game/path", _cacheDir, NullProgressSink.Instance, NullLogSink.Instance);
     }
 
     public void Dispose()
@@ -58,7 +58,7 @@ public class AssetPipelineSearchTests : IDisposable
         Directory.CreateDirectory(emptyDir);
         try
         {
-            var service = new AssetPipelineService("/fake", emptyDir, new NullProgressSink(), new NullLogSink());
+            var service = new AssetPipelineService("/fake", emptyDir, NullProgressSink.Instance, NullLogSink.Instance);
             Assert.Null(service.LoadIndex());
         }
         finally

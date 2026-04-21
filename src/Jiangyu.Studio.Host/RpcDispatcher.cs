@@ -33,6 +33,13 @@ public static partial class RpcDispatcher
         Register("setGamePath", HandleSetGamePath);
         Register("setUnityEditorPath", HandleSetUnityEditorPath);
         Register("getRecentProjects", HandleGetRecentProjects);
+        Register("assetsIndexStatus", HandleAssetsIndexStatus);
+        Register("assetsIndex", HandleAssetsIndex);
+        Register("assetsSearch", HandleAssetsSearch);
+        Register("assetsExport", HandleAssetsExport);
+        Register("pickDirectory", HandlePickDirectory);
+        Register("getProjectConfig", HandleGetProjectConfig);
+        Register("setProjectAssetExportPath", HandleSetProjectAssetExportPath);
     }
 
     public static void Register(string method, Func<IInfiniFrameWindow, JsonElement?, JsonElement> handler)
@@ -45,6 +52,27 @@ public static partial class RpcDispatcher
         if (parameters is not { } p || !p.TryGetProperty(name, out var prop) || prop.GetString() is not { } value)
             throw new ArgumentException($"Missing '{name}' parameter");
         return value;
+    }
+
+    private static long RequireLong(JsonElement? parameters, string name)
+    {
+        if (parameters is not { } p || !p.TryGetProperty(name, out var prop) || !prop.TryGetInt64(out var value))
+            throw new ArgumentException($"Missing '{name}' parameter");
+        return value;
+    }
+
+    private static string? TryGetString(JsonElement? parameters, string name)
+    {
+        if (parameters is not { } p || !p.TryGetProperty(name, out var prop))
+            return null;
+        return prop.ValueKind == JsonValueKind.String ? prop.GetString() : null;
+    }
+
+    private static int? TryGetInt(JsonElement? parameters, string name)
+    {
+        if (parameters is not { } p || !p.TryGetProperty(name, out var prop))
+            return null;
+        return prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out var v) ? v : null;
     }
 
     // Strict: returns false when the two paths are equal. Callers use this to reject

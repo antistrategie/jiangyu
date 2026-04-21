@@ -1,12 +1,15 @@
-import { Maximize2, SplitSquareHorizontal, SplitSquareVertical, X } from "lucide-react";
+import { Maximize2, Minimize2, SplitSquareHorizontal, SplitSquareVertical, X } from "lucide-react";
 import { BROWSER_KIND_META, type BrowserPane as BrowserPaneModel } from "../../lib/layout.ts";
+import { AssetBrowser } from "../AssetBrowser/AssetBrowser.tsx";
 import { DropOverlay, type DropZone } from "./DropOverlay.tsx";
 import { PANE_DRAG_MIME, TAB_DRAG_MIME, type PaneDragPayload } from "./tabDrag.ts";
 import styles from "./EditorArea.module.css";
 
 interface BrowserPaneProps {
   pane: BrowserPaneModel;
+  projectPath: string;
   isActive: boolean;
+  isFullscreen: boolean;
   flex: number;
   registerEl: (paneId: string, el: HTMLElement | null) => void;
   dragActive: boolean;
@@ -20,7 +23,9 @@ interface BrowserPaneProps {
 
 export function BrowserPane({
   pane,
+  projectPath,
   isActive,
+  isFullscreen,
   flex,
   registerEl,
   dragActive,
@@ -43,7 +48,7 @@ export function BrowserPane({
   return (
     <div
       ref={(el) => registerEl(pane.id, el)}
-      className={`${styles.editor} ${isActive ? styles.editorActive : ""}`}
+      className={`${styles.editor} ${isActive ? styles.editorActive : ""} ${isFullscreen ? styles.editorFullscreen : ""}`}
       style={{ flex }}
       onMouseDown={() => {
         if (!isActive) onSetActive(pane.id);
@@ -87,9 +92,9 @@ export function BrowserPane({
             type="button"
             className={styles.tabbarButton}
             onClick={() => onToggleFullscreen(pane.id)}
-            title="Fullscreen pane"
+            title={isFullscreen ? "Exit fullscreen (Esc)" : "Fullscreen pane"}
           >
-            <Maximize2 size={12} />
+            {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
           </button>
           <button
             type="button"
@@ -102,7 +107,11 @@ export function BrowserPane({
         </div>
       </div>
       <div className={styles.content}>
-        <p className={styles.empty}>{meta.label} — coming soon</p>
+        {pane.kind === "assetBrowser" ? (
+          <AssetBrowser projectPath={projectPath} />
+        ) : (
+          <p className={styles.empty}>{meta.label} — coming soon</p>
+        )}
         <DropOverlay
           active={dragActive}
           acceptedMimes={[TAB_DRAG_MIME, PANE_DRAG_MIME]}
