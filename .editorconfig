@@ -1,0 +1,115 @@
+# Top-level EditorConfig
+root = true
+
+[*]
+indent_style = space
+indent_size = 4
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+[*.{csproj,props,targets,slnx,xml}]
+indent_size = 2
+
+[*.{json,yaml,yml,toml}]
+indent_size = 2
+
+[*.cs]
+# Naming simplification
+dotnet_diagnostic.IDE0001.severity = suggestion
+# Simplify member access
+dotnet_diagnostic.IDE0002.severity = suggestion
+# Remove unnecessary cast
+dotnet_diagnostic.IDE0004.severity = suggestion
+# Remove unnecessary using
+dotnet_diagnostic.IDE0005.severity = suggestion
+# Use var when type is apparent
+dotnet_diagnostic.IDE0007.severity = silent
+# Use explicit type instead of var
+dotnet_diagnostic.IDE0008.severity = silent
+# Populate switch — too noisy for large enums with intentional default cases
+dotnet_diagnostic.IDE0010.severity = silent
+# CA1859: prefer concrete types for perf — too aggressive for API boundaries
+dotnet_diagnostic.CA1859.severity = silent
+# Use object initialiser
+dotnet_diagnostic.IDE0017.severity = suggestion
+# Use collection initialiser
+dotnet_diagnostic.IDE0028.severity = suggestion
+# Use null propagation
+dotnet_diagnostic.IDE0031.severity = suggestion
+# Use auto-property
+dotnet_diagnostic.IDE0032.severity = suggestion
+# Simplify default expression
+dotnet_diagnostic.IDE0034.severity = suggestion
+# Use inferred member name
+dotnet_diagnostic.IDE0037.severity = suggestion
+# Use pattern matching
+dotnet_diagnostic.IDE0038.severity = suggestion
+# Use is null check
+dotnet_diagnostic.IDE0041.severity = suggestion
+# Use conditional expression for assignment
+dotnet_diagnostic.IDE0045.severity = silent
+# Use conditional expression for return
+dotnet_diagnostic.IDE0046.severity = silent
+# Convert anonymous type to tuple
+dotnet_diagnostic.IDE0050.severity = suggestion
+# Remove unused private member
+dotnet_diagnostic.IDE0051.severity = warning
+# Remove unread private member
+dotnet_diagnostic.IDE0052.severity = warning
+# Use compound assignment
+dotnet_diagnostic.IDE0054.severity = suggestion
+# Use index operator
+dotnet_diagnostic.IDE0056.severity = suggestion
+# Use range operator
+dotnet_diagnostic.IDE0057.severity = suggestion
+# Use simple using statement
+dotnet_diagnostic.IDE0063.severity = suggestion
+# Make struct fields writable
+dotnet_diagnostic.IDE0064.severity = suggestion
+# Use switch expression
+dotnet_diagnostic.IDE0066.severity = silent
+# Use System.HashCode
+dotnet_diagnostic.IDE0070.severity = suggestion
+# Simplify interpolation
+dotnet_diagnostic.IDE0071.severity = suggestion
+# Use pattern matching (not operator)
+dotnet_diagnostic.IDE0083.severity = suggestion
+# Simplify new expression
+dotnet_diagnostic.IDE0090.severity = suggestion
+# Remove unnecessary equality operator
+dotnet_diagnostic.IDE0100.severity = suggestion
+# Namespace does not match folder structure
+dotnet_diagnostic.IDE0130.severity = suggestion
+# Prefer null check over type check
+dotnet_diagnostic.IDE0150.severity = suggestion
+# Use collection expression
+dotnet_diagnostic.IDE0300.severity = suggestion
+# Use collection expression for builder
+dotnet_diagnostic.IDE0301.severity = suggestion
+# Use collection expression for fluent
+dotnet_diagnostic.IDE0302.severity = suggestion
+# Use collection expression for Create
+dotnet_diagnostic.IDE0303.severity = suggestion
+# Use collection expression for empty
+dotnet_diagnostic.IDE0304.severity = suggestion
+# Use collection expression for stackalloc
+dotnet_diagnostic.IDE0305.severity = suggestion
+
+# Style preferences
+csharp_style_namespace_declarations = file_scoped:suggestion
+csharp_using_directive_placement = outside_namespace:suggestion
+csharp_prefer_braces = true:silent
+csharp_style_prefer_primary_constructors = false:silent
+
+# Unused parameters: use _ prefix to suppress; keep default as suggestion
+dotnet_code_quality_unused_parameters = non_public:suggestion
+
+# Harmony patch methods have parameters injected by name — cannot rename or remove
+[src/Jiangyu.Loader/Replacements/*Patch.cs]
+dotnet_diagnostic.IDE0060.severity = silent
+
+# TemplatePatchApplier: mutation binders keep unused params for signature symmetry
+[src/Jiangyu.Loader/Templates/TemplatePatchApplier.cs]
+dotnet_diagnostic.IDE0060.severity = silent

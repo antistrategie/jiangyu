@@ -557,7 +557,7 @@ public static class GlbMeshBundleCompiler
     }
 
     private static CompiledMesh? ExtractMesh(
-        SharpGLTF.Schema2.Mesh mesh,
+        Mesh mesh,
         ModelRoot model,
         Node meshNode,
         CompanionSkinData? companionSkinData,
@@ -693,7 +693,7 @@ public static class GlbMeshBundleCompiler
                 // Blender exports COLOR_0 as VEC3 (RGB) when the source mesh has no alpha.
                 // SharpGLTF's AsVector4Array() rejects VEC3 accessors; read as VEC3 and
                 // default alpha to 1.0 so round-tripped colour channels survive compilation.
-                if (colorAccessor.Dimensions == SharpGLTF.Schema2.DimensionType.VEC4)
+                if (colorAccessor.Dimensions == DimensionType.VEC4)
                 {
                     foreach (var color in colorAccessor.AsVector4Array())
                     {
@@ -703,7 +703,7 @@ public static class GlbMeshBundleCompiler
                         allColors.Add(color.W);
                     }
                 }
-                else if (colorAccessor.Dimensions == SharpGLTF.Schema2.DimensionType.VEC3)
+                else if (colorAccessor.Dimensions == DimensionType.VEC3)
                 {
                     foreach (var color in colorAccessor.AsVector3Array())
                     {
@@ -1040,7 +1040,7 @@ public static class GlbMeshBundleCompiler
                Math.Abs(scale.Z - 1f) < epsilon;
     }
 
-    internal static bool IsLikelyCentimeterScale(SharpGLTF.Schema2.Mesh mesh)
+    internal static bool IsLikelyCentimeterScale(Mesh mesh)
     {
         var maxExtent = 0f;
         foreach (var primitive in mesh.Primitives)
@@ -1064,10 +1064,10 @@ public static class GlbMeshBundleCompiler
         return maxExtent > MeshOnlyWeightScaleExtentThreshold;
     }
 
-    private static bool NeedsMeshOnlyWeightScale(SharpGLTF.Schema2.Mesh mesh)
+    private static bool NeedsMeshOnlyWeightScale(Mesh mesh)
         => IsLikelyCentimeterScale(mesh);
 
-    private static float ComputeMaxHalfExtent(SharpGLTF.Schema2.Mesh mesh)
+    private static float ComputeMaxHalfExtent(Mesh mesh)
     {
         var min = new Vector3(float.PositiveInfinity);
         var max = new Vector3(float.NegativeInfinity);

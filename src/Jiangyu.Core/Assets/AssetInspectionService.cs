@@ -325,7 +325,7 @@ public sealed class AssetInspectionService
     {
         foreach (var path in Directory.EnumerateFiles(gameDataPath, "*", SearchOption.TopDirectoryOnly))
         {
-            var fileName = System.IO.Path.GetFileName(path);
+            var fileName = Path.GetFileName(path);
             if (fileName.Equals("globalgamemanagers.assets", StringComparison.OrdinalIgnoreCase) ||
                 fileName.Equals("resources.assets", StringComparison.OrdinalIgnoreCase) ||
                 fileName.StartsWith("sharedassets", StringComparison.OrdinalIgnoreCase) && fileName.EndsWith(".assets", StringComparison.OrdinalIgnoreCase) ||

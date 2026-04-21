@@ -257,7 +257,7 @@ internal static class ModelCleanupService
     /// embedded in the GLB material's extras by GlbLevelBuilder, not by material name.
     /// </summary>
     private static MaterialBuilder CreateMaterial(
-        SharpGLTF.Schema2.Material? sourceMaterial,
+        Material? sourceMaterial,
         IReadOnlyDictionary<string, List<(string channelKey, byte[] pngData)>>? materialTextures)
     {
         var name = sourceMaterial?.Name ?? "default";
@@ -299,7 +299,7 @@ internal static class ModelCleanupService
     /// Reads the stable source material identity ("collection:pathId") from a GLB material's extras.
     /// Returns null if the extras are missing or malformed.
     /// </summary>
-    private static string? GetSourceMaterialId(SharpGLTF.Schema2.Material material)
+    private static string? GetSourceMaterialId(Material material)
     {
         if (material.Extras is not JsonObject extras)
         {

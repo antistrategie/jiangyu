@@ -70,7 +70,7 @@ internal static class TemplateRuntimeAccess
         if (typeof(DataTemplate).IsAssignableFrom(resolvedType))
             return TryResolveDataTemplate(templateId, resolvedType, out template, out error);
 
-        if (typeof(UnityEngine.ScriptableObject).IsAssignableFrom(resolvedType))
+        if (typeof(ScriptableObject).IsAssignableFrom(resolvedType))
             return TryResolveScriptableObjectByName(templateId, resolvedType, out template, out error);
 
         error = $"template type {resolvedType.FullName} is neither DataTemplate nor ScriptableObject.";
@@ -195,7 +195,7 @@ internal static class TemplateRuntimeAccess
                 : MaterialiseTemplates(collection, type);
         }
 
-        if (typeof(UnityEngine.ScriptableObject).IsAssignableFrom(type))
+        if (typeof(ScriptableObject).IsAssignableFrom(type))
             return EnumerateScriptableObjects(type);
 
         return Array.Empty<Il2CppObjectBase>();

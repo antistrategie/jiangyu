@@ -331,7 +331,7 @@ public static class TemplateInspectionPreviewApplier
                 Name = name,
                 Kind = existingKind ?? "int",
                 FieldTypeName = fieldTypeName ?? "Byte",
-                Value = value.Byte ?? (byte)0,
+                Value = value.Byte ?? 0,
             },
             CompiledTemplateValueKind.Int32 => new InspectedFieldNode
             {

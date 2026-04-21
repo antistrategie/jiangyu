@@ -228,7 +228,7 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
             {
                 var (classifiedVia, ancestor) = classificationByType.TryGetValue(group.Key, out var info)
                     ? info
-                    : ("suffix", (string?)null);
+                    : ("suffix", null);
 
                 return new TemplateTypeEntry
                 {

@@ -20,8 +20,8 @@ run = "dotnet test tests/Jiangyu.Core.Tests/Jiangyu.Core.Tests.csproj"
 
 [tasks.format]
 description = "Verify Roslyn formatting/style on first-party code"
-run = "dotnet format Jiangyu.slnx --verify-no-changes --severity info --no-restore --exclude vendor/AssetRipper"
+run = "dotnet format Jiangyu.slnx --verify-no-changes --no-restore --exclude vendor/AssetRipper"
 
 [tasks."format:fix"]
 description = "Apply Roslyn formatting/style fixes to first-party code"
-run = "dotnet format Jiangyu.slnx --severity info --no-restore --exclude vendor/AssetRipper"
+run = "dotnet format Jiangyu.slnx --no-restore --exclude vendor/AssetRipper"

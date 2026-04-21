@@ -1527,7 +1527,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         Directory.CreateDirectory(editorDir);
         Directory.CreateDirectory(modelsImportDir);
 
-        var buildScript = Glb.GlbMeshBundleCompiler.LoadEmbeddedResource("Jiangyu.Core.Unity.BundleBuilder.template");
+        var buildScript = GlbMeshBundleCompiler.LoadEmbeddedResource("Jiangyu.Core.Unity.BundleBuilder.template");
         await File.WriteAllTextAsync(Path.Combine(editorDir, "BundleBuilder.cs"), buildScript);
 
         // Copy model files into the Unity project

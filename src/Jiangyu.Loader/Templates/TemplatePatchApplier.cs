@@ -379,7 +379,7 @@ internal sealed class TemplatePatchApplier
     {
         if (written is Il2CppObjectBase writtenObj && readback is Il2CppObjectBase readbackObj)
             return writtenObj.Pointer == readbackObj.Pointer;
-        return object.Equals(written, readback);
+        return Equals(written, readback);
     }
 
     // Identity formatter for log lines. Each template base class has a
@@ -679,7 +679,6 @@ internal sealed class TemplatePatchApplier
         int? insertIndex,
         out Type elementType, out Action<object> setter, out Func<object> getter, out string error)
     {
-        elementType = null;
         setter = null;
         getter = null;
         error = null;
@@ -777,7 +776,7 @@ internal sealed class TemplatePatchApplier
     }
 
     private static bool BindListMutation(
-        object parent, string fieldName, object liveCollection, Type collectionType, Type elementType,
+        object parent, string fieldName, object _liveCollection, Type collectionType, Type elementType,
         Action<object> fieldSetter, int? insertIndex,
         out Action<object> setter, out Func<object> getter, out string error)
     {
@@ -856,7 +855,7 @@ internal sealed class TemplatePatchApplier
     }
 
     private static bool BindArrayMutation(
-        object parent, string fieldName, object liveCollection, Type collectionType, Type elementType,
+        object parent, string fieldName, object _liveCollection, Type collectionType, Type elementType,
         Action<object> fieldSetter, int? insertIndex,
         out Action<object> setter, out Func<object> getter, out string error)
     {

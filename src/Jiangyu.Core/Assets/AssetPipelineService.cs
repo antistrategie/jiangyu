@@ -17,7 +17,6 @@ using AssetRipper.Processing.Scenes;
 using AssetRipper.Export.Modules.Audio;
 using AssetRipper.Export.Modules.Textures;
 using AssetRipper.SourceGenerated.Classes.ClassID_1;
-using AssetRipper.SourceGenerated.Classes.ClassID_21;
 using AssetRipper.SourceGenerated.Classes.ClassID_25;
 using AssetRipper.SourceGenerated.Classes.ClassID_28;
 using AssetRipper.SourceGenerated.Classes.ClassID_4;
@@ -29,7 +28,6 @@ using AssetRipper.SourceGenerated.Extensions;
 using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Glb;
 using Jiangyu.Core.Models;
-using SharpGLTF.Memory;
 using SharpGLTF.Scenes;
 using SharpGLTF.Schema2;
 
@@ -759,7 +757,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
 
         // Build source material ID → Schema2 Material lookup (for non-standard extras only).
         // Uses the same stable identity embedded by GlbLevelBuilder.
-        var materialsBySourceId = new Dictionary<string, SharpGLTF.Schema2.Material>(StringComparer.Ordinal);
+        var materialsBySourceId = new Dictionary<string, Material>(StringComparer.Ordinal);
         foreach (var mat in model.LogicalMaterials)
         {
             if (mat.Extras is JsonObject matExtras &&
@@ -1282,7 +1280,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
                     Collection = collectionName,
                 };
 
-                if (asset is AssetRipper.SourceGenerated.Classes.ClassID_213.ISprite sprite)
+                if (asset is ISprite sprite)
                 {
                     var backing = ResolveSpriteBackingTexture(sprite);
                     if (backing is not null)
@@ -1292,7 +1290,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
                         entry.SpriteBackingTextureName = backing.GetBestName();
                     }
                 }
-                else if (asset is AssetRipper.SourceGenerated.Classes.ClassID_83.IAudioClip audioClip)
+                else if (asset is IAudioClip audioClip)
                 {
                     if (audioClip.Has_Frequency())
                         entry.AudioFrequency = audioClip.Frequency;
@@ -1335,8 +1333,8 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         return index == 0 ? "_" : new string(buffer[..index]);
     }
 
-    private static AssetRipper.SourceGenerated.Classes.ClassID_28.ITexture2D? ResolveSpriteBackingTexture(
-        AssetRipper.SourceGenerated.Classes.ClassID_213.ISprite sprite)
+    private static ITexture2D? ResolveSpriteBackingTexture(
+        ISprite sprite)
     {
         // Non-atlas sprites carry the texture reference directly on sprite.RD.
         var direct = sprite.RD.Texture.TryGetAsset(sprite.Collection);

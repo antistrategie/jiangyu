@@ -1,7 +1,6 @@
 using System.CommandLine;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Jiangyu.Core.Assets;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
 
