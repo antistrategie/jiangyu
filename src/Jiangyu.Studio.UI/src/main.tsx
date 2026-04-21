@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
+import { ActionRegistryProvider } from "./lib/actions.tsx";
 import { initRpc } from "./lib/rpc.ts";
 import "./styles/global.css";
 
@@ -28,6 +29,8 @@ if (!root) throw new Error("Missing #root element");
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <ActionRegistryProvider>
+      <App />
+    </ActionRegistryProvider>
   </StrictMode>,
 );

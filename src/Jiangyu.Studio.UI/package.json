@@ -19,6 +19,7 @@
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@fontsource/noto-serif-sc": "^5.2.9",
     "@monaco-editor/react": "^4.7.0",
+    "fuse.js": "^7.3.0",
     "lucide-react": "^1.8.0",
     "monaco-editor": "^0.55.1",
     "react": "^19.1.0",

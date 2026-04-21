@@ -228,7 +228,7 @@
 
 .recentList {
   list-style: none;
-  margin: 0;
+  margin-top: var(--space-3);
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -238,12 +238,11 @@
 .recentLink {
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
-  color: var(--fg-muted);
+  color: var(--fg-subtle);
   text-decoration: none;
   transition: color var(--ease-normal);
 }
 
 .recentLink:hover {
-  color: var(--fg);
-  text-decoration: underline;
+  color: var(--fg-muted);
 }

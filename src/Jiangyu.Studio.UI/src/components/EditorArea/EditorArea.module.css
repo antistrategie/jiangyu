@@ -10,13 +10,18 @@
 .tabbar {
   display: flex;
   align-items: flex-end;
-  height: 34px;
+  margin-top: var(--space-1);
   padding: 0 var(--space-2);
   background: var(--bg);
   border-bottom: 1px solid var(--rule);
   flex-shrink: 0;
   user-select: none;
   overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabbar::-webkit-scrollbar {
+  display: none;
 }
 
 .tabPlaceholder {

@@ -20,6 +20,7 @@ public static partial class RpcDispatcher
         Register("openFolder", HandleOpenFolder);
         Register("openProject", HandleOpenProject);
         Register("listDirectory", HandleListDirectory);
+        Register("listAllFiles", HandleListAllFiles);
         Register("readFile", HandleReadFile);
         Register("writeFile", HandleWriteFile);
         Register("movePath", HandleMovePath);
@@ -182,6 +183,98 @@ public static partial class RpcDispatcher
 
         var content = File.ReadAllText(path);
         return JsonSerializer.SerializeToElement(content);
+    }
+
+    // Directories to skip when git isn't available. OrdinalIgnoreCase so Windows
+    // paths like `Node_Modules` or `.Git` are still recognised.
+    private static readonly HashSet<string> FileSearchSkipDirs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".git", "node_modules", "obj", "bin", "dist", "build", "target",
+        ".idea", ".vs", ".vscode", ".gradle", ".next", "__pycache__",
+        ".venv", "venv", ".cache", ".jiangyu", ".unity"
+    };
+
+    private const int FileSearchMaxResults = 10_000;
+
+    private static JsonElement HandleListAllFiles(IInfiniFrameWindow _, JsonElement? parameters)
+    {
+        var root = RequireString(parameters, "path");
+
+        if (!Directory.Exists(root))
+            throw new ArgumentException($"Directory not found: {root}");
+
+        // Prefer git for gitignore-aware listing so the palette matches the sidebar's
+        // hidden/ignored set. Falls back to a manual walk for non-git directories.
+        var results = TryGitListFiles(root) ?? WalkDirectoryForFiles(root);
+        return JsonSerializer.SerializeToElement(results);
+    }
+
+    private static List<string>? TryGitListFiles(string root)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("git", "ls-files -co --exclude-standard")
+            {
+                WorkingDirectory = root,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var process = System.Diagnostics.Process.Start(psi);
+            if (process is null) return null;
+
+            var results = new List<string>(capacity: 1024);
+            string? line;
+            while ((line = process.StandardOutput.ReadLine()) is not null)
+            {
+                if (results.Count >= FileSearchMaxResults) break;
+                results.Add(line);
+            }
+            process.WaitForExit();
+            return process.ExitCode == 0 ? results : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static List<string> WalkDirectoryForFiles(string root)
+    {
+        var results = new List<string>();
+        var stack = new Stack<string>();
+        stack.Push(root);
+
+        while (stack.Count > 0 && results.Count < FileSearchMaxResults)
+        {
+            var dir = stack.Pop();
+
+            IEnumerable<string> files;
+            IEnumerable<string> subdirs;
+            try
+            {
+                files = Directory.EnumerateFiles(dir);
+                subdirs = Directory.EnumerateDirectories(dir);
+            }
+            catch (IOException) { continue; }
+            catch (UnauthorizedAccessException) { continue; }
+
+            foreach (var file in files)
+            {
+                if (results.Count >= FileSearchMaxResults) break;
+                results.Add(Path.GetRelativePath(root, file).Replace(Path.DirectorySeparatorChar, '/'));
+            }
+
+            foreach (var sub in subdirs)
+            {
+                if (FileSearchSkipDirs.Contains(Path.GetFileName(sub)))
+                    continue;
+                stack.Push(sub);
+            }
+        }
+
+        return results;
     }
 
     private static JsonElement HandleWriteFile(IInfiniFrameWindow _, JsonElement? parameters)

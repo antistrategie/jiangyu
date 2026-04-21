@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { X } from "lucide-react";
 import Editor, { type OnMount, type OnChange } from "@monaco-editor/react";
 import type { editor as monacoEditor } from "monaco-editor";
@@ -7,6 +7,8 @@ import { rpcCall, subscribe, type FileChangedEvent, type FileChangeKind } from "
 import { ContextMenu, type ContextMenuEntry } from "../ContextMenu/ContextMenu.tsx";
 import type { OpenFile } from "../../App.tsx";
 import { buildTabMenu } from "./tabMenu.ts";
+import { fileTargetCommands } from "../../lib/fileCommands.ts";
+import { PALETTE_SCOPE, useRegisterActions, type PaletteAction } from "../../lib/actions.tsx";
 import styles from "./EditorArea.module.css";
 
 function getSelectedText(editor: monacoEditor.IStandaloneCodeEditor): string {
@@ -68,12 +70,12 @@ function buildEditorMenu(editor: monacoEditor.IStandaloneCodeEditor): ContextMen
       { id: "editor.action.startFindReplaceAction", shortcut: "Ctrl+H" },
     ],
     [{ id: "editor.action.commentLine", shortcut: "Ctrl+/" }],
-    [{ id: "editor.action.quickCommand", shortcut: "F1" }],
+    [],
   ];
 
   const language = editor.getModel()?.getLanguageId();
   if (language !== undefined && FORMATTABLE_LANGUAGES.has(language)) {
-    monacoGroups[2]!.unshift({ id: "editor.action.formatDocument", shortcut: "Shift+Alt+F" });
+    monacoGroups[2]!.push({ id: "editor.action.formatDocument", shortcut: "Shift+Alt+F" });
   }
 
   for (const group of monacoGroups) {
@@ -294,8 +296,8 @@ export function EditorArea({
   const [binary, setBinary] = useState(false);
   const [editorMenu, setEditorMenu] = useState<{ x: number; y: number } | null>(null);
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+  const [editor, setEditor] = useState<monacoEditor.IStandaloneCodeEditor | null>(null);
   const themeRegistered = useRef(false);
-  const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | null>(null);
 
   const activeFileRef = useRef(activeFile);
   const contentsRef = useRef(contents);
@@ -375,9 +377,79 @@ export function EditorArea({
     clearConflict(path);
   }, [clearConflict]);
 
+  const fileActions = useMemo<PaletteAction[]>(() => {
+    if (activeFile === null) return [];
+    const commands = fileTargetCommands(activeFile, projectPath, onCloseFiles);
+    const close = commands.find((c) => c.id === "close")!;
+    const extras = commands.filter((c) => c.id !== "close");
+
+    const result: PaletteAction[] = [
+      {
+        id: "editor.save",
+        label: "Save",
+        scope: PALETTE_SCOPE.File,
+        cn: "保存",
+        kbd: "Ctrl+S",
+        run: () => void handleSave(),
+      },
+      {
+        id: "editor.close",
+        label: "Close Tab",
+        scope: PALETTE_SCOPE.File,
+        ...(close.cn !== undefined ? { cn: close.cn } : {}),
+        ...(close.shortcut !== undefined ? { kbd: close.shortcut } : {}),
+        run: close.run,
+      },
+    ];
+    for (const c of extras) {
+      result.push({
+        id: `editor.${c.id}`,
+        label: c.label,
+        scope: PALETTE_SCOPE.File,
+        ...(c.cn !== undefined ? { cn: c.cn } : {}),
+        ...(c.shortcut !== undefined ? { kbd: c.shortcut } : {}),
+        ...(c.desc !== undefined ? { desc: c.desc } : {}),
+        run: c.run,
+      });
+    }
+    return result;
+  }, [activeFile, projectPath, handleSave, onCloseFiles]);
+
+  const monacoActions = useMemo<PaletteAction[]>(() => {
+    if (!editor) return [];
+    // Monaco doesn't expose a public way to read an action's keybinding; the
+    // standalone editor keeps it on the internal _standaloneKeybindingService.
+    // Accessing it lets us show shortcuts next to each command like VS Code.
+    const kbService = (
+      editor as unknown as {
+        _standaloneKeybindingService?: {
+          lookupKeybinding: (id: string) => { getLabel: () => string | null } | undefined;
+        };
+      }
+    )._standaloneKeybindingService;
+
+    return editor.getSupportedActions().map((action) => {
+      const kbd = kbService?.lookupKeybinding(action.id)?.getLabel() ?? undefined;
+      return {
+        id: `monaco.${action.id}`,
+        label: action.label,
+        scope: PALETTE_SCOPE.Editor,
+        ...(kbd !== undefined && kbd.length > 0 ? { kbd } : {}),
+        run: () => {
+          editor.focus();
+          void action.run();
+        },
+      };
+    });
+  }, [editor]);
+
+  useRegisterActions(fileActions);
+  useRegisterActions(monacoActions);
+
   const handleMount: OnMount = useCallback(
     (editor, monaco) => {
-      editorRef.current = editor;
+      setEditor(editor);
+      editor.onDidDispose(() => setEditor(null));
       if (!themeRegistered.current) {
         monaco.editor.defineTheme("jiangyu", jiangyuTheme);
         themeRegistered.current = true;
@@ -491,7 +563,13 @@ export function EditorArea({
 
   return (
     <div className={styles.editor}>
-      <div className={styles.tabbar}>
+      <div
+        className={styles.tabbar}
+        onWheel={(e) => {
+          if (e.deltaY === 0) return;
+          e.currentTarget.scrollLeft += e.deltaY;
+        }}
+      >
         {openFiles.map((f) => (
           <button
             key={f.path}
@@ -499,6 +577,11 @@ export function EditorArea({
             type="button"
             onClick={() => {
               onSelectFile(f.path);
+            }}
+            onAuxClick={(e) => {
+              if (e.button !== 1) return;
+              e.preventDefault();
+              onCloseFiles([f.path]);
             }}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -567,7 +650,7 @@ export function EditorArea({
           <div
             className={styles.editorHost}
             onContextMenu={(e) => {
-              if (!editorRef.current) return;
+              if (!editor) return;
               e.preventDefault();
               setEditorMenu({ x: e.clientX, y: e.clientY });
             }}
@@ -599,11 +682,11 @@ export function EditorArea({
           <p className={styles.empty}>Unable to read file</p>
         )}
       </div>
-      {editorMenu && editorRef.current && (
+      {editorMenu && editor && (
         <ContextMenu
           x={editorMenu.x}
           y={editorMenu.y}
-          items={buildEditorMenu(editorRef.current)}
+          items={buildEditorMenu(editor)}
           onClose={() => setEditorMenu(null)}
         />
       )}

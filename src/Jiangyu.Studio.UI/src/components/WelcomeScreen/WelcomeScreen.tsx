@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { CircleX, TriangleAlert, Info } from "lucide-react";
 import { rpcCall } from "../../lib/rpc.ts";
+import { pickProjectFolder } from "../../lib/projectCommands.ts";
 import styles from "./WelcomeScreen.module.css";
 
 interface WelcomeScreenProps {
@@ -29,14 +30,8 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
   }, []);
 
   const handleOpen = async () => {
-    try {
-      const path = await rpcCall<string | null>("openFolder");
-      if (path) {
-        onOpenProject(path);
-      }
-    } catch (err) {
-      console.error("[Studio] openFolder failed:", err);
-    }
+    const path = await pickProjectFolder();
+    if (path !== null) onOpenProject(path);
   };
 
   const handleSetGamePath = async () => {
@@ -145,38 +140,33 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
       </details>
 
       {config !== null && config.gamePath !== null && (
-        <>
-          <div className={styles.actions}>
-            <button className={styles.action} type="button" onClick={handleOpen}>
-              Open Project
-            </button>
-            {recentProjects.length > 0 && (
-              <ul className={styles.recentList}>
-                {recentProjects.slice(0, 5).map((p) => (
-                  <li key={p}>
-                    <a
-                      className={styles.recentLink}
-                      href="#"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        void rpcCall<string>("openProject", { path: p })
-                          .then(onOpenProject)
-                          .catch((err) => {
-                            console.error("[Studio] openProject failed:", err);
-                          });
-                      }}
-                    >
-                      {p}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <p className={styles.hint}>
-            <kbd className={styles.kbd}>Ctrl+O</kbd> to open a project folder
-          </p>
-        </>
+        <div className={styles.actions}>
+          <button className={styles.action} type="button" onClick={handleOpen}>
+            Open Project
+          </button>
+          {recentProjects.length > 0 && (
+            <ul className={styles.recentList}>
+              {recentProjects.slice(0, 5).map((p) => (
+                <li key={p}>
+                  <a
+                    className={styles.recentLink}
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      void rpcCall<string>("openProject", { path: p })
+                        .then(onOpenProject)
+                        .catch((err) => {
+                          console.error("[Studio] openProject failed:", err);
+                        });
+                    }}
+                  >
+                    {p}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </main>
   );
