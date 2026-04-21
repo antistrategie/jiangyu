@@ -15,6 +15,9 @@ indent_size = 2
 [*.{json,yaml,yml,toml}]
 indent_size = 2
 
+[*.{tsx,ts,css}]
+indent_size = 2
+
 [*.cs]
 # Naming simplification
 dotnet_diagnostic.IDE0001.severity = suggestion

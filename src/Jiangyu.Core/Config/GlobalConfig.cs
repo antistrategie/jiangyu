@@ -29,6 +29,26 @@ public sealed class GlobalConfig
     [JsonPropertyName("cache")]
     public string? Cache { get; set; }
 
+    /// <summary>
+    /// Recently opened project directories, most recent first. Studio-only.
+    /// </summary>
+    [JsonPropertyName("recentProjects")]
+    public List<string>? RecentProjects { get; set; }
+
+    private const int MaxRecentProjects = 10;
+
+    /// <summary>
+    /// Records a project path as the most recently opened. Moves to front if already present.
+    /// </summary>
+    public void RecordRecentProject(string path)
+    {
+        RecentProjects ??= [];
+        RecentProjects.Remove(path);
+        RecentProjects.Insert(0, path);
+        if (RecentProjects.Count > MaxRecentProjects)
+            RecentProjects.RemoveRange(MaxRecentProjects, RecentProjects.Count - MaxRecentProjects);
+    }
+
     public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
 
     public static GlobalConfig FromJson(string json) =>
@@ -214,7 +234,7 @@ public sealed class GlobalConfig
         return fallback;
     }
 
-    internal static string ExpandHome(string path)
+    public static string ExpandHome(string path)
     {
         if (path.StartsWith('~'))
         {

@@ -1,0 +1,128 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-width: 0;
+  max-width: 600px;
+  background: var(--paper-1);
+  border-right: 1px solid var(--rule);
+  flex: none;
+  overflow: hidden;
+}
+
+.tree {
+  flex: 1;
+  overflow: auto;
+  padding: var(--space-1) 0;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-2);
+  flex-shrink: 0;
+}
+
+.headerCjk {
+  font-family: var(--font-display-cjk);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg-strong);
+}
+
+.headerEn {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fg-strong);
+}
+
+.filter {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--rule-faint);
+}
+
+.filterInput {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  color: var(--fg-strong);
+  outline: none;
+}
+
+.filterInput:focus {
+  border-color: var(--cinnabar-1);
+}
+
+.nodeList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.entry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px var(--space-3);
+  border: none;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.entry:hover {
+  background: var(--paper-2);
+}
+
+.ignored {
+  opacity: 0.4;
+}
+
+.icon {
+  font-size: 10px;
+  width: 12px;
+  text-align: center;
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.entryName {
+  white-space: nowrap;
+}
+
+.dirtyDot {
+  margin-left: auto;
+  padding-left: var(--space-2);
+  color: var(--cinnabar-1);
+  font-size: 9px;
+  line-height: 1;
+}
+
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+}
+
+.resizeHandle:hover {
+  background: var(--cinnabar-1);
+  opacity: 0.3;
+}

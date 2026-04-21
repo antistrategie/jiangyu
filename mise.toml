@@ -1,27 +1,71 @@
+[tools]
+bun = "latest"
+
 [tasks."build:core"]
 description = "Build Jiangyu.Core"
-run = "dotnet build src/Jiangyu.Core/Jiangyu.Core.csproj"
+run = "dotnet build src/Jiangyu.Core/Jiangyu.Core.csproj -c Release"
 
 [tasks."build:cli"]
 description = "Build Jiangyu.Cli"
-run = "dotnet build src/Jiangyu.Cli/Jiangyu.Cli.csproj"
+run = "dotnet build src/Jiangyu.Cli/Jiangyu.Cli.csproj -c Release"
 
 [tasks."build:loader"]
 description = "Build Jiangyu.Loader"
-run = "dotnet build src/Jiangyu.Loader/Jiangyu.Loader.csproj"
+run = "dotnet build src/Jiangyu.Loader/Jiangyu.Loader.csproj -c Release"
+
+[tasks."build:studio"]
+description = "Build Studio frontend + host"
+run = """
+cd src/Jiangyu.Studio.UI && bun run build
+dotnet build src/Jiangyu.Studio.Host/Jiangyu.Studio.Host.csproj -c Release
+"""
 
 [tasks.build]
 description = "Build the full solution"
-run = "dotnet build Jiangyu.slnx"
+run = "dotnet build Jiangyu.slnx -c Release"
 
-[tasks.test]
+[tasks."test:core"]
 description = "Run Jiangyu.Core tests"
 run = "dotnet test tests/Jiangyu.Core.Tests/Jiangyu.Core.Tests.csproj"
 
-[tasks.format]
-description = "Verify Roslyn formatting/style on first-party code"
-run = "dotnet format Jiangyu.slnx --verify-no-changes --no-restore --exclude vendor/AssetRipper"
+[tasks."test:loader"]
+description = "Run Jiangyu.Loader tests"
+run = "dotnet test tests/Jiangyu.Loader.Tests/Jiangyu.Loader.Tests.csproj"
 
-[tasks."format:fix"]
+[tasks."test:studio"]
+description = "Run Studio UI frontend tests"
+run = "cd src/Jiangyu.Studio.UI && bun run test"
+
+[tasks.test]
+description = "Run all tests"
+depends = ["test:core", "test:loader", "test:studio"]
+
+[tasks."format:roslyn"]
 description = "Apply Roslyn formatting/style fixes to first-party code"
 run = "dotnet format Jiangyu.slnx --no-restore --exclude vendor/AssetRipper"
+
+[tasks."format:studio"]
+description = "Run Prettier for Studio"
+run = "cd src/Jiangyu.Studio.UI && bun run format"
+
+[tasks.format]
+description = "Run formatting"
+depends = ["format:roslyn", "format:studio"]
+
+[tasks."studio"]
+description = "Build and run Jiangyu Studio"
+run = """
+cd src/Jiangyu.Studio.UI && bun run build && cd ../Jiangyu.Studio.Host && dotnet run
+"""
+
+[tasks."studio:dev"]
+description = "Run Studio with Vite HMR in the native window"
+run = """
+cd src/Jiangyu.Studio.UI
+npx vite &
+VITE_PID=$!
+trap 'kill $VITE_PID 2>/dev/null; wait $VITE_PID 2>/dev/null' EXIT INT TERM
+sleep 2
+cd ../..
+JIANGYU_DEV_URL=http://localhost:5173 dotnet run --project src/Jiangyu.Studio.Host
+"""

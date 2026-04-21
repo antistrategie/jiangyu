@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "verbatimModuleSyntax": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "baseUrl": ".",
+    "rootDirs": [".", "generated"],
+    "paths": {
+      "@/*": ["./src/*"],
+    },
+    "plugins": [{ "name": "@css-modules-kit/ts-plugin" }],
+  },
+  "include": ["src"],
+  "cmkOptions": {
+    "enabled": true,
+    "dtsOutDir": "generated",
+  },
+}

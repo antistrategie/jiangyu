@@ -1,0 +1,154 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-raised);
+}
+
+.tabbar {
+  display: flex;
+  align-items: flex-end;
+  height: 34px;
+  padding: 0 var(--space-2);
+  background: var(--bg);
+  border-bottom: 1px solid var(--rule);
+  flex-shrink: 0;
+  user-select: none;
+  overflow-x: auto;
+}
+
+.tabPlaceholder {
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  color: var(--fg-muted);
+  padding: 0 var(--space-3);
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 26px;
+  padding: 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tab:hover {
+  color: var(--fg);
+}
+
+.tabActive {
+  color: var(--fg);
+  border-bottom-color: var(--cinnabar-1);
+}
+
+.tabName {
+  pointer-events: none;
+}
+
+.tabDirty {
+  color: var(--cinnabar-1);
+  font-size: 9px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.tabClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  opacity: 0.4;
+}
+
+.tabClose:hover {
+  opacity: 1;
+  background: var(--bg-sunken);
+}
+
+.tabFill {
+  flex: 1;
+  align-self: stretch;
+}
+
+.content {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  background: var(--bg-raised);
+}
+
+.empty {
+  font-family: var(--font-editorial);
+  font-style: italic;
+  font-size: var(--fs-md);
+  color: var(--fg-muted);
+  margin: auto;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg);
+  border-bottom: 1px solid var(--cinnabar-1);
+  flex-shrink: 0;
+}
+
+.bannerText {
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  color: var(--fg-strong);
+  letter-spacing: var(--tracking-normal);
+  flex: 1;
+}
+
+.bannerAction {
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  padding: 4px var(--space-3);
+  background: var(--cinnabar-1);
+  color: var(--paper-0);
+  border: none;
+  cursor: pointer;
+}
+
+.bannerAction:hover {
+  background: var(--cinnabar-2, var(--cinnabar-1));
+  filter: brightness(1.1);
+}
+
+.bannerActionMuted {
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  padding: 4px var(--space-3);
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--rule);
+  cursor: pointer;
+}
+
+.bannerActionMuted:hover {
+  background: var(--paper-2);
+}

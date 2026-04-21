@@ -1,0 +1,125 @@
+/* =========================================================================
+   JIANGYU STUDIO — Design Tokens
+   ========================================================================= */
+
+/* Fonts — self-hosted via @fontsource (offline-capable) */
+@import "@fontsource/barlow-condensed/300.css";
+@import "@fontsource/barlow-condensed/400.css";
+@import "@fontsource/barlow-condensed/500.css";
+@import "@fontsource/barlow-condensed/600.css";
+@import "@fontsource/barlow-condensed/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/700.css";
+@import "@fontsource/cormorant-garamond/400.css";
+@import "@fontsource/cormorant-garamond/400-italic.css";
+@import "@fontsource/cormorant-garamond/500.css";
+@import "@fontsource/cormorant-garamond/600.css";
+@import "@fontsource/noto-serif-sc/400.css";
+@import "@fontsource/noto-serif-sc/500.css";
+@import "@fontsource/noto-serif-sc/600.css";
+@import "@fontsource/noto-serif-sc/700.css";
+@import "@fontsource/noto-serif-sc/900.css";
+
+:root {
+  /* Parchment / paper */
+  --paper-0: #f4efe6;
+  --paper-1: #ebe4d6;
+  --paper-2: #ddd3c0;
+  --paper-3: #c5b99f;
+
+  /* Ink */
+  --ink-0: #1a1713;
+  --ink-1: #2a2620;
+  --ink-2: #4a433a;
+  --ink-3: #6e655a;
+  --ink-4: #9a9082;
+
+  /* Cinnabar */
+  --cinnabar-0: #7a1a15;
+  --cinnabar-1: #a52a1f;
+  --cinnabar-2: #c23b29;
+
+  /* Gold */
+  --gold-0: #8a6d2a;
+  --gold-1: #b89248;
+  --gold-2: #d4b26a;
+
+  /* Jade */
+  --jade-0: #2d4a44;
+  --jade-1: #4a6e64;
+  --jade-2: #6e9185;
+
+  /* Semantic surfaces */
+  --bg: var(--paper-1);
+  --bg-raised: var(--paper-0);
+  --bg-sunken: var(--paper-2);
+  --bg-inverse: var(--ink-0);
+  --bg-inverse-2: var(--ink-1);
+
+  /* Semantic foreground */
+  --fg: var(--ink-1);
+  --fg-strong: var(--ink-0);
+  --fg-muted: var(--ink-3);
+  --fg-subtle: var(--ink-4);
+  --fg-on-inverse: var(--paper-0);
+  --fg-on-inverse-muted: var(--paper-3);
+
+  /* Accent */
+  --accent: var(--cinnabar-1);
+  --accent-strong: var(--cinnabar-0);
+  --accent-weak: var(--cinnabar-2);
+
+  /* Status */
+  --success: #5a7a3a;
+  --warning: var(--gold-1);
+  --danger: var(--cinnabar-1);
+  --info: var(--jade-1);
+
+  /* Rules / borders */
+  --rule: var(--ink-2);
+  --rule-strong: var(--ink-0);
+  --rule-muted: var(--ink-3);
+  --rule-faint: rgba(26, 23, 19, 0.15);
+
+  /* Type stacks */
+  --font-display-cjk: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
+  --font-display: "Barlow Condensed", "Oswald", sans-serif;
+  --font-label: "Barlow Condensed", "Oswald", sans-serif;
+  --font-editorial: "Cormorant Garamond", "EB Garamond", Georgia, serif;
+  --font-ui: "Barlow Condensed", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Scale */
+  --fs-xs: 11px;
+  --fs-sm: 13px;
+  --fs-base: 14px;
+  --fs-md: 16px;
+  --fs-lg: 20px;
+  --fs-xl: 28px;
+
+  --lh-tight: 1.1;
+  --lh-snug: 1.25;
+  --lh-base: 1.5;
+
+  --tracking-wide: 0.04em;
+  --tracking-wider: 0.14em;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Geometry */
+  --radius: 0;
+  --border-hair: 1px solid var(--rule-faint);
+  --border-rule: 1px solid var(--rule);
+  --border-strong: 2px solid var(--rule-strong);
+
+  /* Transitions */
+  --ease-fast: 80ms ease;
+  --ease-normal: 120ms ease;
+}
