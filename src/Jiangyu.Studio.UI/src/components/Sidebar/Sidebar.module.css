@@ -73,6 +73,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
+  width: 100%;
   padding: 3px var(--space-3);
   border: none;
   background: transparent;
@@ -110,6 +111,41 @@
   color: var(--cinnabar-1);
   font-size: 9px;
   line-height: 1;
+}
+
+.cut {
+  opacity: 0.5;
+}
+
+.dropTarget {
+  background: var(--cinnabar-1);
+  color: var(--paper-0);
+}
+
+.dropTarget .icon,
+.dropTarget .entryName {
+  color: var(--paper-0);
+}
+
+.renameInput {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 0 2px;
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg-strong);
+  border: 1px solid var(--cinnabar-1);
+  outline: none;
+}
+
+.newRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px var(--space-3);
+  list-style: none;
 }
 
 .resizeHandle {

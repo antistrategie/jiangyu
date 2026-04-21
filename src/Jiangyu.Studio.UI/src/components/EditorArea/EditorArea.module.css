@@ -94,6 +94,13 @@
   background: var(--bg-raised);
 }
 
+.editorHost {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
 .empty {
   font-family: var(--font-editorial);
   font-style: italic;

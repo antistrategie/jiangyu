@@ -1,19 +1,110 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { X } from "lucide-react";
 import Editor, { type OnMount, type OnChange } from "@monaco-editor/react";
+import type { editor as monacoEditor } from "monaco-editor";
 import { jiangyuTheme } from "./jiangyuTheme.ts";
 import { rpcCall, subscribe, type FileChangedEvent, type FileChangeKind } from "../../lib/rpc.ts";
+import { ContextMenu, type ContextMenuEntry } from "../ContextMenu/ContextMenu.tsx";
 import type { OpenFile } from "../../App.tsx";
+import { buildTabMenu } from "./tabMenu.ts";
 import styles from "./EditorArea.module.css";
+
+function getSelectedText(editor: monacoEditor.IStandaloneCodeEditor): string {
+  const selection = editor.getSelection();
+  const model = editor.getModel();
+  if (!selection || !model || selection.isEmpty()) return "";
+  return model.getValueInRange(selection);
+}
+
+async function copySelection(editor: monacoEditor.IStandaloneCodeEditor): Promise<void> {
+  const text = getSelectedText(editor);
+  if (text.length === 0) return;
+  await navigator.clipboard.writeText(text);
+}
+
+async function cutSelection(editor: monacoEditor.IStandaloneCodeEditor): Promise<void> {
+  const text = getSelectedText(editor);
+  if (text.length === 0) return;
+  await navigator.clipboard.writeText(text);
+  const selection = editor.getSelection();
+  if (!selection) return;
+  editor.executeEdits("cut", [{ range: selection, text: "", forceMoveMarkers: true }]);
+  editor.focus();
+}
+
+async function pasteAtCursor(editor: monacoEditor.IStandaloneCodeEditor): Promise<void> {
+  const text = await navigator.clipboard.readText();
+  if (text.length === 0) return;
+  const selection = editor.getSelection();
+  if (!selection) return;
+  editor.executeEdits("paste", [{ range: selection, text, forceMoveMarkers: true }]);
+  editor.focus();
+}
+
+// Languages whose Monaco build ships with a DocumentFormattingEditProvider.
+// Others (C#, KDL, TOML, YAML, Python, …) would have the action registered but
+// would no-op without an LSP backing it — so we hide the menu item instead.
+const FORMATTABLE_LANGUAGES = new Set([
+  "json",
+  "jsonc",
+  "javascript",
+  "typescript",
+  "html",
+  "css",
+  "scss",
+  "less",
+]);
+
+function buildEditorMenu(editor: monacoEditor.IStandaloneCodeEditor): ContextMenuEntry[] {
+  const items: ContextMenuEntry[] = [
+    { label: "Cut", shortcut: "Ctrl+X", onSelect: () => void cutSelection(editor) },
+    { label: "Copy", shortcut: "Ctrl+C", onSelect: () => void copySelection(editor) },
+    { label: "Paste", shortcut: "Ctrl+V", onSelect: () => void pasteAtCursor(editor) },
+  ];
+
+  const monacoGroups: { id: string; shortcut?: string }[][] = [
+    [
+      { id: "actions.find", shortcut: "Ctrl+F" },
+      { id: "editor.action.startFindReplaceAction", shortcut: "Ctrl+H" },
+    ],
+    [{ id: "editor.action.commentLine", shortcut: "Ctrl+/" }],
+    [{ id: "editor.action.quickCommand", shortcut: "F1" }],
+  ];
+
+  const language = editor.getModel()?.getLanguageId();
+  if (language !== undefined && FORMATTABLE_LANGUAGES.has(language)) {
+    monacoGroups[2]!.unshift({ id: "editor.action.formatDocument", shortcut: "Shift+Alt+F" });
+  }
+
+  for (const group of monacoGroups) {
+    const groupItems: ContextMenuEntry[] = [];
+    for (const { id, shortcut } of group) {
+      const action = editor.getAction(id);
+      if (!action) continue;
+      const onSelect = () => void action.run();
+      groupItems.push(
+        shortcut !== undefined
+          ? { label: action.label, shortcut, onSelect }
+          : { label: action.label, onSelect },
+      );
+    }
+    if (groupItems.length === 0) continue;
+    items.push("separator");
+    items.push(...groupItems);
+  }
+
+  return items;
+}
 
 type ConflictKind = FileChangeKind;
 
 interface EditorAreaProps {
+  projectPath: string;
   openFiles: OpenFile[];
   activeFile: string | null;
   dirtyFiles: Set<string>;
   onSelectFile: (path: string) => void;
-  onCloseFile: (path: string) => void;
+  onCloseFiles: (paths: string[]) => void;
   onMarkDirty: (path: string, isDirty: boolean) => void;
 }
 
@@ -189,18 +280,22 @@ function isBinaryFile(path: string): boolean {
 }
 
 export function EditorArea({
+  projectPath,
   openFiles,
   activeFile,
   dirtyFiles,
   onSelectFile,
-  onCloseFile,
+  onCloseFiles,
   onMarkDirty,
 }: EditorAreaProps) {
   const [contents, setContents] = useState<Map<string, string>>(new Map());
   const [conflicts, setConflicts] = useState<Map<string, ConflictKind>>(new Map());
   const [loading, setLoading] = useState(false);
   const [binary, setBinary] = useState(false);
+  const [editorMenu, setEditorMenu] = useState<{ x: number; y: number } | null>(null);
+  const [tabMenu, setTabMenu] = useState<{ x: number; y: number; path: string } | null>(null);
   const themeRegistered = useRef(false);
+  const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | null>(null);
 
   const activeFileRef = useRef(activeFile);
   const contentsRef = useRef(contents);
@@ -282,6 +377,7 @@ export function EditorArea({
 
   const handleMount: OnMount = useCallback(
     (editor, monaco) => {
+      editorRef.current = editor;
       if (!themeRegistered.current) {
         monaco.editor.defineTheme("jiangyu", jiangyuTheme);
         themeRegistered.current = true;
@@ -404,6 +500,10 @@ export function EditorArea({
             onClick={() => {
               onSelectFile(f.path);
             }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setTabMenu({ x: e.clientX, y: e.clientY, path: f.path });
+            }}
           >
             <span className={styles.tabName}>{f.name}</span>
             {dirtyFiles.has(f.path) && <span className={styles.tabDirty}>●</span>}
@@ -411,7 +511,7 @@ export function EditorArea({
               className={styles.tabClose}
               onClick={(e) => {
                 e.stopPropagation();
-                onCloseFile(f.path);
+                onCloseFiles([f.path]);
               }}
             >
               <X size={10} />
@@ -429,7 +529,7 @@ export function EditorArea({
                 type="button"
                 className={styles.bannerAction}
                 onClick={() => {
-                  onCloseFile(activeFile);
+                  onCloseFiles([activeFile]);
                 }}
               >
                 Close tab
@@ -464,31 +564,57 @@ export function EditorArea({
         ) : binary ? (
           <p className={styles.empty}>Binary file — cannot display</p>
         ) : activeContent !== undefined ? (
-          <Editor
-            path={activeFile ?? "untitled"}
-            value={activeContent}
-            language={getLanguage(activeFile ?? "")}
-            theme="vs"
-            loading=""
-            onMount={handleMount}
-            onChange={handleChange}
-            options={{
-              minimap: { enabled: false },
-              fontSize: 13,
-              fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-              lineNumbers: "on",
-              scrollBeyondLastLine: false,
-              wordWrap: "on",
-              renderLineHighlight: "gutter",
-              guides: { indentation: true, bracketPairs: true },
-              bracketPairColorization: { enabled: true },
-              padding: { top: 8 },
+          <div
+            className={styles.editorHost}
+            onContextMenu={(e) => {
+              if (!editorRef.current) return;
+              e.preventDefault();
+              setEditorMenu({ x: e.clientX, y: e.clientY });
             }}
-          />
+          >
+            <Editor
+              path={activeFile ?? "untitled"}
+              value={activeContent}
+              language={getLanguage(activeFile ?? "")}
+              theme="vs"
+              loading=""
+              onMount={handleMount}
+              onChange={handleChange}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 13,
+                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                lineNumbers: "on",
+                scrollBeyondLastLine: false,
+                wordWrap: "on",
+                renderLineHighlight: "gutter",
+                guides: { indentation: true, bracketPairs: true },
+                bracketPairColorization: { enabled: true },
+                padding: { top: 8 },
+                contextmenu: false,
+              }}
+            />
+          </div>
         ) : (
           <p className={styles.empty}>Unable to read file</p>
         )}
       </div>
+      {editorMenu && editorRef.current && (
+        <ContextMenu
+          x={editorMenu.x}
+          y={editorMenu.y}
+          items={buildEditorMenu(editorRef.current)}
+          onClose={() => setEditorMenu(null)}
+        />
+      )}
+      {tabMenu && (
+        <ContextMenu
+          x={tabMenu.x}
+          y={tabMenu.y}
+          items={buildTabMenu(tabMenu.path, openFiles, projectPath, onCloseFiles)}
+          onClose={() => setTabMenu(null)}
+        />
+      )}
     </div>
   );
 }

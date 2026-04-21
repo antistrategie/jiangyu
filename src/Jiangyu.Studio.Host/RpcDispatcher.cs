@@ -22,6 +22,12 @@ public static partial class RpcDispatcher
         Register("listDirectory", HandleListDirectory);
         Register("readFile", HandleReadFile);
         Register("writeFile", HandleWriteFile);
+        Register("movePath", HandleMovePath);
+        Register("copyPath", HandleCopyPath);
+        Register("deletePath", HandleDeletePath);
+        Register("createFile", HandleCreateFile);
+        Register("createDirectory", HandleCreateDirectory);
+        Register("revealInExplorer", HandleRevealInExplorer);
         Register("getConfigStatus", HandleGetConfigStatus);
         Register("setGamePath", HandleSetGamePath);
         Register("setUnityEditorPath", HandleSetUnityEditorPath);
@@ -32,6 +38,18 @@ public static partial class RpcDispatcher
     {
         Handlers[method] = handler;
     }
+
+    private static string RequireString(JsonElement? parameters, string name)
+    {
+        if (parameters is not { } p || !p.TryGetProperty(name, out var prop) || prop.GetString() is not { } value)
+            throw new ArgumentException($"Missing '{name}' parameter");
+        return value;
+    }
+
+    // Strict: returns false when the two paths are equal. Callers use this to reject
+    // moving/copying a directory into itself; the UI-side `isDescendant` includes equality.
+    private static bool IsStrictDescendantPath(string ancestor, string descendant)
+        => descendant.StartsWith(ancestor + Path.DirectorySeparatorChar, StringComparison.Ordinal);
 
     /// <summary>
     /// Push a notification from the host to the frontend. The frontend's
@@ -106,8 +124,7 @@ public static partial class RpcDispatcher
 
     private static JsonElement HandleOpenProject(IInfiniFrameWindow window, JsonElement? parameters)
     {
-        var path = parameters?.GetProperty("path").GetString()
-                   ?? throw new ArgumentException("Missing 'path' parameter");
+        var path = RequireString(parameters, "path");
         if (!Directory.Exists(path))
             throw new ArgumentException($"Directory not found: {path}");
 
@@ -126,8 +143,7 @@ public static partial class RpcDispatcher
 
     private static JsonElement HandleListDirectory(IInfiniFrameWindow _, JsonElement? parameters)
     {
-        var path = parameters?.GetProperty("path").GetString()
-                   ?? throw new ArgumentException("Missing 'path' parameter");
+        var path = RequireString(parameters, "path");
 
         if (!Directory.Exists(path))
             throw new ArgumentException($"Directory not found: {path}");
@@ -159,8 +175,7 @@ public static partial class RpcDispatcher
 
     private static JsonElement HandleReadFile(IInfiniFrameWindow _, JsonElement? parameters)
     {
-        var path = parameters?.GetProperty("path").GetString()
-                   ?? throw new ArgumentException("Missing 'path' parameter");
+        var path = RequireString(parameters, "path");
 
         if (!File.Exists(path))
             throw new ArgumentException($"File not found: {path}");
@@ -171,13 +186,135 @@ public static partial class RpcDispatcher
 
     private static JsonElement HandleWriteFile(IInfiniFrameWindow _, JsonElement? parameters)
     {
-        var path = parameters?.GetProperty("path").GetString()
-                   ?? throw new ArgumentException("Missing 'path' parameter");
-        var content = parameters?.GetProperty("content").GetString()
-                      ?? throw new ArgumentException("Missing 'content' parameter");
+        var path = RequireString(parameters, "path");
+        var content = RequireString(parameters, "content");
 
         ProjectWatcher.SuppressFor(path);
         File.WriteAllText(path, content);
+        return NullElement;
+    }
+
+    private static JsonElement HandleMovePath(IInfiniFrameWindow _, JsonElement? parameters)
+    {
+        var src = RequireString(parameters, "srcPath");
+        var dest = RequireString(parameters, "destPath");
+
+        if (Directory.Exists(src))
+        {
+            if (IsStrictDescendantPath(src, dest))
+                throw new IOException("Cannot move a directory into itself");
+            Directory.Move(src, dest);
+        }
+        else if (File.Exists(src))
+        {
+            File.Move(src, dest);
+        }
+        else
+        {
+            throw new FileNotFoundException($"Source not found: {src}");
+        }
+
+        return NullElement;
+    }
+
+    private static JsonElement HandleCopyPath(IInfiniFrameWindow _, JsonElement? parameters)
+    {
+        var src = RequireString(parameters, "srcPath");
+        var dest = RequireString(parameters, "destPath");
+
+        // Directory.CreateDirectory (used by recursive copy) is idempotent and
+        // File.Copy's no-overwrite default doesn't cover dest being a directory.
+        if (File.Exists(dest) || Directory.Exists(dest))
+            throw new IOException($"Destination already exists: {dest}");
+
+        if (Directory.Exists(src))
+        {
+            if (IsStrictDescendantPath(src, dest))
+                throw new IOException("Cannot copy a directory into itself");
+            CopyDirectoryRecursive(src, dest);
+        }
+        else if (File.Exists(src))
+        {
+            File.Copy(src, dest);
+        }
+        else
+        {
+            throw new FileNotFoundException($"Source not found: {src}");
+        }
+
+        return NullElement;
+    }
+
+    private static void CopyDirectoryRecursive(string src, string dest)
+    {
+        Directory.CreateDirectory(dest);
+        Parallel.ForEach(
+            Directory.EnumerateFiles(src),
+            file => File.Copy(file, Path.Combine(dest, Path.GetFileName(file))));
+        foreach (var dir in Directory.EnumerateDirectories(src))
+            CopyDirectoryRecursive(dir, Path.Combine(dest, Path.GetFileName(dir)));
+    }
+
+    private static JsonElement HandleDeletePath(IInfiniFrameWindow _, JsonElement? parameters)
+    {
+        var path = RequireString(parameters, "path");
+
+        if (Directory.Exists(path))
+            Directory.Delete(path, recursive: true);
+        else if (File.Exists(path))
+            File.Delete(path);
+        else
+            throw new FileNotFoundException($"Not found: {path}");
+
+        return NullElement;
+    }
+
+    private static JsonElement HandleCreateFile(IInfiniFrameWindow _, JsonElement? parameters)
+    {
+        var path = RequireString(parameters, "path");
+
+        // File.Create silently truncates; guard to treat existing paths as an error.
+        if (File.Exists(path) || Directory.Exists(path))
+            throw new IOException($"Already exists: {path}");
+
+        using (File.Create(path)) { }
+        return NullElement;
+    }
+
+    private static JsonElement HandleCreateDirectory(IInfiniFrameWindow _, JsonElement? parameters)
+    {
+        var path = RequireString(parameters, "path");
+
+        // Directory.CreateDirectory is idempotent; guard to treat existing paths as an error.
+        if (File.Exists(path) || Directory.Exists(path))
+            throw new IOException($"Already exists: {path}");
+
+        Directory.CreateDirectory(path);
+        return NullElement;
+    }
+
+    private static JsonElement HandleRevealInExplorer(IInfiniFrameWindow _, JsonElement? parameters)
+    {
+        var path = RequireString(parameters, "path");
+
+        if (OperatingSystem.IsWindows())
+        {
+            // ArgumentList avoids quoting bugs and command-injection via paths containing `"`.
+            var psi = new System.Diagnostics.ProcessStartInfo("explorer.exe");
+            psi.ArgumentList.Add($"/select,{path}");
+            System.Diagnostics.Process.Start(psi);
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            System.Diagnostics.Process.Start("open", ["-R", path]);
+        }
+        else
+        {
+            // xdg-open can't select a specific file — open the containing directory instead.
+            var target = File.Exists(path) ? Path.GetDirectoryName(path) ?? path : path;
+            System.Diagnostics.Process.Start("xdg-open", [target]);
+        }
+
         return NullElement;
     }
 
