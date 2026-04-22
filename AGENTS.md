@@ -31,6 +31,11 @@ If `PROGRESS.md` or `TODO.md` are absent, treat them as optional working docs ra
 
 - For Roslyn IDE/code-style diagnostics, prefer `dotnet format Jiangyu.slnx --verify-no-changes --severity info --no-restore --exclude vendor/AssetRipper` over build output alone.
 
+## Commits
+
+- One-line commit messages. No multi-paragraph bodies.
+- No `Co-authored-by` trailers or AI attribution.
+
 ## Research policy
 
 - Jiangyu derives its own knowledge from the current game's serialised data, Jiangyu-native tooling, and controlled experiments.
