@@ -105,7 +105,9 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
       controls.dispose();
       renderer.dispose();
       URL.revokeObjectURL(blobUrl);
-      container.removeChild(renderer.domElement);
+      if (renderer.domElement.parentNode === container) {
+        container.removeChild(renderer.domElement);
+      }
     };
     cleanupRef.current = cleanup;
     return cleanup;
