@@ -14,6 +14,7 @@ public static class Program
         builder.Window
             .SetTitle("Jiangyu Studio")
             .SetSize(new Size(1680, 1050))
+            .SetIconFile(Path.Combine(AppContext.BaseDirectory, "icon.png"))
             .Center()
             .RegisterWebMessageReceivedHandler(
                 (window, message) =>

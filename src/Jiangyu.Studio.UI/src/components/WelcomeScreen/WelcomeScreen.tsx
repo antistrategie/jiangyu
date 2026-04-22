@@ -3,18 +3,11 @@ import { CircleX, TriangleAlert, Info, X } from "lucide-react";
 import { rpcCall } from "../../lib/rpc.ts";
 import { pickProjectFolder } from "../../lib/projectCommands.ts";
 import { loadRecentProjects, removeRecentProject } from "../../lib/recentProjects.ts";
+import type { ConfigStatus } from "../../lib/configStatus.ts";
 import styles from "./WelcomeScreen.module.css";
 
 interface WelcomeScreenProps {
   onOpenProject: (path: string) => void;
-}
-
-interface ConfigStatus {
-  readonly gamePath: string | null;
-  readonly gameError: string | null;
-  readonly unityEditorPath: string | null;
-  readonly unityEditorError: string | null;
-  readonly melonLoaderError: string | null;
 }
 
 export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {

@@ -10,6 +10,7 @@ import {
 } from "react";
 
 export const PALETTE_SCOPE = {
+  App: "APP · 应用",
   Project: "PROJECT · 项目",
   View: "VIEW · 视图",
   File: "FILE · 文件",

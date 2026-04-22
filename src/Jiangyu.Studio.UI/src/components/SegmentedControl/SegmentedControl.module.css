@@ -1,0 +1,33 @@
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  background: var(--bg-raised);
+}
+
+.segment {
+  padding: var(--space-1) var(--space-3);
+  font-family: var(--font-label);
+  font-size: var(--fs-sm);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--fg);
+  border: none;
+  cursor: pointer;
+  transition:
+    background var(--ease-fast),
+    color var(--ease-fast);
+}
+
+.segment + .segment {
+  border-left: 1px solid var(--rule);
+}
+
+.segment:hover:not(.segmentActive) {
+  background: var(--paper-2);
+}
+
+.segmentActive {
+  background: var(--cinnabar-1);
+  color: var(--paper-0);
+}

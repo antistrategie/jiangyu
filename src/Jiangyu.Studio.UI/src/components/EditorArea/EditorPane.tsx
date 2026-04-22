@@ -8,6 +8,7 @@ import { buildTabMenu } from "./tabMenu.ts";
 import { getLanguage, isBinaryFile } from "./fileTypes.ts";
 import type { CodePane } from "../../lib/layout.ts";
 import type { FileChangeKind } from "../../lib/rpc.ts";
+import { useEditorFontSize, useEditorKeybindMode, useEditorWordWrap } from "../../lib/settings.ts";
 import { DropOverlay, type DropZone } from "./DropOverlay.tsx";
 import { EmptyPrompt } from "./EmptyPrompt.tsx";
 import type { BrowserPane as BrowserPaneModel } from "../../lib/layout.ts";
@@ -163,6 +164,27 @@ export function EditorPane({
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; path: string } | null>(null);
   const [tabbarDropHover, setTabbarDropHover] = useState(false);
   const themeRegistered = useRef(false);
+  const [fontSize] = useEditorFontSize();
+  const [wordWrap] = useEditorWordWrap();
+  const [keybindMode] = useEditorKeybindMode();
+  const vimStatusRef = useRef<HTMLDivElement>(null);
+
+  // monaco-vim attaches keybindings to the Monaco instance and, optionally,
+  // renders mode / command-buffer text into a status bar element. Lazy-import
+  // it so the ~40KB bundle only loads for users who opt into vim mode.
+  useEffect(() => {
+    if (editor === null || keybindMode !== "vim") return;
+    let adapter: { dispose: () => void } | null = null;
+    let cancelled = false;
+    void import("monaco-vim").then(({ initVimMode }) => {
+      if (cancelled) return;
+      adapter = initVimMode(editor, vimStatusRef.current);
+    });
+    return () => {
+      cancelled = true;
+      adapter?.dispose();
+    };
+  }, [editor, keybindMode]);
 
   const activeFile = pane.activeTab;
 
@@ -234,12 +256,11 @@ export function EditorPane({
 
   const handleTabbarDragLeave = () => setTabbarDropHover(false);
 
-  // Monaco options want a numeric fontSize and a CSS font-family string, so the
-  // values can't be CSS vars directly — resolve them from :root at mount so the
-  // editor inherits --font-mono / --fs-base instead of drifting from the tokens.
+  // Font family and padding come from design tokens (no user-visible control).
+  // Font size and word wrap come from settings so they live on re-renders, and
+  // @monaco-editor/react forwards options changes into `editor.updateOptions`.
   const editorOptions = useMemo<monacoEditor.IStandaloneEditorConstructionOptions>(() => {
     const root = getComputedStyle(document.documentElement);
-    const fontSize = parseInt(root.getPropertyValue("--fs-base").trim(), 10) || 14;
     const fontFamily =
       root.getPropertyValue("--font-mono").trim() || "'JetBrains Mono', ui-monospace, monospace";
     const padding = parseInt(root.getPropertyValue("--space-2").trim(), 10) || 8;
@@ -250,14 +271,14 @@ export function EditorPane({
       fontFamily,
       lineNumbers: "on",
       scrollBeyondLastLine: false,
-      wordWrap: "on",
+      wordWrap,
       renderLineHighlight: "gutter",
       guides: { indentation: true, bracketPairs: true },
       bracketPairColorization: { enabled: true },
       padding: { top: padding },
       contextmenu: false,
     };
-  }, []);
+  }, [fontSize, wordWrap]);
 
   const handleTabbarDrop = (e: React.DragEvent) => {
     setTabbarDropHover(false);
@@ -416,16 +437,19 @@ export function EditorPane({
               setEditorMenu({ x: e.clientX, y: e.clientY });
             }}
           >
-            <Editor
-              path={activeFile}
-              value={activeContent}
-              language={getLanguage(activeFile)}
-              theme="vs"
-              loading=""
-              onMount={handleMount}
-              onChange={handleChange}
-              options={editorOptions}
-            />
+            <div className={styles.editorInner}>
+              <Editor
+                path={activeFile}
+                value={activeContent}
+                language={getLanguage(activeFile)}
+                theme="vs"
+                loading=""
+                onMount={handleMount}
+                onChange={handleChange}
+                options={editorOptions}
+              />
+            </div>
+            {keybindMode === "vim" && <div ref={vimStatusRef} className={styles.vimStatus} />}
           </div>
         ) : (
           <p className={styles.empty}>Unable to read file</p>

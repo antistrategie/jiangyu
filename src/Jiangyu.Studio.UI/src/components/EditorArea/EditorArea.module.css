@@ -104,9 +104,26 @@
   z-index: 500;
 }
 
-/* Inactive panes dim the tabbar so the active pane stands out by contrast. */
+/* Inactive panes dim the tabbar to paper-2. Tab content (text, close icons,
+   vertical dividers) on code panes adds visual density that can read as
+   "darker" than a browser pane with the same bg — so fade that content too
+   when the pane is inactive so both pane types settle at the same visible
+   shade. */
 .editor:not(.editorActive) .tabbar {
   background: var(--bg-sunken);
+}
+
+.editor:not(.editorActive) .tabActive {
+  background: var(--bg-sunken);
+  color: var(--fg-subtle);
+}
+
+.editor:not(.editorActive) .tab {
+  color: var(--fg-subtle);
+}
+
+.editor:not(.editorActive) .tab + .tab {
+  border-left-color: transparent;
 }
 
 .tabbarDrop {
@@ -280,8 +297,29 @@
 .editorHost {
   flex: 1;
   display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
+}
+
+.editorInner {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.vimStatus {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  min-height: 20px;
+  border-top: 1px solid var(--rule);
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg);
 }
 
 .empty {

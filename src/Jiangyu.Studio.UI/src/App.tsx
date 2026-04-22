@@ -4,6 +4,7 @@ import { Sidebar } from "./components/Sidebar/Sidebar.tsx";
 import { EditorGrid } from "./components/EditorArea/EditorGrid.tsx";
 import { WelcomeScreen } from "./components/WelcomeScreen/WelcomeScreen.tsx";
 import { Palette } from "./components/Palette/Palette.tsx";
+import { SettingsModal } from "./components/SettingsModal/SettingsModal.tsx";
 import { basename, join, remapPath } from "./lib/path.ts";
 import { rpcCall, subscribe, type FileChangedEvent } from "./lib/rpc.ts";
 import { pickProjectFolder } from "./lib/projectCommands.ts";
@@ -53,6 +54,7 @@ export function App() {
   const [layout, setLayout] = useState<Layout>(EMPTY_LAYOUT);
   const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [fileEntries, setFileEntries] = useState<readonly string[]>([]);
   const [recentProjects, setRecentProjects] = useState<readonly string[]>([]);
   const [fullscreenPaneId, setFullscreenPaneId] = useState<string | null>(null);
@@ -299,6 +301,19 @@ export function App() {
     [projectPath, recentProjects, openProject, closeProject, revealProject, switchProject],
   );
 
+  const settingsActions = useMemo<PaletteAction[]>(
+    () => [
+      {
+        id: "app.openSettings",
+        label: "Settings",
+        scope: PALETTE_SCOPE.App,
+        cn: "设置",
+        run: () => setSettingsOpen(true),
+      },
+    ],
+    [],
+  );
+
   // Keep paneActions cheap: it only cares about topology (active id + pane id
   // order), not weights. Depending on `layout` directly rebuilds the palette
   // registry once per pixel during drag-resize. Use `` as the delimiter
@@ -397,6 +412,7 @@ export function App() {
   }, [projectPath, fileEntries, handleOpenFile]);
 
   useRegisterActions(appActions);
+  useRegisterActions(settingsActions);
   useRegisterActions(paneActions);
   useRegisterActions(fileActions);
 
@@ -540,6 +556,7 @@ export function App() {
         </>
       )}
       <Palette open={paletteOpen} onClose={() => setPaletteOpen(false)} actions={allActions} />
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

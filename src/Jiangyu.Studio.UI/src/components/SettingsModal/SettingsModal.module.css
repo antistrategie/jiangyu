@@ -1,0 +1,373 @@
+.dialog {
+  width: min(1100px, 92vw);
+  height: min(760px, 88vh);
+  background: var(--bg-raised);
+  border: 1px solid var(--ink-0);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  color: var(--fg);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-display);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: var(--tracking-section);
+  text-transform: uppercase;
+  color: var(--cinnabar-1);
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--fg);
+  cursor: pointer;
+  transition: background var(--ease-fast);
+}
+
+.close:hover {
+  background: var(--paper-2);
+}
+
+.body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  min-height: 0;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-2);
+  border-right: 1px solid var(--rule);
+  background: var(--bg);
+}
+
+.navItem {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-label);
+  font-size: var(--fs-sm);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background var(--ease-fast),
+    border-color var(--ease-fast);
+}
+
+.navItem:hover {
+  background: var(--paper-1);
+}
+
+.navItemActive {
+  background: var(--paper-0);
+  border-color: var(--rule);
+  color: var(--cinnabar-1);
+}
+
+.content {
+  padding: var(--space-4) var(--space-5);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sectionHeader {
+  font-family: var(--font-display);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-section);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin: 0;
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--rule-faint);
+}
+
+.sectionHeader:not(:first-child) {
+  margin-top: var(--space-3);
+}
+
+.field {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(0, 1.4fr);
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.fieldLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fieldLabelText {
+  font-family: var(--font-label);
+  font-size: var(--fs-base);
+  color: var(--fg-strong);
+}
+
+.fieldHint {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+
+.fieldControl {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--rule);
+  background: var(--bg-raised);
+}
+
+.stepButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  background: transparent;
+  border: none;
+  color: var(--fg);
+  cursor: pointer;
+  transition: background var(--ease-fast);
+}
+
+.stepButton:hover:not(:disabled) {
+  background: var(--paper-2);
+}
+
+.stepButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.stepValue {
+  width: 48px;
+  text-align: center;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--rule);
+  border-right: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  color: var(--fg-strong);
+  padding: var(--space-1) 0;
+}
+
+.stepValue::-webkit-outer-spin-button,
+.stepValue::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.stepValue:focus {
+  outline: none;
+  background: var(--paper-1);
+}
+
+.pathRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  width: 100%;
+}
+
+.pathValue {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--fg-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pathMissing {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.linkButton {
+  font-family: var(--font-label);
+  font-size: var(--fs-sm);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--cinnabar-1);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--rule-faint);
+  text-underline-offset: 3px;
+}
+
+.linkButton:hover {
+  text-decoration-color: var(--cinnabar-1);
+}
+
+/* URL-style link: monospaced, preserves casing — used for the repo URL in About. */
+.repoLink {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  background: transparent;
+  color: var(--cinnabar-1);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--rule-faint);
+  text-underline-offset: 3px;
+}
+
+.repoLink:hover {
+  text-decoration-color: var(--cinnabar-1);
+}
+
+.muted {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+  margin: 0;
+  line-height: var(--lh-base);
+}
+
+.error {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--cinnabar-1);
+  margin: 0;
+}
+
+.warning {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--gold-0);
+  margin: 0;
+}
+
+.aboutHero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-3) 0;
+}
+
+.aboutTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  color: var(--fg-strong);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+}
+
+.aboutGlyph {
+  font-family: var(--font-display-cjk);
+  font-size: var(--fs-xl);
+  color: var(--cinnabar-1);
+  line-height: 1;
+}
+
+.aboutVersion {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.creditsGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.creditsGroupLabel {
+  margin: var(--space-2) 0 0;
+  font-family: var(--font-label);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg);
+}
+
+.creditsList {
+  list-style: none;
+  margin-top: var(--space-1);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.creditsRow {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 90px minmax(0, 2fr);
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  font-size: var(--fs-sm);
+  border-bottom: 1px solid var(--rule-faint);
+}
+
+.creditsName {
+  font-family: var(--font-label);
+  color: var(--fg-strong);
+}
+
+.creditsLicense {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.creditsNote {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  line-height: var(--lh-snug);
+}

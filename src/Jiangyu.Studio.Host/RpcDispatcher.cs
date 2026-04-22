@@ -29,6 +29,7 @@ public static partial class RpcDispatcher
         Register("createFile", HandleCreateFile);
         Register("createDirectory", HandleCreateDirectory);
         Register("revealInExplorer", HandleRevealInExplorer);
+        Register("openExternal", HandleOpenExternal);
         Register("getConfigStatus", HandleGetConfigStatus);
         Register("setGamePath", HandleSetGamePath);
         Register("setUnityEditorPath", HandleSetUnityEditorPath);
@@ -499,6 +500,38 @@ public static partial class RpcDispatcher
             throw new IOException($"Already exists: {path}");
 
         Directory.CreateDirectory(path);
+        return NullElement;
+    }
+
+    private static JsonElement HandleOpenExternal(IInfiniFrameWindow _, JsonElement? parameters)
+    {
+        var url = RequireString(parameters, "url");
+
+        // Only allow http / https. The UI today only calls this with our own
+        // repo URL, but the guard prevents the RPC from being weaponised into
+        // launching arbitrary `file://`, `javascript:` or custom-scheme handlers
+        // if a future caller ever forwards a user-controlled string.
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new ArgumentException($"Invalid external URL: {url}");
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            // UseShellExecute routes the URL through the default browser.
+            var psi = new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true };
+            System.Diagnostics.Process.Start(psi);
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            System.Diagnostics.Process.Start("open", [uri.AbsoluteUri]);
+        }
+        else
+        {
+            System.Diagnostics.Process.Start("xdg-open", [uri.AbsoluteUri]);
+        }
+
         return NullElement;
     }
 

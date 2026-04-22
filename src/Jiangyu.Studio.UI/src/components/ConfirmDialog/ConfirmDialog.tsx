@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
+import { Modal } from "../Modal/Modal.tsx";
 import styles from "./ConfirmDialog.module.css";
 
 export type ConfirmVariant = "default" | "danger";
@@ -29,30 +29,21 @@ export function ConfirmDialog({
     confirmRef.current?.focus();
   }, []);
 
+  // Modal handles Escape → onCancel; Enter-to-confirm is specific to this
+  // dialog's semantics, so it stays here.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onCancel();
-      } else if (e.key === "Enter") {
+      if (e.key === "Enter") {
         e.preventDefault();
         onConfirm();
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onCancel, onConfirm]);
+  }, [onConfirm]);
 
-  return createPortal(
-    <div
-      className={styles.backdrop}
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onCancel();
-      }}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirm-title"
-    >
+  return (
+    <Modal onClose={onCancel} ariaLabelledBy="confirm-title">
       <div className={styles.dialog}>
         <div id="confirm-title" className={styles.header}>
           {title}
@@ -72,7 +63,6 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }

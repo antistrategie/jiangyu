@@ -61,15 +61,11 @@ export function filterActions(
   return out;
 }
 
-// Known scopes are ordered explicitly so the palette layout doesn't depend on
-// React effect timing (parent vs. child registration order). Unknown scopes
-// keep their first-seen order between the known head and the FILES_SCOPE tail.
-const SCOPE_ORDER: readonly string[] = [
-  PALETTE_SCOPE.Project,
-  PALETTE_SCOPE.View,
-  PALETTE_SCOPE.File,
-  PALETTE_SCOPE.Editor,
-];
+// Known scopes follow the declaration order of PALETTE_SCOPE so the palette
+// layout doesn't depend on React effect timing (parent vs. child registration
+// order). Unknown scopes keep their first-seen order between the known head
+// and the FILES_SCOPE tail.
+const SCOPE_ORDER: readonly string[] = Object.values(PALETTE_SCOPE);
 
 /**
  * Group actions by scope. Known scopes follow `SCOPE_ORDER`; unknown scopes

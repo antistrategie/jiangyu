@@ -23,6 +23,12 @@
     <Content Update="wwwroot\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- OS window icon — shipped from the UI project so there's a single source
+         of truth (UI/public/icon.png is also the web favicon). Copied to the
+         output as "icon.png" so SetIconFile can resolve it via AppContext.BaseDirectory. -->
+    <Content Include="..\Jiangyu.Studio.UI\public\icon.png" Link="icon.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <!--
