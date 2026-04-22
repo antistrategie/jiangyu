@@ -9,7 +9,10 @@ export function ToastContainer() {
   return (
     <div className={styles.container}>
       {toasts.map((t) => (
-        <div key={t.id} className={`${styles.toast}${t.variant === "error" ? ` ${styles.toastError}` : ""}`}>
+        <div
+          key={t.id}
+          className={`${styles.toast}${t.variant === "error" ? ` ${styles.toastError}` : ""}`}
+        >
           {t.sticker && <img src={t.sticker} alt="" className={styles.sticker} />}
           <div className={styles.body}>
             <span className={styles.message}>{t.message}</span>

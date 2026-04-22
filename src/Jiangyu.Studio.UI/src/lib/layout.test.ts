@@ -218,6 +218,125 @@ describe("closePane", () => {
   });
 });
 
+describe("closePane weight redistribution", () => {
+  it("conserves total pane weight when removing a pane from a multi-pane column", () => {
+    const a = openFile(EMPTY_LAYOUT, A);
+    const aId = a.activePaneId!;
+    const down = openFile(splitDown(a), B);
+    const bId = down.activePaneId!;
+    const weighted = setPaneWeight(setPaneWeight(down, aId, 1), bId, 3);
+    const totalBefore = weighted.columns[0]!.panes.reduce((s, p) => s + paneWeight(p), 0);
+
+    const closed = closePane(weighted, aId);
+    const totalAfter = closed.columns[0]!.panes.reduce((s, p) => s + paneWeight(p), 0);
+    expect(totalAfter).toBeCloseTo(totalBefore);
+  });
+
+  it("preserves ratio between surviving panes in a 3-pane column", () => {
+    const a = openFile(EMPTY_LAYOUT, A);
+    const aId = a.activePaneId!;
+    const down1 = openFile(splitDown(a), B);
+    const bId = down1.activePaneId!;
+    const down2 = openFile(splitDown(down1), C);
+    const cId = down2.activePaneId!;
+    const weighted = setPaneWeight(setPaneWeight(setPaneWeight(down2, aId, 2), bId, 3), cId, 5);
+    const ratioBefore = paneWeight(findPane(weighted, bId)!) / paneWeight(findPane(weighted, cId)!);
+
+    const closed = closePane(weighted, aId);
+    const ratioAfter = paneWeight(findPane(closed, bId)!) / paneWeight(findPane(closed, cId)!);
+    expect(ratioAfter).toBeCloseTo(ratioBefore);
+  });
+
+  it("does not change column weights when a pane is removed from a multi-pane column", () => {
+    const a = openFile(EMPTY_LAYOUT, A);
+    const aId = a.activePaneId!;
+    const right = openFile(splitRight(a), B);
+    const down = openFile(splitDown(setActivePane(right, aId)), C);
+    const col0Id = down.columns[0]!.id;
+    const col1Id = down.columns[1]!.id;
+    const weighted = setColumnWeight(setColumnWeight(down, col0Id, 2), col1Id, 5);
+    const cId = down.activePaneId!;
+
+    const closed = closePane(weighted, cId);
+    const col0 = closed.columns.find((c) => c.id === col0Id)!;
+    const col1 = closed.columns.find((c) => c.id === col1Id)!;
+    expect(columnWeight(col0)).toBe(2);
+    expect(columnWeight(col1)).toBe(5);
+  });
+
+  it("conserves total column weight when removing the sole pane (column removal)", () => {
+    const a = openFile(EMPTY_LAYOUT, A);
+    const right = openFile(splitRight(a), B);
+    const right2 = openFile(splitRight(right), C);
+    const col0 = right2.columns[0]!;
+    const col1 = right2.columns[1]!;
+    const col2 = right2.columns[2]!;
+    const weighted = setColumnWeight(
+      setColumnWeight(setColumnWeight(right2, col0.id, 2), col1.id, 3),
+      col2.id,
+      5,
+    );
+    const totalBefore = weighted.columns.reduce((s, c) => s + columnWeight(c), 0);
+
+    const bPaneId = weighted.columns[1]!.panes[0]!.id;
+    const closed = closePane(weighted, bPaneId);
+    const totalAfter = closed.columns.reduce((s, c) => s + columnWeight(c), 0);
+    expect(totalAfter).toBeCloseTo(totalBefore);
+  });
+
+  it("preserves ratio between surviving columns when a column is removed", () => {
+    const a = openFile(EMPTY_LAYOUT, A);
+    const right = openFile(splitRight(a), B);
+    const right2 = openFile(splitRight(right), C);
+    const col0 = right2.columns[0]!;
+    const col2 = right2.columns[2]!;
+    const weighted = setColumnWeight(
+      setColumnWeight(setColumnWeight(right2, col0.id, 2), right2.columns[1]!.id, 3),
+      col2.id,
+      5,
+    );
+    const ratioBefore = columnWeight(weighted.columns[0]!) / columnWeight(weighted.columns[2]!);
+
+    const bPaneId = weighted.columns[1]!.panes[0]!.id;
+    const closed = closePane(weighted, bPaneId);
+    const ratioAfter = columnWeight(closed.columns[0]!) / columnWeight(closed.columns[1]!);
+    expect(ratioAfter).toBeCloseTo(ratioBefore);
+  });
+
+  it("does not change pane weights in unrelated columns when a column is removed", () => {
+    const a = openFile(EMPTY_LAYOUT, A);
+    const aId = a.activePaneId!;
+    const right = openFile(splitRight(a), B);
+    const bId = right.activePaneId!;
+    const weighted = setPaneWeight(setPaneWeight(right, aId, 7), bId, 3);
+
+    const closed = closePane(weighted, bId);
+    expect(paneWeight(findPane(closed, aId)!)).toBe(7);
+  });
+
+  it("works correctly with default weights (all 1)", () => {
+    const a = openFile(EMPTY_LAYOUT, A);
+    const aId = a.activePaneId!;
+    const down = openFile(splitDown(a), B);
+    const bId = down.activePaneId!;
+
+    const closed = closePane(down, aId);
+    // Sole survivor absorbs the removed pane's weight: 1 + 1 = 2.
+    expect(paneWeight(findPane(closed, bId)!)).toBeCloseTo(2);
+  });
+
+  it("keeps activePaneId unchanged when closing a non-active pane", () => {
+    const a = openFile(EMPTY_LAYOUT, A);
+    const aId = a.activePaneId!;
+    const down = openFile(splitDown(a), B);
+    const bId = down.activePaneId!;
+    const reactivated = setActivePane(down, aId);
+
+    const closed = closePane(reactivated, bId);
+    expect(closed.activePaneId).toBe(aId);
+  });
+});
+
 describe("remapPaths", () => {
   it("rewrites tab paths and the active tab", () => {
     const { layout } = withTwoTabs();

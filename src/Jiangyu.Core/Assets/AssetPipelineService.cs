@@ -1476,12 +1476,42 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
                 break;
 
             case "Sprite" when found is ISprite sprite:
-                if (!SpriteConverter.TryConvertToBitmap(sprite, out var sprBitmap) || sprBitmap.IsEmpty)
+                // Get the full backing texture bitmap first.
+                DirectBitmap? fullBitmap = null;
+                if (SpriteConverter.TryConvertToBitmap(sprite, out var sprBitmap) && !sprBitmap.IsEmpty)
+                    fullBitmap = sprBitmap;
+                else
+                {
+                    var backingTexture = ResolveSpriteBackingTexture(sprite);
+                    if (backingTexture is not null &&
+                        TextureConverter.TryConvertToBitmap(backingTexture, out var backingBmp) &&
+                        !backingBmp.IsEmpty)
+                        fullBitmap = backingBmp;
+                }
+                if (fullBitmap is null)
                 {
                     _log.Warning($"Preview: failed to decode Sprite at {collection}/{pathId}");
                     return null;
                 }
-                data = GenerateThumbnailPng(sprBitmap);
+
+                // Crop to the sprite's TextureRect within the atlas.
+                // TextureRect is in Unity coords (bottom-left origin); the bitmap
+                // has been FlipY'd to top-left origin by TextureConverter.
+                var texRect = sprite.RD.TextureRect;
+                int rx = Math.Max(0, (int)texRect.X);
+                int rw = Math.Min(fullBitmap.Width - rx, (int)Math.Ceiling(texRect.Width));
+                int rh = Math.Min(fullBitmap.Height, (int)Math.Ceiling(texRect.Height));
+                int ry = Math.Max(0, fullBitmap.Height - (int)texRect.Y - rh);
+
+                if (rw > 0 && rh > 0 && (rw < fullBitmap.Width || rh < fullBitmap.Height))
+                {
+                    var cropped = fullBitmap.Crop(rx..(rx + rw), ry..(ry + rh));
+                    data = GenerateThumbnailPng(cropped);
+                }
+                else
+                {
+                    data = GenerateThumbnailPng(fullBitmap);
+                }
                 ext = ".png";
                 mime2 = "image/png";
                 break;

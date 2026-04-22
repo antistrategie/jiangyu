@@ -1,4 +1,5 @@
 import uFuzzy from "@leeoniya/ufuzzy";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   assetsExport,
@@ -23,7 +24,10 @@ import {
 } from "../../lib/projectConfig.ts";
 import { isAbsolute, join, normalise } from "../../lib/path.ts";
 import { useToast } from "../../lib/toast.tsx";
+import { AudioPlayer } from "./AudioPlayer.tsx";
+import { ImageViewer } from "./ImageViewer.tsx";
 import { ModelViewer } from "./ModelViewer.tsx";
+import { Spinner } from "../Spinner/Spinner.tsx";
 import styles from "./AssetBrowser.module.css";
 
 interface AssetBrowserProps {
@@ -34,11 +38,6 @@ type KindFilter = "all" | AssetKindGroup;
 type Destination = "default" | "project" | "custom";
 
 const rowKey = (a: AssetEntry): string => `${a.collection ?? ""}:${a.pathId}`;
-
-// Visible row cap. Reconciling hundreds of grid rows on every keystroke is
-// visible lag even with useDeferredValue; 200 is enough for "find the match,
-// refine if needed" without making the filter feel sluggish.
-const RESULT_CAP = 200;
 
 const KIND_FILTERS: readonly ("all" | AssetKindGroup)[] = [
   "all",
@@ -66,6 +65,24 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
   const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(
     null,
   );
+
+  // Resizable split between list and details panels
+  const [listFraction, setListFraction] = useState(0.6);
+  const [landscape, setLandscape] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        setLandscape(width > height * (5 / 3));
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Asset preview state — guarded by a token so stale responses from a
   // previously focused asset don't overwrite the current preview.
@@ -109,7 +126,8 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
   // Fetch a lazy on-demand preview when the focused asset changes.
   // Uses a token to discard stale responses from a previously focused asset.
   const PREVIEWABLE_CLASSES = useMemo(
-    () => new Set(["Texture2D", "Sprite", "AudioClip", "GameObject", "PrefabHierarchyObject", "Mesh"]),
+    () =>
+      new Set(["Texture2D", "Sprite", "AudioClip", "GameObject", "PrefabHierarchyObject", "Mesh"]),
     [],
   );
   useEffect(() => {
@@ -197,13 +215,7 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
 
     const q = deferredQuery.trim();
     if (q.length === 0) {
-      const out: AssetEntry[] = [];
-      for (const a of allAssets) {
-        if (!passes(a)) continue;
-        out.push(a);
-        if (out.length >= RESULT_CAP) break;
-      }
-      return out;
+      return allAssets.filter(passes);
     }
 
     const [idxs, info, order] = uf.search(haystack, q);
@@ -216,14 +228,12 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
         const a = allAssets[assetIdx]!;
         if (!passes(a)) continue;
         out.push(a);
-        if (out.length >= RESULT_CAP) break;
       }
     } else {
       for (const assetIdx of idxs) {
         const a = allAssets[assetIdx]!;
         if (!passes(a)) continue;
         out.push(a);
-        if (out.length >= RESULT_CAP) break;
       }
     }
     return out;
@@ -246,6 +256,55 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
     });
     setFocusedKey((prev) => (prev !== null && keys.has(prev) ? prev : null));
   }, [allAssets]);
+
+  const listScrollRef = useRef<HTMLDivElement>(null);
+  const virtualiser = useVirtualizer({
+    count: results.length,
+    getScrollElement: () => listScrollRef.current,
+    estimateSize: () => 28,
+    overscan: 20,
+  });
+
+  const handleSplitDrag = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const body = bodyRef.current;
+      if (!body) return;
+      const startPos = landscape ? e.clientY : e.clientX;
+      const startFraction = listFraction;
+      const extent = landscape ? body.clientHeight : body.clientWidth;
+      const prevCursor = document.body.style.cursor;
+      const prevSelect = document.body.style.userSelect;
+      document.body.style.cursor = landscape ? "row-resize" : "col-resize";
+      document.body.style.userSelect = "none";
+
+      let pending: number | null = null;
+      let raf: number | null = null;
+      const flush = () => {
+        raf = null;
+        if (pending === null) return;
+        const delta = pending;
+        pending = null;
+        const next = startFraction + delta / extent;
+        setListFraction(Math.max(0.2, Math.min(0.8, next)));
+      };
+      const onMove = (ev: MouseEvent) => {
+        pending = (landscape ? ev.clientY : ev.clientX) - startPos;
+        if (raf === null) raf = requestAnimationFrame(flush);
+      };
+      const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        if (raf !== null) cancelAnimationFrame(raf);
+        flush();
+        document.body.style.cursor = prevCursor;
+        document.body.style.userSelect = prevSelect;
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    },
+    [listFraction, landscape],
+  );
 
   const handleIndex = useCallback(async () => {
     setIndexing(true);
@@ -399,7 +458,9 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
               variant: "success",
               message: `Exported ${paths.length} asset${paths.length === 1 ? "" : "s"}`,
               ...(first != null ? { detail: first } : {}),
-              ...(first != null ? { actions: [{ label: "Reveal", run: () => void revealInExplorer(first) }] } : {}),
+              ...(first != null
+                ? { actions: [{ label: "Reveal", run: () => void revealInExplorer(first) }] }
+                : {}),
             });
           } catch (err) {
             pushToast({
@@ -441,7 +502,7 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
     return (
       <div className={styles.root}>
         <div className={styles.gate}>
-          <div className={styles.spinner} />
+          <Spinner />
         </div>
       </div>
     );
@@ -470,7 +531,13 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
               disabled={indexing}
               onClick={() => void handleIndex()}
             >
-              {indexing && <span className={styles.gateSpinner} />}
+              {indexing && (
+                <Spinner
+                  size={12}
+                  trackColor="rgba(255,255,255,0.3)"
+                  accentColor="var(--paper-0)"
+                />
+              )}
               {indexing ? "Indexing…" : stale ? "Re-index" : "Index assets"}
             </button>
           )}
@@ -503,8 +570,8 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
         </div>
       </div>
 
-      <div className={styles.body}>
-        <div className={styles.listPanel}>
+      <div className={`${styles.body}${landscape ? ` ${styles.landscape}` : ""}`} ref={bodyRef}>
+        <div className={styles.listPanel} style={{ flex: `0 0 ${listFraction * 100}%` }}>
           <div className={styles.listHeader}>
             <span className={styles.listHeaderCheck}>
               <input
@@ -519,7 +586,7 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
             <span>Name</span>
             <span>Type</span>
           </div>
-          <div className={styles.list}>
+          <div className={styles.list} ref={listScrollRef}>
             {loadingAssets ? (
               <div className={styles.detailsEmpty}>Loading index…</div>
             ) : results.length === 0 ? (
@@ -529,37 +596,52 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
                   : `${status.assetCount ?? 0} assets indexed. Start typing to search.`}
               </div>
             ) : (
-              results.map((row) => {
-                const key = rowKey(row);
-                const selected = selection.has(key);
-                const focused = focusedKey === key;
-                const group = classifyAsset(row.className);
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    className={`${styles.row} ${selected ? styles.rowSelected : ""} ${focused ? styles.rowFocused : ""}`}
-                    onClick={(e) => handleRowClick(row, e)}
-                  >
-                    <span
-                      className={styles.rowCheck}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleSelection(key);
+              <div style={{ height: virtualiser.getTotalSize(), position: "relative" }}>
+                {virtualiser.getVirtualItems().map((vRow) => {
+                  const row = results[vRow.index]!;
+                  const key = rowKey(row);
+                  const selected = selection.has(key);
+                  const focused = focusedKey === key;
+                  const group = classifyAsset(row.className);
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      ref={virtualiser.measureElement}
+                      data-index={vRow.index}
+                      className={`${styles.row} ${selected ? styles.rowSelected : ""} ${focused ? styles.rowFocused : ""}`}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        transform: `translateY(${vRow.start}px)`,
                       }}
+                      onClick={(e) => handleRowClick(row, e)}
                     >
-                      <input type="checkbox" checked={selected} readOnly />
-                    </span>
-                    <span className={styles.rowName}>{row.name ?? "(unnamed)"}</span>
-                    <span className={styles.rowKind}>
-                      {group ? ASSET_KIND_GROUP_LABEL[group] : (row.className ?? "—")}
-                    </span>
-                  </button>
-                );
-              })
+                      <span
+                        className={styles.rowCheck}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSelection(key);
+                        }}
+                      >
+                        <input type="checkbox" checked={selected} readOnly />
+                      </span>
+                      <span className={styles.rowName}>{row.name ?? "(unnamed)"}</span>
+                      <span className={styles.rowKind}>
+                        {group ? ASSET_KIND_GROUP_LABEL[group] : (row.className ?? "—")}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>
+
+        {/* Resize handle */}
+        <div className={styles.splitHandle} onMouseDown={handleSplitDrag} />
 
         <div className={styles.detailsPanel}>
           {focusedKey === null ? (
@@ -572,24 +654,16 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
                 <>
                   <div className={styles.preview}>
                     {previewData?.mimeType === "image/png" ? (
-                      <img
-                        className={styles.previewImage}
+                      <ImageViewer
                         src={previewData.dataUrl}
                         alt={focused.name ?? "Asset preview"}
                       />
                     ) : previewData?.mimeType.startsWith("audio/") ? (
-                      <div className={styles.audioPreview}>
-                        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                        <audio
-                          className={styles.audioPlayer}
-                          controls
-                          src={previewData.dataUrl}
-                        />
-                      </div>
+                      <AudioPlayer src={previewData.dataUrl} />
                     ) : previewData?.mimeType === "model/gltf-binary" ? (
                       <ModelViewer dataUrl={previewData.dataUrl} />
                     ) : previewLoading ? (
-                      <span className={styles.previewSpinner} />
+                      <Spinner />
                     ) : (
                       <span className={styles.previewPlaceholder}>No preview</span>
                     )}
@@ -662,7 +736,7 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
                 disabled={selectedRows.length === 0 || exporting}
                 onClick={handleExport}
               >
-                {exporting && <span className={styles.exportSpinner} />}
+                {exporting && <Spinner size={12} />}
                 {exporting ? "Exporting…" : `Export ${selectedRows.length || "0"} selected`}
               </button>
               {exportProgress && exporting && exportProgress.total > 1 && (

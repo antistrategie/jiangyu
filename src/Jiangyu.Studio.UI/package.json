@@ -20,6 +20,7 @@
     "@fontsource/noto-serif-sc": "^5.2.9",
     "@leeoniya/ufuzzy": "^1.0.19",
     "@monaco-editor/react": "^4.7.0",
+    "@tanstack/react-virtual": "^3.13.24",
     "lucide-react": "^1.8.0",
     "monaco-editor": "^0.55.1",
     "react": "^19.1.0",

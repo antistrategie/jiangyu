@@ -243,12 +243,47 @@ export function closeTabsEverywhere(layout: Layout, paths: readonly string[]): L
 function removePane(layout: Layout, paneId: string): Layout {
   const coords = findPaneCoords(layout, paneId);
   if (coords === null) return layout;
-  const columns = layout.columns
+
+  const srcCol = layout.columns[coords.col]!;
+  const removedPane = srcCol.panes[coords.pane]!;
+
+  // Remove the pane and drop empty columns.
+  let columns = layout.columns
     .map((col, ci) => {
       if (ci !== coords.col) return col;
       return { ...col, panes: col.panes.filter((p) => p.id !== paneId) };
     })
     .filter((col) => col.panes.length > 0);
+
+  // Redistribute weight so surviving siblings fill the vacated space.
+  if (srcCol.panes.length > 1) {
+    // Pane removed from a multi-pane column — redistribute among sibling panes.
+    const removedW = paneWeight(removedPane);
+    const siblingPanes = srcCol.panes.filter((p) => p.id !== paneId);
+    const siblingTotal = siblingPanes.reduce((s, p) => s + paneWeight(p), 0);
+    if (siblingTotal > 0) {
+      columns = columns.map((col) => {
+        if (col.id !== srcCol.id) return col;
+        return {
+          ...col,
+          panes: col.panes.map((p) => ({
+            ...p,
+            weight: paneWeight(p) + removedW * (paneWeight(p) / siblingTotal),
+          })),
+        };
+      });
+    }
+  } else if (columns.length > 0) {
+    // Entire column removed — redistribute among sibling columns.
+    const removedW = columnWeight(srcCol);
+    const siblingTotal = columns.reduce((s, c) => s + columnWeight(c), 0);
+    if (siblingTotal > 0) {
+      columns = columns.map((c) => ({
+        ...c,
+        weight: columnWeight(c) + removedW * (columnWeight(c) / siblingTotal),
+      }));
+    }
+  }
 
   let activePaneId = layout.activePaneId;
   if (activePaneId === paneId) activePaneId = pickNextActive(layout, coords);
