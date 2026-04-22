@@ -37,7 +37,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
 {
     private const string IndexFileName = "asset-index.json";
     private const string ManifestFileName = "index-manifest.json";
-    private const string ThumbnailDirName = "thumbnails";
+    private const string PreviewDirName = "previews";
     private const int ThumbnailMaxDimension = 256;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -106,49 +106,26 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
     /// </summary>
     public void BuildIndex()
     {
-        _log.Info($"Loading game data from: {GameDataPath}");
+        var gameData = LoadAndProcessGameData();
+        BuildIndexFromGameData(gameData);
+    }
 
-        var settings = new CoreConfiguration();
-        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level0;
+    /// <summary>
+    /// Builds the asset index from pre-loaded game data. Use this overload when
+    /// the caller already holds a <see cref="GameData"/> instance (e.g. from a
+    /// cached load) to avoid re-loading.
+    /// </summary>
+    public void BuildIndexFromGameData(GameData gameData)
+    {
+        _progress.SetPhase("Building index");
+        var index = BuildAssetIndex(gameData);
+        _progress.Finish();
 
-        var adapter = new AssetRipperProgressAdapter(_progress);
-        Logger.Add(adapter);
-
-        AssetIndex index;
-        try
-        {
-            _progress.SetPhase("Loading assets");
-            var gameStructure = GameStructure.Load([GameDataPath], LocalFileSystem.Instance, settings);
-            var gameData = GameData.FromGameStructure(gameStructure);
-
-            if (!gameData.GameBundle.HasAnyAssetCollections())
-            {
-                _progress.Finish();
-                _log.Error("No asset collections found in game data.");
-                return;
-            }
-
-            _progress.Finish();
-
-            int collectionCount = gameData.GameBundle.FetchAssetCollections().Count();
-            _log.Info($"Loaded {collectionCount} asset collections");
-
-            _progress.SetPhase("Processing");
-            RunProcessors(gameData);
-            _progress.Finish();
-
-            _progress.SetPhase("Building index");
-            index = BuildAssetIndex(gameData);
-            _progress.Finish();
-
-            _progress.SetPhase("Generating thumbnails");
-            GenerateThumbnails(gameData);
-            _progress.Finish();
-        }
-        finally
-        {
-            Logger.Remove(adapter);
-        }
+        // Wipe cached previews so stale entries from an older game version
+        // (which may reuse the same collection/pathId) don't survive.
+        var previewDir = Path.Combine(CachePath, PreviewDirName);
+        if (Directory.Exists(previewDir))
+            Directory.Delete(previewDir, recursive: true);
 
         // Write index
         Directory.CreateDirectory(CachePath);
@@ -169,6 +146,50 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
             JsonSerializer.Serialize(manifest, JsonOptions));
 
         _log.Info($"Indexed {index.Assets?.Count ?? 0} assets to: {CachePath}");
+    }
+
+    /// <summary>
+    /// Loads game data via AssetRipper and runs all processors. Returns the
+    /// fully-processed <see cref="GameData"/> ready for asset extraction.
+    /// Callers may cache the result for repeated lookups.
+    /// </summary>
+    public GameData LoadAndProcessGameData()
+    {
+        _log.Info($"Loading game data from: {GameDataPath}");
+
+        var settings = new CoreConfiguration();
+        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level0;
+
+        var adapter = new AssetRipperProgressAdapter(_progress);
+        Logger.Add(adapter);
+
+        try
+        {
+            _progress.SetPhase("Loading assets");
+            var gameStructure = GameStructure.Load([GameDataPath], LocalFileSystem.Instance, settings);
+            var gameData = GameData.FromGameStructure(gameStructure);
+
+            if (!gameData.GameBundle.HasAnyAssetCollections())
+            {
+                _progress.Finish();
+                throw new InvalidOperationException("No asset collections found in game data.");
+            }
+
+            _progress.Finish();
+
+            int collectionCount = gameData.GameBundle.FetchAssetCollections().Count();
+            _log.Info($"Loaded {collectionCount} asset collections");
+
+            _progress.SetPhase("Processing");
+            RunProcessors(gameData);
+            _progress.Finish();
+
+            return gameData;
+        }
+        finally
+        {
+            Logger.Remove(adapter);
+        }
     }
 
     /// <summary>
@@ -1411,102 +1432,109 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
     /// Returns the file path for a cached thumbnail, or <c>null</c> if no thumbnail
     /// has been generated for this asset.
     /// </summary>
-    public string? GetThumbnailPath(string collection, long pathId)
-    {
-        var path = BuildThumbnailPath(collection, pathId);
-        return File.Exists(path) ? path : null;
-    }
+    /// <summary>
+    /// Result of a lazy on-demand asset preview generation.
+    /// </summary>
+    public sealed record AssetPreviewResult(byte[] Data, string MimeType, string FileExtension);
 
     /// <summary>
-    /// Reads a cached thumbnail and returns its bytes as a Base64-encoded string,
-    /// or <c>null</c> if no thumbnail exists.
+    /// Generates an on-demand preview for a single asset. Returns a thumbnail PNG for
+    /// textures/sprites, decoded audio bytes for audio clips, or a raw GLB for models.
+    /// Results are cached to disk under <c>&lt;cache&gt;/previews/</c>.
     /// </summary>
-    public string? GetThumbnailBase64(string collection, long pathId)
+    public AssetPreviewResult? GeneratePreview(GameData gameData, string collection, long pathId, string className)
     {
-        var path = GetThumbnailPath(collection, pathId);
-        if (path is null) return null;
-        return Convert.ToBase64String(File.ReadAllBytes(path));
-    }
-
-    private string BuildThumbnailPath(string collection, long pathId)
-    {
-        var safeCollection = SanitizeAssetPathSegment(collection);
-        return Path.Combine(CachePath, ThumbnailDirName, $"{safeCollection}--{pathId}.png");
-    }
-
-    /// <summary>
-    /// Iterates all Texture2D and Sprite assets in the loaded game data and writes
-    /// downscaled PNG thumbnails (max 256 px on the longest edge) to the cache.
-    /// The thumbnail directory is wiped on each run so stale entries don't survive
-    /// a game-version change.
-    /// </summary>
-    private void GenerateThumbnails(GameData gameData)
-    {
-        var thumbnailDir = Path.Combine(CachePath, ThumbnailDirName);
-
-        // Wipe previous thumbnails so stale entries from an older game version
-        // (which may reuse the same collection/pathId) don't survive.
-        if (Directory.Exists(thumbnailDir))
-            Directory.Delete(thumbnailDir, recursive: true);
-
-        Directory.CreateDirectory(thumbnailDir);
-
-        int generated = 0;
-        int failed = 0;
-
-        foreach (var collection in gameData.GameBundle.FetchAssetCollections())
+        // Check disk cache first
+        var cached = FindCachedPreview(collection, pathId);
+        if (cached is not null)
         {
-            foreach (IUnityObjectBase asset in collection)
-            {
-                DirectBitmap? bitmap = null;
-
-                try
-                {
-                    if (asset is ITexture2D texture)
-                    {
-                        if (!TextureConverter.TryConvertToBitmap(texture, out var bmp) || bmp.IsEmpty)
-                            continue;
-                        bitmap = bmp;
-                    }
-                    else if (asset is ISprite sprite)
-                    {
-                        if (!SpriteConverter.TryConvertToBitmap(sprite, out var bmp) || bmp.IsEmpty)
-                            continue;
-                        bitmap = bmp;
-                    }
-                    else
-                    {
-                        continue;
-                    }
-
-                    var outPath = BuildThumbnailPath(collection.Name, asset.PathID);
-                    Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
-
-                    if (bitmap.Width <= ThumbnailMaxDimension && bitmap.Height <= ThumbnailMaxDimension)
-                    {
-                        using var fs = File.Create(outPath);
-                        bitmap.SaveAsPng(fs);
-                    }
-                    else
-                    {
-                        WriteThumbnailDownscaled(bitmap, outPath);
-                    }
-
-                    generated++;
-                }
-                catch (Exception ex)
-                {
-                    failed++;
-                    _log.Warning($"Thumbnail failed for {collection.Name}/{asset.PathID}: {ex.Message}");
-                }
-            }
+            var mime = MimeTypeForExtension(Path.GetExtension(cached));
+            return new AssetPreviewResult(File.ReadAllBytes(cached), mime, Path.GetExtension(cached));
         }
 
-        _log.Info($"Generated {generated} thumbnails ({failed} failed) to: {thumbnailDir}");
+        IUnityObjectBase? found = FindAsset(gameData, collection, pathId);
+        if (found is null)
+        {
+            _log.Warning($"Preview: asset not found in {collection} at pathId={pathId}");
+            return null;
+        }
+
+        byte[] data;
+        string ext;
+        string mime2;
+
+        switch (className)
+        {
+            case "Texture2D" when found is ITexture2D texture:
+                if (!TextureConverter.TryConvertToBitmap(texture, out var texBitmap) || texBitmap.IsEmpty)
+                    return null;
+                data = GenerateThumbnailPng(texBitmap);
+                ext = ".png";
+                mime2 = "image/png";
+                break;
+
+            case "Sprite" when found is ISprite sprite:
+                if (!SpriteConverter.TryConvertToBitmap(sprite, out var sprBitmap) || sprBitmap.IsEmpty)
+                    return null;
+                data = GenerateThumbnailPng(sprBitmap);
+                ext = ".png";
+                mime2 = "image/png";
+                break;
+
+            case "AudioClip" when found is IAudioClip audioClip:
+                if (!AudioClipDecoder.TryDecode(audioClip, out var audioData, out var audioExt, out var decodeMsg))
+                {
+                    _log.Warning($"Preview: failed to decode AudioClip: {decodeMsg}");
+                    return null;
+                }
+                ext = audioExt.StartsWith('.') ? audioExt : "." + audioExt;
+                mime2 = ext switch
+                {
+                    ".ogg" => "audio/ogg",
+                    ".wav" => "audio/wav",
+                    _ => "application/octet-stream",
+                };
+                data = audioData;
+                break;
+
+            case "GameObject" or "PrefabHierarchyObject" or "Mesh":
+                data = GenerateModelGlb(gameData, found);
+                if (data.Length == 0) return null;
+                ext = ".glb";
+                mime2 = "model/gltf-binary";
+                break;
+
+            default:
+                return null;
+        }
+
+        // Cache to disk
+        var cachePath = BuildPreviewCachePath(collection, pathId, ext);
+        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+        File.WriteAllBytes(cachePath, data);
+
+        return new AssetPreviewResult(data, mime2, ext);
     }
 
-    private static void WriteThumbnailDownscaled(DirectBitmap bitmap, string outPath)
+    private static IUnityObjectBase? FindAsset(GameData gameData, string collection, long pathId)
     {
+        foreach (var col in gameData.GameBundle.FetchAssetCollections())
+        {
+            if (col.Name != collection) continue;
+            return col.FirstOrDefault(a => a.PathID == pathId);
+        }
+        return null;
+    }
+
+    private static byte[] GenerateThumbnailPng(DirectBitmap bitmap)
+    {
+        if (bitmap.Width <= ThumbnailMaxDimension && bitmap.Height <= ThumbnailMaxDimension)
+        {
+            using var ms = new MemoryStream();
+            bitmap.SaveAsPng(ms);
+            return ms.ToArray();
+        }
+
         int srcW = bitmap.Width;
         int srcH = bitmap.Height;
         float scale = Math.Min((float)ThumbnailMaxDimension / srcW, (float)ThumbnailMaxDimension / srcH);
@@ -1516,11 +1544,65 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         byte[] rgba = bitmap.ToRgba32();
         byte[] scaled = BoxFilterDownscale(rgba, srcW, srcH, dstW, dstH);
 
-        using var ms = new MemoryStream();
+        using var ms2 = new MemoryStream();
         var writer = new StbImageWriteSharp.ImageWriter();
-        writer.WritePng(scaled, dstW, dstH, StbImageWriteSharp.ColorComponents.RedGreenBlueAlpha, ms);
-        File.WriteAllBytes(outPath, ms.ToArray());
+        writer.WritePng(scaled, dstW, dstH, StbImageWriteSharp.ColorComponents.RedGreenBlueAlpha, ms2);
+        return ms2.ToArray();
     }
+
+    private byte[] GenerateModelGlb(GameData gameData, IUnityObjectBase asset)
+    {
+        SceneBuilder? scene = null;
+
+        if (asset is IGameObject go)
+        {
+            var root = go.GetRoot();
+            var assets = root.FetchHierarchy().Cast<IUnityObjectBase>();
+            scene = GlbLevelBuilder.Build(assets, false);
+        }
+        else if (asset is PrefabHierarchyObject pho)
+        {
+            scene = GlbLevelBuilder.Build(pho.Assets, false);
+        }
+        else if (asset is IMesh mesh)
+        {
+            scene = GlbMeshBuilder.Build(mesh);
+        }
+
+        if (scene is null) return [];
+
+        using var ms = new MemoryStream();
+        if (GlbWriter.TryWrite(scene, ms, out string? errorMessage))
+            return ms.ToArray();
+
+        _log.Warning($"Preview: GLB write failed: {errorMessage}");
+        return [];
+    }
+
+    private string BuildPreviewCachePath(string collection, long pathId, string extension)
+    {
+        var safeCollection = SanitizeAssetPathSegment(collection);
+        return Path.Combine(CachePath, PreviewDirName, $"{safeCollection}--{pathId}{extension}");
+    }
+
+    private string? FindCachedPreview(string collection, long pathId)
+    {
+        var safeCollection = SanitizeAssetPathSegment(collection);
+        var dir = Path.Combine(CachePath, PreviewDirName);
+        if (!Directory.Exists(dir)) return null;
+        var pattern = $"{safeCollection}--{pathId}.*";
+        var files = Directory.GetFiles(dir, pattern);
+        return files.Length > 0 ? files[0] : null;
+    }
+
+    private static string MimeTypeForExtension(string ext) => ext.ToLowerInvariant() switch
+    {
+        ".png" => "image/png",
+        ".ogg" => "audio/ogg",
+        ".wav" => "audio/wav",
+        ".glb" => "model/gltf-binary",
+        _ => "application/octet-stream",
+    };
 
     /// <summary>
     /// Area-average (box filter) downscale of RGBA32 pixel data.

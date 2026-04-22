@@ -113,6 +113,7 @@ export interface AssetPreviewResult {
 export function assetsPreview(params: {
   collection: string;
   pathId: number;
+  className: string;
 }): Promise<AssetPreviewResult | null> {
   return rpcCall<AssetPreviewResult | null>("assetsPreview", params);
 }

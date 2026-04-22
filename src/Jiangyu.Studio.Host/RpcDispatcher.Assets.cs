@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AssetRipper.Processing;
 using InfiniFrame;
 using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Assets;
@@ -10,6 +11,44 @@ namespace Jiangyu.Studio.Host;
 
 public static partial class RpcDispatcher
 {
+    /// <summary>
+    /// Cached game data from the most recent index build or lazy preview load.
+    /// Kept in memory so that successive preview requests don't re-load the full
+    /// game data each time (~30-60 s cold start).
+    /// </summary>
+    private static readonly Lock _gameDataLock = new();
+    private static GameData? _cachedGameData;
+    private static string? _cachedGameDataPath;
+
+    private static GameData EnsureGameData(AssetPipelineService service, string gameDataPath)
+    {
+        lock (_gameDataLock)
+        {
+            if (_cachedGameData is not null &&
+                string.Equals(_cachedGameDataPath, gameDataPath, StringComparison.Ordinal))
+            {
+                return _cachedGameData;
+            }
+
+            var gd = service.LoadAndProcessGameData();
+            _cachedGameData = gd;
+            _cachedGameDataPath = gameDataPath;
+            return gd;
+        }
+    }
+
+    /// <summary>
+    /// Replaces the cached game data (e.g. after a fresh index build).
+    /// </summary>
+    private static void SetCachedGameData(GameData gameData, string gameDataPath)
+    {
+        lock (_gameDataLock)
+        {
+            _cachedGameData = gameData;
+            _cachedGameDataPath = gameDataPath;
+        }
+    }
+
     private static JsonElement HandleAssetsIndexStatus(IInfiniFrameWindow _, JsonElement? __)
     {
         var resolution = EnvironmentContext.ResolveFromGlobalConfig();
@@ -47,8 +86,15 @@ public static partial class RpcDispatcher
         if (!resolution.Success)
             throw new InvalidOperationException(resolution.Error ?? "Could not resolve game data path.");
 
-        var service = resolution.Context!.CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
-        service.BuildIndex();
+        var ctx = resolution.Context!;
+        var service = ctx.CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
+
+        // Load game data, build the index, and keep the loaded data in the
+        // static cache so subsequent preview requests can reuse it.
+        var gameData = service.LoadAndProcessGameData();
+        SetCachedGameData(gameData, ctx.GameDataPath);
+        service.BuildIndexFromGameData(gameData);
+
         var manifest = service.LoadManifest();
         return JsonSerializer.SerializeToElement(new AssetIndexStatusDto
         {
@@ -154,21 +200,24 @@ public static partial class RpcDispatcher
     {
         var collection = RequireString(parameters, "collection");
         var pathId = RequireLong(parameters, "pathId");
+        var className = RequireString(parameters, "className");
 
         var resolution = EnvironmentContext.ResolveFromGlobalConfig();
         if (!resolution.Success)
             return NullElement;
 
-        var service = resolution.Context!.CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
-        var base64 = service.GetThumbnailBase64(collection, pathId);
+        var ctx = resolution.Context!;
+        var service = ctx.CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
+        var gameData = EnsureGameData(service, ctx.GameDataPath);
+        var result = service.GeneratePreview(gameData, collection, pathId, className);
 
-        if (base64 is null)
+        if (result is null)
             return NullElement;
 
         return JsonSerializer.SerializeToElement(new AssetPreviewDto
         {
-            Data = base64,
-            MimeType = "image/png",
+            Data = Convert.ToBase64String(result.Data),
+            MimeType = result.MimeType,
         });
     }
 

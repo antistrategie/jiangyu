@@ -23,6 +23,7 @@ import {
 } from "../../lib/projectConfig.ts";
 import { isAbsolute, join, normalise } from "../../lib/path.ts";
 import { useToast } from "../../lib/toast.tsx";
+import { ModelViewer } from "./ModelViewer.tsx";
 import styles from "./AssetBrowser.module.css";
 
 interface AssetBrowserProps {
@@ -68,7 +69,10 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
 
   // Asset preview state — guarded by a token so stale responses from a
   // previously focused asset don't overwrite the current preview.
-  const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
+  const [previewData, setPreviewData] = useState<{
+    dataUrl: string;
+    mimeType: string;
+  } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const previewTokenRef = useRef(0);
 
@@ -102,29 +106,36 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
     };
   }, [projectPath]);
 
-  // Fetch a cached thumbnail preview when the focused asset changes.
+  // Fetch a lazy on-demand preview when the focused asset changes.
   // Uses a token to discard stale responses from a previously focused asset.
-  const PREVIEWABLE_CLASSES = useMemo(() => new Set(["Texture2D", "Sprite"]), []);
+  const PREVIEWABLE_CLASSES = useMemo(
+    () => new Set(["Texture2D", "Sprite", "AudioClip", "GameObject", "PrefabHierarchyObject", "Mesh"]),
+    [],
+  );
   useEffect(() => {
     const token = ++previewTokenRef.current;
-    setPreviewDataUrl(null);
+    setPreviewData(null);
 
     if (focusedKey === null) {
       setPreviewLoading(false);
       return;
     }
     const focused = allAssets.find((a) => rowKey(a) === focusedKey);
-    if (!focused || !focused.collection || !PREVIEWABLE_CLASSES.has(focused.className ?? "")) {
+    const className = focused?.className ?? "";
+    if (!focused || !focused.collection || !PREVIEWABLE_CLASSES.has(className)) {
       setPreviewLoading(false);
       return;
     }
 
     setPreviewLoading(true);
-    void assetsPreview({ collection: focused.collection, pathId: focused.pathId })
+    void assetsPreview({ collection: focused.collection, pathId: focused.pathId, className })
       .then((result) => {
         if (previewTokenRef.current !== token) return;
         if (result) {
-          setPreviewDataUrl(`data:${result.mimeType};base64,${result.data}`);
+          setPreviewData({
+            dataUrl: `data:${result.mimeType};base64,${result.data}`,
+            mimeType: result.mimeType,
+          });
         }
       })
       .catch(() => {
@@ -459,10 +470,10 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
               disabled={indexing}
               onClick={() => void handleIndex()}
             >
+              {indexing && <span className={styles.gateSpinner} />}
               {indexing ? "Indexing…" : stale ? "Re-index" : "Index assets"}
             </button>
           )}
-          {indexing && <div className={styles.spinner} />}
         </div>
       </div>
     );
@@ -557,26 +568,28 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
             (() => {
               const focused = results.find((r) => rowKey(r) === focusedKey);
               if (!focused) return <div className={styles.detailsEmpty}>—</div>;
-              const kind = classifyAsset(focused.className);
               return (
                 <>
                   <div className={styles.preview}>
-                    {previewDataUrl ? (
+                    {previewData?.mimeType === "image/png" ? (
                       <img
                         className={styles.previewImage}
-                        src={previewDataUrl}
+                        src={previewData.dataUrl}
                         alt={focused.name ?? "Asset preview"}
                       />
+                    ) : previewData?.mimeType.startsWith("audio/") ? (
+                      <div className={styles.audioPreview}>
+                        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                        <audio
+                          className={styles.audioPlayer}
+                          controls
+                          src={previewData.dataUrl}
+                        />
+                      </div>
+                    ) : previewData?.mimeType === "model/gltf-binary" ? (
+                      <ModelViewer dataUrl={previewData.dataUrl} />
                     ) : previewLoading ? (
                       <span className={styles.previewSpinner} />
-                    ) : kind === "texture" || kind === "sprite" ? (
-                      <span className={styles.previewPlaceholder}>
-                        No thumbnail — rebuild index to generate
-                      </span>
-                    ) : kind === "audio" ? (
-                      <span className={styles.previewPlaceholder}>♪ Audio</span>
-                    ) : kind === "model" || kind === "mesh" ? (
-                      <span className={styles.previewPlaceholder}>⬡ Model</span>
                     ) : (
                       <span className={styles.previewPlaceholder}>No preview</span>
                     )}
