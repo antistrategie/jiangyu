@@ -15,7 +15,7 @@
   justify-content: space-between;
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--rule);
-  font-family: var(--font-display);
+  font-family: var(--font-label);
   font-size: var(--fs-sm);
   font-weight: 600;
   letter-spacing: var(--tracking-section);
@@ -60,7 +60,7 @@
   text-align: left;
   padding: var(--space-2) var(--space-3);
   font-family: var(--font-label);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   background: transparent;
@@ -87,11 +87,11 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 
 .sectionHeader {
-  font-family: var(--font-display);
+  font-family: var(--font-label);
   font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: var(--tracking-section);
@@ -100,10 +100,6 @@
   margin: 0;
   padding-bottom: var(--space-1);
   border-bottom: 1px solid var(--rule-faint);
-}
-
-.sectionHeader:not(:first-child) {
-  margin-top: var(--space-3);
 }
 
 .field {
@@ -283,30 +279,33 @@
   margin: 0;
 }
 
+/* Dossier treatment (matches the Brief panel in the design system):
+   oversized CJK display glyph sits above a tightly tracked Latin eyebrow,
+   with the mono version stamp sitting quietly below. */
 .aboutHero {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-1);
-  padding: var(--space-3) 0;
-}
-
-.aboutTitle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-family: var(--font-display);
-  font-size: var(--fs-lg);
-  color: var(--fg-strong);
-  font-weight: 600;
-  letter-spacing: var(--tracking-wide);
+  gap: 6px;
+  padding: var(--space-3) 0 var(--space-4);
 }
 
 .aboutGlyph {
   font-family: var(--font-display-cjk);
-  font-size: var(--fs-xl);
-  color: var(--cinnabar-1);
-  line-height: 1;
+  font-size: var(--fs-3xl);
+  font-weight: 900;
+  color: var(--fg-strong);
+  line-height: var(--lh-tight);
+  letter-spacing: 0.02em;
+}
+
+.aboutEyebrow {
+  font-family: var(--font-label);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
 }
 
 .aboutVersion {
@@ -315,7 +314,7 @@
   color: var(--fg-muted);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
-  margin: 0;
+  margin: var(--space-1) 0 0;
 }
 
 .creditsGroup {
@@ -327,33 +326,38 @@
 .creditsGroupLabel {
   margin: var(--space-2) 0 0;
   font-family: var(--font-label);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   font-weight: 500;
-  letter-spacing: var(--tracking-wide);
+  letter-spacing: var(--tracking-wider);
   text-transform: uppercase;
-  color: var(--fg);
+  color: var(--fg-muted);
 }
 
 .creditsList {
   list-style: none;
-  margin-top: var(--space-1);
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
 }
 
+/* Three-column dossier row: name (label font) · license (mono eyebrow) ·
+   note (mono prose). Padding and underline match the info-panel subStat
+   convention in CompileModal so data surfaces read as the same species. */
 .creditsRow {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 90px minmax(0, 2fr);
-  gap: var(--space-2);
-  padding: var(--space-1) 0;
-  font-size: var(--fs-sm);
+  grid-template-columns: minmax(180px, 1fr) 80px minmax(0, 2fr);
+  gap: var(--space-3);
+  padding: 4px 0;
+  align-items: baseline;
   border-bottom: 1px solid var(--rule-faint);
 }
 
 .creditsName {
   font-family: var(--font-label);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  letter-spacing: var(--tracking-wide);
   color: var(--fg-strong);
 }
 
@@ -361,7 +365,7 @@
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--fg-muted);
-  letter-spacing: var(--tracking-wide);
+  letter-spacing: var(--tracking-wider);
   text-transform: uppercase;
 }
 

@@ -77,7 +77,7 @@ public sealed partial class UnityVersionValidationService
         };
     }
 
-    internal static UnityVersion? DetectGameVersion(string gameDataPath)
+    public static UnityVersion? DetectGameVersion(string gameDataPath)
     {
         var settings = new CoreConfiguration();
         settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level0;
@@ -96,7 +96,7 @@ public sealed partial class UnityVersionValidationService
         return await TryGetUnityVersionFromProcessAsync(unityEditorPath);
     }
 
-    internal static bool TryParseUnityVersionFromText(string text, out UnityVersion version)
+    public static bool TryParseUnityVersionFromText(string text, out UnityVersion version)
     {
         Match match = UnityVersionRegex().Match(text);
         if (match.Success && TryParseUnityVersion(match.Value, out version))

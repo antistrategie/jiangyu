@@ -5,6 +5,8 @@ import { EditorGrid } from "./components/EditorArea/EditorGrid.tsx";
 import { WelcomeScreen } from "./components/WelcomeScreen/WelcomeScreen.tsx";
 import { Palette } from "./components/Palette/Palette.tsx";
 import { SettingsModal } from "./components/SettingsModal/SettingsModal.tsx";
+import { CompileModal } from "./components/CompileModal/CompileModal.tsx";
+import { useCompile } from "./lib/compile.ts";
 import { basename, join, remapPath } from "./lib/path.ts";
 import { rpcCall, subscribe, type FileChangedEvent } from "./lib/rpc.ts";
 import { pickProjectFolder } from "./lib/projectCommands.ts";
@@ -55,6 +57,8 @@ export function App() {
   const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [compileOpen, setCompileOpen] = useState(false);
+  const { state: compileState, start: startCompile } = useCompile();
   const [fileEntries, setFileEntries] = useState<readonly string[]>([]);
   const [recentProjects, setRecentProjects] = useState<readonly string[]>([]);
   const [fullscreenPaneId, setFullscreenPaneId] = useState<string | null>(null);
@@ -314,6 +318,23 @@ export function App() {
     [],
   );
 
+  // Palette just opens the dossier; the Run-Compile button inside kicks off
+  // the pipeline. Surfacing state before acting lets the user see asset and
+  // template counts before committing to a multi-minute Unity build.
+  const compileActions = useMemo<PaletteAction[]>(() => {
+    if (projectPath === null) return [];
+    return [
+      {
+        id: "project.compile",
+        label: "Compile",
+        scope: PALETTE_SCOPE.Project,
+        cn: "编译",
+        desc: "Build the mod.",
+        run: () => setCompileOpen(true),
+      },
+    ];
+  }, [projectPath]);
+
   // Keep paneActions cheap: it only cares about topology (active id + pane id
   // order), not weights. Depending on `layout` directly rebuilds the palette
   // registry once per pixel during drag-resize. Use `` as the delimiter
@@ -413,6 +434,7 @@ export function App() {
 
   useRegisterActions(appActions);
   useRegisterActions(settingsActions);
+  useRegisterActions(compileActions);
   useRegisterActions(paneActions);
   useRegisterActions(fileActions);
 
@@ -557,6 +579,13 @@ export function App() {
       )}
       <Palette open={paletteOpen} onClose={() => setPaletteOpen(false)} actions={allActions} />
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      {compileOpen && (
+        <CompileModal
+          state={compileState}
+          onClose={() => setCompileOpen(false)}
+          onStart={startCompile}
+        />
+      )}
     </div>
   );
 }

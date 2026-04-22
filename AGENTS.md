@@ -75,7 +75,15 @@ If logic must compile in both the real IL2CPP/game-reference loader context and 
 The Studio UI follows the Jiangyu Design System — an ink-wash × near-future tactical visual language inspired by East Asian calligraphy and the source material's character-sheet art. Key rules:
 
 - **Palette**: five families — Ink (sumi neutrals), Paper (warm parchment, never pure white), Cinnabar (朱 red, ≤10% of any surface), Gold (decorative eyebrows on dark panels only), Jade (informational/verified states). Tokens in `src/Jiangyu.Studio.UI/src/styles/tokens.css`.
-- **Typography**: Noto Serif SC (display CJK), Barlow Condensed (display EN / labels), Cormorant Garamond (editorial serif), JetBrains Mono (data / CLI). Western labels are ALL CAPS with wide tracking. Chinese headings are never tracked.
+- **Typography**: six semantic roles in `tokens.css`, do not mix them up —
+  - `--font-display-cjk` Noto Serif SC: CJK display / hero glyphs (绛雨), big stat readouts (weight 900)
+  - `--font-display` Cormorant SC: chiseled western display serif — headings and **primary (filled) buttons** only
+  - `--font-label` Barlow Condensed: tracked uppercase labels, section eyebrows, modal headers, ghost/default buttons. Never body copy.
+  - `--font-ui` Noto Sans SC: CJK-capable body sans — body text, form inputs, data rows, banners
+  - `--font-editorial` Cormorant Garamond: long-form serif passages (About blurbs, credits notes)
+  - `--font-mono` JetBrains Mono: code, paths, hashes, CLI output, version stamps, small data values
+  Western labels are ALL CAPS with `--tracking-wider` / `--tracking-section`. Chinese headings are never tracked. The serif on primary buttons is intentional — it signals the weight of a committing action versus the throwaway feel of a ghost button.
+- **Modal dossier pattern**: long-running / state-rich actions (e.g. Compile) use a two-column modal at `min(1100px, 92vw) × min(760px, 88vh)` — **left** column is a terminal-style log on `--bg-inverse` with mono text, gold eyebrow, ink-0 scrollbar track; **right** column is a paper-toned info panel with 2×2 stat grid (Noto Serif SC 900 numbers, Barlow Condensed eyebrows), sub-stat rows, and action buttons at the bottom. `CompileModal` + `SettingsModal` are the canonical references; new modals should align to this shape. Long action completions also push a toast via `useToast()` with duration / warning count as detail and a Reveal action when a file artefact exists.
 - **Corner radii**: `0` everywhere. Jiangyu is hard-edged.
 - **Borders**: hairline-first. 1px default, 2px for emphasis. Double keyline (nested 1px with 4px gap) for hero frames only.
 - **Shadows**: essentially none. Depth comes from hairline borders and paper-vs-ink contrast.

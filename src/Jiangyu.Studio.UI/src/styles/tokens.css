@@ -15,11 +15,19 @@
 @import "@fontsource/cormorant-garamond/400-italic.css";
 @import "@fontsource/cormorant-garamond/500.css";
 @import "@fontsource/cormorant-garamond/600.css";
+@import "@fontsource/cormorant-sc/400.css";
+@import "@fontsource/cormorant-sc/500.css";
+@import "@fontsource/cormorant-sc/600.css";
+@import "@fontsource/cormorant-sc/700.css";
 @import "@fontsource/noto-serif-sc/400.css";
 @import "@fontsource/noto-serif-sc/500.css";
 @import "@fontsource/noto-serif-sc/600.css";
 @import "@fontsource/noto-serif-sc/700.css";
 @import "@fontsource/noto-serif-sc/900.css";
+@import "@fontsource/noto-sans-sc/300.css";
+@import "@fontsource/noto-sans-sc/400.css";
+@import "@fontsource/noto-sans-sc/500.css";
+@import "@fontsource/noto-sans-sc/700.css";
 
 :root {
   /* Parchment / paper */
@@ -85,21 +93,28 @@
      so the panel edge reads as a seam, not as a flat block. */
   --rule-on-inverse: #3a332b;
 
-  /* Type stacks */
+  /* Type stacks — families map to semantic roles per the Jiangyu Design System.
+     Cormorant SC is the chiseled carved-stone western display serif; pair with
+     Noto Serif SC for CJK display. Barlow Condensed is reserved for tracked
+     labels / eyebrows / CLI chrome — never for headings or body copy. Noto
+     Sans SC carries CJK glyphs in body text without mode-switching. */
   --font-display-cjk: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
-  --font-display: "Barlow Condensed", "Oswald", sans-serif;
-  --font-label: "Barlow Condensed", "Oswald", sans-serif;
+  --font-display: "Cormorant SC", "Cormorant Garamond", "Trajan Pro", Georgia, serif;
+  --font-label: "Barlow Condensed", "Oswald", "Bebas Neue", sans-serif;
   --font-editorial: "Cormorant Garamond", "EB Garamond", Georgia, serif;
-  --font-ui: "Barlow Condensed", system-ui, sans-serif;
+  --font-ui:
+    "Noto Sans SC", "Source Han Sans SC", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-  /* Scale — three-tier base (xs/sm/base) + display ramp (md/lg/xl). */
+  /* Scale — three-tier base (xs/sm/base) + display ramp (md/lg/xl/2xl/3xl). */
   --fs-xs: 10px;
   --fs-sm: 12px;
   --fs-base: 14px;
   --fs-md: 16px;
   --fs-lg: 20px;
   --fs-xl: 28px;
+  --fs-2xl: 40px;
+  --fs-3xl: 56px;
 
   --lh-tight: 1.1;
   --lh-snug: 1.25;

@@ -394,9 +394,10 @@
 }
 
 .bannerAction {
-  font-family: var(--font-label);
+  font-family: var(--font-display);
   font-size: var(--fs-sm);
-  letter-spacing: var(--tracking-wide);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wider);
   text-transform: uppercase;
   padding: var(--space-1) var(--space-3);
   background: var(--cinnabar-1);

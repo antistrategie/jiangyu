@@ -7,7 +7,9 @@
       "dependencies": {
         "@fontsource/barlow-condensed": "^5.2.8",
         "@fontsource/cormorant-garamond": "^5.2.11",
+        "@fontsource/cormorant-sc": "^5.2.8",
         "@fontsource/jetbrains-mono": "^5.2.8",
+        "@fontsource/noto-sans-sc": "^5.2.9",
         "@fontsource/noto-serif-sc": "^5.2.9",
         "@leeoniya/ufuzzy": "^1.0.19",
         "@monaco-editor/react": "^4.7.0",
@@ -160,7 +162,11 @@
 
     "@fontsource/cormorant-garamond": ["@fontsource/cormorant-garamond@5.2.11", "", {}, "sha512-5JjpN023lhA5soijgVT0BdRGzmlijm402ppjccMd6h+vRE0mX2lJnE+41UPfnlidrkV9/rCo1mf58WZlHnB0CA=="],
 
+    "@fontsource/cormorant-sc": ["@fontsource/cormorant-sc@5.2.8", "", {}, "sha512-CwDlqVYqCeEoSB2P3TsgRM/beU/hsJbFyU+MIvfcWim48BGhtVcJzvvHLWiGnmj5ZY3kVvO0KiWA0OLb/Hfc9A=="],
+
     "@fontsource/jetbrains-mono": ["@fontsource/jetbrains-mono@5.2.8", "", {}, "sha512-6w8/SG4kqvIMu7xd7wt6x3idn1Qux3p9N62s6G3rfldOUYHpWcc2FKrqf+Vo44jRvqWj2oAtTHrZXEP23oSKwQ=="],
+
+    "@fontsource/noto-sans-sc": ["@fontsource/noto-sans-sc@5.2.9", "", {}, "sha512-bTUIWGBgJDpwi5qAr+x0/lcgv80IHTB9vl6s2f6EymZEa7qYV99yNRBZuKFT+SYDKVunZrjCEhWtpxqmbXWl5Q=="],
 
     "@fontsource/noto-serif-sc": ["@fontsource/noto-serif-sc@5.2.9", "", {}, "sha512-+wosdNmyrtRjnqJ/4A6i99jApm6ye34n8Nh7jUO3P/+6Hd1ZBY1gB9yGaI5jVxb56RS1lM2kTc0DzX1ifRO2MA=="],
 

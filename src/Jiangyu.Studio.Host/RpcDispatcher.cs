@@ -1,7 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AssetRipper.Primitives;
 using InfiniFrame;
 using Jiangyu.Core.Config;
+using Jiangyu.Core.Unity;
 
 namespace Jiangyu.Studio.Host;
 
@@ -41,6 +43,8 @@ public static partial class RpcDispatcher
         Register("pickDirectory", HandlePickDirectory);
         Register("getProjectConfig", HandleGetProjectConfig);
         Register("setProjectAssetExportPath", HandleSetProjectAssetExportPath);
+        Register("compile", HandleCompile);
+        Register("getCompileSummary", HandleGetCompileSummary);
     }
 
     private static void Register(string method, Func<IInfiniFrameWindow, JsonElement?, JsonElement> handler)
@@ -634,11 +638,58 @@ public static partial class RpcDispatcher
         public bool IsIgnored { get; set; }
     }
 
+    // Cache the game Unity version per resolved game-data path. DetectGameVersion
+    // loads the AssetRipper GameStructure which is measurable-seconds slow; the
+    // welcome screen + settings modal both poll getConfigStatus on open, so
+    // without a cache every open would stall the UI.
+    private static string? _cachedUnityVersionGamePath;
+    private static UnityVersion? _cachedUnityGameVersion;
+
+    private static UnityVersion? GetGameUnityVersionCached(string gameDataPath)
+    {
+        if (string.Equals(_cachedUnityVersionGamePath, gameDataPath, StringComparison.Ordinal) && _cachedUnityGameVersion is not null)
+            return _cachedUnityGameVersion;
+        try
+        {
+            var version = UnityVersionValidationService.DetectGameVersion(gameDataPath);
+            _cachedUnityVersionGamePath = gameDataPath;
+            _cachedUnityGameVersion = version;
+            return version;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static JsonElement HandleGetConfigStatus(IInfiniFrameWindow _, JsonElement? __)
     {
         var config = GlobalConfig.Load();
         var (gamePath, gameError) = GlobalConfig.ResolveGameDataPath(config);
-        var (editorPath, editorError) = GlobalConfig.ResolveUnityEditorPath(config);
+
+        // Detect the game's Unity version so we can (a) steer editor discovery
+        // toward the matching install and (b) flag mismatches at config time
+        // instead of waiting for the user to hit compile.
+        UnityVersion? gameVersion = gamePath is not null ? GetGameUnityVersionCached(gamePath) : null;
+
+        var (editorPath, editorError) = GlobalConfig.ResolveUnityEditorPath(config, gameVersion?.ToString());
+
+        // If discovery or explicit config produced an editor path, compare its
+        // version to the game's. Editor version is parsed from the path (cheap,
+        // no process spawn) — Unity Hub installs always embed the version in
+        // the directory name. Mismatch is surfaced via unityEditorError so the
+        // welcome screen and settings modal can render a warning.
+        UnityVersion? editorVersion = null;
+        if (editorPath is not null &&
+            UnityVersionValidationService.TryParseUnityVersionFromText(editorPath, out var parsed))
+        {
+            editorVersion = parsed;
+        }
+
+        if (editorPath is not null && gameVersion is not null && editorVersion is not null && editorVersion != gameVersion)
+        {
+            editorError = $"Unity {gameVersion} required (editor is {editorVersion}).";
+        }
 
         string? melonLoaderError = null;
         if (gamePath is not null && !string.IsNullOrEmpty(config.Game))
@@ -655,8 +706,10 @@ public static partial class RpcDispatcher
                 ? GlobalConfig.ExpandHome(config.Game)
                 : gamePath,
             GameError = gameError,
+            GameUnityVersion = gameVersion?.ToString(),
             UnityEditorPath = editorPath,
             UnityEditorError = editorError,
+            UnityEditorVersion = editorVersion?.ToString(),
             MelonLoaderError = melonLoaderError,
         };
 
@@ -706,11 +759,17 @@ public static partial class RpcDispatcher
         [JsonPropertyName("gameError")]
         public string? GameError { get; set; }
 
+        [JsonPropertyName("gameUnityVersion")]
+        public string? GameUnityVersion { get; set; }
+
         [JsonPropertyName("unityEditorPath")]
         public string? UnityEditorPath { get; set; }
 
         [JsonPropertyName("unityEditorError")]
         public string? UnityEditorError { get; set; }
+
+        [JsonPropertyName("unityEditorVersion")]
+        public string? UnityEditorVersion { get; set; }
 
         [JsonPropertyName("melonLoaderError")]
         public string? MelonLoaderError { get; set; }

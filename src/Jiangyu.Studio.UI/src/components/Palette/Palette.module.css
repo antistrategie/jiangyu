@@ -29,7 +29,7 @@
 }
 
 .headerLabel {
-  font-family: var(--font-display);
+  font-family: var(--font-label);
   font-size: var(--fs-sm);
   font-weight: 600;
   letter-spacing: 0.22em;

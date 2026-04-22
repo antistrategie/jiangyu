@@ -11,7 +11,7 @@
 .header {
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--rule);
-  font-family: var(--font-display);
+  font-family: var(--font-label);
   font-size: var(--fs-sm);
   font-weight: 600;
   letter-spacing: var(--tracking-section);

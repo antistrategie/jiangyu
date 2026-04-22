@@ -9,7 +9,9 @@
 export interface ConfigStatus {
   readonly gamePath: string | null;
   readonly gameError: string | null;
+  readonly gameUnityVersion: string | null;
   readonly unityEditorPath: string | null;
   readonly unityEditorError: string | null;
+  readonly unityEditorVersion: string | null;
   readonly melonLoaderError: string | null;
 }

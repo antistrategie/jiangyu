@@ -16,7 +16,9 @@
   "dependencies": {
     "@fontsource/barlow-condensed": "^5.2.8",
     "@fontsource/cormorant-garamond": "^5.2.11",
+    "@fontsource/cormorant-sc": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/noto-sans-sc": "^5.2.9",
     "@fontsource/noto-serif-sc": "^5.2.9",
     "@leeoniya/ufuzzy": "^1.0.19",
     "@monaco-editor/react": "^4.7.0",
