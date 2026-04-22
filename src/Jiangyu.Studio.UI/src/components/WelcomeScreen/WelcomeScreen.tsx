@@ -50,6 +50,8 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
 
   const hasGameError = config !== null && config.gamePath === null;
   const hasEditorWarning = config !== null && config.unityEditorPath === null;
+  const hasEditorVersionMismatch =
+    config !== null && config.unityEditorPath !== null && config.unityEditorError !== null;
   const hasMelonWarning = config !== null && config.melonLoaderError !== null;
 
   return (
@@ -75,7 +77,7 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
                   change
                 </button>
               </div>
-              {!hasEditorWarning && (
+              {!hasEditorWarning && !hasEditorVersionMismatch && (
                 <div className={styles.statusLine}>
                   <span className={styles.statusText}>
                     Unity: {config.unityEditorPath ?? <em className={styles.notSet}>not set</em>}
@@ -92,7 +94,7 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
             </div>
           )}
 
-          {(hasGameError || hasEditorWarning || hasMelonWarning) && (
+          {(hasGameError || hasEditorWarning || hasEditorVersionMismatch || hasMelonWarning) && (
             <div className={styles.statusGroup}>
               {hasGameError && (
                 <div className={styles.statusLine}>
@@ -109,12 +111,29 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
                   <span className={styles.statusTextWarning}>Unity Editor not found</span>
                   <span
                     className={styles.infoTip}
-                    title="Requires 6000.0.63f1. Only needed for asset compilation."
+                    title={
+                      config.gameUnityVersion !== null
+                        ? `Requires ${config.gameUnityVersion}. Only needed for asset compilation.`
+                        : "Only needed for asset compilation."
+                    }
                   >
                     <Info size={12} />
                   </span>
                   <button className={styles.setPathBtn} type="button" onClick={handleSetUnityPath}>
                     Set path…
+                  </button>
+                </div>
+              )}
+              {hasEditorVersionMismatch && config !== null && config.unityEditorError !== null && (
+                <div className={styles.statusLine}>
+                  <TriangleAlert size={14} className={styles.iconWarning} />
+                  <span className={styles.statusTextWarning}>{config.unityEditorError}</span>
+                  <button
+                    className={styles.configLinkInline}
+                    type="button"
+                    onClick={handleSetUnityPath}
+                  >
+                    change
                   </button>
                 </div>
               )}

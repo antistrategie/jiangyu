@@ -208,11 +208,20 @@ function PathsSection() {
           />
           <PathRow
             label="Unity Editor"
-            hint="Required for asset compilation (6000.0.63f1)"
+            hint={
+              config.gameUnityVersion !== null
+                ? `Required for asset compilation (${config.gameUnityVersion})`
+                : "Required for asset compilation"
+            }
             path={config.unityEditorPath}
             missingIcon={<TriangleAlert size={12} />}
             onChange={handleSetUnityPath}
           />
+          {config.unityEditorPath !== null && config.unityEditorError !== null && (
+            <p className={styles.warning}>
+              <TriangleAlert size={12} /> {config.unityEditorError}
+            </p>
+          )}
           {config.melonLoaderError !== null && (
             <p className={styles.warning}>
               <TriangleAlert size={12} /> MelonLoader: {config.melonLoaderError}
@@ -284,8 +293,10 @@ const CREDIT_GROUPS: readonly CreditGroup[] = [
       { name: "three.js", license: "MIT", note: "GLB / model preview." },
       { name: "Lucide", license: "ISC", note: "Icon set." },
       { name: "JetBrains Mono", license: "OFL-1.1", note: "Editor typeface." },
-      { name: "Barlow Condensed", license: "OFL-1.1", note: "UI & label typeface." },
+      { name: "Barlow Condensed", license: "OFL-1.1", note: "Label & eyebrow typeface." },
       { name: "Cormorant Garamond", license: "OFL-1.1", note: "Editorial typeface." },
+      { name: "Cormorant SC", license: "OFL-1.1", note: "Western display serif." },
+      { name: "Noto Sans SC", license: "OFL-1.1", note: "CJK UI body typeface." },
       { name: "Noto Serif SC", license: "OFL-1.1", note: "CJK display typeface." },
     ],
   },
@@ -315,10 +326,8 @@ function AboutSection() {
     <>
       <SectionHeader title="About" />
       <div className={styles.aboutHero}>
-        <div className={styles.aboutTitle}>
-          <span className={styles.aboutGlyph}>绛雨</span>
-          <span>Jiangyu Studio</span>
-        </div>
+        <span className={styles.aboutGlyph}>绛雨</span>
+        <span className={styles.aboutEyebrow}>Jiangyu Studio</span>
         <p className={styles.aboutVersion}>{STUDIO_VERSION}</p>
       </div>
       <Field label="Repository">
