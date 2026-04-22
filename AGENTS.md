@@ -4,7 +4,7 @@ General-purpose modkit for MENACE (Unity 6, IL2CPP). Named after Jiangyu, a Girl
 
 ## Language
 
-C# for everything — CLI compiler, MelonLoader loader, shared libraries. One language for the whole stack.
+C# for the core stack — CLI compiler, MelonLoader loader, shared libraries. TypeScript + React for the Studio UI frontend. One language per boundary.
 
 ## English
 
@@ -67,6 +67,36 @@ If `PROGRESS.md` or `TODO.md` are absent, treat them as optional working docs ra
 - **Loader** (`Jiangyu.Loader`) — MelonLoader mod. Shared framework installed once. Scans `Mods/` for bundles and patch files, loads via `Il2CppAssetBundleManager`, swaps assets at runtime. Runs in-game. The shipped loader is **always a single DLL** — `Jiangyu.Shared` and any managed dependencies that MelonLoader's net6 runtime does not already provide (currently `System.Text.Json` + `System.Text.Encodings.Web`) must be merged in before distribution. This is automated via `src/Jiangyu.Loader/ILRepack.targets`, which runs ILRepack as an AfterBuild target on Release builds only (Debug keeps the multi-DLL layout for fast iteration). Never ship loose sidecar DLLs next to `Jiangyu.Loader.dll`; modders drop one file into `Mods/`.
 
 If logic must compile in both the real IL2CPP/game-reference loader context and a normal SDK/test context, put it in `Jiangyu.Shared` instead of linking the same source file into multiple projects.
+
+- **Studio Host** (`Jiangyu.Studio.Host`) — .NET backend for Jiangyu Studio. Hosts the Tauri-style RPC bridge that the UI frontend calls into for asset indexing, search, export, file operations, and project configuration.
+- **Studio UI** (`Jiangyu.Studio.UI`) — React + TypeScript + Vite frontend. Lives at `src/Jiangyu.Studio.UI/`. Component-per-folder structure under `src/components/` (AssetBrowser, Sidebar, EditorArea, Palette, Toast, Topbar, WelcomeScreen, etc.). CSS Modules for scoped styles, with generated `.d.ts` via `@css-modules-kit/codegen` (output in `generated/`). Dev server with hot reload. Run `npx tsc --noEmit` for type-checking; regenerate CSS module types with `npx @css-modules-kit/codegen`.
+
+### Jiangyu Design System
+
+The Studio UI follows the Jiangyu Design System — an ink-wash × near-future tactical visual language inspired by East Asian calligraphy and the source material's character-sheet art. Key rules:
+
+- **Palette**: five families — Ink (sumi neutrals), Paper (warm parchment, never pure white), Cinnabar (朱 red, ≤10% of any surface), Gold (decorative eyebrows on dark panels only), Jade (informational/verified states). Tokens in `src/Jiangyu.Studio.UI/src/styles/tokens.css`.
+- **Typography**: Noto Serif SC (display CJK), Barlow Condensed (display EN / labels), Cormorant Garamond (editorial serif), JetBrains Mono (data / CLI). Western labels are ALL CAPS with wide tracking. Chinese headings are never tracked.
+- **Corner radii**: `0` everywhere. Jiangyu is hard-edged.
+- **Borders**: hairline-first. 1px default, 2px for emphasis. Double keyline (nested 1px with 4px gap) for hero frames only.
+- **Shadows**: essentially none. Depth comes from hairline borders and paper-vs-ink contrast.
+- **Animation**: minimal. Fades only, 80–120ms, `ease-out`. No bounces, springs, or parallax. Hover = instant colour swap. Press = 1px inset shadow (no scale).
+- **Iconography**: hairline SVG icons, 24px grid, `stroke-width: 1.25`. No icon fonts, no emoji, no PNG icons.
+- **Imagery tone**: warm, painted, hand-rendered. Grain preserved. Never cold, never purple, never gradients.
+- **Content voice**: terse, disciplined, bilingual (Chinese leads, English supports). Dossier voice (declarative, clipped) is primary; character voice (first-person to 长官) is accent only.
+- **Form controls** (checkboxes, radios): custom-styled globally in `global.css`. Ink borders on paper background, cinnabar fill/dot when active. No browser chrome.
+
+### Stickers
+
+Character stickers live at `src/Jiangyu.Studio.UI/public/stickers/Jiangyu_001.jpg` through `_009.jpg`. Used by the toast system and available for other UI surfaces. Mood mapping in `src/Jiangyu.Studio.UI/src/lib/stickers.ts`:
+
+- **Success**: 004 (triumphant flex), 007 (happy/hearts), 009 (double pointing/agreement)
+- **Error**: 001 (punching), 003 (winding up attack), 006 (sad/rain), 008 (asking for a fight)
+- **Info**: 002 (waving goodbye), 005 ("come at me" gesture)
+
+### Toast system
+
+App-wide toast notifications via `useToast()` context (`src/Jiangyu.Studio.UI/src/lib/toast.tsx`). `ToastProvider` wraps the app in `main.tsx`; `ToastContainer` renders fixed bottom-centre. Each toast auto-picks a random sticker from the mood pool matching its variant (`success`/`error`/`info`). Auto-dismisses after 8 seconds. Supports action buttons (e.g. "Reveal" to open exported file in explorer).
 
 Individual mods are just data — `.bundle` files, JSON patches, no code needed. Mods that need custom logic ship their own MelonLoader DLL alongside the data.
 

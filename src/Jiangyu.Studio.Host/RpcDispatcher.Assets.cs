@@ -150,6 +150,28 @@ public static partial class RpcDispatcher
         return JsonSerializer.SerializeToElement(new AssetExportResultDto { OutputPath = outputPath });
     }
 
+    private static JsonElement HandleAssetsPreview(IInfiniFrameWindow _, JsonElement? parameters)
+    {
+        var collection = RequireString(parameters, "collection");
+        var pathId = RequireLong(parameters, "pathId");
+
+        var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+        if (!resolution.Success)
+            return NullElement;
+
+        var service = resolution.Context!.CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
+        var base64 = service.GetThumbnailBase64(collection, pathId);
+
+        if (base64 is null)
+            return NullElement;
+
+        return JsonSerializer.SerializeToElement(new AssetPreviewDto
+        {
+            Data = base64,
+            MimeType = "image/png",
+        });
+    }
+
     private static JsonElement HandlePickDirectory(IInfiniFrameWindow window, JsonElement? parameters)
     {
         var title = TryGetString(parameters, "title") ?? "Select directory";
@@ -178,5 +200,14 @@ public static partial class RpcDispatcher
     {
         [JsonPropertyName("outputPath")]
         public required string OutputPath { get; set; }
+    }
+
+    internal sealed class AssetPreviewDto
+    {
+        [JsonPropertyName("data")]
+        public required string Data { get; set; }
+
+        [JsonPropertyName("mimeType")]
+        public required string MimeType { get; set; }
     }
 }

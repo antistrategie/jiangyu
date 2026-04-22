@@ -214,6 +214,17 @@ public sealed class DirectBitmap<TColor, TChannel> : DirectBitmap
 		}
 	}
 
+	public override byte[] ToRgba32()
+	{
+		if (typeof(TColor) == typeof(ColorRGBA<byte>))
+		{
+			return (byte[])Data.Clone();
+		}
+
+		RgbConverter.Convert<TColor, TChannel, ColorRGBA<byte>, byte>(Bits, Width, Height * Depth, out byte[] data);
+		return data;
+	}
+
 	private void GetDataAndComponentsForSaving(out byte[] data, out ColorComponents components)
 	{
 		if (typeof(TColor) == typeof(ColorRGBA<byte>))

@@ -105,6 +105,18 @@ export function assetsExport(params: AssetExportParams): Promise<AssetExportResu
   return rpcCall<AssetExportResult>("assetsExport", params);
 }
 
+export interface AssetPreviewResult {
+  readonly data: string;
+  readonly mimeType: string;
+}
+
+export function assetsPreview(params: {
+  collection: string;
+  pathId: number;
+}): Promise<AssetPreviewResult | null> {
+  return rpcCall<AssetPreviewResult | null>("assetsPreview", params);
+}
+
 export function pickDirectory(params?: {
   title?: string;
   initial?: string;

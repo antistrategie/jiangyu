@@ -191,21 +191,53 @@
 
 .preview {
   border-bottom: 1px solid var(--rule);
-  padding: var(--space-3);
+  padding: var(--space-2);
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 140px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    repeating-conic-gradient(
+        var(--bg-raised) 0% 25%,
+        var(--bg) 0% 50%
+      )
+      50% / 16px 16px;
+}
+
+.previewImage {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.previewPlaceholder {
   color: var(--fg-muted);
   font-family: var(--font-editorial);
   font-style: italic;
   font-size: var(--fs-sm);
-  background: var(--bg);
+}
+
+.previewSpinner {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--rule);
+  border-top-color: var(--cinnabar-1);
+  animation: previewSpin 0.6s linear infinite;
+}
+
+@keyframes previewSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .meta {
   padding: var(--space-3);
-  flex: 1;
+  flex-shrink: 0;
   overflow-y: auto;
   font-family: var(--font-mono);
   font-size: 11px;
@@ -294,6 +326,9 @@
 }
 
 .exportButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   font-family: var(--font-label);
   font-size: 11px;
   letter-spacing: var(--tracking-wide);
@@ -314,6 +349,22 @@
   filter: brightness(1.1);
 }
 
+.exportSpinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--rule);
+  border-top-color: var(--cinnabar-1);
+  border-radius: 50%;
+  animation: exportSpin 600ms linear infinite;
+}
+
+@keyframes exportSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .exportProgress {
   flex: 1;
   height: 4px;
@@ -329,43 +380,6 @@
   left: 0;
   background: var(--cinnabar-1);
   transition: width 80ms linear;
-}
-
-.toast {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  background: var(--bg-sunken);
-  border: 1px solid var(--rule);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--fg);
-}
-
-.toastPath {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fg-muted);
-}
-
-.toastAction {
-  font-family: var(--font-label);
-  font-size: 10px;
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-  padding: 2px 6px;
-  background: transparent;
-  color: var(--cinnabar-1);
-  border: none;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.toastAction:hover {
-  color: var(--fg-strong);
 }
 
 .gate {

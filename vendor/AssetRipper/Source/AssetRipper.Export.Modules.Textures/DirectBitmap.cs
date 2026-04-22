@@ -123,6 +123,13 @@ public abstract class DirectBitmap
 
 	public abstract void SaveAsTga(Stream stream);
 
+	/// <summary>
+	/// Returns the pixel data normalised to RGBA32 (4 bytes per pixel, red-green-blue-alpha
+	/// order). Callers can use this for downstream processing (e.g. thumbnail generation)
+	/// without depending on the concrete colour type.
+	/// </summary>
+	public abstract byte[] ToRgba32();
+
 	private static long CalculateByteSize(int width, int height, int depth, int pixelSize)
 	{
 		return 1L * width * height * depth * pixelSize;

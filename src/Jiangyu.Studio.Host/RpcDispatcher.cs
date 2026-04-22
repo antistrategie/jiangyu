@@ -37,6 +37,7 @@ public static partial class RpcDispatcher
         Register("assetsIndex", HandleAssetsIndex);
         Register("assetsSearch", HandleAssetsSearch);
         Register("assetsExport", HandleAssetsExport);
+        Register("assetsPreview", HandleAssetsPreview);
         Register("pickDirectory", HandlePickDirectory);
         Register("getProjectConfig", HandleGetProjectConfig);
         Register("setProjectAssetExportPath", HandleSetProjectAssetExportPath);

@@ -37,6 +37,8 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
 {
     private const string IndexFileName = "asset-index.json";
     private const string ManifestFileName = "index-manifest.json";
+    private const string ThumbnailDirName = "thumbnails";
+    private const int ThumbnailMaxDimension = 256;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -137,6 +139,10 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
 
             _progress.SetPhase("Building index");
             index = BuildAssetIndex(gameData);
+            _progress.Finish();
+
+            _progress.SetPhase("Generating thumbnails");
+            GenerateThumbnails(gameData);
             _progress.Finish();
         }
         finally
@@ -1397,6 +1403,169 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         }
 
         return null;
+    }
+
+    // ── Thumbnail generation ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the file path for a cached thumbnail, or <c>null</c> if no thumbnail
+    /// has been generated for this asset.
+    /// </summary>
+    public string? GetThumbnailPath(string collection, long pathId)
+    {
+        var path = BuildThumbnailPath(collection, pathId);
+        return File.Exists(path) ? path : null;
+    }
+
+    /// <summary>
+    /// Reads a cached thumbnail and returns its bytes as a Base64-encoded string,
+    /// or <c>null</c> if no thumbnail exists.
+    /// </summary>
+    public string? GetThumbnailBase64(string collection, long pathId)
+    {
+        var path = GetThumbnailPath(collection, pathId);
+        if (path is null) return null;
+        return Convert.ToBase64String(File.ReadAllBytes(path));
+    }
+
+    private string BuildThumbnailPath(string collection, long pathId)
+    {
+        var safeCollection = SanitizeAssetPathSegment(collection);
+        return Path.Combine(CachePath, ThumbnailDirName, $"{safeCollection}--{pathId}.png");
+    }
+
+    /// <summary>
+    /// Iterates all Texture2D and Sprite assets in the loaded game data and writes
+    /// downscaled PNG thumbnails (max 256 px on the longest edge) to the cache.
+    /// The thumbnail directory is wiped on each run so stale entries don't survive
+    /// a game-version change.
+    /// </summary>
+    private void GenerateThumbnails(GameData gameData)
+    {
+        var thumbnailDir = Path.Combine(CachePath, ThumbnailDirName);
+
+        // Wipe previous thumbnails so stale entries from an older game version
+        // (which may reuse the same collection/pathId) don't survive.
+        if (Directory.Exists(thumbnailDir))
+            Directory.Delete(thumbnailDir, recursive: true);
+
+        Directory.CreateDirectory(thumbnailDir);
+
+        int generated = 0;
+        int failed = 0;
+
+        foreach (var collection in gameData.GameBundle.FetchAssetCollections())
+        {
+            foreach (IUnityObjectBase asset in collection)
+            {
+                DirectBitmap? bitmap = null;
+
+                try
+                {
+                    if (asset is ITexture2D texture)
+                    {
+                        if (!TextureConverter.TryConvertToBitmap(texture, out var bmp) || bmp.IsEmpty)
+                            continue;
+                        bitmap = bmp;
+                    }
+                    else if (asset is ISprite sprite)
+                    {
+                        if (!SpriteConverter.TryConvertToBitmap(sprite, out var bmp) || bmp.IsEmpty)
+                            continue;
+                        bitmap = bmp;
+                    }
+                    else
+                    {
+                        continue;
+                    }
+
+                    var outPath = BuildThumbnailPath(collection.Name, asset.PathID);
+                    Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
+
+                    if (bitmap.Width <= ThumbnailMaxDimension && bitmap.Height <= ThumbnailMaxDimension)
+                    {
+                        using var fs = File.Create(outPath);
+                        bitmap.SaveAsPng(fs);
+                    }
+                    else
+                    {
+                        WriteThumbnailDownscaled(bitmap, outPath);
+                    }
+
+                    generated++;
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    _log.Warning($"Thumbnail failed for {collection.Name}/{asset.PathID}: {ex.Message}");
+                }
+            }
+        }
+
+        _log.Info($"Generated {generated} thumbnails ({failed} failed) to: {thumbnailDir}");
+    }
+
+    private static void WriteThumbnailDownscaled(DirectBitmap bitmap, string outPath)
+    {
+        int srcW = bitmap.Width;
+        int srcH = bitmap.Height;
+        float scale = Math.Min((float)ThumbnailMaxDimension / srcW, (float)ThumbnailMaxDimension / srcH);
+        int dstW = Math.Max(1, (int)(srcW * scale));
+        int dstH = Math.Max(1, (int)(srcH * scale));
+
+        byte[] rgba = bitmap.ToRgba32();
+        byte[] scaled = BoxFilterDownscale(rgba, srcW, srcH, dstW, dstH);
+
+        using var ms = new MemoryStream();
+        var writer = new StbImageWriteSharp.ImageWriter();
+        writer.WritePng(scaled, dstW, dstH, StbImageWriteSharp.ColorComponents.RedGreenBlueAlpha, ms);
+        File.WriteAllBytes(outPath, ms.ToArray());
+    }
+
+    /// <summary>
+    /// Area-average (box filter) downscale of RGBA32 pixel data.
+    /// </summary>
+    private static byte[] BoxFilterDownscale(byte[] rgba, int srcW, int srcH, int dstW, int dstH)
+    {
+        byte[] result = new byte[dstW * dstH * 4];
+        float xScale = (float)srcW / dstW;
+        float yScale = (float)srcH / dstH;
+
+        for (int dy = 0; dy < dstH; dy++)
+        {
+            int srcY0 = (int)(dy * yScale);
+            int srcY1 = Math.Min((int)((dy + 1) * yScale), srcH);
+            if (srcY1 <= srcY0) srcY1 = srcY0 + 1;
+
+            for (int dx = 0; dx < dstW; dx++)
+            {
+                int srcX0 = (int)(dx * xScale);
+                int srcX1 = Math.Min((int)((dx + 1) * xScale), srcW);
+                if (srcX1 <= srcX0) srcX1 = srcX0 + 1;
+
+                int r = 0, g = 0, b = 0, a = 0, count = 0;
+                for (int sy = srcY0; sy < srcY1; sy++)
+                {
+                    for (int sx = srcX0; sx < srcX1; sx++)
+                    {
+                        int si = (sy * srcW + sx) * 4;
+                        r += rgba[si];
+                        g += rgba[si + 1];
+                        b += rgba[si + 2];
+                        a += rgba[si + 3];
+                        count++;
+                    }
+                }
+
+                int di = (dy * dstW + dx) * 4;
+                result[di] = (byte)(r / count);
+                result[di + 1] = (byte)(g / count);
+                result[di + 2] = (byte)(b / count);
+                result[di + 3] = (byte)(a / count);
+            }
+        }
+
+        return result;
     }
 
 }

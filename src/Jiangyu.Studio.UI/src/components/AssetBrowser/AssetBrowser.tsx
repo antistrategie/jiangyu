@@ -4,6 +4,7 @@ import {
   assetsExport,
   assetsIndex,
   assetsIndexStatus,
+  assetsPreview,
   assetsSearch,
   classifyAsset,
   pickDirectory,
@@ -21,6 +22,7 @@ import {
   type ProjectConfig,
 } from "../../lib/projectConfig.ts";
 import { isAbsolute, join, normalise } from "../../lib/path.ts";
+import { useToast } from "../../lib/toast.tsx";
 import styles from "./AssetBrowser.module.css";
 
 interface AssetBrowserProps {
@@ -63,8 +65,14 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
   const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(
     null,
   );
-  const [lastExport, setLastExport] = useState<{ paths: readonly string[] } | null>(null);
-  const [exportError, setExportError] = useState<string | null>(null);
+
+  // Asset preview state — guarded by a token so stale responses from a
+  // previously focused asset don't overwrite the current preview.
+  const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const previewTokenRef = useRef(0);
+
+  const { push: pushToast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
@@ -93,6 +101,39 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
       cancelled = true;
     };
   }, [projectPath]);
+
+  // Fetch a cached thumbnail preview when the focused asset changes.
+  // Uses a token to discard stale responses from a previously focused asset.
+  const PREVIEWABLE_CLASSES = useMemo(() => new Set(["Texture2D", "Sprite"]), []);
+  useEffect(() => {
+    const token = ++previewTokenRef.current;
+    setPreviewDataUrl(null);
+
+    if (focusedKey === null) {
+      setPreviewLoading(false);
+      return;
+    }
+    const focused = allAssets.find((a) => rowKey(a) === focusedKey);
+    if (!focused || !focused.collection || !PREVIEWABLE_CLASSES.has(focused.className ?? "")) {
+      setPreviewLoading(false);
+      return;
+    }
+
+    setPreviewLoading(true);
+    void assetsPreview({ collection: focused.collection, pathId: focused.pathId })
+      .then((result) => {
+        if (previewTokenRef.current !== token) return;
+        if (result) {
+          setPreviewDataUrl(`data:${result.mimeType};base64,${result.data}`);
+        }
+      })
+      .catch(() => {
+        // Preview failure is non-fatal; just leave the placeholder.
+      })
+      .finally(() => {
+        if (previewTokenRef.current === token) setPreviewLoading(false);
+      });
+  }, [focusedKey, allAssets, PREVIEWABLE_CLASSES]);
 
   // Load the full index once the catalogue is current. All filtering + fuzzy
   // search happens client-side via uFuzzy against this list — the host's
@@ -311,38 +352,59 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
     return await pickDirectory({ title: "Export assets to…" });
   }, [destination, defaultBaseDir, projectExportPath]);
 
-  const handleExport = useCallback(async () => {
-    if (selectedRows.length === 0) return;
-
-    const baseDir = await resolveBaseDir();
-    if (baseDir === null) return;
-
+  const handleExport = useCallback(() => {
+    if (selectedRows.length === 0 || exporting) return;
     setExporting(true);
-    setExportError(null);
-    setLastExport(null);
-    setExportProgress({ done: 0, total: selectedRows.length });
 
-    const paths: string[] = [];
-    try {
-      for (let i = 0; i < selectedRows.length; i++) {
-        const row = selectedRows[i]!;
-        const result = await assetsExport({
-          assetName: row.name ?? "unnamed",
-          collection: row.collection ?? "",
-          pathId: row.pathId,
-          kind: row.className ?? "",
-          baseDir,
-        });
-        paths.push(result.outputPath);
-        setExportProgress({ done: i + 1, total: selectedRows.length });
-      }
-      setLastExport({ paths });
-    } catch (err) {
-      setExportError((err as Error).message);
-    } finally {
-      setExporting(false);
-    }
-  }, [selectedRows, resolveBaseDir]);
+    // Use double-rAF to guarantee the browser has painted the disabled/spinner
+    // state before kicking off the export RPC.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const run = async () => {
+          const baseDir = await resolveBaseDir();
+          if (baseDir === null) {
+            setExporting(false);
+            return;
+          }
+
+          setExportProgress({ done: 0, total: selectedRows.length });
+
+          const paths: string[] = [];
+          try {
+            for (let i = 0; i < selectedRows.length; i++) {
+              const row = selectedRows[i]!;
+              const result = await assetsExport({
+                assetName: row.name ?? "unnamed",
+                collection: row.collection ?? "",
+                pathId: row.pathId,
+                kind: row.className ?? "",
+                baseDir,
+              });
+              paths.push(result.outputPath);
+              setExportProgress({ done: i + 1, total: selectedRows.length });
+            }
+            const first = paths[0];
+            pushToast({
+              variant: "success",
+              message: `Exported ${paths.length} asset${paths.length === 1 ? "" : "s"}`,
+              ...(first != null ? { detail: first } : {}),
+              ...(first != null ? { actions: [{ label: "Reveal", run: () => void revealInExplorer(first) }] } : {}),
+            });
+          } catch (err) {
+            pushToast({
+              variant: "error",
+              message: `Export failed: ${(err as Error).message}`,
+            });
+          } finally {
+            setExporting(false);
+            setExportProgress(null);
+          }
+        };
+
+        void run();
+      });
+    });
+  }, [selectedRows, exporting, resolveBaseDir, pushToast]);
 
   const handleConfigureProjectPath = useCallback(async () => {
     const picked = await pickDirectory({
@@ -363,12 +425,6 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
     setProjectConfig(updated);
     setDestination("project");
   }, [projectPath]);
-
-  const handleRevealLast = useCallback(() => {
-    const first = lastExport?.paths[0];
-    if (!first) return;
-    void revealInExplorer(first);
-  }, [lastExport]);
 
   if (status === null) {
     return (
@@ -501,9 +557,30 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
             (() => {
               const focused = results.find((r) => rowKey(r) === focusedKey);
               if (!focused) return <div className={styles.detailsEmpty}>—</div>;
+              const kind = classifyAsset(focused.className);
               return (
                 <>
-                  <div className={styles.preview}>Preview coming soon</div>
+                  <div className={styles.preview}>
+                    {previewDataUrl ? (
+                      <img
+                        className={styles.previewImage}
+                        src={previewDataUrl}
+                        alt={focused.name ?? "Asset preview"}
+                      />
+                    ) : previewLoading ? (
+                      <span className={styles.previewSpinner} />
+                    ) : kind === "texture" || kind === "sprite" ? (
+                      <span className={styles.previewPlaceholder}>
+                        No thumbnail — rebuild index to generate
+                      </span>
+                    ) : kind === "audio" ? (
+                      <span className={styles.previewPlaceholder}>♪ Audio</span>
+                    ) : kind === "model" || kind === "mesh" ? (
+                      <span className={styles.previewPlaceholder}>⬡ Model</span>
+                    ) : (
+                      <span className={styles.previewPlaceholder}>No preview</span>
+                    )}
+                  </div>
                   <div className={styles.meta}>
                     <MetaRow label="Name" value={focused.name ?? "—"} />
                     <MetaRow label="Class" value={focused.className ?? "—"} />
@@ -570,11 +647,12 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
                 type="button"
                 className={styles.exportButton}
                 disabled={selectedRows.length === 0 || exporting}
-                onClick={() => void handleExport()}
+                onClick={handleExport}
               >
+                {exporting && <span className={styles.exportSpinner} />}
                 {exporting ? "Exporting…" : `Export ${selectedRows.length || "0"} selected`}
               </button>
-              {exportProgress && exporting && (
+              {exportProgress && exporting && exportProgress.total > 1 && (
                 <div className={styles.exportProgress}>
                   <div
                     className={styles.exportProgressFill}
@@ -583,37 +661,6 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
                 </div>
               )}
             </div>
-            {lastExport && (
-              <div className={styles.toast}>
-                <span>
-                  Exported {lastExport.paths.length} asset
-                  {lastExport.paths.length === 1 ? "" : "s"}
-                </span>
-                <span className={styles.toastPath}>{lastExport.paths[0]}</span>
-                <button type="button" className={styles.toastAction} onClick={handleRevealLast}>
-                  Reveal
-                </button>
-                <button
-                  type="button"
-                  className={styles.toastAction}
-                  onClick={() => setLastExport(null)}
-                >
-                  Dismiss
-                </button>
-              </div>
-            )}
-            {exportError && (
-              <div className={styles.toast}>
-                <span>Export failed: {exportError}</span>
-                <button
-                  type="button"
-                  className={styles.toastAction}
-                  onClick={() => setExportError(null)}
-                >
-                  Dismiss
-                </button>
-              </div>
-            )}
           </div>
         </div>
       </div>
