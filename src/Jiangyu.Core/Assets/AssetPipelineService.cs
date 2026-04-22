@@ -14,6 +14,7 @@ using AssetRipper.Processing;
 using AssetRipper.Processing.AnimatorControllers;
 using AssetRipper.Processing.Prefabs;
 using AssetRipper.Processing.Scenes;
+using AssetRipper.Processing.Textures;
 using AssetRipper.Export.Modules.Audio;
 using AssetRipper.Export.Modules.Textures;
 using AssetRipper.SourceGenerated.Classes.ClassID_1;
@@ -1397,6 +1398,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
             new MainAssetProcessor(),
             new AnimatorControllerProcessor(),
             new PrefabProcessor(),
+            new SpriteProcessor(),
         ];
 
         foreach (var processor in processors)
@@ -1475,7 +1477,10 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
 
             case "Sprite" when found is ISprite sprite:
                 if (!SpriteConverter.TryConvertToBitmap(sprite, out var sprBitmap) || sprBitmap.IsEmpty)
+                {
+                    _log.Warning($"Preview: failed to decode Sprite at {collection}/{pathId}");
                     return null;
+                }
                 data = GenerateThumbnailPng(sprBitmap);
                 ext = ".png";
                 mime2 = "image/png";
@@ -1505,6 +1510,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
                 break;
 
             default:
+                _log.Warning($"Preview: unsupported className={className} or type mismatch (found={found.GetType().Name})");
                 return null;
         }
 

@@ -138,8 +138,8 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
           });
         }
       })
-      .catch(() => {
-        // Preview failure is non-fatal; just leave the placeholder.
+      .catch((err: unknown) => {
+        console.warn("[AssetBrowser] preview failed:", err);
       })
       .finally(() => {
         if (previewTokenRef.current === token) setPreviewLoading(false);
