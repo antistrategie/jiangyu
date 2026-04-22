@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { CircleX, TriangleAlert, Info } from "lucide-react";
+import { CircleX, TriangleAlert, Info, X } from "lucide-react";
 import { rpcCall } from "../../lib/rpc.ts";
 import { pickProjectFolder } from "../../lib/projectCommands.ts";
+import { loadRecentProjects, removeRecentProject } from "../../lib/recentProjects.ts";
 import styles from "./WelcomeScreen.module.css";
 
 interface WelcomeScreenProps {
@@ -18,16 +19,18 @@ interface ConfigStatus {
 
 export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
   const [config, setConfig] = useState<ConfigStatus | null>(null);
-  const [recentProjects, setRecentProjects] = useState<string[]>([]);
+  const [recentProjects, setRecentProjects] = useState<readonly string[]>([]);
 
   useEffect(() => {
     void rpcCall<ConfigStatus>("getConfigStatus")
       .then(setConfig)
       .catch(() => {});
-    void rpcCall<string[]>("getRecentProjects")
-      .then(setRecentProjects)
-      .catch(() => {});
+    setRecentProjects(loadRecentProjects());
   }, []);
+
+  const handleRemoveRecent = (path: string) => {
+    setRecentProjects(removeRecentProject(path));
+  };
 
   const handleOpen = async () => {
     const path = await pickProjectFolder();
@@ -147,7 +150,7 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
           {recentProjects.length > 0 && (
             <ul className={styles.recentList}>
               {recentProjects.slice(0, 5).map((p) => (
-                <li key={p}>
+                <li key={p} className={styles.recentRow}>
                   <a
                     className={styles.recentLink}
                     href="#"
@@ -162,6 +165,15 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
                   >
                     {p}
                   </a>
+                  <button
+                    type="button"
+                    className={styles.recentRemove}
+                    aria-label={`Remove ${p} from recent projects`}
+                    title="Remove from recent"
+                    onClick={() => handleRemoveRecent(p)}
+                  >
+                    <X size={12} />
+                  </button>
                 </li>
               ))}
             </ul>

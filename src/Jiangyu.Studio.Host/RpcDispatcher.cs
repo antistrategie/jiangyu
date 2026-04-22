@@ -32,7 +32,6 @@ public static partial class RpcDispatcher
         Register("getConfigStatus", HandleGetConfigStatus);
         Register("setGamePath", HandleSetGamePath);
         Register("setUnityEditorPath", HandleSetUnityEditorPath);
-        Register("getRecentProjects", HandleGetRecentProjects);
         Register("assetsIndexStatus", HandleAssetsIndexStatus);
         Register("assetsIndex", HandleAssetsIndex);
         Register("assetsSearch", HandleAssetsSearch);
@@ -43,7 +42,7 @@ public static partial class RpcDispatcher
         Register("setProjectAssetExportPath", HandleSetProjectAssetExportPath);
     }
 
-    public static void Register(string method, Func<IInfiniFrameWindow, JsonElement?, JsonElement> handler)
+    private static void Register(string method, Func<IInfiniFrameWindow, JsonElement?, JsonElement> handler)
     {
         Handlers[method] = handler;
     }
@@ -81,6 +80,27 @@ public static partial class RpcDispatcher
     private static bool IsStrictDescendantPath(string ancestor, string descendant)
         => descendant.StartsWith(ancestor + Path.DirectorySeparatorChar, StringComparison.Ordinal);
 
+    // Defence-in-depth: filesystem ops must target paths inside the currently open
+    // project. Today the frontend is trusted and would never send paths outside,
+    // but a malicious mod rendering into a shared surface or a bug in the editor
+    // could. Silent safety-net — we don't trust the client's sandboxing.
+    private static void EnsurePathInsideProject(string path)
+    {
+        var root = ProjectWatcher.ProjectRoot;
+        if (root is null)
+            return; // No project open; RPC handlers will fail naturally.
+
+        var cmp = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        var full = Path.GetFullPath(path);
+        if (full.Equals(root, cmp)) return;
+        if (full.StartsWith(root + Path.DirectorySeparatorChar, cmp)) return;
+
+        throw new UnauthorizedAccessException($"Path is outside the open project: {path}");
+    }
+
     /// <summary>
     /// Push a notification from the host to the frontend. The frontend's
     /// rpc.ts dispatches by `method` when no `id` is present.
@@ -97,18 +117,27 @@ public static partial class RpcDispatcher
 
     public static void HandleMessage(IInfiniFrameWindow window, string message, Action<string> sendResponse)
     {
+        // Two-stage parse: (a) pull `id` best-effort so we can still respond to a
+        // malformed request with its id, otherwise the frontend's promise hangs;
+        // (b) parse the full request. Silent returns would leave promises dangling.
+        int? requestId = TryExtractId(message);
+
         RpcRequest? request;
         try
         {
             request = JsonSerializer.Deserialize<RpcRequest>(message);
         }
-        catch
+        catch (Exception ex)
         {
+            RespondWithError(sendResponse, requestId ?? 0, $"Malformed RPC request: {ex.Message}");
             return;
         }
 
         if (request is null || string.IsNullOrEmpty(request.Method))
+        {
+            RespondWithError(sendResponse, requestId ?? request?.Id ?? 0, "Missing 'method' field");
             return;
+        }
 
         JsonElement result;
         string? error = null;
@@ -141,6 +170,32 @@ public static partial class RpcDispatcher
         sendResponse(JsonSerializer.Serialize(response, RpcJsonContext.Default.RpcResponse));
     }
 
+    private static int? TryExtractId(string message)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(message);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("id", out var idProp) &&
+                idProp.ValueKind == JsonValueKind.Number &&
+                idProp.TryGetInt32(out var id))
+            {
+                return id;
+            }
+        }
+        catch
+        {
+            // Fall through — best-effort only.
+        }
+        return null;
+    }
+
+    private static void RespondWithError(Action<string> sendResponse, int id, string error)
+    {
+        var response = new RpcResponse { Id = id, Result = NullElement, Error = error };
+        sendResponse(JsonSerializer.Serialize(response, RpcJsonContext.Default.RpcResponse));
+    }
+
     private static JsonElement HandleOpenFolder(IInfiniFrameWindow window, JsonElement? _)
     {
         var results = window.ShowOpenFolder("Open Jiangyu project");
@@ -164,16 +219,13 @@ public static partial class RpcDispatcher
 
     private static void OpenProject(IInfiniFrameWindow window, string path)
     {
-        var config = GlobalConfig.Load();
-        config.RecordRecentProject(path);
-        config.Save();
-
         ProjectWatcher.Start(window, path);
     }
 
     private static JsonElement HandleListDirectory(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
+        EnsurePathInsideProject(path);
 
         if (!Directory.Exists(path))
             throw new ArgumentException($"Directory not found: {path}");
@@ -206,6 +258,7 @@ public static partial class RpcDispatcher
     private static JsonElement HandleReadFile(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
+        EnsurePathInsideProject(path);
 
         if (!File.Exists(path))
             throw new ArgumentException($"File not found: {path}");
@@ -228,6 +281,7 @@ public static partial class RpcDispatcher
     private static JsonElement HandleListAllFiles(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var root = RequireString(parameters, "path");
+        EnsurePathInsideProject(root);
 
         if (!Directory.Exists(root))
             throw new ArgumentException($"Directory not found: {root}");
@@ -306,13 +360,36 @@ public static partial class RpcDispatcher
         return results;
     }
 
+    // 64 MiB — generous enough for any plausible source file, small enough that
+    // a pathological paste-into-Monaco-and-save doesn't OOM the host.
+    private const int MaxWriteFileBytes = 64 * 1024 * 1024;
+
     private static JsonElement HandleWriteFile(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
         var content = RequireString(parameters, "content");
+        EnsurePathInsideProject(path);
 
+        // UTF-8 upper bound: 4 bytes per char. Fast reject before we allocate.
+        if (content.Length > MaxWriteFileBytes)
+            throw new IOException($"File content exceeds {MaxWriteFileBytes / (1024 * 1024)} MiB limit");
+
+        // Atomic write: stage in a sibling tmp file, then rename over the target.
+        // File.WriteAllText truncates-then-writes in place; a mid-write crash
+        // leaves a corrupt file, which for an editor is real data loss.
+        var tmp = path + ".jiangyu.tmp";
         ProjectWatcher.SuppressFor(path);
-        File.WriteAllText(path, content);
+        ProjectWatcher.SuppressFor(tmp);
+        try
+        {
+            File.WriteAllText(tmp, content);
+            File.Move(tmp, path, overwrite: true);
+        }
+        catch
+        {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { /* ignore cleanup failure */ }
+            throw;
+        }
         return NullElement;
     }
 
@@ -320,6 +397,8 @@ public static partial class RpcDispatcher
     {
         var src = RequireString(parameters, "srcPath");
         var dest = RequireString(parameters, "destPath");
+        EnsurePathInsideProject(src);
+        EnsurePathInsideProject(dest);
 
         if (Directory.Exists(src))
         {
@@ -343,6 +422,8 @@ public static partial class RpcDispatcher
     {
         var src = RequireString(parameters, "srcPath");
         var dest = RequireString(parameters, "destPath");
+        EnsurePathInsideProject(src);
+        EnsurePathInsideProject(dest);
 
         // Directory.CreateDirectory (used by recursive copy) is idempotent and
         // File.Copy's no-overwrite default doesn't cover dest being a directory.
@@ -369,10 +450,13 @@ public static partial class RpcDispatcher
 
     private static void CopyDirectoryRecursive(string src, string dest)
     {
+        // Sequential: project copies are small enough that thread-pool overhead
+        // outweighs any parallelism win, and concurrent writes are a regression
+        // on HDDs. Sharing a queue across sibling directories would matter only
+        // at much larger scales than this tool handles.
         Directory.CreateDirectory(dest);
-        Parallel.ForEach(
-            Directory.EnumerateFiles(src),
-            file => File.Copy(file, Path.Combine(dest, Path.GetFileName(file))));
+        foreach (var file in Directory.EnumerateFiles(src))
+            File.Copy(file, Path.Combine(dest, Path.GetFileName(file)));
         foreach (var dir in Directory.EnumerateDirectories(src))
             CopyDirectoryRecursive(dir, Path.Combine(dest, Path.GetFileName(dir)));
     }
@@ -380,6 +464,7 @@ public static partial class RpcDispatcher
     private static JsonElement HandleDeletePath(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
+        EnsurePathInsideProject(path);
 
         if (Directory.Exists(path))
             Directory.Delete(path, recursive: true);
@@ -394,6 +479,7 @@ public static partial class RpcDispatcher
     private static JsonElement HandleCreateFile(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
+        EnsurePathInsideProject(path);
 
         // File.Create silently truncates; guard to treat existing paths as an error.
         if (File.Exists(path) || Directory.Exists(path))
@@ -406,6 +492,7 @@ public static partial class RpcDispatcher
     private static JsonElement HandleCreateDirectory(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
+        EnsurePathInsideProject(path);
 
         // Directory.CreateDirectory is idempotent; guard to treat existing paths as an error.
         if (File.Exists(path) || Directory.Exists(path))
@@ -441,19 +528,18 @@ public static partial class RpcDispatcher
     }
 
     /// <summary>
-    /// Tries git check-ignore first (handles global ignores, nested .gitignore, etc.).
-    /// Falls back to a basic in-process .gitignore parser if git is unavailable.
+    /// Uses `git check-ignore` to identify files excluded by .gitignore /
+    /// .git/info/exclude / global excludes. When git isn't available or the
+    /// directory isn't a repo, returns an empty set — a home-grown matcher
+    /// was tried before and was weak enough to mislead users; "nothing ignored"
+    /// is more honest than "some subset that looks right".
     /// </summary>
     private static HashSet<string> GetIgnoredSet(string directory, List<FileEntry> entries)
     {
         if (entries.Count == 0)
             return [];
 
-        var result = TryGitCheckIgnore(directory, entries);
-        if (result is not null)
-            return result;
-
-        return FallbackGitignoreParse(directory, entries);
+        return TryGitCheckIgnore(directory, entries) ?? [];
     }
 
     private static HashSet<string>? TryGitCheckIgnore(string directory, List<FileEntry> entries)
@@ -497,67 +583,6 @@ public static partial class RpcDispatcher
         {
             return null;
         }
-    }
-
-    private static HashSet<string> FallbackGitignoreParse(string directory, List<FileEntry> entries)
-    {
-        var patterns = new List<string>();
-
-        // Walk up to collect .gitignore files
-        var current = directory;
-        while (current is not null)
-        {
-            var gitignorePath = System.IO.Path.Combine(current, ".gitignore");
-            if (File.Exists(gitignorePath))
-            {
-                foreach (var line in File.ReadAllLines(gitignorePath))
-                {
-                    var trimmed = line.Trim();
-                    if (trimmed.Length == 0 || trimmed.StartsWith('#'))
-                        continue;
-                    patterns.Add(trimmed);
-                }
-            }
-
-            if (Directory.Exists(System.IO.Path.Combine(current, ".git")))
-                break;
-            current = System.IO.Path.GetDirectoryName(current);
-        }
-
-        var result = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var entry in entries)
-        {
-            if (MatchesIgnorePattern(entry, patterns))
-                result.Add(entry.Path);
-        }
-
-        return result;
-    }
-
-    private static bool MatchesIgnorePattern(FileEntry entry, List<string> patterns)
-    {
-        var name = entry.Name;
-        foreach (var pattern in patterns)
-        {
-            if (pattern.StartsWith('!'))
-                continue;
-
-            var p = pattern.TrimEnd('/');
-
-            // Direct name match (e.g. "bin", "obj", "node_modules")
-            if (p == name)
-                return true;
-
-            // Simple wildcard (e.g. "*.user", "*.dll")
-            if (p.StartsWith('*') && name.EndsWith(p[1..], StringComparison.OrdinalIgnoreCase))
-                return true;
-
-            // Directory-only pattern (e.g. "bin/") — only match directories
-            if (pattern.EndsWith('/') && entry.IsDirectory && p == name)
-                return true;
-        }
-
-        return false;
     }
 
     internal sealed class FileEntry
@@ -638,13 +663,6 @@ public static partial class RpcDispatcher
         config.Save();
 
         return HandleGetConfigStatus(window, null);
-    }
-
-    private static JsonElement HandleGetRecentProjects(IInfiniFrameWindow _, JsonElement? __)
-    {
-        var config = GlobalConfig.Load();
-        var projects = config.RecentProjects ?? [];
-        return JsonSerializer.SerializeToElement(projects);
     }
 
     internal sealed class ConfigStatus

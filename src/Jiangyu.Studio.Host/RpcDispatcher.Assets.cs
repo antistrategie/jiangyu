@@ -177,16 +177,8 @@ public static partial class RpcDispatcher
             case "AudioClip":
                 {
                     Directory.CreateDirectory(baseDir);
-                    if (!service.ExportAudio(assetName, baseDir, collection, pathId))
-                        throw new InvalidOperationException($"Failed to export audio '{assetName}'.");
-                    // ExportAudio picks the file extension at decode time and writes to
-                    // Path.Combine(baseDir, "{assetName}{ext}"). Match by stem without
-                    // sanitising, since the file on disk uses the raw assetName.
-                    outputPath = Directory.EnumerateFiles(baseDir)
-                        .Where(f => string.Equals(Path.GetFileNameWithoutExtension(f), assetName, StringComparison.Ordinal))
-                        .OrderByDescending(File.GetLastWriteTimeUtc)
-                        .FirstOrDefault()
-                        ?? throw new InvalidOperationException($"Exported audio file not found for '{assetName}'.");
+                    outputPath = service.ExportAudio(assetName, baseDir, collection, pathId)
+                        ?? throw new InvalidOperationException($"Failed to export audio '{assetName}'.");
                     break;
                 }
             default:

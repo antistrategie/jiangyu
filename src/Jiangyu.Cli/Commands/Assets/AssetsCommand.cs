@@ -244,7 +244,7 @@ public static class AssetsCommand
             className: "AudioClip",
             // Audio is written into a directory; the decoder picks the file extension.
             defaultFileName: null,
-            invoke: (service, name, output, collection, pathId) => service.ExportAudio(name, output, collection, pathId)));
+            invoke: (service, name, output, collection, pathId) => service.ExportAudio(name, output, collection, pathId) is not null));
 
         return exportCommand;
     }

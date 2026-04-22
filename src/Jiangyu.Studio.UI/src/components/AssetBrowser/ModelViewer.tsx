@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { Spinner } from "../Spinner/Spinner.tsx";
 import styles from "./AssetBrowser.module.css";
 
@@ -35,11 +36,19 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
       renderer.setPixelRatio(window.devicePixelRatio);
       renderer.setClearColor(0x000000, 0);
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.8;
+      renderer.toneMappingExposure = 1.1;
       container.appendChild(renderer.domElement);
 
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(45, w / h, 0.01, 1000);
+
+      // PBR materials render dark with directional lights alone — they need an
+      // environment probe to fake indirect light. A PMREM'd RoomEnvironment is
+      // the standard neutral-indoor rig; it lights every material consistently
+      // whether or not the glTF ships explicit lights.
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      const envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      scene.environment = envTexture;
 
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
@@ -52,18 +61,14 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
       };
       controls.addEventListener("start", stopAutoRotate);
 
-      // Lighting
-      const ambient = new THREE.AmbientLight(0xffffff, 3.0);
-      scene.add(ambient);
-      const hemi = new THREE.HemisphereLight(0xffffff, 0x888888, 2.0);
-      scene.add(hemi);
-      const key = new THREE.DirectionalLight(0xffffff, 3.0);
+      // Directional lights add shape on top of the environment probe.
+      const key = new THREE.DirectionalLight(0xffffff, 2.5);
       key.position.set(5, 10, 7);
       scene.add(key);
-      const fill = new THREE.DirectionalLight(0xffffff, 2.0);
+      const fill = new THREE.DirectionalLight(0xffffff, 1.2);
       fill.position.set(-5, 5, -5);
       scene.add(fill);
-      const rim = new THREE.DirectionalLight(0xffffff, 1.5);
+      const rim = new THREE.DirectionalLight(0xffffff, 1.0);
       rim.position.set(0, -5, -10);
       scene.add(rim);
 
@@ -92,6 +97,8 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
         resizeObserver.disconnect();
         controls.removeEventListener("start", stopAutoRotate);
         controls.dispose();
+        envTexture.dispose();
+        pmrem.dispose();
         renderer.forceContextLoss();
         renderer.dispose();
         if (renderer.domElement.parentNode === container) {

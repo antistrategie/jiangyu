@@ -456,11 +456,12 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
     /// Decodes the indexed AudioClip asset. Writes to <paramref name="outputDirectory"/>; the
     /// file extension is chosen by the decoder (usually <c>.ogg</c> or <c>.wav</c> for PCM
     /// Fmod samples, occasionally module formats like <c>.it</c>/<c>.xm</c>). Returns the
-    /// written path.
+    /// written path on success, or <c>null</c> if decode / export failed.
     /// </summary>
-    public bool ExportAudio(string assetName, string outputDirectory, string collection, long pathId)
+    public string? ExportAudio(string assetName, string outputDirectory, string collection, long pathId)
     {
-        return ExportAssetFromIndexed<IAudioClip>(assetName, collection, pathId, "AudioClip", (audioClip) =>
+        string? writtenPath = null;
+        var success = ExportAssetFromIndexed<IAudioClip>(assetName, collection, pathId, "AudioClip", (audioClip) =>
         {
             if (!AudioClipDecoder.TryDecode(audioClip, out var decodedData, out var fileExtension, out var message))
             {
@@ -478,8 +479,10 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
             var outputFilePath = Path.Combine(outputDirectory, $"{assetName}{fileExtension}");
             File.WriteAllBytes(outputFilePath, decodedData);
             _log.Info($"  -> {outputFilePath} ({decodedData.Length} bytes)");
+            writtenPath = outputFilePath;
             return true;
         });
+        return success ? writtenPath : null;
     }
 
     private bool ExportAssetFromIndexed<T>(
@@ -1533,7 +1536,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
                 break;
 
             case "GameObject" or "PrefabHierarchyObject" or "Mesh":
-                data = GenerateModelGlb(gameData, found);
+                data = GenerateModelGlb(found);
                 if (data.Length == 0) return null;
                 ext = ".glb";
                 mime2 = "model/gltf-binary";
@@ -1586,7 +1589,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         return ms2.ToArray();
     }
 
-    private byte[] GenerateModelGlb(GameData gameData, IUnityObjectBase asset)
+    private byte[] GenerateModelGlb(IUnityObjectBase asset)
     {
         SceneBuilder? scene = null;
 

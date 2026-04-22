@@ -235,6 +235,12 @@
   gap: var(--space-1);
 }
 
+.recentRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .recentLink {
   font-family: var(--font-mono);
   font-size: var(--fs-base);
@@ -245,4 +251,28 @@
 
 .recentLink:hover {
   color: var(--fg-muted);
+}
+
+.recentRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--fg-subtle);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--ease-normal);
+}
+
+.recentRow:hover .recentRemove,
+.recentRemove:focus-visible {
+  opacity: 1;
+}
+
+.recentRemove:hover {
+  color: var(--cinnabar-1);
 }

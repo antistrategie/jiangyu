@@ -1346,7 +1346,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
     // replacement path.
     private static string EnsureBindPoseReferenceExport(string projectDir, ReplacementModelTarget target, AssetPipelineService assetPipeline)
     {
-        var referenceDirectory = Path.Combine(projectDir, ".jiangyu", "bind-pose-references", BuildModelReplacementAlias(target.Name, target.PathId));
+        var referenceDirectory = Path.Combine(projectDir, ".jiangyu", "bind_pose_references", BuildModelReplacementAlias(target.Name, target.PathId));
         var referenceModelPath = Path.Combine(referenceDirectory, "model.gltf");
         var referenceManifestPath = Path.Combine(referenceDirectory, BindPoseReferenceManifestFileName);
         var assetIndexManifest = assetPipeline.LoadManifest()

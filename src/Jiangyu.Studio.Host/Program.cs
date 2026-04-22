@@ -16,10 +16,8 @@ public static class Program
             .SetSize(new Size(1680, 1050))
             .Center()
             .RegisterWebMessageReceivedHandler(
-                (IInfiniFrameWindow window, string message) =>
-                {
-                    RpcDispatcher.HandleMessage(window, message, response => window.SendWebMessage(response));
-                });
+                (window, message) =>
+                    RpcDispatcher.HandleMessage(window, message, window.SendWebMessage));
 
         // In dev mode, point the webview at the Vite dev server for HMR.
         var devUrl = Environment.GetEnvironmentVariable("JIANGYU_DEV_URL");

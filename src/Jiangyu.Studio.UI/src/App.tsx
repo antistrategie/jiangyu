@@ -14,6 +14,7 @@ import {
   type PaletteAction,
 } from "./lib/actions.tsx";
 import { buildProjectActions } from "./lib/appActions.ts";
+import { loadRecentProjects, recordRecentProject } from "./lib/recentProjects.ts";
 import { matchBinding, type KeyBinding } from "./lib/shortcuts.ts";
 import {
   BROWSER_KIND_META,
@@ -196,6 +197,7 @@ export function App() {
   const switchProject = useCallback((path: string) => {
     setLayout(EMPTY_LAYOUT);
     setProjectPath(path);
+    setRecentProjects(recordRecentProject(path));
   }, []);
 
   const openProject = useCallback(() => {
@@ -274,17 +276,11 @@ export function App() {
     };
   }, [projectPath]);
 
+  // Hydrate recent-projects list from localStorage on mount. `switchProject`
+  // updates it on each open, so there's no need to re-read on project change.
   useEffect(() => {
-    let cancelled = false;
-    void rpcCall<string[]>("getRecentProjects")
-      .then((projects) => {
-        if (!cancelled) setRecentProjects(projects);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [projectPath]);
+    setRecentProjects(loadRecentProjects());
+  }, []);
 
   // Latest values read inside the keyboard handler without re-binding on every change.
   const layoutRef = useRef(layout);
@@ -508,7 +504,7 @@ export function App() {
   return (
     <div className={styles.shell}>
       {projectPath === null ? (
-        <WelcomeScreen onOpenProject={setProjectPath} />
+        <WelcomeScreen onOpenProject={switchProject} />
       ) : (
         <>
           <Topbar projectName={basename(projectPath)} onOpenPalette={() => setPaletteOpen(true)} />

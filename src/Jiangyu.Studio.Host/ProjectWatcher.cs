@@ -15,23 +15,32 @@ internal static class ProjectWatcher
     private const int DefaultSuppressMs = 500;
 
     // Path segments that are always excluded regardless of .gitignore.
-    private static readonly HashSet<string> ExcludedSegments = new(StringComparer.Ordinal)
+    // Case-insensitive so Windows paths like `Node_Modules` or `.Git` still match.
+    private static readonly HashSet<string> ExcludedSegments = new(StringComparer.OrdinalIgnoreCase)
     {
-        "bin", "obj", "node_modules", ".git", "Library", "Temp", ".vs", ".idea",
+        "bin", "obj", "node_modules", ".git", "Library", "Temp", ".vs", ".idea", ".jiangyu", ".unity"
     };
 
     private static FileSystemWatcher? _watcher;
     private static IInfiniFrameWindow? _window;
 
+    /// <summary>
+    /// Absolute path of the currently open project root, or null if no project is open.
+    /// Used by the RPC dispatcher to enforce that filesystem operations stay within
+    /// the project sandbox.
+    /// </summary>
+    public static string? ProjectRoot { get; private set; }
+
     private static readonly Dictionary<string, long> SuppressUntil = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, Timer> Pending = new(StringComparer.Ordinal);
-    private static readonly object Lock = new();
+    private static readonly Lock Lock = new();
 
     public static void Start(IInfiniFrameWindow window, string root)
     {
         Stop();
 
         _window = window;
+        ProjectRoot = Path.GetFullPath(root);
         _watcher = new FileSystemWatcher(root)
         {
             IncludeSubdirectories = true,
@@ -63,6 +72,8 @@ internal static class ProjectWatcher
             _watcher.Dispose();
             _watcher = null;
         }
+
+        ProjectRoot = null;
 
         lock (Lock)
         {
@@ -111,7 +122,7 @@ internal static class ProjectWatcher
                 var segment = fullPath.AsSpan(start, i - start);
                 foreach (var ex in ExcludedSegments)
                 {
-                    if (segment.SequenceEqual(ex.AsSpan()))
+                    if (segment.Equals(ex.AsSpan(), StringComparison.OrdinalIgnoreCase))
                         return true;
                 }
             }
