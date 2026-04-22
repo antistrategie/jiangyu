@@ -37,12 +37,20 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
     controls.autoRotate = true;
     controls.autoRotateSpeed = 2;
 
-    // Lighting
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+    // Lighting — three-point studio setup for even coverage
+    const ambient = new THREE.AmbientLight(0xffffff, 1.0);
     scene.add(ambient);
-    const directional = new THREE.DirectionalLight(0xffffff, 0.8);
-    directional.position.set(5, 10, 7);
-    scene.add(directional);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+    scene.add(hemi);
+    const key = new THREE.DirectionalLight(0xffffff, 1.2);
+    key.position.set(5, 10, 7);
+    scene.add(key);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.6);
+    fill.position.set(-5, 5, -5);
+    scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xffffff, 0.4);
+    rim.position.set(0, -5, -10);
+    scene.add(rim);
 
     // Load the GLB
     const loader = new GLTFLoader();
