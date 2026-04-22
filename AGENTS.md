@@ -33,7 +33,8 @@ If `PROGRESS.md` or `TODO.md` are absent, treat them as optional working docs ra
 
 ## Commits
 
-- One-line commit messages. No multi-paragraph bodies.
+- Don't commit unless told to.
+- One-line commit messages in conventional commit standards. No multi-paragraph bodies.
 - No `Co-authored-by` trailers or AI attribution.
 
 ## Research policy

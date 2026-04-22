@@ -26,6 +26,8 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
     renderer.setSize(w, h);
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setClearColor(0x000000, 0);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.8;
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
@@ -37,18 +39,22 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
     controls.autoRotate = true;
     controls.autoRotateSpeed = 2;
 
-    // Lighting — three-point studio setup for even coverage
-    const ambient = new THREE.AmbientLight(0xffffff, 1.0);
+    // Stop auto-rotate when the user interacts
+    const stopAutoRotate = () => { controls.autoRotate = false; };
+    controls.addEventListener("start", stopAutoRotate);
+
+    // Lighting — high-intensity even coverage for preview
+    const ambient = new THREE.AmbientLight(0xffffff, 3.0);
     scene.add(ambient);
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x888888, 2.0);
     scene.add(hemi);
-    const key = new THREE.DirectionalLight(0xffffff, 1.2);
+    const key = new THREE.DirectionalLight(0xffffff, 3.0);
     key.position.set(5, 10, 7);
     scene.add(key);
-    const fill = new THREE.DirectionalLight(0xffffff, 0.6);
+    const fill = new THREE.DirectionalLight(0xffffff, 2.0);
     fill.position.set(-5, 5, -5);
     scene.add(fill);
-    const rim = new THREE.DirectionalLight(0xffffff, 0.4);
+    const rim = new THREE.DirectionalLight(0xffffff, 1.5);
     rim.position.set(0, -5, -10);
     scene.add(rim);
 
