@@ -7,11 +7,12 @@ export function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className={styles.container}>
+    <div className={styles.container} aria-live="polite" aria-atomic="false">
       {toasts.map((t) => (
         <div
           key={t.id}
           className={`${styles.toast}${t.variant === "error" ? ` ${styles.toastError}` : ""}`}
+          role={t.variant === "error" ? "alert" : "status"}
         >
           {t.sticker && <img src={t.sticker} alt="" className={styles.sticker} />}
           <div className={styles.body}>
@@ -31,7 +32,12 @@ export function ToastContainer() {
               {a.label}
             </button>
           ))}
-          <button type="button" className={styles.dismiss} onClick={() => dismiss(t.id)}>
+          <button
+            type="button"
+            className={styles.dismiss}
+            aria-label="Dismiss"
+            onClick={() => dismiss(t.id)}
+          >
             ×
           </button>
         </div>

@@ -1,8 +1,8 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Maximize2, Minimize2, SplitSquareHorizontal, SplitSquareVertical, X } from "lucide-react";
 import Editor, { type OnChange, type OnMount } from "@monaco-editor/react";
 import type { editor as monacoEditor } from "monaco-editor";
-import { jiangyuTheme } from "./jiangyuTheme.ts";
+import { buildJiangyuTheme } from "./jiangyuTheme.ts";
 import { ContextMenu, type ContextMenuEntry } from "../ContextMenu/ContextMenu.tsx";
 import { buildTabMenu } from "./tabMenu.ts";
 import { getLanguage, isBinaryFile } from "./fileTypes.ts";
@@ -165,6 +165,19 @@ export function EditorPane({
   const themeRegistered = useRef(false);
 
   const activeFile = pane.activeTab;
+
+  // Monaco's `onMount` fires once per editor instance, so anything registered
+  // in there (Ctrl+S command) captures the `pane.activeTab` value from that
+  // first mount and never re-reads it. Tab-switches within the pane must read
+  // the *current* active tab, so we route through a ref.
+  const activeFileRef = useRef(activeFile);
+  useEffect(() => {
+    activeFileRef.current = activeFile;
+  }, [activeFile]);
+  const onSaveRef = useRef(onSave);
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  }, [onSave]);
   const activeContent = activeFile !== null ? contents.get(activeFile) : undefined;
   const activeConflict = activeFile !== null ? (conflicts.get(activeFile) ?? null) : null;
   const isBinary = activeFile !== null ? isBinaryFile(activeFile) : false;
@@ -175,20 +188,20 @@ export function EditorPane({
       setEditor(editor);
       onEditorMount(pane.id, editor);
       if (!themeRegistered.current) {
-        monaco.editor.defineTheme("jiangyu", jiangyuTheme);
+        monaco.editor.defineTheme("jiangyu", buildJiangyuTheme());
         themeRegistered.current = true;
       }
       monaco.editor.setTheme("jiangyu");
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-        const path = pane.activeTab;
-        if (path !== null) void onSave(path);
+        const path = activeFileRef.current;
+        if (path !== null) void onSaveRef.current(path);
       });
       editor.onDidFocusEditorWidget(() => {
         onSetActive(pane.id);
       });
       editor.onDidDispose(() => setEditor(null));
     },
-    [pane.id, pane.activeTab, onEditorMount, onSave, onSetActive],
+    [pane.id, onEditorMount, onSetActive],
   );
 
   const handleChange: OnChange = useCallback(
@@ -220,6 +233,31 @@ export function EditorPane({
   };
 
   const handleTabbarDragLeave = () => setTabbarDropHover(false);
+
+  // Monaco options want a numeric fontSize and a CSS font-family string, so the
+  // values can't be CSS vars directly — resolve them from :root at mount so the
+  // editor inherits --font-mono / --fs-base instead of drifting from the tokens.
+  const editorOptions = useMemo<monacoEditor.IStandaloneEditorConstructionOptions>(() => {
+    const root = getComputedStyle(document.documentElement);
+    const fontSize = parseInt(root.getPropertyValue("--fs-base").trim(), 10) || 14;
+    const fontFamily =
+      root.getPropertyValue("--font-mono").trim() || "'JetBrains Mono', ui-monospace, monospace";
+    const padding = parseInt(root.getPropertyValue("--space-2").trim(), 10) || 8;
+    return {
+      automaticLayout: true,
+      minimap: { enabled: false },
+      fontSize,
+      fontFamily,
+      lineNumbers: "on",
+      scrollBeyondLastLine: false,
+      wordWrap: "on",
+      renderLineHighlight: "gutter",
+      guides: { indentation: true, bracketPairs: true },
+      bracketPairColorization: { enabled: true },
+      padding: { top: padding },
+      contextmenu: false,
+    };
+  }, []);
 
   const handleTabbarDrop = (e: React.DragEvent) => {
     setTabbarDropHover(false);
@@ -386,20 +424,7 @@ export function EditorPane({
               loading=""
               onMount={handleMount}
               onChange={handleChange}
-              options={{
-                automaticLayout: true,
-                minimap: { enabled: false },
-                fontSize: 13,
-                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                lineNumbers: "on",
-                scrollBeyondLastLine: false,
-                wordWrap: "on",
-                renderLineHighlight: "gutter",
-                guides: { indentation: true, bracketPairs: true },
-                bracketPairColorization: { enabled: true },
-                padding: { top: 8 },
-                contextmenu: false,
-              }}
+              options={editorOptions}
             />
           </div>
         ) : (

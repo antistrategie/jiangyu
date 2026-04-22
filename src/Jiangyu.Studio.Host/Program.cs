@@ -13,7 +13,7 @@ public static class Program
 
         builder.Window
             .SetTitle("Jiangyu Studio")
-            .SetSize(new Size(1440, 900))
+            .SetSize(new Size(1680, 1050))
             .Center()
             .RegisterWebMessageReceivedHandler(
                 (IInfiniFrameWindow window, string message) =>

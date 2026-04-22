@@ -9,7 +9,7 @@ interface DropOverlayProps {
   onDrop: (zone: DropZone, e: React.DragEvent) => void;
 }
 
-function zoneFor(x: number, y: number, w: number, h: number): DropZone {
+export function zoneFor(x: number, y: number, w: number, h: number): DropZone {
   // Whichever edge is closest wins; the central 50% of the area is "centre".
   const EDGE_FRACTION = 0.25;
   const fx = x / w;

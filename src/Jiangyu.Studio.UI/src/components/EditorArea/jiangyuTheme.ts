@@ -1,133 +1,156 @@
 import type { editor } from "monaco-editor";
 
-/**
- * Jiangyu Studio — custom Monaco editor theme.
- * Warm light parchment palette derived from the design tokens.
- */
-export const jiangyuTheme: editor.IStandaloneThemeData = {
-  base: "vs",
-  inherit: false,
-  rules: [
-    // Base
-    { token: "", foreground: "2a2620", background: "f4efe6" },
-    { token: "invalid", foreground: "a52a1f" },
+// Monaco's theme API takes raw hex strings, not CSS custom properties, so the
+// theme has to be built at runtime from the live :root tokens. This keeps the
+// editor in lockstep with tokens.css instead of drifting when the palette shifts.
+//
+// Rules' `foreground`/`background` want bare hex (no `#`); `colors.*` want it
+// prefixed. Blended overlays (selection/find highlights) are composed by
+// suffixing a 2-hex-digit alpha onto a resolved token.
 
-    // Comments — jade, italic
-    { token: "comment", foreground: "4a6e64", fontStyle: "italic" },
-    { token: "comment.block", foreground: "4a6e64", fontStyle: "italic" },
-    { token: "comment.line", foreground: "4a6e64", fontStyle: "italic" },
+function readToken(name: string): string {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return raw.startsWith("#") ? raw.slice(1) : raw;
+}
 
-    // Keywords — cinnabar
-    { token: "keyword", foreground: "7a1a15" },
-    { token: "keyword.control", foreground: "7a1a15" },
-    { token: "storage", foreground: "7a1a15" },
-    { token: "storage.type", foreground: "7a1a15" },
+function hashed(hex: string): string {
+  return hex.startsWith("#") ? hex : `#${hex}`;
+}
 
-    // Strings — gold
-    { token: "string", foreground: "8a6d2a" },
-    { token: "string.escape", foreground: "6e5520" },
+export function buildJiangyuTheme(): editor.IStandaloneThemeData {
+  const ink0 = readToken("--ink-0");
+  const ink1 = readToken("--ink-1");
+  const ink2 = readToken("--ink-2");
+  const ink3 = readToken("--ink-3");
+  const ink4 = readToken("--ink-4");
+  const paper0 = readToken("--paper-0");
+  const paper1 = readToken("--paper-1");
+  const paper2 = readToken("--paper-2");
+  const paper3 = readToken("--paper-3");
+  const cinnabar0 = readToken("--cinnabar-0");
+  const cinnabar1 = readToken("--cinnabar-1");
+  const gold0 = readToken("--gold-0");
+  const gold2 = readToken("--gold-2");
+  const jade0 = readToken("--jade-0");
+  const jade1 = readToken("--jade-1");
+  // Editorial fallback for escape sequences / predefined variables — a darker
+  // gold that doesn't currently have a token. Kept inline rather than promoted
+  // because it only appears inside the Monaco theme.
+  const goldDark = "6e5520";
 
-    // Numbers — gold
-    { token: "number", foreground: "8a6d2a" },
-    { token: "number.hex", foreground: "8a6d2a" },
+  return {
+    base: "vs",
+    inherit: false,
+    rules: [
+      { token: "", foreground: ink1, background: paper0 },
+      { token: "invalid", foreground: cinnabar1 },
 
-    // Types — dark ink
-    { token: "type", foreground: "2d4a44" },
-    { token: "type.identifier", foreground: "2d4a44" },
-    { token: "entity.name.type", foreground: "2d4a44" },
+      // Comments — jade, italic
+      { token: "comment", foreground: jade1, fontStyle: "italic" },
+      { token: "comment.block", foreground: jade1, fontStyle: "italic" },
+      { token: "comment.line", foreground: jade1, fontStyle: "italic" },
 
-    // Functions — strong ink
-    { token: "entity.name.function", foreground: "1a1713" },
-    { token: "support.function", foreground: "1a1713" },
+      // Keywords — cinnabar
+      { token: "keyword", foreground: cinnabar0 },
+      { token: "keyword.control", foreground: cinnabar0 },
+      { token: "storage", foreground: cinnabar0 },
+      { token: "storage.type", foreground: cinnabar0 },
 
-    // Variables / identifiers
-    { token: "variable", foreground: "2a2620" },
-    { token: "variable.predefined", foreground: "6e5520" },
-    { token: "variable.parameter", foreground: "4a433a" },
+      // Strings — gold
+      { token: "string", foreground: gold0 },
+      { token: "string.escape", foreground: goldDark },
 
-    // Operators / punctuation — muted
-    { token: "delimiter", foreground: "6e655a" },
-    { token: "delimiter.bracket", foreground: "6e655a" },
-    { token: "operator", foreground: "6e655a" },
+      // Numbers — gold
+      { token: "number", foreground: gold0 },
+      { token: "number.hex", foreground: gold0 },
 
-    // Tags (HTML/XML) — cinnabar
-    { token: "tag", foreground: "7a1a15" },
-    { token: "metatag", foreground: "6e655a" },
-    { token: "tag.attribute.name", foreground: "4a433a" },
+      // Types — dark jade
+      { token: "type", foreground: jade0 },
+      { token: "type.identifier", foreground: jade0 },
+      { token: "entity.name.type", foreground: jade0 },
 
-    // Attribute values — gold
-    { token: "attribute.value", foreground: "8a6d2a" },
+      // Functions — strong ink
+      { token: "entity.name.function", foreground: ink0 },
+      { token: "support.function", foreground: ink0 },
 
-    // Constants
-    { token: "constant", foreground: "8a6d2a" },
+      // Variables / identifiers
+      { token: "variable", foreground: ink1 },
+      { token: "variable.predefined", foreground: goldDark },
+      { token: "variable.parameter", foreground: ink2 },
 
-    // Regex
-    { token: "regexp", foreground: "4a6e64" },
+      // Operators / punctuation — muted
+      { token: "delimiter", foreground: ink3 },
+      { token: "delimiter.bracket", foreground: ink3 },
+      { token: "operator", foreground: ink3 },
 
-    // Markdown
-    { token: "markup.heading", foreground: "1a1713", fontStyle: "bold" },
-    { token: "markup.bold", fontStyle: "bold" },
-    { token: "markup.italic", fontStyle: "italic" },
-    { token: "markup.inline.raw", foreground: "6e5520" },
+      // Tags (HTML/XML) — cinnabar
+      { token: "tag", foreground: cinnabar0 },
+      { token: "metatag", foreground: ink3 },
+      { token: "tag.attribute.name", foreground: ink2 },
 
-    // JSON keys
-    { token: "string.key.json", foreground: "4a433a" },
-    { token: "string.value.json", foreground: "8a6d2a" },
+      // Attribute values — gold
+      { token: "attribute.value", foreground: gold0 },
 
-    // YAML
-    { token: "type.yaml", foreground: "4a433a" },
+      // Constants
+      { token: "constant", foreground: gold0 },
 
-    // TOML / INI
-    { token: "type.ini", foreground: "4a433a" },
-  ],
-  colors: {
-    // Editor
-    "editor.background": "#f4efe6",
-    "editor.foreground": "#2a2620",
-    "editor.lineHighlightBackground": "#ebe4d640",
-    "editor.selectionBackground": "#ddd3c066",
-    "editor.inactiveSelectionBackground": "#ddd3c033",
-    "editor.selectionHighlightBackground": "#ddd3c044",
-    "editor.findMatchBackground": "#d4b26a44",
-    "editor.findMatchHighlightBackground": "#d4b26a22",
+      // Regex
+      { token: "regexp", foreground: jade1 },
 
-    // Line numbers
-    "editorLineNumber.foreground": "#9a9082",
-    "editorLineNumber.activeForeground": "#6e655a",
+      // Markdown
+      { token: "markup.heading", foreground: ink0, fontStyle: "bold" },
+      { token: "markup.bold", fontStyle: "bold" },
+      { token: "markup.italic", fontStyle: "italic" },
+      { token: "markup.inline.raw", foreground: goldDark },
 
-    // Cursor
-    "editorCursor.foreground": "#7a1a15",
+      // JSON keys
+      { token: "string.key.json", foreground: ink2 },
+      { token: "string.value.json", foreground: gold0 },
 
-    // Indent guides
-    "editorIndentGuide.background": "#ddd3c080",
-    "editorIndentGuide.activeBackground": "#c5b99f",
+      // YAML
+      { token: "type.yaml", foreground: ink2 },
 
-    // Gutter
-    "editorGutter.background": "#f4efe6",
+      // TOML / INI
+      { token: "type.ini", foreground: ink2 },
+    ],
+    colors: {
+      "editor.background": hashed(paper0),
+      "editor.foreground": hashed(ink1),
+      "editor.lineHighlightBackground": `#${paper1}40`,
+      "editor.selectionBackground": `#${paper2}66`,
+      "editor.inactiveSelectionBackground": `#${paper2}33`,
+      "editor.selectionHighlightBackground": `#${paper2}44`,
+      "editor.findMatchBackground": `#${gold2}44`,
+      "editor.findMatchHighlightBackground": `#${gold2}22`,
 
-    // Brackets
-    "editorBracketMatch.background": "#ddd3c044",
-    "editorBracketMatch.border": "#c5b99f",
+      "editorLineNumber.foreground": hashed(ink4),
+      "editorLineNumber.activeForeground": hashed(ink3),
 
-    // Scrollbar
-    "scrollbar.shadow": "#00000011",
-    "scrollbarSlider.background": "#c5b99f44",
-    "scrollbarSlider.hoverBackground": "#c5b99f77",
-    "scrollbarSlider.activeBackground": "#9a908299",
+      "editorCursor.foreground": hashed(cinnabar0),
 
-    // Widget (autocomplete, hover)
-    "editorWidget.background": "#ebe4d6",
-    "editorWidget.border": "#ddd3c0",
-    "editorWidget.foreground": "#2a2620",
+      "editorIndentGuide.background": `#${paper2}80`,
+      "editorIndentGuide.activeBackground": hashed(paper3),
 
-    // Hover
-    "editorHoverWidget.background": "#ebe4d6",
-    "editorHoverWidget.border": "#ddd3c0",
+      "editorGutter.background": hashed(paper0),
 
-    // Overview ruler
-    "editorOverviewRuler.border": "#ebe4d6",
+      "editorBracketMatch.background": `#${paper2}44`,
+      "editorBracketMatch.border": hashed(paper3),
 
-    // Minimap
-    "minimap.background": "#f4efe6",
-  },
-};
+      "scrollbar.shadow": "#00000011",
+      "scrollbarSlider.background": `#${paper3}44`,
+      "scrollbarSlider.hoverBackground": `#${paper3}77`,
+      "scrollbarSlider.activeBackground": `#${ink4}99`,
+
+      "editorWidget.background": hashed(paper1),
+      "editorWidget.border": hashed(paper2),
+      "editorWidget.foreground": hashed(ink1),
+
+      "editorHoverWidget.background": hashed(paper1),
+      "editorHoverWidget.border": hashed(paper2),
+
+      "editorOverviewRuler.border": hashed(paper1),
+
+      "minimap.background": hashed(paper0),
+    },
+  };
+}

@@ -1,7 +1,7 @@
 import styles from "./Topbar.module.css";
 
 interface TopbarProps {
-  projectName: string | null | undefined;
+  projectName: string;
   onOpenPalette: () => void;
 }
 
@@ -14,7 +14,7 @@ export function Topbar({ projectName, onOpenPalette }: TopbarProps) {
         </div>
       </div>
       <span className={styles.separator} />
-      <span className={styles.breadcrumb}>{projectName ?? "No project"}</span>
+      <span className={styles.breadcrumb}>{projectName}</span>
       <div className={styles.spacer} />
       <button className={styles.palette} type="button" onClick={onOpenPalette}>
         <span className={styles.paletteIcon}>⌘</span>

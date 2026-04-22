@@ -19,10 +19,10 @@
   background: var(--bg-inverse);
   border: 1px solid var(--rule-strong);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--fg-on-inverse);
   pointer-events: auto;
-  animation: slideIn 120ms ease;
+  animation: slideIn var(--ease-normal);
 }
 
 .toastError {
@@ -61,7 +61,7 @@
 
 .action {
   font-family: var(--font-label);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   padding: 2px 6px;
@@ -82,7 +82,7 @@
   justify-content: center;
   width: 24px;
   height: 24px;
-  font-size: 16px;
+  font-size: var(--fs-md);
   line-height: 1;
   background: transparent;
   color: var(--fg-on-inverse-muted);

@@ -509,6 +509,39 @@ export function movePaneToEdge(
 }
 
 /**
+ * Swap two panes' positions. Slot weights stay pinned to their coordinates —
+ * only the pane identities (and their tabs/kind) exchange places, so the
+ * destination's layout size is unaffected.
+ */
+export function swapPanes(layout: Layout, paneIdA: string, paneIdB: string): Layout {
+  if (paneIdA === paneIdB) return layout;
+  const coordsA = findPaneCoords(layout, paneIdA);
+  const coordsB = findPaneCoords(layout, paneIdB);
+  if (coordsA === null || coordsB === null) return layout;
+
+  const paneA = layout.columns[coordsA.col]!.panes[coordsA.pane]!;
+  const paneB = layout.columns[coordsB.col]!.panes[coordsB.pane]!;
+
+  const atA = applySlotWeight(paneB, paneA.weight);
+  const atB = applySlotWeight(paneA, paneB.weight);
+
+  const columns = layout.columns.map((col, ci) => ({
+    ...col,
+    panes: col.panes.map((pane, pi) => {
+      if (ci === coordsA.col && pi === coordsA.pane) return atA;
+      if (ci === coordsB.col && pi === coordsB.pane) return atB;
+      return pane;
+    }),
+  }));
+
+  return { ...layout, columns };
+}
+
+function applySlotWeight(pane: Pane, weight: number | undefined): Pane {
+  return weight === undefined ? withoutWeight(pane) : withWeight(pane, weight);
+}
+
+/**
  * Swap a pane's kind in place, preserving id, position, and weight. Useful for
  * letting an empty code pane become a browser pane without restructuring.
  */

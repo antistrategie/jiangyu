@@ -26,6 +26,7 @@ import {
   splitDown,
   splitRight,
   splitWithTab,
+  swapPanes,
   type CodePane,
   type Layout,
   type Pane,
@@ -629,5 +630,88 @@ describe("saveLayout / loadLayout", () => {
   it("returns null when stored value is malformed", () => {
     localStorage.setItem("jiangyu:layout:/proj", "{bad json");
     expect(loadLayout("/proj")).toBeNull();
+  });
+});
+
+describe("swapPanes", () => {
+  it("exchanges the contents of two panes in different columns", () => {
+    const l1 = openFile(EMPTY_LAYOUT, A);
+    const l2 = splitRight(l1);
+    const l3 = openFile(l2, B);
+    const [leftBefore, rightBefore] = getAllPanes(l3);
+    expect(leftBefore!.id).not.toBe(rightBefore!.id);
+    expect((leftBefore as CodePane).tabs.map((t) => t.path)).toEqual([A]);
+    expect((rightBefore as CodePane).tabs.map((t) => t.path)).toEqual([B]);
+
+    const swapped = swapPanes(l3, leftBefore!.id, rightBefore!.id);
+    const [leftAfter, rightAfter] = getAllPanes(swapped);
+    // Position 0 now holds the pane that used to be at position 1.
+    expect(leftAfter!.id).toBe(rightBefore!.id);
+    expect((leftAfter as CodePane).tabs.map((t) => t.path)).toEqual([B]);
+    expect(rightAfter!.id).toBe(leftBefore!.id);
+    expect((rightAfter as CodePane).tabs.map((t) => t.path)).toEqual([A]);
+  });
+
+  it("exchanges two panes in the same column", () => {
+    const l1 = openFile(EMPTY_LAYOUT, A);
+    const l2 = splitDown(l1);
+    const l3 = openFile(l2, B);
+    const [topBefore, bottomBefore] = getAllPanes(l3);
+
+    const swapped = swapPanes(l3, topBefore!.id, bottomBefore!.id);
+    const [topAfter, bottomAfter] = getAllPanes(swapped);
+    expect(topAfter!.id).toBe(bottomBefore!.id);
+    expect(bottomAfter!.id).toBe(topBefore!.id);
+  });
+
+  it("keeps slot weights pinned to positions", () => {
+    const l1 = openFile(EMPTY_LAYOUT, A);
+    const l2 = splitRight(l1);
+    const l3 = openFile(l2, B);
+    const [left, right] = getAllPanes(l3);
+    const leftW = 2;
+    const rightW = 5;
+    const withWeights: Layout = {
+      ...l3,
+      columns: l3.columns.map((col, ci) => ({
+        ...col,
+        panes: col.panes.map((p) => ({ ...p, weight: ci === 0 ? leftW : rightW })),
+      })),
+    };
+
+    const swapped = swapPanes(withWeights, left!.id, right!.id);
+    const [leftAfter, rightAfter] = getAllPanes(swapped);
+    // Slot sizes stay put (leftW at position 0, rightW at position 1); only identities swap.
+    expect(paneWeight(leftAfter!)).toBe(leftW);
+    expect(paneWeight(rightAfter!)).toBe(rightW);
+    expect(leftAfter!.id).toBe(right!.id);
+    expect(rightAfter!.id).toBe(left!.id);
+  });
+
+  it("is a no-op when swapping a pane with itself", () => {
+    const l1 = openFile(EMPTY_LAYOUT, A);
+    const l2 = splitRight(l1);
+    const [, right] = getAllPanes(l2);
+    expect(swapPanes(l2, right!.id, right!.id)).toBe(l2);
+  });
+
+  it("is a no-op when either pane id is unknown", () => {
+    const l1 = openFile(EMPTY_LAYOUT, A);
+    const [only] = getAllPanes(l1);
+    expect(swapPanes(l1, only!.id, "nope")).toBe(l1);
+    expect(swapPanes(l1, "nope", only!.id)).toBe(l1);
+  });
+
+  it("swaps a code pane with a browser pane", () => {
+    const l1 = openFile(EMPTY_LAYOUT, A);
+    const l2 = splitRight(l1, "assetBrowser");
+    const [codeBefore, browserBefore] = getAllPanes(l2);
+    expect(codeBefore!.kind).toBe("code");
+    expect(browserBefore!.kind).toBe("assetBrowser");
+
+    const swapped = swapPanes(l2, codeBefore!.id, browserBefore!.id);
+    const [leftAfter, rightAfter] = getAllPanes(swapped);
+    expect(leftAfter!.kind).toBe("assetBrowser");
+    expect(rightAfter!.kind).toBe("code");
   });
 });

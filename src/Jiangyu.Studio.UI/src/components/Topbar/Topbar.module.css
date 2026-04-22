@@ -5,7 +5,7 @@
   height: 46px;
   padding: 0 var(--space-5);
   background: var(--ink-0);
-  border-bottom: 1px solid #3a332b;
+  border-bottom: 1px solid var(--rule-on-inverse);
   flex-shrink: 0;
   color: var(--paper-0);
 }
@@ -25,20 +25,20 @@
   font-family: var(--font-display-cjk);
   font-size: 22px;
   font-weight: 900;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-wide);
   color: var(--paper-0);
 }
 
 .separator {
   width: 1px;
   align-self: stretch;
-  background: #3a332b;
+  background: var(--rule-on-inverse);
   margin: var(--space-2) 0;
 }
 
 .breadcrumb {
   font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   color: var(--paper-3);
 }
 
@@ -52,10 +52,10 @@
   gap: var(--space-3);
   padding: var(--space-1) var(--space-3);
   font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   color: var(--paper-3);
-  background: #2a2620;
-  border: 1px solid #3a332b;
+  background: var(--ink-1);
+  border: 1px solid var(--rule-on-inverse);
   cursor: pointer;
   min-width: 260px;
 }
@@ -71,8 +71,8 @@
 .kbd {
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 10px;
-  border: 1px solid #3a332b;
+  font-size: var(--fs-xs);
+  border: 1px solid var(--rule-on-inverse);
   padding: 1px var(--space-1);
   color: var(--paper-3);
 }

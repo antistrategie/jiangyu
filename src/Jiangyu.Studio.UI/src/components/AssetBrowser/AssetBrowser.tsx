@@ -8,6 +8,8 @@ import {
   assetsPreview,
   assetsSearch,
   classifyAsset,
+  isAudioClip,
+  isSprite,
   pickDirectory,
   revealInExplorer,
   ASSET_KIND_GROUP_CLASSES,
@@ -534,7 +536,7 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
               {indexing && (
                 <Spinner
                   size={12}
-                  trackColor="rgba(255,255,255,0.3)"
+                  trackColor="var(--track-on-accent)"
                   accentColor="var(--paper-0)"
                 />
               )}
@@ -644,49 +646,12 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
         <div className={styles.splitHandle} onMouseDown={handleSplitDrag} />
 
         <div className={styles.detailsPanel}>
-          {focusedKey === null ? (
-            <div className={styles.detailsEmpty}>Select an asset to see details</div>
-          ) : (
-            (() => {
-              const focused = results.find((r) => rowKey(r) === focusedKey);
-              if (!focused) return <div className={styles.detailsEmpty}>—</div>;
-              return (
-                <>
-                  <div className={styles.preview}>
-                    {previewData?.mimeType === "image/png" ? (
-                      <ImageViewer
-                        src={previewData.dataUrl}
-                        alt={focused.name ?? "Asset preview"}
-                      />
-                    ) : previewData?.mimeType.startsWith("audio/") ? (
-                      <AudioPlayer src={previewData.dataUrl} />
-                    ) : previewData?.mimeType === "model/gltf-binary" ? (
-                      <ModelViewer dataUrl={previewData.dataUrl} />
-                    ) : previewLoading ? (
-                      <Spinner />
-                    ) : (
-                      <span className={styles.previewPlaceholder}>No preview</span>
-                    )}
-                  </div>
-                  <div className={styles.meta}>
-                    <MetaRow label="Name" value={focused.name ?? "—"} />
-                    <MetaRow label="Class" value={focused.className ?? "—"} />
-                    <MetaRow label="Collection" value={focused.collection ?? "—"} />
-                    <MetaRow label="Path ID" value={String(focused.pathId)} />
-                    {focused.audioFrequency != null && (
-                      <MetaRow label="Frequency" value={`${focused.audioFrequency} Hz`} />
-                    )}
-                    {focused.audioChannels != null && (
-                      <MetaRow label="Channels" value={String(focused.audioChannels)} />
-                    )}
-                    {focused.spriteBackingTextureName && (
-                      <MetaRow label="Atlas" value={focused.spriteBackingTextureName} />
-                    )}
-                  </div>
-                </>
-              );
-            })()
-          )}
+          <AssetDetails
+            focusedKey={focusedKey}
+            results={results}
+            previewData={previewData}
+            previewLoading={previewLoading}
+          />
           <div className={styles.exportBar}>
             <div className={styles.exportOptions}>
               <label className={styles.exportOption}>
@@ -761,5 +726,54 @@ function MetaRow({ label, value }: { label: string; value: string }) {
       <span className={styles.metaLabel}>{label}</span>
       <span className={styles.metaValue}>{value}</span>
     </div>
+  );
+}
+
+interface AssetDetailsProps {
+  readonly focusedKey: string | null;
+  readonly results: readonly AssetEntry[];
+  readonly previewData: { dataUrl: string; mimeType: string } | null;
+  readonly previewLoading: boolean;
+}
+
+function AssetDetails({ focusedKey, results, previewData, previewLoading }: AssetDetailsProps) {
+  if (focusedKey === null) {
+    return <div className={styles.detailsEmpty}>Select an asset to see details</div>;
+  }
+  const focused = results.find((r) => rowKey(r) === focusedKey);
+  if (!focused) return <div className={styles.detailsEmpty}>—</div>;
+
+  let preview: React.ReactNode;
+  if (previewData?.mimeType === "image/png") {
+    preview = <ImageViewer src={previewData.dataUrl} alt={focused.name ?? "Asset preview"} />;
+  } else if (previewData?.mimeType.startsWith("audio/")) {
+    preview = <AudioPlayer src={previewData.dataUrl} />;
+  } else if (previewData?.mimeType === "model/gltf-binary") {
+    preview = <ModelViewer dataUrl={previewData.dataUrl} />;
+  } else if (previewLoading) {
+    preview = <Spinner />;
+  } else {
+    preview = <span className={styles.previewPlaceholder}>No preview</span>;
+  }
+
+  return (
+    <>
+      <div className={styles.preview}>{preview}</div>
+      <div className={styles.meta}>
+        <MetaRow label="Name" value={focused.name ?? "—"} />
+        <MetaRow label="Class" value={focused.className ?? "—"} />
+        <MetaRow label="Collection" value={focused.collection ?? "—"} />
+        <MetaRow label="Path ID" value={String(focused.pathId)} />
+        {isAudioClip(focused) && focused.audioFrequency != null && (
+          <MetaRow label="Frequency" value={`${focused.audioFrequency} Hz`} />
+        )}
+        {isAudioClip(focused) && focused.audioChannels != null && (
+          <MetaRow label="Channels" value={String(focused.audioChannels)} />
+        )}
+        {isSprite(focused) && focused.spriteBackingTextureName && (
+          <MetaRow label="Atlas" value={focused.spriteBackingTextureName} />
+        )}
+      </div>
+    </>
   );
 }

@@ -81,6 +81,9 @@
   --rule-strong: var(--ink-0);
   --rule-muted: var(--ink-3);
   --rule-faint: rgba(26, 23, 19, 0.15);
+  /* Hairline on ink-0 surfaces (topbar, statusbar): a touch lighter than ink-1
+     so the panel edge reads as a seam, not as a flat block. */
+  --rule-on-inverse: #3a332b;
 
   /* Type stacks */
   --font-display-cjk: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
@@ -90,9 +93,9 @@
   --font-ui: "Barlow Condensed", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-  /* Scale */
-  --fs-xs: 11px;
-  --fs-sm: 13px;
+  /* Scale — three-tier base (xs/sm/base) + display ramp (md/lg/xl). */
+  --fs-xs: 10px;
+  --fs-sm: 12px;
   --fs-base: 14px;
   --fs-md: 16px;
   --fs-lg: 20px;
@@ -104,6 +107,7 @@
 
   --tracking-wide: 0.04em;
   --tracking-wider: 0.14em;
+  --tracking-section: 0.18em;
 
   /* Spacing */
   --space-1: 4px;
@@ -121,5 +125,14 @@
 
   /* Transitions */
   --ease-fast: 80ms ease;
+  --ease-fast-linear: 80ms linear;
   --ease-normal: 120ms ease;
+
+  /* Scrim / shadows — reserved for floating overlays (palette, context menu). */
+  --scrim: rgba(30, 26, 22, 0.35);
+  --shadow-sm: 0 6px 24px rgba(0, 0, 0, 0.18);
+  --shadow-lg: 0 18px 60px rgba(30, 26, 22, 0.25);
+
+  /* Track colour behind the spinner when it sits on an accent surface. */
+  --track-on-accent: rgba(255, 255, 255, 0.3);
 }

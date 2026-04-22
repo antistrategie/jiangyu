@@ -21,9 +21,9 @@
   min-width: 160px;
   border: 1px solid var(--rule);
   background: var(--bg);
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--fg-strong);
   outline: none;
 }
@@ -39,10 +39,10 @@
 
 .kindPill {
   font-family: var(--font-label);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--rule);
   background: transparent;
   color: var(--fg-muted);
@@ -68,9 +68,9 @@
 .collectionSelect {
   border: 1px solid var(--rule);
   background: var(--bg);
-  padding: 4px 6px;
+  padding: var(--space-1) 6px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--fg-strong);
   max-width: 180px;
 }
@@ -109,10 +109,10 @@
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr) 80px;
   gap: var(--space-2);
-  padding: 4px var(--space-3);
+  padding: var(--space-1) var(--space-3);
   border-bottom: 1px solid var(--rule);
   font-family: var(--font-label);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   color: var(--fg-muted);
@@ -136,9 +136,9 @@
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr) 80px;
   gap: var(--space-2);
-  padding: 4px var(--space-3);
+  padding: var(--space-1) var(--space-3);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--fg);
   cursor: pointer;
   border: none;
@@ -176,12 +176,12 @@
 
 .rowKind {
   color: var(--fg-muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 
 .rowCollection {
   color: var(--fg-muted);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -217,7 +217,7 @@
   margin: auto;
   font-family: var(--font-editorial);
   font-style: italic;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-base);
   color: var(--fg-muted);
   padding: var(--space-3);
   text-align: center;
@@ -279,10 +279,10 @@
   bottom: var(--space-2);
   right: var(--space-2);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: var(--fg-muted);
   background: var(--bg);
-  padding: 1px 4px;
+  padding: 1px var(--space-1);
   border: 1px solid var(--rule);
   pointer-events: none;
 }
@@ -291,7 +291,7 @@
   color: var(--fg-muted);
   font-family: var(--font-editorial);
   font-style: italic;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-base);
 }
 
 .customAudio {
@@ -316,7 +316,7 @@
   background: transparent;
   color: var(--fg-strong);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   padding: 0;
 }
 
@@ -327,7 +327,7 @@
 
 .audioTime {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: var(--fg-muted);
   flex: 0 0 auto;
   min-width: 28px;
@@ -370,7 +370,7 @@
   flex-shrink: 0;
   overflow-y: auto;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--fg);
 }
 
@@ -383,7 +383,7 @@
 
 .metaLabel {
   font-family: var(--font-label);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   color: var(--fg-muted);
@@ -414,7 +414,7 @@
   align-items: center;
   gap: var(--space-2);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--fg);
   cursor: pointer;
 }
@@ -425,7 +425,7 @@
 
 .exportOptionPath {
   color: var(--fg-muted);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -435,7 +435,7 @@
 
 .exportProjectConfigure {
   font-family: var(--font-label);
-  font-size: 9px;
+  font-size: var(--fs-xs);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   padding: 2px 6px;
@@ -460,7 +460,7 @@
   align-items: center;
   gap: var(--space-1);
   font-family: var(--font-label);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   padding: 6px var(--space-3);
@@ -493,7 +493,7 @@
   bottom: 0;
   left: 0;
   background: var(--cinnabar-1);
-  transition: width 80ms linear;
+  transition: width var(--ease-fast-linear);
 }
 
 .gate {
@@ -517,17 +517,17 @@
 
 .gateReason {
   font-family: var(--font-ui);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-base);
   color: var(--fg-muted);
   margin: 0;
 }
 
 .gateButton {
   font-family: var(--font-label);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
-  padding: 8px var(--space-3);
+  padding: var(--space-2) var(--space-3);
   background: var(--cinnabar-1);
   color: var(--paper-0);
   border: none;

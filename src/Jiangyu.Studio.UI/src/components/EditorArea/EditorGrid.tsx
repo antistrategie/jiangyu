@@ -49,6 +49,7 @@ interface EditorGridProps {
   onResizePanes: (topId: string, topWeight: number, bottomId: string, bottomWeight: number) => void;
   onSplitWithTab: (fromPaneId: string, toPaneId: string, path: string, edge: SplitEdge) => void;
   onMovePaneToEdge: (paneId: string, targetPaneId: string, edge: SplitEdge) => void;
+  onSwapPanes: (paneIdA: string, paneIdB: string) => void;
   onConvertPane: (paneId: string, kind: BrowserPaneModel["kind"]) => void;
   onSplitFromPane: (paneId: string, direction: "right" | "down") => void;
   onToggleFullscreen: (paneId: string) => void;
@@ -70,6 +71,7 @@ export function EditorGrid({
   onResizePanes,
   onSplitWithTab,
   onMovePaneToEdge,
+  onSwapPanes,
   onConvertPane,
   onSplitFromPane,
   onToggleFullscreen,
@@ -131,14 +133,17 @@ export function EditorGrid({
         try {
           const { paneId } = JSON.parse(paneRaw) as PaneDragPayload;
           if (paneId === toPaneId) return;
-          if (zone === "centre") return; // pane-into-pane merge not supported
-          onMovePaneToEdge(paneId, toPaneId, zone);
+          if (zone === "centre") {
+            onSwapPanes(paneId, toPaneId);
+          } else {
+            onMovePaneToEdge(paneId, toPaneId, zone);
+          }
         } catch {
           // ignore malformed payload
         }
       }
     },
-    [onMoveTab, onSplitWithTab, onMovePaneToEdge],
+    [onMoveTab, onSplitWithTab, onMovePaneToEdge, onSwapPanes],
   );
 
   const activeCodePane = getActiveCodePane(layout);
@@ -253,16 +258,23 @@ export function EditorGrid({
     return () => cancelAnimationFrame(id);
   }, [layout, editors, fullscreenPaneId]);
 
-  // Lazy-load any path that is an active tab somewhere and isn't already cached.
-  const activePaths = useMemo(() => {
-    const out = new Set<string>();
+  // Single walk over the layout produces every derived set the grid needs:
+  // currently-active file paths (to trigger lazy reads), all open file paths
+  // (to prune stale content/conflict entries), and all pane ids (to prune the
+  // editor registry).
+  const { activePaths, openPaths, openPaneIds } = useMemo(() => {
+    const active = new Set<string>();
+    const open = new Set<string>();
+    const paneIds = new Set<string>();
     for (const col of layout.columns) {
       for (const pane of col.panes) {
+        paneIds.add(pane.id);
         if (pane.kind !== "code") continue;
-        if (pane.activeTab !== null) out.add(pane.activeTab);
+        if (pane.activeTab !== null) active.add(pane.activeTab);
+        for (const tab of pane.tabs) open.add(tab.path);
       }
     }
-    return out;
+    return { activePaths: active, openPaths: open, openPaneIds: paneIds };
   }, [layout]);
 
   useEffect(() => {
@@ -282,23 +294,6 @@ export function EditorGrid({
         });
     }
   }, [activePaths, setContent]);
-
-  // Drop content / conflict / editor entries when their path leaves all panes.
-  const openPaths = useMemo(() => {
-    const out = new Set<string>();
-    for (const col of layout.columns) {
-      for (const pane of col.panes) {
-        if (pane.kind !== "code") continue;
-        for (const tab of pane.tabs) out.add(tab.path);
-      }
-    }
-    return out;
-  }, [layout]);
-  const openPaneIds = useMemo(() => {
-    const out = new Set<string>();
-    for (const col of layout.columns) for (const pane of col.panes) out.add(pane.id);
-    return out;
-  }, [layout]);
 
   useEffect(() => {
     const prune = <V,>(prev: Map<string, V>): Map<string, V> => {

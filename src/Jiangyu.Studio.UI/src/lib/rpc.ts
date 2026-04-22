@@ -17,6 +17,16 @@ interface RpcNotification {
   readonly params?: unknown;
 }
 
+type RpcMessage = RpcResponse | RpcNotification;
+
+function isRpcResponse(msg: RpcMessage): msg is RpcResponse {
+  return typeof (msg as RpcResponse).id === "number";
+}
+
+function isRpcNotification(msg: RpcMessage): msg is RpcNotification {
+  return typeof (msg as RpcNotification).method === "string";
+}
+
 export type FileChangeKind = "changed" | "deleted";
 
 export interface FileChangedEvent {
@@ -68,14 +78,14 @@ export function initRpc(): void {
   }
 
   host.receiveMessage((data: string) => {
-    let msg: Partial<RpcResponse & RpcNotification>;
+    let msg: RpcMessage;
     try {
-      msg = JSON.parse(data) as Partial<RpcResponse & RpcNotification>;
+      msg = JSON.parse(data) as RpcMessage;
     } catch {
       return;
     }
 
-    if (typeof msg.id === "number") {
+    if (isRpcResponse(msg)) {
       const req = pending.get(msg.id);
       if (!req) return;
       pending.delete(msg.id);
@@ -87,7 +97,7 @@ export function initRpc(): void {
       return;
     }
 
-    if (typeof msg.method === "string") {
+    if (isRpcNotification(msg)) {
       const subs = subscribers.get(msg.method);
       if (subs) for (const cb of subs) cb(msg.params);
     }

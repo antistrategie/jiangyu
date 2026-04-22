@@ -20,23 +20,32 @@ import {
 import { rpcCall, subscribe, type FileChangedEvent } from "../../lib/rpc.ts";
 import { dirname, basename, join, relative, isDescendant } from "../../lib/path.ts";
 import { ContextMenu, type ContextMenuEntry } from "../ContextMenu/ContextMenu.tsx";
+import { ConfirmDialog } from "../ConfirmDialog/ConfirmDialog.tsx";
+import { useToast } from "../../lib/toast.tsx";
 import styles from "./Sidebar.module.css";
 
 const DRAG_MIME = "application/x-jiangyu-path";
 
-function validateName(name: string): string | null {
+type PushToast = ReturnType<typeof useToast>["push"];
+
+type NameValidation = { value: string; error: null } | { value: null; error: string | null };
+
+// Returns `{ value: null, error: null }` for an empty name — callers treat that
+// as "silently cancel", not "show an error". Only structurally-bad names (e.g.
+// containing `/`) surface an error string.
+function validateName(name: string): NameValidation {
   const trimmed = name.trim();
-  if (trimmed.length === 0) return null;
-  if (trimmed.includes("/")) {
-    alert("Name cannot contain '/'");
-    return null;
-  }
-  return trimmed;
+  if (trimmed.length === 0) return { value: null, error: null };
+  if (trimmed.includes("/")) return { value: null, error: "Name cannot contain '/'" };
+  return { value: trimmed, error: null };
 }
 
-// Placeholder surface for RPC failures. When we add toasts, change this one site.
-function reportRpcError(action: string, err: unknown): void {
-  alert(`${action} failed: ${(err as Error).message}`);
+function reportRpcError(push: PushToast, action: string, err: unknown): void {
+  push({
+    variant: "error",
+    message: `${action} failed`,
+    detail: (err as Error).message,
+  });
 }
 
 function setDragPath(e: React.DragEvent, path: string): void {
@@ -62,13 +71,9 @@ interface PendingNew {
 }
 
 // Single fileChanged subscription per Sidebar, with TreeNodes registering
-// invalidation callbacks by directory path. Avoids O(nodes) listener scans
-// per event when many directories are expanded.
+// invalidation callbacks by directory path via `registerRefresh`. Avoids
+// O(nodes) listener scans per event when many directories are expanded.
 type InvalidateCallback = () => void;
-interface TreeRefreshContextValue {
-  register: (path: string, cb: InvalidateCallback) => () => void;
-}
-const TreeRefreshContext = createContext<TreeRefreshContextValue | null>(null);
 
 interface SidebarContextValue {
   projectPath: string;
@@ -78,9 +83,12 @@ interface SidebarContextValue {
   setPendingNew: (p: PendingNew | null) => void;
   expandDirectory: (path: string) => void;
   invalidateDir: (path: string) => void;
+  registerRefresh: (path: string, cb: InvalidateCallback) => () => void;
   onOpenFile: (path: string) => void;
   dirtyPaths: Set<string>;
   onPathMoved: (oldPath: string, newPath: string) => void;
+  pushToast: PushToast;
+  confirmDelete: (entry: FileEntry) => Promise<boolean>;
 }
 const SidebarContext = createContext<SidebarContextValue | null>(null);
 function useSidebar(): SidebarContextValue {
@@ -96,17 +104,40 @@ interface SidebarProps {
   onPathMoved: (oldPath: string, newPath: string) => void;
 }
 
+interface PendingConfirm {
+  readonly title: string;
+  readonly message: string;
+  readonly confirmLabel: string;
+  readonly variant: "default" | "danger";
+  readonly resolve: (confirmed: boolean) => void;
+}
+
 export function Sidebar({ projectPath, onOpenFile, dirtyPaths, onPathMoved }: SidebarProps) {
   const [width, setWidth] = useState(240);
   const [clipboard, setClipboard] = useState<ClipboardState | null>(null);
   const [pendingNew, setPendingNew] = useState<PendingNew | null>(null);
   const [expansionTick, setExpansionTick] = useState(0);
   const [rootMenu, setRootMenu] = useState<{ x: number; y: number } | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const forceExpandRef = useRef<Set<string>>(new Set());
   const dragging = useRef(false);
   const refreshers = useRef<Map<string, Set<InvalidateCallback>>>(new Map());
+  const { push: pushToast } = useToast();
 
-  const register = useCallback((path: string, cb: InvalidateCallback) => {
+  const confirmDelete = useCallback((entry: FileEntry): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const kind = entry.isDirectory ? "folder" : "file";
+      setPendingConfirm({
+        title: `Delete ${kind}`,
+        message: `Delete ${kind} "${entry.name}"?${entry.isDirectory ? " All contents will be removed." : ""}`,
+        confirmLabel: "Delete",
+        variant: "danger",
+        resolve,
+      });
+    });
+  }, []);
+
+  const registerRefresh = useCallback((path: string, cb: InvalidateCallback) => {
     let set = refreshers.current.get(path);
     if (!set) {
       set = new Set();
@@ -166,9 +197,12 @@ export function Sidebar({ projectPath, onOpenFile, dirtyPaths, onPathMoved }: Si
       setPendingNew,
       expandDirectory,
       invalidateDir,
+      registerRefresh,
       onOpenFile,
       dirtyPaths,
       onPathMoved,
+      pushToast,
+      confirmDelete,
     }),
     [
       projectPath,
@@ -176,43 +210,59 @@ export function Sidebar({ projectPath, onOpenFile, dirtyPaths, onPathMoved }: Si
       pendingNew,
       expandDirectory,
       invalidateDir,
+      registerRefresh,
       onOpenFile,
       dirtyPaths,
       onPathMoved,
+      pushToast,
+      confirmDelete,
     ],
   );
 
   return (
-    <TreeRefreshContext.Provider value={{ register }}>
-      <SidebarContext.Provider value={sidebarCtx}>
-        <aside className={styles.sidebar} style={{ width, minWidth: 160, maxWidth: 600 }}>
-          <div
-            className={styles.tree}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              setRootMenu({ x: e.clientX, y: e.clientY });
+    <SidebarContext.Provider value={sidebarCtx}>
+      <aside className={styles.sidebar} style={{ width }}>
+        <div
+          className={styles.tree}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setRootMenu({ x: e.clientX, y: e.clientY });
+          }}
+        >
+          <TreeNode
+            path={projectPath}
+            depth={0}
+            forceExpand={forceExpandRef.current}
+            expansionTick={expansionTick}
+          />
+        </div>
+        <div className={styles.resizeHandle} onMouseDown={handleMouseDown} />
+        {rootMenu && (
+          <ContextMenu
+            x={rootMenu.x}
+            y={rootMenu.y}
+            items={buildRootMenu(sidebarCtx)}
+            onClose={() => setRootMenu(null)}
+          />
+        )}
+        {pendingConfirm && (
+          <ConfirmDialog
+            title={pendingConfirm.title}
+            message={pendingConfirm.message}
+            confirmLabel={pendingConfirm.confirmLabel}
+            variant={pendingConfirm.variant}
+            onConfirm={() => {
+              pendingConfirm.resolve(true);
+              setPendingConfirm(null);
             }}
-          >
-            <TreeNode
-              path={projectPath}
-              depth={0}
-              forceExpand={forceExpandRef.current}
-              expansionTick={expansionTick}
-              defaultOpen
-            />
-          </div>
-          <div className={styles.resizeHandle} onMouseDown={handleMouseDown} />
-          {rootMenu && (
-            <ContextMenu
-              x={rootMenu.x}
-              y={rootMenu.y}
-              items={buildRootMenu(sidebarCtx)}
-              onClose={() => setRootMenu(null)}
-            />
-          )}
-        </aside>
-      </SidebarContext.Provider>
-    </TreeRefreshContext.Provider>
+            onCancel={() => {
+              pendingConfirm.resolve(false);
+              setPendingConfirm(null);
+            }}
+          />
+        )}
+      </aside>
+    </SidebarContext.Provider>
   );
 }
 
@@ -221,14 +271,12 @@ interface TreeNodeProps {
   depth: number;
   forceExpand: Set<string>;
   expansionTick: number;
-  defaultOpen?: boolean;
 }
 
 function TreeNode({ path, depth, forceExpand, expansionTick }: TreeNodeProps) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const refresh = useContext(TreeRefreshContext);
-  const { pendingNew } = useSidebar();
+  const { registerRefresh, pendingNew } = useSidebar();
 
   useEffect(() => {
     if (!loaded) {
@@ -245,23 +293,13 @@ function TreeNode({ path, depth, forceExpand, expansionTick }: TreeNodeProps) {
   }, [path, loaded]);
 
   useEffect(() => {
-    if (!refresh) return;
-    return refresh.register(path, () => {
-      setLoaded(false);
-    });
-  }, [path, refresh]);
+    return registerRefresh(path, () => setLoaded(false));
+  }, [path, registerRefresh]);
 
   const showPendingHere = pendingNew !== null && pendingNew.parentPath === path;
 
   return (
-    <ul
-      className={styles.nodeList}
-      style={
-        depth > 0
-          ? { marginLeft: 12, borderLeft: "1px solid var(--rule-faint)", paddingLeft: 0 }
-          : undefined
-      }
-    >
+    <ul className={`${styles.nodeList}${depth > 0 ? ` ${styles.nodeListNested}` : ""}`}>
       {showPendingHere && <NewEntryRow />}
       {entries.map((entry) => (
         <li key={entry.path}>
@@ -418,7 +456,7 @@ function FileItem({ entry }: { entry: FileEntry }) {
 }
 
 function RenameInput({ entry, onDone }: { entry: FileEntry; onDone: () => void }) {
-  const { onPathMoved, invalidateDir } = useSidebar();
+  const { onPathMoved, invalidateDir, pushToast } = useSidebar();
   const [value, setValue] = useState(entry.name);
   const ref = useRef<HTMLInputElement>(null);
 
@@ -433,19 +471,23 @@ function RenameInput({ entry, onDone }: { entry: FileEntry; onDone: () => void }
   }, [entry.name, entry.isDirectory]);
 
   const commit = async () => {
-    const trimmed = validateName(value);
-    if (trimmed === null || trimmed === entry.name) {
+    const result = validateName(value);
+    if (result.error !== null) {
+      pushToast({ variant: "error", message: result.error });
+      return;
+    }
+    if (result.value === null || result.value === entry.name) {
       onDone();
       return;
     }
-    const destPath = join(dirname(entry.path), trimmed);
+    const destPath = join(dirname(entry.path), result.value);
     try {
       await rpcCall<null>("movePath", { srcPath: entry.path, destPath });
       onPathMoved(entry.path, destPath);
       invalidateDir(dirname(entry.path));
       onDone();
     } catch (err) {
-      reportRpcError("Rename", err);
+      reportRpcError(pushToast, "Rename", err);
     }
   };
 
@@ -468,7 +510,7 @@ function RenameInput({ entry, onDone }: { entry: FileEntry; onDone: () => void }
 }
 
 function NewEntryRow() {
-  const { pendingNew, setPendingNew, expandDirectory, invalidateDir } = useSidebar();
+  const { pendingNew, setPendingNew, expandDirectory, invalidateDir, pushToast } = useSidebar();
   const [value, setValue] = useState("");
   const ref = useRef<HTMLInputElement>(null);
 
@@ -479,12 +521,16 @@ function NewEntryRow() {
   if (!pendingNew) return null;
 
   const commit = async () => {
-    const trimmed = validateName(value);
-    if (trimmed === null) {
+    const result = validateName(value);
+    if (result.error !== null) {
+      pushToast({ variant: "error", message: result.error });
+      return;
+    }
+    if (result.value === null) {
       setPendingNew(null);
       return;
     }
-    const newPath = join(pendingNew.parentPath, trimmed);
+    const newPath = join(pendingNew.parentPath, result.value);
     const method = pendingNew.kind === "file" ? "createFile" : "createDirectory";
     try {
       await rpcCall<null>(method, { path: newPath });
@@ -492,7 +538,7 @@ function NewEntryRow() {
       invalidateDir(pendingNew.parentPath);
       setPendingNew(null);
     } catch (err) {
-      reportRpcError("Create", err);
+      reportRpcError(pushToast, "Create", err);
     }
   };
 
@@ -575,7 +621,7 @@ function buildEntryMenu(entry: FileEntry, mctx: MenuBuildCtx): ContextMenuEntry[
       label: "Reveal in File Explorer",
       onSelect: () => {
         void rpcCall<null>("revealInExplorer", { path: entry.path }).catch((err) => {
-          reportRpcError("Reveal", err);
+          reportRpcError(mctx.pushToast, "Reveal", err);
         });
       },
     },
@@ -653,7 +699,11 @@ async function pasteClipboard(mctx: MenuBuildCtx, destDir: string): Promise<void
   for (const d of affectedDirs) mctx.invalidateDir(d);
   if (cb.mode === "cut") mctx.setClipboard(null);
   if (failures.length > 0) {
-    alert(`Paste failed for ${failures.length} item(s):\n${failures.join("\n")}`);
+    mctx.pushToast({
+      variant: "error",
+      message: `Paste failed for ${failures.length} item${failures.length === 1 ? "" : "s"}`,
+      detail: failures.join("; "),
+    });
   }
 }
 
@@ -663,7 +713,7 @@ async function duplicate(entry: FileEntry, ctx: SidebarContextValue): Promise<vo
     await rpcCall<null>("copyPath", { srcPath: entry.path, destPath });
     ctx.invalidateDir(dirname(destPath));
   } catch (err) {
-    reportRpcError("Duplicate", err);
+    reportRpcError(ctx.pushToast, "Duplicate", err);
   }
 }
 
@@ -687,19 +737,18 @@ async function moveWithFeedback(
     ctx.invalidateDir(dirname(srcPath));
     ctx.invalidateDir(dirname(destPath));
   } catch (err) {
-    reportRpcError("Move", err);
+    reportRpcError(ctx.pushToast, "Move", err);
   }
 }
 
 async function performDelete(entry: FileEntry, ctx: SidebarContextValue): Promise<void> {
-  const kind = entry.isDirectory ? "folder" : "file";
-  const msg = `Delete ${kind} "${entry.name}"?${entry.isDirectory ? " All contents will be removed." : ""}`;
-  if (!confirm(msg)) return;
+  const confirmed = await ctx.confirmDelete(entry);
+  if (!confirmed) return;
   try {
     await rpcCall<null>("deletePath", { path: entry.path });
     ctx.invalidateDir(dirname(entry.path));
   } catch (err) {
-    reportRpcError("Delete", err);
+    reportRpcError(ctx.pushToast, "Delete", err);
   }
 }
 

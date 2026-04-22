@@ -2,7 +2,7 @@
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(30, 26, 22, 0.35);
+  background: var(--scrim);
   display: flex;
   justify-content: center;
   align-items: flex-start;
@@ -15,7 +15,7 @@
   max-height: 72vh;
   background: var(--bg-raised);
   border: 1px solid var(--ink-0);
-  box-shadow: 0 18px 60px rgba(30, 26, 22, 0.25);
+  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
 }
@@ -30,7 +30,7 @@
 
 .headerLabel {
   font-family: var(--font-display);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   letter-spacing: 0.22em;
   text-transform: uppercase;
@@ -43,7 +43,7 @@
   background: transparent;
   outline: none;
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: var(--fs-base);
   color: var(--fg-strong);
 }
 
@@ -59,7 +59,7 @@
 .groupLabel {
   padding: 10px 18px 4px;
   font-family: var(--font-label);
-  font-size: 9px;
+  font-size: var(--fs-xs);
   letter-spacing: 0.28em;
   text-transform: uppercase;
   color: var(--fg-muted);
@@ -88,7 +88,7 @@
 
 .rowCjk {
   font-family: var(--font-display-cjk);
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 700;
   color: var(--fg-strong);
   min-width: 32px;
@@ -101,7 +101,7 @@
 .rowLabel {
   flex: 1;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--fg-strong);
   min-width: 0;
   overflow: hidden;
@@ -112,13 +112,13 @@
 .rowDesc {
   font-family: var(--font-editorial);
   font-style: italic;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--fg-muted);
 }
 
 .rowKbd {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   border: 1px solid var(--rule);
   padding: 2px 6px;
   color: var(--fg-muted);
@@ -126,7 +126,7 @@
 }
 
 .empty {
-  padding: 24px 18px;
+  padding: var(--space-5) 18px;
   text-align: center;
   font-family: var(--font-editorial);
   font-style: italic;
@@ -135,13 +135,13 @@
 
 .footer {
   border-top: 1px solid var(--rule);
-  padding: 8px 18px;
+  padding: var(--space-2) 18px;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-4);
   font-family: var(--font-label);
-  font-size: 10px;
-  letter-spacing: 0.18em;
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-section);
   text-transform: uppercase;
   color: var(--fg-muted);
 }
@@ -154,7 +154,7 @@
 
 .footerKbd {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   border: 1px solid var(--rule);
   padding: 2px 6px;
   color: var(--fg-muted);
@@ -166,7 +166,7 @@
 .footerCount {
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   letter-spacing: 0;
   text-transform: none;
   color: var(--fg-muted);

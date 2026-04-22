@@ -31,11 +31,31 @@ function PaletteDialog({ onClose, actions }: PaletteDialogProps) {
   const index = useMemo(() => buildSearchIndex(actions), [actions]);
   const filtered = useMemo(() => filterActions(query, actions, index), [query, actions, index]);
   const groups = useMemo(() => groupByScope(filtered), [filtered]);
+
+  // Navigate by render order, not fuzzy-match order, so ArrowDown/Up walk the
+  // list as the user sees it and cross section boundaries smoothly. `groups`
+  // can reorder items vs. `filtered`, so indexing off `filtered` would jump
+  // around visually.
+  const visualOrder = useMemo(() => {
+    const out: PaletteAction[] = [];
+    for (const [, list] of groups) out.push(...list);
+    return out;
+  }, [groups]);
   const indexOf = useMemo(() => {
     const m = new Map<PaletteAction, number>();
-    filtered.forEach((item, i) => m.set(item, i));
+    visualOrder.forEach((item, i) => m.set(item, i));
     return m;
-  }, [filtered]);
+  }, [visualOrder]);
+  // First visual index of each group — used by PageUp/PageDown to jump sections.
+  const groupStarts = useMemo(() => {
+    const starts: number[] = [];
+    let cursor = 0;
+    for (const [, list] of groups) {
+      starts.push(cursor);
+      cursor += list.length;
+    }
+    return starts;
+  }, [groups]);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => inputRef.current?.focus());
@@ -65,13 +85,28 @@ function PaletteDialog({ onClose, actions }: PaletteDialogProps) {
       onClose();
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSelected((s) => (filtered.length === 0 ? 0 : Math.min(filtered.length - 1, s + 1)));
+      setSelected((s) => (visualOrder.length === 0 ? 0 : Math.min(visualOrder.length - 1, s + 1)));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setSelected((s) => Math.max(0, s - 1));
+    } else if (e.key === "PageDown") {
+      e.preventDefault();
+      setSelected((s) => {
+        const next = groupStarts.find((start) => start > s);
+        return next ?? Math.max(0, visualOrder.length - 1);
+      });
+    } else if (e.key === "PageUp") {
+      e.preventDefault();
+      setSelected((s) => {
+        // Jump to current section's first row; if already there, to the previous section's first.
+        const currentStart = [...groupStarts].reverse().find((start) => start <= s) ?? 0;
+        if (currentStart < s) return currentStart;
+        const prevIdx = groupStarts.indexOf(currentStart) - 1;
+        return prevIdx >= 0 ? groupStarts[prevIdx]! : 0;
+      });
     } else if (e.key === "Enter") {
       e.preventDefault();
-      run(filtered[selected]);
+      run(visualOrder[selected]);
     }
   };
 
@@ -126,6 +161,9 @@ function PaletteDialog({ onClose, actions }: PaletteDialogProps) {
         <div className={styles.footer}>
           <span className={styles.footerHint}>
             <span className={styles.footerKbd}>↑↓</span>navigate
+          </span>
+          <span className={styles.footerHint}>
+            <span className={styles.footerKbd}>⇞⇟</span>section
           </span>
           <span className={styles.footerHint}>
             <span className={styles.footerKbd}>↵</span>run

@@ -63,7 +63,7 @@
   background: var(--cinnabar-1);
   opacity: 0.18;
   pointer-events: none;
-  transition: inset 80ms ease;
+  transition: inset var(--ease-fast);
 }
 
 .dropZone_left {
@@ -123,7 +123,6 @@
   align-self: center;
   background: transparent;
   border: none;
-  border-radius: 2px;
   color: var(--fg-muted);
   cursor: pointer;
   flex-shrink: 0;
@@ -145,7 +144,7 @@
 
 .paneHeaderLabel {
   font-family: var(--font-label);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   color: var(--fg);
@@ -157,7 +156,6 @@
   justify-content: center;
   width: 18px;
   height: 18px;
-  border-radius: 2px;
   cursor: pointer;
   opacity: 0.5;
   background: transparent;
@@ -202,7 +200,7 @@
 
 .tabPlaceholder {
   font-family: var(--font-label);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   letter-spacing: var(--tracking-wide);
   color: var(--fg-muted);
   padding: 0 var(--space-3);
@@ -218,7 +216,7 @@
   height: 26px;
   padding: 0 var(--space-3);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--fg-muted);
   background: transparent;
   border: none;
@@ -229,7 +227,7 @@
 }
 
 .tab + .tab {
-  border-left: 1px solid var(--rule-faint, var(--rule));
+  border-left: 1px solid var(--rule-faint);
 }
 
 .tab:hover {
@@ -247,7 +245,7 @@
 
 .tabDirty {
   color: var(--cinnabar-1);
-  font-size: 9px;
+  font-size: var(--fs-xs);
   line-height: 1;
   pointer-events: none;
 }
@@ -258,7 +256,6 @@
   justify-content: center;
   width: 14px;
   height: 14px;
-  border-radius: 2px;
   opacity: 0.4;
 }
 
@@ -310,7 +307,7 @@
 .emptySeparator {
   font-family: var(--font-editorial);
   font-style: italic;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-base);
   color: var(--fg-muted);
   margin: 0;
 }
@@ -327,7 +324,7 @@
 
 .emptyAction {
   font-family: var(--font-label);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   color: var(--cinnabar-1);
@@ -353,18 +350,17 @@
 
 .bannerText {
   font-family: var(--font-ui);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-base);
   color: var(--fg-strong);
-  letter-spacing: var(--tracking-normal);
   flex: 1;
 }
 
 .bannerAction {
   font-family: var(--font-label);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
-  padding: 4px var(--space-3);
+  padding: var(--space-1) var(--space-3);
   background: var(--cinnabar-1);
   color: var(--paper-0);
   border: none;
@@ -372,16 +368,15 @@
 }
 
 .bannerAction:hover {
-  background: var(--cinnabar-2, var(--cinnabar-1));
   filter: brightness(1.1);
 }
 
 .bannerActionMuted {
   font-family: var(--font-label);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
-  padding: 4px var(--space-3);
+  padding: var(--space-1) var(--space-3);
   background: transparent;
   color: var(--fg);
   border: 1px solid var(--rule);

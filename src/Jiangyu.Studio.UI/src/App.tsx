@@ -5,7 +5,7 @@ import { EditorGrid } from "./components/EditorArea/EditorGrid.tsx";
 import { WelcomeScreen } from "./components/WelcomeScreen/WelcomeScreen.tsx";
 import { Palette } from "./components/Palette/Palette.tsx";
 import { basename, join, remapPath } from "./lib/path.ts";
-import { rpcCall, subscribe } from "./lib/rpc.ts";
+import { rpcCall, subscribe, type FileChangedEvent } from "./lib/rpc.ts";
 import { pickProjectFolder } from "./lib/projectCommands.ts";
 import {
   PALETTE_SCOPE,
@@ -14,6 +14,7 @@ import {
   type PaletteAction,
 } from "./lib/actions.tsx";
 import { buildProjectActions } from "./lib/appActions.ts";
+import { matchBinding, type KeyBinding } from "./lib/shortcuts.ts";
 import {
   BROWSER_KIND_META,
   EMPTY_LAYOUT,
@@ -38,6 +39,7 @@ import {
   splitDown,
   splitRight,
   splitWithTab as splitWithTabInLayout,
+  swapPanes as swapPanesInLayout,
   type BrowserPane,
   type Layout,
   type PaneKind,
@@ -119,6 +121,10 @@ export function App() {
     },
     [],
   );
+
+  const handleSwapPanes = useCallback((paneIdA: string, paneIdB: string) => {
+    setLayout((prev) => swapPanesInLayout(prev, paneIdA, paneIdB));
+  }, []);
 
   const handleConvertPane = useCallback((paneId: string, kind: PaneKind) => {
     setLayout((prev) => convertPaneInLayout(prev, paneId, kind));
@@ -228,6 +234,10 @@ export function App() {
     return () => clearTimeout(handle);
   }, [projectPath, layoutProject, layout]);
 
+  // Single `fileChanged` subscription handles both the debounced palette file
+  // list refresh and tab cleanup for deleted files. The flat list is only
+  // relevant while a project is open; if none is, we clear entries and skip
+  // subscribing — the layout is EMPTY_LAYOUT so there are no tabs to close.
   useEffect(() => {
     if (projectPath === null) {
       setFileEntries([]);
@@ -248,9 +258,11 @@ export function App() {
 
     refresh();
 
-    // Sidebar mutations (create/delete/rename) and external changes fire
-    // fileChanged; debounce so a burst of events only triggers one refetch.
-    const unsubscribe = subscribe("fileChanged", () => {
+    const unsubscribe = subscribe<FileChangedEvent>("fileChanged", (event) => {
+      if (event.kind === "deleted") {
+        setLayout((prev) => closeTabsEverywhere(prev, [event.path]));
+      }
+      // Debounce: a burst of sidebar mutations should trigger one refetch.
       if (refreshTimer !== null) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(refresh, 300);
     });
@@ -274,77 +286,11 @@ export function App() {
     };
   }, [projectPath]);
 
-  // Close-on-disk events: drop tabs everywhere and forget the file.
-  useEffect(() => {
-    return subscribe<{ path: string; kind: string }>("fileChanged", (event) => {
-      if (event.kind !== "deleted") return;
-      setLayout((prev) => closeTabsEverywhere(prev, [event.path]));
-    });
-  }, []);
-
-  // Keyboard shortcuts: read latest layout via ref so we don't re-bind on every change.
+  // Latest values read inside the keyboard handler without re-binding on every change.
   const layoutRef = useRef(layout);
   useEffect(() => {
     layoutRef.current = layout;
   }, [layout]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const mod = e.ctrlKey || e.metaKey;
-      const key = e.key.toLowerCase();
-      if (e.key === "Escape" && fullscreenPaneId !== null) {
-        e.preventDefault();
-        setFullscreenPaneId(null);
-      } else if (mod && e.shiftKey && key === "p") {
-        e.preventDefault();
-        setPaletteOpen((o) => !o);
-      } else if (mod && !e.shiftKey && !e.altKey && key === "k") {
-        e.preventDefault();
-        setPaletteOpen((o) => !o);
-      } else if (mod && !e.shiftKey && !e.altKey && key === "w") {
-        const active = getActiveCodePane(layoutRef.current);
-        if (active === null || active.activeTab === null) return;
-        e.preventDefault();
-        handleCloseTabsInPane(active.id, [active.activeTab]);
-      } else if (mod && e.shiftKey && key === "w") {
-        const active = getActivePane(layoutRef.current);
-        if (active === null) return;
-        e.preventDefault();
-        handleClosePane(active.id);
-      } else if (mod && !e.shiftKey && !e.altKey && e.key === "\\") {
-        e.preventDefault();
-        handleSplitRight();
-      } else if (mod && e.shiftKey && e.key === "|") {
-        e.preventDefault();
-        handleSplitDown();
-      } else if (mod && e.shiftKey && e.key === "]") {
-        const panes = getAllPanes(layoutRef.current);
-        const active = getActivePane(layoutRef.current);
-        if (active === null || panes.length < 2) return;
-        const idx = panes.findIndex((p) => p.id === active.id);
-        const next = panes[(idx + 1) % panes.length]!;
-        e.preventDefault();
-        handleSetActivePane(next.id);
-      } else if (mod && e.shiftKey && e.key === "[") {
-        const panes = getAllPanes(layoutRef.current);
-        const active = getActivePane(layoutRef.current);
-        if (active === null || panes.length < 2) return;
-        const idx = panes.findIndex((p) => p.id === active.id);
-        const prev = panes[(idx - 1 + panes.length) % panes.length]!;
-        e.preventDefault();
-        handleSetActivePane(prev.id);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [
-    fullscreenPaneId,
-    handleCloseTabsInPane,
-    handleClosePane,
-    handleSplitRight,
-    handleSplitDown,
-    handleSetActivePane,
-  ]);
 
   const appActions = useMemo<PaletteAction[]>(
     () =>
@@ -359,19 +305,21 @@ export function App() {
 
   // Keep paneActions cheap: it only cares about topology (active id + pane id
   // order), not weights. Depending on `layout` directly rebuilds the palette
-  // registry once per pixel during drag-resize.
+  // registry once per pixel during drag-resize. Use `` as the delimiter
+  // so we can round-trip safely — pane ids are base36/underscore only.
+  const PANE_ID_DELIM = "";
   const paneIdSignature = useMemo(
     () =>
       getAllPanes(layout)
         .map((p) => p.id)
-        .join(","),
+        .join(PANE_ID_DELIM),
     [layout],
   );
   const activePaneId = layout.activePaneId;
 
   const paneActions = useMemo<PaletteAction[]>(() => {
     if (projectPath === null) return [];
-    const paneIds = paneIdSignature.length > 0 ? paneIdSignature.split(",") : [];
+    const paneIds = paneIdSignature.length > 0 ? paneIdSignature.split(PANE_ID_DELIM) : [];
     const active = activePaneId !== null && paneIds.includes(activePaneId) ? activePaneId : null;
     const actions: PaletteAction[] = [];
     for (const kind of Object.keys(BROWSER_KIND_META) as BrowserPane["kind"][]) {
@@ -457,6 +405,105 @@ export function App() {
   useRegisterActions(fileActions);
 
   const allActions = useRegisteredActions();
+  const allActionsRef = useRef(allActions);
+  useEffect(() => {
+    allActionsRef.current = allActions;
+  }, [allActions]);
+
+  useEffect(() => {
+    const runActionById = (id: string): boolean => {
+      const action = allActionsRef.current.find((a) => a.id === id);
+      if (!action) return false;
+      void action.run();
+      return true;
+    };
+    const focusAdjacentPane = (direction: 1 | -1): boolean => {
+      const panes = getAllPanes(layoutRef.current);
+      const active = getActivePane(layoutRef.current);
+      if (active === null || panes.length < 2) return false;
+      const idx = panes.findIndex((p) => p.id === active.id);
+      const target = panes[(idx + direction + panes.length) % panes.length]!;
+      handleSetActivePane(target.id);
+      return true;
+    };
+    const shortcuts: { binding: KeyBinding; run: () => boolean }[] = [
+      {
+        binding: { key: "Escape" },
+        run: () => {
+          if (fullscreenPaneId === null) return false;
+          setFullscreenPaneId(null);
+          return true;
+        },
+      },
+      {
+        binding: { mod: true, shift: true, key: "p" },
+        run: () => {
+          setPaletteOpen((o) => !o);
+          return true;
+        },
+      },
+      {
+        binding: { mod: true, key: "k" },
+        run: () => {
+          setPaletteOpen((o) => !o);
+          return true;
+        },
+      },
+      // Ctrl+S delegates to the palette-registered save action so it works
+      // even when the editor doesn't have keyboard focus.
+      { binding: { mod: true, key: "s" }, run: () => runActionById("editor.save") },
+      {
+        binding: { mod: true, key: "w" },
+        run: () => {
+          const active = getActiveCodePane(layoutRef.current);
+          if (active === null || active.activeTab === null) return false;
+          handleCloseTabsInPane(active.id, [active.activeTab]);
+          return true;
+        },
+      },
+      {
+        binding: { mod: true, shift: true, key: "w" },
+        run: () => {
+          const active = getActivePane(layoutRef.current);
+          if (active === null) return false;
+          handleClosePane(active.id);
+          return true;
+        },
+      },
+      {
+        binding: { mod: true, key: "\\" },
+        run: () => {
+          handleSplitRight();
+          return true;
+        },
+      },
+      {
+        binding: { mod: true, shift: true, key: "|" },
+        run: () => {
+          handleSplitDown();
+          return true;
+        },
+      },
+      { binding: { mod: true, shift: true, key: "]" }, run: () => focusAdjacentPane(1) },
+      { binding: { mod: true, shift: true, key: "[" }, run: () => focusAdjacentPane(-1) },
+    ];
+    const onKey = (e: KeyboardEvent) => {
+      for (const { binding, run } of shortcuts) {
+        if (!matchBinding(e, binding)) continue;
+        if (run()) e.preventDefault();
+        return;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    fullscreenPaneId,
+    handleCloseTabsInPane,
+    handleClosePane,
+    handleSplitRight,
+    handleSplitDown,
+    handleSetActivePane,
+  ]);
 
   return (
     <div className={styles.shell}>
@@ -464,10 +511,7 @@ export function App() {
         <WelcomeScreen onOpenProject={setProjectPath} />
       ) : (
         <>
-          <Topbar
-            projectName={projectPath ? basename(projectPath) : null}
-            onOpenPalette={() => setPaletteOpen(true)}
-          />
+          <Topbar projectName={basename(projectPath)} onOpenPalette={() => setPaletteOpen(true)} />
           <div className={styles.main}>
             <Sidebar
               projectPath={projectPath}
@@ -491,6 +535,7 @@ export function App() {
               onResizePanes={handleResizePanes}
               onSplitWithTab={handleSplitWithTab}
               onMovePaneToEdge={handleMovePaneToEdge}
+              onSwapPanes={handleSwapPanes}
               onConvertPane={handleConvertPane}
               onSplitFromPane={handleSplitFromPane}
               onToggleFullscreen={handleToggleFullscreen}

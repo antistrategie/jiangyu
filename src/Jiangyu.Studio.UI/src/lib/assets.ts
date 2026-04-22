@@ -8,18 +8,44 @@ export type AssetKind =
   | "Sprite"
   | "AudioClip";
 
-export interface AssetEntry {
+interface AssetEntryBase {
   readonly name: string | null;
   readonly canonicalPath: string | null;
   readonly className: string | null;
   readonly classId: number;
   readonly pathId: number;
   readonly collection: string | null;
+}
+
+export interface AudioClipAsset extends AssetEntryBase {
+  readonly className: "AudioClip";
+  readonly audioFrequency?: number | null;
+  readonly audioChannels?: number | null;
+}
+
+export interface SpriteAsset extends AssetEntryBase {
+  readonly className: "Sprite";
   readonly spriteBackingTexturePathId?: number | null;
   readonly spriteBackingTextureCollection?: string | null;
   readonly spriteBackingTextureName?: string | null;
-  readonly audioFrequency?: number | null;
-  readonly audioChannels?: number | null;
+}
+
+/**
+ * Catch-all variant for classes Jiangyu indexes without kind-specific fields
+ * (Texture2D / Mesh / GameObject / PrefabHierarchyObject / MonoBehaviour / …)
+ * and for entries whose `className` is null or unknown. Use `isAudioClip` /
+ * `isSprite` type guards to narrow to the specific shapes.
+ */
+export interface GenericAsset extends AssetEntryBase {}
+
+export type AssetEntry = AudioClipAsset | SpriteAsset | GenericAsset;
+
+export function isAudioClip(a: AssetEntry): a is AudioClipAsset {
+  return a.className === "AudioClip";
+}
+
+export function isSprite(a: AssetEntry): a is SpriteAsset {
+  return a.className === "Sprite";
 }
 
 export type AssetIndexState = "current" | "stale" | "missing" | "noGame";
