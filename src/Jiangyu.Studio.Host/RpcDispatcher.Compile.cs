@@ -5,6 +5,7 @@ using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Compile;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
+using Jiangyu.Core.Templates;
 
 namespace Jiangyu.Studio.Host;
 
@@ -57,6 +58,8 @@ public static partial class RpcDispatcher
             AudioReplacements = CountFiles(Path.Combine(replacementsRoot, "audio")),
             AdditionFiles = CountFilesRecursive(additionsRoot),
             TemplateFiles = CountFilesRecursive(templatesRoot, "*.kdl"),
+            TemplatePatches = CountKdlNodes(templatesRoot, "patch"),
+            TemplateClones = CountKdlNodes(templatesRoot, "clone"),
         };
 
         return JsonSerializer.SerializeToElement(summary);
@@ -72,6 +75,21 @@ public static partial class RpcDispatcher
         => Directory.Exists(dir)
             ? Directory.EnumerateFiles(dir, searchPattern, SearchOption.AllDirectories).Count()
             : 0;
+
+    private static int CountKdlNodes(string dir, string nodeType)
+    {
+        if (!Directory.Exists(dir)) return 0;
+        var count = 0;
+        foreach (var file in Directory.EnumerateFiles(dir, "*.kdl", SearchOption.AllDirectories))
+        {
+            foreach (var line in File.ReadLines(file))
+            {
+                if (KdlHeuristics.IsNodeHeader(line, nodeType))
+                    count++;
+            }
+        }
+        return count;
+    }
 
     // Kicks off CompilationService on a worker thread and streams progress/log
     // events back as host-pushed notifications. Returns immediately with
@@ -275,5 +293,11 @@ public static partial class RpcDispatcher
 
         [JsonPropertyName("templateFiles")]
         public required int TemplateFiles { get; set; }
+
+        [JsonPropertyName("templatePatches")]
+        public required int TemplatePatches { get; set; }
+
+        [JsonPropertyName("templateClones")]
+        public required int TemplateClones { get; set; }
     }
 }

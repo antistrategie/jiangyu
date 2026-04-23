@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Topbar } from "./components/Topbar/Topbar.tsx";
 import { Sidebar } from "./components/Sidebar/Sidebar.tsx";
-import { EditorGrid } from "./components/EditorArea/EditorGrid.tsx";
+import { EditorGrid, type EditorGridHandle } from "./components/EditorArea/EditorGrid.tsx";
 import { WelcomeScreen } from "./components/WelcomeScreen/WelcomeScreen.tsx";
 import { Palette } from "./components/Palette/Palette.tsx";
 import { SettingsModal } from "./components/SettingsModal/SettingsModal.tsx";
@@ -27,6 +27,7 @@ import {
   closeTabs,
   closeTabsEverywhere,
   convertPane as convertPaneInLayout,
+  findPane,
   getActiveCodePane,
   getActivePane,
   getAllOpenPaths,
@@ -63,18 +64,46 @@ export function App() {
   const [fileEntries, setFileEntries] = useState<readonly string[]>([]);
   const [recentProjects, setRecentProjects] = useState<readonly string[]>([]);
   const [fullscreenPaneId, setFullscreenPaneId] = useState<string | null>(null);
+  const revealTickRef = useRef(0);
+  const [revealRequest, setRevealRequest] = useState<{ path: string; tick: number } | null>(null);
+  const editorGridRef = useRef<EditorGridHandle>(null);
+  const lastCodePathRef = useRef<string | null>(null);
+  const refreshFilesRef = useRef<() => void>(() => {});
 
-  const handleOpenFile = useCallback((path: string) => {
-    setLayout((prev) => openFileInLayout(prev, path));
+  const revealFile = useCallback((path: string) => {
+    revealTickRef.current += 1;
+    setRevealRequest({ path, tick: revealTickRef.current });
   }, []);
 
-  const handleSelectTab = useCallback((paneId: string, path: string) => {
-    setLayout((prev) => selectTabInLayout(prev, paneId, path));
-  }, []);
+  const handleOpenFile = useCallback(
+    (path: string) => {
+      setLayout((prev) => openFileInLayout(prev, path));
+      lastCodePathRef.current = path;
+      revealFile(path);
+    },
+    [revealFile],
+  );
 
-  const handleSetActivePane = useCallback((paneId: string) => {
-    setLayout((prev) => setActivePaneInLayout(prev, paneId));
-  }, []);
+  const handleSelectTab = useCallback(
+    (paneId: string, path: string) => {
+      setLayout((prev) => selectTabInLayout(prev, paneId, path));
+      lastCodePathRef.current = path;
+      revealFile(path);
+    },
+    [revealFile],
+  );
+
+  const handleSetActivePane = useCallback(
+    (paneId: string) => {
+      setLayout((prev) => setActivePaneInLayout(prev, paneId));
+      const pane = findPane(layoutRef.current, paneId);
+      if (pane && pane.kind === "code" && pane.activeTab) {
+        lastCodePathRef.current = pane.activeTab;
+        revealFile(pane.activeTab);
+      }
+    },
+    [revealFile],
+  );
 
   const handleCloseTabsInPane = useCallback((paneId: string, paths: readonly string[]) => {
     setLayout((prev) => closeTabs(prev, paneId, paths));
@@ -82,6 +111,17 @@ export function App() {
 
   const handleMoveTab = useCallback((fromPaneId: string, toPaneId: string, path: string) => {
     setLayout((prev) => moveTabInLayout(prev, fromPaneId, toPaneId, path));
+  }, []);
+
+  const handleAppendToFile = useCallback(async (path: string, snippet: string) => {
+    // Open the tab; appendToFile coordinates with the loader itself, so no
+    // wait-for-render hack is needed here.
+    setLayout((prev) => openFileInLayout(prev, path));
+    await editorGridRef.current?.appendToFile(path, snippet);
+  }, []);
+
+  const handleRefreshFiles = useCallback(() => {
+    refreshFilesRef.current();
   }, []);
 
   const handleSplitRight = useCallback((kind: PaneKind = "code") => {
@@ -265,6 +305,7 @@ export function App() {
         });
     };
 
+    refreshFilesRef.current = refresh;
     refresh();
 
     const unsubscribe = subscribe<FileChangedEvent>("fileChanged", (event) => {
@@ -575,12 +616,16 @@ export function App() {
               onOpenFile={handleOpenFile}
               dirtyPaths={dirtyFiles}
               onPathMoved={handlePathMoved}
+              revealPath={revealRequest}
             />
             <EditorGrid
+              ref={editorGridRef}
               projectPath={projectPath}
               layout={layout}
               fullscreenPaneId={fullscreenPaneId}
               dirtyFiles={dirtyFiles}
+              fileEntries={fileEntries}
+              lastCodePath={lastCodePathRef.current}
               onSelectTab={handleSelectTab}
               onSetActivePane={handleSetActivePane}
               onCloseTabsInPane={handleCloseTabsInPane}
@@ -588,6 +633,9 @@ export function App() {
               onMoveTab={handleMoveTab}
               onMarkDirty={handleMarkDirty}
               onOpenBrowserPane={handleSplitRight}
+              onOpenFile={handleOpenFile}
+              onAppendToFile={handleAppendToFile}
+              onRefreshFiles={handleRefreshFiles}
               onResizeColumns={handleResizeColumns}
               onResizePanes={handleResizePanes}
               onSplitWithTab={handleSplitWithTab}

@@ -46,6 +46,10 @@ public static partial class RpcDispatcher
         Register("setProjectAssetExportPath", HandleSetProjectAssetExportPath);
         Register("compile", HandleCompile);
         Register("getCompileSummary", HandleGetCompileSummary);
+        Register("templatesIndexStatus", HandleTemplatesIndexStatus);
+        Register("templatesIndex", HandleTemplatesIndex);
+        Register("templatesSearch", HandleTemplatesSearch);
+        Register("templatesQuery", HandleTemplatesQuery);
     }
 
     private static void Register(string method, Func<IInfiniFrameWindow, JsonElement?, JsonElement> handler)

@@ -184,7 +184,11 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
                 <button className={styles.action} type="button" onClick={handleOpen}>
                   Open Project
                 </button>
-                <button className={styles.actionGhost} type="button" onClick={() => setShowNewDialog(true)}>
+                <button
+                  className={styles.actionGhost}
+                  type="button"
+                  onClick={() => setShowNewDialog(true)}
+                >
                   New Project
                 </button>
               </div>
@@ -224,10 +228,7 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
         </>
       )}
       {showNewDialog && (
-        <NewProjectDialog
-          onCreated={onOpenProject}
-          onCancel={() => setShowNewDialog(false)}
-        />
+        <NewProjectDialog onCreated={onOpenProject} onCancel={() => setShowNewDialog(false)} />
       )}
     </main>
   );

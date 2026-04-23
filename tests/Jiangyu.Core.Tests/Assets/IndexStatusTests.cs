@@ -46,6 +46,7 @@ public class IndexStatusTests
             string hash = ComputeHash(Path.Combine(gameDir, "GameAssembly.so"));
             var manifest = new IndexManifest
             {
+                FormatVersion = 2,
                 GameAssemblyHash = hash,
                 IndexedAt = DateTimeOffset.UtcNow,
                 GameDataPath = dataDir,
@@ -86,6 +87,7 @@ public class IndexStatusTests
             string hash = ComputeHash(Path.Combine(gameDir, "GameAssembly.so"));
             var manifest = new IndexManifest
             {
+                FormatVersion = 2,
                 GameAssemblyHash = hash,
                 IndexedAt = DateTimeOffset.UtcNow,
                 GameDataPath = dataDir,

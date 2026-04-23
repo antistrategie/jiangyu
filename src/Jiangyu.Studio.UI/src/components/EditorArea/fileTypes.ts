@@ -98,6 +98,8 @@ export function getLanguage(path: string): string {
     case "cfg":
     case "conf":
       return "ini";
+    case "kdl":
+      return "kdl";
     default:
       return "plaintext";
   }

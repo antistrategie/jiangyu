@@ -116,6 +116,17 @@ export function classifyAsset(className: string | null | undefined): AssetKindGr
 }
 
 /**
+ * True if an asset should appear in the browser list for the given kind filter.
+ * "all" includes anything in `EXPORTABLE_CLASS_NAMES`; a specific kind only
+ * includes its own class list.
+ */
+export function passesKindFilter(entry: AssetEntry, kindFilter: AssetKindGroup | "all"): boolean {
+  if (entry.className === null) return false;
+  if (kindFilter === "all") return EXPORTABLE_CLASS_NAMES.has(entry.className);
+  return ASSET_KIND_GROUP_CLASSES[kindFilter].includes(entry.className);
+}
+
+/**
  * Build the replacement alias: bare name when unique, `name--pathId` otherwise.
  */
 export function buildReplacementAlias(name: string, pathId: number, unique: boolean): string {
@@ -127,10 +138,7 @@ export function buildReplacementAlias(name: string, pathId: number, unique: bool
  * Returns `null` for asset types that don't have a replacement convention
  * (e.g. bare Mesh entries).
  */
-export function buildReplacementPath(
-  entry: AssetEntry,
-  unique: boolean,
-): string | null {
+export function buildReplacementPath(entry: AssetEntry, unique: boolean): string | null {
   const name = entry.name;
   if (!name) return null;
   const alias = buildReplacementAlias(name, entry.pathId, unique);
@@ -185,8 +193,7 @@ export function isAssetNameUnique(
   uniquenessMap: ReadonlyMap<string, number>,
 ): boolean {
   if (!entry.name || !entry.className) return false;
-  const cls =
-    entry.className === "GameObject" ? "PrefabHierarchyObject" : entry.className;
+  const cls = entry.className === "GameObject" ? "PrefabHierarchyObject" : entry.className;
   const key = `${cls}\0${entry.name}`;
   return (uniquenessMap.get(key) ?? 0) <= 1;
 }

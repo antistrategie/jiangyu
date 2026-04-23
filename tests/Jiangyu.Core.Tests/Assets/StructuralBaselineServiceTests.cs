@@ -295,6 +295,7 @@ public class StructuralBaselineServiceTests
             string hash = ComputeHash(Path.Combine(gameDir, "GameAssembly.so"));
             var manifest = new TemplateIndexManifest
             {
+                FormatVersion = 2,
                 GameAssemblyHash = hash,
                 IndexedAt = DateTimeOffset.UtcNow,
                 GameDataPath = dataDir,
@@ -345,6 +346,7 @@ public class StructuralBaselineServiceTests
             string hash = ComputeHash(Path.Combine(gameDir, "GameAssembly.so"));
             var manifest = new TemplateIndexManifest
             {
+                FormatVersion = 2,
                 GameAssemblyHash = hash,
                 IndexedAt = DateTimeOffset.UtcNow,
                 GameDataPath = dataDir,

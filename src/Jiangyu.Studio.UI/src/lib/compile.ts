@@ -12,6 +12,8 @@ export interface CompileSummary {
   readonly audioReplacements: number;
   readonly additionFiles: number;
   readonly templateFiles: number;
+  readonly templatePatches: number;
+  readonly templateClones: number;
 }
 
 export function useCompileSummary(enabled: boolean): CompileSummary | null {

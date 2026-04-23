@@ -89,6 +89,7 @@ interface SidebarContextValue {
   onPathMoved: (oldPath: string, newPath: string) => void;
   pushToast: PushToast;
   confirmDelete: (entry: FileEntry) => Promise<boolean>;
+  highlightedPath: string | null;
 }
 const SidebarContext = createContext<SidebarContextValue | null>(null);
 function useSidebar(): SidebarContextValue {
@@ -102,6 +103,7 @@ interface SidebarProps {
   onOpenFile: (path: string) => void;
   dirtyPaths: Set<string>;
   onPathMoved: (oldPath: string, newPath: string) => void;
+  revealPath?: { path: string; tick: number } | null;
 }
 
 interface PendingConfirm {
@@ -112,15 +114,34 @@ interface PendingConfirm {
   readonly resolve: (confirmed: boolean) => void;
 }
 
-export function Sidebar({ projectPath, onOpenFile, dirtyPaths, onPathMoved }: SidebarProps) {
-  const [width, setWidth] = useState(240);
+export function Sidebar({
+  projectPath,
+  onOpenFile,
+  dirtyPaths,
+  onPathMoved,
+  revealPath,
+}: SidebarProps) {
+  const [width, setWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem("jiangyu:sidebarWidth");
+      if (saved !== null) {
+        const n = Number(saved);
+        if (Number.isFinite(n) && n >= 120 && n <= 800) return n;
+      }
+    } catch {
+      /* ignore */
+    }
+    return 240;
+  });
   const [clipboard, setClipboard] = useState<ClipboardState | null>(null);
   const [pendingNew, setPendingNew] = useState<PendingNew | null>(null);
   const [expansionTick, setExpansionTick] = useState(0);
   const [rootMenu, setRootMenu] = useState<{ x: number; y: number } | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
+  const [highlightedPath, setHighlightedPath] = useState<string | null>(null);
   const forceExpandRef = useRef<Set<string>>(new Set());
   const dragging = useRef(false);
+  const widthRef = useRef(width);
   const refreshers = useRef<Map<string, Set<InvalidateCallback>>>(new Map());
   const { push: pushToast } = useToast();
 
@@ -169,19 +190,50 @@ export function Sidebar({ projectPath, onOpenFile, dirtyPaths, onPathMoved }: Si
     setExpansionTick((t) => t + 1);
   }, []);
 
+  // Reveal file in tree: expand all ancestor dirs and highlight briefly
+  useEffect(() => {
+    if (!revealPath) return;
+    const filePath = revealPath.path;
+    if (!filePath.startsWith(projectPath)) return;
+    const ancestors: string[] = [];
+    let cur = dirname(filePath);
+    while (cur !== projectPath && cur.length > projectPath.length) {
+      ancestors.push(cur);
+      cur = dirname(cur);
+    }
+    for (const dir of ancestors) {
+      forceExpandRef.current.add(dir);
+    }
+    if (ancestors.length > 0) {
+      setExpansionTick((t) => t + 1);
+    }
+    setHighlightedPath(filePath);
+    const timer = window.setTimeout(() => {
+      setHighlightedPath((cur) => (cur === filePath ? null : cur));
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [revealPath, projectPath]);
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     dragging.current = true;
 
     const onMouseMove = (ev: MouseEvent) => {
       if (dragging.current) {
-        setWidth(Math.max(160, Math.min(ev.clientX, 600)));
+        const w = Math.max(160, Math.min(ev.clientX, 600));
+        widthRef.current = w;
+        setWidth(w);
       }
     };
     const onMouseUp = () => {
       dragging.current = false;
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
+      try {
+        localStorage.setItem("jiangyu:sidebarWidth", String(widthRef.current));
+      } catch {
+        /* ignore */
+      }
     };
 
     document.addEventListener("mousemove", onMouseMove);
@@ -203,6 +255,7 @@ export function Sidebar({ projectPath, onOpenFile, dirtyPaths, onPathMoved }: Si
       onPathMoved,
       pushToast,
       confirmDelete,
+      highlightedPath,
     }),
     [
       projectPath,
@@ -216,6 +269,7 @@ export function Sidebar({ projectPath, onOpenFile, dirtyPaths, onPathMoved }: Si
       onPathMoved,
       pushToast,
       confirmDelete,
+      highlightedPath,
     ],
   );
 
@@ -415,11 +469,20 @@ function FileItem({ entry }: { entry: FileEntry }) {
   const [renaming, setRenaming] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const isCut = ctx.clipboard?.mode === "cut" && ctx.clipboard.paths.includes(entry.path);
+  const isHighlighted = ctx.highlightedPath === entry.path;
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (isHighlighted && btnRef.current) {
+      btnRef.current.scrollIntoView({ block: "nearest" });
+    }
+  }, [isHighlighted]);
 
   return (
     <>
       <button
-        className={`${styles.entry} ${entry.isIgnored ? styles.ignored : ""} ${isCut ? styles.cut : ""}`}
+        ref={btnRef}
+        className={`${styles.entry} ${entry.isIgnored ? styles.ignored : ""} ${isCut ? styles.cut : ""} ${isHighlighted ? styles.highlighted : ""}`}
         type="button"
         draggable={!renaming}
         onClick={() => {

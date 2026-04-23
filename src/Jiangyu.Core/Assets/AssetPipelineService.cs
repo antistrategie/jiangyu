@@ -40,6 +40,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
     private const string ManifestFileName = "index-manifest.json";
     private const string PreviewDirName = "previews";
     private const int ThumbnailMaxDimension = 256;
+    private const int CurrentFormatVersion = 2;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -86,7 +87,8 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         }
 
         var currentHash = ComputeGameAssemblyHash();
-        if (currentHash is null || currentHash != manifest.GameAssemblyHash)
+        if (currentHash is null || currentHash != manifest.GameAssemblyHash
+            || manifest.FormatVersion != CurrentFormatVersion)
         {
             return new CachedIndexStatus
             {
@@ -137,6 +139,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         // Write manifest
         var manifest = new IndexManifest
         {
+            FormatVersion = CurrentFormatVersion,
             GameAssemblyHash = ComputeGameAssemblyHash(),
             IndexedAt = DateTimeOffset.UtcNow,
             GameDataPath = GameDataPath,

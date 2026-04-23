@@ -205,6 +205,10 @@ function InfoPanel({
       </Section>
 
       <Section title="Templates · 模板">
+        <div className={styles.statGrid}>
+          <Stat label="Patches" value={summary?.templatePatches ?? null} />
+          <Stat label="Clones" value={summary?.templateClones ?? null} />
+        </div>
         <div className={styles.subStats}>
           <SubStat
             label="KDL files"
@@ -226,11 +230,6 @@ function InfoPanel({
           {state.status === "failed" && state.errorMessage !== null && (
             <p className={styles.resultError}>{state.errorMessage}</p>
           )}
-          {state.status === "success" && state.bundlePath !== null && (
-            <p className={styles.resultPath} title={state.bundlePath}>
-              {state.bundlePath}
-            </p>
-          )}
           {errorCount > 0 && state.status === "failed" && (
             <p className={styles.resultMeta}>
               {errorCount} error{errorCount === 1 ? "" : "s"}
@@ -239,6 +238,11 @@ function InfoPanel({
         </Section>
       )}
 
+      {state.status === "success" && state.bundlePath !== null && (
+        <p className={styles.resultPath} title={state.bundlePath}>
+          {state.bundlePath}
+        </p>
+      )}
       <div className={styles.actions}>
         <button
           type="button"

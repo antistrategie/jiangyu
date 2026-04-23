@@ -64,6 +64,8 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var manifest = input.Manifest;
         var config = input.Config;
         var projectDir = input.ProjectDirectory;
+        var totalSw = Stopwatch.StartNew();
+        var phaseSw = Stopwatch.StartNew();
 
         // Resolve game data first — needed to detect the Unity version for editor discovery
         var (gameDataPath, gameDataError) = GlobalConfig.ResolveGameDataPath(config);
@@ -85,12 +87,16 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         if (!assetIndexStatus.IsCurrent)
             return Fail(assetIndexStatus.Reason ?? "Asset index is missing or stale. Run 'jiangyu assets index' first.");
 
+        _log.Info($"  [timing] Setup/validation: {phaseSw.Elapsed.TotalSeconds:F1}s");
+        phaseSw.Restart();
+
         var replacementRoot = Path.Combine(projectDir, "assets", "replacements");
         var additionRoot = Path.Combine(projectDir, "assets", "additions");
         var replacementEntries = DiscoverReplacementMeshEntries(projectDir, replacementRoot, config.GetCachePath(), gameDataPath, assetPipeline);
         var replacementTextures = DiscoverReplacementTextureEntries(projectDir, replacementRoot, config.GetCachePath());
         var replacementSprites = DiscoverReplacementSpriteEntries(projectDir, replacementRoot, config.GetCachePath());
         var replacementAudio = DiscoverReplacementAudioEntries(projectDir, replacementRoot, config.GetCachePath());
+        _log.Info($"  [timing] Discovery: {phaseSw.Elapsed.TotalSeconds:F1}s");
         var replacementModelFiles = replacementEntries
             .Select(entry => entry.SourceFilePath)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -134,6 +140,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         List<CompiledTemplatePatch>? patchSource = null;
         List<CompiledTemplateClone>? cloneSource = null;
 
+        phaseSw.Restart();
         if (hasKdlTemplates)
         {
             var kdlResult = KdlTemplateParser.ParseAll(templatesDir, _log);
@@ -151,6 +158,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             return Fail($"Template compilation failed with {totalEmitErrors} error(s). See errors above.");
         if (templatePatchResult.RewriteCount > 0)
             _log.Info($"  Rewrote {templatePatchResult.RewriteCount} template patch path(s) to canonical indexed form.");
+        _log.Info($"  [timing] Template compilation: {phaseSw.Elapsed.TotalSeconds:F1}s");
 
         var compiledManifest = ModManifest.FromJson(manifest.ToJson());
         compiledManifest.TemplatePatches = templatePatchResult.Patches;
@@ -168,6 +176,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         if (useRawGlbPipeline)
         {
             _log.Info("  Using direct mesh replacement pipeline...");
+            phaseSw.Restart();
             var bundleOutputPath = Path.Combine(unityProjectDir, "AssetBundles", bundleName);
             Directory.CreateDirectory(Path.GetDirectoryName(bundleOutputPath)!);
             var targetMeshNamesByBundleMesh = replacementEntries
@@ -186,7 +195,8 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                     replacementSprites,
                     replacementAudio,
                     gameDataPath,
-                    targetMeshNamesByBundleMesh);
+                    targetMeshNamesByBundleMesh,
+                    _log);
                 compiledManifest.Meshes = new Dictionary<string, MeshManifestEntry>(StringComparer.Ordinal);
                 foreach (var entry in replacementEntries)
                 {
@@ -213,6 +223,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             {
                 return Fail($"Direct mesh replacement pipeline failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
             }
+            _log.Info($"  [timing] Asset bundle build: {phaseSw.Elapsed.TotalSeconds:F1}s");
         }
         else
         {
@@ -242,6 +253,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         await File.WriteAllTextAsync(Path.Combine(outputDir, ModManifest.FileName), compiledManifest.ToJson());
 
         _log.Info($"  -> {destBundle}");
+        _log.Info($"  [timing] Total: {totalSw.Elapsed.TotalSeconds:F1}s");
         _log.Info("Done.");
 
         return new CompilationResult { Success = true, BundlePath = destBundle };

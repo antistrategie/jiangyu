@@ -3,6 +3,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using AssetRipper.Assets;
 using AssetRipper.Assets.Collections;
+using AssetRipper.Assets.Metadata;
+using AssetRipper.Assets.Traversal;
 using AssetRipper.Import.Configuration;
 using AssetRipper.Import.Logging;
 using AssetRipper.Import.Structure;
@@ -23,6 +25,7 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
 {
     private const string IndexFileName = "template-index.json";
     private const string ManifestFileName = "template-index-manifest.json";
+    private const int CurrentFormatVersion = 2;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -69,7 +72,8 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
         if (currentHash is null
             || !string.Equals(currentHash, manifest.GameAssemblyHash, StringComparison.Ordinal)
             || !string.Equals(manifest.RuleVersion, classification.RuleVersion, StringComparison.Ordinal)
-            || !string.Equals(manifest.RuleDescription, classification.RuleDescription, StringComparison.Ordinal))
+            || !string.Equals(manifest.RuleDescription, classification.RuleDescription, StringComparison.Ordinal)
+            || manifest.FormatVersion != CurrentFormatVersion)
         {
             return new CachedIndexStatus
             {
@@ -129,6 +133,7 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
         TemplateClassificationMetadata classification = TemplateClassifier.GetMetadata();
         var manifest = new TemplateIndexManifest
         {
+            FormatVersion = CurrentFormatVersion,
             GameAssemblyHash = ComputeGameAssemblyHash(),
             IndexedAt = DateTimeOffset.UtcNow,
             GameDataPath = GameDataPath,
@@ -173,6 +178,12 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
         // Track classification method per concrete class name so we can aggregate to TemplateTypeEntry.
         var classificationByType = new Dictionary<string, (string ClassifiedVia, string? Ancestor)>(StringComparer.OrdinalIgnoreCase);
 
+        // Lookup of known template assets by (collection, pathId) for the reference pass.
+        var knownTemplates = new HashSet<(string Collection, long PathId)>();
+
+        // Map (collection, pathId) → the IUnityObjectBase for the reference walk.
+        var assetByIdentity = new Dictionary<(string Collection, long PathId), IUnityObjectBase>();
+
         foreach (AssetCollection collection in collections)
         {
             string collectionName = collection.Name;
@@ -181,17 +192,20 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
                 // Fast path: suffix match.
                 if (TemplateClassifier.TryGetTemplateClassName(asset, out string? templateClassName))
                 {
+                    var identity = new TemplateIdentity
+                    {
+                        Collection = collectionName,
+                        PathId = asset.PathID,
+                    };
                     instances.Add(new TemplateInstanceEntry
                     {
                         Name = asset.GetBestName(),
                         ClassName = templateClassName!,
-                        Identity = new TemplateIdentity
-                        {
-                            Collection = collectionName,
-                            PathId = asset.PathID,
-                        },
+                        Identity = identity,
                     });
                     classificationByType.TryAdd(templateClassName!, ("suffix", null));
+                    knownTemplates.Add((collectionName, asset.PathID));
+                    assetByIdentity[(collectionName, asset.PathID)] = asset;
                     continue;
                 }
 
@@ -201,20 +215,85 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
                     && TemplateClassifier.TryGetInheritedTemplateClassName(
                         monoBehaviour, assemblyManager, out string? inheritedClassName, out string? ancestorClassName))
                 {
+                    var identity = new TemplateIdentity
+                    {
+                        Collection = collectionName,
+                        PathId = asset.PathID,
+                    };
                     instances.Add(new TemplateInstanceEntry
                     {
                         Name = asset.GetBestName(),
                         ClassName = inheritedClassName!,
-                        Identity = new TemplateIdentity
-                        {
-                            Collection = collectionName,
-                            PathId = asset.PathID,
-                        },
+                        Identity = identity,
                     });
                     classificationByType.TryAdd(inheritedClassName!, ("inheritance", ancestorClassName));
+                    knownTemplates.Add((collectionName, asset.PathID));
+                    assetByIdentity[(collectionName, asset.PathID)] = asset;
                 }
             }
         }
+
+        // --- Pass 2: collect template-to-template references ---
+        foreach (var instance in instances)
+        {
+            var key = (instance.Identity.Collection, instance.Identity.PathId);
+            if (!assetByIdentity.TryGetValue(key, out var asset))
+            {
+                continue;
+            }
+
+            var collector = new TemplateReferenceCollector(asset.Collection, knownTemplates);
+            asset.WalkStandard(collector);
+
+            if (collector.Edges.Count > 0)
+            {
+                instance.References = collector.Edges
+                    .Select(e => new TemplateEdge
+                    {
+                        FieldName = e.FieldPath,
+                        Target = new TemplateIdentity
+                        {
+                            Collection = e.TargetCollection,
+                            PathId = e.TargetPathId,
+                        },
+                    })
+                    .ToList();
+            }
+        }
+
+        // --- Build reverse index ---
+        var referencedBy = new Dictionary<string, HashSet<(string Collection, long PathId, string FieldName)>>();
+        foreach (var instance in instances)
+        {
+            if (instance.References is null)
+            {
+                continue;
+            }
+
+            foreach (var edge in instance.References)
+            {
+                string targetKey = TemplateIndex.IdentityKey(edge.Target);
+                if (!referencedBy.TryGetValue(targetKey, out var set))
+                {
+                    set = [];
+                    referencedBy[targetKey] = set;
+                }
+
+                set.Add((instance.Identity.Collection, instance.Identity.PathId, edge.FieldName));
+            }
+        }
+
+        var referencedByLists = referencedBy.ToDictionary(
+            kvp => kvp.Key,
+            kvp => kvp.Value
+                .Select(e => new TemplateReferenceEntry
+                {
+                    Source = new TemplateIdentity { Collection = e.Collection, PathId = e.PathId },
+                    FieldName = e.FieldName,
+                })
+                .OrderBy(e => e.Source.Collection, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(e => e.Source.PathId)
+                .ToList());
 
         instances = [.. instances
             .OrderBy(instance => instance.ClassName, StringComparer.OrdinalIgnoreCase)
@@ -246,6 +325,7 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
             Classification = TemplateClassifier.GetMetadata(),
             TemplateTypes = templateTypes,
             Instances = instances,
+            ReferencedBy = referencedByLists.Count > 0 ? referencedByLists : null,
         };
     }
 
@@ -286,5 +366,67 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Lightweight <see cref="AssetWalker"/> that collects PPtr references
+    /// pointing at known template instances. Ignores primitives and strings.
+    /// </summary>
+    private sealed class TemplateReferenceCollector(AssetCollection collection, HashSet<(string Collection, long PathId)> knownTemplates) : AssetWalker
+    {
+        private readonly AssetCollection _collection = collection;
+        private readonly HashSet<(string Collection, long PathId)> _knownTemplates = knownTemplates;
+
+        // Dedupe edges so the same source→target via the same field path is recorded once.
+        private readonly HashSet<(string FieldPath, string TargetCollection, long TargetPathId)> _seen = [];
+
+        // Stack of field names currently being walked (root → leaf). Joined with '.'
+        // to give the full path of the field containing a PPtr, so nested structs
+        // produce e.g. "Stats.PrimaryWeapon" rather than just "PrimaryWeapon".
+        private readonly Stack<string> _fieldStack = new();
+
+        public List<(string FieldPath, string TargetCollection, long TargetPathId)> Edges { get; } = [];
+
+        public override bool EnterField(IUnityAssetBase asset, string name)
+        {
+            _fieldStack.Push(name);
+            return true;
+        }
+
+        public override void ExitField(IUnityAssetBase asset, string name)
+        {
+            if (_fieldStack.Count > 0)
+                _fieldStack.Pop();
+        }
+
+        public override void VisitPPtr<TAsset>(PPtr<TAsset> pptr)
+        {
+            if (pptr.IsNull)
+            {
+                return;
+            }
+
+            IUnityObjectBase? target = _collection.TryGetAsset(pptr);
+            if (target is null)
+            {
+                return;
+            }
+
+            string targetCollection = target.Collection.Name;
+            long targetPathId = target.PathID;
+
+            if (!_knownTemplates.Contains((targetCollection, targetPathId)))
+            {
+                return;
+            }
+
+            string fieldPath = _fieldStack.Count > 0
+                ? string.Join('.', _fieldStack.Reverse())
+                : "<unknown>";
+            if (_seen.Add((fieldPath, targetCollection, targetPathId)))
+            {
+                Edges.Add((fieldPath, targetCollection, targetPathId));
+            }
+        }
     }
 }

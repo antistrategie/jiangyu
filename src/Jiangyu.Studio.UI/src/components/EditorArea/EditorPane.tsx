@@ -3,6 +3,7 @@ import { Maximize2, Minimize2, SplitSquareHorizontal, SplitSquareVertical, X } f
 import Editor, { type OnChange, type OnMount } from "@monaco-editor/react";
 import type { editor as monacoEditor } from "monaco-editor";
 import { buildJiangyuTheme } from "./jiangyuTheme.ts";
+import { registerKdlLanguage } from "./kdlLanguage.ts";
 import { ContextMenu, type ContextMenuEntry } from "../ContextMenu/ContextMenu.tsx";
 import { buildTabMenu } from "./tabMenu.ts";
 import { getLanguage, isBinaryFile } from "./fileTypes.ts";
@@ -168,6 +169,7 @@ export function EditorPane({
   const [wordWrap] = useEditorWordWrap();
   const [keybindMode] = useEditorKeybindMode();
   const vimStatusRef = useRef<HTMLDivElement>(null);
+  const activeTabRef = useRef<HTMLButtonElement>(null);
 
   // monaco-vim attaches keybindings to the Monaco instance and, optionally,
   // renders mode / command-buffer text into a status bar element. Lazy-import
@@ -176,8 +178,12 @@ export function EditorPane({
     if (editor === null || keybindMode !== "vim") return;
     let adapter: { dispose: () => void } | null = null;
     let cancelled = false;
-    void import("monaco-vim").then(({ initVimMode }) => {
+    void import("monaco-vim").then(({ initVimMode, VimMode }) => {
       if (cancelled) return;
+      (VimMode.commands as Record<string, unknown>).save = () => {
+        const path = activeFileRef.current;
+        if (path !== null) void onSaveRef.current(path);
+      };
       adapter = initVimMode(editor, vimStatusRef.current);
     });
     return () => {
@@ -196,6 +202,10 @@ export function EditorPane({
   useEffect(() => {
     activeFileRef.current = activeFile;
   }, [activeFile]);
+  // Scroll the active tab into view when the active file changes.
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeFile]);
   const onSaveRef = useRef(onSave);
   useEffect(() => {
     onSaveRef.current = onSave;
@@ -211,6 +221,7 @@ export function EditorPane({
       onEditorMount(pane.id, editor);
       if (!themeRegistered.current) {
         monaco.editor.defineTheme("jiangyu", buildJiangyuTheme());
+        registerKdlLanguage(monaco);
         themeRegistered.current = true;
       }
       monaco.editor.setTheme("jiangyu");
@@ -317,6 +328,7 @@ export function EditorPane({
           {pane.tabs.map((tab) => (
             <button
               key={tab.path}
+              ref={tab.path === activeFile ? activeTabRef : undefined}
               className={`${styles.tab} ${tab.path === activeFile ? styles.tabActive : ""}`}
               type="button"
               draggable

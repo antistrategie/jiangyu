@@ -303,10 +303,15 @@
   color: var(--cinnabar-1);
   white-space: pre-wrap;
   word-break: break-word;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--cinnabar-1);
+  background: color-mix(in srgb, var(--cinnabar-1) 8%, transparent);
 }
 
 .resultPath {
   margin: 0;
+  margin-top: auto;
+  padding-top: var(--space-3);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--fg-muted);

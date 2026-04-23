@@ -62,39 +62,6 @@ public sealed class CompiledGltfRoundTripTests : IDisposable
         Assert.Contains("soldier_NormalMap", textures.Keys);
     }
 
-    [Fact]
-    public void BuildMaterialBindings_UsesExplicitMaterialSlotTextureMappings()
-    {
-        var gltfPath = Path.Combine(_tempDir, "bindings.gltf");
-        WriteMaterialBindingsGltfPackage(gltfPath);
-
-        var bindings = GlbMeshBundleCompiler.BuildMaterialBindings(
-            [
-                new GlbMeshBundleCompiler.MeshSourceEntry
-                {
-                    SourceFilePath = gltfPath,
-                    BundleMeshName = "body_mesh",
-                    TargetMeshName = "body_mesh",
-                    TargetRendererPath = "body_mesh",
-                    HasExplicitMeshName = true,
-                },
-            ]);
-
-        var meshBindings = bindings["body_mesh"];
-        Assert.Equal(2, meshBindings.Count);
-
-        Assert.Equal(0, meshBindings[0].Slot);
-        Assert.Equal("Body", meshBindings[0].Name);
-        Assert.Equal("body_BaseMap", meshBindings[0].Textures["_BaseColorMap"]);
-        Assert.Equal("body_NormalMap", meshBindings[0].Textures["_NormalMap"]);
-        Assert.Equal("body_MaskMap", meshBindings[0].Textures["_MaskMap"]);
-
-        Assert.Equal(1, meshBindings[1].Slot);
-        Assert.Equal("Eyes", meshBindings[1].Name);
-        Assert.Equal("eyes_BaseMap", meshBindings[1].Textures["_BaseColorMap"]);
-        Assert.Equal("eyes_EffectMap", meshBindings[1].Textures["_Effect_Map"]);
-    }
-
     private static void WriteCompiledLikeGltfPackage(string gltfPath)
     {
         var png = CreateMinimalPng();
@@ -212,76 +179,6 @@ public sealed class CompiledGltfRoundTripTests : IDisposable
         AssignImageName(model, "body_mat", "Normal", "soldier_NormalMap");
 
         model.SaveGLB(glbPath);
-    }
-
-    private static void WriteMaterialBindingsGltfPackage(string gltfPath)
-    {
-        var bodyBase = CreateTaggedPng(0x01);
-        var bodyNormal = CreateTaggedPng(0x02);
-        var eyesBase = CreateTaggedPng(0x03);
-
-        var body = new MaterialBuilder("Body");
-        body.UseChannel("BaseColor")
-            .UseTexture()
-            .WithPrimaryImage(new MemoryImage(bodyBase));
-        body.UseChannel("Normal")
-            .UseTexture()
-            .WithPrimaryImage(new MemoryImage(bodyNormal));
-        body.Extras = new JsonObject
-        {
-            ["jiangyu"] = new JsonObject
-            {
-                ["textures"] = new JsonObject
-                {
-                    ["_MaskMap"] = "textures/body_MaskMap.png",
-                },
-            },
-        };
-
-        var eyes = new MaterialBuilder("Eyes");
-        eyes.UseChannel("BaseColor")
-            .UseTexture()
-            .WithPrimaryImage(new MemoryImage(eyesBase));
-        eyes.Extras = new JsonObject
-        {
-            ["jiangyu"] = new JsonObject
-            {
-                ["textures"] = new JsonObject
-                {
-                    ["_Effect_Map"] = "textures/eyes_EffectMap.png",
-                },
-            },
-        };
-
-        var mesh = new MeshBuilder<VertexPositionNormal, VertexTexture1, VertexEmpty>("body_mesh");
-        var bodyPrim = mesh.UsePrimitive(body);
-        bodyPrim.AddTriangle(
-            (new VertexPositionNormal(Vector3.Zero, Vector3.UnitY), new VertexTexture1(Vector2.Zero), default),
-            (new VertexPositionNormal(Vector3.UnitX, Vector3.UnitY), new VertexTexture1(Vector2.UnitX), default),
-            (new VertexPositionNormal(Vector3.UnitY, Vector3.UnitY), new VertexTexture1(Vector2.UnitY), default));
-
-        var eyesPrim = mesh.UsePrimitive(eyes);
-        eyesPrim.AddTriangle(
-            (new VertexPositionNormal(new Vector3(0, 0, 1), Vector3.UnitY), new VertexTexture1(Vector2.Zero), default),
-            (new VertexPositionNormal(new Vector3(1, 0, 1), Vector3.UnitY), new VertexTexture1(Vector2.UnitX), default),
-            (new VertexPositionNormal(new Vector3(0, 1, 1), Vector3.UnitY), new VertexTexture1(Vector2.UnitY), default));
-
-        var scene = new SceneBuilder();
-        var root = new NodeBuilder("Root");
-        scene.AddRigidMesh(mesh, root);
-        scene.AddNode(root);
-
-        var model = scene.ToGltf2();
-        AssignImageName(model, "Body", "BaseColor", "body_BaseMap");
-        AssignImageName(model, "Body", "Normal", "body_NormalMap");
-        AssignImageName(model, "Eyes", "BaseColor", "eyes_BaseMap");
-
-        var texturesDir = Path.Combine(Path.GetDirectoryName(gltfPath)!, "textures");
-        Directory.CreateDirectory(texturesDir);
-        File.WriteAllBytes(Path.Combine(texturesDir, "body_MaskMap.png"), CreateMinimalPng());
-        File.WriteAllBytes(Path.Combine(texturesDir, "eyes_EffectMap.png"), CreateMinimalPng());
-
-        model.SaveGLTF(gltfPath, new WriteSettings { ImageWriting = ResourceWriteMode.SatelliteFile });
     }
 
     private static void AssignImageName(ModelRoot model, string materialName, string channelKey, string imageName)

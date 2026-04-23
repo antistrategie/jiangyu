@@ -13,11 +13,11 @@ import {
   isAssetNameUnique,
   isAudioClip,
   isSprite,
+  passesKindFilter,
   pickDirectory,
   revealInExplorer,
   ASSET_KIND_GROUP_CLASSES,
   ASSET_KIND_GROUP_LABEL,
-  EXPORTABLE_CLASS_NAMES,
   type AssetEntry,
   type AssetIndexStatus,
   type AssetKindGroup,
@@ -33,6 +33,7 @@ import { AudioPlayer } from "./AudioPlayer.tsx";
 import { ImageViewer } from "./ImageViewer.tsx";
 import { ModelViewer } from "./ModelViewer.tsx";
 import { Spinner } from "../Spinner/Spinner.tsx";
+import { DetailTitle, MetaBlock, MetaRow } from "../DetailPanel/DetailPanel.tsx";
 import styles from "./AssetBrowser.module.css";
 
 interface AssetBrowserProps {
@@ -64,15 +65,16 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
   const lastClickedRef = useRef<string | null>(null);
 
   const [projectConfig, setProjectConfig] = useState<ProjectConfig>({});
-  const [destination, setDestination] = useState<Destination>("default");
 
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(
     null,
   );
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
   // Resizable split between list and details panels
-  const [listFraction, setListFraction] = useState(0.6);
+  const [listFraction, setListFraction] = useState(0.35);
   const [landscape, setLandscape] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -212,17 +214,18 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
   const uf = useMemo(() => new uFuzzy({ intraMode: 1 }), []);
 
   const deferredQuery = useDeferredValue(query);
-  const results = useMemo<readonly AssetEntry[]>(() => {
-    const kindClasses = kindFilter === "all" ? null : ASSET_KIND_GROUP_CLASSES[kindFilter];
-    const passes = (a: AssetEntry): boolean => {
-      if (a.className === null) return false;
-      if (kindClasses === null) return EXPORTABLE_CLASS_NAMES.has(a.className);
-      return kindClasses.includes(a.className);
-    };
 
+  // Denominator for the list footer, sharing the same filter the `results`
+  // memo uses so the ratio matches the visible pool.
+  const kindFilteredCount = useMemo(
+    () => allAssets.reduce((n, a) => (passesKindFilter(a, kindFilter) ? n + 1 : n), 0),
+    [allAssets, kindFilter],
+  );
+
+  const results = useMemo<readonly AssetEntry[]>(() => {
     const q = deferredQuery.trim();
     if (q.length === 0) {
-      return allAssets.filter(passes);
+      return allAssets.filter((a) => passesKindFilter(a, kindFilter));
     }
 
     const [idxs, info, order] = uf.search(haystack, q);
@@ -233,18 +236,18 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
       for (const oi of order) {
         const assetIdx = info.idx[oi]!;
         const a = allAssets[assetIdx]!;
-        if (!passes(a)) continue;
+        if (!passesKindFilter(a, kindFilter)) continue;
         out.push(a);
       }
     } else {
       for (const assetIdx of idxs) {
         const a = allAssets[assetIdx]!;
-        if (!passes(a)) continue;
+        if (!passesKindFilter(a, kindFilter)) continue;
         out.push(a);
       }
     }
     return out;
-  }, [allAssets, haystack, uf, kindFilter, deferredQuery]);
+  }, [allAssets, haystack, uf, deferredQuery, kindFilter]);
 
   // Prune selection / focus when the underlying catalogue reloads. Intentionally
   // NOT gated on `results`: narrowing the filter or search should preserve the
@@ -423,67 +426,85 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
 
   const defaultBaseDir = useMemo(() => join(projectPath, ".jiangyu", "exports"), [projectPath]);
 
-  const resolveBaseDir = useCallback(async (): Promise<string | null> => {
-    if (destination === "default") return defaultBaseDir;
-    if (destination === "project") return projectExportPath;
-    return await pickDirectory({ title: "Export assets to…" });
-  }, [destination, defaultBaseDir, projectExportPath]);
+  const resolveBaseDir = useCallback(
+    async (dest: Destination): Promise<string | null> => {
+      if (dest === "default") return defaultBaseDir;
+      if (dest === "project") return projectExportPath;
+      return await pickDirectory({ title: "Export assets to…" });
+    },
+    [defaultBaseDir, projectExportPath],
+  );
 
-  const handleExport = useCallback(() => {
-    if (selectedRows.length === 0 || exporting) return;
-    setExporting(true);
+  const handleExport = useCallback(
+    (dest: Destination) => {
+      if (selectedRows.length === 0 || exporting) return;
+      setExporting(true);
 
-    // Use double-rAF to guarantee the browser has painted the disabled/spinner
-    // state before kicking off the export RPC.
-    requestAnimationFrame(() => {
+      // Use double-rAF to guarantee the browser has painted the disabled/spinner
+      // state before kicking off the export RPC.
       requestAnimationFrame(() => {
-        const run = async () => {
-          const baseDir = await resolveBaseDir();
-          if (baseDir === null) {
-            setExporting(false);
-            return;
-          }
-
-          setExportProgress({ done: 0, total: selectedRows.length });
-
-          const paths: string[] = [];
-          try {
-            for (let i = 0; i < selectedRows.length; i++) {
-              const row = selectedRows[i]!;
-              const result = await assetsExport({
-                assetName: row.name ?? "unnamed",
-                collection: row.collection ?? "",
-                pathId: row.pathId,
-                kind: row.className ?? "",
-                baseDir,
-              });
-              paths.push(result.outputPath);
-              setExportProgress({ done: i + 1, total: selectedRows.length });
+        requestAnimationFrame(() => {
+          const run = async () => {
+            const baseDir = await resolveBaseDir(dest);
+            if (baseDir === null) {
+              setExporting(false);
+              return;
             }
-            const first = paths[0];
-            pushToast({
-              variant: "success",
-              message: `Exported ${paths.length} asset${paths.length === 1 ? "" : "s"}`,
-              ...(first != null ? { detail: first } : {}),
-              ...(first != null
-                ? { actions: [{ label: "Reveal", run: () => void revealInExplorer(first) }] }
-                : {}),
-            });
-          } catch (err) {
-            pushToast({
-              variant: "error",
-              message: `Export failed: ${(err as Error).message}`,
-            });
-          } finally {
-            setExporting(false);
-            setExportProgress(null);
-          }
-        };
 
-        void run();
+            setExportProgress({ done: 0, total: selectedRows.length });
+
+            const paths: string[] = [];
+            try {
+              for (let i = 0; i < selectedRows.length; i++) {
+                const row = selectedRows[i]!;
+                const result = await assetsExport({
+                  assetName: row.name ?? "unnamed",
+                  collection: row.collection ?? "",
+                  pathId: row.pathId,
+                  kind: row.className ?? "",
+                  baseDir,
+                });
+                paths.push(result.outputPath);
+                setExportProgress({ done: i + 1, total: selectedRows.length });
+              }
+              const first = paths[0];
+              pushToast({
+                variant: "success",
+                message: `Exported ${paths.length} asset${paths.length === 1 ? "" : "s"}`,
+                ...(first != null ? { detail: first } : {}),
+                ...(first != null
+                  ? { actions: [{ label: "Reveal", run: () => void revealInExplorer(first) }] }
+                  : {}),
+              });
+            } catch (err) {
+              pushToast({
+                variant: "error",
+                message: `Export failed: ${(err as Error).message}`,
+              });
+            } finally {
+              setExporting(false);
+              setExportProgress(null);
+            }
+          };
+
+          void run();
+        });
       });
-    });
-  }, [selectedRows, exporting, resolveBaseDir, pushToast]);
+    },
+    [selectedRows, exporting, resolveBaseDir, pushToast],
+  );
+
+  // Close export menu on outside click
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [exportMenuOpen]);
 
   const handleConfigureProjectPath = useCallback(async () => {
     const picked = await pickDirectory({
@@ -502,7 +523,6 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
         : norm;
     const updated = await setProjectAssetExportPath(projectPath, rel);
     setProjectConfig(updated);
-    setDestination("project");
   }, [projectPath]);
 
   if (status === null) {
@@ -617,6 +637,7 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
                       ref={virtualiser.measureElement}
                       data-index={vRow.index}
                       className={`${styles.row} ${selected ? styles.rowSelected : ""} ${focused ? styles.rowFocused : ""}`}
+                      title={row.name ?? "(unnamed)"}
                       style={{
                         position: "absolute",
                         top: 0,
@@ -645,6 +666,9 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
               </div>
             )}
           </div>
+          <div className={styles.listFooter}>
+            {results.length.toLocaleString()} / {kindFilteredCount.toLocaleString()} assets
+          </div>
         </div>
 
         {/* Resize handle */}
@@ -657,80 +681,19 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
             previewData={previewData}
             previewLoading={previewLoading}
             nameUniqueness={nameUniqueness}
+            exportMenuRef={exportMenuRef}
+            exportMenuOpen={exportMenuOpen}
+            onToggleExportMenu={() => setExportMenuOpen((v) => !v)}
+            onCloseExportMenu={() => setExportMenuOpen(false)}
+            onExport={handleExport}
+            onConfigureProjectPath={() => void handleConfigureProjectPath()}
+            projectExportPath={projectExportPath}
+            selectedCount={selectedRows.length}
+            exporting={exporting}
+            exportProgress={exportProgress}
           />
-          <div className={styles.exportBar}>
-            <div className={styles.exportOptions}>
-              <label className={styles.exportOption}>
-                <input
-                  type="radio"
-                  name="asset-export-destination"
-                  checked={destination === "default"}
-                  onChange={() => setDestination("default")}
-                />
-                <span>Default</span>
-                <span className={styles.exportOptionPath}>.jiangyu/exports</span>
-              </label>
-              <label className={styles.exportOption}>
-                <input
-                  type="radio"
-                  name="asset-export-destination"
-                  checked={destination === "project"}
-                  onChange={() => setDestination("project")}
-                  disabled={projectExportPath === null}
-                />
-                <span>Project</span>
-                <span className={styles.exportOptionPath}>
-                  {projectExportPath ?? "not configured"}
-                </span>
-                <button
-                  type="button"
-                  className={styles.exportProjectConfigure}
-                  onClick={() => void handleConfigureProjectPath()}
-                >
-                  {projectExportPath ? "change" : "configure"}
-                </button>
-              </label>
-              <label className={styles.exportOption}>
-                <input
-                  type="radio"
-                  name="asset-export-destination"
-                  checked={destination === "custom"}
-                  onChange={() => setDestination("custom")}
-                />
-                <span>Custom…</span>
-              </label>
-            </div>
-            <div className={styles.exportActions}>
-              <button
-                type="button"
-                className={styles.exportButton}
-                disabled={selectedRows.length === 0 || exporting}
-                onClick={handleExport}
-              >
-                {exporting && <Spinner size={12} />}
-                {exporting ? "Exporting…" : `Export ${selectedRows.length || "0"} selected`}
-              </button>
-              {exportProgress && exporting && exportProgress.total > 1 && (
-                <div className={styles.exportProgress}>
-                  <div
-                    className={styles.exportProgressFill}
-                    style={{ width: `${(exportProgress.done / exportProgress.total) * 100}%` }}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function MetaRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className={styles.metaRow}>
-      <span className={styles.metaLabel}>{label}</span>
-      <span className={styles.metaValue}>{value}</span>
     </div>
   );
 }
@@ -741,9 +704,35 @@ interface AssetDetailsProps {
   readonly previewData: { dataUrl: string; mimeType: string } | null;
   readonly previewLoading: boolean;
   readonly nameUniqueness: ReadonlyMap<string, number>;
+  readonly exportMenuRef: React.RefObject<HTMLDivElement | null>;
+  readonly exportMenuOpen: boolean;
+  readonly onToggleExportMenu: () => void;
+  readonly onCloseExportMenu: () => void;
+  readonly onExport: (dest: Destination) => void;
+  readonly onConfigureProjectPath: () => void;
+  readonly projectExportPath: string | null;
+  readonly selectedCount: number;
+  readonly exporting: boolean;
+  readonly exportProgress: { done: number; total: number } | null;
 }
 
-function AssetDetails({ focusedKey, results, previewData, previewLoading, nameUniqueness }: AssetDetailsProps) {
+function AssetDetails({
+  focusedKey,
+  results,
+  previewData,
+  previewLoading,
+  nameUniqueness,
+  exportMenuRef,
+  exportMenuOpen,
+  onToggleExportMenu,
+  onCloseExportMenu,
+  onExport,
+  onConfigureProjectPath,
+  projectExportPath,
+  selectedCount,
+  exporting,
+  exportProgress,
+}: AssetDetailsProps) {
   if (focusedKey === null) {
     return <div className={styles.detailsEmpty}>Select an asset to see details</div>;
   }
@@ -769,22 +758,100 @@ function AssetDetails({ focusedKey, results, previewData, previewLoading, nameUn
   return (
     <>
       <div className={styles.preview}>{preview}</div>
-      <div className={styles.meta}>
-        <MetaRow label="Name" value={focused.name ?? "—"} />
-        <MetaRow label="Class" value={focused.className ?? "—"} />
-        <MetaRow label="Collection" value={focused.collection ?? "—"} />
-        <MetaRow label="Path ID" value={String(focused.pathId)} />
-        {isAudioClip(focused) && focused.audioFrequency != null && (
-          <MetaRow label="Frequency" value={`${focused.audioFrequency} Hz`} />
-        )}
-        {isAudioClip(focused) && focused.audioChannels != null && (
-          <MetaRow label="Channels" value={String(focused.audioChannels)} />
-        )}
-        {isSprite(focused) && focused.spriteBackingTextureName && (
-          <MetaRow label="Atlas" value={focused.spriteBackingTextureName} />
-        )}
-        {replacementPath != null && (
-          <MetaRow label="Replace" value={replacementPath} />
+      <div className={styles.detailHeader}>
+        <div className={styles.detailTitleRow}>
+          <DetailTitle>{focused.name ?? "(unnamed)"}</DetailTitle>
+          <div className={styles.exportDropdown} ref={exportMenuRef}>
+            <button
+              type="button"
+              className={styles.exportButton}
+              disabled={selectedCount === 0 || exporting}
+              onClick={onToggleExportMenu}
+            >
+              {exporting && <Spinner size={12} />}
+              <span>{exporting ? "Exporting…" : `Export ${selectedCount || "0"} selected`}</span>
+              {!exporting && (
+                <span className={styles.exportButtonChevron} aria-hidden>
+                  ▾
+                </span>
+              )}
+            </button>
+            {exportMenuOpen && (
+              <div className={styles.exportMenu}>
+                <button
+                  type="button"
+                  className={styles.exportMenuItem}
+                  onClick={() => {
+                    onCloseExportMenu();
+                    onExport("default");
+                  }}
+                >
+                  <span className={styles.exportMenuItemLabel}>Default</span>
+                  <span className={styles.exportMenuItemPath}>.jiangyu/exports</span>
+                </button>
+                <button
+                  type="button"
+                  className={styles.exportMenuItem}
+                  disabled={projectExportPath === null}
+                  onClick={() => {
+                    onCloseExportMenu();
+                    onExport("project");
+                  }}
+                >
+                  <span className={styles.exportMenuItemLabel}>Project</span>
+                  <span className={styles.exportMenuItemPath}>
+                    {projectExportPath ?? "not configured"}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={styles.exportMenuItem}
+                  onClick={() => {
+                    onCloseExportMenu();
+                    onExport("custom");
+                  }}
+                >
+                  <span className={styles.exportMenuItemLabel}>Custom…</span>
+                </button>
+                <div className={styles.exportMenuSep} />
+                <button
+                  type="button"
+                  className={styles.exportMenuItem}
+                  onClick={() => {
+                    onCloseExportMenu();
+                    onConfigureProjectPath();
+                  }}
+                >
+                  <span className={styles.exportMenuItemLabel}>
+                    {projectExportPath ? "Change project path…" : "Configure project path…"}
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+        <MetaBlock>
+          <MetaRow label="Class" value={focused.className ?? "—"} />
+          <MetaRow label="Collection" value={focused.collection ?? "—"} />
+          <MetaRow label="Path ID" value={String(focused.pathId)} />
+          {isAudioClip(focused) && focused.audioFrequency != null && (
+            <MetaRow label="Frequency" value={`${focused.audioFrequency} Hz`} />
+          )}
+          {isAudioClip(focused) && focused.audioChannels != null && (
+            <MetaRow label="Channels" value={String(focused.audioChannels)} />
+          )}
+          {isSprite(focused) && focused.spriteBackingTextureName && (
+            <MetaRow label="Atlas" value={focused.spriteBackingTextureName} />
+          )}
+          {replacementPath != null && <MetaRow label="Replace" value={replacementPath} />}
+        </MetaBlock>
+        {exportProgress && exporting && exportProgress.total > 1 && (
+          <div className={styles.exportProgress}>
+            <div
+              className={styles.exportProgressFill}
+              style={{ width: `${(exportProgress.done / exportProgress.total) * 100}%` }}
+            />
+          </div>
         )}
       </div>
     </>

@@ -1,6 +1,7 @@
 import { Maximize2, Minimize2, SplitSquareHorizontal, SplitSquareVertical, X } from "lucide-react";
 import { BROWSER_KIND_META, type BrowserPane as BrowserPaneModel } from "../../lib/layout.ts";
 import { AssetBrowser } from "../AssetBrowser/AssetBrowser.tsx";
+import { TemplateBrowser } from "../TemplateBrowser/TemplateBrowser.tsx";
 import { DropOverlay, type DropZone } from "./DropOverlay.tsx";
 import { PANE_DRAG_MIME, TAB_DRAG_MIME, type PaneDragPayload } from "./tabDrag.ts";
 import styles from "./EditorArea.module.css";
@@ -13,12 +14,17 @@ interface BrowserPaneProps {
   flex: number;
   registerEl: (paneId: string, el: HTMLElement | null) => void;
   dragActive: boolean;
+  fileEntries: readonly string[];
+  lastCodePath: string | null;
   onSetActive: (paneId: string) => void;
   onClosePane: (paneId: string) => void;
   onPaneDragStart: () => void;
   onPaneDrop: (toPaneId: string, zone: DropZone, event: React.DragEvent) => void;
   onSplitFromPane: (paneId: string, direction: "right" | "down") => void;
   onToggleFullscreen: (paneId: string) => void;
+  onOpenFile: (path: string) => void;
+  onAppendToFile: (path: string, snippet: string) => Promise<void>;
+  onRefreshFiles: () => void;
 }
 
 export function BrowserPane({
@@ -29,12 +35,17 @@ export function BrowserPane({
   flex,
   registerEl,
   dragActive,
+  fileEntries,
+  lastCodePath,
   onSetActive,
   onClosePane,
   onPaneDragStart,
   onPaneDrop,
   onSplitFromPane,
   onToggleFullscreen,
+  onOpenFile,
+  onAppendToFile,
+  onRefreshFiles,
 }: BrowserPaneProps) {
   const meta = BROWSER_KIND_META[pane.kind];
 
@@ -109,6 +120,15 @@ export function BrowserPane({
       <div className={styles.content}>
         {pane.kind === "assetBrowser" ? (
           <AssetBrowser projectPath={projectPath} />
+        ) : pane.kind === "templateBrowser" ? (
+          <TemplateBrowser
+            projectPath={projectPath}
+            fileEntries={fileEntries}
+            lastCodePath={lastCodePath}
+            onOpenFile={onOpenFile}
+            onAppendToFile={onAppendToFile}
+            onRefreshFiles={onRefreshFiles}
+          />
         ) : (
           <p className={styles.empty}>{meta.label} — coming soon</p>
         )}

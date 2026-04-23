@@ -53,6 +53,9 @@ public sealed class AssetEntry
 
 public sealed class IndexManifest
 {
+    [JsonPropertyName("formatVersion")]
+    public int FormatVersion { get; set; }
+
     [JsonPropertyName("gameAssemblyHash")]
     public string? GameAssemblyHash { get; set; }
 

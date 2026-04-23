@@ -3,6 +3,7 @@ using System.Numerics;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Compile;
 using Jiangyu.Core.Models;
 using SharpGLTF.Schema2;
@@ -21,7 +22,6 @@ public static class GlbMeshBundleCompiler
         public required string PrimaryName { get; init; }
         public required HashSet<string> Aliases { get; init; }
         public required Node Node { get; init; }
-        public required CompiledMesh Mesh { get; init; }
         public required List<CompiledMaterialBinding> MaterialBindings { get; init; }
     }
 
@@ -102,6 +102,42 @@ public static class GlbMeshBundleCompiler
     private const uint Magic = 0x4D455348; // "MESH"
     private const uint TextureMagic = 0x54585452; // "TXTR"
 
+    /// <summary>
+    /// Cached per-source-file context to avoid redundant <see cref="ModelRoot.Load"/> calls.
+    /// </summary>
+    private sealed class LoadedModelContext
+    {
+        public required ModelRoot Model { get; init; }
+        public required bool IsCleaned { get; init; }
+        public required CompanionSkinData? CompanionSkinData { get; init; }
+        public required List<ExtractedMeshCandidate> Candidates { get; init; }
+    }
+
+    private static Dictionary<string, LoadedModelContext> LoadModelContexts(IReadOnlyList<MeshSourceEntry> entries)
+    {
+        var contexts = new Dictionary<string, LoadedModelContext>(StringComparer.OrdinalIgnoreCase);
+        foreach (var group in entries.GroupBy(e => e.SourceFilePath, StringComparer.OrdinalIgnoreCase))
+        {
+            var path = group.Key;
+            var model = ModelRoot.Load(path);
+            var companionSkinData = TryLoadCompanionSkinData(path);
+            var isCleaned = IsCleanedExport(model);
+            var candidates = model.LogicalNodes
+                .Where(node => node.Mesh != null)
+                .Select(node => BuildLightweightCandidate(node))
+                .ToList();
+
+            contexts[path] = new LoadedModelContext
+            {
+                Model = model,
+                IsCleaned = isCleaned,
+                CompanionSkinData = companionSkinData,
+                Candidates = candidates,
+            };
+        }
+        return contexts;
+    }
+
     internal sealed class CompiledTexture
     {
         public required string Name { get; init; }
@@ -134,110 +170,131 @@ public static class GlbMeshBundleCompiler
         IReadOnlyList<ImportedSpriteAsset> directSprites,
         IReadOnlyList<ImportedAudioAsset> directAudioAssets,
         string? gameDataPath,
-        IReadOnlyDictionary<string, string> targetMeshNamesByBundleMesh)
+        IReadOnlyDictionary<string, string> targetMeshNamesByBundleMesh,
+        ILogSink? log = null)
     {
-        var meshes = ExtractMeshes(entries);
-        var textures = ExtractTextures(entries)
-            .ToDictionary(texture => texture.Name, StringComparer.Ordinal);
-        foreach (var texture in directTextures)
-            textures[texture.Name] = texture;
-
-        if (meshes.Count == 0 && textures.Count == 0 && directSprites.Count == 0 && directAudioAssets.Count == 0)
-            throw new InvalidOperationException("No replacement assets were extracted.");
-
-        var sourceDiagnosticsPath = outputBundlePath + ".source-diagnostics.json";
-        WriteSourceDiagnostics(sourceDiagnosticsPath, meshes);
-
-        var meshDataPath = Path.Combine(unityProjectDir, "meshdata.bin");
-        var textureDataPath = Path.Combine(unityProjectDir, "texturedata.bin");
-        WriteMeshData(meshDataPath, meshes);
-        WriteTextureData(textureDataPath, [.. textures.Values.OrderBy(texture => texture.Name, StringComparer.Ordinal)]);
-        await SetupUnityProjectAsync(unityProjectDir, directSprites, directAudioAssets);
-        var diagnosticsPath = outputBundlePath + ".unity-diagnostics.json";
-        var contractPath = Path.Combine(unityProjectDir, "meshcontract.bin");
-        var firstPassOutputPath = outputBundlePath;
-
-        var allTargetMeshNames = entries
-            .Select(entry => entry.TargetMeshName)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        var needsSecondPass = !string.IsNullOrWhiteSpace(gameDataPath) &&
-                              Directory.Exists(gameDataPath) &&
-                              allTargetMeshNames.Length > 0;
-        if (needsSecondPass)
-            firstPassOutputPath = outputBundlePath + ".pass1";
-
-        await InvokeUnityBuildAsync(unityEditor, unityProjectDir, firstPassOutputPath, bundleName, meshDataPath, textureDataPath, diagnosticsPath, meshContractPath: null);
-
-        if (needsSecondPass)
+        try
         {
-            var extractedContracts = MeshContractExtractor.Extract(firstPassOutputPath, gameDataPath!, allTargetMeshNames);
+            var sw = Stopwatch.StartNew();
+            var contexts = LoadModelContexts(entries);
+            log?.Info($"  [timing]   Load models: {sw.Elapsed.TotalSeconds:F1}s ({contexts.Count} file(s))");
+            sw.Restart();
+            var meshes = ExtractMeshes(entries, contexts, out var meshMaterialBindings, log);
+            log?.Info($"  [timing]   ExtractMeshes: {sw.Elapsed.TotalSeconds:F1}s ({meshes.Count} mesh(es))");
+            sw.Restart();
+            var textures = ExtractTextures(entries, contexts)
+                .ToDictionary(texture => texture.Name, StringComparer.Ordinal);
+            foreach (var texture in directTextures)
+                textures[texture.Name] = texture;
+            log?.Info($"  [timing]   ExtractTextures: {sw.Elapsed.TotalSeconds:F1}s ({textures.Count} texture(s))");
 
-            // Contract stamping (bone name hashes, bindposes) only fires for non-ambiguous
-            // target mesh names — those that identify a single game asset unambiguously.
-            var contracts = new List<MeshBuildContract>();
-            foreach (var entry in entries)
+            if (meshes.Count == 0 && textures.Count == 0 && directSprites.Count == 0 && directAudioAssets.Count == 0)
+                throw new InvalidOperationException("No replacement assets were extracted.");
+
+            var sourceDiagnosticsPath = outputBundlePath + ".source-diagnostics.json";
+            WriteSourceDiagnostics(sourceDiagnosticsPath, meshes);
+
+            sw.Restart();
+            var meshDataPath = Path.Combine(unityProjectDir, "meshdata.bin");
+            var textureDataPath = Path.Combine(unityProjectDir, "texturedata.bin");
+            WriteMeshData(meshDataPath, meshes);
+            WriteTextureData(textureDataPath, [.. textures.Values.OrderBy(texture => texture.Name, StringComparer.Ordinal)]);
+            await SetupUnityProjectAsync(unityProjectDir, directSprites, directAudioAssets);
+            log?.Info($"  [timing]   Write staging data: {sw.Elapsed.TotalSeconds:F1}s");
+            var diagnosticsPath = outputBundlePath + ".unity-diagnostics.json";
+            var contractPath = Path.Combine(unityProjectDir, "meshcontract.bin");
+            var firstPassOutputPath = outputBundlePath;
+
+            var allTargetMeshNames = entries
+                .Select(entry => entry.TargetMeshName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
+            var needsSecondPass = !string.IsNullOrWhiteSpace(gameDataPath) &&
+                                  Directory.Exists(gameDataPath) &&
+                                  allTargetMeshNames.Length > 0;
+            if (needsSecondPass)
+                firstPassOutputPath = outputBundlePath + ".pass1";
+
+            sw.Restart();
+            await InvokeUnityBuildAsync(unityEditor, unityProjectDir, firstPassOutputPath, bundleName, meshDataPath, textureDataPath, diagnosticsPath, meshContractPath: null);
+            log?.Info($"  [timing] Unity pass 1: {sw.Elapsed.TotalSeconds:F1}s");
+
+            if (needsSecondPass)
             {
-                if (string.IsNullOrWhiteSpace(entry.TargetMeshName))
-                    continue;
-                if (!extractedContracts.TryGetValue(entry.TargetMeshName, out var contract))
-                    continue;
+                sw.Restart();
+                var extractedContracts = MeshContractExtractor.Extract(firstPassOutputPath, gameDataPath!, allTargetMeshNames);
+                log?.Info($"  [timing] Mesh contract extraction: {sw.Elapsed.TotalSeconds:F1}s");
 
-                if (targetMeshNamesByBundleMesh.TryGetValue(entry.BundleMeshName, out var nonAmbiguousTarget) &&
-                    string.Equals(nonAmbiguousTarget, entry.TargetMeshName, StringComparison.Ordinal))
+                // Contract stamping (bone name hashes, bindposes) only fires for non-ambiguous
+                // target mesh names — those that identify a single game asset unambiguously.
+                var contracts = new List<MeshBuildContract>();
+                foreach (var entry in entries)
                 {
-                    contracts.Add(new MeshBuildContract
+                    if (string.IsNullOrWhiteSpace(entry.TargetMeshName))
+                        continue;
+                    if (!extractedContracts.TryGetValue(entry.TargetMeshName, out var contract))
+                        continue;
+
+                    if (targetMeshNamesByBundleMesh.TryGetValue(entry.BundleMeshName, out var nonAmbiguousTarget) &&
+                        string.Equals(nonAmbiguousTarget, entry.TargetMeshName, StringComparison.Ordinal))
                     {
-                        MeshName = entry.BundleMeshName,
-                        BoneNameHashes = contract.BoneNameHashes,
-                        RootBoneNameHash = contract.RootBoneNameHash,
-                        BindPoses = contract.BindPoses,
-                    });
+                        contracts.Add(new MeshBuildContract
+                        {
+                            MeshName = entry.BundleMeshName,
+                            BoneNameHashes = contract.BoneNameHashes,
+                            RootBoneNameHash = contract.RootBoneNameHash,
+                            BindPoses = contract.BindPoses,
+                        });
+                    }
+                }
+
+                if (contracts.Count > 0)
+                {
+                    WriteMeshContracts(contractPath, contracts);
+                    sw.Restart();
+                    await InvokeUnityBuildAsync(unityEditor, unityProjectDir, outputBundlePath, bundleName, meshDataPath, textureDataPath, diagnosticsPath, contractPath);
+                    log?.Info($"  [timing] Unity pass 2: {sw.Elapsed.TotalSeconds:F1}s");
+                }
+                else if (!string.Equals(firstPassOutputPath, outputBundlePath, StringComparison.Ordinal))
+                {
+                    File.Copy(firstPassOutputPath, outputBundlePath, overwrite: true);
                 }
             }
 
-            if (contracts.Count > 0)
+            return new BuildResult
             {
-                WriteMeshContracts(contractPath, contracts);
-                await InvokeUnityBuildAsync(unityEditor, unityProjectDir, outputBundlePath, bundleName, meshDataPath, textureDataPath, diagnosticsPath, contractPath);
-            }
-            else if (!string.Equals(firstPassOutputPath, outputBundlePath, StringComparison.Ordinal))
-            {
-                File.Copy(firstPassOutputPath, outputBundlePath, overwrite: true);
-            }
+                MeshBoneNames = meshes.ToDictionary(m => m.Name, m => m.BoneNames, StringComparer.Ordinal),
+                MeshMaterialBindings = meshMaterialBindings,
+            };
         }
-
-        return new BuildResult
+        finally
         {
-            MeshBoneNames = meshes.ToDictionary(m => m.Name, m => m.BoneNames, StringComparer.Ordinal),
-            MeshMaterialBindings = BuildMaterialBindings(entries),
-        };
+            _referenceModelCache.Clear();
+        }
     }
 
-    private static List<CompiledMesh> ExtractMeshes(IReadOnlyList<MeshSourceEntry> entries)
+    private static List<CompiledMesh> ExtractMeshes(
+        IReadOnlyList<MeshSourceEntry> entries,
+        Dictionary<string, LoadedModelContext> contexts,
+        out Dictionary<string, List<CompiledMaterialBinding>> materialBindings,
+        ILogSink? log = null)
     {
         var extracted = new List<CompiledMesh>();
+        materialBindings = new Dictionary<string, List<CompiledMaterialBinding>>(StringComparer.Ordinal);
         var bySource = entries
             .GroupBy(e => e.SourceFilePath, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         foreach (var group in bySource)
         {
-            var model = ModelRoot.Load(group.Key);
-            var companionSkinData = TryLoadCompanionSkinData(group.Key);
-            var isCleaned = IsCleanedExport(group.Key);
-            var extractedCandidates = model.LogicalNodes
-                .Where(node => node.Mesh != null)
-                .Select(node => ExtractMeshCandidate(node, model, companionSkinData, isCleaned))
-                .Where(candidate => candidate != null)
-                .Cast<ExtractedMeshCandidate>()
-                .ToList();
+            var ctx = contexts[group.Key];
+            var extractedCandidates = ctx.Candidates;
 
             if (extractedCandidates.Count == 0)
             {
-                var available = string.Join(", ", model.LogicalMeshes.Select(m => m.Name ?? $"Mesh_{m.LogicalIndex}").OrderBy(n => n, StringComparer.Ordinal));
+                var available = string.Join(", ", ctx.Model.LogicalMeshes.Select(m => m.Name ?? $"Mesh_{m.LogicalIndex}").OrderBy(n => n, StringComparer.Ordinal));
                 throw new InvalidOperationException(
                     $"No extractable mesh nodes were found in '{group.Key}'. Available logical meshes: {available}");
             }
@@ -256,13 +313,14 @@ public static class GlbMeshBundleCompiler
                         $"No matching mesh instance was found in '{group.Key}' for '{sourceMeshName}'. Available names: {available}");
                 }
 
+                var meshSw = Stopwatch.StartNew();
                 var mesh = match.Node.Mesh ?? throw new InvalidOperationException("Matched mesh candidate has no mesh.");
                 var compiled = ExtractMesh(
                     mesh,
-                    model,
+                    ctx.Model,
                     match.Node,
-                    companionSkinData,
-                    isCleaned,
+                    ctx.CompanionSkinData,
+                    ctx.IsCleaned,
                     entry.BindPoseReferencePath,
                     entry.BundleMeshName,
                     entry.TargetRendererPath,
@@ -270,54 +328,21 @@ public static class GlbMeshBundleCompiler
                     ?? throw new InvalidOperationException($"Matched mesh '{entry.BundleMeshName}' in '{group.Key}' could not be extracted.");
 
                 extracted.Add(CloneMeshWithName(compiled, entry.BundleMeshName));
+                materialBindings[entry.BundleMeshName] = match.MaterialBindings;
+                log?.Info($"  [timing]     {entry.BundleMeshName}: {meshSw.Elapsed.TotalSeconds:F1}s");
             }
         }
 
         return extracted;
     }
 
-    internal static Dictionary<string, List<CompiledMaterialBinding>> BuildMaterialBindings(IReadOnlyList<MeshSourceEntry> entries)
+    /// <summary>
+    /// Lightweight candidate builder — computes aliases and material bindings only,
+    /// without running the expensive vertex-level <see cref="ExtractMesh"/> pass.
+    /// </summary>
+    private static ExtractedMeshCandidate BuildLightweightCandidate(Node node)
     {
-        var result = new Dictionary<string, List<CompiledMaterialBinding>>(StringComparer.Ordinal);
-        var bySource = entries
-            .GroupBy(e => e.SourceFilePath, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        foreach (var group in bySource)
-        {
-            var model = ModelRoot.Load(group.Key);
-            var isCleaned = IsCleanedExport(group.Key);
-            var extractedCandidates = model.LogicalNodes
-                .Where(node => node.Mesh != null)
-                .Select(node => ExtractMeshCandidate(node, model, companionSkinData: null, isCleaned))
-                .Where(candidate => candidate != null)
-                .Cast<ExtractedMeshCandidate>()
-                .ToList();
-
-            foreach (var entry in group)
-            {
-                var sourceMeshName = entry.SourceMeshName ?? entry.BundleMeshName;
-                var match = extractedCandidates.FirstOrDefault(candidate => candidate.Aliases.Contains(sourceMeshName));
-                if (match == null && extractedCandidates.Count == 1)
-                    match = extractedCandidates[0];
-
-                result[entry.BundleMeshName] = match?.MaterialBindings ?? [];
-            }
-        }
-
-        return result;
-    }
-
-    private static ExtractedMeshCandidate? ExtractMeshCandidate(Node node, ModelRoot model, CompanionSkinData? companionSkinData, bool isCleaned)
-    {
-        var mesh = node.Mesh;
-        if (mesh == null)
-            return null;
-
-        var compiled = ExtractMesh(mesh, model, node, companionSkinData, isCleaned, bindPoseReferencePath: null, bundleMeshName: mesh.Name ?? $"Mesh_{mesh.LogicalIndex}");
-        if (compiled == null)
-            return null;
-
+        var mesh = node.Mesh!;
         var aliases = new HashSet<string>(StringComparer.Ordinal);
         var nodeName = node.Name;
         var meshName = mesh.Name;
@@ -342,7 +367,6 @@ public static class GlbMeshBundleCompiler
             PrimaryName = primaryName,
             Aliases = aliases,
             Node = node,
-            Mesh = CloneMeshWithName(compiled, primaryName),
             MaterialBindings = ExtractMaterialBindings(node),
         };
     }
@@ -946,14 +970,20 @@ public static class GlbMeshBundleCompiler
         };
     }
 
+    private static readonly Dictionary<string, (ModelRoot Model, bool IsCleaned)> _referenceModelCache = new(StringComparer.OrdinalIgnoreCase);
+
     private static SkinBindingData LoadReferenceSkinBindingData(string referencePath, string referenceMeshSelector)
     {
-        var model = ModelRoot.Load(referencePath);
-        var candidates = model.LogicalNodes
+        if (!_referenceModelCache.TryGetValue(referencePath, out var cached))
+        {
+            var model = ModelRoot.Load(referencePath);
+            cached = (model, IsCleanedExport(model));
+            _referenceModelCache[referencePath] = cached;
+        }
+
+        var candidates = cached.Model.LogicalNodes
             .Where(node => node.Mesh != null)
-            .Select(node => ExtractMeshCandidate(node, model, companionSkinData: null, isCleaned: IsCleanedExport(referencePath)))
-            .Where(candidate => candidate != null)
-            .Cast<ExtractedMeshCandidate>()
+            .Select(BuildLightweightCandidate)
             .ToList();
 
         if (candidates.Count == 0)
@@ -1092,13 +1122,22 @@ public static class GlbMeshBundleCompiler
         return Math.Max(Math.Abs(extent.X), Math.Max(Math.Abs(extent.Y), Math.Abs(extent.Z)));
     }
 
-    private static List<CompiledTexture> ExtractTextures(IReadOnlyList<MeshSourceEntry> entries)
+    private static List<CompiledTexture> ExtractTextures(
+        IReadOnlyList<MeshSourceEntry> entries,
+        Dictionary<string, LoadedModelContext>? contexts = null)
     {
         var result = new Dictionary<string, CompiledTexture>(StringComparer.Ordinal);
         foreach (var sourceFilePath in entries.Select(entry => entry.SourceFilePath).Distinct(StringComparer.OrdinalIgnoreCase))
         {
+            // Use cached model when available
+            ModelRoot? cachedModel = null;
+            if (contexts != null && contexts.TryGetValue(sourceFilePath, out var ctx))
+                cachedModel = ctx.Model;
+
             // Prefer glTF-family material graph when available (.gltf or .glb)
-            if (TryExtractTexturesFromModelGraph(sourceFilePath, result))
+            if (cachedModel != null
+                ? TryExtractTexturesFromModelGraph(sourceFilePath, cachedModel, result)
+                : TryExtractTexturesFromModelGraph(sourceFilePath, result))
             {
                 continue;
             }
@@ -1135,15 +1174,7 @@ public static class GlbMeshBundleCompiler
     internal static bool TryExtractTexturesFromModelGraph(string sourceFilePath, Dictionary<string, CompiledTexture> result)
     {
         if (!IsGltfFamilySource(sourceFilePath))
-        {
             return false;
-        }
-
-        var sourceDir = Path.GetDirectoryName(sourceFilePath);
-        if (sourceDir is null)
-        {
-            return false;
-        }
 
         ModelRoot model;
         try
@@ -1154,6 +1185,21 @@ public static class GlbMeshBundleCompiler
         {
             return false;
         }
+
+        return TryExtractTexturesFromModelGraph(sourceFilePath, model, result);
+    }
+
+    /// <summary>
+    /// Reads textures from a pre-loaded glTF model's material graph.
+    /// </summary>
+    private static bool TryExtractTexturesFromModelGraph(string sourceFilePath, ModelRoot model, Dictionary<string, CompiledTexture> result)
+    {
+        if (!IsGltfFamilySource(sourceFilePath))
+            return false;
+
+        var sourceDir = Path.GetDirectoryName(sourceFilePath);
+        if (sourceDir is null)
+            return false;
 
         bool found = false;
 
@@ -1338,26 +1384,28 @@ public static class GlbMeshBundleCompiler
     internal static bool IsCleanedExport(string sourceFilePath)
     {
         if (!IsGltfFamilySource(sourceFilePath))
-        {
             return false;
-        }
 
         try
         {
             var model = ModelRoot.Load(sourceFilePath);
-            if (model.Extras is System.Text.Json.Nodes.JsonObject rootExtras &&
-                rootExtras.TryGetPropertyValue("jiangyu", out var jiangyuNode) &&
-                jiangyuNode is System.Text.Json.Nodes.JsonObject jiangyuObj &&
-                jiangyuObj.TryGetPropertyValue("cleaned", out var cleanedNode))
-            {
-                return cleanedNode?.GetValue<bool>() ?? false;
-            }
+            return IsCleanedExport(model);
         }
         catch
         {
-            // Fall through
+            return false;
         }
+    }
 
+    private static bool IsCleanedExport(ModelRoot model)
+    {
+        if (model.Extras is System.Text.Json.Nodes.JsonObject rootExtras &&
+            rootExtras.TryGetPropertyValue("jiangyu", out var jiangyuNode) &&
+            jiangyuNode is System.Text.Json.Nodes.JsonObject jiangyuObj &&
+            jiangyuObj.TryGetPropertyValue("cleaned", out var cleanedNode))
+        {
+            return cleanedNode?.GetValue<bool>() ?? false;
+        }
         return false;
     }
 

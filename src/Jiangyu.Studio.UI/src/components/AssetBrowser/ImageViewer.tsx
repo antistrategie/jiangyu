@@ -36,39 +36,51 @@ export function ImageViewer({ src, alt }: Props) {
     setFitted(true);
   }, [src]);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
+  // Native non-passive wheel listener so preventDefault actually blocks the
+  // browser's default Ctrl-wheel behaviour (page zoom). React's synthetic
+  // onWheel is passive and calling e.preventDefault() there is a no-op.
+  useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const rect = container.getBoundingClientRect();
-    const cursorX = e.clientX - rect.left;
-    const cursorY = e.clientY - rect.top;
+    const onWheel = (e: WheelEvent) => {
+      // Hold Ctrl/Cmd to zoom; plain wheel bubbles so the surrounding
+      // scroll container can scroll even when the viewer fills the viewport.
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
 
-    setFitted((wasFitted) => {
-      if (wasFitted) {
-        const fs = readFittedState(container);
-        if (!fs) return false;
-        const factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
-        const next = clampZoom(fs.fitScale * factor, MIN_ZOOM, MAX_ZOOM);
-        setZoom(next);
-        setOffset({
-          x: zoomTowardsCursor(cursorX, fs.ox, fs.fitScale, next),
-          y: zoomTowardsCursor(cursorY, fs.oy, fs.fitScale, next),
-        });
-      } else {
-        setZoom((prev) => {
+      const rect = container.getBoundingClientRect();
+      const cursorX = e.clientX - rect.left;
+      const cursorY = e.clientY - rect.top;
+
+      setFitted((wasFitted) => {
+        if (wasFitted) {
+          const fs = readFittedState(container);
+          if (!fs) return false;
           const factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
-          const next = clampZoom(prev * factor, MIN_ZOOM, MAX_ZOOM);
-          setOffset((o) => ({
-            x: zoomTowardsCursor(cursorX, o.x, prev, next),
-            y: zoomTowardsCursor(cursorY, o.y, prev, next),
-          }));
-          return next;
-        });
-      }
-      return false;
-    });
+          const next = clampZoom(fs.fitScale * factor, MIN_ZOOM, MAX_ZOOM);
+          setZoom(next);
+          setOffset({
+            x: zoomTowardsCursor(cursorX, fs.ox, fs.fitScale, next),
+            y: zoomTowardsCursor(cursorY, fs.oy, fs.fitScale, next),
+          });
+        } else {
+          setZoom((prev) => {
+            const factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+            const next = clampZoom(prev * factor, MIN_ZOOM, MAX_ZOOM);
+            setOffset((o) => ({
+              x: zoomTowardsCursor(cursorX, o.x, prev, next),
+              y: zoomTowardsCursor(cursorY, o.y, prev, next),
+            }));
+            return next;
+          });
+        }
+        return false;
+      });
+    };
+
+    container.addEventListener("wheel", onWheel, { passive: false });
+    return () => container.removeEventListener("wheel", onWheel);
   }, []);
 
   const handleMouseDown = useCallback(
@@ -133,7 +145,6 @@ export function ImageViewer({ src, alt }: Props) {
     <div
       ref={containerRef}
       className={styles.imageViewer}
-      onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
     >
@@ -149,6 +160,14 @@ export function ImageViewer({ src, alt }: Props) {
         }
       />
       {!fitted && <span className={styles.imageViewerZoom}>{Math.round(zoom * 100)}%</span>}
+      <div className={styles.viewerHint}>
+        <span className={styles.viewerHintAction}>Pan</span>
+        <span className={styles.viewerHintControl}>click + drag</span>
+        <span className={styles.viewerHintAction}>Zoom</span>
+        <span className={styles.viewerHintControl}>ctrl + wheel</span>
+        <span className={styles.viewerHintAction}>Fit</span>
+        <span className={styles.viewerHintControl}>double-click</span>
+      </div>
     </div>
   );
 }

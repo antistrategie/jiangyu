@@ -7,6 +7,7 @@ import {
   isAssetNameUnique,
   isAudioClip,
   isSprite,
+  passesKindFilter,
   type AssetEntry,
   type AudioClipAsset,
   type SpriteAsset,
@@ -89,37 +90,27 @@ describe("buildReplacementAlias", () => {
 describe("buildReplacementPath", () => {
   it("returns model path for PrefabHierarchyObject", () => {
     const entry: AssetEntry = { ...BASE, className: "PrefabHierarchyObject" };
-    expect(buildReplacementPath(entry, true)).toBe(
-      "models/foo/model.gltf (.glb)",
-    );
+    expect(buildReplacementPath(entry, true)).toBe("models/foo/model.gltf (.glb)");
   });
 
   it("returns texture path for Texture2D", () => {
     const entry: AssetEntry = { ...BASE, className: "Texture2D" };
-    expect(buildReplacementPath(entry, true)).toBe(
-      "textures/foo.png",
-    );
+    expect(buildReplacementPath(entry, true)).toBe("textures/foo.png");
   });
 
   it("returns sprite path for Sprite", () => {
     const entry: AssetEntry = { ...BASE, className: "Sprite" };
-    expect(buildReplacementPath(entry, true)).toBe(
-      "sprites/foo.png",
-    );
+    expect(buildReplacementPath(entry, true)).toBe("sprites/foo.png");
   });
 
   it("returns audio path for AudioClip", () => {
     const entry: AssetEntry = { ...BASE, className: "AudioClip" };
-    expect(buildReplacementPath(entry, true)).toBe(
-      "audio/foo.wav",
-    );
+    expect(buildReplacementPath(entry, true)).toBe("audio/foo.wav");
   });
 
   it("includes pathId when not unique", () => {
     const entry: AssetEntry = { ...BASE, className: "Texture2D", pathId: 42 };
-    expect(buildReplacementPath(entry, false)).toBe(
-      "textures/foo--42.png",
-    );
+    expect(buildReplacementPath(entry, false)).toBe("textures/foo--42.png");
   });
 
   it("returns null for Mesh", () => {
@@ -188,5 +179,31 @@ describe("isAssetNameUnique", () => {
     const map = new Map([["PrefabHierarchyObject\0soldier", 1]]);
     const entry: AssetEntry = { ...BASE, className: "GameObject", name: "soldier" };
     expect(isAssetNameUnique(entry, map)).toBe(true);
+  });
+});
+
+describe("passesKindFilter", () => {
+  it("excludes entries with null className", () => {
+    const entry: AssetEntry = { ...BASE, className: null };
+    expect(passesKindFilter(entry, "all")).toBe(false);
+    expect(passesKindFilter(entry, "texture")).toBe(false);
+  });
+
+  it("under 'all' only accepts exportable classes", () => {
+    const tex: AssetEntry = { ...BASE, className: "Texture2D" };
+    const mesh: AssetEntry = { ...BASE, className: "Mesh" };
+    const odd: AssetEntry = { ...BASE, className: "MonoBehaviour" };
+    expect(passesKindFilter(tex, "all")).toBe(true);
+    expect(passesKindFilter(mesh, "all")).toBe(true);
+    expect(passesKindFilter(odd, "all")).toBe(false);
+  });
+
+  it("under a specific kind, only accepts classes in that kind's class list", () => {
+    const tex: AssetEntry = { ...BASE, className: "Texture2D" };
+    const sprite: AssetEntry = { ...BASE, className: "Sprite" };
+    expect(passesKindFilter(tex, "texture")).toBe(true);
+    expect(passesKindFilter(tex, "sprite")).toBe(false);
+    expect(passesKindFilter(sprite, "sprite")).toBe(true);
+    expect(passesKindFilter(sprite, "texture")).toBe(false);
   });
 });

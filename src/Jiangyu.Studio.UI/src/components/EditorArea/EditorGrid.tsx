@@ -1,4 +1,13 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { editor as monacoEditor } from "monaco-editor";
 import { rpcCall, subscribe, type FileChangedEvent, type FileChangeKind } from "../../lib/rpc.ts";
 import { fileTargetCommands } from "../../lib/fileCommands.ts";
@@ -28,11 +37,18 @@ import styles from "./EditorArea.module.css";
 
 type ConflictKind = FileChangeKind;
 
+export interface EditorGridHandle {
+  /** Append a text snippet to the given file's editor buffer (marks dirty). */
+  appendToFile(path: string, snippet: string): Promise<void>;
+}
+
 interface EditorGridProps {
   projectPath: string;
   layout: Layout;
   fullscreenPaneId: string | null;
   dirtyFiles: Set<string>;
+  fileEntries: readonly string[];
+  lastCodePath: string | null;
   onSelectTab: (paneId: string, path: string) => void;
   onSetActivePane: (paneId: string) => void;
   onCloseTabsInPane: (paneId: string, paths: readonly string[]) => void;
@@ -40,6 +56,9 @@ interface EditorGridProps {
   onMoveTab: (fromPaneId: string, toPaneId: string, path: string) => void;
   onMarkDirty: (path: string, isDirty: boolean) => void;
   onOpenBrowserPane: (kind: BrowserPaneModel["kind"]) => void;
+  onOpenFile: (path: string) => void;
+  onAppendToFile: (path: string, snippet: string) => Promise<void>;
+  onRefreshFiles: () => void;
   onResizeColumns: (
     leftId: string,
     leftWeight: number,
@@ -55,27 +74,35 @@ interface EditorGridProps {
   onToggleFullscreen: (paneId: string) => void;
 }
 
-export function EditorGrid({
-  projectPath,
-  layout,
-  fullscreenPaneId,
-  dirtyFiles,
-  onSelectTab,
-  onSetActivePane,
-  onCloseTabsInPane,
-  onClosePane,
-  onMoveTab,
-  onMarkDirty,
-  onOpenBrowserPane,
-  onResizeColumns,
-  onResizePanes,
-  onSplitWithTab,
-  onMovePaneToEdge,
-  onSwapPanes,
-  onConvertPane,
-  onSplitFromPane,
-  onToggleFullscreen,
-}: EditorGridProps) {
+export const EditorGrid = forwardRef<EditorGridHandle, EditorGridProps>(function EditorGrid(
+  {
+    projectPath,
+    layout,
+    fullscreenPaneId,
+    dirtyFiles,
+    fileEntries,
+    lastCodePath,
+    onSelectTab,
+    onSetActivePane,
+    onCloseTabsInPane,
+    onClosePane,
+    onMoveTab,
+    onMarkDirty,
+    onOpenBrowserPane,
+    onOpenFile,
+    onAppendToFile,
+    onRefreshFiles,
+    onResizeColumns,
+    onResizePanes,
+    onSplitWithTab,
+    onMovePaneToEdge,
+    onSwapPanes,
+    onConvertPane,
+    onSplitFromPane,
+    onToggleFullscreen,
+  },
+  ref,
+) {
   const [contents, setContents] = useState<Map<string, string>>(new Map());
   const [conflicts, setConflicts] = useState<Map<string, ConflictKind>>(new Map());
   const [editors, setEditors] = useState<Map<string, monacoEditor.IStandaloneCodeEditor>>(
@@ -189,6 +216,58 @@ export function EditorGrid({
   useEffect(() => {
     onMarkDirtyRef.current = onMarkDirty;
   }, [onMarkDirty]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      async appendToFile(path: string, snippet: string) {
+        // Coordinate with the activePaths loader so its background readFile
+        // can't overwrite the appended snippet. Three cases:
+        //  1) content already loaded — append directly.
+        //  2) load in flight elsewhere — wait for it to populate contentsRef,
+        //     then append.
+        //  3) not loaded and not in flight — take ownership of the load here,
+        //     marking inflight so the activePaths effect skips it; combine the
+        //     loaded text with the snippet in a single setContent so there's
+        //     no window where the loaded text sits without the snippet.
+        if (!contentsRef.current.has(path) && !inflightRef.current.has(path)) {
+          inflightRef.current.add(path);
+          try {
+            let text = "";
+            try {
+              text = await rpcCall<string>("readFile", { path });
+            } catch {
+              // File doesn't exist yet — treat as empty.
+            }
+            const sep = text.length === 0 ? "" : text.endsWith("\n") ? "\n" : "\n\n";
+            setContent(path, text + sep + snippet);
+            onMarkDirtyRef.current(path, true);
+          } finally {
+            inflightRef.current.delete(path);
+          }
+          return;
+        }
+
+        if (!contentsRef.current.has(path)) {
+          // Loader in flight elsewhere — poll for it to land.
+          const deadline = Date.now() + 5000;
+          while (
+            inflightRef.current.has(path) &&
+            !contentsRef.current.has(path) &&
+            Date.now() < deadline
+          ) {
+            await new Promise((r) => setTimeout(r, 20));
+          }
+        }
+
+        const current = contentsRef.current.get(path) ?? "";
+        const separator = current.length === 0 ? "" : current.endsWith("\n") ? "\n" : "\n\n";
+        setContent(path, current + separator + snippet);
+        onMarkDirtyRef.current(path, true);
+      },
+    }),
+    [setContent],
+  );
 
   const handleSave = useCallback(
     async (path: string) => {
@@ -489,12 +568,17 @@ export function EditorGrid({
                     flex={paneWeight(pane)}
                     registerEl={registerPaneEl}
                     dragActive={dragActive}
+                    fileEntries={fileEntries}
+                    lastCodePath={lastCodePath}
                     onSetActive={onSetActivePane}
                     onClosePane={onClosePane}
                     onPaneDragStart={handleDragStart}
                     onPaneDrop={handlePaneDrop}
                     onSplitFromPane={onSplitFromPane}
                     onToggleFullscreen={onToggleFullscreen}
+                    onOpenFile={onOpenFile}
+                    onAppendToFile={onAppendToFile}
+                    onRefreshFiles={onRefreshFiles}
                   />
                 );
               if (pi === 0) return <Fragment key={pane.id}>{paneNode}</Fragment>;
@@ -563,4 +647,4 @@ export function EditorGrid({
       })}
     </div>
   );
-}
+});

@@ -56,6 +56,15 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
       controls.autoRotate = true;
       controls.autoRotateSpeed = 2;
 
+      // Plain wheel scrolls the ancestor; Ctrl/Cmd + wheel zooms. Without this,
+      // OrbitControls swallows every wheel event and the preview traps scroll.
+      const wheelGuard = (e: WheelEvent) => {
+        if (!e.ctrlKey && !e.metaKey) {
+          e.stopImmediatePropagation();
+        }
+      };
+      renderer.domElement.addEventListener("wheel", wheelGuard, { capture: true });
+
       const stopAutoRotate = () => {
         controls.autoRotate = false;
       };
@@ -95,6 +104,7 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
       innerCleanup = () => {
         cancelAnimationFrame(animId);
         resizeObserver.disconnect();
+        renderer.domElement.removeEventListener("wheel", wheelGuard, { capture: true });
         controls.removeEventListener("start", stopAutoRotate);
         controls.dispose();
         envTexture.dispose();
@@ -156,6 +166,14 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
   return (
     <div ref={containerRef} className={styles.modelViewer}>
       {loading && <Spinner className={styles.modelViewerSpinner} />}
+      <div className={styles.viewerHint}>
+        <span className={styles.viewerHintAction}>Orbit</span>
+        <span className={styles.viewerHintControl}>left-click + drag</span>
+        <span className={styles.viewerHintAction}>Pan</span>
+        <span className={styles.viewerHintControl}>right-click + drag</span>
+        <span className={styles.viewerHintAction}>Zoom</span>
+        <span className={styles.viewerHintControl}>ctrl + wheel</span>
+      </div>
     </div>
   );
 }

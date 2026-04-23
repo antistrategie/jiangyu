@@ -123,6 +123,10 @@
   opacity: 0.5;
 }
 
+.highlighted {
+  background: var(--paper-2);
+}
+
 .dropTarget {
   background: var(--cinnabar-1);
   color: var(--paper-0);

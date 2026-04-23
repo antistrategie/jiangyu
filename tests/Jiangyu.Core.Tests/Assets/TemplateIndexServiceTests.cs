@@ -78,6 +78,7 @@ public sealed class TemplateIndexServiceTests : IDisposable
         WriteIndex();
         WriteManifest(new TemplateIndexManifest
         {
+            FormatVersion = 2,
             GameAssemblyHash = ComputeGameAssemblyHash(),
             IndexedAt = DateTimeOffset.UtcNow,
             GameDataPath = _gameDataPath,
@@ -96,6 +97,7 @@ public sealed class TemplateIndexServiceTests : IDisposable
         WriteIndex();
         WriteManifest(new TemplateIndexManifest
         {
+            FormatVersion = 2,
             GameAssemblyHash = ComputeGameAssemblyHash(),
             IndexedAt = DateTimeOffset.UtcNow,
             GameDataPath = _gameDataPath,

@@ -10,6 +10,9 @@
     <div id="root">
       <!-- Inline splash — shown until React mounts and replaces #root content -->
       <style>
+        body {
+          margin: 0;
+        }
         @keyframes jy-spin {
           to {
             transform: rotate(360deg);
@@ -20,8 +23,9 @@
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          height: 100vh;
+          height: 100dvh;
           background: #ebe4d6;
+          overflow: hidden;
         }
         .jy-splash img {
           width: 128px;
