@@ -136,13 +136,13 @@ export function buildReplacementPath(
   const alias = buildReplacementAlias(name, entry.pathId, unique);
   switch (entry.className) {
     case "PrefabHierarchyObject":
-      return `assets/replacements/models/${alias}/model.gltf`;
+      return `models/${alias}/model.gltf (.glb)`;
     case "Texture2D":
-      return `assets/replacements/textures/${alias}.png`;
+      return `textures/${alias}.png`;
     case "Sprite":
-      return `assets/replacements/sprites/${alias}.png`;
+      return `sprites/${alias}.png`;
     case "AudioClip":
-      return `assets/replacements/audio/${alias}.wav`;
+      return `audio/${alias}.wav`;
     default:
       return null;
   }

@@ -90,35 +90,35 @@ describe("buildReplacementPath", () => {
   it("returns model path for PrefabHierarchyObject", () => {
     const entry: AssetEntry = { ...BASE, className: "PrefabHierarchyObject" };
     expect(buildReplacementPath(entry, true)).toBe(
-      "assets/replacements/models/foo/model.gltf",
+      "models/foo/model.gltf (.glb)",
     );
   });
 
   it("returns texture path for Texture2D", () => {
     const entry: AssetEntry = { ...BASE, className: "Texture2D" };
     expect(buildReplacementPath(entry, true)).toBe(
-      "assets/replacements/textures/foo.png",
+      "textures/foo.png",
     );
   });
 
   it("returns sprite path for Sprite", () => {
     const entry: AssetEntry = { ...BASE, className: "Sprite" };
     expect(buildReplacementPath(entry, true)).toBe(
-      "assets/replacements/sprites/foo.png",
+      "sprites/foo.png",
     );
   });
 
   it("returns audio path for AudioClip", () => {
     const entry: AssetEntry = { ...BASE, className: "AudioClip" };
     expect(buildReplacementPath(entry, true)).toBe(
-      "assets/replacements/audio/foo.wav",
+      "audio/foo.wav",
     );
   });
 
   it("includes pathId when not unique", () => {
     const entry: AssetEntry = { ...BASE, className: "Texture2D", pathId: 42 };
     expect(buildReplacementPath(entry, false)).toBe(
-      "assets/replacements/textures/foo--42.png",
+      "textures/foo--42.png",
     );
   });
 
