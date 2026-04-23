@@ -6,7 +6,6 @@ using Jiangyu.Core.Assets;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
 using Jiangyu.Core.Templates;
-using Jiangyu.Shared.Templates;
 
 namespace Jiangyu.Studio.Host;
 
@@ -76,10 +75,7 @@ public static partial class RpcDispatcher
             throw new InvalidOperationException(resolution.Error ?? "Could not resolve game data path.");
 
         var service = resolution.Context!.CreateTemplateIndexService(NullProgressSink.Instance, NullLogSink.Instance);
-        var index = service.LoadIndex();
-
-        if (index is null)
-            throw new InvalidOperationException("Template index not found. Build it first.");
+        var index = service.LoadIndex() ?? throw new InvalidOperationException("Template index not found. Build it first.");
 
         // If no query, return the full index (types + instances).
         // Client does filtering.
@@ -149,7 +145,7 @@ public static partial class RpcDispatcher
             TypeFullName = result.CurrentType?.FullName,
             IsWritable = result.IsWritable,
             PatchScalarKind = result.PatchScalarKind?.ToString(),
-            EnumMemberNames = result.EnumMemberNames.Count > 0 ? result.EnumMemberNames.ToList() : null,
+            EnumMemberNames = result.EnumMemberNames.Count > 0 ? [.. result.EnumMemberNames] : null,
             ReferenceTargetTypeName = result.ReferenceTargetTypeName,
             IsLikelyOdinOnly = result.IsLikelyOdinOnly ? true : null,
             Members = result.Members?.Select(m => new TemplateMemberDto

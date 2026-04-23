@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { rpcCall, subscribe, type FileChangedEvent } from "../../lib/rpc.ts";
 import { dirname, basename, join, relative, isDescendant } from "../../lib/path.ts";
+import { CROSS_TAB_MIME, encodeCrossTabPayload } from "../../lib/crossWindowTabDrag.ts";
 import { ContextMenu, type ContextMenuEntry } from "../ContextMenu/ContextMenu.tsx";
 import { ConfirmDialog } from "../ConfirmDialog/ConfirmDialog.tsx";
 import { useToast } from "../../lib/toast.tsx";
@@ -494,7 +495,14 @@ function FileItem({ entry }: { entry: FileEntry }) {
           setMenu({ x: e.clientX, y: e.clientY });
         }}
         onKeyDown={(e) => handleEntryKey(e, entry, ctx, () => setRenaming(true))}
-        onDragStart={(e) => setDragPath(e, entry.path)}
+        onDragStart={(e) => {
+          setDragPath(e, entry.path);
+          // Also carry a cross-window tab payload so the entry can be
+          // dropped onto any editor tab bar (primary or a secondary pane
+          // window) to open the file there. No beginTabMove — the sidebar
+          // isn't "moving" this file, just offering it.
+          e.dataTransfer.setData(CROSS_TAB_MIME, encodeCrossTabPayload(entry.path));
+        }}
       >
         <span className={styles.icon}>{getFileIcon(entry.name)}</span>
         {renaming ? (

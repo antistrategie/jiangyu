@@ -5,9 +5,10 @@ namespace Jiangyu.Studio.Host;
 
 /// <summary>
 /// Watches the currently open project root and pushes debounced
-/// <c>fileChanged</c> notifications to the frontend. Callers can suppress
-/// upcoming events for a path (e.g. during our own writeFile) so that
-/// self-writes don't trigger the conflict banner.
+/// <c>fileChanged</c> notifications to every subscribed window. Callers can
+/// suppress upcoming events for a <c>(path, originWindowId)</c> pair so that
+/// a window's own writeFile doesn't trigger its own conflict banner — but
+/// other windows still receive the notification and can reconcile.
 /// </summary>
 internal static class ProjectWatcher
 {
@@ -22,7 +23,7 @@ internal static class ProjectWatcher
     };
 
     private static FileSystemWatcher? _watcher;
-    private static IInfiniFrameWindow? _window;
+    private static readonly List<IInfiniFrameWindow> Subscribers = [];
 
     /// <summary>
     /// Absolute path of the currently open project root, or null if no project is open.
@@ -31,7 +32,7 @@ internal static class ProjectWatcher
     /// </summary>
     public static string? ProjectRoot { get; private set; }
 
-    private static readonly Dictionary<string, long> SuppressUntil = new(StringComparer.Ordinal);
+    private static readonly Dictionary<(string Path, Guid WindowId), long> SuppressUntil = [];
     private static readonly Dictionary<string, Timer> Pending = new(StringComparer.Ordinal);
     private static readonly Lock Lock = new();
 
@@ -39,7 +40,7 @@ internal static class ProjectWatcher
     {
         Stop();
 
-        _window = window;
+        lock (Lock) Subscribers.Add(window);
         ProjectRoot = Path.GetFullPath(root);
         _watcher = new FileSystemWatcher(root)
         {
@@ -77,6 +78,7 @@ internal static class ProjectWatcher
 
         lock (Lock)
         {
+            Subscribers.Clear();
             foreach (var timer in Pending.Values)
                 timer.Dispose();
             Pending.Clear();
@@ -84,13 +86,37 @@ internal static class ProjectWatcher
         }
     }
 
-    /// <summary>Suppress upcoming events for <paramref name="path"/> for a short window.</summary>
-    public static void SuppressFor(string path, int milliseconds = DefaultSuppressMs)
+    /// <summary>
+    /// Add a secondary window to receive <c>fileChanged</c> notifications for the
+    /// current project. No-op if the window is already subscribed.
+    /// </summary>
+    public static void Subscribe(IInfiniFrameWindow window)
+    {
+        lock (Lock)
+        {
+            if (!Subscribers.Contains(window))
+                Subscribers.Add(window);
+        }
+    }
+
+    /// <summary>Remove a window (e.g. when it closes) from the subscriber list.</summary>
+    public static void Unsubscribe(IInfiniFrameWindow window)
+    {
+        lock (Lock) Subscribers.Remove(window);
+    }
+
+    /// <summary>
+    /// Suppress upcoming <c>fileChanged</c> events for <paramref name="path"/>
+    /// to <paramref name="originWindowId"/> only. Other subscribed windows
+    /// still receive the notification — that's the cross-window conflict
+    /// surface: a save in window A looks like an external edit to window B.
+    /// </summary>
+    public static void SuppressFor(string path, Guid originWindowId, int milliseconds = DefaultSuppressMs)
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         lock (Lock)
         {
-            SuppressUntil[path] = now + milliseconds;
+            SuppressUntil[(path, originWindowId)] = now + milliseconds;
 
             // Normally entries are evicted on the matching FS event. If that
             // event never arrives (excluded path, FSW miss, …) the map grows
@@ -131,14 +157,15 @@ internal static class ProjectWatcher
         return false;
     }
 
-    private static bool IsSuppressed(string path)
+    private static bool IsSuppressedFor(string path, Guid windowId)
     {
         lock (Lock)
         {
-            if (!SuppressUntil.TryGetValue(path, out var expiry)) return false;
+            var key = (path, windowId);
+            if (!SuppressUntil.TryGetValue(key, out var expiry)) return false;
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             if (now < expiry) return true;
-            SuppressUntil.Remove(path);
+            SuppressUntil.Remove(key);
             return false;
         }
     }
@@ -164,25 +191,25 @@ internal static class ProjectWatcher
             timer.Dispose();
         }
 
-        if (IsSuppressed(path)) return;
-
-        var window = _window;
-        if (window is null) return;
+        IInfiniFrameWindow[] windows;
+        lock (Lock) windows = [.. Subscribers];
+        if (windows.Length == 0) return;
 
         var exists = File.Exists(path) || Directory.Exists(path);
         var kind = exists ? "changed" : "deleted";
+        var payload = new FileChangedEvent { Path = path, Kind = kind };
 
-        try
+        foreach (var window in windows)
         {
-            RpcDispatcher.SendNotification(window, "fileChanged", new FileChangedEvent
+            if (IsSuppressedFor(path, window.Id)) continue;
+            try
             {
-                Path = path,
-                Kind = kind,
-            });
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[Watcher] SendNotification failed: {ex.Message}");
+                RpcDispatcher.SendNotification(window, "fileChanged", payload);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Watcher] SendNotification failed: {ex.Message}");
+            }
         }
     }
 

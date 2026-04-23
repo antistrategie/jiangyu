@@ -29,6 +29,8 @@ import {
 } from "../../lib/projectConfig.ts";
 import { isAbsolute, join, normalise } from "../../lib/path.ts";
 import { useToast } from "../../lib/toast.tsx";
+import { DEFAULT_ASSET_BROWSER_STATE, type AssetBrowserState } from "../../lib/browserState.ts";
+import { useDebouncedScrollTop } from "../../lib/useDebouncedScrollTop.ts";
 import { AudioPlayer } from "./AudioPlayer.tsx";
 import { ImageViewer } from "./ImageViewer.tsx";
 import { ModelViewer } from "./ModelViewer.tsx";
@@ -38,6 +40,8 @@ import styles from "./AssetBrowser.module.css";
 
 interface AssetBrowserProps {
   projectPath: string;
+  initialState?: AssetBrowserState | undefined;
+  onStateChange?: ((state: AssetBrowserState) => void) | undefined;
 }
 
 type KindFilter = "all" | AssetKindGroup;
@@ -50,18 +54,30 @@ const KIND_FILTERS: readonly ("all" | AssetKindGroup)[] = [
   ...(Object.keys(ASSET_KIND_GROUP_CLASSES) as AssetKindGroup[]),
 ];
 
-export function AssetBrowser({ projectPath }: AssetBrowserProps) {
+export function AssetBrowser({ projectPath, initialState, onStateChange }: AssetBrowserProps) {
   const [status, setStatus] = useState<AssetIndexStatus | null>(null);
   const [indexing, setIndexing] = useState(false);
   const [indexError, setIndexError] = useState<string | null>(null);
 
-  const [query, setQuery] = useState("");
-  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
+  // Filter / query / selection / listFraction are controlled through
+  // initialState so the parent can persist them (per pane in layout, per
+  // pane window in a descriptor). initialState is read once on mount; further
+  // updates are pushed out through onStateChange.
+  const [query, setQuery] = useState(
+    () => initialState?.query ?? DEFAULT_ASSET_BROWSER_STATE.query,
+  );
+  const [kindFilter, setKindFilter] = useState<KindFilter>(
+    () => initialState?.kindFilter ?? DEFAULT_ASSET_BROWSER_STATE.kindFilter,
+  );
   const [allAssets, setAllAssets] = useState<readonly AssetEntry[]>([]);
   const [loadingAssets, setLoadingAssets] = useState(false);
 
-  const [selection, setSelection] = useState<ReadonlySet<string>>(new Set());
-  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const [selection, setSelection] = useState<ReadonlySet<string>>(
+    () => new Set(initialState?.selection ?? []),
+  );
+  const [focusedKey, setFocusedKey] = useState<string | null>(
+    () => initialState?.focusedKey ?? DEFAULT_ASSET_BROWSER_STATE.focusedKey,
+  );
   const lastClickedRef = useRef<string | null>(null);
 
   const [projectConfig, setProjectConfig] = useState<ProjectConfig>({});
@@ -74,9 +90,33 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
   // Resizable split between list and details panels
-  const [listFraction, setListFraction] = useState(0.35);
+  const [listFraction, setListFraction] = useState(
+    () => initialState?.listFraction ?? DEFAULT_ASSET_BROWSER_STATE.listFraction,
+  );
   const [landscape, setLandscape] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
+
+  const [scrollTop, handleListScroll] = useDebouncedScrollTop(
+    initialState?.scrollTop ?? DEFAULT_ASSET_BROWSER_STATE.scrollTop,
+  );
+
+  // Emit the persisted state slice back to the parent so it can round-trip
+  // via layout / pane-window descriptor. Fires on every relevant change;
+  // parent is expected to dedupe if needed.
+  const onStateChangeRef = useRef(onStateChange);
+  useEffect(() => {
+    onStateChangeRef.current = onStateChange;
+  }, [onStateChange]);
+  useEffect(() => {
+    onStateChangeRef.current?.({
+      query,
+      kindFilter,
+      selection: Array.from(selection),
+      focusedKey,
+      listFraction,
+      scrollTop,
+    });
+  }, [query, kindFilter, selection, focusedKey, listFraction, scrollTop]);
 
   useEffect(() => {
     const el = bodyRef.current;
@@ -252,7 +292,11 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
   // Prune selection / focus when the underlying catalogue reloads. Intentionally
   // NOT gated on `results`: narrowing the filter or search should preserve the
   // user's multi-select so they can widen back without re-picking.
+  //
+  // Skip while the catalogue hasn't loaded yet — on initial mount allAssets is
+  // empty and would wipe a restored selection / focus before the data arrives.
   useEffect(() => {
+    if (allAssets.length === 0) return;
     const keys = new Set(allAssets.map(rowKey));
     setSelection((prev) => {
       if (prev.size === 0) return prev;
@@ -274,6 +318,20 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
     estimateSize: () => 28,
     overscan: 20,
   });
+
+  // Restore persisted scroll position once the list has actual rows to scroll
+  // over. Gated on results so we don't seed before the virtualiser has sized
+  // anything — otherwise scrollTop would be clamped to 0.
+  const scrollRestoredRef = useRef(false);
+  useEffect(() => {
+    if (scrollRestoredRef.current) return;
+    if (results.length === 0) return;
+    const target = initialState?.scrollTop ?? 0;
+    if (target > 0 && listScrollRef.current !== null) {
+      listScrollRef.current.scrollTop = target;
+    }
+    scrollRestoredRef.current = true;
+  }, [results, initialState]);
 
   const handleSplitDrag = useCallback(
     (e: React.MouseEvent) => {
@@ -613,7 +671,7 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
             <span>Name</span>
             <span>Type</span>
           </div>
-          <div className={styles.list} ref={listScrollRef}>
+          <div className={styles.list} ref={listScrollRef} onScroll={handleListScroll}>
             {loadingAssets ? (
               <div className={styles.detailsEmpty}>Loading index…</div>
             ) : results.length === 0 ? (

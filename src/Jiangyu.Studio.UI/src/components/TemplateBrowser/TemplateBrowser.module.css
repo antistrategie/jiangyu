@@ -476,6 +476,11 @@
   flex-direction: column;
 }
 
+.refNode {
+  display: flex;
+  flex-direction: column;
+}
+
 .refRow {
   display: flex;
   align-items: center;

@@ -26,6 +26,17 @@ import { EmptyPrompt } from "./EmptyPrompt.tsx";
 import { ResizeHandle } from "./ResizeHandle.tsx";
 import type { DropZone } from "./DropOverlay.tsx";
 import {
+  parseCrossTabPayload,
+  completeTabMove,
+  CROSS_TAB_MIME,
+} from "../../lib/crossWindowTabDrag.ts";
+import {
+  CROSS_PANE_MIME,
+  completePaneMove,
+  parseCrossPanePayload,
+} from "../../lib/crossWindowPaneDrag.ts";
+import type { AssetBrowserState, TemplateBrowserState } from "../../lib/browserState.ts";
+import {
   PANE_DRAG_MIME,
   TAB_DRAG_MIME,
   type PaneDragPayload,
@@ -67,11 +78,21 @@ interface EditorGridProps {
   ) => void;
   onResizePanes: (topId: string, topWeight: number, bottomId: string, bottomWeight: number) => void;
   onSplitWithTab: (fromPaneId: string, toPaneId: string, path: string, edge: SplitEdge) => void;
+  onSplitAtEdgeWithPath: (toPaneId: string, path: string, edge: SplitEdge) => void;
   onMovePaneToEdge: (paneId: string, targetPaneId: string, edge: SplitEdge) => void;
   onSwapPanes: (paneIdA: string, paneIdB: string) => void;
   onConvertPane: (paneId: string, kind: BrowserPaneModel["kind"]) => void;
   onSplitFromPane: (paneId: string, direction: "right" | "down") => void;
   onToggleFullscreen: (paneId: string) => void;
+  onTearOutPane: (paneId: string) => void;
+  onCrossDragStart: (ticket: { paneId: string; path: string }) => void;
+  onOpenFileInPane: (paneId: string, path: string) => void;
+  onBrowserStateChange: (paneId: string, state: AssetBrowserState | TemplateBrowserState) => void;
+  onInsertCrossWindowPane: (
+    toPaneId: string,
+    payload: ReturnType<typeof parseCrossPanePayload> & object,
+    edge: "left" | "right" | "top" | "bottom",
+  ) => void;
 }
 
 export const EditorGrid = forwardRef<EditorGridHandle, EditorGridProps>(function EditorGrid(
@@ -95,11 +116,17 @@ export const EditorGrid = forwardRef<EditorGridHandle, EditorGridProps>(function
     onResizeColumns,
     onResizePanes,
     onSplitWithTab,
+    onSplitAtEdgeWithPath,
     onMovePaneToEdge,
     onSwapPanes,
     onConvertPane,
     onSplitFromPane,
     onToggleFullscreen,
+    onTearOutPane,
+    onCrossDragStart,
+    onOpenFileInPane,
+    onBrowserStateChange,
+    onInsertCrossWindowPane,
   },
   ref,
 ) {
@@ -136,6 +163,24 @@ export const EditorGrid = forwardRef<EditorGridHandle, EditorGridProps>(function
     };
   }, [dragActive]);
 
+  // Activate the drop overlays when an external drag carrying a Jiangyu tab
+  // payload enters the window (e.g. cross-window drag from a secondary, or
+  // a sidebar file drop that bubbles up to document level). In-window drags
+  // set dragActive directly via handleDragStart; this covers cross-origin
+  // where no dragstart fires on this document.
+  useEffect(() => {
+    const onEnter = (e: DragEvent) => {
+      const types = e.dataTransfer?.types;
+      if (types === undefined) return;
+      const arr = Array.from(types);
+      if (arr.includes(CROSS_TAB_MIME) || arr.includes(CROSS_PANE_MIME)) {
+        setDragActive(true);
+      }
+    };
+    document.addEventListener("dragenter", onEnter);
+    return () => document.removeEventListener("dragenter", onEnter);
+  }, []);
+
   const handleDragStart = useCallback(() => setDragActive(true), []);
 
   const handlePaneDrop = useCallback(
@@ -168,9 +213,46 @@ export const EditorGrid = forwardRef<EditorGridHandle, EditorGridProps>(function
         } catch {
           // ignore malformed payload
         }
+        return;
+      }
+      // Cross-window PANE drag: a secondary's whole pane landing here.
+      // Centre would need a "merge into this pane" semantic that doesn't
+      // map cleanly across mixed kinds, so we coerce it to "right" — the
+      // user gets a new pane next to the target. Source window closes
+      // itself on paneMovedOut.
+      const crossPaneRaw = e.dataTransfer.getData(CROSS_PANE_MIME);
+      if (crossPaneRaw.length > 0) {
+        const payload = parseCrossPanePayload(crossPaneRaw);
+        if (payload !== null) {
+          const edge = zone === "centre" ? "right" : zone;
+          onInsertCrossWindowPane(toPaneId, payload, edge);
+          void completePaneMove().catch(() => {});
+        }
+        return;
+      }
+      // Cross-window tab drag or sidebar file drag: centre zone opens a tab
+      // in the pane, edge zones split a new pane with the file. completeTabMove
+      // is a no-op for sidebar drags (no matching beginTabMove state) and
+      // triggers close-at-source for cross-window tab drags.
+      const crossPath = parseCrossTabPayload(e.dataTransfer.getData(CROSS_TAB_MIME));
+      if (crossPath !== null) {
+        if (zone === "centre") {
+          onOpenFileInPane(toPaneId, crossPath);
+        } else {
+          onSplitAtEdgeWithPath(toPaneId, crossPath, zone);
+        }
+        void completeTabMove(crossPath).catch(() => {});
       }
     },
-    [onMoveTab, onSplitWithTab, onMovePaneToEdge, onSwapPanes],
+    [
+      onMoveTab,
+      onSplitWithTab,
+      onMovePaneToEdge,
+      onSwapPanes,
+      onOpenFileInPane,
+      onSplitAtEdgeWithPath,
+      onInsertCrossWindowPane,
+    ],
   );
 
   const activeCodePane = getActiveCodePane(layout);
@@ -545,6 +627,7 @@ export const EditorGrid = forwardRef<EditorGridHandle, EditorGridProps>(function
                     onSplitFromPane={onSplitFromPane}
                     onClosePane={onClosePane}
                     onToggleFullscreen={onToggleFullscreen}
+                    onTearOutPane={onTearOutPane}
                     projectPath={projectPath}
                     dirtyFiles={dirtyFiles}
                     contents={contents}
@@ -558,6 +641,8 @@ export const EditorGrid = forwardRef<EditorGridHandle, EditorGridProps>(function
                     onSave={handleSave}
                     onReload={handleReload}
                     onDismissConflict={clearConflict}
+                    onCrossDragStart={onCrossDragStart}
+                    onOpenFileInPane={onOpenFileInPane}
                   />
                 ) : (
                   <BrowserPane
@@ -576,9 +661,11 @@ export const EditorGrid = forwardRef<EditorGridHandle, EditorGridProps>(function
                     onPaneDrop={handlePaneDrop}
                     onSplitFromPane={onSplitFromPane}
                     onToggleFullscreen={onToggleFullscreen}
+                    onTearOutPane={onTearOutPane}
                     onOpenFile={onOpenFile}
                     onAppendToFile={onAppendToFile}
                     onRefreshFiles={onRefreshFiles}
+                    onBrowserStateChange={onBrowserStateChange}
                   />
                 );
               if (pi === 0) return <Fragment key={pane.id}>{paneNode}</Fragment>;

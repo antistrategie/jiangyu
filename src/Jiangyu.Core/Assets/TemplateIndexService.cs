@@ -247,7 +247,7 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
 
             if (collector.Edges.Count > 0)
             {
-                instance.References = collector.Edges
+                instance.References = [.. collector.Edges
                     .Select(e => new TemplateEdge
                     {
                         FieldName = e.FieldPath,
@@ -256,8 +256,7 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
                             Collection = e.TargetCollection,
                             PathId = e.TargetPathId,
                         },
-                    })
-                    .ToList();
+                    })];
             }
         }
 

@@ -1,19 +1,23 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Maximize2, Minimize2, SplitSquareHorizontal, SplitSquareVertical, X } from "lucide-react";
-import Editor, { type OnChange, type OnMount } from "@monaco-editor/react";
+import { useCallback, useState } from "react";
+import { ExternalLink, Maximize2, Minimize2, SplitSquareHorizontal, X } from "lucide-react";
 import type { editor as monacoEditor } from "monaco-editor";
-import { buildJiangyuTheme } from "./jiangyuTheme.ts";
-import { registerKdlLanguage } from "./kdlLanguage.ts";
 import { ContextMenu, type ContextMenuEntry } from "../ContextMenu/ContextMenu.tsx";
+import { TabbedMonacoEditor } from "../CodeEditor/TabbedMonacoEditor.tsx";
 import { buildTabMenu } from "./tabMenu.ts";
-import { getLanguage, isBinaryFile } from "./fileTypes.ts";
 import type { CodePane } from "../../lib/layout.ts";
 import type { FileChangeKind } from "../../lib/rpc.ts";
-import { useEditorFontSize, useEditorKeybindMode, useEditorWordWrap } from "../../lib/settings.ts";
 import { DropOverlay, type DropZone } from "./DropOverlay.tsx";
 import { EmptyPrompt } from "./EmptyPrompt.tsx";
 import type { BrowserPane as BrowserPaneModel } from "../../lib/layout.ts";
 import { PANE_DRAG_MIME, TAB_DRAG_MIME, type TabDragPayload } from "./tabDrag.ts";
+import {
+  CROSS_TAB_MIME,
+  beginTabMove,
+  completeTabMove,
+  encodeCrossTabPayload,
+  parseCrossTabPayload,
+} from "../../lib/crossWindowTabDrag.ts";
+import { CROSS_PANE_MIME } from "../../lib/crossWindowPaneDrag.ts";
 import styles from "./EditorArea.module.css";
 
 function getSelectedText(editor: monacoEditor.IStandaloneCodeEditor): string {
@@ -103,6 +107,11 @@ function buildEditorMenu(editor: monacoEditor.IStandaloneCodeEditor): ContextMen
   return items;
 }
 
+export interface CrossDragTicket {
+  readonly paneId: string;
+  readonly path: string;
+}
+
 interface EditorPaneProps {
   pane: CodePane;
   isActive: boolean;
@@ -117,6 +126,7 @@ interface EditorPaneProps {
   onSplitFromPane: (paneId: string, direction: "right" | "down") => void;
   onClosePane: (paneId: string) => void;
   onToggleFullscreen: (paneId: string) => void;
+  onTearOutPane: (paneId: string) => void;
   projectPath: string;
   dirtyFiles: Set<string>;
   contents: ReadonlyMap<string, string>;
@@ -130,6 +140,8 @@ interface EditorPaneProps {
   onSave: (path: string) => Promise<void> | void;
   onReload: (path: string) => Promise<void> | void;
   onDismissConflict: (path: string) => void;
+  onCrossDragStart: (ticket: CrossDragTicket) => void;
+  onOpenFileInPane: (paneId: string, path: string) => void;
 }
 
 export function EditorPane({
@@ -146,6 +158,7 @@ export function EditorPane({
   onSplitFromPane,
   onClosePane,
   onToggleFullscreen,
+  onTearOutPane,
   projectPath,
   dirtyFiles,
   contents,
@@ -159,337 +172,191 @@ export function EditorPane({
   onSave,
   onReload,
   onDismissConflict,
+  onCrossDragStart,
+  onOpenFileInPane,
 }: EditorPaneProps) {
-  const [editor, setEditor] = useState<monacoEditor.IStandaloneCodeEditor | null>(null);
-  const [editorMenu, setEditorMenu] = useState<{ x: number; y: number } | null>(null);
-  const [tabMenu, setTabMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+  const [splitMenu, setSplitMenu] = useState<{ x: number; y: number } | null>(null);
   const [tabbarDropHover, setTabbarDropHover] = useState(false);
-  const themeRegistered = useRef(false);
-  const [fontSize] = useEditorFontSize();
-  const [wordWrap] = useEditorWordWrap();
-  const [keybindMode] = useEditorKeybindMode();
-  const vimStatusRef = useRef<HTMLDivElement>(null);
-  const activeTabRef = useRef<HTMLButtonElement>(null);
-
-  // monaco-vim attaches keybindings to the Monaco instance and, optionally,
-  // renders mode / command-buffer text into a status bar element. Lazy-import
-  // it so the ~40KB bundle only loads for users who opt into vim mode.
-  useEffect(() => {
-    if (editor === null || keybindMode !== "vim") return;
-    let adapter: { dispose: () => void } | null = null;
-    let cancelled = false;
-    void import("monaco-vim").then(({ initVimMode, VimMode }) => {
-      if (cancelled) return;
-      (VimMode.commands as Record<string, unknown>).save = () => {
-        const path = activeFileRef.current;
-        if (path !== null) void onSaveRef.current(path);
-      };
-      adapter = initVimMode(editor, vimStatusRef.current);
-    });
-    return () => {
-      cancelled = true;
-      adapter?.dispose();
-    };
-  }, [editor, keybindMode]);
 
   const activeFile = pane.activeTab;
-
-  // Monaco's `onMount` fires once per editor instance, so anything registered
-  // in there (Ctrl+S command) captures the `pane.activeTab` value from that
-  // first mount and never re-reads it. Tab-switches within the pane must read
-  // the *current* active tab, so we route through a ref.
-  const activeFileRef = useRef(activeFile);
-  useEffect(() => {
-    activeFileRef.current = activeFile;
-  }, [activeFile]);
-  // Scroll the active tab into view when the active file changes.
-  useEffect(() => {
-    activeTabRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [activeFile]);
-  const onSaveRef = useRef(onSave);
-  useEffect(() => {
-    onSaveRef.current = onSave;
-  }, [onSave]);
   const activeContent = activeFile !== null ? contents.get(activeFile) : undefined;
   const activeConflict = activeFile !== null ? (conflicts.get(activeFile) ?? null) : null;
-  const isBinary = activeFile !== null ? isBinaryFile(activeFile) : false;
-  const isLoading = activeFile !== null && !isBinary && activeContent === undefined;
 
-  const handleMount: OnMount = useCallback(
-    (editor, monaco) => {
-      setEditor(editor);
+  const handleEditorMount = useCallback(
+    (editor: monacoEditor.IStandaloneCodeEditor) => {
       onEditorMount(pane.id, editor);
-      if (!themeRegistered.current) {
-        monaco.editor.defineTheme("jiangyu", buildJiangyuTheme());
-        registerKdlLanguage(monaco);
-        themeRegistered.current = true;
-      }
-      monaco.editor.setTheme("jiangyu");
-      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-        const path = activeFileRef.current;
-        if (path !== null) void onSaveRef.current(path);
-      });
-      editor.onDidFocusEditorWidget(() => {
-        onSetActive(pane.id);
-      });
-      editor.onDidDispose(() => setEditor(null));
     },
-    [pane.id, onEditorMount, onSetActive],
+    [pane.id, onEditorMount],
   );
 
-  const handleChange: OnChange = useCallback(
-    (value) => {
-      if (value === undefined || activeFile === null) return;
-      onContentChange(activeFile, value);
+  const handleTabDragStart = useCallback(
+    (e: React.DragEvent<HTMLButtonElement>, path: string) => {
+      const payload: TabDragPayload = { fromPaneId: pane.id, path };
+      e.dataTransfer.setData(TAB_DRAG_MIME, JSON.stringify(payload));
+      // Also set a text/plain payload so cross-window drops (into another
+      // Jiangyu window) can read it — custom mimetypes don't always bridge.
+      e.dataTransfer.setData(CROSS_TAB_MIME, encodeCrossTabPayload(path));
+      e.dataTransfer.effectAllowed = "move";
+      onTabDragStart();
+      onCrossDragStart({ paneId: pane.id, path });
+      void beginTabMove(path).catch(() => {});
     },
-    [activeFile, onContentChange],
+    [pane.id, onTabDragStart, onCrossDragStart],
   );
 
-  const handleTabDragStart = (e: React.DragEvent, path: string) => {
-    const payload: TabDragPayload = { fromPaneId: pane.id, path };
-    e.dataTransfer.setData(TAB_DRAG_MIME, JSON.stringify(payload));
-    e.dataTransfer.effectAllowed = "move";
-    onTabDragStart();
-  };
+  const handleTabbarDragStart = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.dataTransfer.setData(PANE_DRAG_MIME, JSON.stringify({ paneId: pane.id }));
+      e.dataTransfer.effectAllowed = "move";
+      onPaneDragStart();
+    },
+    [pane.id, onPaneDragStart],
+  );
 
-  const handleTabbarDragStart = (e: React.DragEvent) => {
-    e.dataTransfer.setData(PANE_DRAG_MIME, JSON.stringify({ paneId: pane.id }));
-    e.dataTransfer.effectAllowed = "move";
-    onPaneDragStart();
-  };
-
-  const handleTabbarDragOver = (e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return;
+  const handleTabbarDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    const accepts =
+      e.dataTransfer.types.includes(TAB_DRAG_MIME) || e.dataTransfer.types.includes(CROSS_TAB_MIME);
+    if (!accepts) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     setTabbarDropHover(true);
-  };
+  }, []);
 
-  const handleTabbarDragLeave = () => setTabbarDropHover(false);
+  const handleTabbarDragLeave = useCallback(() => setTabbarDropHover(false), []);
 
-  // Font family and padding come from design tokens (no user-visible control).
-  // Font size and word wrap come from settings so they live on re-renders, and
-  // @monaco-editor/react forwards options changes into `editor.updateOptions`.
-  const editorOptions = useMemo<monacoEditor.IStandaloneEditorConstructionOptions>(() => {
-    const root = getComputedStyle(document.documentElement);
-    const fontFamily =
-      root.getPropertyValue("--font-mono").trim() || "'JetBrains Mono', ui-monospace, monospace";
-    const padding = parseInt(root.getPropertyValue("--space-2").trim(), 10) || 8;
-    return {
-      automaticLayout: true,
-      minimap: { enabled: false },
-      fontSize,
-      fontFamily,
-      lineNumbers: "on",
-      scrollBeyondLastLine: false,
-      wordWrap,
-      renderLineHighlight: "gutter",
-      guides: { indentation: true, bracketPairs: true },
-      bracketPairColorization: { enabled: true },
-      padding: { top: padding },
-      contextmenu: false,
-    };
-  }, [fontSize, wordWrap]);
+  const handleTabbarDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      setTabbarDropHover(false);
+      // Prefer the in-window payload when present — richer, knows fromPaneId,
+      // and avoids a host round-trip.
+      const inWindow = e.dataTransfer.getData(TAB_DRAG_MIME);
+      if (inWindow.length > 0) {
+        e.preventDefault();
+        try {
+          const { fromPaneId, path } = JSON.parse(inWindow) as TabDragPayload;
+          if (fromPaneId === pane.id) return;
+          onMoveTab(fromPaneId, pane.id, path);
+        } catch {
+          /* malformed — ignore */
+        }
+        return;
+      }
+      // Cross-window fallback: open the file in this pane and tell the host
+      // so the source window can close its tab.
+      const crossPath = parseCrossTabPayload(e.dataTransfer.getData(CROSS_TAB_MIME));
+      if (crossPath === null) return;
+      e.preventDefault();
+      onOpenFileInPane(pane.id, crossPath);
+      void completeTabMove(crossPath).catch(() => {});
+    },
+    [pane.id, onMoveTab, onOpenFileInPane],
+  );
 
-  const handleTabbarDrop = (e: React.DragEvent) => {
-    setTabbarDropHover(false);
-    const raw = e.dataTransfer.getData(TAB_DRAG_MIME);
-    if (raw.length === 0) return;
-    e.preventDefault();
-    try {
-      const { fromPaneId, path } = JSON.parse(raw) as TabDragPayload;
-      if (fromPaneId === pane.id) return;
-      onMoveTab(fromPaneId, pane.id, path);
-    } catch {
-      // Malformed payload — ignore.
-    }
-  };
+  const handleClosePaneDirect = useCallback(() => onClosePane(pane.id), [onClosePane, pane.id]);
+
+  const toolbar = (
+    <>
+      <button
+        type="button"
+        className={styles.tabbarButton}
+        onClick={(e) => {
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          setSplitMenu({ x: rect.left, y: rect.bottom });
+        }}
+        title="Split pane"
+      >
+        <SplitSquareHorizontal size={12} />
+      </button>
+      <button
+        type="button"
+        className={styles.tabbarButton}
+        onClick={() => onTearOutPane(pane.id)}
+        title="Move pane to new window"
+      >
+        <ExternalLink size={12} />
+      </button>
+      <button
+        type="button"
+        className={styles.tabbarButton}
+        onClick={() => onToggleFullscreen(pane.id)}
+        title={isFullscreen ? "Exit fullscreen (Esc)" : "Fullscreen pane"}
+      >
+        {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+      </button>
+      <button
+        type="button"
+        className={styles.tabbarButton}
+        onClick={handleClosePaneDirect}
+        title="Close pane"
+      >
+        <X size={12} />
+      </button>
+    </>
+  );
 
   return (
-    <div
-      ref={(el) => registerEl(pane.id, el)}
-      className={`${styles.editor} ${isActive ? styles.editorActive : ""} ${isFullscreen ? styles.editorFullscreen : ""}`}
-      style={{ flex }}
-      onMouseDown={() => {
-        if (!isActive) onSetActive(pane.id);
-      }}
-    >
-      <div className={`${styles.tabbar} ${tabbarDropHover ? styles.tabbarDrop : ""}`}>
-        <div
-          className={styles.tabScroll}
-          onWheel={(e) => {
-            if (e.deltaY === 0) return;
-            e.currentTarget.scrollLeft += e.deltaY;
-          }}
-          onDragOver={handleTabbarDragOver}
-          onDragLeave={handleTabbarDragLeave}
-          onDrop={handleTabbarDrop}
-        >
-          {pane.tabs.map((tab) => (
-            <button
-              key={tab.path}
-              ref={tab.path === activeFile ? activeTabRef : undefined}
-              className={`${styles.tab} ${tab.path === activeFile ? styles.tabActive : ""}`}
-              type="button"
-              draggable
-              onDragStart={(e) => handleTabDragStart(e, tab.path)}
-              onClick={() => onSelectTab(pane.id, tab.path)}
-              onAuxClick={(e) => {
-                if (e.button !== 1) return;
-                e.preventDefault();
-                onCloseTabs(pane.id, [tab.path]);
-              }}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setTabMenu({ x: e.clientX, y: e.clientY, path: tab.path });
-              }}
-            >
-              <span className={styles.tabName}>{tab.name}</span>
-              {dirtyFiles.has(tab.path) && <span className={styles.tabDirty}>●</span>}
-              <span
-                className={styles.tabClose}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCloseTabs(pane.id, [tab.path]);
-                }}
-              >
-                <X size={10} />
-              </span>
-            </button>
-          ))}
-          <div
-            className={styles.tabFill}
-            draggable
-            onDragStart={handleTabbarDragStart}
-            title="Drag to move pane"
+    <>
+      <TabbedMonacoEditor
+        tabs={pane.tabs}
+        activePath={activeFile}
+        activeContent={activeContent}
+        activeConflict={activeConflict}
+        dirtyFiles={dirtyFiles}
+        onSelectTab={(path) => onSelectTab(pane.id, path)}
+        onCloseTab={(path) => onCloseTabs(pane.id, [path])}
+        onActiveContentChange={(value) => {
+          if (activeFile !== null) onContentChange(activeFile, value);
+        }}
+        onSave={() => {
+          if (activeFile !== null) void onSave(activeFile);
+        }}
+        onReload={() => {
+          if (activeFile !== null) void onReload(activeFile);
+        }}
+        onDismissConflict={() => {
+          if (activeFile !== null) onDismissConflict(activeFile);
+        }}
+        onEditorMount={handleEditorMount}
+        onEditorFocus={() => onSetActive(pane.id)}
+        toolbar={toolbar}
+        onTabbarDragStart={handleTabbarDragStart}
+        tabDrag={{
+          onTabDragStart: handleTabDragStart,
+          onTabbarDragOver: handleTabbarDragOver,
+          onTabbarDragLeave: handleTabbarDragLeave,
+          onTabbarDrop: handleTabbarDrop,
+          dropHover: tabbarDropHover,
+        }}
+        buildTabContextMenu={(path) =>
+          buildTabMenu(path, pane.tabs, projectPath, (paths) => onCloseTabs(pane.id, paths))
+        }
+        buildEditorContextMenu={buildEditorMenu}
+        dropOverlay={
+          <DropOverlay
+            active={dragActive}
+            acceptedMimes={[TAB_DRAG_MIME, PANE_DRAG_MIME, CROSS_TAB_MIME, CROSS_PANE_MIME]}
+            onDrop={(zone, e) => onPaneDrop(pane.id, zone, e)}
           />
-        </div>
-        <div className={styles.tabActions}>
-          <button
-            type="button"
-            className={styles.tabbarButton}
-            onClick={() => onSplitFromPane(pane.id, "right")}
-            title="Split right"
-          >
-            <SplitSquareHorizontal size={12} />
-          </button>
-          <button
-            type="button"
-            className={styles.tabbarButton}
-            onClick={() => onSplitFromPane(pane.id, "down")}
-            title="Split down"
-          >
-            <SplitSquareVertical size={12} />
-          </button>
-          <button
-            type="button"
-            className={styles.tabbarButton}
-            onClick={() => onToggleFullscreen(pane.id)}
-            title={isFullscreen ? "Exit fullscreen (Esc)" : "Fullscreen pane"}
-          >
-            {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
-          </button>
-          <button
-            type="button"
-            className={styles.tabbarButton}
-            onClick={() => onClosePane(pane.id)}
-            title="Close pane"
-          >
-            <X size={12} />
-          </button>
-        </div>
-      </div>
-      {activeConflict !== null && activeFile !== null && (
-        <div className={styles.banner}>
-          {activeConflict === "deleted" ? (
-            <>
-              <span className={styles.bannerText}>This file was deleted or moved on disk.</span>
-              <button
-                type="button"
-                className={styles.bannerAction}
-                onClick={() => onCloseTabs(pane.id, [activeFile])}
-              >
-                Close tab
-              </button>
-            </>
-          ) : (
-            <>
-              <span className={styles.bannerText}>This file has changed on disk.</span>
-              <button
-                type="button"
-                className={styles.bannerAction}
-                onClick={() => void onReload(activeFile)}
-              >
-                Reload
-              </button>
-              <button
-                type="button"
-                className={styles.bannerActionMuted}
-                onClick={() => onDismissConflict(activeFile)}
-              >
-                Keep mine
-              </button>
-            </>
-          )}
-        </div>
-      )}
-      <div className={styles.content}>
-        {activeFile === null ? (
-          <EmptyPrompt onOpenBrowser={(kind) => onConvertPane(pane.id, kind)} />
-        ) : isLoading ? (
-          <p className={styles.empty}>Loading…</p>
-        ) : isBinary ? (
-          <p className={styles.empty}>Binary file — cannot display</p>
-        ) : activeContent !== undefined ? (
-          <div
-            className={styles.editorHost}
-            onContextMenu={(e) => {
-              if (!editor) return;
-              e.preventDefault();
-              setEditorMenu({ x: e.clientX, y: e.clientY });
-            }}
-          >
-            <div className={styles.editorInner}>
-              <Editor
-                path={activeFile}
-                value={activeContent}
-                language={getLanguage(activeFile)}
-                theme="vs"
-                loading=""
-                onMount={handleMount}
-                onChange={handleChange}
-                options={editorOptions}
-              />
-            </div>
-            {keybindMode === "vim" && <div ref={vimStatusRef} className={styles.vimStatus} />}
-          </div>
-        ) : (
-          <p className={styles.empty}>Unable to read file</p>
-        )}
-        <DropOverlay
-          active={dragActive}
-          acceptedMimes={[TAB_DRAG_MIME, PANE_DRAG_MIME]}
-          onDrop={(zone, e) => onPaneDrop(pane.id, zone, e)}
-        />
-      </div>
-      {editorMenu && editor && (
+        }
+        emptyState={<EmptyPrompt onOpenBrowser={(kind) => onConvertPane(pane.id, kind)} />}
+        className={`${isActive ? styles.editorActive : ""} ${isFullscreen ? styles.editorFullscreen : ""}`.trim()}
+        style={{ flex }}
+        containerRef={(el) => registerEl(pane.id, el)}
+        onMouseDown={() => {
+          if (!isActive) onSetActive(pane.id);
+        }}
+      />
+      {splitMenu && (
         <ContextMenu
-          x={editorMenu.x}
-          y={editorMenu.y}
-          items={buildEditorMenu(editor)}
-          onClose={() => setEditorMenu(null)}
+          x={splitMenu.x}
+          y={splitMenu.y}
+          items={[
+            { label: "Split right", onSelect: () => onSplitFromPane(pane.id, "right") },
+            { label: "Split down", onSelect: () => onSplitFromPane(pane.id, "down") },
+          ]}
+          onClose={() => setSplitMenu(null)}
         />
       )}
-      {tabMenu && (
-        <ContextMenu
-          x={tabMenu.x}
-          y={tabMenu.y}
-          items={buildTabMenu(tabMenu.path, pane.tabs, projectPath, (paths) =>
-            onCloseTabs(pane.id, paths),
-          )}
-          onClose={() => setTabMenu(null)}
-        />
-      )}
-    </div>
+    </>
   );
 }

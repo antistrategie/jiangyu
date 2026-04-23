@@ -5,7 +5,6 @@ using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Compile;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
-using Jiangyu.Core.Templates;
 
 namespace Jiangyu.Studio.Host;
 
@@ -76,6 +75,10 @@ public static partial class RpcDispatcher
             ? Directory.EnumerateFiles(dir, searchPattern, SearchOption.AllDirectories).Count()
             : 0;
 
+    // Heuristic line counter. Good enough for the compile status badge — not
+    // a parser. Skips leading whitespace, `//` comments, and `/-` slashdash,
+    // and requires whitespace or `{` after the node name so `patchwork`
+    // doesn't match `patch`. Still misses multiple nodes on one line.
     private static int CountKdlNodes(string dir, string nodeType)
     {
         if (!Directory.Exists(dir)) return 0;
@@ -84,8 +87,14 @@ public static partial class RpcDispatcher
         {
             foreach (var line in File.ReadLines(file))
             {
-                if (KdlHeuristics.IsNodeHeader(line, nodeType))
-                    count++;
+                var trimmed = line.AsSpan().TrimStart();
+                if (trimmed.Length == 0) continue;
+                if (trimmed.StartsWith("//", StringComparison.Ordinal)) continue;
+                if (trimmed.StartsWith("/-", StringComparison.Ordinal)) continue;
+                if (!trimmed.StartsWith(nodeType, StringComparison.Ordinal)) continue;
+                if (trimmed.Length == nodeType.Length) continue;
+                var tail = trimmed[nodeType.Length];
+                if (char.IsWhiteSpace(tail) || tail == '{') count++;
             }
         }
         return count;

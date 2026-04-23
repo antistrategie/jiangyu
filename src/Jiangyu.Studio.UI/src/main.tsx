@@ -1,10 +1,12 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
+import { PaneWindow } from "./components/PaneWindow/PaneWindow.tsx";
 import { ActionRegistryProvider } from "./lib/actions.tsx";
 import { ToastProvider } from "./lib/toast.tsx";
 import { ToastContainer } from "./components/Toast/Toast.tsx";
 import { initRpc } from "./lib/rpc.ts";
+import { getWindowParams } from "./lib/windowRole.ts";
 import "./styles/global.css";
 
 // Monaco editor web worker setup for Vite
@@ -29,13 +31,28 @@ initRpc();
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root element");
 
+const params = getWindowParams();
+
 createRoot(root).render(
   <StrictMode>
-    <ActionRegistryProvider>
+    {params.role === "pane" ? (
       <ToastProvider>
-        <App />
+        <PaneWindow
+          paneKind={params.paneKind}
+          projectPath={params.projectPath}
+          filePaths={params.filePaths}
+          activeFilePath={params.activeFilePath}
+          browserState={params.browserState}
+        />
         <ToastContainer />
       </ToastProvider>
-    </ActionRegistryProvider>
+    ) : (
+      <ActionRegistryProvider>
+        <ToastProvider>
+          <App />
+          <ToastContainer />
+        </ToastProvider>
+      </ActionRegistryProvider>
+    )}
   </StrictMode>,
 );

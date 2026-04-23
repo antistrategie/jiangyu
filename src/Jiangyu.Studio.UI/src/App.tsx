@@ -19,10 +19,18 @@ import {
 } from "./lib/actions.tsx";
 import { buildProjectActions } from "./lib/appActions.ts";
 import { loadRecentProjects, recordRecentProject } from "./lib/recentProjects.ts";
+import {
+  loadPaneWindows,
+  savePaneWindows,
+  type PaneWindowDescriptor,
+} from "./lib/paneWindowStore.ts";
+import type { AssetBrowserState, TemplateBrowserState } from "./lib/browserState.ts";
+import type { CrossPanePayload } from "./lib/crossWindowPaneDrag.ts";
 import { matchBinding, type KeyBinding } from "./lib/shortcuts.ts";
 import {
   BROWSER_KIND_META,
   EMPTY_LAYOUT,
+  insertCrossWindowPane as insertCrossWindowPaneInLayout,
   closePane as closePaneInLayout,
   closeTabs,
   closeTabsEverywhere,
@@ -42,6 +50,8 @@ import {
   setActivePane as setActivePaneInLayout,
   setColumnWeight,
   setPaneWeight,
+  setBrowserPaneState,
+  splitAtEdgeWithPath as splitAtEdgeWithPathInLayout,
   splitDown,
   splitRight,
   splitWithTab as splitWithTabInLayout,
@@ -70,6 +80,30 @@ export function App() {
   const lastCodePathRef = useRef<string | null>(null);
   const refreshFilesRef = useRef<() => void>(() => {});
 
+  // windowId → descriptor for currently-open pane windows. Persisted copy
+  // lives in localStorage (keyed by projectPath) so reopening the project
+  // re-spawns them. This map is the in-memory index used to drop an entry
+  // when a secondary closes mid-session.
+  const paneWindowsRef = useRef<Map<string, PaneWindowDescriptor>>(new Map());
+
+  const persistPaneWindowsRef = useRef<() => void>(() => {});
+
+  const openPaneWindow = useCallback(async (desc: PaneWindowDescriptor) => {
+    try {
+      const result = await rpcCall<{ windowId: string }>("openPaneWindow", {
+        kind: desc.kind,
+        filePaths: desc.filePaths,
+        activeFilePath: desc.activeFilePath,
+        browserState: desc.browserState,
+      });
+      if (result.windowId.length === 0) return;
+      paneWindowsRef.current.set(result.windowId, desc);
+      persistPaneWindowsRef.current();
+    } catch (err) {
+      console.error("[App] openPaneWindow failed:", err);
+    }
+  }, []);
+
   const revealFile = useCallback((path: string) => {
     revealTickRef.current += 1;
     setRevealRequest({ path, tick: revealTickRef.current });
@@ -83,6 +117,24 @@ export function App() {
     },
     [revealFile],
   );
+
+  // Open a file directly into a specific pane. Used when a cross-window tab
+  // drop lands on a particular pane's tab bar — we want the file to open
+  // there, not in whatever pane happens to be active.
+  const handleOpenFileInPane = useCallback((paneId: string, path: string) => {
+    setLayout((prev) => openFileInLayout(prev, path, paneId));
+    lastCodePathRef.current = path;
+  }, []);
+
+  // Tracks the (paneId, path) pair that initiated a cross-window tab drag,
+  // so when the host fires tabMovedOut we know which pane to close the tab
+  // from. Cleared ONLY by the tabMovedOut subscriber — dragend is synchronous
+  // and can beat the notification, so clearing on dragend races a successful
+  // drop and makes the close silently no-op.
+  const crossDragTicketRef = useRef<{ paneId: string; path: string } | null>(null);
+  const handleCrossDragStart = useCallback((ticket: { paneId: string; path: string }) => {
+    crossDragTicketRef.current = ticket;
+  }, []);
 
   const handleSelectTab = useCallback(
     (paneId: string, path: string) => {
@@ -124,6 +176,30 @@ export function App() {
     refreshFilesRef.current();
   }, []);
 
+  const handleTearOutPane = useCallback(
+    (paneId: string) => {
+      const pane = findPane(layoutRef.current, paneId);
+      if (pane === null) return;
+      if (pane.kind === "code") {
+        if (pane.tabs.length === 0) return;
+        void openPaneWindow({
+          kind: "code",
+          filePaths: pane.tabs.map((t) => t.path),
+          activeFilePath: pane.activeTab,
+        });
+      } else {
+        void openPaneWindow({
+          kind: pane.kind,
+          filePaths: [],
+          activeFilePath: null,
+          browserState: pane.state,
+        });
+      }
+      setLayout((prev) => closePaneInLayout(prev, paneId));
+    },
+    [openPaneWindow],
+  );
+
   const handleSplitRight = useCallback((kind: PaneKind = "code") => {
     setLayout((prev) => splitRight(prev, kind));
   }, []);
@@ -159,6 +235,37 @@ export function App() {
   const handleSplitWithTab = useCallback(
     (fromPaneId: string, toPaneId: string, path: string, edge: SplitEdge) => {
       setLayout((prev) => splitWithTabInLayout(prev, fromPaneId, toPaneId, path, edge));
+    },
+    [],
+  );
+
+  const handleSplitAtEdgeWithPath = useCallback(
+    (toPaneId: string, path: string, edge: SplitEdge) => {
+      setLayout((prev) => splitAtEdgeWithPathInLayout(prev, toPaneId, path, edge));
+    },
+    [],
+  );
+
+  const handleBrowserStateChange = useCallback(
+    (paneId: string, state: AssetBrowserState | TemplateBrowserState) => {
+      setLayout((prev) => setBrowserPaneState(prev, paneId, state));
+    },
+    [],
+  );
+
+  const handleInsertCrossWindowPane = useCallback(
+    (toPaneId: string, payload: CrossPanePayload, edge: "left" | "right" | "top" | "bottom") => {
+      setLayout((prev) =>
+        insertCrossWindowPaneInLayout(
+          prev,
+          toPaneId,
+          payload.kind,
+          (payload.filePaths ?? []).map((p) => ({ path: p })),
+          payload.activeFilePath ?? null,
+          payload.browserState,
+          edge,
+        ),
+      );
     },
     [],
   );
@@ -237,11 +344,15 @@ export function App() {
   }, [openPaths]);
 
   const closeProject = useCallback(() => {
+    void rpcCall<null>("closeAllPaneWindows").catch(() => {});
+    paneWindowsRef.current.clear();
     setLayout(EMPTY_LAYOUT);
     setProjectPath(null);
   }, []);
 
   const switchProject = useCallback((path: string) => {
+    void rpcCall<null>("closeAllPaneWindows").catch(() => {});
+    paneWindowsRef.current.clear();
     setLayout(EMPTY_LAYOUT);
     setProjectPath(path);
     setRecentProjects(recordRecentProject(path));
@@ -330,6 +441,75 @@ export function App() {
     setRecentProjects(loadRecentProjects());
   }, []);
 
+  // Drop descriptors from the restore list when a secondary is closed mid-
+  // session. Bulk project-close fires paneWindowClosed with silent=true on
+  // the host, so storage is preserved across project reopens.
+  useEffect(() => {
+    return subscribe<{ windowId: string }>("paneWindowClosed", ({ windowId }) => {
+      if (!paneWindowsRef.current.delete(windowId)) return;
+      persistPaneWindowsRef.current();
+    });
+  }, []);
+
+  // Refresh the stored descriptor when a secondary reports a tab change.
+  // Missing entry (e.g. restore raced with an update) → add it.
+  useEffect(() => {
+    return subscribe<{
+      windowId: string;
+      filePaths: readonly string[];
+      activeFilePath: string | null;
+    }>("paneWindowTabsChanged", ({ windowId, filePaths, activeFilePath }) => {
+      const existing = paneWindowsRef.current.get(windowId);
+      paneWindowsRef.current.set(windowId, {
+        kind: existing?.kind ?? "code",
+        filePaths,
+        activeFilePath,
+        browserState: existing?.browserState,
+      });
+      persistPaneWindowsRef.current();
+    });
+  }, []);
+
+  useEffect(() => {
+    return subscribe<{
+      windowId: string;
+      state: AssetBrowserState | TemplateBrowserState;
+    }>("paneWindowBrowserStateChanged", ({ windowId, state }) => {
+      const existing = paneWindowsRef.current.get(windowId);
+      if (existing === undefined) return;
+      paneWindowsRef.current.set(windowId, { ...existing, browserState: state });
+      persistPaneWindowsRef.current();
+    });
+  }, []);
+
+  // When our cross-window drag is consumed elsewhere, the host echoes a
+  // tabMovedOut notification with the path. Close the source tab in the
+  // pane that started the drag (captured in the ref at dragstart).
+  useEffect(() => {
+    return subscribe<{ path: string }>("tabMovedOut", ({ path }) => {
+      const ticket = crossDragTicketRef.current;
+      if (ticket === null || ticket.path !== path) return;
+      crossDragTicketRef.current = null;
+      handleCloseTabsInPane(ticket.paneId, [path]);
+    });
+  }, [handleCloseTabsInPane]);
+
+  // Restore pane windows stored against a project whenever it becomes the
+  // active project. The in-memory map only tracks windows we spawned this
+  // session, so a stale entry from a previous session is harmless — the
+  // restored spawn overwrites it with a fresh windowId.
+  useEffect(() => {
+    if (projectPath === null) return;
+    const stored = loadPaneWindows(projectPath);
+    if (stored.length === 0) return;
+    paneWindowsRef.current.clear();
+    void (async () => {
+      for (const desc of stored) {
+        await openPaneWindow(desc);
+      }
+    })();
+  }, [projectPath, openPaneWindow]);
+
   // Latest values read inside the keyboard handler without re-binding on every change.
   const layoutRef = useRef(layout);
   useEffect(() => {
@@ -340,6 +520,15 @@ export function App() {
   useEffect(() => {
     projectPathRef.current = projectPath;
   }, [projectPath]);
+
+  useEffect(() => {
+    persistPaneWindowsRef.current = () => {
+      const root = projectPathRef.current;
+      if (root === null) return;
+      savePaneWindows(root, Array.from(paneWindowsRef.current.values()));
+    };
+  }, []);
+
   const compileStateRef = useRef(compileState);
   useEffect(() => {
     compileStateRef.current = compileState;
@@ -445,6 +634,16 @@ export function App() {
         kbd: "Ctrl+Shift+W",
         run: () => handleClosePane(active),
       });
+      actions.push({
+        id: "view.tearOutActivePane",
+        label: "Move active pane to new window",
+        scope: PALETTE_SCOPE.View,
+        run: () => {
+          const pane = getActivePane(layoutRef.current);
+          if (pane === null) return;
+          handleTearOutPane(pane.id);
+        },
+      });
     }
     if (paneIds.length > 1 && active !== null) {
       const idx = paneIds.indexOf(active);
@@ -473,6 +672,7 @@ export function App() {
     handleSplitRight,
     handleSplitDown,
     handleClosePane,
+    handleTearOutPane,
     handleSetActivePane,
   ]);
 
@@ -639,11 +839,17 @@ export function App() {
               onResizeColumns={handleResizeColumns}
               onResizePanes={handleResizePanes}
               onSplitWithTab={handleSplitWithTab}
+              onSplitAtEdgeWithPath={handleSplitAtEdgeWithPath}
               onMovePaneToEdge={handleMovePaneToEdge}
               onSwapPanes={handleSwapPanes}
               onConvertPane={handleConvertPane}
               onSplitFromPane={handleSplitFromPane}
               onToggleFullscreen={handleToggleFullscreen}
+              onTearOutPane={handleTearOutPane}
+              onCrossDragStart={handleCrossDragStart}
+              onOpenFileInPane={handleOpenFileInPane}
+              onBrowserStateChange={handleBrowserStateChange}
+              onInsertCrossWindowPane={handleInsertCrossWindowPane}
             />
           </div>
           <StatusBar compileState={compileState} onOpenCompileModal={() => setCompileOpen(true)} />

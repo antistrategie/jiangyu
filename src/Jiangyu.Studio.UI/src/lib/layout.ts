@@ -1,4 +1,5 @@
 import { basename } from "./path.ts";
+import type { AssetBrowserState, TemplateBrowserState } from "./browserState.ts";
 
 export interface Tab {
   readonly path: string;
@@ -20,7 +21,12 @@ export interface BrowserPane {
   readonly id: string;
   readonly kind: "assetBrowser" | "templateBrowser";
   /** Flex weight relative to siblings in the same column. Treated as 1 when absent. */
-  readonly weight?: number;
+  readonly weight?: number | undefined;
+  /**
+   * Persisted UI state for the browser (query, filter, selection, split).
+   * Shape depends on `kind`; callers must match appropriately.
+   */
+  readonly state?: AssetBrowserState | TemplateBrowserState | undefined;
 }
 
 export type Pane = CodePane | BrowserPane;
@@ -207,7 +213,11 @@ export function openFile(layout: Layout, path: string, paneId: string | null = n
 
   if (target === null) {
     const pane = withTab(emptyPane("code") as CodePane, path);
-    const col = emptyColumn(pane);
+    // Take the average weight of the existing columns. Without this the new
+    // column defaults to weight 1 while surviving siblings have inherited
+    // weight from earlier close-pane redistributions, so each open/close
+    // cycle makes the new code pane progressively narrower.
+    const col = withWeight(emptyColumn(pane), avgColumnWeight(layout.columns));
     return { columns: [...layout.columns, col], activePaneId: pane.id };
   }
 
@@ -444,8 +454,10 @@ export function splitWithTab(
   if (!from.tabs.some((t) => t.path === path)) return layout;
 
   const afterRemove = closeTabs(layout, fromPaneId, [path]);
-  const toCoords = findPaneCoords(afterRemove, toPaneId);
-  if (toCoords === null) return layout;
+  // Pruning the source pane can invalidate the target (e.g. dragging the only
+  // tab onto the only pane). Full rollback to the original layout — partial
+  // state (tab closed, no split) is worse than the no-op.
+  if (findPaneCoords(afterRemove, toPaneId) === null) return layout;
 
   const newPane: CodePane = {
     id: nextId("p"),
@@ -453,31 +465,97 @@ export function splitWithTab(
     tabs: [{ path, name: basename(path) }],
     activeTab: path,
   };
+  return insertPaneAtEdge(afterRemove, toPaneId, newPane, edge);
+}
+
+/**
+ * Build a pane from a cross-window payload (from a secondary dragged back
+ * into the primary) and insert it at the given edge of the target pane.
+ * State — tabs/activeTab for code, browserState for browsers — survives.
+ */
+export function insertCrossWindowPane(
+  layout: Layout,
+  toPaneId: string,
+  kind: PaneKind,
+  tabs: readonly { path: string }[],
+  activeTab: string | null,
+  browserState: AssetBrowserState | TemplateBrowserState | undefined,
+  edge: SplitEdge,
+): Layout {
+  const pane: Pane =
+    kind === "code"
+      ? {
+          id: nextId("p"),
+          kind: "code",
+          tabs: tabs.map((t) => ({ path: t.path, name: basename(t.path) })),
+          activeTab,
+        }
+      : {
+          id: nextId("p"),
+          kind,
+          state: browserState,
+        };
+  return insertPaneAtEdge(layout, toPaneId, pane, edge);
+}
+
+/**
+ * Insert a pre-built pane at a specific edge of a target pane. Used when a
+ * whole pane is dropped from a secondary window and we already have a fully
+ * constructed pane (with its tabs or browser state) to place.
+ */
+export function insertPaneAtEdge(
+  layout: Layout,
+  toPaneId: string,
+  newPane: Pane,
+  edge: SplitEdge,
+): Layout {
+  const toCoords = findPaneCoords(layout, toPaneId);
+  if (toCoords === null) return layout;
 
   if (edge === "left" || edge === "right") {
     const newCol = withWeight<Column>(
       { id: nextId("c"), panes: [newPane] },
-      avgColumnWeight(afterRemove.columns),
+      avgColumnWeight(layout.columns),
     );
     const insertAt = edge === "right" ? toCoords.col + 1 : toCoords.col;
     const columns = [
-      ...afterRemove.columns.slice(0, insertAt),
+      ...layout.columns.slice(0, insertAt),
       newCol,
-      ...afterRemove.columns.slice(insertAt),
+      ...layout.columns.slice(insertAt),
     ];
     return { columns, activePaneId: newPane.id };
   }
 
   const insertAt = edge === "bottom" ? toCoords.pane + 1 : toCoords.pane;
-  const columns = afterRemove.columns.map((col, ci) => {
+  const columns = layout.columns.map((col, ci) => {
     if (ci !== toCoords.col) return col;
-    const insertPane = withWeight(newPane, avgPaneWeight(col.panes));
+    const sized = withWeight(newPane, avgPaneWeight(col.panes));
     return {
       ...col,
-      panes: [...col.panes.slice(0, insertAt), insertPane, ...col.panes.slice(insertAt)],
+      panes: [...col.panes.slice(0, insertAt), sized, ...col.panes.slice(insertAt)],
     };
   });
   return { columns, activePaneId: newPane.id };
+}
+
+/**
+ * Split a target pane in the given direction with a brand-new code pane that
+ * holds only `path`. Unlike splitWithTab there's no source pane to remove
+ * from — used for cross-window drags and sidebar file drops.
+ */
+export function splitAtEdgeWithPath(
+  layout: Layout,
+  toPaneId: string,
+  path: string,
+  edge: SplitEdge,
+): Layout {
+  const newPane: CodePane = {
+    id: nextId("p"),
+    kind: "code",
+    tabs: [{ path, name: basename(path) }],
+    activeTab: path,
+  };
+  return insertPaneAtEdge(layout, toPaneId, newPane, edge);
 }
 
 /**
@@ -560,6 +638,18 @@ export function setPaneWeight(layout: Layout, paneId: string, weight: number): L
   const target = findPane(layout, paneId);
   if (target === null || paneWeight(target) === weight) return layout;
   return replacePane(layout, paneId, { ...target, weight } as Pane);
+}
+
+/** Set the persisted state blob on a browser pane. No-op for code panes. */
+export function setBrowserPaneState(
+  layout: Layout,
+  paneId: string,
+  state: AssetBrowserState | TemplateBrowserState,
+): Layout {
+  const target = findPane(layout, paneId);
+  if (target === null || target.kind === "code") return layout;
+  if (target.state === state) return layout;
+  return replacePane(layout, paneId, { ...target, state });
 }
 
 /** Set a column's flex weight. */

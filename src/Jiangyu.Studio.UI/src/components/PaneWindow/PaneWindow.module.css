@@ -1,0 +1,64 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* Thin drag strip for browser pane windows — the grab affordance to drag
+   the whole window back to the primary. Code pane windows use the tabbar's
+   empty area instead, so they skip this. */
+.browserDragBar {
+  flex: 0 0 auto;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--rule-faint);
+  cursor: grab;
+  user-select: none;
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.browserDragBar:active {
+  cursor: grabbing;
+}
+
+.content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-3);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--fg);
+  background: var(--bg-raised);
+  white-space: pre;
+  tab-size: 2;
+}
+
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-family: var(--font-label);
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+}
+
+.error {
+  color: var(--cinnabar-1);
+}

@@ -50,6 +50,16 @@ public static partial class RpcDispatcher
         Register("templatesIndex", HandleTemplatesIndex);
         Register("templatesSearch", HandleTemplatesSearch);
         Register("templatesQuery", HandleTemplatesQuery);
+        Register("openPaneWindow", HandleOpenPaneWindow);
+        Register("closeAllPaneWindows", HandleCloseAllPaneWindows);
+        Register("updatePaneWindowTabs", HandleUpdatePaneWindowTabs);
+        Register("updatePaneWindowBrowserState", HandleUpdatePaneWindowBrowserState);
+        Register("setWindowTitle", HandleSetWindowTitle);
+        Register("closeSelf", HandleCloseSelf);
+        Register("beginTabMove", HandleBeginTabMove);
+        Register("completeTabMove", HandleCompleteTabMove);
+        Register("beginPaneMove", HandleBeginPaneMove);
+        Register("completePaneMove", HandleCompletePaneMove);
     }
 
     private static void Register(string method, Func<IInfiniFrameWindow, JsonElement?, JsonElement> handler)
@@ -398,7 +408,7 @@ public static partial class RpcDispatcher
     // a pathological paste-into-Monaco-and-save doesn't OOM the host.
     private const int MaxWriteFileBytes = 64 * 1024 * 1024;
 
-    private static JsonElement HandleWriteFile(IInfiniFrameWindow _, JsonElement? parameters)
+    private static JsonElement HandleWriteFile(IInfiniFrameWindow window, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
         var content = RequireString(parameters, "content");
@@ -411,9 +421,13 @@ public static partial class RpcDispatcher
         // Atomic write: stage in a sibling tmp file, then rename over the target.
         // File.WriteAllText truncates-then-writes in place; a mid-write crash
         // leaves a corrupt file, which for an editor is real data loss.
+        //
+        // Suppression is scoped to this window's id: other open windows still
+        // receive the fileChanged notification and surface the conflict banner,
+        // mirroring how an external editor overwriting a file looks to them.
         var tmp = path + ".jiangyu.tmp";
-        ProjectWatcher.SuppressFor(path);
-        ProjectWatcher.SuppressFor(tmp);
+        ProjectWatcher.SuppressFor(path, window.Id);
+        ProjectWatcher.SuppressFor(tmp, window.Id);
         try
         {
             File.WriteAllText(tmp, content);

@@ -12,6 +12,11 @@ import {
 import { rpcCall } from "../../lib/rpc.ts";
 import { generatePatchKdl, generateCloneKdl } from "../../lib/kdlSnippets.ts";
 import { useToast } from "../../lib/toast.tsx";
+import {
+  DEFAULT_TEMPLATE_BROWSER_STATE,
+  type TemplateBrowserState,
+} from "../../lib/browserState.ts";
+import { useDebouncedScrollTop } from "../../lib/useDebouncedScrollTop.ts";
 import { Spinner } from "../Spinner/Spinner.tsx";
 import {
   TemplateFilePicker,
@@ -117,6 +122,8 @@ interface TemplateBrowserProps {
   onOpenFile: (path: string) => void;
   onAppendToFile: (path: string, snippet: string) => Promise<void>;
   onRefreshFiles: () => void;
+  initialState?: TemplateBrowserState | undefined;
+  onStateChange?: ((state: TemplateBrowserState) => void) | undefined;
 }
 
 export function TemplateBrowser({
@@ -126,6 +133,8 @@ export function TemplateBrowser({
   onOpenFile,
   onAppendToFile,
   onRefreshFiles,
+  initialState,
+  onStateChange,
 }: TemplateBrowserProps) {
   const [status, setStatus] = useState<TemplateIndexStatus | null>(null);
   const [indexing, setIndexing] = useState(false);
@@ -138,13 +147,26 @@ export function TemplateBrowser({
   >({});
   const [loadingData, setLoadingData] = useState(false);
 
-  const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  // Controlled via initialState / onStateChange so parent can persist and
+  // transfer. Initialiser pattern (useState with lazy init) avoids re-seeding
+  // from a later prop change.
+  const [query, setQuery] = useState(
+    () => initialState?.query ?? DEFAULT_TEMPLATE_BROWSER_STATE.query,
+  );
+  const [typeFilter, setTypeFilter] = useState(
+    () => initialState?.typeFilter ?? DEFAULT_TEMPLATE_BROWSER_STATE.typeFilter,
+  );
+  const [focusedKey, setFocusedKey] = useState<string | null>(
+    () => initialState?.focusedKey ?? DEFAULT_TEMPLATE_BROWSER_STATE.focusedKey,
+  );
 
   // Navigation history for detail panel
-  const [navHistory, setNavHistory] = useState<string[]>([]);
-  const [navIndex, setNavIndex] = useState(-1);
+  const [navHistory, setNavHistory] = useState<string[]>(() => [
+    ...(initialState?.navHistory ?? DEFAULT_TEMPLATE_BROWSER_STATE.navHistory),
+  ]);
+  const [navIndex, setNavIndex] = useState(
+    () => initialState?.navIndex ?? DEFAULT_TEMPLATE_BROWSER_STATE.navIndex,
+  );
   const canGoBack = navIndex > 0;
   const canGoForward = navIndex < navHistory.length - 1;
 
@@ -175,8 +197,30 @@ export function TemplateBrowser({
   const memberTokenRef = useRef(0);
 
   // Resizable split
-  const [listFraction, setListFraction] = useState(0.35);
+  const [listFraction, setListFraction] = useState(
+    () => initialState?.listFraction ?? DEFAULT_TEMPLATE_BROWSER_STATE.listFraction,
+  );
   const bodyRef = useRef<HTMLDivElement>(null);
+
+  const [scrollTop, handleListScroll] = useDebouncedScrollTop(
+    initialState?.scrollTop ?? DEFAULT_TEMPLATE_BROWSER_STATE.scrollTop,
+  );
+
+  const onStateChangeRef = useRef(onStateChange);
+  useEffect(() => {
+    onStateChangeRef.current = onStateChange;
+  }, [onStateChange]);
+  useEffect(() => {
+    onStateChangeRef.current?.({
+      query,
+      typeFilter,
+      focusedKey,
+      navHistory,
+      navIndex,
+      listFraction,
+      scrollTop,
+    });
+  }, [query, typeFilter, focusedKey, navHistory, navIndex, listFraction, scrollTop]);
 
   const { push: pushToast } = useToast();
 
@@ -488,6 +532,18 @@ export function TemplateBrowser({
     overscan: 20,
   });
 
+  // Restore scroll position once the list is populated.
+  const scrollRestoredRef = useRef(false);
+  useEffect(() => {
+    if (scrollRestoredRef.current) return;
+    if (filtered.length === 0) return;
+    const target = initialState?.scrollTop ?? 0;
+    if (target > 0 && listRef.current !== null) {
+      listRef.current.scrollTop = target;
+    }
+    scrollRestoredRef.current = true;
+  }, [filtered, initialState]);
+
   // --- Split handle drag ---
   const handleSplitPointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -595,7 +651,7 @@ export function TemplateBrowser({
         <div ref={bodyRef} className={styles.body}>
           {/* --- List panel --- */}
           <div className={styles.listPanel} style={{ flex: listFraction }}>
-            <div ref={listRef} className={styles.listScroll}>
+            <div ref={listRef} className={styles.listScroll} onScroll={handleListScroll}>
               <div
                 style={{
                   height: `${rowVirtualizer.getTotalSize()}px`,

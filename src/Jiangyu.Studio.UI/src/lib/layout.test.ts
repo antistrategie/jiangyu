@@ -11,6 +11,8 @@ import {
   getActivePane,
   getAllOpenPaths,
   getAllPanes,
+  insertCrossWindowPane,
+  insertPaneAtEdge,
   loadLayout,
   moveTab,
   movePane,
@@ -21,16 +23,20 @@ import {
   saveLayout,
   selectTab,
   setActivePane,
+  setBrowserPaneState,
   setColumnWeight,
   setPaneWeight,
+  splitAtEdgeWithPath,
   splitDown,
   splitRight,
   splitWithTab,
   swapPanes,
+  type BrowserPane,
   type CodePane,
   type Layout,
   type Pane,
 } from "./layout.ts";
+import { DEFAULT_ASSET_BROWSER_STATE, DEFAULT_TEMPLATE_BROWSER_STATE } from "./browserState.ts";
 
 const A = "/proj/src/A.tsx";
 const B = "/proj/src/B.tsx";
@@ -713,5 +719,174 @@ describe("swapPanes", () => {
     const [leftAfter, rightAfter] = getAllPanes(swapped);
     expect(leftAfter!.kind).toBe("assetBrowser");
     expect(rightAfter!.kind).toBe("code");
+  });
+});
+
+describe("setBrowserPaneState", () => {
+  it("stores the state blob on a browser pane", () => {
+    const l = splitRight(EMPTY_LAYOUT, "assetBrowser");
+    const paneId = l.activePaneId!;
+    const next = setBrowserPaneState(l, paneId, DEFAULT_ASSET_BROWSER_STATE);
+    const pane = findPane(next, paneId) as BrowserPane;
+    expect(pane.state).toBe(DEFAULT_ASSET_BROWSER_STATE);
+  });
+
+  it("is a no-op when the state reference hasn't changed", () => {
+    const l = splitRight(EMPTY_LAYOUT, "templateBrowser");
+    const paneId = l.activePaneId!;
+    const set = setBrowserPaneState(l, paneId, DEFAULT_TEMPLATE_BROWSER_STATE);
+    expect(setBrowserPaneState(set, paneId, DEFAULT_TEMPLATE_BROWSER_STATE)).toBe(set);
+  });
+
+  it("is a no-op for an unknown pane id", () => {
+    const l = splitRight(EMPTY_LAYOUT, "assetBrowser");
+    expect(setBrowserPaneState(l, "missing", DEFAULT_ASSET_BROWSER_STATE)).toBe(l);
+  });
+
+  it("is a no-op on a code pane (states apply only to browsers)", () => {
+    const l = openFile(EMPTY_LAYOUT, A);
+    expect(setBrowserPaneState(l, l.activePaneId!, DEFAULT_ASSET_BROWSER_STATE)).toBe(l);
+  });
+
+  it("preserves the pane's weight across a state update", () => {
+    const l = splitRight(EMPTY_LAYOUT, "assetBrowser");
+    const paneId = l.activePaneId!;
+    const weighted = setPaneWeight(l, paneId, 3);
+    const next = setBrowserPaneState(weighted, paneId, DEFAULT_ASSET_BROWSER_STATE);
+    expect(paneWeight(findPane(next, paneId)!)).toBe(3);
+  });
+});
+
+describe("splitAtEdgeWithPath", () => {
+  it("creates a new right column with the given path", () => {
+    const l = openFile(EMPTY_LAYOUT, A);
+    const toId = l.activePaneId!;
+    const next = splitAtEdgeWithPath(l, toId, B, "right");
+    expect(next.columns).toHaveLength(2);
+    expect(asCode(next.columns[1]!.panes[0]).tabs.map((t) => t.path)).toEqual([B]);
+    // Source is untouched (unlike splitWithTab, no removal from origin).
+    expect(asCode(findPane(next, toId)).tabs.map((t) => t.path)).toEqual([A]);
+  });
+
+  it("creates a new pane below the target with the given path", () => {
+    const l = openFile(EMPTY_LAYOUT, A);
+    const toId = l.activePaneId!;
+    const next = splitAtEdgeWithPath(l, toId, B, "bottom");
+    expect(next.columns[0]!.panes).toHaveLength(2);
+    expect(asCode(next.columns[0]!.panes[1]).tabs.map((t) => t.path)).toEqual([B]);
+  });
+
+  it("returns the layout unchanged for an unknown target pane", () => {
+    const l = openFile(EMPTY_LAYOUT, A);
+    expect(splitAtEdgeWithPath(l, "missing", B, "right")).toBe(l);
+  });
+
+  it("makes the newly-created pane active", () => {
+    const l = openFile(EMPTY_LAYOUT, A);
+    const next = splitAtEdgeWithPath(l, l.activePaneId!, B, "right");
+    const active = findPane(next, next.activePaneId!);
+    expect(active!.kind).toBe("code");
+    expect(asCode(active).tabs.map((t) => t.path)).toEqual([B]);
+  });
+});
+
+describe("insertPaneAtEdge", () => {
+  it("inserts a fully-constructed code pane to the right as a new column", () => {
+    const l = openFile(EMPTY_LAYOUT, A);
+    const toId = l.activePaneId!;
+    const newPane: CodePane = {
+      id: "new-1",
+      kind: "code",
+      tabs: [{ path: B, name: "B.tsx" }],
+      activeTab: B,
+    };
+    const next = insertPaneAtEdge(l, toId, newPane, "right");
+    expect(next.columns).toHaveLength(2);
+    expect(next.columns[1]!.panes[0]!.id).toBe("new-1");
+    expect(next.activePaneId).toBe("new-1");
+  });
+
+  it("inserts a browser pane below the target", () => {
+    const l = openFile(EMPTY_LAYOUT, A);
+    const toId = l.activePaneId!;
+    const newPane: BrowserPane = {
+      id: "bp-1",
+      kind: "templateBrowser",
+      state: DEFAULT_TEMPLATE_BROWSER_STATE,
+    };
+    const next = insertPaneAtEdge(l, toId, newPane, "bottom");
+    expect(next.columns[0]!.panes.map((p) => p.id)).toEqual([toId, "bp-1"]);
+    expect((findPane(next, "bp-1") as BrowserPane).state).toBe(DEFAULT_TEMPLATE_BROWSER_STATE);
+  });
+
+  it("is a no-op when the target pane doesn't exist", () => {
+    const l = openFile(EMPTY_LAYOUT, A);
+    const newPane: CodePane = { id: "x", kind: "code", tabs: [], activeTab: null };
+    expect(insertPaneAtEdge(l, "missing", newPane, "right")).toBe(l);
+  });
+
+  it("gives the new pane the average weight of existing panes in the column", () => {
+    const l = openFile(EMPTY_LAYOUT, A);
+    const toId = l.activePaneId!;
+    const withHeavy = setPaneWeight(l, toId, 5);
+    const newPane: CodePane = { id: "np", kind: "code", tabs: [], activeTab: null };
+    const next = insertPaneAtEdge(withHeavy, toId, newPane, "bottom");
+    expect(paneWeight(findPane(next, "np")!)).toBeCloseTo(5);
+  });
+});
+
+describe("insertCrossWindowPane", () => {
+  it("rebuilds a code pane from a tabs list + active tab", () => {
+    const l = openFile(EMPTY_LAYOUT, A);
+    const toId = l.activePaneId!;
+    const next = insertCrossWindowPane(
+      l,
+      toId,
+      "code",
+      [{ path: B }, { path: C }],
+      C,
+      undefined,
+      "right",
+    );
+    expect(next.columns).toHaveLength(2);
+    const added = asCode(next.columns[1]!.panes[0]);
+    expect(added.tabs.map((t) => t.path)).toEqual([B, C]);
+    expect(added.activeTab).toBe(C);
+  });
+
+  it("rebuilds a browser pane with its persisted state", () => {
+    const l = openFile(EMPTY_LAYOUT, A);
+    const toId = l.activePaneId!;
+    const next = insertCrossWindowPane(
+      l,
+      toId,
+      "assetBrowser",
+      [],
+      null,
+      DEFAULT_ASSET_BROWSER_STATE,
+      "bottom",
+    );
+    const added = next.columns[0]!.panes[1]! as BrowserPane;
+    expect(added.kind).toBe("assetBrowser");
+    expect(added.state).toBe(DEFAULT_ASSET_BROWSER_STATE);
+  });
+
+  it("is a no-op for an unknown target pane", () => {
+    expect(
+      insertCrossWindowPane(EMPTY_LAYOUT, "missing", "code", [{ path: A }], A, undefined, "right"),
+    ).toBe(EMPTY_LAYOUT);
+  });
+});
+
+describe("openFile with non-default column weights", () => {
+  it("gives a brand-new column the average of existing column weights", () => {
+    // Regression: open-into-browser-only layouts used to hand the new code
+    // column a default weight of 1 while survivors had inherited redistributed
+    // weight, so each close/reopen cycle shrank the new code pane.
+    const onlyBrowser = splitRight(EMPTY_LAYOUT, "assetBrowser");
+    const wide = setColumnWeight(onlyBrowser, onlyBrowser.columns[0]!.id, 5);
+    const opened = openFile(wide, C);
+    expect(columnWeight(opened.columns[0]!)).toBe(5);
+    expect(columnWeight(opened.columns[1]!)).toBeCloseTo(5);
   });
 });
