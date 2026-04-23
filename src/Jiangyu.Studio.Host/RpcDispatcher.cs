@@ -21,6 +21,7 @@ public static partial class RpcDispatcher
     {
         Register("openFolder", HandleOpenFolder);
         Register("openProject", HandleOpenProject);
+        Register("newProject", HandleNewProject);
         Register("listDirectory", HandleListDirectory);
         Register("listAllFiles", HandleListAllFiles);
         Register("readFile", HandleReadFile);
@@ -225,6 +226,30 @@ public static partial class RpcDispatcher
     private static void OpenProject(IInfiniFrameWindow window, string path)
     {
         ProjectWatcher.Start(window, path);
+    }
+
+    private static JsonElement HandleNewProject(IInfiniFrameWindow window, JsonElement? parameters)
+    {
+        var name = RequireString(parameters, "name");
+
+        if (Path.IsPathRooted(name) ||
+            name.Contains(Path.DirectorySeparatorChar) ||
+            name.Contains(Path.AltDirectorySeparatorChar) ||
+            name.Contains(".."))
+            throw new ArgumentException($"Invalid project name: {name}");
+
+        var results = window.ShowOpenFolder("Choose location for new project");
+        var parentDir = results.FirstOrDefault(p => p is not null);
+        if (parentDir is null)
+            return JsonSerializer.SerializeToElement<string?>(null);
+
+        var projectDir = Path.Combine(parentDir, name);
+        Directory.CreateDirectory(projectDir);
+
+        ProjectScaffold.InitAsync(projectDir).GetAwaiter().GetResult();
+
+        OpenProject(window, projectDir);
+        return JsonSerializer.SerializeToElement(projectDir);
     }
 
     private static JsonElement HandleListDirectory(IInfiniFrameWindow _, JsonElement? parameters)

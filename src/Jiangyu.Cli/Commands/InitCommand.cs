@@ -1,5 +1,5 @@
 using System.CommandLine;
-using Jiangyu.Core.Models;
+using Jiangyu.Core.Config;
 
 namespace Jiangyu.Cli.Commands;
 
@@ -12,31 +12,16 @@ public static class InitCommand
         {
             var projectDir = Directory.GetCurrentDirectory();
 
-            var manifestPath = Path.Combine(projectDir, ModManifest.FileName);
-            if (File.Exists(manifestPath))
-            {
-                Console.Error.WriteLine($"Error: {ModManifest.FileName} already exists in this directory.");
-                return 1;
-            }
-
             try
             {
-                var dirName = Path.GetFileName(projectDir) ?? "MyMod";
-                var manifest = ModManifest.CreateDefault(dirName);
-
-                await File.WriteAllTextAsync(manifestPath, manifest.ToJson());
-
-                var gitignorePath = Path.Combine(projectDir, ".gitignore");
-                if (!File.Exists(gitignorePath))
-                {
-                    await File.WriteAllTextAsync(gitignorePath, """
-                        .jiangyu/
-                        compiled/
-                        """);
-                }
-
+                var dirName = await ProjectScaffold.InitAsync(projectDir);
                 Console.WriteLine($"Initialised mod project: {dirName}");
                 return 0;
+            }
+            catch (InvalidOperationException ex)
+            {
+                Console.Error.WriteLine($"Error: {ex.Message}");
+                return 1;
             }
             catch (Exception ex)
             {
