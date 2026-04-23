@@ -5,12 +5,26 @@ import {
   EDITOR_FONT_SIZE_MIN,
   EDITOR_KEYBIND_MODE_DEFAULT,
   EDITOR_WORD_WRAP_DEFAULT,
+  SESSION_RESTORE_PROJECT_DEFAULT,
+  SESSION_RESTORE_TABS_DEFAULT,
+  SIDEBAR_HIDDEN_DEFAULT,
+  UI_FONT_SCALE_DEFAULT,
+  UI_FONT_SCALE_MAX,
+  UI_FONT_SCALE_MIN,
   loadEditorFontSize,
   loadEditorKeybindMode,
   loadEditorWordWrap,
+  loadSessionRestoreProject,
+  loadSessionRestoreTabs,
+  loadSidebarHidden,
+  loadUiFontScale,
   saveEditorFontSize,
   saveEditorKeybindMode,
   saveEditorWordWrap,
+  saveSessionRestoreProject,
+  saveSessionRestoreTabs,
+  saveSidebarHidden,
+  saveUiFontScale,
 } from "./settings.ts";
 
 beforeEach(() => {
@@ -64,6 +78,32 @@ describe("editor font size", () => {
   });
 });
 
+describe("UI font scale", () => {
+  it("returns the default when nothing is stored", () => {
+    expect(loadUiFontScale()).toBe(UI_FONT_SCALE_DEFAULT);
+  });
+
+  it("round-trips a valid value", () => {
+    saveUiFontScale(115);
+    expect(loadUiFontScale()).toBe(115);
+  });
+
+  it("clamps below the minimum on save", () => {
+    saveUiFontScale(10);
+    expect(loadUiFontScale()).toBe(UI_FONT_SCALE_MIN);
+  });
+
+  it("clamps above the maximum on save", () => {
+    saveUiFontScale(9999);
+    expect(loadUiFontScale()).toBe(UI_FONT_SCALE_MAX);
+  });
+
+  it("falls back to default when stored value is not a number", () => {
+    localStorage.setItem("jiangyu:setting:uiFontScale", JSON.stringify("huge"));
+    expect(loadUiFontScale()).toBe(UI_FONT_SCALE_DEFAULT);
+  });
+});
+
 describe("editor word wrap", () => {
   it("returns the default when nothing is stored", () => {
     expect(loadEditorWordWrap()).toBe(EDITOR_WORD_WRAP_DEFAULT);
@@ -93,5 +133,58 @@ describe("editor keybind mode", () => {
   it("falls back to default for unrecognised values", () => {
     localStorage.setItem("jiangyu:setting:editorKeybindMode", JSON.stringify("helix"));
     expect(loadEditorKeybindMode()).toBe(EDITOR_KEYBIND_MODE_DEFAULT);
+  });
+});
+
+describe("session restore project", () => {
+  it("returns the default when nothing is stored", () => {
+    expect(loadSessionRestoreProject()).toBe(SESSION_RESTORE_PROJECT_DEFAULT);
+  });
+
+  it("round-trips true", () => {
+    saveSessionRestoreProject(true);
+    expect(loadSessionRestoreProject()).toBe(true);
+  });
+
+  it("round-trips false", () => {
+    saveSessionRestoreProject(false);
+    expect(loadSessionRestoreProject()).toBe(false);
+  });
+
+  it("falls back to default for non-boolean values", () => {
+    localStorage.setItem("jiangyu:setting:sessionRestoreProject", JSON.stringify("yes"));
+    expect(loadSessionRestoreProject()).toBe(SESSION_RESTORE_PROJECT_DEFAULT);
+  });
+});
+
+describe("sidebar hidden", () => {
+  it("returns the default when nothing is stored", () => {
+    expect(loadSidebarHidden()).toBe(SIDEBAR_HIDDEN_DEFAULT);
+  });
+
+  it("round-trips true", () => {
+    saveSidebarHidden(true);
+    expect(loadSidebarHidden()).toBe(true);
+  });
+
+  it("falls back to default for non-boolean values", () => {
+    localStorage.setItem("jiangyu:setting:sidebarHidden", JSON.stringify("yes"));
+    expect(loadSidebarHidden()).toBe(SIDEBAR_HIDDEN_DEFAULT);
+  });
+});
+
+describe("session restore tabs", () => {
+  it("returns the default when nothing is stored", () => {
+    expect(loadSessionRestoreTabs()).toBe(SESSION_RESTORE_TABS_DEFAULT);
+  });
+
+  it("round-trips false", () => {
+    saveSessionRestoreTabs(false);
+    expect(loadSessionRestoreTabs()).toBe(false);
+  });
+
+  it("falls back to default for non-boolean values", () => {
+    localStorage.setItem("jiangyu:setting:sessionRestoreTabs", JSON.stringify(1));
+    expect(loadSessionRestoreTabs()).toBe(SESSION_RESTORE_TABS_DEFAULT);
   });
 });

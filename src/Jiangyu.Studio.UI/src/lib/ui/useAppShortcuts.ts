@@ -7,6 +7,7 @@ import { matchBinding, type KeyBinding } from "./shortcuts.ts";
 
 interface UseAppShortcutsParams {
   readonly setPaletteOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  readonly toggleSidebar: () => void;
 
   readonly projectPathRef: React.RefObject<string | null>;
   readonly compileStateRef: React.RefObject<CompileState>;
@@ -21,6 +22,7 @@ interface UseAppShortcutsParams {
 // palette toggle itself).
 export function useAppShortcuts({
   setPaletteOpen,
+  toggleSidebar,
   projectPathRef,
   compileStateRef,
   startCompileRef,
@@ -104,6 +106,13 @@ export function useAppShortcuts({
       { binding: { mod: true, shift: true, key: "]" }, run: () => focusAdjacentPane(1) },
       { binding: { mod: true, shift: true, key: "[" }, run: () => focusAdjacentPane(-1) },
       {
+        binding: { mod: true, key: "b" },
+        run: () => {
+          toggleSidebar();
+          return true;
+        },
+      },
+      {
         binding: { mod: true, shift: true, key: "b" },
         run: () => {
           if (projectPathRef.current === null) return false;
@@ -122,5 +131,12 @@ export function useAppShortcuts({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setPaletteOpen, projectPathRef, compileStateRef, startCompileRef, allActionsRef]);
+  }, [
+    setPaletteOpen,
+    toggleSidebar,
+    projectPathRef,
+    compileStateRef,
+    startCompileRef,
+    allActionsRef,
+  ]);
 }

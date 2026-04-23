@@ -108,15 +108,19 @@
     "Noto Sans SC", "Source Han Sans SC", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-  /* Scale — three-tier base (xs/sm/base) + display ramp (md/lg/xl/2xl/3xl). */
-  --fs-xs: 10px;
-  --fs-sm: 12px;
-  --fs-base: 14px;
-  --fs-md: 16px;
-  --fs-lg: 20px;
-  --fs-xl: 28px;
-  --fs-2xl: 40px;
-  --fs-3xl: 56px;
+  /* Scale — three-tier base (xs/sm/base) + display ramp (md/lg/xl/2xl/3xl).
+     All sizes are multiplied by --fs-scale so a single user-controlled knob
+     resizes the whole UI typographically. Editor font size is independent —
+     Monaco reads its own px value from settings. See useUiFontScale. */
+  --fs-scale: 1;
+  --fs-xs: calc(10px * var(--fs-scale));
+  --fs-sm: calc(12px * var(--fs-scale));
+  --fs-base: calc(14px * var(--fs-scale));
+  --fs-md: calc(16px * var(--fs-scale));
+  --fs-lg: calc(20px * var(--fs-scale));
+  --fs-xl: calc(28px * var(--fs-scale));
+  --fs-2xl: calc(40px * var(--fs-scale));
+  --fs-3xl: calc(56px * var(--fs-scale));
 
   --lh-tight: 1.1;
   --lh-snug: 1.25;

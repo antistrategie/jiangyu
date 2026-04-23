@@ -20,7 +20,7 @@
   font-weight: 600;
   letter-spacing: var(--tracking-section);
   text-transform: uppercase;
-  color: var(--cinnabar-1);
+  color: var(--accent);
 }
 
 .close {
@@ -37,7 +37,7 @@
 }
 
 .close:hover {
-  background: var(--paper-2);
+  background: var(--bg-sunken);
 }
 
 .body {
@@ -50,41 +50,55 @@
 .nav {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-3) var(--space-2);
+  padding: var(--space-3) 0;
   border-right: 1px solid var(--rule);
   background: var(--bg);
 }
 
+/* Row treatment mirrors the Palette command list: flush edges, a 2px
+   left stripe marks the active row (transparent on rest), sunken bg on
+   hover/active. Keeps vertical-nav language consistent across the app. */
 .navItem {
   text-align: left;
   padding: var(--space-2) var(--space-3);
   font-family: var(--font-label);
-  font-size: var(--fs-md);
-  letter-spacing: var(--tracking-wide);
+  font-size: var(--fs-sm);
+  letter-spacing: var(--tracking-wider);
   text-transform: uppercase;
   background: transparent;
   color: var(--fg);
-  border: 1px solid transparent;
+  border: none;
+  border-left: 2px solid transparent;
   cursor: pointer;
   transition:
     background var(--ease-fast),
-    border-color var(--ease-fast);
+    border-color var(--ease-fast),
+    color var(--ease-fast);
 }
 
 .navItem:hover {
-  background: var(--paper-1);
+  background: var(--bg-sunken);
 }
 
 .navItemActive {
-  background: var(--paper-0);
-  border-color: var(--rule);
-  color: var(--cinnabar-1);
+  background: var(--bg-sunken);
+  border-left-color: var(--accent);
+  color: var(--accent);
 }
 
 .content {
   padding: var(--space-4) var(--space-5);
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  scroll-behavior: smooth;
+}
+
+/* Each nav section is a flex-column wrapper so SectionHeader + Fields inside
+   get the tighter intra-section rhythm, while the parent `.content` flex
+   column spaces whole sections apart more loosely via its larger gap. */
+.content > div {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -116,10 +130,36 @@
   gap: 2px;
 }
 
+.fieldLabelRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  line-height: 1;
+}
+
 .fieldLabelText {
   font-family: var(--font-label);
   font-size: var(--fs-base);
   color: var(--fg-strong);
+}
+
+/* Appears only when a setting differs from its default — doubles as a
+   "non-default" marker and a one-click reset. Muted at rest, accent on
+   hover to match the link/accent treatment elsewhere in the modal. */
+.resetButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: color var(--ease-fast);
+}
+
+.resetButton:hover {
+  color: var(--accent);
 }
 
 .fieldHint {
@@ -154,7 +194,7 @@
 }
 
 .stepButton:hover:not(:disabled) {
-  background: var(--paper-2);
+  background: var(--bg-sunken);
 }
 
 .stepButton:disabled {
@@ -183,7 +223,7 @@
 
 .stepValue:focus {
   outline: none;
-  background: var(--paper-1);
+  background: var(--bg);
 }
 
 .pathRow {
@@ -222,7 +262,7 @@
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   background: transparent;
-  color: var(--cinnabar-1);
+  color: var(--accent);
   border: none;
   padding: 0;
   cursor: pointer;
@@ -232,7 +272,7 @@
 }
 
 .linkButton:hover {
-  text-decoration-color: var(--cinnabar-1);
+  text-decoration-color: var(--accent);
 }
 
 /* URL-style link: monospaced, preserves casing — used for the repo URL in About. */
@@ -240,7 +280,7 @@
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
   background: transparent;
-  color: var(--cinnabar-1);
+  color: var(--accent);
   border: none;
   padding: 0;
   cursor: pointer;
@@ -251,7 +291,7 @@
 }
 
 .repoLink:hover {
-  text-decoration-color: var(--cinnabar-1);
+  text-decoration-color: var(--accent);
 }
 
 .muted {
@@ -265,7 +305,7 @@
 .error {
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
-  color: var(--cinnabar-1);
+  color: var(--danger);
   margin: 0;
 }
 
@@ -275,7 +315,7 @@
   gap: var(--space-1);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
-  color: var(--gold-0);
+  color: var(--warning);
   margin: 0;
 }
 
@@ -348,7 +388,7 @@
   display: grid;
   grid-template-columns: minmax(180px, 1fr) 80px minmax(0, 2fr);
   gap: var(--space-3);
-  padding: 4px 0;
+  padding: var(--space-1) 0;
   align-items: baseline;
   border-bottom: 1px solid var(--rule-faint);
 }

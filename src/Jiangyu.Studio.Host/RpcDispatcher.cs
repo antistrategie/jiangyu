@@ -22,6 +22,7 @@ public static partial class RpcDispatcher
         Register("openFolder", HandleOpenFolder);
         Register("openProject", HandleOpenProject);
         Register("newProject", HandleNewProject);
+        Register("getGitBranch", HandleGetGitBranch);
         Register("listDirectory", HandleListDirectory);
         Register("listAllFiles", HandleListAllFiles);
         Register("readFile", HandleReadFile);
@@ -264,6 +265,56 @@ public static partial class RpcDispatcher
 
         OpenProject(window, projectDir);
         return JsonSerializer.SerializeToElement(projectDir);
+    }
+
+    /// <summary>
+    /// Returns the current git branch name for the given path, or null when
+    /// git isn't installed, the path isn't inside a git repo, or HEAD is
+    /// detached. Catch-everything so a missing git binary or damaged repo
+    /// surfaces as "no branch indicator" rather than a visible error.
+    /// </summary>
+    private static JsonElement HandleGetGitBranch(IInfiniFrameWindow _, JsonElement? parameters)
+    {
+        var path = RequireString(parameters, "path");
+        EnsurePathInsideProject(path);
+
+        return JsonSerializer.SerializeToElement(TryGetGitBranch(path));
+    }
+
+    private static string? TryGetGitBranch(string path)
+    {
+        try
+        {
+            // `symbolic-ref --short HEAD` returns the branch name on success
+            // and exits non-zero on detached HEAD — exactly the "no label"
+            // signal we want, rather than the literal string "HEAD" that
+            // `rev-parse --abbrev-ref HEAD` would give back.
+            var psi = new System.Diagnostics.ProcessStartInfo("git", "symbolic-ref --short HEAD")
+            {
+                WorkingDirectory = path,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var proc = System.Diagnostics.Process.Start(psi);
+            if (proc is null) return null;
+
+            var output = proc.StandardOutput.ReadToEnd();
+            if (!proc.WaitForExit(3000))
+            {
+                try { proc.Kill(); } catch { /* ignore */ }
+                return null;
+            }
+            if (proc.ExitCode != 0) return null;
+
+            var trimmed = output.Trim();
+            return string.IsNullOrEmpty(trimmed) ? null : trimmed;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static JsonElement HandleListDirectory(IInfiniFrameWindow _, JsonElement? parameters)

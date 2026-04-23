@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Pause, Play } from "lucide-react";
 import { formatTime } from "@lib/ui/formatTime.ts";
 import styles from "./AssetBrowser.module.css";
 
@@ -92,8 +93,17 @@ export function AudioPlayer({ src }: Props) {
         onPlay={handlePlay}
         onPause={handlePause}
       />
-      <button type="button" className={styles.audioPlayBtn} onClick={togglePlay}>
-        {playing ? "⏸" : "▶"}
+      <button
+        type="button"
+        className={styles.audioPlayBtn}
+        onClick={togglePlay}
+        aria-label={playing ? "Pause" : "Play"}
+      >
+        {playing ? (
+          <Pause size={12} fill="currentColor" strokeWidth={0} />
+        ) : (
+          <Play size={12} fill="currentColor" strokeWidth={0} />
+        )}
       </button>
       <span className={styles.audioTime}>{formatTime(currentTime)}</span>
       <div className={styles.audioTrack} onMouseDown={handleTrackMouseDown}>

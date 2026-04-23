@@ -30,6 +30,7 @@ import {
 } from "@lib/layout.ts";
 import type { AssetBrowserState, TemplateBrowserState } from "./browserState.ts";
 import type { CrossPanePayload } from "@lib/drag/crossPane.ts";
+import { loadSessionRestoreTabs } from "@lib/settings.ts";
 
 interface RevealRequest {
   readonly path: string;
@@ -119,7 +120,12 @@ export const useLayoutStore = create<LayoutStore>((set) => {
     revealRequest: null,
 
     setProject: (path) => {
-      const layout = path !== null ? (loadLayout(path) ?? EMPTY_LAYOUT) : EMPTY_LAYOUT;
+      // Honour the session-restore setting: when disabled, open projects
+      // fresh instead of rehydrating the saved pane/tab layout. Saving
+      // still happens unconditionally below, so toggling the setting back
+      // on later surfaces whatever the user edited most recently.
+      const restore = path !== null && loadSessionRestoreTabs();
+      const layout = restore ? (loadLayout(path) ?? EMPTY_LAYOUT) : EMPTY_LAYOUT;
       set({
         currentProject: path,
         layout,

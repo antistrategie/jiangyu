@@ -2,8 +2,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  height: 46px;
-  padding: 0 var(--space-5);
+  padding: var(--space-1) var(--space-2);
   background: var(--ink-0);
   border-bottom: 1px solid var(--rule-on-inverse);
   flex-shrink: 0;
@@ -40,6 +39,22 @@
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
   color: var(--paper-3);
+}
+
+.branch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--ink-4);
+  /* Tight line-height keeps the icon and text centres aligned so the
+     branch reads as one unit rather than a wobbly glyph + label. */
+  line-height: 1;
+}
+
+.branch svg {
+  display: block;
 }
 
 .spacer {

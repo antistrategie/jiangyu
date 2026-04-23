@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
+import { CheckCircle, CircleDot, PanelLeft, PanelLeftClose, XCircle } from "lucide-react";
 import {
   formatDurationShort,
   type CompileState,
   type CompileStatus,
 } from "@lib/compile/compile.ts";
+import { useSidebarHidden } from "@lib/settings.ts";
+import { Spinner } from "@components/Spinner/Spinner.tsx";
 import styles from "./StatusBar.module.css";
 
 interface StatusBarProps {
@@ -20,6 +23,7 @@ export function StatusBar({ compileState, onOpenCompileModal }: StatusBarProps) 
   const displayStatus = useDisplayStatus(compileState);
   useTickerWhileRunning(compileState.status === "running");
   useStatusBarHeight();
+  const [sidebarHidden, setSidebarHidden] = useSidebarHidden();
 
   const progressPct = computeProgressPct(compileState);
 
@@ -39,20 +43,54 @@ export function StatusBar({ compileState, onOpenCompileModal }: StatusBarProps) 
 
       <button
         type="button"
+        className={styles.sidebarToggle}
+        onClick={() => setSidebarHidden(!sidebarHidden)}
+        aria-label={sidebarHidden ? "Show sidebar" : "Hide sidebar"}
+        aria-pressed={!sidebarHidden}
+        title={sidebarHidden ? "Show sidebar (Ctrl+B)" : "Hide sidebar (Ctrl+B)"}
+      >
+        {sidebarHidden ? <PanelLeft size={12} /> : <PanelLeftClose size={12} />}
+      </button>
+
+      <span className={styles.vrule} aria-hidden="true" />
+
+      <button
+        type="button"
         className={styles.compileRegion}
         onClick={onOpenCompileModal}
         title="Open compile dossier"
       >
+        <StatusIcon status={displayStatus} />
         {displayStatus === "running" && <RunningSegment state={compileState} />}
         {displayStatus === "success" && <SuccessSegment state={compileState} />}
         {displayStatus === "failed" && <FailedSegment state={compileState} />}
         {displayStatus === "idle" && <IdleSegment />}
       </button>
-
-      <span className={styles.spacer} />
-      <span className={styles.kbd}>Ctrl+Shift+B — compile</span>
     </div>
   );
+}
+
+function StatusIcon({ status }: { status: CompileStatus }) {
+  if (status === "running") {
+    // Size matches the lucide 12px icons so all status states share a
+    // visual footprint. Colours come from the Spinner's currentColor-aware
+    // border, tuned for the bar's dark surface.
+    return (
+      <Spinner
+        size={12}
+        trackColor="var(--ink-2)"
+        accentColor="var(--paper-0)"
+        className={styles.statusSpinner}
+      />
+    );
+  }
+  if (status === "success") {
+    return <CheckCircle size={12} className={styles.statusIconSuccess} />;
+  }
+  if (status === "failed") {
+    return <XCircle size={12} className={styles.statusIconFailed} />;
+  }
+  return <CircleDot size={12} className={styles.statusIconIdle} />;
 }
 
 function RunningSegment({ state }: { state: CompileState }) {
@@ -93,7 +131,12 @@ function FailedSegment({ state }: { state: CompileState }) {
 }
 
 function IdleSegment() {
-  return <span className={styles.idle}>Ready</span>;
+  return (
+    <>
+      <span className={styles.idle}>Ready</span>
+      <span className={styles.kbd}>(Ctrl+Shift+B — compile)</span>
+    </>
+  );
 }
 
 // ---------------------------------------------------------------------------

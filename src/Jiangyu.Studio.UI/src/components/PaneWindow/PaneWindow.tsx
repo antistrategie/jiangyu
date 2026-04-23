@@ -3,6 +3,7 @@ import { AssetBrowser } from "@components/AssetBrowser/AssetBrowser.tsx";
 import { TemplateBrowser } from "@components/TemplateBrowser/TemplateBrowser.tsx";
 import { TabbedMonacoEditor } from "@components/CodeEditor/TabbedMonacoEditor.tsx";
 import { rpcCall, subscribe, type FileChangedEvent } from "@lib/rpc.ts";
+import { useApplyUiFontScale } from "@lib/settings.ts";
 import { useEditorContent, useEditorContentSync } from "@lib/editor/content.ts";
 import {
   CROSS_TAB_MIME,
@@ -47,6 +48,8 @@ export function PaneWindow({
   activeFilePath,
   browserState,
 }: PaneWindowProps) {
+  useApplyUiFontScale();
+
   useEffect(() => {
     document.title = titleFor(paneKind, activeFilePath);
   }, [paneKind, activeFilePath]);

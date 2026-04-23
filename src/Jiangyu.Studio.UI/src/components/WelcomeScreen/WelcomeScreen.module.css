@@ -90,13 +90,13 @@
   padding: var(--space-3) var(--space-5);
   background: transparent;
   color: var(--fg);
-  border: 1px solid var(--border);
+  border: 1px solid var(--rule);
   cursor: pointer;
   transition: background var(--ease-normal);
 }
 
 .actionGhost:hover {
-  background: var(--bg-2);
+  background: var(--bg-sunken);
 }
 
 .hint {

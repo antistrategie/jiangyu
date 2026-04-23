@@ -1,28 +1,81 @@
-import { useEffect, useState } from "react";
-import { CircleX, Minus, Plus, TriangleAlert, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CircleX, Minus, Plus, RotateCcw, TriangleAlert, X } from "lucide-react";
 import { Modal } from "@components/Modal/Modal.tsx";
 import { SegmentedControl } from "@components/SegmentedControl/SegmentedControl.tsx";
 import { rpcCall } from "@lib/rpc.ts";
 import type { ConfigStatus } from "@lib/compile/configStatus.ts";
 import {
+  EDITOR_FONT_SIZE_DEFAULT,
   EDITOR_FONT_SIZE_MAX,
   EDITOR_FONT_SIZE_MIN,
+  EDITOR_KEYBIND_MODE_DEFAULT,
+  EDITOR_WORD_WRAP_DEFAULT,
+  SESSION_RESTORE_PROJECT_DEFAULT,
+  SESSION_RESTORE_TABS_DEFAULT,
+  UI_FONT_SCALE_DEFAULT,
+  UI_FONT_SCALE_MAX,
+  UI_FONT_SCALE_MIN,
   useEditorFontSize,
   useEditorKeybindMode,
   useEditorWordWrap,
+  useSessionRestoreProject,
+  useSessionRestoreTabs,
+  useUiFontScale,
   type EditorKeybindMode,
   type EditorWordWrap,
 } from "@lib/settings.ts";
 import styles from "./SettingsModal.module.css";
 
-type SectionId = "editor" | "paths" | "about";
+type SectionId = "appearance" | "session" | "editor" | "paths" | "about";
 
 interface SettingsModalProps {
   readonly onClose: () => void;
 }
 
+const NAV_SECTIONS: readonly { readonly id: SectionId; readonly label: string }[] = [
+  { id: "appearance", label: "Appearance" },
+  { id: "session", label: "Session" },
+  { id: "editor", label: "Editor" },
+  { id: "paths", label: "Paths" },
+  { id: "about", label: "About" },
+];
+
 export function SettingsModal({ onClose }: SettingsModalProps) {
-  const [section, setSection] = useState<SectionId>("editor");
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState<SectionId>("appearance");
+
+  // Nav items are scroll anchors. An IntersectionObserver keyed to the
+  // content scroll container picks the topmost section whose heading sits
+  // inside the top 30% of the viewport as "active", keeping the nav in
+  // sync with the user's scroll position.
+  useEffect(() => {
+    const root = contentRef.current;
+    if (root === null) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const intersecting = entries.filter((e) => e.isIntersecting);
+        if (intersecting.length === 0) return;
+        intersecting.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        const top = intersecting[0];
+        if (top === undefined) return;
+        const id = top.target.id.replace(/^setting-/, "") as SectionId;
+        setActive(id);
+      },
+      { root, rootMargin: "0px 0px -70% 0px", threshold: 0 },
+    );
+    for (const { id } of NAV_SECTIONS) {
+      const el = document.getElementById(`setting-${id}`);
+      if (el !== null) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, []);
+
+  const handleNavClick = (id: SectionId) => {
+    document.getElementById(`setting-${id}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  };
 
   return (
     <Modal onClose={onClose} ariaLabelledBy="settings-title">
@@ -35,14 +88,32 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         </div>
         <div className={styles.body}>
           <nav className={styles.nav}>
-            <NavItem id="editor" current={section} onSelect={setSection} label="Editor" />
-            <NavItem id="paths" current={section} onSelect={setSection} label="Paths" />
-            <NavItem id="about" current={section} onSelect={setSection} label="About" />
+            {NAV_SECTIONS.map(({ id, label }) => (
+              <NavItem
+                key={id}
+                id={id}
+                active={active === id}
+                onSelect={handleNavClick}
+                label={label}
+              />
+            ))}
           </nav>
-          <div className={styles.content}>
-            {section === "editor" && <EditorSection />}
-            {section === "paths" && <PathsSection />}
-            {section === "about" && <AboutSection />}
+          <div className={styles.content} ref={contentRef}>
+            <div id="setting-appearance">
+              <AppearanceSection />
+            </div>
+            <div id="setting-session">
+              <SessionSection />
+            </div>
+            <div id="setting-editor">
+              <EditorSection />
+            </div>
+            <div id="setting-paths">
+              <PathsSection />
+            </div>
+            <div id="setting-about">
+              <AboutSection />
+            </div>
           </div>
         </div>
       </div>
@@ -52,16 +123,16 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
 interface NavItemProps {
   readonly id: SectionId;
-  readonly current: SectionId;
+  readonly active: boolean;
   readonly onSelect: (id: SectionId) => void;
   readonly label: string;
 }
 
-function NavItem({ id, current, onSelect, label }: NavItemProps) {
+function NavItem({ id, active, onSelect, label }: NavItemProps) {
   return (
     <button
       type="button"
-      className={`${styles.navItem} ${current === id ? styles.navItemActive : ""}`}
+      className={`${styles.navItem} ${active ? styles.navItemActive : ""}`}
       onClick={() => onSelect(id)}
     >
       {label}
@@ -76,20 +147,172 @@ function SectionHeader({ title }: { title: string }) {
 function Field({
   label,
   hint,
+  onReset,
   children,
 }: {
   label: string;
   hint?: string;
+  /** When provided, a small undo icon appears after the label that fires
+   *  this callback on click. Call sites pass it only when the current
+   *  value differs from the setting's default, so the icon doubles as a
+   *  "non-default" indicator. */
+  onReset?: (() => void) | undefined;
   children: React.ReactNode;
 }) {
   return (
     <div className={styles.field}>
       <div className={styles.fieldLabel}>
-        <span className={styles.fieldLabelText}>{label}</span>
+        <span className={styles.fieldLabelRow}>
+          <span className={styles.fieldLabelText}>{label}</span>
+          {onReset !== undefined && (
+            <button
+              type="button"
+              className={styles.resetButton}
+              onClick={onReset}
+              aria-label="Reset to default"
+              title="Reset to default"
+            >
+              <RotateCcw size={12} />
+            </button>
+          )}
+        </span>
         {hint !== undefined && <span className={styles.fieldHint}>{hint}</span>}
       </div>
       <div className={styles.fieldControl}>{children}</div>
     </div>
+  );
+}
+
+interface StepperProps {
+  readonly value: number;
+  readonly min: number;
+  readonly max: number;
+  readonly step?: number;
+  readonly onChange: (value: number) => void;
+  readonly ariaLabelDown: string;
+  readonly ariaLabelUp: string;
+}
+
+function Stepper({
+  value,
+  min,
+  max,
+  step = 1,
+  onChange,
+  ariaLabelDown,
+  ariaLabelUp,
+}: StepperProps) {
+  return (
+    <div className={styles.stepper}>
+      <button
+        type="button"
+        className={styles.stepButton}
+        aria-label={ariaLabelDown}
+        onClick={() => onChange(value - step)}
+        disabled={value <= min}
+      >
+        <Minus size={12} />
+      </button>
+      <input
+        type="number"
+        className={styles.stepValue}
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => {
+          const next = parseInt(e.target.value, 10);
+          if (Number.isFinite(next)) onChange(next);
+        }}
+      />
+      <button
+        type="button"
+        className={styles.stepButton}
+        aria-label={ariaLabelUp}
+        onClick={() => onChange(value + step)}
+        disabled={value >= max}
+      >
+        <Plus size={12} />
+      </button>
+    </div>
+  );
+}
+
+// --- Appearance section ----------------------------------------------------
+
+function AppearanceSection() {
+  const [uiScale, setUiScale] = useUiFontScale();
+
+  return (
+    <>
+      <SectionHeader title="Appearance" />
+      <Field
+        label="UI font size"
+        hint={`${UI_FONT_SCALE_MIN}–${UI_FONT_SCALE_MAX}%`}
+        onReset={
+          uiScale !== UI_FONT_SCALE_DEFAULT ? () => setUiScale(UI_FONT_SCALE_DEFAULT) : undefined
+        }
+      >
+        <Stepper
+          value={uiScale}
+          min={UI_FONT_SCALE_MIN}
+          max={UI_FONT_SCALE_MAX}
+          step={5}
+          onChange={setUiScale}
+          ariaLabelDown="Decrease UI font size"
+          ariaLabelUp="Increase UI font size"
+        />
+      </Field>
+    </>
+  );
+}
+
+// --- Session section -------------------------------------------------------
+
+function SessionSection() {
+  const [restoreProject, setRestoreProject] = useSessionRestoreProject();
+  const [restoreTabs, setRestoreTabs] = useSessionRestoreTabs();
+
+  return (
+    <>
+      <SectionHeader title="Session" />
+      <Field
+        label="Restore project on launch"
+        hint="Reopen the most recent project automatically."
+        onReset={
+          restoreProject !== SESSION_RESTORE_PROJECT_DEFAULT
+            ? () => setRestoreProject(SESSION_RESTORE_PROJECT_DEFAULT)
+            : undefined
+        }
+      >
+        <SegmentedControl<"on" | "off">
+          value={restoreProject ? "on" : "off"}
+          onChange={(v) => setRestoreProject(v === "on")}
+          options={[
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
+          ]}
+        />
+      </Field>
+      <Field
+        label="Restore open tabs"
+        hint="Reopen the panes and tabs from your last session."
+        onReset={
+          restoreTabs !== SESSION_RESTORE_TABS_DEFAULT
+            ? () => setRestoreTabs(SESSION_RESTORE_TABS_DEFAULT)
+            : undefined
+        }
+      >
+        <SegmentedControl<"on" | "off">
+          value={restoreTabs ? "on" : "off"}
+          onChange={(v) => setRestoreTabs(v === "on")}
+          options={[
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
+          ]}
+        />
+      </Field>
+    </>
   );
 }
 
@@ -103,40 +326,32 @@ function EditorSection() {
   return (
     <>
       <SectionHeader title="Editor" />
-      <Field label="Font size" hint={`${EDITOR_FONT_SIZE_MIN}–${EDITOR_FONT_SIZE_MAX}px`}>
-        <div className={styles.stepper}>
-          <button
-            type="button"
-            className={styles.stepButton}
-            aria-label="Decrease font size"
-            onClick={() => setFontSize(fontSize - 1)}
-            disabled={fontSize <= EDITOR_FONT_SIZE_MIN}
-          >
-            <Minus size={12} />
-          </button>
-          <input
-            type="number"
-            className={styles.stepValue}
-            min={EDITOR_FONT_SIZE_MIN}
-            max={EDITOR_FONT_SIZE_MAX}
-            value={fontSize}
-            onChange={(e) => {
-              const next = parseInt(e.target.value, 10);
-              if (Number.isFinite(next)) setFontSize(next);
-            }}
-          />
-          <button
-            type="button"
-            className={styles.stepButton}
-            aria-label="Increase font size"
-            onClick={() => setFontSize(fontSize + 1)}
-            disabled={fontSize >= EDITOR_FONT_SIZE_MAX}
-          >
-            <Plus size={12} />
-          </button>
-        </div>
+      <Field
+        label="Font size"
+        hint={`${EDITOR_FONT_SIZE_MIN}–${EDITOR_FONT_SIZE_MAX}px`}
+        onReset={
+          fontSize !== EDITOR_FONT_SIZE_DEFAULT
+            ? () => setFontSize(EDITOR_FONT_SIZE_DEFAULT)
+            : undefined
+        }
+      >
+        <Stepper
+          value={fontSize}
+          min={EDITOR_FONT_SIZE_MIN}
+          max={EDITOR_FONT_SIZE_MAX}
+          onChange={setFontSize}
+          ariaLabelDown="Decrease editor font size"
+          ariaLabelUp="Increase editor font size"
+        />
       </Field>
-      <Field label="Word wrap">
+      <Field
+        label="Word wrap"
+        onReset={
+          wordWrap !== EDITOR_WORD_WRAP_DEFAULT
+            ? () => setWordWrap(EDITOR_WORD_WRAP_DEFAULT)
+            : undefined
+        }
+      >
         <SegmentedControl<EditorWordWrap>
           value={wordWrap}
           onChange={setWordWrap}
@@ -146,7 +361,14 @@ function EditorSection() {
           ]}
         />
       </Field>
-      <Field label="Keybinds">
+      <Field
+        label="Keybinds"
+        onReset={
+          keybinds !== EDITOR_KEYBIND_MODE_DEFAULT
+            ? () => setKeybinds(EDITOR_KEYBIND_MODE_DEFAULT)
+            : undefined
+        }
+      >
         <SegmentedControl<EditorKeybindMode>
           value={keybinds}
           onChange={setKeybinds}

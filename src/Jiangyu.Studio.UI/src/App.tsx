@@ -8,6 +8,8 @@ import { SettingsModal } from "@components/SettingsModal/SettingsModal.tsx";
 import { CompileModal } from "@components/CompileModal/CompileModal.tsx";
 import { StatusBar } from "@components/StatusBar/StatusBar.tsx";
 import { useCompile } from "@lib/compile/compile.ts";
+import { rpcCall } from "@lib/rpc.ts";
+import { loadSessionRestoreProject, useApplyUiFontScale, useSidebarHidden } from "@lib/settings.ts";
 import { basename, join, remapPath } from "@lib/path.ts";
 import {
   PALETTE_SCOPE,
@@ -18,6 +20,7 @@ import {
 import { buildProjectActions } from "@lib/palette/appActions.ts";
 import { usePaneActions } from "@lib/palette/paneActions.ts";
 import { useFileEntries } from "@lib/project/useFileEntries.ts";
+import { useGitBranch } from "@lib/project/gitBranch.ts";
 import { useProjectStore } from "@lib/project/store.ts";
 import { useEditorContent, useEditorContentSync } from "@lib/editor/content.ts";
 import { usePaneWindowStore, useSyncPaneWindowProject } from "@lib/panes/paneWindowStore.ts";
@@ -28,7 +31,33 @@ import { findPane } from "@lib/layout.ts";
 import styles from "./App.module.css";
 
 export function App() {
+  useApplyUiFontScale();
   useEditorContentSync();
+
+  const [sidebarHidden, setSidebarHidden] = useSidebarHidden();
+
+  // Auto-reopen the most recent project on launch when the user has opted
+  // in. Runs once on mount; no-op if a project is already open (e.g. during
+  // hot reload) or the recent list is empty. Routes through the host's
+  // openProject RPC — same path the WelcomeScreen uses — so the host-side
+  // ProjectWatcher.ProjectRoot stays in sync with the UI's projectPath.
+  // Going through store.switchProject directly would leave the host
+  // unaware of the restored project and break compile + path-scoped RPCs.
+  useEffect(() => {
+    if (!loadSessionRestoreProject()) return;
+    const store = useProjectStore.getState();
+    if (store.projectPath !== null) return;
+    const last = store.recentProjects[0];
+    if (last === undefined) return;
+    void rpcCall<string>("openProject", { path: last })
+      .then(() => store.switchProject(last))
+      .catch((err: unknown) => {
+        // Swallow — most likely the directory moved/was deleted since last
+        // run. Leaving the user on the welcome screen is the right
+        // fallback, no toast needed.
+        console.error("[Studio] auto-restore failed:", err);
+      });
+  }, []);
 
   const projectPath = useProjectStore((s) => s.projectPath);
 
@@ -99,6 +128,7 @@ export function App() {
   }, []);
 
   const { fileEntries, refreshFiles } = useFileEntries(projectPath, handleDeletedPath);
+  const gitBranch = useGitBranch(projectPath);
 
   const recentProjects = useProjectStore((s) => s.recentProjects);
 
@@ -164,8 +194,14 @@ export function App() {
     allActionsRef.current = allActions;
   }, [allActions]);
 
+  const toggleSidebar = useCallback(
+    () => setSidebarHidden(!sidebarHidden),
+    [sidebarHidden, setSidebarHidden],
+  );
+
   useAppShortcuts({
     setPaletteOpen,
+    toggleSidebar,
     projectPathRef,
     compileStateRef,
     startCompileRef,
@@ -178,15 +214,21 @@ export function App() {
         <WelcomeScreen onOpenProject={useProjectStore.getState().switchProject} />
       ) : (
         <>
-          <Topbar projectName={basename(projectPath)} onOpenPalette={() => setPaletteOpen(true)} />
+          <Topbar
+            projectName={basename(projectPath)}
+            gitBranch={gitBranch}
+            onOpenPalette={() => setPaletteOpen(true)}
+          />
           <div className={styles.main}>
-            <Sidebar
-              projectPath={projectPath}
-              onOpenFile={(path) => useLayoutStore.getState().openFile(path)}
-              dirtyPaths={dirtyFiles}
-              onPathMoved={handlePathMoved}
-              revealPath={revealRequest}
-            />
+            {!sidebarHidden && (
+              <Sidebar
+                projectPath={projectPath}
+                onOpenFile={(path) => useLayoutStore.getState().openFile(path)}
+                dirtyPaths={dirtyFiles}
+                onPathMoved={handlePathMoved}
+                revealPath={revealRequest}
+              />
+            )}
             <WorkspaceGrid
               projectPath={projectPath}
               layout={layout}

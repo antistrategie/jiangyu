@@ -335,7 +335,7 @@
 .navBtn {
   background: none;
   border: 1px solid var(--rule);
-  padding: 2px 8px;
+  padding: 2px var(--space-2);
   font-size: var(--fs-base);
   color: var(--fg);
   cursor: pointer;
@@ -503,7 +503,7 @@
   background: none;
   border: none;
   padding: 0;
-  font-size: 14px;
+  font-size: var(--fs-base);
   width: 16px;
   height: 16px;
   display: inline-flex;
@@ -512,7 +512,7 @@
   cursor: pointer;
   color: var(--fg-muted);
   flex-shrink: 0;
-  transition: transform 80ms ease-out;
+  transition: transform var(--ease-fast);
 }
 
 .refExpanderOpen {
@@ -593,7 +593,7 @@
 
 .memberTags {
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
   margin-left: auto;
   flex-shrink: 0;
 }
@@ -603,7 +603,7 @@
   font-size: 9px;
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   border: 1px solid var(--rule);
   color: var(--fg-muted);
   line-height: 16px;
@@ -644,13 +644,13 @@
 .enumValues {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .enumValue {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   border: 1px solid var(--rule);
   color: var(--fg-strong);
   line-height: 16px;

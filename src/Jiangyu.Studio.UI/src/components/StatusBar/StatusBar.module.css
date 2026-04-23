@@ -2,22 +2,40 @@
   display: flex;
   align-items: center;
   height: 26px;
-  padding: 0 var(--space-4);
+  padding: 0 var(--space-1);
   background: var(--ink-0);
   border-top: 1px solid var(--rule-on-inverse);
   flex-shrink: 0;
   color: var(--paper-3);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
+  /* line-height: 1 keeps text boxes tight so icons and text glyphs centre
+     consistently against each other inside the 26px bar. */
+  line-height: 1;
   position: relative;
-  gap: var(--space-3);
+  gap: var(--space-2);
   overflow: hidden;
   transition: background var(--ease-normal);
+}
+
+/* SVGs default to `display: inline` with `vertical-align: baseline`, which
+   makes them sit on the text baseline rather than aligning by their centre
+   — visibly low next to a mono text label. Forcing block display drops them
+   out of inline-text flow so the flex container's align-items: center
+   takes over cleanly. */
+.bar svg {
+  display: block;
 }
 
 .barRunning {
   background: var(--jade-0);
   border-top-color: var(--jade-1);
+}
+
+/* Separator tracks the bar's border colour so it reads as the same seam
+   language on both the default (ink) and running (jade) backgrounds. */
+.barRunning .vrule {
+  background: var(--jade-1);
 }
 
 /* Thin progress strip along the top edge of the status bar. */
@@ -34,6 +52,54 @@
   height: 100%;
   background: var(--cinnabar-1);
   transition: width 200ms linear;
+}
+
+.sidebarToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--paper-3);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color var(--ease-fast);
+}
+
+.sidebarToggle:hover {
+  color: var(--paper-0);
+}
+
+/* Vertical rule between the sidebar toggle and the compile region.
+   Matches the Topbar's separator language (hairline on inverse surface). */
+.vrule {
+  width: 1px;
+  align-self: stretch;
+  background: var(--rule-on-inverse);
+  margin: var(--space-1) 0;
+  flex-shrink: 0;
+}
+
+.statusSpinner {
+  flex-shrink: 0;
+}
+
+.statusIconIdle {
+  color: var(--paper-3);
+  flex-shrink: 0;
+}
+
+.statusIconSuccess {
+  color: var(--jade-2);
+  flex-shrink: 0;
+}
+
+.statusIconFailed {
+  color: var(--cinnabar-2);
+  flex-shrink: 0;
 }
 
 .compileRegion {
