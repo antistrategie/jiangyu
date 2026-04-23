@@ -77,6 +77,23 @@ public static class AssetsCommand
                 return 0;
             }
 
+            // Build a (className, name) → count map from the full index so we
+            // can suggest bare names for unique assets and pathId-qualified
+            // names for ambiguous ones. The search result page is capped at 50
+            // rows, so inferring uniqueness from it alone would be unreliable.
+            var fullIndex = service.LoadIndex();
+            var classNameCounts = new Dictionary<(string, string), int>();
+            if (fullIndex?.Assets is not null)
+            {
+                foreach (var entry in fullIndex.Assets)
+                {
+                    if (string.IsNullOrWhiteSpace(entry.ClassName) || string.IsNullOrWhiteSpace(entry.Name))
+                        continue;
+                    var key = (entry.ClassName, entry.Name);
+                    classNameCounts[key] = classNameCounts.GetValueOrDefault(key) + 1;
+                }
+            }
+
             int nameWidth = Math.Min(results.Max(r => r.Name?.Length ?? 0), 50);
             int pathIdTokenWidth = results.Max(r => $"pathId={r.PathId}".Length);
             bool showClassColumn = string.IsNullOrWhiteSpace(typeFilter);
@@ -98,12 +115,29 @@ public static class AssetsCommand
                 if (string.IsNullOrWhiteSpace(entry.Name))
                     continue;
 
+                // For replaceable asset types, determine whether the name is
+                // unique within its class. Model targets count PHO + GO
+                // together since they collapse to the same effective target.
+                var isUnique = entry.ClassName switch
+                {
+                    "PrefabHierarchyObject" =>
+                        classNameCounts.GetValueOrDefault(("PrefabHierarchyObject", entry.Name)) +
+                        classNameCounts.GetValueOrDefault(("GameObject", entry.Name)) <= 2,
+                    "GameObject" =>
+                        classNameCounts.GetValueOrDefault(("PrefabHierarchyObject", entry.Name)) +
+                        classNameCounts.GetValueOrDefault(("GameObject", entry.Name)) <= 2,
+                    _ when entry.ClassName is not null && entry.Name is not null =>
+                        classNameCounts.GetValueOrDefault((entry.ClassName, entry.Name)) <= 1,
+                    _ => false,
+                };
+                long? suggestedPathId = isUnique ? null : entry.PathId;
+
                 var replacementTarget = entry.ClassName switch
                 {
-                    "PrefabHierarchyObject" => CompilationService.BuildModelReplacementRelativePath(entry.Name!, entry.PathId),
-                    "Texture2D" => CompilationService.BuildTextureReplacementRelativePath(entry.Name!, entry.PathId),
-                    "Sprite" => CompilationService.BuildSpriteReplacementRelativePath(entry.Name!, entry.PathId),
-                    "AudioClip" => CompilationService.BuildAudioReplacementRelativePath(entry.Name!, entry.PathId),
+                    "PrefabHierarchyObject" => CompilationService.BuildModelReplacementRelativePath(entry.Name!, suggestedPathId),
+                    "Texture2D" => CompilationService.BuildTextureReplacementRelativePath(entry.Name!, suggestedPathId),
+                    "Sprite" => CompilationService.BuildSpriteReplacementRelativePath(entry.Name!, suggestedPathId),
+                    "AudioClip" => CompilationService.BuildAudioReplacementRelativePath(entry.Name!, suggestedPathId),
                     _ => null,
                 };
 

@@ -41,21 +41,29 @@ If a prefab-hierarchy view exists, that is the target modders should use. `GameO
 Current convention-first model replacement path shape:
 
 ```text
-assets/replacements/models/<target-name>--<pathId>/model.gltf
-assets/replacements/models/<target-name>--<pathId>/model.glb
+assets/replacements/models/<target-name>/model.gltf
+assets/replacements/models/<target-name>/model.glb
 ```
 
 Example:
 
 ```text
-assets/replacements/models/el.local_forces_basic_soldier--519/model.gltf
+assets/replacements/models/el.local_forces_basic_soldier/model.gltf
 ```
 
 or:
 
 ```text
-assets/replacements/models/el.local_forces_basic_soldier--519/model.glb
+assets/replacements/models/el.local_forces_basic_soldier/model.glb
 ```
+
+When the target name is shared by multiple assets in the index, disambiguate with `--<pathId>`:
+
+```text
+assets/replacements/models/el.local_forces_basic_soldier--519/model.gltf
+```
+
+`assets search` shows the bare name when it is unique, or the `--pathId` form when disambiguation is needed. The compiler tells you which candidates exist if a bare name is ambiguous.
 
 Inside the model file, mesh names should match the target mesh/LOD contract.
 
@@ -94,10 +102,16 @@ That means convention-first model replacement is only safe when the target model
 For direct texture replacement, use:
 
 ```text
-assets/replacements/textures/<target-name>--<pathId>.<ext>
+assets/replacements/textures/<target-name>.<ext>
 ```
 
 Example:
+
+```text
+assets/replacements/textures/local_forces_basic_soldier_BaseMap.png
+```
+
+When the texture name is shared by multiple assets, disambiguate with `--<pathId>`:
 
 ```text
 assets/replacements/textures/local_forces_basic_soldier_BaseMap--1234.png
@@ -110,10 +124,16 @@ This replaces the matching `Texture2D` asset when Jiangyu can prove the runtime 
 For UI icons and other direct sprite replacement, use:
 
 ```text
-assets/replacements/sprites/<target-name>--<pathId>.<ext>
+assets/replacements/sprites/<target-name>.<ext>
 ```
 
 Example:
+
+```text
+assets/replacements/sprites/MenaceFontIcons_0.png
+```
+
+When the sprite name is shared by multiple assets, disambiguate with `--<pathId>`:
 
 ```text
 assets/replacements/sprites/MenaceFontIcons_0--9316.png
@@ -141,10 +161,16 @@ the current index is too old.
 For direct audio replacement, use:
 
 ```text
-assets/replacements/audio/<target-name>--<pathId>.<ext>
+assets/replacements/audio/<target-name>.<ext>
 ```
 
 Example:
+
+```text
+assets/replacements/audio/sfx_rifle_fire.wav
+```
+
+When the audio clip name is shared by multiple assets, disambiguate with `--<pathId>`:
 
 ```text
 assets/replacements/audio/sfx_rifle_fire--4321.wav

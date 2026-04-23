@@ -139,6 +139,124 @@ public class ModelReplacementAliasTests
     }
 }
 
+public class ReplacementAliasParsingTests
+{
+    [Fact]
+    public void TryParseReplacementAlias_ExtractsNameAndPathId()
+    {
+        var success = CompilationService.TryParseReplacementAlias("soldier--20510", out var name, out var pathId);
+
+        Assert.True(success);
+        Assert.Equal("soldier", name);
+        Assert.Equal(20510L, pathId);
+    }
+
+    [Fact]
+    public void TryParseReplacementAlias_AcceptsBareName()
+    {
+        var success = CompilationService.TryParseReplacementAlias("soldier", out var name, out var pathId);
+
+        Assert.True(success);
+        Assert.Equal("soldier", name);
+        Assert.Null(pathId);
+    }
+
+    [Fact]
+    public void TryParseReplacementAlias_TreatsNonNumericSuffixAsBareName()
+    {
+        var success = CompilationService.TryParseReplacementAlias("soldier--abc", out var name, out var pathId);
+
+        Assert.True(success);
+        Assert.Equal("soldier--abc", name);
+        Assert.Null(pathId);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void TryParseReplacementAlias_RejectsEmptyOrWhitespace(string alias)
+    {
+        Assert.False(CompilationService.TryParseReplacementAlias(alias, out _, out _));
+    }
+
+    [Fact]
+    public void TryParseReplacementAlias_RejectsPathIdOnlyNoName()
+    {
+        var success = CompilationService.TryParseReplacementAlias("--20510", out var name, out var pathId);
+
+        // "--20510" has separator at index 0 (no name before --), so
+        // it falls through to bare-name parsing. The bare name is "--20510".
+        Assert.True(success);
+        Assert.Equal("--20510", name);
+        Assert.Null(pathId);
+    }
+
+    [Fact]
+    public void TryParseReplacementAlias_HandlesDottedNamesWithPathId()
+    {
+        var success = CompilationService.TryParseReplacementAlias("el.local_forces_basic_soldier--519", out var name, out var pathId);
+
+        Assert.True(success);
+        Assert.Equal("el.local_forces_basic_soldier", name);
+        Assert.Equal(519L, pathId);
+    }
+
+    [Fact]
+    public void TryParseReplacementAlias_HandlesNameWithDoubleDashInMiddle()
+    {
+        // Name itself contains "--" but also has a valid --<digits> suffix.
+        var success = CompilationService.TryParseReplacementAlias("some--thing--123", out var name, out var pathId);
+
+        Assert.True(success);
+        Assert.Equal("some--thing", name);
+        Assert.Equal(123L, pathId);
+    }
+
+    [Fact]
+    public void BuildReplacementAlias_EmitsBareName_WhenPathIdNull()
+    {
+        Assert.Equal("soldier", CompilationService.BuildReplacementAlias("soldier", null));
+    }
+
+    [Fact]
+    public void BuildReplacementAlias_EmitsQualifiedName_WhenPathIdPresent()
+    {
+        Assert.Equal("soldier--123", CompilationService.BuildReplacementAlias("soldier", 123));
+    }
+
+    [Fact]
+    public void BuildModelReplacementRelativePath_BareNameOverload()
+    {
+        var path = CompilationService.BuildModelReplacementRelativePath("soldier", (long?)null);
+
+        Assert.Equal("assets/replacements/models/soldier/model.gltf", path);
+    }
+
+    [Fact]
+    public void BuildTextureReplacementRelativePath_BareNameOverload()
+    {
+        var path = CompilationService.BuildTextureReplacementRelativePath("tex_BaseMap", (long?)null);
+
+        Assert.Equal("assets/replacements/textures/tex_BaseMap.png", path);
+    }
+
+    [Fact]
+    public void BuildSpriteReplacementRelativePath_BareNameOverload()
+    {
+        var path = CompilationService.BuildSpriteReplacementRelativePath("icon_0", (long?)null);
+
+        Assert.Equal("assets/replacements/sprites/icon_0.png", path);
+    }
+
+    [Fact]
+    public void BuildAudioReplacementRelativePath_BareNameOverload()
+    {
+        var path = CompilationService.BuildAudioReplacementRelativePath("sfx_fire", (long?)null);
+
+        Assert.Equal("assets/replacements/audio/sfx_fire.wav", path);
+    }
+}
+
 public class LodNamingTests
 {
     [Fact]

@@ -250,36 +250,74 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
     public static string BuildModelReplacementAlias(string targetName, long pathId)
         => $"{targetName}--{pathId}";
 
+    public static string BuildReplacementAlias(string targetName, long? pathId)
+        => pathId.HasValue ? $"{targetName}--{pathId.Value}" : targetName;
+
     public static string BuildModelReplacementRelativePath(string targetName, long pathId, string fileName = "model.gltf")
         => Path.Combine("assets", "replacements", "models", BuildModelReplacementAlias(targetName, pathId), fileName)
+            .Replace(Path.DirectorySeparatorChar, '/');
+
+    public static string BuildModelReplacementRelativePath(string targetName, long? pathId, string fileName = "model.gltf")
+        => Path.Combine("assets", "replacements", "models", BuildReplacementAlias(targetName, pathId), fileName)
             .Replace(Path.DirectorySeparatorChar, '/');
 
     public static string BuildTextureReplacementRelativePath(string targetName, long pathId, string extension = ".png")
         => Path.Combine("assets", "replacements", "textures", $"{BuildModelReplacementAlias(targetName, pathId)}{NormalizeReplacementExtension(extension)}")
             .Replace(Path.DirectorySeparatorChar, '/');
 
+    public static string BuildTextureReplacementRelativePath(string targetName, long? pathId, string extension = ".png")
+        => Path.Combine("assets", "replacements", "textures", $"{BuildReplacementAlias(targetName, pathId)}{NormalizeReplacementExtension(extension)}")
+            .Replace(Path.DirectorySeparatorChar, '/');
+
     public static string BuildSpriteReplacementRelativePath(string targetName, long pathId, string extension = ".png")
         => Path.Combine("assets", "replacements", "sprites", $"{BuildModelReplacementAlias(targetName, pathId)}{NormalizeReplacementExtension(extension)}")
+            .Replace(Path.DirectorySeparatorChar, '/');
+
+    public static string BuildSpriteReplacementRelativePath(string targetName, long? pathId, string extension = ".png")
+        => Path.Combine("assets", "replacements", "sprites", $"{BuildReplacementAlias(targetName, pathId)}{NormalizeReplacementExtension(extension)}")
             .Replace(Path.DirectorySeparatorChar, '/');
 
     public static string BuildAudioReplacementRelativePath(string targetName, long pathId, string extension = ".wav")
         => Path.Combine("assets", "replacements", "audio", $"{BuildModelReplacementAlias(targetName, pathId)}{NormalizeReplacementExtension(extension)}")
             .Replace(Path.DirectorySeparatorChar, '/');
 
-    public static bool TryParseModelReplacementAlias(string alias, out string targetName, out long pathId)
+    public static string BuildAudioReplacementRelativePath(string targetName, long? pathId, string extension = ".wav")
+        => Path.Combine("assets", "replacements", "audio", $"{BuildReplacementAlias(targetName, pathId)}{NormalizeReplacementExtension(extension)}")
+            .Replace(Path.DirectorySeparatorChar, '/');
+
+    /// <summary>
+    /// Parses a replacement alias into a target name and optional pathId.
+    /// Accepts both <c>name--pathId</c> and bare <c>name</c> forms.
+    /// Only the <c>--&lt;digits&gt;</c> suffix is treated as a pathId; if the
+    /// text after <c>--</c> is non-numeric the whole alias is a bare name.
+    /// </summary>
+    public static bool TryParseReplacementAlias(string alias, out string targetName, out long? pathId)
     {
         targetName = string.Empty;
-        pathId = 0;
+        pathId = null;
 
         if (string.IsNullOrWhiteSpace(alias))
             return false;
 
         var separatorIndex = alias.LastIndexOf("--", StringComparison.Ordinal);
-        if (separatorIndex <= 0 || separatorIndex + 2 >= alias.Length)
-            return false;
+        if (separatorIndex > 0 && separatorIndex + 2 < alias.Length &&
+            long.TryParse(alias[(separatorIndex + 2)..], out var parsed))
+        {
+            targetName = alias[..separatorIndex];
+            pathId = parsed;
+            return true;
+        }
 
-        targetName = alias[..separatorIndex];
-        return long.TryParse(alias[(separatorIndex + 2)..], out pathId);
+        // Bare name — no pathId suffix, or non-numeric suffix after --.
+        targetName = alias;
+        return true;
+    }
+
+    public static bool TryParseModelReplacementAlias(string alias, out string targetName, out long pathId)
+    {
+        var result = TryParseReplacementAlias(alias, out targetName, out var nullablePathId);
+        pathId = nullablePathId ?? 0;
+        return result && nullablePathId.HasValue;
     }
 
     private static string NormalizeReplacementExtension(string extension)
@@ -319,10 +357,10 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         foreach (var targetDirectory in Directory.GetDirectories(modelsRoot))
         {
             var targetAlias = Path.GetFileName(targetDirectory);
-            if (!TryParseModelReplacementAlias(targetAlias, out var targetName, out var targetPathId))
+            if (!TryParseReplacementAlias(targetAlias, out var targetName, out var targetPathId))
             {
                 throw new InvalidOperationException(
-                    $"Replacement target directory '{targetDirectory}' must be named '<target-name>--<pathId>'.");
+                    $"Replacement target directory '{targetDirectory}' has an invalid name.");
             }
 
             var target = ResolveReplacementModelTarget(index, targetAlias, targetName, targetPathId);
@@ -442,10 +480,10 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         foreach (var file in files)
         {
             var alias = Path.GetFileNameWithoutExtension(file);
-            if (!TryParseModelReplacementAlias(alias, out var targetName, out var targetPathId))
+            if (!TryParseReplacementAlias(alias, out var targetName, out var targetPathId))
             {
                 throw new InvalidOperationException(
-                    $"Replacement texture '{Path.GetRelativePath(projectDir, file)}' must be named '<target-name>--<pathId>.<ext>'.");
+                    $"Replacement texture '{Path.GetRelativePath(projectDir, file)}' has an invalid name.");
             }
 
             var target = ResolveReplacementTextureTarget(index, alias, targetName, targetPathId);
@@ -493,10 +531,10 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         foreach (var file in files)
         {
             var alias = Path.GetFileNameWithoutExtension(file);
-            if (!TryParseModelReplacementAlias(alias, out var targetName, out var targetPathId))
+            if (!TryParseReplacementAlias(alias, out var targetName, out var targetPathId))
             {
                 throw new InvalidOperationException(
-                    $"Replacement sprite '{Path.GetRelativePath(projectDir, file)}' must be named '<target-name>--<pathId>.<ext>'.");
+                    $"Replacement sprite '{Path.GetRelativePath(projectDir, file)}' has an invalid name.");
             }
 
             var target = ResolveAndValidateSpriteTarget(index, alias, targetName, targetPathId);
@@ -549,10 +587,10 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         foreach (var file in files)
         {
             var alias = Path.GetFileNameWithoutExtension(file);
-            if (!TryParseModelReplacementAlias(alias, out var targetName, out var targetPathId))
+            if (!TryParseReplacementAlias(alias, out var targetName, out var targetPathId))
             {
                 throw new InvalidOperationException(
-                    $"Replacement audio '{Path.GetRelativePath(projectDir, file)}' must be named '<target-name>--<pathId>.<ext>'.");
+                    $"Replacement audio '{Path.GetRelativePath(projectDir, file)}' has an invalid name.");
             }
 
             var target = ResolveAndValidateAudioTarget(index, alias, targetName, targetPathId, file);
@@ -590,14 +628,14 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         return JsonSerializer.Deserialize<AssetIndex>(File.ReadAllText(indexPath));
     }
 
-    private static ReplacementModelTarget ResolveReplacementModelTarget(AssetIndex index, string alias, string targetName, long targetPathId)
+    private static ReplacementModelTarget ResolveReplacementModelTarget(AssetIndex index, string alias, string targetName, long? targetPathId)
     {
         var candidates = index.Assets?
             .Where(entry =>
                 (string.Equals(entry.ClassName, "GameObject", StringComparison.Ordinal) ||
                  string.Equals(entry.ClassName, "PrefabHierarchyObject", StringComparison.Ordinal)) &&
                 string.Equals(entry.Name, targetName, StringComparison.Ordinal) &&
-                entry.PathId == targetPathId)
+                (!targetPathId.HasValue || entry.PathId == targetPathId.Value))
             .ToList()
             ?? [];
 
@@ -606,27 +644,42 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 $"Replacement target '{alias}' could not be resolved in the asset index. " +
                 "Use 'jiangyu assets search <name> --type PrefabHierarchyObject' to find the preferred target, or '--type GameObject' for the lower-level fallback.");
 
+        // When pathId was not specified, collapse PHO→backing GO pairs so a
+        // name that exists as both PHO and GO counts as one effective target.
+        if (!targetPathId.HasValue && candidates.Count > 1)
+        {
+            var deduped = new Dictionary<(string Collection, long PathId), AssetEntry>();
+            foreach (var entry in candidates)
+            {
+                var resolved = AssetPipelineService.ResolveGameObjectBacking(index, entry);
+                var key = (resolved.Collection ?? string.Empty, resolved.PathId);
+                deduped.TryAdd(key, resolved);
+            }
+            candidates = [.. deduped.Values];
+        }
+
         if (candidates.Count > 1)
         {
             var matches = candidates
                 .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/{entry.Name}--{entry.PathId}")
                 .OrderBy(path => path, StringComparer.Ordinal);
             throw new InvalidOperationException(
-                $"Replacement target '{alias}' is ambiguous in the asset index. Matches: {string.Join(", ", matches)}");
+                $"Replacement target '{alias}' is ambiguous in the asset index. " +
+                $"Disambiguate with '--pathId', e.g. '{targetName}--<pathId>'. Candidates: {string.Join(", ", matches)}");
         }
 
         var candidate = candidates[0];
-        var resolved = AssetPipelineService.ResolveGameObjectBacking(index, candidate);
-        return new ReplacementModelTarget(alias, resolved.Name ?? targetName, resolved.PathId, resolved.Collection ?? string.Empty, resolved.CanonicalPath);
+        var finalResolved = AssetPipelineService.ResolveGameObjectBacking(index, candidate);
+        return new ReplacementModelTarget(alias, finalResolved.Name ?? targetName, finalResolved.PathId, finalResolved.Collection ?? string.Empty, finalResolved.CanonicalPath);
     }
 
-    private static ReplacementTextureTarget ResolveReplacementTextureTarget(AssetIndex index, string alias, string targetName, long targetPathId)
+    private static ReplacementTextureTarget ResolveReplacementTextureTarget(AssetIndex index, string alias, string targetName, long? targetPathId)
     {
         var candidates = index.Assets?
             .Where(entry =>
                 string.Equals(entry.ClassName, "Texture2D", StringComparison.Ordinal) &&
                 string.Equals(entry.Name, targetName, StringComparison.Ordinal) &&
-                entry.PathId == targetPathId)
+                (!targetPathId.HasValue || entry.PathId == targetPathId.Value))
             .ToList()
             ?? [];
 
@@ -640,20 +693,21 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/Texture2D/{entry.Name}--{entry.PathId}")
                 .OrderBy(path => path, StringComparer.Ordinal);
             throw new InvalidOperationException(
-                $"Replacement target '{alias}' is ambiguous in the asset index. Matches: {string.Join(", ", matches)}");
+                $"Replacement target '{alias}' is ambiguous in the asset index. " +
+                $"Disambiguate with '--pathId', e.g. '{targetName}--<pathId>'. Candidates: {string.Join(", ", matches)}");
         }
 
         var candidate = candidates[0];
         return new ReplacementTextureTarget(alias, candidate.Name ?? targetName, candidate.PathId, candidate.Collection ?? string.Empty, candidate.CanonicalPath);
     }
 
-    private static ReplacementAudioTarget ResolveReplacementAudioTarget(AssetIndex index, string alias, string targetName, long targetPathId)
+    private static ReplacementAudioTarget ResolveReplacementAudioTarget(AssetIndex index, string alias, string targetName, long? targetPathId)
     {
         var candidates = index.Assets?
             .Where(entry =>
                 string.Equals(entry.ClassName, "AudioClip", StringComparison.Ordinal) &&
                 string.Equals(entry.Name, targetName, StringComparison.Ordinal) &&
-                entry.PathId == targetPathId)
+                (!targetPathId.HasValue || entry.PathId == targetPathId.Value))
             .ToList()
             ?? [];
 
@@ -667,20 +721,21 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/AudioClip/{entry.Name}--{entry.PathId}")
                 .OrderBy(path => path, StringComparer.Ordinal);
             throw new InvalidOperationException(
-                $"Replacement target '{alias}' is ambiguous in the asset index. Matches: {string.Join(", ", matches)}");
+                $"Replacement target '{alias}' is ambiguous in the asset index. " +
+                $"Disambiguate with '--pathId', e.g. '{targetName}--<pathId>'. Candidates: {string.Join(", ", matches)}");
         }
 
         var candidate = candidates[0];
         return new ReplacementAudioTarget(alias, candidate.Name ?? targetName, candidate.PathId, candidate.Collection ?? string.Empty, candidate.CanonicalPath);
     }
 
-    private static ReplacementSpriteTarget ResolveReplacementSpriteTarget(AssetIndex index, string alias, string targetName, long targetPathId)
+    private static ReplacementSpriteTarget ResolveReplacementSpriteTarget(AssetIndex index, string alias, string targetName, long? targetPathId)
     {
         var candidates = index.Assets?
             .Where(entry =>
                 string.Equals(entry.ClassName, "Sprite", StringComparison.Ordinal) &&
                 string.Equals(entry.Name, targetName, StringComparison.Ordinal) &&
-                entry.PathId == targetPathId)
+                (!targetPathId.HasValue || entry.PathId == targetPathId.Value))
             .ToList()
             ?? [];
 
@@ -694,7 +749,8 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/Sprite/{entry.Name}--{entry.PathId}")
                 .OrderBy(path => path, StringComparer.Ordinal);
             throw new InvalidOperationException(
-                $"Replacement target '{alias}' is ambiguous in the asset index. Matches: {string.Join(", ", matches)}");
+                $"Replacement target '{alias}' is ambiguous in the asset index. " +
+                $"Disambiguate with '--pathId', e.g. '{targetName}--<pathId>'. Candidates: {string.Join(", ", matches)}");
         }
 
         var candidate = candidates[0];
@@ -824,7 +880,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         AssetIndex index,
         string alias,
         string targetName,
-        long targetPathId)
+        long? targetPathId)
     {
         var target = ResolveReplacementSpriteTarget(index, alias, targetName, targetPathId);
         ValidateUniqueRuntimeSpriteNames(index, target);
@@ -891,7 +947,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         AssetIndex index,
         string alias,
         string targetName,
-        long targetPathId,
+        long? targetPathId,
         string filePath)
     {
         var target = ResolveReplacementAudioTarget(index, alias, targetName, targetPathId);

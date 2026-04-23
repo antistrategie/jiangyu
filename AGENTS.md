@@ -163,11 +163,11 @@ Source project manifests should stay ergonomic for modders. Compiled manifests a
 ```
 
 - Replacements come from `assets/replacements/` by convention. Current supported categories are:
-  - models: `assets/replacements/models/<target-name>--<pathId>/model.gltf` (or `.glb`)
-  - textures: `assets/replacements/textures/<target-name>--<pathId>.<ext>`
-  - sprites: `assets/replacements/sprites/<target-name>--<pathId>.<ext>`
-  - audio: `assets/replacements/audio/<target-name>--<pathId>.<ext>`
-  where `<target-name>--<pathId>` is the short Jiangyu replacement alias surfaced by `assets search`. Model mesh names inside the file must match the target mesh contract. Replacements are discovered by convention; there is no explicit mapping list in `jiangyu.json`.
+  - models: `assets/replacements/models/<target-name>/model.gltf` (or `.glb`)
+  - textures: `assets/replacements/textures/<target-name>.<ext>`
+  - sprites: `assets/replacements/sprites/<target-name>.<ext>`
+  - audio: `assets/replacements/audio/<target-name>.<ext>`
+  where `<target-name>` is the asset name surfaced by `assets search`. When the name is ambiguous (multiple assets share it), append `--<pathId>` to disambiguate, e.g. `soldier--20510`. The compiler resolves bare names when unique and rejects ambiguous ones with a candidate list. Model mesh names inside the file must match the target mesh contract. Replacements are discovered by convention; there is no explicit mapping list in `jiangyu.json`.
 - For model-replacement UX, prefer `PrefabHierarchyObject` as the modder-facing target when both `PrefabHierarchyObject` and `GameObject` exist for the same effective model. Treat `GameObject` as the lower-level/internal identity used for inspection and runtime resolution unless there is no prefab-hierarchy view.
 - PHO→GameObject collapse is shared infrastructure: `AssetPipelineService.ResolveGameObjectBacking(index, target)` takes any index entry and, if it is a `PrefabHierarchyObject`, returns its single same-named `GameObject`. Both compile-time target resolution (`CompilationService.ResolveReplacementModelTarget`) and CLI model export (`assets export model`) route through this helper, so a PHO pathId is accepted anywhere a model target is expected. Missing/ambiguous backing `GameObject`s are hard errors, not heuristics.
 - `assets/additions/` is for additional bundled assets preserved under their own names. It is created only when a mod needs it.
