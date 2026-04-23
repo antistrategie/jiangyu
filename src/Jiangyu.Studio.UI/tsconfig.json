@@ -22,6 +22,12 @@
     "rootDirs": [".", "generated"],
     "paths": {
       "@/*": ["./src/*"],
+      // Each alias lists both the source dir and the generated dir so the
+      // @css-modules-kit .d.ts files (written under generated/src/) are
+      // picked up for aliased CSS imports. `rootDirs` only merges relative
+      // paths; it doesn't compose with `paths`, so we enumerate manually.
+      "@lib/*": ["./src/lib/*", "./generated/src/lib/*"],
+      "@components/*": ["./src/components/*", "./generated/src/components/*"],
     },
     "plugins": [{ "name": "@css-modules-kit/ts-plugin" }],
   },

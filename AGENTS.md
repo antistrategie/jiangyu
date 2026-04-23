@@ -68,7 +68,40 @@ If `PROGRESS.md` or `TODO.md` are absent, treat them as optional working docs ra
 If logic must compile in both the real IL2CPP/game-reference loader context and a normal SDK/test context, put it in `Jiangyu.Shared` instead of linking the same source file into multiple projects.
 
 - **Studio Host** (`Jiangyu.Studio.Host`) — .NET backend for Jiangyu Studio. Bridges the React frontend to Core via JSON-RPC over InfiniFrame's message channel: requests `{id, method, params}`, responses `{id, result?, error?}`, host-pushed notifications `{method, params}` (no id). Handlers live in `RpcDispatcher.*.cs` partial files. Filesystem ops (`readFile`, `writeFile`, `movePath`, `copyPath`, `deletePath`, `createFile`, `createDirectory`, `listDirectory`, `listAllFiles`) route through `EnsurePathInsideProject` — paths outside the currently open project root are rejected. `writeFile` is atomic (writes to a sibling `.jiangyu.tmp` and renames). `ProjectWatcher` pushes debounced `fileChanged` notifications; writes call `ProjectWatcher.SuppressFor(path)` so self-writes don't trigger the conflict banner. Recent projects are held in the frontend's `localStorage`; the host does not persist them.
-- **Studio UI** (`Jiangyu.Studio.UI`) — React + TypeScript + Vite frontend. Lives at `src/Jiangyu.Studio.UI/`. Component-per-folder structure under `src/components/` (AssetBrowser, Sidebar, EditorArea, Palette, Toast, Topbar, WelcomeScreen, etc.). CSS Modules for scoped styles, with generated `.d.ts` via `@css-modules-kit/codegen` (output in `generated/`). Dev server with hot reload. Run `npx tsc --noEmit` for type-checking; regenerate CSS module types with `npx @css-modules-kit/codegen`.
+- **Studio UI** (`Jiangyu.Studio.UI`) — React + TypeScript + Vite frontend. Lives at `src/Jiangyu.Studio.UI/`. Component-per-folder structure under `src/components/` (AssetBrowser, Sidebar, Workspace, CodeEditor, PaneWindow, Palette, Toast, Topbar, WelcomeScreen, etc.). CSS Modules for scoped styles, with generated `.d.ts` via `@css-modules-kit/codegen` (output in `generated/`). Dev server with hot reload. Run `npx tsc --noEmit` for type-checking; regenerate CSS module types with `npx @css-modules-kit/codegen`.
+
+### Path aliases
+
+Use the `@lib/*` and `@components/*` aliases rather than relative `../../lib/…` imports. Configured in both `tsconfig.json` (`paths`) and `vite.config.ts` (`resolve.alias`), and the tsconfig entry lists both the source dir and `generated/src/…` so aliased CSS-module imports resolve through cmk's generated `.d.ts` files. Same-folder sibling imports stay `./X` — the alias isn't meant to replace genuinely-local paths.
+
+### Lib organisation
+
+`src/lib/` is grouped by concern, not flat:
+
+- `lib/drag/` — HTML5 drag helpers: `chip.ts` (floating drag-image builder), `crossTab.ts` / `crossPane.ts` (cross-window payload marshalling over `text/plain` + `application/json`), `computeDropIndex.ts` (insertion-index math for tab reorder).
+- `lib/editor/` — `content.ts` is the zustand store for editor buffers, dirty flags, conflicts, and Monaco instances. `useEditorContentSync()` is mounted once per window root to wire the host's `fileChanged` into the store.
+- `lib/panes/` — pane-workspace concerns: `layoutStore.ts` (the layout + 20 transform actions + autosave + fullscreen + reveal state), `paneWindowStore.ts` (secondary-window spawn/persist/restore), `paneWindowStorage.ts` (localStorage helper), `browserState.ts` / `role.ts` (secondary-window URL params + state shape).
+- `lib/project/` — project-level: `store.ts` (project path + recent list + lifecycle), `commands.ts` / `config.ts` (RPC wrappers), `recent.ts` (localStorage), `fileCommands.ts` (palette command factories), `useFileEntries.ts` (flat-file-list hook).
+- `lib/palette/` — `actions.tsx` (the palette action-registry zustand store plus `useRegisterActions` / `useRegisteredActions` hooks), `appActions.ts` / `paneActions.ts` (builders for each action group).
+- `lib/toast/` — `toast.tsx` (toast queue zustand store + legacy `useToast()` hook), `stickers.ts` (mood → sticker mapping).
+- `lib/compile/` — `compile.ts` (the compile hook + state), `configStatus.ts` (the config-gate RPC fetch).
+- `lib/ui/` — generic UI utilities: `shortcuts.ts`, `zoomMath.ts`, `formatTime.ts`, `useDebouncedScrollTop.ts`, `useAppShortcuts.ts`.
+- Root files are the truly cross-cutting primitives — `rpc.ts`, `layout.ts` (pure topology math), `path.ts`, `assets.ts`, `kdlSnippets.ts`, `settings.ts`.
+
+### State management
+
+Zustand stores own shared state; React hooks own per-component state. Use a store when state is read by 3+ components at different tree depths, needs to be reached from non-component code (RPC handlers, watchers), or has subscriptions / coordination that outlives a single mount. Use `useState` / a custom hook otherwise (modal flags, form inputs, component-scoped drag state).
+
+The live stores are:
+
+- `useEditorContent` (`lib/editor/content.ts`) — per-window editor buffers, dirty set, conflicts, live Monaco instances. Shared between the primary's `WorkspaceGrid` and each secondary's `PaneWindow.CodePaneShell` — before the store, both duplicated ~200 lines of state management.
+- `useLayoutStore` (`lib/panes/layoutStore.ts`) — the layout tree, 20 transform actions (`openFile`, `splitRight`, `moveTab`, etc.), fullscreen pane id, reveal signal, last-focused code path, and per-project localStorage autosave (150ms debounce, cleared on project switch). `setProject(path)` atomically loads the target layout.
+- `useProjectStore` (`lib/project/store.ts`) — current project path + recent-projects list + lifecycle actions (`openProject` / `switchProject` / `closeProject` / `revealProject`). `switchProject` coordinates with the layout + pane-window stores.
+- `usePaneWindowStore` (`lib/panes/paneWindowStore.ts`) — descriptors of live secondary windows plus subscriptions to `paneWindowClosed` / `paneWindowTabsChanged` / `paneWindowBrowserStateChanged`. `useSyncPaneWindowProject(path)` must be mounted once in App to sync the module-local `currentProject` pointer and trigger restore on project change.
+- `usePaletteStore` (`lib/palette/actions.tsx`) — the global action registry. Each component calls `useRegisterActions(actions)` to add a slot; `useRegisteredActions()` returns the merged list. Replaced `<ActionRegistryProvider>`.
+- `useToastStore` (`lib/toast/toast.tsx`) — the toast queue. Any non-component code (RPC error handler, background task) can call `useToastStore.getState().push({...})`. Replaced `<ToastProvider>`.
+
+Selectors (`useStore(s => s.slice)`) subscribe only to that slice so unrelated updates don't re-render the consumer. For imperative reads / actions from event handlers, use `useStore.getState()`.
 
 ### Jiangyu Design System
 
@@ -95,7 +128,7 @@ The Studio UI follows the Jiangyu Design System — an ink-wash × near-future t
 
 ### Stickers
 
-Character stickers live at `src/Jiangyu.Studio.UI/public/stickers/Jiangyu_001.jpg` through `_009.jpg`. Used by the toast system and available for other UI surfaces. Mood mapping in `src/Jiangyu.Studio.UI/src/lib/stickers.ts`:
+Character stickers live at `src/Jiangyu.Studio.UI/public/stickers/Jiangyu_001.jpg` through `_009.jpg`. Used by the toast system and available for other UI surfaces. Mood mapping in `src/Jiangyu.Studio.UI/src/lib/toast/stickers.ts`:
 
 - **Success**: 004 (triumphant flex), 007 (happy/hearts), 009 (double pointing/agreement)
 - **Error**: 001 (punching), 003 (winding up attack), 006 (sad/rain), 008 (asking for a fight)
@@ -103,7 +136,7 @@ Character stickers live at `src/Jiangyu.Studio.UI/public/stickers/Jiangyu_001.jp
 
 ### Toast system
 
-App-wide toast notifications via `useToast()` context (`src/Jiangyu.Studio.UI/src/lib/toast.tsx`). `ToastProvider` wraps the app in `main.tsx`; `ToastContainer` renders fixed bottom-centre with `aria-live="polite"`; error toasts get `role="alert"`, others `role="status"`. Each toast auto-picks a random sticker from the mood pool matching its variant (`success`/`error`/`info`). Auto-dismisses after 8 seconds. Supports action buttons (e.g. "Reveal" to open exported file in explorer).
+App-wide toast notifications via `useToastStore` (`src/Jiangyu.Studio.UI/src/lib/toast/toast.tsx`). Zustand-backed, no provider needed — any module (including non-React code) can push via `useToastStore.getState().push({...})`. `ToastContainer` renders fixed bottom-centre with `aria-live="polite"`; error toasts get `role="alert"`, others `role="status"`. Each toast auto-picks a random sticker from the mood pool matching its variant (`success`/`error`/`info`). Auto-dismisses after 8 seconds. Supports action buttons (e.g. "Reveal" to open exported file in explorer). The legacy `useToast()` hook still exists as a thin wrapper for existing call sites.
 
 ### Confirm dialog
 

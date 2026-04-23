@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { PaletteAction } from "../../lib/actions.tsx";
+import type { PaletteAction } from "@lib/palette/actions.tsx";
 import { buildSearchIndex, filterActions, groupByScope } from "./paletteFilter.ts";
 import styles from "./Palette.module.css";
 

@@ -1,5 +1,5 @@
 import { basename } from "./path.ts";
-import type { AssetBrowserState, TemplateBrowserState } from "./browserState.ts";
+import type { AssetBrowserState, TemplateBrowserState } from "@lib/panes/browserState.ts";
 
 export interface Tab {
   readonly path: string;
@@ -662,6 +662,34 @@ export function setColumnWeight(layout: Layout, columnId: string, weight: number
     return { ...col, weight };
   });
   return changed ? { ...layout, columns } : layout;
+}
+
+/**
+ * Reorder a tab within its code pane. `targetIndex` is the desired position
+ * in the resulting tabs array (0-based; equal to tabs.length is "at the end").
+ * A no-op when the path isn't in the pane or the order doesn't change.
+ */
+export function reorderTab(
+  layout: Layout,
+  paneId: string,
+  path: string,
+  targetIndex: number,
+): Layout {
+  const pane = findPane(layout, paneId);
+  if (pane === null || pane.kind !== "code") return layout;
+  const currentIndex = pane.tabs.findIndex((t) => t.path === path);
+  if (currentIndex === -1) return layout;
+
+  const tab = pane.tabs[currentIndex]!;
+  const without = [...pane.tabs.slice(0, currentIndex), ...pane.tabs.slice(currentIndex + 1)];
+  // Drops past the source position need to shift down by one since the
+  // removal closes the gap before the insertion.
+  let insertAt = targetIndex > currentIndex ? targetIndex - 1 : targetIndex;
+  insertAt = Math.max(0, Math.min(insertAt, without.length));
+  if (insertAt === currentIndex) return layout;
+
+  const tabs = [...without.slice(0, insertAt), tab, ...without.slice(insertAt)];
+  return replacePane(layout, paneId, { ...pane, tabs });
 }
 
 /** Move a tab from one code pane to another. Both must be code panes. */

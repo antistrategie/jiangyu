@@ -20,6 +20,7 @@ import {
   openFile,
   paneWeight,
   remapPaths,
+  reorderTab,
   saveLayout,
   selectTab,
   setActivePane,
@@ -36,7 +37,10 @@ import {
   type Layout,
   type Pane,
 } from "./layout.ts";
-import { DEFAULT_ASSET_BROWSER_STATE, DEFAULT_TEMPLATE_BROWSER_STATE } from "./browserState.ts";
+import {
+  DEFAULT_ASSET_BROWSER_STATE,
+  DEFAULT_TEMPLATE_BROWSER_STATE,
+} from "@lib/panes/browserState.ts";
 
 const A = "/proj/src/A.tsx";
 const B = "/proj/src/B.tsx";
@@ -875,6 +879,60 @@ describe("insertCrossWindowPane", () => {
     expect(
       insertCrossWindowPane(EMPTY_LAYOUT, "missing", "code", [{ path: A }], A, undefined, "right"),
     ).toBe(EMPTY_LAYOUT);
+  });
+});
+
+describe("reorderTab", () => {
+  function withThreeTabs(): { layout: Layout; paneId: string } {
+    const l = openFile(openFile(openFile(EMPTY_LAYOUT, A), B), C);
+    return { layout: l, paneId: l.activePaneId! };
+  }
+
+  it("moves a tab earlier in the array", () => {
+    const { layout, paneId } = withThreeTabs();
+    const next = reorderTab(layout, paneId, C, 0);
+    expect(asCode(findPane(next, paneId)).tabs.map((t) => t.path)).toEqual([C, A, B]);
+  });
+
+  it("moves a tab later in the array (accounting for removal shift)", () => {
+    const { layout, paneId } = withThreeTabs();
+    // Request: put A at the tail (index 3). After removing A, list is [B, C]
+    // and inserting at index 3 clamps to 2 → [B, C, A].
+    const next = reorderTab(layout, paneId, A, 3);
+    expect(asCode(findPane(next, paneId)).tabs.map((t) => t.path)).toEqual([B, C, A]);
+  });
+
+  it("is a no-op when the target index equals the current index", () => {
+    const { layout, paneId } = withThreeTabs();
+    expect(reorderTab(layout, paneId, B, 1)).toBe(layout);
+  });
+
+  it("is a no-op for an unknown path", () => {
+    const { layout, paneId } = withThreeTabs();
+    expect(reorderTab(layout, paneId, "/nope", 0)).toBe(layout);
+  });
+
+  it("is a no-op for an unknown pane", () => {
+    const { layout } = withThreeTabs();
+    expect(reorderTab(layout, "missing", A, 0)).toBe(layout);
+  });
+
+  it("is a no-op on a browser pane", () => {
+    const l = splitRight(EMPTY_LAYOUT, "assetBrowser");
+    expect(reorderTab(l, l.activePaneId!, A, 0)).toBe(l);
+  });
+
+  it("clamps a target index larger than tabs.length to the end", () => {
+    const { layout, paneId } = withThreeTabs();
+    const next = reorderTab(layout, paneId, B, 99);
+    expect(asCode(findPane(next, paneId)).tabs.map((t) => t.path)).toEqual([A, C, B]);
+  });
+
+  it("keeps the active tab pointing at the same path after reorder", () => {
+    const { layout, paneId } = withThreeTabs();
+    const active = asCode(findPane(layout, paneId)).activeTab;
+    const next = reorderTab(layout, paneId, A, 2);
+    expect(asCode(findPane(next, paneId)).activeTab).toBe(active);
   });
 });
 

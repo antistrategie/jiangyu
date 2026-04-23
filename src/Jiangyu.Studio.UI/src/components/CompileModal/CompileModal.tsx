@@ -1,14 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { FolderOpen, Play, X } from "lucide-react";
-import { Modal } from "../Modal/Modal.tsx";
-import { rpcCall } from "../../lib/rpc.ts";
+import { Modal } from "@components/Modal/Modal.tsx";
+import { rpcCall } from "@lib/rpc.ts";
 import {
   useCompileSummary,
   formatDurationShort,
   type CompileLogEntry,
   type CompileState,
   type CompileSummary,
-} from "../../lib/compile.ts";
+} from "@lib/compile/compile.ts";
 import styles from "./CompileModal.module.css";
 
 interface CompileModalProps {

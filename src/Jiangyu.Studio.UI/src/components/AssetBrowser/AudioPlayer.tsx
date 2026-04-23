@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { formatTime } from "../../lib/formatTime.ts";
+import { formatTime } from "@lib/ui/formatTime.ts";
 import styles from "./AssetBrowser.module.css";
 
 interface Props {

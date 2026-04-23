@@ -17,12 +17,13 @@ import {
   FileAudio,
   Box,
 } from "lucide-react";
-import { rpcCall, subscribe, type FileChangedEvent } from "../../lib/rpc.ts";
-import { dirname, basename, join, relative, isDescendant } from "../../lib/path.ts";
-import { CROSS_TAB_MIME, encodeCrossTabPayload } from "../../lib/crossWindowTabDrag.ts";
-import { ContextMenu, type ContextMenuEntry } from "../ContextMenu/ContextMenu.tsx";
-import { ConfirmDialog } from "../ConfirmDialog/ConfirmDialog.tsx";
-import { useToast } from "../../lib/toast.tsx";
+import { rpcCall, subscribe, type FileChangedEvent } from "@lib/rpc.ts";
+import { dirname, basename, join, relative, isDescendant } from "@lib/path.ts";
+import { CROSS_TAB_MIME, encodeCrossTabPayload } from "@lib/drag/crossTab.ts";
+import { attachDragChip } from "@lib/drag/chip.ts";
+import { ContextMenu, type ContextMenuEntry } from "@components/ContextMenu/ContextMenu.tsx";
+import { ConfirmDialog } from "@components/ConfirmDialog/ConfirmDialog.tsx";
+import { useToast } from "@lib/toast/toast.tsx";
 import styles from "./Sidebar.module.css";
 
 const DRAG_MIME = "application/x-jiangyu-path";
@@ -52,6 +53,7 @@ function reportRpcError(push: PushToast, action: string, err: unknown): void {
 function setDragPath(e: React.DragEvent, path: string): void {
   e.dataTransfer.setData(DRAG_MIME, path);
   e.dataTransfer.effectAllowed = "move";
+  attachDragChip(e, basename(path));
 }
 
 interface FileEntry {
@@ -86,7 +88,7 @@ interface SidebarContextValue {
   invalidateDir: (path: string) => void;
   registerRefresh: (path: string, cb: InvalidateCallback) => () => void;
   onOpenFile: (path: string) => void;
-  dirtyPaths: Set<string>;
+  dirtyPaths: ReadonlySet<string>;
   onPathMoved: (oldPath: string, newPath: string) => void;
   pushToast: PushToast;
   confirmDelete: (entry: FileEntry) => Promise<boolean>;
@@ -102,7 +104,7 @@ function useSidebar(): SidebarContextValue {
 interface SidebarProps {
   projectPath: string;
   onOpenFile: (path: string) => void;
-  dirtyPaths: Set<string>;
+  dirtyPaths: ReadonlySet<string>;
   onPathMoved: (oldPath: string, newPath: string) => void;
   revealPath?: { path: string; tick: number } | null;
 }

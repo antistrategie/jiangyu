@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { CircleX, Minus, Plus, TriangleAlert, X } from "lucide-react";
-import { Modal } from "../Modal/Modal.tsx";
-import { SegmentedControl } from "../SegmentedControl/SegmentedControl.tsx";
-import { rpcCall } from "../../lib/rpc.ts";
-import type { ConfigStatus } from "../../lib/configStatus.ts";
+import { Modal } from "@components/Modal/Modal.tsx";
+import { SegmentedControl } from "@components/SegmentedControl/SegmentedControl.tsx";
+import { rpcCall } from "@lib/rpc.ts";
+import type { ConfigStatus } from "@lib/compile/configStatus.ts";
 import {
   EDITOR_FONT_SIZE_MAX,
   EDITOR_FONT_SIZE_MIN,
@@ -12,7 +12,7 @@ import {
   useEditorWordWrap,
   type EditorKeybindMode,
   type EditorWordWrap,
-} from "../../lib/settings.ts";
+} from "@lib/settings.ts";
 import styles from "./SettingsModal.module.css";
 
 type SectionId = "editor" | "paths" | "about";
@@ -288,8 +288,11 @@ const CREDIT_GROUPS: readonly CreditGroup[] = [
     label: "Studio UI",
     items: [
       { name: "React", license: "MIT", note: "UI framework." },
+      { name: "Zustand", license: "MIT", note: "State stores." },
       { name: "Monaco Editor", license: "MIT", note: "Code editing surface." },
       { name: "monaco-vim", license: "MIT", note: "Vim keybindings for Monaco." },
+      { name: "TanStack Virtual", license: "MIT", note: "Virtualised asset / template lists." },
+      { name: "uFuzzy", license: "MIT", note: "Fuzzy search." },
       { name: "three.js", license: "MIT", note: "GLB / model preview." },
       { name: "Lucide", license: "ISC", note: "Icon set." },
       { name: "JetBrains Mono", license: "OFL-1.1", note: "Editor typeface." },

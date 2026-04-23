@@ -1,0 +1,452 @@
+.grid {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.colResizer {
+  flex: 0 0 4px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 1;
+}
+
+.colResizer::before {
+  content: "";
+  position: absolute;
+  inset: 0 1px;
+  background: var(--rule);
+}
+
+.colResizer:hover::before {
+  background: var(--cinnabar-1);
+}
+
+.paneResizer {
+  flex: 0 0 4px;
+  cursor: row-resize;
+  background: transparent;
+  position: relative;
+  z-index: 1;
+}
+
+.paneResizer::before {
+  content: "";
+  position: absolute;
+  inset: 1px 0;
+  background: var(--rule);
+}
+
+.paneResizer:hover::before {
+  background: var(--cinnabar-1);
+}
+
+.dropOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+}
+
+.dropZone {
+  position: absolute;
+  background: var(--cinnabar-1);
+  opacity: 0.18;
+  pointer-events: none;
+  transition: inset var(--ease-fast);
+}
+
+.dropZone_left {
+  inset: 0 50% 0 0;
+}
+
+.dropZone_right {
+  inset: 0 0 0 50%;
+}
+
+.dropZone_top {
+  inset: 0 0 50% 0;
+}
+
+.dropZone_bottom {
+  inset: 50% 0 0 0;
+}
+
+.dropZone_centre {
+  inset: 0;
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-raised);
+  position: relative;
+}
+
+/* Overlay the fullscreened pane on top of everything (including Topbar/Sidebar)
+   without unmounting the underlying grid, so Monaco keeps its editor state. */
+.editorFullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+}
+
+/* Inactive panes dim the tabbar to paper-2. Tab content (text, close icons,
+   vertical dividers) on code panes adds visual density that can read as
+   "darker" than a browser pane with the same bg — so fade that content too
+   when the pane is inactive so both pane types settle at the same visible
+   shade. */
+.editor:not(.editorActive) .tabbar {
+  background: var(--bg-sunken);
+}
+
+.editor:not(.editorActive) .tabActive {
+  background: var(--bg-sunken);
+  color: var(--fg-subtle);
+}
+
+.editor:not(.editorActive) .tab {
+  color: var(--fg-subtle);
+}
+
+.editor:not(.editorActive) .tab + .tab {
+  border-left-color: transparent;
+}
+
+.tabbarDrop {
+  background: var(--paper-2) !important;
+}
+
+.tabbarButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: 0 2px;
+  align-self: center;
+  background: transparent;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.tabbarButton:hover {
+  color: var(--fg);
+  background: var(--bg-sunken);
+}
+
+.paneHeaderItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 26px;
+  padding: 0 var(--space-3);
+  flex-shrink: 0;
+  cursor: grab;
+}
+
+.paneHeaderItem:active {
+  cursor: grabbing;
+}
+
+.paneHeaderLabel {
+  font-family: var(--font-label);
+  font-size: var(--fs-sm);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg);
+}
+
+.paneHeaderClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  opacity: 0.5;
+  background: transparent;
+  border: none;
+  color: inherit;
+}
+
+.paneHeaderClose:hover {
+  opacity: 1;
+  background: var(--bg-sunken);
+}
+
+.tabbar {
+  display: flex;
+  align-items: stretch;
+  padding: 0 var(--space-2);
+  background: var(--bg);
+  flex-shrink: 0;
+  user-select: none;
+  min-height: 26px;
+}
+
+.tabScroll {
+  display: flex;
+  align-items: flex-end;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabScroll::-webkit-scrollbar {
+  display: none;
+}
+
+.tabActions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding-left: var(--space-1);
+}
+
+.tabPlaceholder {
+  font-family: var(--font-label);
+  font-size: var(--fs-sm);
+  letter-spacing: var(--tracking-wide);
+  color: var(--fg-muted);
+  padding: 0 var(--space-3);
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 26px;
+  padding: 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: grab;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tab:active {
+  cursor: grabbing;
+}
+
+.tab + .tab {
+  border-left: 1px solid var(--rule-faint);
+}
+
+.tab:hover {
+  color: var(--fg);
+}
+
+.tabActive {
+  color: var(--fg);
+  background: var(--bg-raised);
+}
+
+/* Drop indicators rendered during in-pane tab reorder. Inset box-shadow
+   avoids reflow (unlike border) — the 2px cinnabar line sits flush on the
+   target tab's edge, marking where the dragged tab will land. */
+.tabDropBefore {
+  box-shadow: inset 2px 0 0 0 var(--cinnabar-1);
+}
+
+.tabDropAfter {
+  box-shadow: inset -2px 0 0 0 var(--cinnabar-1);
+}
+
+.tabName {
+  pointer-events: none;
+}
+
+.tabDirty {
+  color: var(--cinnabar-1);
+  font-size: var(--fs-xs);
+  line-height: 1;
+  pointer-events: none;
+}
+
+.tabClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  opacity: 0.4;
+}
+
+.tabClose:hover {
+  opacity: 1;
+  background: var(--bg-sunken);
+}
+
+.tabFill {
+  flex: 1;
+  align-self: stretch;
+  cursor: grab;
+}
+
+.tabFill:active {
+  cursor: grabbing;
+}
+
+.content {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  background: var(--bg-raised);
+  position: relative;
+}
+
+.editorHost {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.editorInner {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.vimStatus {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  min-height: 20px;
+  border-top: 1px solid var(--rule);
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg);
+}
+
+.empty {
+  font-family: var(--font-editorial);
+  font-style: italic;
+  font-size: var(--fs-md);
+  color: var(--fg-muted);
+  margin: auto;
+}
+
+.emptyStack {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.emptyStack .empty {
+  margin: 0;
+}
+
+.emptySeparator {
+  font-family: var(--font-editorial);
+  font-style: italic;
+  font-size: var(--fs-base);
+  color: var(--fg-muted);
+  margin: 0;
+}
+
+.emptyActions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.emptyAction {
+  font-family: var(--font-label);
+  font-size: var(--fs-sm);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--cinnabar-1);
+  background: transparent;
+  border: none;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.emptyAction:hover {
+  color: var(--fg-strong);
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg);
+  border-bottom: 1px solid var(--cinnabar-1);
+  flex-shrink: 0;
+}
+
+.bannerText {
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+  color: var(--fg-strong);
+  flex: 1;
+}
+
+.bannerAction {
+  font-family: var(--font-display);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-3);
+  background: var(--cinnabar-1);
+  color: var(--paper-0);
+  border: none;
+  cursor: pointer;
+}
+
+.bannerAction:hover {
+  filter: brightness(1.1);
+}
+
+.bannerActionMuted {
+  font-family: var(--font-label);
+  font-size: var(--fs-sm);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--rule);
+  cursor: pointer;
+}
+
+.bannerActionMuted:hover {
+  background: var(--paper-2);
+}

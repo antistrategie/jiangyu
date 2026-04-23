@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import uFuzzy from "@leeoniya/ufuzzy";
-import { Modal } from "../Modal/Modal.tsx";
+import { Modal } from "@components/Modal/Modal.tsx";
 import styles from "./TemplateFilePicker.module.css";
 
 const uf = new uFuzzy({});

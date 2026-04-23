@@ -1,12 +1,10 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
-import { PaneWindow } from "./components/PaneWindow/PaneWindow.tsx";
-import { ActionRegistryProvider } from "./lib/actions.tsx";
-import { ToastProvider } from "./lib/toast.tsx";
-import { ToastContainer } from "./components/Toast/Toast.tsx";
-import { initRpc } from "./lib/rpc.ts";
-import { getWindowParams } from "./lib/windowRole.ts";
+import { PaneWindow } from "@components/PaneWindow/PaneWindow.tsx";
+import { ToastContainer } from "@components/Toast/Toast.tsx";
+import { initRpc } from "@lib/rpc.ts";
+import { getWindowParams } from "@lib/panes/role.ts";
 import "./styles/global.css";
 
 // Monaco editor web worker setup for Vite
@@ -36,7 +34,7 @@ const params = getWindowParams();
 createRoot(root).render(
   <StrictMode>
     {params.role === "pane" ? (
-      <ToastProvider>
+      <>
         <PaneWindow
           paneKind={params.paneKind}
           projectPath={params.projectPath}
@@ -45,14 +43,12 @@ createRoot(root).render(
           browserState={params.browserState}
         />
         <ToastContainer />
-      </ToastProvider>
+      </>
     ) : (
-      <ActionRegistryProvider>
-        <ToastProvider>
-          <App />
-          <ToastContainer />
-        </ToastProvider>
-      </ActionRegistryProvider>
+      <>
+        <App />
+        <ToastContainer />
+      </>
     )}
   </StrictMode>,
 );

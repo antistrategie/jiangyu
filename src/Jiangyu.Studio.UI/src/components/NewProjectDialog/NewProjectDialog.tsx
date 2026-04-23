@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { Modal } from "../Modal/Modal.tsx";
-import { rpcCall } from "../../lib/rpc.ts";
+import { Modal } from "@components/Modal/Modal.tsx";
+import { rpcCall } from "@lib/rpc.ts";
 import styles from "./NewProjectDialog.module.css";
 
 export interface NewProjectDialogProps {

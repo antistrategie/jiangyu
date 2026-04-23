@@ -9,20 +9,25 @@ import {
   useRef,
   useState,
 } from "react";
-import { rpcCall } from "../../lib/rpc.ts";
-import { generatePatchKdl, generateCloneKdl } from "../../lib/kdlSnippets.ts";
-import { useToast } from "../../lib/toast.tsx";
+import { rpcCall } from "@lib/rpc.ts";
+import { generatePatchKdl, generateCloneKdl } from "@lib/kdlSnippets.ts";
+import { useToast } from "@lib/toast/toast.tsx";
 import {
   DEFAULT_TEMPLATE_BROWSER_STATE,
   type TemplateBrowserState,
-} from "../../lib/browserState.ts";
-import { useDebouncedScrollTop } from "../../lib/useDebouncedScrollTop.ts";
-import { Spinner } from "../Spinner/Spinner.tsx";
+} from "@lib/panes/browserState.ts";
+import { useDebouncedScrollTop } from "@lib/ui/useDebouncedScrollTop.ts";
+import { Spinner } from "@components/Spinner/Spinner.tsx";
 import {
   TemplateFilePicker,
   type PickerResult,
-} from "../TemplateFilePicker/TemplateFilePicker.tsx";
-import { DetailTitle, MetaBlock, MetaRow, SectionHeader } from "../DetailPanel/DetailPanel.tsx";
+} from "@components/TemplateFilePicker/TemplateFilePicker.tsx";
+import {
+  DetailTitle,
+  MetaBlock,
+  MetaRow,
+  SectionHeader,
+} from "@components/DetailPanel/DetailPanel.tsx";
 import styles from "./TemplateBrowser.module.css";
 
 // --- RPC types ---

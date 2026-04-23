@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { clampZoom, zoomTowardsCursor } from "../../lib/zoomMath.ts";
+import { clampZoom, zoomTowardsCursor } from "@lib/ui/zoomMath.ts";
 import styles from "./AssetBrowser.module.css";
 
 interface Props {

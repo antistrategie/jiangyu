@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INITIAL_COMPILE_STATE, type CompileState } from "../../lib/compile.ts";
+import { INITIAL_COMPILE_STATE, type CompileState } from "@lib/compile/compile.ts";
 import { computeProgressPct, deriveDisplayStatus, formatDurationLive } from "./StatusBar.tsx";
 
 function stateWith(overrides: Partial<CompileState>): CompileState {

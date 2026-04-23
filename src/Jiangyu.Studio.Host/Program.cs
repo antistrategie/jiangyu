@@ -9,6 +9,8 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (OperatingSystem.IsLinux()) LinuxDesktopEntry.Ensure();
+
         var builder = InfiniFrameWebApplication.CreateBuilder(args);
 
         builder.Window

@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { formatDurationShort, type CompileState, type CompileStatus } from "../../lib/compile.ts";
+import {
+  formatDurationShort,
+  type CompileState,
+  type CompileStatus,
+} from "@lib/compile/compile.ts";
 import styles from "./StatusBar.module.css";
 
 interface StatusBarProps {

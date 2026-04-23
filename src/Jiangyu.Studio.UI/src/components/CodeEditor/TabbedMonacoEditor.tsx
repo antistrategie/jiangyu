@@ -2,14 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { X } from "lucide-react";
 import Editor, { type OnChange, type OnMount } from "@monaco-editor/react";
 import type { editor as monacoEditor } from "monaco-editor";
-import { ContextMenu, type ContextMenuEntry } from "../ContextMenu/ContextMenu.tsx";
-import { buildJiangyuTheme } from "../EditorArea/jiangyuTheme.ts";
-import { registerKdlLanguage } from "../EditorArea/kdlLanguage.ts";
-import { getLanguage, isBinaryFile } from "../EditorArea/fileTypes.ts";
-import type { Tab } from "../../lib/layout.ts";
-import type { FileChangeKind } from "../../lib/rpc.ts";
-import { useEditorFontSize, useEditorKeybindMode, useEditorWordWrap } from "../../lib/settings.ts";
-import styles from "../EditorArea/EditorArea.module.css";
+import { ContextMenu, type ContextMenuEntry } from "@components/ContextMenu/ContextMenu.tsx";
+import { buildJiangyuTheme } from "@components/CodeEditor/jiangyuTheme.ts";
+import { registerKdlLanguage } from "@components/CodeEditor/kdlLanguage.ts";
+import { getLanguage, isBinaryFile } from "@components/CodeEditor/fileTypes.ts";
+import { computeTabDropIndex } from "@lib/drag/computeDropIndex.ts";
+import type { Tab } from "@lib/layout.ts";
+import type { FileChangeKind } from "@lib/rpc.ts";
+import { useEditorFontSize, useEditorKeybindMode, useEditorWordWrap } from "@lib/settings.ts";
+import styles from "@components/Workspace/Workspace.module.css";
 
 export interface TabDragSlots {
   readonly onTabDragStart?: (e: React.DragEvent<HTMLButtonElement>, path: string) => void;
@@ -33,17 +34,17 @@ export interface TabbedMonacoEditorProps {
   readonly onReload: () => void | Promise<void>;
   readonly onDismissConflict: () => void;
 
-  // Optional editor-lifecycle hooks (EditorPane uses these to register the
+  // Optional editor-lifecycle hooks (CodePane uses these to register the
   // editor instance per-pane and to claim focus when the user clicks in).
   readonly onEditorMount?: (editor: monacoEditor.IStandaloneCodeEditor) => void;
   readonly onEditorFocus?: () => void;
 
-  // Toolbar slot: rendered at the right of the tab bar. EditorPane fills this
+  // Toolbar slot: rendered at the right of the tab bar. CodePane fills this
   // with its split / tear-out / fullscreen / close pane buttons; pane windows
   // pass nothing.
   readonly toolbar?: ReactNode;
 
-  // Pane-drag handle: EditorPane makes the empty space after the last tab
+  // Pane-drag handle: CodePane makes the empty space after the last tab
   // drag-out the whole pane. Pane windows use the same affordance to drag
   // themselves back to the primary (cross-window pane drag).
   readonly onTabbarDragStart?: (e: React.DragEvent<HTMLDivElement>) => void;
@@ -58,7 +59,7 @@ export interface TabbedMonacoEditorProps {
     editor: monacoEditor.IStandaloneCodeEditor,
   ) => ContextMenuEntry[];
 
-  // EditorPane layers a DropOverlay on the content area for pane-drop zones.
+  // CodePane layers a DropOverlay on the content area for pane-drop zones.
   // Rendered after the editor so it composites over it.
   readonly dropOverlay?: ReactNode;
 
@@ -66,7 +67,7 @@ export interface TabbedMonacoEditorProps {
   // EmptyPrompt). When omitted, a plain "no file" placeholder is shown.
   readonly emptyState?: ReactNode;
 
-  // Outer container customization. EditorPane wires ref + flex + active-state
+  // Outer container customization. CodePane wires ref + flex + active-state
   // dimming; pane windows don't need any of this.
   readonly className?: string;
   readonly style?: React.CSSProperties;
@@ -144,6 +145,12 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
   const [editor, setEditor] = useState<monacoEditor.IStandaloneCodeEditor | null>(null);
   const [editorMenu, setEditorMenu] = useState<{ x: number; y: number } | null>(null);
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+  // Reorder indicator: which tab index the drop would land at. Only populated
+  // while a tab from THIS bar is being dragged (tracked via isOwnDragRef) so
+  // cross-pane drops — which currently always append — don't show a
+  // misleading indicator.
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const isOwnDragRef = useRef(false);
   const [fontSize] = useEditorFontSize();
   const [wordWrap] = useEditorWordWrap();
   const [keybindMode] = useEditorKeybindMode();
@@ -258,18 +265,44 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
             if (e.deltaY === 0) return;
             e.currentTarget.scrollLeft += e.deltaY;
           }}
-          onDragOver={tabDrag?.onTabbarDragOver}
-          onDragLeave={tabDrag?.onTabbarDragLeave}
-          onDrop={tabDrag?.onTabbarDrop}
+          onDragOver={(e) => {
+            if (isOwnDragRef.current) {
+              setDropTargetIndex(computeTabDropIndex(e.currentTarget, e.clientX));
+            }
+            tabDrag?.onTabbarDragOver?.(e);
+          }}
+          onDragLeave={() => {
+            setDropTargetIndex(null);
+            tabDrag?.onTabbarDragLeave?.();
+          }}
+          onDrop={(e) => {
+            setDropTargetIndex(null);
+            tabDrag?.onTabbarDrop?.(e);
+          }}
         >
-          {tabs.map((tab) => (
+          {tabs.map((tab, i) => (
             <button
               key={tab.path}
               ref={tab.path === activePath ? activeTabRef : undefined}
-              className={`${styles.tab} ${tab.path === activePath ? styles.tabActive : ""}`}
+              data-tab-path={tab.path}
+              className={[
+                styles.tab,
+                tab.path === activePath ? styles.tabActive : "",
+                dropTargetIndex === i ? styles.tabDropBefore : "",
+                dropTargetIndex === tabs.length && i === tabs.length - 1 ? styles.tabDropAfter : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
               type="button"
               draggable={tabDrag?.onTabDragStart !== undefined}
-              onDragStart={(e) => tabDrag?.onTabDragStart?.(e, tab.path)}
+              onDragStart={(e) => {
+                isOwnDragRef.current = true;
+                tabDrag?.onTabDragStart?.(e, tab.path);
+              }}
+              onDragEnd={() => {
+                isOwnDragRef.current = false;
+                setDropTargetIndex(null);
+              }}
               onClick={() => onSelectTab(tab.path)}
               onAuxClick={(e) => {
                 if (e.button !== 1) return;
