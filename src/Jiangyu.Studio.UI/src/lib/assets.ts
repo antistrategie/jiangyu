@@ -115,6 +115,82 @@ export function classifyAsset(className: string | null | undefined): AssetKindGr
   return null;
 }
 
+/**
+ * Build the replacement alias: bare name when unique, `name--pathId` otherwise.
+ */
+export function buildReplacementAlias(name: string, pathId: number, unique: boolean): string {
+  return unique ? name : `${name}--${pathId}`;
+}
+
+/**
+ * Build the suggested replacement path for an asset entry.
+ * Returns `null` for asset types that don't have a replacement convention
+ * (e.g. bare Mesh entries).
+ */
+export function buildReplacementPath(
+  entry: AssetEntry,
+  unique: boolean,
+): string | null {
+  const name = entry.name;
+  if (!name) return null;
+  const alias = buildReplacementAlias(name, entry.pathId, unique);
+  switch (entry.className) {
+    case "PrefabHierarchyObject":
+      return `assets/replacements/models/${alias}/model.gltf`;
+    case "Texture2D":
+      return `assets/replacements/textures/${alias}.png`;
+    case "Sprite":
+      return `assets/replacements/sprites/${alias}.png`;
+    case "AudioClip":
+      return `assets/replacements/audio/${alias}.wav`;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Build a lookup counting how many index entries share each `(className, name)` pair.
+ * Used to decide whether an asset name needs `--pathId` disambiguation.
+ *
+ * For model targets (PrefabHierarchyObject), each PHO has a same-named backing
+ * GameObject — those pairs are collapsed so a single PHO+GO pair counts as 1.
+ */
+export function buildNameUniquenessMap(
+  allAssets: readonly AssetEntry[],
+): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  for (const a of allAssets) {
+    if (!a.name || !a.className) continue;
+    // Collapse PHO/GO pairs: count GameObjects under PHO's key so both
+    // contribute to the same uniqueness bucket.
+    const cls = a.className === "GameObject" ? "PrefabHierarchyObject" : a.className;
+    const key = `${cls}\0${a.name}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  // For PHO entries, each unique name normally produces exactly 2 counts
+  // (one PHO + one backing GO). That pair is unique — normalise to 1.
+  for (const [key, count] of counts) {
+    if (key.startsWith("PrefabHierarchyObject\0") && count === 2) {
+      counts.set(key, 1);
+    }
+  }
+  return counts;
+}
+
+/**
+ * Check whether an asset's name is unique among same-class entries.
+ */
+export function isAssetNameUnique(
+  entry: AssetEntry,
+  uniquenessMap: ReadonlyMap<string, number>,
+): boolean {
+  if (!entry.name || !entry.className) return false;
+  const cls =
+    entry.className === "GameObject" ? "PrefabHierarchyObject" : entry.className;
+  const key = `${cls}\0${entry.name}`;
+  return (uniquenessMap.get(key) ?? 0) <= 1;
+}
+
 export function assetsIndexStatus(): Promise<AssetIndexStatus> {
   return rpcCall<AssetIndexStatus>("assetsIndexStatus");
 }

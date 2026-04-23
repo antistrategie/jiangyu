@@ -7,7 +7,10 @@ import {
   assetsIndexStatus,
   assetsPreview,
   assetsSearch,
+  buildNameUniquenessMap,
+  buildReplacementPath,
   classifyAsset,
+  isAssetNameUnique,
   isAudioClip,
   isSprite,
   pickDirectory,
@@ -198,6 +201,8 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
       cancelled = true;
     };
   }, [status?.state]);
+
+  const nameUniqueness = useMemo(() => buildNameUniquenessMap(allAssets), [allAssets]);
 
   // uFuzzy is designed for 100k+ haystacks — typical full-catalogue search
   // comes in under 20ms. The haystack is the asset-name list, stable across
@@ -651,6 +656,7 @@ export function AssetBrowser({ projectPath }: AssetBrowserProps) {
             results={results}
             previewData={previewData}
             previewLoading={previewLoading}
+            nameUniqueness={nameUniqueness}
           />
           <div className={styles.exportBar}>
             <div className={styles.exportOptions}>
@@ -734,9 +740,10 @@ interface AssetDetailsProps {
   readonly results: readonly AssetEntry[];
   readonly previewData: { dataUrl: string; mimeType: string } | null;
   readonly previewLoading: boolean;
+  readonly nameUniqueness: ReadonlyMap<string, number>;
 }
 
-function AssetDetails({ focusedKey, results, previewData, previewLoading }: AssetDetailsProps) {
+function AssetDetails({ focusedKey, results, previewData, previewLoading, nameUniqueness }: AssetDetailsProps) {
   if (focusedKey === null) {
     return <div className={styles.detailsEmpty}>Select an asset to see details</div>;
   }
@@ -756,6 +763,9 @@ function AssetDetails({ focusedKey, results, previewData, previewLoading }: Asse
     preview = <span className={styles.previewPlaceholder}>No preview</span>;
   }
 
+  const unique = isAssetNameUnique(focused, nameUniqueness);
+  const replacementPath = buildReplacementPath(focused, unique);
+
   return (
     <>
       <div className={styles.preview}>{preview}</div>
@@ -772,6 +782,9 @@ function AssetDetails({ focusedKey, results, previewData, previewLoading }: Asse
         )}
         {isSprite(focused) && focused.spriteBackingTextureName && (
           <MetaRow label="Atlas" value={focused.spriteBackingTextureName} />
+        )}
+        {replacementPath != null && (
+          <MetaRow label="Replace" value={replacementPath} />
         )}
       </div>
     </>

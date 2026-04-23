@@ -1,6 +1,10 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
+  buildNameUniquenessMap,
+  buildReplacementAlias,
+  buildReplacementPath,
   classifyAsset,
+  isAssetNameUnique,
   isAudioClip,
   isSprite,
   type AssetEntry,
@@ -69,5 +73,120 @@ describe("classifyAsset", () => {
     expect(classifyAsset(null)).toBeNull();
     expect(classifyAsset(undefined)).toBeNull();
     expect(classifyAsset("Transform")).toBeNull();
+  });
+});
+
+describe("buildReplacementAlias", () => {
+  it("returns bare name when unique", () => {
+    expect(buildReplacementAlias("soldier", 519, true)).toBe("soldier");
+  });
+
+  it("appends pathId when not unique", () => {
+    expect(buildReplacementAlias("soldier", 519, false)).toBe("soldier--519");
+  });
+});
+
+describe("buildReplacementPath", () => {
+  it("returns model path for PrefabHierarchyObject", () => {
+    const entry: AssetEntry = { ...BASE, className: "PrefabHierarchyObject" };
+    expect(buildReplacementPath(entry, true)).toBe(
+      "assets/replacements/models/foo/model.gltf",
+    );
+  });
+
+  it("returns texture path for Texture2D", () => {
+    const entry: AssetEntry = { ...BASE, className: "Texture2D" };
+    expect(buildReplacementPath(entry, true)).toBe(
+      "assets/replacements/textures/foo.png",
+    );
+  });
+
+  it("returns sprite path for Sprite", () => {
+    const entry: AssetEntry = { ...BASE, className: "Sprite" };
+    expect(buildReplacementPath(entry, true)).toBe(
+      "assets/replacements/sprites/foo.png",
+    );
+  });
+
+  it("returns audio path for AudioClip", () => {
+    const entry: AssetEntry = { ...BASE, className: "AudioClip" };
+    expect(buildReplacementPath(entry, true)).toBe(
+      "assets/replacements/audio/foo.wav",
+    );
+  });
+
+  it("includes pathId when not unique", () => {
+    const entry: AssetEntry = { ...BASE, className: "Texture2D", pathId: 42 };
+    expect(buildReplacementPath(entry, false)).toBe(
+      "assets/replacements/textures/foo--42.png",
+    );
+  });
+
+  it("returns null for Mesh", () => {
+    const entry: AssetEntry = { ...BASE, className: "Mesh" };
+    expect(buildReplacementPath(entry, true)).toBeNull();
+  });
+
+  it("returns null for unnamed assets", () => {
+    const entry: AssetEntry = { ...BASE, name: null, className: "Texture2D" };
+    expect(buildReplacementPath(entry, true)).toBeNull();
+  });
+});
+
+describe("buildNameUniquenessMap", () => {
+  it("counts distinct entries per (className, name)", () => {
+    const assets: AssetEntry[] = [
+      { ...BASE, className: "Texture2D", name: "tex_a", pathId: 1 },
+      { ...BASE, className: "Texture2D", name: "tex_a", pathId: 2 },
+      { ...BASE, className: "Texture2D", name: "tex_b", pathId: 3 },
+    ];
+    const map = buildNameUniquenessMap(assets);
+    expect(map.get("Texture2D\0tex_a")).toBe(2);
+    expect(map.get("Texture2D\0tex_b")).toBe(1);
+  });
+
+  it("collapses PHO + GO pair to count 1", () => {
+    const assets: AssetEntry[] = [
+      { ...BASE, className: "PrefabHierarchyObject", name: "soldier", pathId: 10 },
+      { ...BASE, className: "GameObject", name: "soldier", pathId: 11 },
+    ];
+    const map = buildNameUniquenessMap(assets);
+    expect(map.get("PrefabHierarchyObject\0soldier")).toBe(1);
+  });
+
+  it("flags multiple PHOs with same name as non-unique", () => {
+    const assets: AssetEntry[] = [
+      { ...BASE, className: "PrefabHierarchyObject", name: "soldier", pathId: 10 },
+      { ...BASE, className: "PrefabHierarchyObject", name: "soldier", pathId: 20 },
+      { ...BASE, className: "GameObject", name: "soldier", pathId: 11 },
+    ];
+    const map = buildNameUniquenessMap(assets);
+    expect(map.get("PrefabHierarchyObject\0soldier")).toBe(3);
+  });
+});
+
+describe("isAssetNameUnique", () => {
+  it("returns true when count is 1", () => {
+    const map = new Map([["Texture2D\0tex_a", 1]]);
+    const entry: AssetEntry = { ...BASE, className: "Texture2D", name: "tex_a" };
+    expect(isAssetNameUnique(entry, map)).toBe(true);
+  });
+
+  it("returns false when count > 1", () => {
+    const map = new Map([["Texture2D\0tex_a", 2]]);
+    const entry: AssetEntry = { ...BASE, className: "Texture2D", name: "tex_a" };
+    expect(isAssetNameUnique(entry, map)).toBe(false);
+  });
+
+  it("returns false for unnamed entries", () => {
+    const map = new Map<string, number>();
+    const entry: AssetEntry = { ...BASE, className: "Texture2D", name: null };
+    expect(isAssetNameUnique(entry, map)).toBe(false);
+  });
+
+  it("collapses GameObject to PHO bucket", () => {
+    const map = new Map([["PrefabHierarchyObject\0soldier", 1]]);
+    const entry: AssetEntry = { ...BASE, className: "GameObject", name: "soldier" };
+    expect(isAssetNameUnique(entry, map)).toBe(true);
   });
 });
