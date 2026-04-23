@@ -1,6 +1,6 @@
 .container {
   position: fixed;
-  bottom: var(--space-3);
+  bottom: calc(var(--status-bar-h) + var(--space-3));
   left: 50%;
   transform: translateX(-50%);
   z-index: 9000;

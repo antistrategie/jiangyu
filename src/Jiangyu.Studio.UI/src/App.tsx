@@ -6,6 +6,7 @@ import { WelcomeScreen } from "./components/WelcomeScreen/WelcomeScreen.tsx";
 import { Palette } from "./components/Palette/Palette.tsx";
 import { SettingsModal } from "./components/SettingsModal/SettingsModal.tsx";
 import { CompileModal } from "./components/CompileModal/CompileModal.tsx";
+import { StatusBar } from "./components/StatusBar/StatusBar.tsx";
 import { useCompile } from "./lib/compile.ts";
 import { basename, join, remapPath } from "./lib/path.ts";
 import { rpcCall, subscribe, type FileChangedEvent } from "./lib/rpc.ts";
@@ -294,6 +295,19 @@ export function App() {
     layoutRef.current = layout;
   }, [layout]);
 
+  const projectPathRef = useRef(projectPath);
+  useEffect(() => {
+    projectPathRef.current = projectPath;
+  }, [projectPath]);
+  const compileStateRef = useRef(compileState);
+  useEffect(() => {
+    compileStateRef.current = compileState;
+  }, [compileState]);
+  const startCompileRef = useRef(startCompile);
+  useEffect(() => {
+    startCompileRef.current = startCompile;
+  }, [startCompile]);
+
   const appActions = useMemo<PaletteAction[]>(
     () =>
       buildProjectActions(projectPath, recentProjects, {
@@ -520,6 +534,15 @@ export function App() {
       },
       { binding: { mod: true, shift: true, key: "]" }, run: () => focusAdjacentPane(1) },
       { binding: { mod: true, shift: true, key: "[" }, run: () => focusAdjacentPane(-1) },
+      {
+        binding: { mod: true, shift: true, key: "b" },
+        run: () => {
+          if (projectPathRef.current === null) return false;
+          if (compileStateRef.current.status === "running") return false;
+          startCompileRef.current();
+          return true;
+        },
+      },
     ];
     const onKey = (e: KeyboardEvent) => {
       for (const { binding, run } of shortcuts) {
@@ -575,6 +598,7 @@ export function App() {
               onToggleFullscreen={handleToggleFullscreen}
             />
           </div>
+          <StatusBar compileState={compileState} onOpenCompileModal={() => setCompileOpen(true)} />
         </>
       )}
       <Palette open={paletteOpen} onClose={() => setPaletteOpen(false)} actions={allActions} />

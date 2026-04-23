@@ -32,6 +32,9 @@
 :root {
   /* Parchment / paper */
   --paper-0: #f4efe6;
+
+  /* Height of the status bar when visible (set by StatusBar component). */
+  --status-bar-h: 0px;
   --paper-1: #ebe4d6;
   --paper-2: #ddd3c0;
   --paper-3: #c5b99f;
