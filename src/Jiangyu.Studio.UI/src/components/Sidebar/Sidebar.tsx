@@ -193,7 +193,7 @@ export function Sidebar({
     setExpansionTick((t) => t + 1);
   }, []);
 
-  // Reveal file in tree: expand all ancestor dirs and highlight briefly
+  // Reveal file in tree: expand all ancestor dirs and highlight
   useEffect(() => {
     if (!revealPath) return;
     const filePath = revealPath.path;
@@ -211,10 +211,6 @@ export function Sidebar({
       setExpansionTick((t) => t + 1);
     }
     setHighlightedPath(filePath);
-    const timer = window.setTimeout(() => {
-      setHighlightedPath((cur) => (cur === filePath ? null : cur));
-    }, 1500);
-    return () => window.clearTimeout(timer);
   }, [revealPath, projectPath]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {

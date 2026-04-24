@@ -970,7 +970,9 @@ internal sealed class TemplatePatchApplier
             return ApplyOutcome.MemberMissing;
         }
 
-        var removeIndex = terminal.Index!.Value;
+        var removeIndex = op.Index
+            ?? throw new InvalidOperationException(
+                $"Remove operation on '{terminal.Name}' has no Index; the compiled patch is malformed.");
 
         try
         {

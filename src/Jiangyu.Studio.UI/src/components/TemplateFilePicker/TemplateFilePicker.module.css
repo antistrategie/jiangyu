@@ -64,6 +64,13 @@
   font-family: var(--font-mono);
 }
 
+.searchHint {
+  font-family: var(--font-ui);
+  font-size: var(--fs-xs);
+  color: var(--fg-subtle);
+  margin: 0;
+}
+
 .fileList {
   flex: 1;
   min-height: 0;
@@ -91,6 +98,21 @@
 
 .fileRow:hover {
   background: var(--bg-sunken);
+}
+
+.fileRowCreate {
+  color: var(--cinnabar-1);
+  font-family: var(--font-label);
+  font-size: var(--fs-sm);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  border-top: 1px solid var(--rule-faint);
+}
+
+.fileRowCreate code {
+  font-family: var(--font-mono);
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .empty {

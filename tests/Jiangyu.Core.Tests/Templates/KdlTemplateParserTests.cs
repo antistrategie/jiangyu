@@ -130,7 +130,7 @@ public class KdlTemplateParserTests
             patch "WeaponTemplate" "weapon.test" {
                 append "SkillsGranted" ref="SkillTemplate" "active.aimed_shot"
                 insert "PerkTrees" index=0 ref="PerkTreeTemplate" "perk_tree.tech"
-                remove "PerkTrees[2]"
+                remove "PerkTrees" index=2
             }
             """);
 
@@ -153,7 +153,8 @@ public class KdlTemplateParserTests
 
         // Remove
         Assert.Equal(CompiledTemplateOp.Remove, ops[2].Op);
-        Assert.Equal("PerkTrees[2]", ops[2].FieldPath);
+        Assert.Equal("PerkTrees", ops[2].FieldPath);
+        Assert.Equal(2, ops[2].Index);
         Assert.Null(ops[2].Value);
     }
 

@@ -7,9 +7,17 @@ import { buildJiangyuTheme } from "@components/CodeEditor/jiangyuTheme.ts";
 import { registerKdlLanguage } from "@components/CodeEditor/kdlLanguage.ts";
 import { getLanguage, isBinaryFile } from "@components/CodeEditor/fileTypes.ts";
 import { computeTabDropIndex } from "@lib/drag/computeDropIndex.ts";
+import { TemplateVisualEditor } from "@components/TemplateVisualEditor/TemplateVisualEditor.tsx";
 import type { Tab } from "@lib/layout.ts";
-import type { FileChangeKind } from "@lib/rpc.ts";
-import { useEditorFontSize, useEditorKeybindMode, useEditorWordWrap } from "@lib/settings.ts";
+import { rpcCall, type FileChangeKind } from "@lib/rpc.ts";
+import {
+  useEditorFontSize,
+  useEditorKeybindMode,
+  useEditorWordWrap,
+  useTemplateEditorMode,
+  type TemplateEditorMode,
+} from "@lib/settings.ts";
+import { useProjectStore } from "@lib/project/store.ts";
 import styles from "@components/Workspace/Workspace.module.css";
 
 export interface TabDragSlots {
@@ -143,6 +151,7 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
   } = props;
 
   const [editor, setEditor] = useState<monacoEditor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<typeof import("monaco-editor") | null>(null);
   const [editorMenu, setEditorMenu] = useState<{ x: number; y: number } | null>(null);
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; path: string } | null>(null);
   // Reorder indicator: which tab index the drop would land at. Only populated
@@ -154,8 +163,42 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
   const [fontSize] = useEditorFontSize();
   const [wordWrap] = useEditorWordWrap();
   const [keybindMode] = useEditorKeybindMode();
+  const [defaultEditorMode] = useTemplateEditorMode();
+  const projectPath = useProjectStore((s) => s.projectPath);
+  // Per-file mode overrides: paths in this set deviate from the global default.
+  const [modeOverrides, setModeOverrides] = useState<Set<string>>(new Set());
   const vimStatusRef = useRef<HTMLDivElement>(null);
   const activeTabRef = useRef<HTMLButtonElement>(null);
+
+  const isTemplateKdl =
+    activePath !== null && activePath.includes("/templates/") && activePath.endsWith(".kdl");
+
+  const activeMode: TemplateEditorMode =
+    isTemplateKdl && activePath !== null
+      ? modeOverrides.has(activePath)
+        ? defaultEditorMode === "visual"
+          ? "source"
+          : "visual"
+        : defaultEditorMode
+      : "source";
+
+  const setMode = useCallback(
+    (target: TemplateEditorMode) => {
+      if (activePath === null) return;
+      const shouldOverride = target !== defaultEditorMode;
+      setModeOverrides((prev) => {
+        const has = prev.has(activePath);
+        if (has === shouldOverride) return prev;
+        const next = new Set(prev);
+        if (shouldOverride) next.add(activePath);
+        else next.delete(activePath);
+        return next;
+      });
+    },
+    [activePath, defaultEditorMode],
+  );
+
+  const forceSourceMode = useCallback(() => setMode("source"), [setMode]);
 
   // Monaco's onMount captures the initial onSave in its Ctrl+S handler, so
   // route through a ref that always points at the latest prop.
@@ -171,6 +214,7 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
 
   const handleMount: OnMount = useCallback(
     (mountedEditor, monaco) => {
+      monacoRef.current = monaco;
       if (!globalsRegistered) {
         monaco.editor.defineTheme("jiangyu", buildJiangyuTheme());
         registerKdlLanguage(monaco);
@@ -222,6 +266,44 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
       adapter?.dispose();
     };
   }, [editor, keybindMode]);
+
+  // KDL parse diagnostics: run templatesParse on template KDL files and set
+  // Monaco model markers so errors appear as squiggles in source mode.
+  const markerTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    const model = editor?.getModel();
+    if (!isTemplateKdl || !monaco || !model) {
+      // Clear markers when switching away from a template file
+      if (monaco && model) monaco.editor.setModelMarkers(model, "jiangyu-kdl", []);
+      return;
+    }
+    const text = activeContent ?? "";
+    clearTimeout(markerTimer.current);
+    markerTimer.current = setTimeout(() => {
+      void rpcCall<{ errors: { message: string; line?: number }[] }>("templatesParse", { text })
+        .then((doc) => {
+          // Only set if model is still current
+          if (editor?.getModel() !== model) return;
+          const markers: monacoEditor.IMarkerData[] = doc.errors.map((err) => ({
+            severity: monaco.MarkerSeverity.Error,
+            message: err.message,
+            startLineNumber: err.line ?? 1,
+            startColumn: 1,
+            endLineNumber: err.line ?? 1,
+            endColumn: 1000,
+          }));
+          monaco.editor.setModelMarkers(model, "jiangyu-kdl", markers);
+        })
+        .catch(() => {
+          // RPC failure — clear markers rather than show stale data
+          if (editor?.getModel() === model) {
+            monaco.editor.setModelMarkers(model, "jiangyu-kdl", []);
+          }
+        });
+    }, 300);
+    return () => clearTimeout(markerTimer.current);
+  }, [editor, isTemplateKdl, activeContent]);
 
   // Font family and padding come from design tokens (no user-visible control).
   // Font size and word wrap come from settings so they live on re-renders, and
@@ -371,6 +453,33 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
           )}
         </div>
       )}
+      {activePath !== null && (
+        <div className={styles.editorBar}>
+          <span className={styles.editorBarPath}>
+            {projectPath && activePath.startsWith(projectPath)
+              ? activePath.slice(projectPath.length + 1)
+              : activePath}
+          </span>
+          {isTemplateKdl && (
+            <span className={styles.editorBarActions}>
+              <button
+                type="button"
+                className={`${styles.modeBtn} ${activeMode === "visual" ? styles.modeBtnActive : ""}`}
+                onClick={() => setMode("visual")}
+              >
+                Visual
+              </button>
+              <button
+                type="button"
+                className={`${styles.modeBtn} ${activeMode === "source" ? styles.modeBtnActive : ""}`}
+                onClick={() => setMode("source")}
+              >
+                Source
+              </button>
+            </span>
+          )}
+        </div>
+      )}
       <div className={styles.content}>
         {activePath === null ? (
           (emptyState ?? <p className={styles.empty}>No file open</p>)
@@ -378,6 +487,13 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
           <p className={styles.empty}>Loading…</p>
         ) : isBinary ? (
           <p className={styles.empty}>Binary file — cannot display</p>
+        ) : activeMode === "visual" ? (
+          <TemplateVisualEditor
+            content={activeContent ?? ""}
+            filePath={activePath}
+            onChange={onActiveContentChange}
+            onRequestSourceMode={forceSourceMode}
+          />
         ) : showEditor ? (
           <div
             className={styles.editorHost}

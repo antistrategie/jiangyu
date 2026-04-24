@@ -85,6 +85,316 @@ public static class KdlTemplateParser
         return new ParseResult(patches, clones, errorCount);
     }
 
+    /// <summary>
+    /// Parse KDL text into an editor-facing document that preserves node order
+    /// and clone inline directives. Used by the Studio visual editor.
+    /// </summary>
+    public static KdlEditorDocument ParseText(string text)
+    {
+        var doc = new KdlEditorDocument();
+
+        KdlDocument kdl;
+        try
+        {
+            kdl = KdlDocument.Parse(text);
+        }
+        catch (Exception)
+        {
+            // KDL library throws on the first syntax error and stops.
+            // Recover by splitting into top-level blocks and parsing each
+            // independently so we can report errors across all blocks.
+            return ParseTextWithRecovery(text);
+        }
+
+        ProcessKdlNodes(kdl, doc, lineOffset: 0);
+        return doc;
+    }
+
+    /// <summary>
+    /// Split raw text into top-level blocks (one per patch/clone node) and parse
+    /// each independently. This lets us report syntax errors from every block
+    /// instead of stopping at the first one.
+    /// </summary>
+    private static KdlEditorDocument ParseTextWithRecovery(string text)
+    {
+        var doc = new KdlEditorDocument();
+
+        foreach (var (blockText, startLine) in SplitTopLevelBlocks(text))
+        {
+            var trimmed = blockText.Trim();
+            if (trimmed.Length == 0) continue;
+
+            KdlDocument kdl;
+            try
+            {
+                kdl = KdlDocument.Parse(trimmed);
+            }
+            catch (Exception ex)
+            {
+                var localLine = ExtractLineFromMessage(ex.Message);
+                var absoluteLine = localLine.HasValue ? localLine.Value + startLine - 1 : startLine;
+                doc.Errors.Add(new KdlEditorError { Message = ex.Message, Line = absoluteLine });
+                continue;
+            }
+
+            ProcessKdlNodes(kdl, doc, lineOffset: startLine - 1);
+        }
+
+        return doc;
+    }
+
+    /// <summary>
+    /// Process parsed KDL nodes into editor nodes/errors, adjusting line numbers
+    /// by <paramref name="lineOffset"/> for block-recovery mode.
+    /// </summary>
+    private static void ProcessKdlNodes(KdlDocument kdl, KdlEditorDocument doc, int lineOffset)
+    {
+        var errors = new List<string>();
+        var log = new ListLogSink(errors);
+
+        foreach (var node in kdl.Nodes)
+        {
+            var pos = FormatPos("text", node.SourcePosition);
+            var localLine = node.SourcePosition?.Line;
+            var line = localLine.HasValue ? localLine.Value + lineOffset : (int?)null;
+
+            switch (node.Name)
+            {
+                case "patch":
+                    if (TryParsePatchNode(node, pos, log, out var patch))
+                    {
+                        doc.Nodes.Add(CompiledPatchToEditor(patch));
+                    }
+                    else
+                    {
+                        FlushErrors(doc, errors, line);
+                    }
+                    break;
+
+                case "clone":
+                    if (TryParseCloneNode(node, pos, log, out var clone, out var clonePatches))
+                    {
+                        var editorNode = new KdlEditorNode
+                        {
+                            Kind = KdlEditorNodeKind.Clone,
+                            TemplateType = clone.TemplateType ?? string.Empty,
+                            SourceId = clone.SourceId,
+                            CloneId = clone.CloneId,
+                        };
+                        if (clonePatches != null)
+                        {
+                            foreach (var op in clonePatches.Set)
+                                editorNode.Directives.Add(CompiledOpToEditor(op));
+                        }
+                        doc.Nodes.Add(editorNode);
+                    }
+                    else
+                    {
+                        FlushErrors(doc, errors, line);
+                    }
+                    break;
+
+                default:
+                    doc.Errors.Add(new KdlEditorError
+                    {
+                        Message = $"Unknown top-level node '{node.Name}'. Expected 'patch' or 'clone'.",
+                        Line = line,
+                    });
+                    break;
+            }
+
+            FlushErrors(doc, errors, line);
+        }
+    }
+
+    /// <summary>
+    /// Split raw KDL text into top-level blocks by tracking brace depth.
+    /// Returns each block's text and its 1-based starting line number.
+    /// </summary>
+    private static List<(string Text, int StartLine)> SplitTopLevelBlocks(string text)
+    {
+        var blocks = new List<(string Text, int StartLine)>();
+        var lines = text.Split('\n');
+        var blockStart = -1;
+        var depth = 0;
+        var maxDepth = 0;
+        var inString = false;
+        var escape = false;
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+
+            // Track brace depth, skipping quoted strings
+            for (var c = 0; c < line.Length; c++)
+            {
+                var ch = line[c];
+                if (escape) { escape = false; continue; }
+                if (ch == '\\' && inString) { escape = true; continue; }
+                if (ch == '"') { inString = !inString; continue; }
+                if (inString) continue;
+
+                // Line comment — rest of line is ignored
+                if (ch == '/' && c + 1 < line.Length && line[c + 1] == '/')
+                    break;
+
+                if (ch == '{') { depth++; maxDepth = Math.Max(maxDepth, depth); continue; }
+                if (ch == '}') { depth--; continue; }
+            }
+
+            var nonBlank = line.TrimStart().Length > 0;
+
+            // Detect start of a block (non-blank line at depth 0)
+            if (blockStart < 0 && nonBlank)
+                blockStart = i;
+
+            // End block when we return to depth 0 after entering braces
+            if (blockStart >= 0 && depth <= 0 && maxDepth > 0 && nonBlank)
+            {
+                blocks.Add((string.Join('\n', lines[blockStart..(i + 1)]), blockStart + 1));
+                blockStart = -1;
+                depth = 0;
+                maxDepth = 0;
+                inString = false;
+            }
+        }
+
+        // Capture any trailing block (unclosed brace or braceless node)
+        if (blockStart >= 0)
+            blocks.Add((string.Join('\n', lines[blockStart..]), blockStart + 1));
+
+        return blocks;
+    }
+
+    private static void FlushErrors(KdlEditorDocument doc, List<string> errors, int? fallbackLine)
+    {
+        foreach (var msg in errors)
+            doc.Errors.Add(new KdlEditorError { Message = msg, Line = ExtractLineFromMessage(msg) ?? fallbackLine });
+        errors.Clear();
+    }
+
+    /// <summary>
+    /// Extract line number from error messages. Handles two formats:
+    /// <list type="bullet">
+    /// <item>"text:5: ..." or "path/file.kdl:12: ..." (Jiangyu position prefix)</item>
+    /// <item>"Parse error at line 3, column 2: ..." (KDL library exception)</item>
+    /// </list>
+    /// </summary>
+    private static int? ExtractLineFromMessage(string message)
+    {
+        // Try "at line N" (KDL library format)
+        const string atLine = "at line ";
+        var atIdx = message.IndexOf(atLine, StringComparison.OrdinalIgnoreCase);
+        if (atIdx >= 0)
+        {
+            var start = atIdx + atLine.Length;
+            var end = start;
+            while (end < message.Length && char.IsDigit(message[end])) end++;
+            if (end > start && int.TryParse(message.AsSpan()[start..end], out var line))
+                return line;
+        }
+
+        // Try "prefix:N:" (Jiangyu position format)
+        var firstColon = message.IndexOf(':');
+        if (firstColon < 0) return null;
+        var secondColon = message.IndexOf(':', firstColon + 1);
+        if (secondColon < 0) return null;
+        var lineSpan = message.AsSpan()[(firstColon + 1)..secondColon];
+        return int.TryParse(lineSpan, out var line2) ? line2 : null;
+    }
+
+    private static KdlEditorNode CompiledPatchToEditor(CompiledTemplatePatch patch)
+    {
+        var node = new KdlEditorNode
+        {
+            Kind = KdlEditorNodeKind.Patch,
+            TemplateType = patch.TemplateType ?? string.Empty,
+            TemplateId = patch.TemplateId,
+        };
+        foreach (var op in patch.Set)
+            node.Directives.Add(CompiledOpToEditor(op));
+        return node;
+    }
+
+    private static KdlEditorDirective CompiledOpToEditor(CompiledTemplateSetOperation op)
+    {
+        return new KdlEditorDirective
+        {
+            Op = op.Op switch
+            {
+                CompiledTemplateOp.Set => KdlEditorOp.Set,
+                CompiledTemplateOp.Append => KdlEditorOp.Append,
+                CompiledTemplateOp.InsertAt => KdlEditorOp.Insert,
+                CompiledTemplateOp.Remove => KdlEditorOp.Remove,
+                _ => KdlEditorOp.Set,
+            },
+            FieldPath = op.FieldPath,
+            Index = op.Index,
+            Value = op.Value != null ? CompiledValueToEditor(op.Value) : null,
+        };
+    }
+
+    private static KdlEditorValue CompiledValueToEditor(CompiledTemplateValue v)
+    {
+        return v.Kind switch
+        {
+            CompiledTemplateValueKind.Boolean => new KdlEditorValue
+            {
+                Kind = KdlEditorValueKind.Boolean,
+                Boolean = v.Boolean,
+            },
+            CompiledTemplateValueKind.Byte => new KdlEditorValue
+            {
+                Kind = KdlEditorValueKind.Byte,
+                Int32 = v.Byte,
+            },
+            CompiledTemplateValueKind.Int32 => new KdlEditorValue
+            {
+                Kind = KdlEditorValueKind.Int32,
+                Int32 = v.Int32,
+            },
+            CompiledTemplateValueKind.Single => new KdlEditorValue
+            {
+                Kind = KdlEditorValueKind.Single,
+                Single = v.Single,
+            },
+            CompiledTemplateValueKind.String => new KdlEditorValue
+            {
+                Kind = KdlEditorValueKind.String,
+                String = v.String,
+            },
+            CompiledTemplateValueKind.Enum => new KdlEditorValue
+            {
+                Kind = KdlEditorValueKind.Enum,
+                EnumType = v.EnumType,
+                EnumValue = v.EnumValue,
+            },
+            CompiledTemplateValueKind.TemplateReference => new KdlEditorValue
+            {
+                Kind = KdlEditorValueKind.TemplateReference,
+                ReferenceType = v.Reference?.TemplateType,
+                ReferenceId = v.Reference?.TemplateId,
+            },
+            CompiledTemplateValueKind.Composite => new KdlEditorValue
+            {
+                Kind = KdlEditorValueKind.Composite,
+                CompositeType = v.Composite?.TypeName,
+                CompositeFields = v.Composite?.Fields
+                    .ToDictionary(kv => kv.Key, kv => CompiledValueToEditor(kv.Value)),
+            },
+            _ => new KdlEditorValue { Kind = KdlEditorValueKind.String, String = "" },
+        };
+    }
+
+    /// <summary>Captures log messages as strings for the editor RPC path.</summary>
+    private sealed class ListLogSink(List<string> target) : ILogSink
+    {
+        public void Info(string message) { }
+        public void Msg(string message) { }
+        public void Warning(string message) => target.Add(message);
+        public void Error(string message) => target.Add(message);
+    }
+
     private readonly record struct FileResult(
         List<CompiledTemplatePatch> Patches,
         List<CompiledTemplateClone> Clones,
@@ -197,13 +507,20 @@ public static class KdlTemplateParser
         }
 
         var ops = new List<CompiledTemplateSetOperation>();
+        var hasError = false;
         foreach (var child in node.Children)
         {
             var childPos = FormatPos(pos, child.SourcePosition);
             if (!TryParseOperation(child, childPos, log, out var op))
-                return false;
+            {
+                hasError = true;
+                continue;
+            }
             ops.Add(op);
         }
+
+        if (hasError)
+            return false;
 
         patch = new CompiledTemplatePatch
         {
@@ -261,13 +578,20 @@ public static class KdlTemplateParser
         if (node.HasChildren)
         {
             var ops = new List<CompiledTemplateSetOperation>();
+            var hasError = false;
             foreach (var child in node.Children)
             {
                 var childPos = FormatPos(pos, child.SourcePosition);
                 if (!TryParseOperation(child, childPos, log, out var op))
-                    return false;
+                {
+                    hasError = true;
+                    continue;
+                }
                 ops.Add(op);
             }
+
+            if (hasError)
+                return false;
 
             if (ops.Count > 0)
             {
@@ -286,7 +610,7 @@ public static class KdlTemplateParser
     // set "fieldPath" <value>
     // append "fieldPath" <value>
     // insert "fieldPath" index=N <value>
-    // remove "fieldPath"
+    // remove "fieldPath" index=N
     private static bool TryParseOperation(
         KdlNode node, string pos, ILogSink log,
         out CompiledTemplateSetOperation op)
@@ -319,13 +643,21 @@ public static class KdlTemplateParser
             return false;
         }
 
-        // Remove needs no value
+        // Remove needs index= property, no value
         if (opKind == CompiledTemplateOp.Remove)
         {
+            var removeIndexProp = GetPropertyValue(node, "index");
+            if (removeIndexProp == null || removeIndexProp.AsInt32() == null)
+            {
+                log.Error($"{pos}: 'remove' requires an index=N property.");
+                return false;
+            }
+
             op = new CompiledTemplateSetOperation
             {
                 Op = opKind,
                 FieldPath = fieldPath,
+                Index = removeIndexProp.AsInt32(),
             };
             return true;
         }

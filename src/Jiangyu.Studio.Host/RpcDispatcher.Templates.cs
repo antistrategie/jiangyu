@@ -78,14 +78,21 @@ public static partial class RpcDispatcher
         var index = service.LoadIndex() ?? throw new InvalidOperationException("Template index not found. Build it first.");
 
         // If no query, return the full index (types + instances).
-        // Client does filtering.
-        if (string.IsNullOrWhiteSpace(query) && string.IsNullOrWhiteSpace(className))
+        // When className is set but query is empty, filter instances by class.
+        if (string.IsNullOrWhiteSpace(query))
         {
+            var instances = string.IsNullOrWhiteSpace(className)
+                ? index.Instances
+                : index.Instances
+                    .Where(i => string.Equals(i.ClassName, className, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
             return JsonSerializer.SerializeToElement(new TemplateSearchResultDto
             {
-                Types = index.TemplateTypes,
-                Instances = index.Instances,
-                ReferencedBy = index.ReferencedBy,
+                Types = string.IsNullOrWhiteSpace(className) ? index.TemplateTypes : [],
+                Instances = instances,
+                ReferencedBy = TemplateIndex.FilterReferencedBy(index.ReferencedBy, instances),
             });
         }
 
@@ -135,6 +142,146 @@ public static partial class RpcDispatcher
         return JsonSerializer.SerializeToElement(MapQueryResult(catalog, result));
     }
 
+    private static JsonElement HandleTemplatesParse(IInfiniFrameWindow _, JsonElement? parameters)
+    {
+        var text = RequireString(parameters, "text");
+        var document = KdlTemplateParser.ParseText(text);
+        return JsonSerializer.SerializeToElement(document);
+    }
+
+    private static JsonElement HandleTemplatesSerialise(IInfiniFrameWindow _, JsonElement? parameters)
+    {
+        if (parameters is not { } p)
+            throw new ArgumentException("Missing parameters");
+
+        var document = p.Deserialize<KdlEditorDocument>()
+            ?? throw new ArgumentException("Could not deserialise editor document");
+
+        var text = KdlTemplateSerialiser.Serialise(document);
+        return JsonSerializer.SerializeToElement(new { text });
+    }
+
+    private static JsonElement HandleTemplatesProjectClones(IInfiniFrameWindow _, JsonElement? __)
+    {
+        var root = ProjectWatcher.ProjectRoot;
+        if (root is null)
+            return JsonSerializer.SerializeToElement(new { clones = Array.Empty<object>() });
+
+        var templatesDir = Path.Combine(root, "templates");
+        if (!Directory.Exists(templatesDir))
+            return JsonSerializer.SerializeToElement(new { clones = Array.Empty<object>() });
+
+        var clones = new List<ProjectCloneEntryDto>();
+        foreach (var file in Directory.EnumerateFiles(templatesDir, "*.kdl", SearchOption.AllDirectories))
+        {
+            try
+            {
+                var text = File.ReadAllText(file);
+                var doc = KdlTemplateParser.ParseText(text);
+                var relativePath = Path.GetRelativePath(root, file).Replace('\\', '/');
+                foreach (var node in doc.Nodes)
+                {
+                    if (node.Kind == KdlEditorNodeKind.Clone && !string.IsNullOrEmpty(node.CloneId))
+                    {
+                        clones.Add(new ProjectCloneEntryDto
+                        {
+                            TemplateType = node.TemplateType,
+                            Id = node.CloneId,
+                            File = relativePath,
+                        });
+                    }
+                }
+            }
+            catch
+            {
+                // Skip files that fail to parse.
+            }
+        }
+
+        return JsonSerializer.SerializeToElement(new { clones });
+    }
+
+    private static JsonElement HandleTemplatesEnumMembers(IInfiniFrameWindow _, JsonElement? parameters)
+    {
+        var typeName = RequireString(parameters, "typeName");
+
+        var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+        if (!resolution.Success)
+            throw new InvalidOperationException(resolution.Error ?? "Could not resolve game data path.");
+
+        var gamePath = Path.GetDirectoryName(resolution.Context!.GameDataPath)
+            ?? throw new InvalidOperationException("Could not derive game directory.");
+
+        var assemblyPath = Path.Combine(gamePath, DefaultAssemblyRelativePath);
+        if (!File.Exists(assemblyPath))
+            throw new InvalidOperationException($"Assembly-CSharp.dll not found at: {assemblyPath}");
+
+        var additionalSearchDirs = new List<string>();
+        var melonNet6 = Path.Combine(gamePath, MelonLoaderNet6RelativePath);
+        if (Directory.Exists(melonNet6))
+            additionalSearchDirs.Add(melonNet6);
+
+        using var catalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirs);
+        // Note: `out _` would bind to the IInfiniFrameWindow parameter named
+        // `_` on this method, so the discard is spelt with an explicit type.
+        var type = catalog.ResolveType(typeName, out IReadOnlyList<Type> _, out var error);
+        if (type == null || !type.IsEnum)
+            throw new InvalidOperationException(error ?? $"'{typeName}' is not a known enum type.");
+
+        var members = TemplateTypeCatalog.GetEnumMemberNames(type);
+        return JsonSerializer.SerializeToElement(new { members });
+    }
+
+    private static string? ComputeMemberPatchScalarKind(TemplateTypeCatalog catalog, MemberShape m)
+    {
+        // For the member's effective leaf type, determine what patch value kind it uses.
+        var memberType = m.MemberType;
+        var elementType = TemplateTypeCatalog.GetElementType(memberType);
+        var leafType = elementType ?? memberType;
+
+        if (TemplateTypeCatalog.IsScalar(leafType))
+        {
+            if (leafType.IsEnum) return "Enum";
+            return leafType.FullName switch
+            {
+                "System.Boolean" => "Boolean",
+                "System.Byte" => "Byte",
+                "System.Int32" => "Int32",
+                "System.Single" => "Single",
+                "System.String" => "String",
+                _ => null,
+            };
+        }
+
+        if (TemplateTypeCatalog.IsTemplateReferenceTarget(leafType))
+            return "TemplateReference";
+
+        return null;
+    }
+
+    private static string? ComputeElementTypeName(TemplateTypeCatalog catalog, MemberShape m)
+    {
+        var elementType = TemplateTypeCatalog.GetElementType(m.MemberType);
+        return elementType != null ? catalog.FriendlyName(elementType) : null;
+    }
+
+    private static string? ComputeEnumTypeName(TemplateTypeCatalog catalog, MemberShape m)
+    {
+        var memberType = m.MemberType;
+        var elementType = TemplateTypeCatalog.GetElementType(memberType);
+        var leafType = elementType ?? memberType;
+        return leafType.IsEnum ? catalog.FriendlyName(leafType) : null;
+    }
+
+    private static string? ComputeReferenceTypeName(TemplateTypeCatalog catalog, MemberShape m)
+    {
+        var memberType = m.MemberType;
+        var elementType = TemplateTypeCatalog.GetElementType(memberType);
+        var leafType = elementType ?? memberType;
+        return TemplateTypeCatalog.IsTemplateReferenceTarget(leafType)
+            ? catalog.FriendlyName(leafType) : null;
+    }
+
     private static TemplateQueryResultDto MapQueryResult(TemplateTypeCatalog catalog, QueryResult result)
     {
         return new TemplateQueryResultDto
@@ -159,6 +306,10 @@ public static partial class RpcDispatcher
                 IsCollection = TemplateTypeCatalog.GetElementType(m.MemberType) != null ? true : null,
                 IsScalar = TemplateTypeCatalog.IsScalar(m.MemberType) ? true : null,
                 IsTemplateReference = TemplateTypeCatalog.IsTemplateReferenceTarget(m.MemberType) ? true : null,
+                PatchScalarKind = ComputeMemberPatchScalarKind(catalog, m),
+                ElementTypeName = ComputeElementTypeName(catalog, m),
+                EnumTypeName = ComputeEnumTypeName(catalog, m),
+                ReferenceTypeName = ComputeReferenceTypeName(catalog, m),
             }).ToList(),
         };
     }
@@ -256,6 +407,30 @@ public static partial class RpcDispatcher
 
         [JsonPropertyName("isTemplateReference")]
         public bool? IsTemplateReference { get; set; }
+
+        [JsonPropertyName("patchScalarKind")]
+        public string? PatchScalarKind { get; set; }
+
+        [JsonPropertyName("elementTypeName")]
+        public string? ElementTypeName { get; set; }
+
+        [JsonPropertyName("enumTypeName")]
+        public string? EnumTypeName { get; set; }
+
+        [JsonPropertyName("referenceTypeName")]
+        public string? ReferenceTypeName { get; set; }
+    }
+
+    internal sealed class ProjectCloneEntryDto
+    {
+        [JsonPropertyName("templateType")]
+        public required string TemplateType { get; set; }
+
+        [JsonPropertyName("id")]
+        public required string Id { get; set; }
+
+        [JsonPropertyName("file")]
+        public required string File { get; set; }
     }
 
 }

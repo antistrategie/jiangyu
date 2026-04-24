@@ -1,0 +1,858 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3);
+  gap: var(--space-3);
+}
+
+/* --- Node card --- */
+
+.card {
+  border: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg-sunken);
+  cursor: pointer;
+  user-select: none;
+}
+
+.cardBadge {
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--rule);
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.cardBadgePatch {
+  color: var(--cinnabar-1);
+  border-color: var(--cinnabar-1);
+}
+
+.cardBadgeClone {
+  color: var(--jade-1, var(--fg-muted));
+  border-color: var(--jade-1, var(--rule));
+}
+
+.cardType {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.cardId {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--fg-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.cardProp {
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.cardPropValue {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--fg);
+}
+
+.cardTypeInput {
+  max-width: 180px;
+  min-width: 0;
+}
+
+.cardTypeInput .setValueInput {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 0 var(--space-1);
+}
+
+.cardTypeInput .setValueInput:hover,
+.cardTypeInput .setValueInput:focus {
+  border-color: var(--rule);
+  outline: none;
+}
+
+.cardIdInput {
+  min-width: 0;
+  flex: 1;
+}
+
+.cardIdInput .setValueInput {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--fg-strong);
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 0 var(--space-1);
+}
+
+.cardIdInput .setValueInput:hover,
+.cardIdInput .setValueInput:focus {
+  border-color: var(--rule);
+  outline: none;
+}
+
+.cardExpander {
+  margin-left: auto;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--fg-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform var(--ease-fast);
+  display: flex;
+  align-items: center;
+  transform: rotate(-90deg);
+}
+
+.cardExpanderOpen {
+  transform: rotate(0deg);
+}
+
+.cardDelete {
+  background: none;
+  border: none;
+  padding: 2px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.cardDelete:hover {
+  color: var(--cinnabar-1);
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+}
+
+/* --- Set row --- */
+
+.setRow {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--rule-faint);
+}
+
+.setRowComposite {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--rule-faint);
+}
+
+.setRowHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  min-height: 32px;
+}
+
+.setField {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--fg-strong);
+  flex-shrink: 1;
+  min-width: 60px;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setValue {
+  flex: 1 1 80px;
+  min-width: 0;
+}
+
+.setValueInput {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  padding: 2px var(--space-2);
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--rule);
+  outline: none;
+  min-width: 0;
+}
+
+.setValueInput:focus {
+  border-color: var(--cinnabar-1);
+}
+
+.setValueInvalid {
+  border-color: var(--cinnabar-1);
+  background: color-mix(in srgb, var(--cinnabar-1) 5%, var(--bg));
+}
+
+.setValueCheckbox {
+  accent-color: var(--cinnabar-1);
+}
+
+.setValueSelect {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  padding: 2px var(--space-2);
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--rule);
+  outline: none;
+}
+
+.setKind {
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  flex-shrink: 0;
+  text-align: right;
+}
+
+/* Hide kind label in narrow containers */
+@container (max-width: 300px) {
+  .setKind {
+    display: none;
+  }
+}
+
+.setDelete {
+  background: none;
+  border: none;
+  padding: 2px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+  opacity: 0;
+}
+
+.setRow:hover .setDelete,
+.setRowComposite:hover .setDelete {
+  opacity: 1;
+}
+
+.setDelete:hover {
+  color: var(--cinnabar-1);
+}
+
+/* --- Op selector --- */
+
+.setOpWrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.setOpBtn {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  background: none;
+  border: 1px solid transparent;
+  padding: 1px var(--space-1);
+  cursor: pointer;
+}
+
+.setOpBtn:hover {
+  border-color: var(--rule);
+  color: var(--fg);
+}
+
+.setOpLabel {
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  padding: 1px var(--space-1);
+  flex-shrink: 0;
+}
+
+.setOpMenu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  min-width: 80px;
+}
+
+.setOpMenuItem {
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  background: none;
+  border: none;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  text-align: left;
+}
+
+.setOpMenuItem:hover {
+  background: var(--paper-2);
+  color: var(--fg);
+}
+
+.setOpMenuItemActive {
+  color: var(--fg-strong);
+  background: var(--paper-2);
+}
+
+.setIndexInput {
+  width: 40px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  padding: 2px var(--space-1);
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--rule);
+  outline: none;
+  flex-shrink: 0;
+}
+
+.setIndexInput:focus {
+  border-color: var(--cinnabar-1);
+}
+
+.setInsertRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+}
+
+.setInsertAt {
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+/* --- Field adder --- */
+
+.fieldAdder {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  gap: var(--space-1);
+  border: 1px dashed var(--rule);
+  margin: var(--space-4) var(--space-3);
+  transition:
+    border-color var(--ease-fast),
+    background var(--ease-fast);
+}
+
+.fieldAdderIcon {
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.fieldAdderInput {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  padding: 2px var(--space-2);
+  background: transparent;
+  color: var(--fg);
+  border: none;
+  outline: none;
+}
+
+.fieldAdderInput::placeholder {
+  color: var(--fg-muted);
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.fieldAdderDropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+}
+
+.fieldAdderHint {
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  padding: var(--space-2) var(--space-3);
+}
+
+.fieldAdderItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.fieldAdderItem:hover {
+  background: var(--paper-2);
+}
+
+.fieldAdderItemDim {
+  opacity: 0.5;
+}
+
+.fieldAdderItemName {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--fg-strong);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fieldAdderItemType {
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.fieldAdderItemBadge {
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--jade-1, var(--fg-muted));
+  border: 1px solid var(--jade-1, var(--rule));
+  padding: 0 var(--space-1);
+  flex-shrink: 0;
+}
+
+.fieldAdderSep {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-1) var(--space-3);
+  color: var(--ink-4);
+  font-family: var(--font-label);
+  font-size: 10px;
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.fieldAdderSep::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--rule-faint);
+}
+
+/* --- Drag grip (cards + rows) --- */
+
+.dragGrip,
+.rowDragGrip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  cursor: grab;
+  color: var(--fg-muted);
+  opacity: 0;
+  transition: opacity var(--ease-fast);
+  flex-shrink: 0;
+}
+
+.card:hover > .cardHeader > .dragGrip,
+.dragGrip:hover {
+  opacity: 1;
+}
+
+.dragGrip:active,
+.rowDragGrip:active {
+  cursor: grabbing;
+}
+
+.setRow:hover .rowDragGrip,
+.setRowComposite:hover .rowDragGrip,
+.rowDragGrip:hover {
+  opacity: 1;
+}
+
+/* --- Drag states --- */
+
+.cardDragging {
+  opacity: 0.35;
+}
+
+.rowDragging {
+  opacity: 0.35;
+}
+
+/* --- Drop indicator --- */
+
+.dropIndicator {
+  height: 2px;
+  background: var(--cinnabar-1);
+  pointer-events: none;
+  margin: -1px 0;
+  position: relative;
+  z-index: 10;
+}
+
+/* --- Add node area --- */
+
+.addNodeArea {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--rule);
+  transition:
+    border-color var(--ease-fast),
+    background var(--ease-fast);
+}
+
+.addNodeAreaDragOver {
+  border-color: var(--cinnabar-1);
+  background: color-mix(in srgb, var(--cinnabar-1) 8%, transparent);
+}
+
+.addNodeBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  background: none;
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  transition:
+    color var(--ease-fast),
+    border-color var(--ease-fast);
+}
+
+.addNodeBtn:hover {
+  color: var(--fg-strong);
+  border-color: var(--fg-muted);
+}
+
+/* --- Field adder drop hint --- */
+
+.fieldAdderDragOver {
+  background: color-mix(in srgb, var(--cinnabar-1) 8%, transparent);
+  border-color: var(--cinnabar-1);
+}
+
+/* --- Parse error banner --- */
+
+.parseError {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  color: var(--cinnabar-1);
+  background: color-mix(in srgb, var(--cinnabar-1) 6%, var(--bg));
+  border-bottom: 1px solid var(--cinnabar-1);
+}
+
+.fallbackBtn {
+  margin-left: auto;
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  color: var(--cinnabar-1);
+  background: transparent;
+  border: 1px solid var(--cinnabar-1);
+  cursor: pointer;
+}
+
+.fallbackBtn:hover {
+  background: color-mix(in srgb, var(--cinnabar-1) 12%, transparent);
+}
+
+.errorSummary {
+  flex: 1;
+  min-width: 0;
+}
+
+.errorPanel {
+  border-bottom: 1px solid var(--cinnabar-1);
+  background: color-mix(in srgb, var(--cinnabar-1) 6%, var(--bg));
+}
+
+.errorPanel .parseError {
+  border-bottom: 1px solid color-mix(in srgb, var(--cinnabar-1) 20%, transparent);
+}
+
+.errorList {
+  display: flex;
+  flex-direction: column;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.errorItem {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--cinnabar-1);
+  border-bottom: 1px solid color-mix(in srgb, var(--cinnabar-1) 10%, transparent);
+}
+
+.errorItem:last-child {
+  border-bottom: none;
+}
+
+.errorLine {
+  flex-shrink: 0;
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.errorMessage {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Empty state --- */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  font-family: var(--font-label);
+  font-size: var(--fs-sm);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+/* --- Reference combobox --- */
+
+.refCombobox {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.refComboboxDropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- Reference value inline --- */
+
+.suggestionTag {
+  font-family: var(--font-label);
+  font-size: 8px;
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  color: var(--jade-1, var(--fg-muted));
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.setRefRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+}
+
+.setRefLabel {
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.setRefTypeInput {
+  flex: 0 1 140px;
+  min-width: 60px;
+  max-width: 140px;
+}
+
+.setRefTypeInput .setValueInput {
+  color: var(--fg-muted);
+}
+
+.setRefTypeInput .setValueInput:focus {
+  color: var(--fg);
+}
+
+/* --- Composite value --- */
+
+.compositeBody {
+  padding: 0 0 var(--space-1) var(--space-4);
+  border-left: 1px solid var(--rule-faint);
+  margin-left: var(--space-4);
+  margin-top: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.compositeHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+}
+
+.compositeType {
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  border: 1px solid var(--rule);
+  padding: 1px var(--space-1);
+}
+
+.compositeRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  min-height: 28px;
+}
+
+.compositeFieldName {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--fg-strong);
+  flex-shrink: 0;
+  min-width: 60px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compositeFieldValue {
+  flex: 1;
+  min-width: 0;
+}
+
+.compositeFieldDelete {
+  background: none;
+  border: none;
+  padding: 2px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+  opacity: 0;
+}
+
+.compositeRow:hover .compositeFieldDelete {
+  opacity: 1;
+}
+
+.compositeFieldDelete:hover {
+  color: var(--cinnabar-1);
+}
+
+.compositeEmpty {
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  padding: var(--space-1) var(--space-2);
+}

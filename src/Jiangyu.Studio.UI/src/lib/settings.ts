@@ -231,6 +231,35 @@ export function saveEditorKeybindMode(value: EditorKeybindMode): void {
   notify();
 }
 
+// --- template editor default mode -------------------------------------------
+
+export type TemplateEditorMode = "visual" | "source";
+export const TEMPLATE_EDITOR_MODE_DEFAULT: TemplateEditorMode = "visual";
+const TEMPLATE_EDITOR_MODE_KEY = `${STORAGE_PREFIX}templateEditorMode`;
+
+function parseTemplateEditorMode(raw: unknown): TemplateEditorMode {
+  return raw === "source" ? "source" : TEMPLATE_EDITOR_MODE_DEFAULT;
+}
+
+export function loadTemplateEditorMode(): TemplateEditorMode {
+  try {
+    const raw = localStorage.getItem(TEMPLATE_EDITOR_MODE_KEY);
+    if (raw === null) return TEMPLATE_EDITOR_MODE_DEFAULT;
+    return parseTemplateEditorMode(JSON.parse(raw));
+  } catch {
+    return TEMPLATE_EDITOR_MODE_DEFAULT;
+  }
+}
+
+export function saveTemplateEditorMode(value: TemplateEditorMode): void {
+  try {
+    localStorage.setItem(TEMPLATE_EDITOR_MODE_KEY, JSON.stringify(value));
+  } catch {
+    // see note on saveEditorFontSize.
+  }
+  notify();
+}
+
 // --- hooks -----------------------------------------------------------------
 
 export function useEditorFontSize(): [number, (value: number) => void] {
@@ -293,5 +322,15 @@ export function useEditorKeybindMode(): [EditorKeybindMode, (value: EditorKeybin
     () => EDITOR_KEYBIND_MODE_DEFAULT,
   );
   const set = useCallback((next: EditorKeybindMode) => saveEditorKeybindMode(next), []);
+  return [value, set];
+}
+
+export function useTemplateEditorMode(): [TemplateEditorMode, (value: TemplateEditorMode) => void] {
+  const value = useSyncExternalStore(
+    subscribe,
+    loadTemplateEditorMode,
+    () => TEMPLATE_EDITOR_MODE_DEFAULT,
+  );
+  const set = useCallback((next: TemplateEditorMode) => saveTemplateEditorMode(next), []);
   return [value, set];
 }

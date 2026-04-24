@@ -96,7 +96,7 @@ public static class TemplateMemberQuery
             Kind = QueryResultKind.TypeNode,
             ResolvedPath = resolvedPath,
             CurrentType = type,
-            Members = TemplateTypeCatalog.GetMembers(type),
+            Members = TemplateTypeCatalog.GetMembers(type, includeReadOnly: true),
         };
     }
 
@@ -199,7 +199,7 @@ public static class TemplateMemberQuery
             Kind = QueryResultKind.TypeNode,
             ResolvedPath = resolvedPath,
             CurrentType = currentType,
-            Members = TemplateTypeCatalog.GetMembers(currentType),
+            Members = TemplateTypeCatalog.GetMembers(currentType, includeReadOnly: true),
             IsWritable = lastWritable,
             UnwrappedFrom = unwrappedFrom,
             PatchScalarKind = lastMemberType != null

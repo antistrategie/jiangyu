@@ -1,6 +1,6 @@
 # Jiangyu
 
-General-purpose modkit for MENACE (Unity 6, IL2CPP). Named after Jiangyu, a Girls Frontline character. Replaces the existing MenaceAssetPacker modkit. Built and tested against a Girls Frontline overhaul mod (WoMENACE) as the driving use case.
+General-purpose modkit for MENACE (Unity 6, IL2CPP).
 
 ## Language
 
@@ -17,15 +17,11 @@ C# for the core stack — CLI compiler, MelonLoader loader, shared libraries. Ty
 - `AGENTS.md` — this file. Architecture, constraints, conventions. Read by AI agents at session start.
 - `docs/PRINCIPLES.md` — Jiangyu's long-term principles and decision rules. Use when making structural or workflow-boundary decisions.
 - `docs/MODDING.md` — current public-facing modder contract. Keep this thin and stable.
-- `PROGRESS.md` — internal chronological log of what was done, what was discovered, what decisions were made. Append-only. May be gitignored or absent in public clones.
-- `TODO.md` — internal future-work backlog only. Not a record of what was completed. May be gitignored or absent in public clones.
 - `docs/research/VALIDATION.md` — how Jiangyu turns reverse-engineering work into verified project knowledge.
 - `docs/research/STRUCTURAL_VALIDATION_WORKFLOW.md` — repeatable structural-audit procedure for edge cases and re-audits.
 - `docs/research/investigations/` — investigation notes and provenance for completed research work.
 - `docs/research/verified/` — promoted Jiangyu-owned findings that product work can rely on.
 - `validation/` — committed machine-readable structural baseline inputs and outputs. Use this for diffable/re-runnable validation artefacts only; prefer Jiangyu inspect/runtime tools for fresh discovery work, and do not drop ad hoc dumps here unless they are meant to be regenerated and compared later.
-
-If `PROGRESS.md` or `TODO.md` are absent, treat them as optional working docs rather than required repo inputs. Fall back to the committed docs, verified research, and git history.
 
 ## Tooling
 
@@ -67,8 +63,8 @@ If `PROGRESS.md` or `TODO.md` are absent, treat them as optional working docs ra
 
 If logic must compile in both the real IL2CPP/game-reference loader context and a normal SDK/test context, put it in `Jiangyu.Shared` instead of linking the same source file into multiple projects.
 
-- **Studio Host** (`Jiangyu.Studio.Host`) — .NET backend for Jiangyu Studio. Bridges the React frontend to Core via JSON-RPC over InfiniFrame's message channel: requests `{id, method, params}`, responses `{id, result?, error?}`, host-pushed notifications `{method, params}` (no id). Handlers live in `RpcDispatcher.*.cs` partial files. Filesystem ops (`readFile`, `writeFile`, `movePath`, `copyPath`, `deletePath`, `createFile`, `createDirectory`, `listDirectory`, `listAllFiles`) route through `EnsurePathInsideProject` — paths outside the currently open project root are rejected. `writeFile` is atomic (writes to a sibling `.jiangyu.tmp` and renames). `ProjectWatcher` pushes debounced `fileChanged` notifications; writes call `ProjectWatcher.SuppressFor(path)` so self-writes don't trigger the conflict banner. Recent projects are held in the frontend's `localStorage`; the host does not persist them.
-- **Studio UI** (`Jiangyu.Studio.UI`) — React + TypeScript + Vite frontend. Lives at `src/Jiangyu.Studio.UI/`. Component-per-folder structure under `src/components/` (AssetBrowser, Sidebar, Workspace, CodeEditor, PaneWindow, Palette, Toast, Topbar, WelcomeScreen, etc.). CSS Modules for scoped styles, with generated `.d.ts` via `@css-modules-kit/codegen` (output in `generated/`). Dev server with hot reload. Run `npx tsc --noEmit` for type-checking; regenerate CSS module types with `npx @css-modules-kit/codegen`.
+- **Studio Host** (`Jiangyu.Studio.Host`) — .NET backend that bridges the React frontend to Core via JSON-RPC over InfiniFrame's message channel: requests `{id, method, params}`, responses `{id, result?, error?}`, host-pushed notifications `{method, params}` (no id). Handlers live in `RpcDispatcher.*.cs` partials; filesystem handlers gate on `EnsurePathInsideProject` (rejects paths outside the open project root) and `writeFile` is atomic via a sibling `.jiangyu.tmp` rename. `ProjectWatcher` pushes debounced `fileChanged` notifications; writes call `ProjectWatcher.SuppressFor(path)` so self-writes don't trigger the conflict banner. Recent projects live in the frontend's `localStorage`.
+- **Studio UI** (`Jiangyu.Studio.UI`) — React + TypeScript + Vite frontend at `src/Jiangyu.Studio.UI/`. Component-per-folder under `src/components/`. CSS Modules for scoped styles, with generated `.d.ts` via `@css-modules-kit/codegen` (output in `generated/`). Run `npx tsc --noEmit` for type-checking; regenerate CSS module types with `npx @css-modules-kit/codegen`.
 
 ### Path aliases
 
@@ -76,32 +72,29 @@ Use the `@lib/*` and `@components/*` aliases rather than relative `../../lib/…
 
 ### Lib organisation
 
-`src/lib/` is grouped by concern, not flat:
+`src/lib/` is grouped by concern, not flat. Each subfolder owns one slice — read its files for the specifics; this index intentionally doesn't enumerate them.
 
-- `lib/drag/` — HTML5 drag helpers: `chip.ts` (floating drag-image builder), `crossTab.ts` / `crossPane.ts` (cross-window payload marshalling over `text/plain` + `application/json`), `computeDropIndex.ts` (insertion-index math for tab reorder).
-- `lib/editor/` — `content.ts` is the zustand store for editor buffers, dirty flags, conflicts, and Monaco instances. `useEditorContentSync()` is mounted once per window root to wire the host's `fileChanged` into the store.
-- `lib/panes/` — pane-workspace concerns: `layoutStore.ts` (the layout + 20 transform actions + autosave + fullscreen + reveal state), `paneWindowStore.ts` (secondary-window spawn/persist/restore), `paneWindowStorage.ts` (localStorage helper), `browserState.ts` / `role.ts` (secondary-window URL params + state shape).
-- `lib/project/` — project-level: `store.ts` (project path + recent list + lifecycle), `commands.ts` / `config.ts` (RPC wrappers), `recent.ts` (localStorage), `fileCommands.ts` (palette command factories), `useFileEntries.ts` (flat-file-list hook).
-- `lib/palette/` — `actions.tsx` (the palette action-registry zustand store plus `useRegisterActions` / `useRegisteredActions` hooks), `appActions.ts` / `paneActions.ts` (builders for each action group).
-- `lib/toast/` — `toast.tsx` (toast queue zustand store + legacy `useToast()` hook), `stickers.ts` (mood → sticker mapping).
-- `lib/compile/` — `compile.ts` (the compile hook + state), `configStatus.ts` (the config-gate RPC fetch).
-- `lib/ui/` — generic UI utilities: `shortcuts.ts`, `zoomMath.ts`, `formatTime.ts`, `useDebouncedScrollTop.ts`, `useAppShortcuts.ts`.
-- Root files are the truly cross-cutting primitives — `rpc.ts`, `layout.ts` (pure topology math), `path.ts`, `assets.ts`, `kdlSnippets.ts`, `settings.ts`.
+- `lib/drag/` — HTML5 drag helpers (drag-image builder, drop-index math) and cross-window payload marshalling (tab, pane, instance, member). Cross-window payloads ride on `text/plain` because custom mimetypes don't bridge WebKitGTK's X11 DnD.
+- `lib/editor/` — editor-buffer store + `useEditorContentSync()`, mounted once per window root to wire the host's `fileChanged` into the store.
+- `lib/panes/` — pane workspace: layout tree + transform actions + autosave + fullscreen + reveal state, secondary-window spawn/persist/restore, browser-state shapes for URL params.
+- `lib/project/` — current project + recent-projects list + lifecycle, plus the RPC wrappers and palette-command factories that go with it.
+- `lib/palette/` — global action-registry store and the per-group action builders (`useRegisterActions` / `useRegisteredActions`).
+- `lib/templateVisual/` — typed editor model for the KDL visual editor; mirrors the `KdlEditorDocument` RPC shape so parse/serialise stay server-side.
+- `lib/toast/` — toast-queue store and mood→sticker mapping.
+- `lib/compile/` — compile hook + state, and the config-gate RPC fetch.
+- `lib/ui/` — generic UI utilities (shortcuts, zoom math, debounced scroll, time formatting).
+- Root files are the truly cross-cutting primitives: `rpc.ts`, `layout.ts` (pure topology math), `path.ts`, `assets.ts`, `kdlSnippets.ts`, `settings.ts`.
 
 ### State management
 
 Zustand stores own shared state; React hooks own per-component state. Use a store when state is read by 3+ components at different tree depths, needs to be reached from non-component code (RPC handlers, watchers), or has subscriptions / coordination that outlives a single mount. Use `useState` / a custom hook otherwise (modal flags, form inputs, component-scoped drag state).
 
-The live stores are:
+Stores live in `lib/**/store.ts` and `lib/**/{name}Store.ts` — read each file for its slice. Cross-cutting expectations:
 
-- `useEditorContent` (`lib/editor/content.ts`) — per-window editor buffers, dirty set, conflicts, live Monaco instances. Shared between the primary's `WorkspaceGrid` and each secondary's `PaneWindow.CodePaneShell` — before the store, both duplicated ~200 lines of state management.
-- `useLayoutStore` (`lib/panes/layoutStore.ts`) — the layout tree, 20 transform actions (`openFile`, `splitRight`, `moveTab`, etc.), fullscreen pane id, reveal signal, last-focused code path, and per-project localStorage autosave (150ms debounce, cleared on project switch). `setProject(path)` atomically loads the target layout.
-- `useProjectStore` (`lib/project/store.ts`) — current project path + recent-projects list + lifecycle actions (`openProject` / `switchProject` / `closeProject` / `revealProject`). `switchProject` coordinates with the layout + pane-window stores.
-- `usePaneWindowStore` (`lib/panes/paneWindowStore.ts`) — descriptors of live secondary windows plus subscriptions to `paneWindowClosed` / `paneWindowTabsChanged` / `paneWindowBrowserStateChanged`. `useSyncPaneWindowProject(path)` must be mounted once in App to sync the module-local `currentProject` pointer and trigger restore on project change.
-- `usePaletteStore` (`lib/palette/actions.tsx`) — the global action registry. Each component calls `useRegisterActions(actions)` to add a slot; `useRegisteredActions()` returns the merged list. Replaced `<ActionRegistryProvider>`.
-- `useToastStore` (`lib/toast/toast.tsx`) — the toast queue. Any non-component code (RPC error handler, background task) can call `useToastStore.getState().push({...})`. Replaced `<ToastProvider>`.
-
-Selectors (`useStore(s => s.slice)`) subscribe only to that slice so unrelated updates don't re-render the consumer. For imperative reads / actions from event handlers, use `useStore.getState()`.
+- Selectors (`useStore(s => s.slice)`) subscribe only to that slice so unrelated updates don't re-render the consumer. For imperative reads / actions from event handlers, use `useStore.getState()`.
+- Project switching coordinates layout + pane-window stores atomically through `useProjectStore.switchProject(path)`. New stores that hold project-scoped state must hook into that flow.
+- `useSyncPaneWindowProject(path)` must be mounted once in `App` so the secondary-window descriptor store sees project changes.
+- Any non-component code (RPC handlers, background tasks) can push toasts via `useToastStore.getState().push({...})`. Likewise actions are registered via `useRegisterActions(actions)` and read via `useRegisteredActions()` — both replace earlier React-context providers.
 
 ### Jiangyu Design System
 
@@ -126,17 +119,11 @@ The Studio UI follows the Jiangyu Design System — an ink-wash × near-future t
 - **Content voice**: terse, disciplined, bilingual (Chinese leads, English supports). Dossier voice (declarative, clipped) is primary; character voice (first-person to 长官) is accent only.
 - **Form controls** (checkboxes, radios): custom-styled globally in `global.css`. Ink borders on paper background, cinnabar fill/dot when active. No browser chrome.
 
-### Stickers
+### Stickers + toasts
 
-Character stickers live at `src/Jiangyu.Studio.UI/public/stickers/Jiangyu_001.jpg` through `_009.jpg`. Used by the toast system and available for other UI surfaces. Mood mapping in `src/Jiangyu.Studio.UI/src/lib/toast/stickers.ts`:
+Character stickers live at `public/stickers/Jiangyu_001.jpg`…`_009.jpg`. Mood pools in `lib/toast/stickers.ts` — Success: 004/007/009, Error: 001/003/006/008, Info: 002/005.
 
-- **Success**: 004 (triumphant flex), 007 (happy/hearts), 009 (double pointing/agreement)
-- **Error**: 001 (punching), 003 (winding up attack), 006 (sad/rain), 008 (asking for a fight)
-- **Info**: 002 (waving goodbye), 005 ("come at me" gesture)
-
-### Toast system
-
-App-wide toast notifications via `useToastStore` (`src/Jiangyu.Studio.UI/src/lib/toast/toast.tsx`). Zustand-backed, no provider needed — any module (including non-React code) can push via `useToastStore.getState().push({...})`. `ToastContainer` renders fixed bottom-centre with `aria-live="polite"`; error toasts get `role="alert"`, others `role="status"`. Each toast auto-picks a random sticker from the mood pool matching its variant (`success`/`error`/`info`). Auto-dismisses after 8 seconds. Supports action buttons (e.g. "Reveal" to open exported file in explorer). The legacy `useToast()` hook still exists as a thin wrapper for existing call sites.
+Toasts render fixed bottom-centre via `ToastContainer` with `aria-live="polite"` (errors `role="alert"`, others `role="status"`). 8s auto-dismiss, mood-matched sticker per variant, optional action buttons (e.g. "Reveal" for exported files).
 
 ### Confirm dialog
 
@@ -205,7 +192,7 @@ Source project manifests should stay ergonomic for modders. Compiled manifests a
 - PHO→GameObject collapse is shared infrastructure: `AssetPipelineService.ResolveGameObjectBacking(index, target)` takes any index entry and, if it is a `PrefabHierarchyObject`, returns its single same-named `GameObject`. Both compile-time target resolution (`CompilationService.ResolveReplacementModelTarget`) and CLI model export (`assets export model`) route through this helper, so a PHO pathId is accepted anywhere a model target is expected. Missing/ambiguous backing `GameObject`s are hard errors, not heuristics.
 - `assets/additions/` is for additional bundled assets preserved under their own names. It is created only when a mod needs it.
 - `depends` — the loader enforces required-mod presence. Matching is against manifest `name`. Version text such as `>= 1.0.0` is stored but not enforced; when mods gain a stable `id` the match will move off `name`.
-- Template patching is a modder-facing contract. Modders author in KDL under `templates/` (parsed by `KdlTemplateParser`); the compiler emits `templatePatches` + `templateClones` into the compiled manifest. Each patch targets a `DataTemplate` subtype by name + `m_ID` and carries a list of `set` operations against dotted/indexed field paths. Value kinds: `Boolean`, `Byte`, `Int32`, `Single`, `String`, `Enum`, and `TemplateReference` (resolves an existing live template by `(templateType, templateId)`). `UnitLeaderTemplate.InitialAttributes.<AttributeName>` is sugar for the byte-offset form. Clones synthesise new templates from an existing base. `templatePatches` can also be authored directly in `jiangyu.json` for small changes, but KDL is the primary surface. See `docs/MODDING.md` for the modder-facing shape and `docs/research/verified/unitleader-initial-attributes.md` for the verified offset contract. `localisation/` patching is not shipped.
+- Template patching is a modder-facing contract. Modders author KDL under `templates/` (parsed by `KdlTemplateParser`) — either as text in the Source editor, or visually in Studio's `TemplateVisualEditor` (host-side parse/serialise via `KdlTemplateParser.ParseText` / `KdlTemplateSerialiser.Serialise` over the same `KdlEditorDocument`, so both modes round-trip). The compiler emits `templatePatches` + `templateClones` into the compiled manifest. Each patch targets a `DataTemplate` subtype by name + `m_ID` and carries a list of operations (`set`, `append`, `insert index=N`, `remove index=N`) against dotted/indexed field paths. Value kinds: `Boolean`, `Byte`, `Int32`, `Single`, `String`, `Enum`, `TemplateReference` (resolves an existing live template by `(templateType, templateId)`), and `Composite` (sub-object literal for collection elements). `UnitLeaderTemplate.InitialAttributes.<AttributeName>` is sugar for the byte-offset form. Clones synthesise new templates from an existing base. `templatePatches` can also be authored directly in `jiangyu.json` for small changes, but KDL is the primary surface. See `docs/MODDING.md` for the modder-facing shape and `docs/research/verified/unitleader-initial-attributes.md` for the verified offset contract. `localisation/` patching is not shipped.
 - `compiled/jiangyu.json` is compiler-owned output. Modders should not author fields inside it by hand.
 
 ## Asset pipeline

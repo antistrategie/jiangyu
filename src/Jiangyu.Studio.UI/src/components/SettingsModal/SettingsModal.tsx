@@ -20,9 +20,12 @@ import {
   useEditorWordWrap,
   useSessionRestoreProject,
   useSessionRestoreTabs,
+  useTemplateEditorMode,
   useUiFontScale,
+  TEMPLATE_EDITOR_MODE_DEFAULT,
   type EditorKeybindMode,
   type EditorWordWrap,
+  type TemplateEditorMode,
 } from "@lib/settings.ts";
 import styles from "./SettingsModal.module.css";
 
@@ -322,6 +325,7 @@ function EditorSection() {
   const [fontSize, setFontSize] = useEditorFontSize();
   const [wordWrap, setWordWrap] = useEditorWordWrap();
   const [keybinds, setKeybinds] = useEditorKeybindMode();
+  const [templateMode, setTemplateMode] = useTemplateEditorMode();
 
   return (
     <>
@@ -375,6 +379,24 @@ function EditorSection() {
           options={[
             { value: "default", label: "Default" },
             { value: "vim", label: "Vim" },
+          ]}
+        />
+      </Field>
+      <Field
+        label="Template editor"
+        hint="Default mode for .kdl template files"
+        onReset={
+          templateMode !== TEMPLATE_EDITOR_MODE_DEFAULT
+            ? () => setTemplateMode(TEMPLATE_EDITOR_MODE_DEFAULT)
+            : undefined
+        }
+      >
+        <SegmentedControl<TemplateEditorMode>
+          value={templateMode}
+          onChange={setTemplateMode}
+          options={[
+            { value: "visual", label: "Visual" },
+            { value: "source", label: "Source" },
           ]}
         />
       </Field>

@@ -87,8 +87,8 @@ public enum CompiledTemplateOp
     InsertAt,
 
     /// <summary>
-    /// Remove the element identified by an indexed terminal fieldPath (e.g.
-    /// <c>Skills[2]</c>). No value is required.
+    /// Remove the element at <see cref="CompiledTemplateSetOperation.Index"/>
+    /// from the collection at fieldPath. No value is required.
     /// </summary>
     Remove,
 }

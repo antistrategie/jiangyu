@@ -490,31 +490,6 @@ export function TemplateBrowser({
     [focusedInstance, openPickerWithSnippet],
   );
 
-  const handleNewPatchFile = useCallback(
-    async (inst?: TemplateInstanceEntry) => {
-      const target = inst ?? focusedInstance;
-      if (!target) return;
-      const filename = `${target.className.replace(/Template$/, "").toLowerCase()}-${target.name.toLowerCase().replace(/\s+/g, "_")}.kdl`;
-      const filePath = `${projectPath}/templates/${filename}`;
-      const snippet = generatePatchKdl(target.className, target.name);
-      await createFileWithSnippet(filePath, snippet);
-    },
-    [focusedInstance, projectPath, createFileWithSnippet],
-  );
-
-  const handleNewCloneFile = useCallback(
-    async (inst?: TemplateInstanceEntry) => {
-      const target = inst ?? focusedInstance;
-      if (!target) return;
-      const cloneId = `${target.name}_clone`;
-      const filename = `${target.className.replace(/Template$/, "").toLowerCase()}-${cloneId.toLowerCase().replace(/\s+/g, "_")}.kdl`;
-      const filePath = `${projectPath}/templates/${filename}`;
-      const snippet = generateCloneKdl(target.className, target.name, cloneId);
-      await createFileWithSnippet(filePath, snippet);
-    },
-    [focusedInstance, projectPath, createFileWithSnippet],
-  );
-
   // --- Navigate to a template (from reference tree) ---
   const navigateTo = useCallback(
     (key: string) => {
@@ -715,8 +690,6 @@ export function TemplateBrowser({
                 onCreateClone={(inst) => void handleCreateClone(inst)}
                 onPatchToFile={(inst) => handlePatchToFile(inst)}
                 onCloneToFile={(inst) => handleCloneToFile(inst)}
-                onNewPatchFile={(inst) => void handleNewPatchFile(inst)}
-                onNewCloneFile={(inst) => void handleNewCloneFile(inst)}
                 onNavigate={navigateTo}
                 onGoBack={goBack}
                 onGoForward={goForward}
@@ -760,8 +733,6 @@ interface TemplateDetailProps {
   onCreateClone: (inst?: TemplateInstanceEntry) => void;
   onPatchToFile: (inst?: TemplateInstanceEntry) => void;
   onCloneToFile: (inst?: TemplateInstanceEntry) => void;
-  onNewPatchFile: (inst?: TemplateInstanceEntry) => void;
-  onNewCloneFile: (inst?: TemplateInstanceEntry) => void;
   onNavigate: (key: string) => void;
   onGoBack: () => void;
   onGoForward: () => void;
@@ -781,8 +752,6 @@ function TemplateDetail({
   onCreateClone,
   onPatchToFile,
   onCloneToFile,
-  onNewPatchFile,
-  onNewCloneFile,
   onNavigate,
   onGoBack,
   onGoForward,
@@ -882,27 +851,6 @@ function TemplateDetail({
                   }}
                 >
                   Add clone to file…
-                </button>
-                <div className={styles.scaffoldMenuSep} />
-                <button
-                  type="button"
-                  className={styles.scaffoldMenuItem}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    void onNewPatchFile();
-                  }}
-                >
-                  New patch file
-                </button>
-                <button
-                  type="button"
-                  className={styles.scaffoldMenuItem}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    void onNewCloneFile();
-                  }}
-                >
-                  New clone file
                 </button>
               </div>
             )}
