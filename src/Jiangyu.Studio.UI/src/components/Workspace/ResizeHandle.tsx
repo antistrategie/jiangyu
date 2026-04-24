@@ -39,7 +39,7 @@ export function ResizeHandle({ axis, measure, onResize }: ResizeHandleProps) {
       const onMove = (ev: MouseEvent) => {
         const cur = axis === "x" ? ev.clientX : ev.clientY;
         pendingDelta = cur - startCoord;
-        if (rafId === null) rafId = requestAnimationFrame(flush);
+        rafId ??= requestAnimationFrame(flush);
       };
       const onUp = () => {
         document.removeEventListener("mousemove", onMove);
@@ -56,8 +56,15 @@ export function ResizeHandle({ axis, measure, onResize }: ResizeHandleProps) {
   );
 
   return (
+    // separator is the correct ARIA role for a draggable resize handle; the
+    // rule doesn't recognise the focusable variant of separator.
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <div
       className={axis === "x" ? styles.colResizer : styles.paneResizer}
+      role="separator"
+      aria-orientation={axis === "x" ? "vertical" : "horizontal"}
+      aria-label="Resize panes"
+      tabIndex={-1}
       onMouseDown={onMouseDown}
     />
   );

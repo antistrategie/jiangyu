@@ -17,6 +17,7 @@ import {
   type TemplateBrowserState,
 } from "@lib/panes/browserState.ts";
 import { useDebouncedScrollTop } from "@lib/ui/useDebouncedScrollTop.ts";
+import { onKeyActivate } from "@lib/ui/a11y.ts";
 import { Spinner } from "@components/Spinner/Spinner.tsx";
 import {
   TemplateFilePicker,
@@ -186,15 +187,19 @@ export function TemplateBrowser({
   const goBack = useCallback(() => {
     if (!canGoBack) return;
     const newIdx = navIndex - 1;
+    const target = navHistory[newIdx];
+    if (target === undefined) return;
     setNavIndex(newIdx);
-    setFocusedKey(navHistory[newIdx]!);
+    setFocusedKey(target);
   }, [canGoBack, navIndex, navHistory]);
 
   const goForward = useCallback(() => {
     if (!canGoForward) return;
     const newIdx = navIndex + 1;
+    const target = navHistory[newIdx];
+    if (target === undefined) return;
     setNavIndex(newIdx);
-    setFocusedKey(navHistory[newIdx]!);
+    setFocusedKey(target);
   }, [canGoForward, navIndex, navHistory]);
 
   const [memberData, setMemberData] = useState<TemplateQueryResult | null>(null);
@@ -236,8 +241,13 @@ export function TemplateBrowser({
       .then((s) => {
         if (!cancelled) setStatus(s);
       })
-      .catch((err: Error) => {
-        if (!cancelled) setStatus({ state: "noGame", reason: err.message });
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setStatus({
+            state: "noGame",
+            reason: err instanceof Error ? err.message : String(err),
+          });
+        }
       });
     return () => {
       cancelled = true;
@@ -261,7 +271,7 @@ export function TemplateBrowser({
         setAllInstances(result.instances);
         setReferencedBy(result.referencedBy ?? {});
       })
-      .catch((err: Error) => {
+      .catch((err: unknown) => {
         console.error("[TemplateBrowser] search failed:", err);
         if (!cancelled) {
           setAllTypes([]);
@@ -301,7 +311,9 @@ export function TemplateBrowser({
     const filteredHaystack = items.map((inst) => `${inst.className} ${inst.name}`);
     const [idxs] = uf.search(filteredHaystack, deferredQuery);
     if (!idxs) return [];
-    return idxs.map((i) => items[i]!);
+    return idxs
+      .map((i) => items[i])
+      .filter((inst): inst is TemplateInstanceEntry => inst !== undefined);
   }, [allInstances, deferredQuery, typeFilter]);
 
   // --- Load members when focus changes ---
@@ -422,7 +434,7 @@ export function TemplateBrowser({
         await createFileWithSnippet(filePath, snippet);
       }
     },
-    [appendSnippetToFile, pendingSnippet, projectPath],
+    [appendSnippetToFile, createFileWithSnippet, pendingSnippet, projectPath],
   );
 
   const openPickerWithSnippet = useCallback((snippet: string) => {
@@ -639,18 +651,25 @@ export function TemplateBrowser({
                 }}
               >
                 {rowVirtualizer.getVirtualItems().map((vRow) => {
-                  const inst = filtered[vRow.index]!;
+                  const inst = filtered[vRow.index];
+                  if (inst === undefined) return null;
                   const key = instanceKey(inst);
                   const focused = key === focusedKey;
                   const refs = referencedBy[key];
                   const ownerInst = refs?.[0]
                     ? instanceLookup.get(`${refs[0].source.collection}:${refs[0].source.pathId}`)
                     : undefined;
+                  const select = () => {
+                    setFocusedKey(key);
+                    pushNav(key);
+                  };
                   return (
                     <div
                       key={key}
                       className={`${styles.row} ${focused ? styles.rowFocused : ""}`}
                       title={ownerInst ? `${inst.name} ← ${ownerInst.name}` : inst.name}
+                      role="button"
+                      tabIndex={0}
                       style={{
                         position: "absolute",
                         top: 0,
@@ -659,10 +678,8 @@ export function TemplateBrowser({
                         height: `${vRow.size}px`,
                         transform: `translateY(${vRow.start}px)`,
                       }}
-                      onClick={() => {
-                        setFocusedKey(key);
-                        pushNav(key);
-                      }}
+                      onClick={select}
+                      onKeyDown={onKeyActivate(select)}
                     >
                       <span className={styles.rowName}>{inst.name}</span>
                       {ownerInst && <span className={styles.rowOwner}>← {ownerInst.name}</span>}
@@ -686,8 +703,8 @@ export function TemplateBrowser({
                 instance={focusedInstance}
                 memberData={memberData}
                 membersLoading={membersLoading}
-                onCreatePatch={(inst) => void handleCreatePatch(inst)}
-                onCreateClone={(inst) => void handleCreateClone(inst)}
+                onCreatePatch={(inst) => handleCreatePatch(inst)}
+                onCreateClone={(inst) => handleCreateClone(inst)}
                 onPatchToFile={(inst) => handlePatchToFile(inst)}
                 onCloneToFile={(inst) => handleCloneToFile(inst)}
                 onNavigate={navigateTo}
@@ -696,7 +713,7 @@ export function TemplateBrowser({
                 canGoBack={canGoBack}
                 canGoForward={canGoForward}
                 projectPath={projectPath}
-                referencedBy={referencedBy[focusedKey!] ?? []}
+                referencedBy={(focusedKey !== null ? referencedBy[focusedKey] : null) ?? []}
                 instanceLookup={instanceLookup}
                 allReferencedBy={referencedBy}
               />
@@ -920,7 +937,7 @@ function TemplateDetail({
             </div>
           ) : (
             <div className={styles.memberList}>
-              {memberData!.members!.map((m) => (
+              {memberData?.members?.map((m) => (
                 <MemberRow
                   key={m.name}
                   member={m}
@@ -963,7 +980,17 @@ function ReferenceNode({
     <div className={styles.refNode}>
       <div
         className={`${styles.refRow} ${hasChildren ? styles.refRowExpandable : ""}`}
-        onClick={hasChildren ? () => setExpanded(!expanded) : undefined}
+        {...(hasChildren && {
+          role: "button",
+          tabIndex: 0,
+          "aria-expanded": expanded,
+          onClick: () => {
+            setExpanded(!expanded);
+          },
+          onKeyDown: onKeyActivate(() => {
+            setExpanded(!expanded);
+          }),
+        })}
       >
         {hasChildren ? (
           <span className={`${styles.refExpander} ${expanded ? styles.refExpanderOpen : ""}`}>
@@ -987,7 +1014,7 @@ function ReferenceNode({
       </div>
       {expanded && hasChildren && (
         <div className={styles.refChildren}>
-          {target!.references!.map((childEdge, i) => (
+          {target.references.map((childEdge, i) => (
             <ReferenceNode
               key={`${childEdge.target.collection}:${childEdge.target.pathId}:${i}`}
               edge={childEdge}
@@ -1018,7 +1045,8 @@ function MemberRow({ member, depth, parentTypeName, fieldPath }: MemberRowProps)
   const [loading, setLoading] = useState(false);
   const loadedRef = useRef(false);
 
-  const isExpandable = !member.isScalar || member.isCollection || member.isTemplateReference;
+  const isExpandable =
+    member.isScalar !== true || member.isCollection === true || member.isTemplateReference === true;
 
   const handleToggle = useCallback(() => {
     const next = !expanded;
@@ -1043,7 +1071,13 @@ function MemberRow({ member, depth, parentTypeName, fieldPath }: MemberRowProps)
     <>
       <div
         className={`${styles.memberRow} ${isExpandable ? styles.memberRowExpandable : ""}`}
-        onClick={isExpandable ? handleToggle : undefined}
+        {...(isExpandable && {
+          role: "button",
+          tabIndex: 0,
+          "aria-expanded": expanded,
+          onClick: handleToggle,
+          onKeyDown: onKeyActivate(handleToggle),
+        })}
       >
         {isExpandable ? (
           <button

@@ -48,7 +48,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   revealProject: () => {
     const path = get().projectPath;
     if (path === null) return;
-    void rpcCall<null>("revealInExplorer", { path }).catch((err) => {
+    void rpcCall<null>("revealInExplorer", { path }).catch((err: unknown) => {
       console.error("[projectStore] reveal failed:", err);
     });
   },

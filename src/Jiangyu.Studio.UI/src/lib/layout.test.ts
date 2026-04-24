@@ -47,7 +47,7 @@ const B = "/proj/src/B.tsx";
 const C = "/proj/src/C.tsx";
 
 function asCode(pane: Pane | null | undefined): CodePane {
-  if (pane === null || pane === undefined || pane.kind !== "code") {
+  if (pane?.kind !== "code") {
     throw new Error("expected code pane");
   }
   return pane;
@@ -88,7 +88,7 @@ describe("openFile", () => {
     const first = openFile(EMPTY_LAYOUT, A);
     const split = splitRight(first);
     const newPaneId = split.activePaneId!;
-    const reopened = openFile(split, B, first.activePaneId!);
+    const reopened = openFile(split, B, first.activePaneId);
     expect(reopened.activePaneId).toBe(first.activePaneId);
     expect(asCode(findPane(reopened, first.activePaneId!)).tabs.map((t) => t.path)).toEqual([A, B]);
     expect(asCode(findPane(reopened, newPaneId)).tabs).toHaveLength(0);

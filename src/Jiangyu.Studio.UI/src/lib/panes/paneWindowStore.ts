@@ -117,20 +117,29 @@ export const usePaneWindowStore = create<PaneWindowStore>((set, get) => ({
 // Module-level subscriptions: the host fans three notifications into every
 // window. We translate each into a store action. Set up once at module load;
 // there's only ever one pane-window store per process.
-subscribe<{ windowId: string }>("paneWindowClosed", ({ windowId }) => {
+interface PaneWindowClosed {
+  readonly windowId: string;
+}
+interface PaneWindowTabsChanged {
+  readonly windowId: string;
+  readonly filePaths: readonly string[];
+  readonly activeFilePath: string | null;
+}
+interface PaneWindowBrowserStateChanged {
+  readonly windowId: string;
+  readonly state: AssetBrowserState | TemplateBrowserState;
+}
+
+subscribe("paneWindowClosed", (params) => {
+  const { windowId } = params as PaneWindowClosed;
   usePaneWindowStore.getState()._handleClosed(windowId);
 });
-subscribe<{
-  windowId: string;
-  filePaths: readonly string[];
-  activeFilePath: string | null;
-}>("paneWindowTabsChanged", ({ windowId, filePaths, activeFilePath }) => {
+subscribe("paneWindowTabsChanged", (params) => {
+  const { windowId, filePaths, activeFilePath } = params as PaneWindowTabsChanged;
   usePaneWindowStore.getState()._handleTabsChanged(windowId, filePaths, activeFilePath);
 });
-subscribe<{
-  windowId: string;
-  state: AssetBrowserState | TemplateBrowserState;
-}>("paneWindowBrowserStateChanged", ({ windowId, state }) => {
+subscribe("paneWindowBrowserStateChanged", (params) => {
+  const { windowId, state } = params as PaneWindowBrowserStateChanged;
   usePaneWindowStore.getState()._handleBrowserStateChanged(windowId, state);
 });
 

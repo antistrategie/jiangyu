@@ -1,4 +1,4 @@
-import { PALETTE_SCOPE, type PaletteAction } from "@lib/palette/actions.tsx";
+import { PALETTE_SCOPE, type PaletteAction } from "@lib/palette/actions.ts";
 import { basename } from "@lib/path.ts";
 
 const PROJECT_SCOPE = PALETTE_SCOPE.Project;

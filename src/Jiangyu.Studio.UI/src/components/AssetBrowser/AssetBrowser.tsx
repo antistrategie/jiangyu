@@ -148,8 +148,13 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
       .then((s) => {
         if (!cancelled) setStatus(s);
       })
-      .catch((err: Error) => {
-        if (!cancelled) setStatus({ state: "noGame", reason: err.message });
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setStatus({
+            state: "noGame",
+            reason: err instanceof Error ? err.message : String(err),
+          });
+        }
       });
     return () => {
       cancelled = true;
@@ -162,7 +167,7 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
       .then((c) => {
         if (!cancelled) setProjectConfig(c);
       })
-      .catch((err: Error) => {
+      .catch((err: unknown) => {
         console.error("[AssetBrowser] getProjectConfig failed:", err);
       });
     return () => {
@@ -187,7 +192,7 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
     }
     const focused = allAssets.find((a) => rowKey(a) === focusedKey);
     const className = focused?.className ?? "";
-    if (!focused || !focused.collection || !PREVIEWABLE_CLASSES.has(className)) {
+    if (!focused?.collection || !PREVIEWABLE_CLASSES.has(className)) {
       setPreviewLoading(false);
       return;
     }
@@ -232,7 +237,7 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
         const sorted = [...rows].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
         setAllAssets(sorted);
       })
-      .catch((err: Error) => {
+      .catch((err: unknown) => {
         console.error("[AssetBrowser] assetsSearch failed:", err);
         if (!cancelled) setAllAssets([]);
       })
@@ -272,17 +277,18 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
     if (idxs === null) return [];
 
     const out: AssetEntry[] = [];
-    if (info !== null && order !== null) {
+    if (info !== null) {
       for (const oi of order) {
-        const assetIdx = info.idx[oi]!;
-        const a = allAssets[assetIdx]!;
-        if (!passesKindFilter(a, kindFilter)) continue;
+        const assetIdx = info.idx[oi];
+        if (assetIdx === undefined) continue;
+        const a = allAssets[assetIdx];
+        if (a === undefined || !passesKindFilter(a, kindFilter)) continue;
         out.push(a);
       }
     } else {
       for (const assetIdx of idxs) {
-        const a = allAssets[assetIdx]!;
-        if (!passesKindFilter(a, kindFilter)) continue;
+        const a = allAssets[assetIdx];
+        if (a === undefined || !passesKindFilter(a, kindFilter)) continue;
         out.push(a);
       }
     }
@@ -358,7 +364,7 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
       };
       const onMove = (ev: MouseEvent) => {
         pending = (landscape ? ev.clientY : ev.clientX) - startPos;
-        if (raf === null) raf = requestAnimationFrame(flush);
+        raf ??= requestAnimationFrame(flush);
       };
       const onUp = () => {
         document.removeEventListener("mousemove", onMove);
@@ -513,8 +519,7 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
 
             const paths: string[] = [];
             try {
-              for (let i = 0; i < selectedRows.length; i++) {
-                const row = selectedRows[i]!;
+              for (const [i, row] of selectedRows.entries()) {
                 const result = await assetsExport({
                   assetName: row.name ?? "unnamed",
                   collection: row.collection ?? "",
@@ -683,7 +688,8 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
             ) : (
               <div style={{ height: virtualiser.getTotalSize(), position: "relative" }}>
                 {virtualiser.getVirtualItems().map((vRow) => {
-                  const row = results[vRow.index]!;
+                  const row = results[vRow.index];
+                  if (row === undefined) return null;
                   const key = rowKey(row);
                   const selected = selection.has(key);
                   const focused = focusedKey === key;
@@ -707,12 +713,20 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
                     >
                       <span
                         className={styles.rowCheck}
+                        role="presentation"
                         onClick={(e) => {
                           e.stopPropagation();
                           toggleSelection(key);
                         }}
                       >
-                        <input type="checkbox" checked={selected} readOnly />
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() => {
+                            toggleSelection(key);
+                          }}
+                          aria-label={`Select ${row.name ?? "asset"}`}
+                        />
                       </span>
                       <span className={styles.rowName}>{row.name ?? "(unnamed)"}</span>
                       <span className={styles.rowKind}>
@@ -729,8 +743,17 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
           </div>
         </div>
 
-        {/* Resize handle */}
-        <div className={styles.splitHandle} onMouseDown={handleSplitDrag} />
+        {/* Resize handle — pointer-driven separator; the rule doesn't
+            recognise the focusable variant of separator. */}
+        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
+        <div
+          className={styles.splitHandle}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize details panel"
+          tabIndex={-1}
+          onMouseDown={handleSplitDrag}
+        />
 
         <div className={styles.detailsPanel}>
           <AssetDetails

@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import Editor, { type OnChange, type OnMount } from "@monaco-editor/react";
+import type * as monacoNs from "monaco-editor";
 import type { editor as monacoEditor } from "monaco-editor";
 import { ContextMenu, type ContextMenuEntry } from "@components/ContextMenu/ContextMenu.tsx";
 import { buildJiangyuTheme } from "@components/CodeEditor/jiangyuTheme.ts";
 import { registerKdlLanguage } from "@components/CodeEditor/kdlLanguage.ts";
 import { getLanguage, isBinaryFile } from "@components/CodeEditor/fileTypes.ts";
 import { computeTabDropIndex } from "@lib/drag/computeDropIndex.ts";
+import { onKeyActivate } from "@lib/ui/a11y.ts";
 import { TemplateVisualEditor } from "@components/TemplateVisualEditor/TemplateVisualEditor.tsx";
 import type { Tab } from "@lib/layout.ts";
 import { rpcCall, type FileChangeKind } from "@lib/rpc.ts";
@@ -93,7 +95,7 @@ let globalsRegistered = false;
 // clipboard. Without this, `y` / `yy` in vim mode only populates the internal
 // register and nothing is available outside the editor.
 let vimClipboardPatched = false;
-type VimRegisterController = {
+interface VimRegisterController {
   pushText: (
     registerName: string,
     operator: string,
@@ -101,7 +103,7 @@ type VimRegisterController = {
     linewise?: boolean,
     blockwise?: boolean,
   ) => void;
-};
+}
 function patchVimClipboardBridge(vim: unknown): void {
   if (vimClipboardPatched) return;
   // monaco-vim's VimMode is the CMAdapter class with a static `Vim` holding
@@ -151,7 +153,7 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
   } = props;
 
   const [editor, setEditor] = useState<monacoEditor.IStandaloneCodeEditor | null>(null);
-  const monacoRef = useRef<typeof import("monaco-editor") | null>(null);
+  const monacoRef = useRef<typeof monacoNs | null>(null);
   const [editorMenu, setEditorMenu] = useState<{ x: number; y: number } | null>(null);
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; path: string } | null>(null);
   // Reorder indicator: which tab index the drop would land at. Only populated
@@ -173,14 +175,15 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
   const isTemplateKdl =
     activePath !== null && activePath.includes("/templates/") && activePath.endsWith(".kdl");
 
-  const activeMode: TemplateEditorMode =
-    isTemplateKdl && activePath !== null
-      ? modeOverrides.has(activePath)
-        ? defaultEditorMode === "visual"
-          ? "source"
-          : "visual"
-        : defaultEditorMode
-      : "source";
+  // isTemplateKdl already implies activePath !== null, so the extra null check
+  // would be flagged as redundant — but TS still needs the narrowing inside.
+  const activeMode: TemplateEditorMode = !isTemplateKdl
+    ? "source"
+    : modeOverrides.has(activePath)
+      ? defaultEditorMode === "visual"
+        ? "source"
+        : "visual"
+      : defaultEditorMode;
 
   const setMode = useCallback(
     (target: TemplateEditorMode) => {
@@ -213,7 +216,8 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
   }, [activePath]);
 
   const handleMount: OnMount = useCallback(
-    (mountedEditor, monaco) => {
+    (mountedEditor, monacoArg) => {
+      const monaco = monacoArg as typeof monacoNs;
       monacoRef.current = monaco;
       if (!globalsRegistered) {
         monaco.editor.defineTheme("jiangyu", buildJiangyuTheme());
@@ -338,6 +342,7 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
       ref={containerRef}
       className={`${styles.editor} ${className ?? ""}`.trim()}
       style={style}
+      role="presentation"
       onMouseDown={onMouseDown}
     >
       <div className={`${styles.tabbar} ${tabDrag?.dropHover ? styles.tabbarDrop : ""}`}>
@@ -405,10 +410,17 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
               {dirtyFiles.has(tab.path) && <span className={styles.tabDirty}>●</span>}
               <span
                 className={styles.tabClose}
+                role="button"
+                tabIndex={-1}
+                aria-label={`Close ${tab.name}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   onCloseTab(tab.path);
                 }}
+                onKeyDown={onKeyActivate((e) => {
+                  e.stopPropagation();
+                  onCloseTab(tab.path);
+                })}
               >
                 <X size={10} />
               </span>

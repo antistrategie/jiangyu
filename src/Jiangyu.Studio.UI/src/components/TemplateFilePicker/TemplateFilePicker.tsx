@@ -33,8 +33,10 @@ export function TemplateFilePicker({
     const trimmed = query.trim();
     if (!trimmed) return templateFiles.slice();
     const result = uf.search(templateFiles.slice(), trimmed);
-    if (!result?.[0]) return [];
-    return result[0].map((idx: number) => templateFiles[idx]!);
+    if (!result[0]) return [];
+    return result[0]
+      .map((idx: number) => templateFiles[idx])
+      .filter((p): p is string => p !== undefined);
   }, [templateFiles, query]);
 
   const createFilename = useMemo(() => {

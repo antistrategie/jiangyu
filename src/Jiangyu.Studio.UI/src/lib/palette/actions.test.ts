@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { PALETTE_SCOPE, usePaletteStore, type PaletteAction } from "./actions.tsx";
+import { PALETTE_SCOPE, usePaletteStore, type PaletteAction } from "./actions.ts";
 
 function makeAction(id: string): PaletteAction {
   return { id, label: id, scope: PALETTE_SCOPE.App, run: () => {} };

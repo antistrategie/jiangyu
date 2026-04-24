@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { PaletteAction } from "@lib/palette/actions.tsx";
+import type { PaletteAction } from "@lib/palette/actions.ts";
 import { buildSearchIndex, filterActions, groupByScope } from "./paletteFilter.ts";
 import styles from "./Palette.module.css";
 
@@ -102,7 +102,7 @@ function PaletteDialog({ onClose, actions }: PaletteDialogProps) {
         const currentStart = [...groupStarts].reverse().find((start) => start <= s) ?? 0;
         if (currentStart < s) return currentStart;
         const prevIdx = groupStarts.indexOf(currentStart) - 1;
-        return prevIdx >= 0 ? groupStarts[prevIdx]! : 0;
+        return groupStarts[prevIdx] ?? 0;
       });
     } else if (e.key === "Enter") {
       e.preventDefault();
@@ -113,11 +113,14 @@ function PaletteDialog({ onClose, actions }: PaletteDialogProps) {
   return createPortal(
     <div
       className={styles.backdrop}
+      role="button"
+      tabIndex={-1}
+      aria-label="Close palette"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={styles.dialog} onKeyDown={onKeyDown} role="dialog" aria-modal="true">
+      <div className={styles.dialog} role="dialog" aria-modal="true">
         <div className={styles.header}>
           <span className={styles.headerLabel}>Command · 命令</span>
           <input
@@ -125,6 +128,7 @@ function PaletteDialog({ onClose, actions }: PaletteDialogProps) {
             className={styles.input}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onKeyDown}
             placeholder="Type to filter commands or files…"
           />
           <span className={styles.footerKbd}>esc</span>

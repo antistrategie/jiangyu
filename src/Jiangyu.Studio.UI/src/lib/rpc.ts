@@ -9,7 +9,10 @@
 interface RpcResponse {
   readonly id: number;
   readonly result?: unknown;
-  readonly error?: string;
+  // Host serialises absent errors as `null`, not as a missing field, so the
+  // type has to allow null too — otherwise runtime `{error: null}` payloads
+  // get misclassified as failures (see the explicit null check below).
+  readonly error?: string | null;
 }
 
 interface RpcNotification {
@@ -34,10 +37,10 @@ export interface FileChangedEvent {
   readonly kind: FileChangeKind;
 }
 
-type PendingRequest = {
+interface PendingRequest {
   readonly resolve: (value: unknown) => void;
   readonly reject: (reason: Error) => void;
-};
+}
 
 type NotificationCallback = (params: unknown) => void;
 
@@ -50,18 +53,34 @@ let nextId = 1;
 const pending = new Map<number, PendingRequest>();
 const subscribers = new Map<string, Set<NotificationCallback>>();
 
+// The host injects one of two bridge shapes onto the window. Declared narrowly
+// here so getHost() can read them without an `any` cast.
+interface WebView2Bridge {
+  postMessage: (msg: string) => void;
+  addEventListener: (event: "message", cb: (e: MessageEvent<string>) => void) => void;
+}
+
+interface BridgedWindow {
+  infiniframe?: { host?: InfiniFrameHost };
+  chrome?: { webview?: WebView2Bridge };
+}
+
 function getHost(): InfiniFrameHost | undefined {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const win = window as any;
+  const win = window as Window & BridgedWindow;
   // WebKitGTK (Linux/macOS)
-  if (win.infiniframe?.host) return win.infiniframe.host as InfiniFrameHost;
+  if (win.infiniframe?.host) return win.infiniframe.host;
   // WebView2 (Windows)
   if (win.chrome?.webview) {
     const wv = win.chrome.webview;
     return {
-      postMessage: (msg: string) => wv.postMessage(msg),
-      receiveMessage: (cb: (msg: string) => void) =>
-        wv.addEventListener("message", (e: MessageEvent<string>) => cb(e.data)),
+      postMessage: (msg: string) => {
+        wv.postMessage(msg);
+      },
+      receiveMessage: (cb: (msg: string) => void) => {
+        wv.addEventListener("message", (e: MessageEvent<string>) => {
+          cb(e.data);
+        });
+      },
     };
   }
   return undefined;
@@ -89,7 +108,7 @@ export function initRpc(): void {
       const req = pending.get(msg.id);
       if (!req) return;
       pending.delete(msg.id);
-      if (msg.error !== undefined && msg.error !== null) {
+      if (msg.error != null) {
         req.reject(new Error(msg.error));
       } else {
         req.resolve(msg.result);
@@ -126,21 +145,22 @@ export function rpcCall<T = unknown>(method: string, params?: unknown): Promise<
 }
 
 /**
- * Subscribe to a notification method pushed from the host.
+ * Subscribe to a notification method pushed from the host. The payload is
+ * `unknown`; callers that know the shape should narrow with a type assertion
+ * at the boundary (the host is the source of truth for the wire schema).
  * Returns an unsubscribe function.
  */
-export function subscribe<T = unknown>(method: string, callback: (params: T) => void): () => void {
+export function subscribe(method: string, callback: (params: unknown) => void): () => void {
   let set = subscribers.get(method);
   if (!set) {
     set = new Set();
     subscribers.set(method, set);
   }
-  const cb = callback as NotificationCallback;
-  set.add(cb);
+  set.add(callback);
   return () => {
     const s = subscribers.get(method);
     if (!s) return;
-    s.delete(cb);
+    s.delete(callback);
     if (s.size === 0) subscribers.delete(method);
   };
 }

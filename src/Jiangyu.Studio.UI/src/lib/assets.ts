@@ -36,7 +36,7 @@ export interface SpriteAsset extends AssetEntryBase {
  * and for entries whose `className` is null or unknown. Use `isAudioClip` /
  * `isSprite` type guards to narrow to the specific shapes.
  */
-export interface GenericAsset extends AssetEntryBase {}
+export type GenericAsset = AssetEntryBase;
 
 export type AssetEntry = AudioClipAsset | SpriteAsset | GenericAsset;
 
@@ -72,7 +72,7 @@ export interface AssetExportParams {
   readonly assetName: string;
   readonly collection: string;
   readonly pathId: number;
-  readonly kind: AssetKind | string;
+  readonly kind: string;
   readonly baseDir: string;
 }
 
@@ -234,6 +234,6 @@ export function pickDirectory(params?: {
   return rpcCall<string | null>("pickDirectory", params ?? {});
 }
 
-export function revealInExplorer(path: string): Promise<void> {
-  return rpcCall<void>("revealInExplorer", { path });
+export async function revealInExplorer(path: string): Promise<void> {
+  await rpcCall<null>("revealInExplorer", { path });
 }

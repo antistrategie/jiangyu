@@ -38,14 +38,16 @@ export function parseCrossPanePayload(raw: string): CrossPanePayload | null {
   }
 }
 
-export function beginPaneMove(): Promise<void> {
-  return rpcCall<void>("beginPaneMove");
+export async function beginPaneMove(): Promise<void> {
+  await rpcCall<null>("beginPaneMove");
 }
 
-export function completePaneMove(): Promise<void> {
-  return rpcCall<void>("completePaneMove");
+export async function completePaneMove(): Promise<void> {
+  await rpcCall<null>("completePaneMove");
 }
 
 export function subscribePaneMovedOut(callback: () => void): () => void {
-  return subscribe<null | undefined>("paneMovedOut", () => callback());
+  return subscribe("paneMovedOut", () => {
+    callback();
+  });
 }

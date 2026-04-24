@@ -9,6 +9,12 @@
   animation: fade 120ms ease-out;
 }
 
+/* Transparent passthrough so the inner dialog wrapper (which carries the
+   role + aria-modal) doesn't change the centred-flex layout. */
+.dialogContent {
+  display: contents;
+}
+
 @keyframes fade {
   from {
     opacity: 0;

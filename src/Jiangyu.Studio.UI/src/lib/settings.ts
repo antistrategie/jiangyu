@@ -30,7 +30,7 @@ function notify(): void {
 
 if (typeof window !== "undefined") {
   window.addEventListener("storage", (e) => {
-    if (e.key !== null && e.key.startsWith(STORAGE_PREFIX)) notify();
+    if (e.key?.startsWith(STORAGE_PREFIX)) notify();
   });
 }
 

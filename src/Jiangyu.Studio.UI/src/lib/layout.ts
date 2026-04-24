@@ -144,26 +144,26 @@ export function getAllOpenPaths(layout: Layout): Set<string> {
 }
 
 function findPaneCoords(layout: Layout, paneId: string): { col: number; pane: number } | null {
-  for (let c = 0; c < layout.columns.length; c++) {
-    const col = layout.columns[c]!;
-    for (let p = 0; p < col.panes.length; p++) {
-      if (col.panes[p]!.id === paneId) return { col: c, pane: p };
+  for (const [c, col] of layout.columns.entries()) {
+    for (const [p, pane] of col.panes.entries()) {
+      if (pane.id === paneId) return { col: c, pane: p };
     }
   }
   return null;
 }
 
 function replacePane(layout: Layout, paneId: string, next: Pane): Layout {
-  let changed = false;
+  // Boxed so the inner callback's mutation is visible to flow analysis.
+  const flag = { changed: false };
   const columns = layout.columns.map((col) => ({
     ...col,
     panes: col.panes.map((pane) => {
       if (pane.id !== paneId) return pane;
-      changed = true;
+      flag.changed = true;
       return next;
     }),
   }));
-  return changed ? { ...layout, columns } : layout;
+  return flag.changed ? { ...layout, columns } : layout;
 }
 
 function withTab(pane: CodePane, path: string): CodePane {
@@ -182,7 +182,7 @@ function withoutTabs(pane: CodePane, paths: ReadonlySet<string>): CodePane {
   if (tabs.length === pane.tabs.length) return pane;
   let activeTab = pane.activeTab;
   if (activeTab !== null && paths.has(activeTab)) {
-    activeTab = tabs.length > 0 ? tabs[tabs.length - 1]!.path : null;
+    activeTab = tabs.at(-1)?.path ?? null;
   }
   return { ...pane, tabs, activeTab };
 }
@@ -229,7 +229,7 @@ export function openFile(layout: Layout, path: string, paneId: string | null = n
 export function closeTabs(layout: Layout, paneId: string, paths: readonly string[]): Layout {
   if (paths.length === 0) return layout;
   const target = findPane(layout, paneId);
-  if (target === null || target.kind !== "code") return layout;
+  if (target?.kind !== "code") return layout;
   const set = new Set(paths);
   const nextPane = withoutTabs(target, set);
   if (nextPane === target) return layout;
@@ -254,8 +254,9 @@ function removePane(layout: Layout, paneId: string): Layout {
   const coords = findPaneCoords(layout, paneId);
   if (coords === null) return layout;
 
-  const srcCol = layout.columns[coords.col]!;
-  const removedPane = srcCol.panes[coords.pane]!;
+  const srcCol = layout.columns[coords.col];
+  const removedPane = srcCol?.panes[coords.pane];
+  if (srcCol === undefined || removedPane === undefined) return layout;
 
   // Remove the pane and drop empty columns.
   let columns = layout.columns
@@ -310,7 +311,8 @@ function pickNextActive(layout: Layout, removed: { col: number; pane: number }):
   for (let dist = 1; dist < layout.columns.length; dist++) {
     for (const ci of [removed.col + dist, removed.col - dist]) {
       const c = layout.columns[ci];
-      if (c !== undefined && c.panes.length > 0) return c.panes[0]!.id;
+      const first = c?.panes[0];
+      if (first !== undefined) return first.id;
     }
   }
   return null;
@@ -319,7 +321,7 @@ function pickNextActive(layout: Layout, removed: { col: number; pane: number }):
 /** Make a pane active and (optionally) select one of its tabs. No-op for browser panes. */
 export function selectTab(layout: Layout, paneId: string, path: string): Layout {
   const target = findPane(layout, paneId);
-  if (target === null || target.kind !== "code") return layout;
+  if (target?.kind !== "code") return layout;
   if (target.activeTab === path) {
     return layout.activePaneId === paneId ? layout : { ...layout, activePaneId: paneId };
   }
@@ -354,7 +356,8 @@ export function splitDown(layout: Layout, kind: PaneKind = "code"): Layout {
   }
   const coords = findPaneCoords(layout, layout.activePaneId);
   if (coords === null) return splitRight(layout, kind);
-  const targetCol = layout.columns[coords.col]!;
+  const targetCol = layout.columns[coords.col];
+  if (targetCol === undefined) return splitRight(layout, kind);
   const newPane = withWeight(emptyPane(kind), avgPaneWeight(targetCol.panes));
   const columns = layout.columns.map((col, ci) => {
     if (ci !== coords.col) return col;
@@ -378,8 +381,9 @@ export function closePane(layout: Layout, paneId: string): Layout {
 export function movePane(layout: Layout, paneId: string, target: MovePaneTarget): Layout {
   const coords = findPaneCoords(layout, paneId);
   if (coords === null) return layout;
-  const sourceColumn = layout.columns[coords.col]!;
-  const sourcePane = sourceColumn.panes[coords.pane]!;
+  const sourceColumn = layout.columns[coords.col];
+  const sourcePane = sourceColumn?.panes[coords.pane];
+  if (sourceColumn === undefined || sourcePane === undefined) return layout;
 
   // Moving the only pane in a column to a position within the same column is a no-op.
   if (
@@ -572,7 +576,8 @@ export function movePaneToEdge(
   if (paneId === targetPaneId) return layout;
   const targetCoords = findPaneCoords(layout, targetPaneId);
   if (targetCoords === null) return layout;
-  const targetColumn = layout.columns[targetCoords.col]!;
+  const targetColumn = layout.columns[targetCoords.col];
+  if (targetColumn === undefined) return layout;
 
   if (edge === "left" || edge === "right") {
     const insertAt = edge === "right" ? targetCoords.col + 1 : targetCoords.col;
@@ -597,8 +602,9 @@ export function swapPanes(layout: Layout, paneIdA: string, paneIdB: string): Lay
   const coordsB = findPaneCoords(layout, paneIdB);
   if (coordsA === null || coordsB === null) return layout;
 
-  const paneA = layout.columns[coordsA.col]!.panes[coordsA.pane]!;
-  const paneB = layout.columns[coordsB.col]!.panes[coordsB.pane]!;
+  const paneA = layout.columns[coordsA.col]?.panes[coordsA.pane];
+  const paneB = layout.columns[coordsB.col]?.panes[coordsB.pane];
+  if (paneA === undefined || paneB === undefined) return layout;
 
   const atA = applySlotWeight(paneB, paneA.weight);
   const atB = applySlotWeight(paneA, paneB.weight);
@@ -637,7 +643,7 @@ export function setPaneWeight(layout: Layout, paneId: string, weight: number): L
   if (!(weight > 0)) return layout;
   const target = findPane(layout, paneId);
   if (target === null || paneWeight(target) === weight) return layout;
-  return replacePane(layout, paneId, { ...target, weight } as Pane);
+  return replacePane(layout, paneId, { ...target, weight });
 }
 
 /** Set the persisted state blob on a browser pane. No-op for code panes. */
@@ -655,13 +661,13 @@ export function setBrowserPaneState(
 /** Set a column's flex weight. */
 export function setColumnWeight(layout: Layout, columnId: string, weight: number): Layout {
   if (!(weight > 0)) return layout;
-  let changed = false;
+  const flag = { changed: false };
   const columns = layout.columns.map((col) => {
     if (col.id !== columnId || columnWeight(col) === weight) return col;
-    changed = true;
+    flag.changed = true;
     return { ...col, weight };
   });
-  return changed ? { ...layout, columns } : layout;
+  return flag.changed ? { ...layout, columns } : layout;
 }
 
 /**
@@ -676,11 +682,12 @@ export function reorderTab(
   targetIndex: number,
 ): Layout {
   const pane = findPane(layout, paneId);
-  if (pane === null || pane.kind !== "code") return layout;
+  if (pane?.kind !== "code") return layout;
   const currentIndex = pane.tabs.findIndex((t) => t.path === path);
   if (currentIndex === -1) return layout;
 
-  const tab = pane.tabs[currentIndex]!;
+  const tab = pane.tabs[currentIndex];
+  if (tab === undefined) return layout;
   const without = [...pane.tabs.slice(0, currentIndex), ...pane.tabs.slice(currentIndex + 1)];
   // Drops past the source position need to shift down by one since the
   // removal closes the gap before the insertion.
@@ -715,25 +722,25 @@ export function moveTab(
 
 /** Rewrite all tab paths in code panes via the supplied mapper. */
 export function remapPaths(layout: Layout, remap: (path: string) => string): Layout {
-  let changed = false;
+  const flag = { changed: false };
   const columns = layout.columns.map((col) => ({
     ...col,
     panes: col.panes.map((pane) => {
       if (pane.kind !== "code") return pane;
-      let paneChanged = false;
+      const paneFlag = { changed: false };
       const tabs = pane.tabs.map((t) => {
         const next = remap(t.path);
         if (next === t.path) return t;
-        paneChanged = true;
+        paneFlag.changed = true;
         return { path: next, name: basename(next) };
       });
       const activeTab = pane.activeTab === null ? null : remap(pane.activeTab);
-      if (!paneChanged && activeTab === pane.activeTab) return pane;
-      changed = true;
+      if (!paneFlag.changed && activeTab === pane.activeTab) return pane;
+      flag.changed = true;
       return { ...pane, tabs, activeTab };
     }),
   }));
-  return changed ? { ...layout, columns } : layout;
+  return flag.changed ? { ...layout, columns } : layout;
 }
 
 const STORAGE_PREFIX = "jiangyu:layout:";
@@ -766,7 +773,13 @@ function isValidPane(p: unknown): p is Pane {
     const cp = p as CodePane;
     if (!Array.isArray(cp.tabs)) return false;
     if (cp.activeTab !== null && typeof cp.activeTab !== "string") return false;
-    return cp.tabs.every((t) => typeof t.path === "string" && typeof t.name === "string");
+    return cp.tabs.every(
+      (t: unknown): t is Tab =>
+        typeof t === "object" &&
+        t !== null &&
+        typeof (t as Tab).path === "string" &&
+        typeof (t as Tab).name === "string",
+    );
   }
   return obj.kind === "assetBrowser" || obj.kind === "templateBrowser";
 }

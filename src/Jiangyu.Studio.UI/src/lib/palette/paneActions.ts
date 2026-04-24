@@ -7,7 +7,7 @@ import {
   type Layout,
 } from "@lib/layout.ts";
 import { useLayoutStore } from "@lib/panes/layoutStore.ts";
-import { PALETTE_SCOPE, type PaletteAction } from "./actions.tsx";
+import { PALETTE_SCOPE, type PaletteAction } from "./actions.ts";
 
 interface UsePaneActionsParams {
   readonly projectPath: string | null;
@@ -96,8 +96,10 @@ export function usePaneActions({
 
     if (paneIds.length > 1 && active !== null) {
       const idx = paneIds.indexOf(active);
-      const nextId = paneIds[(idx + 1) % paneIds.length]!;
-      const prevId = paneIds[(idx - 1 + paneIds.length) % paneIds.length]!;
+      // Modular arithmetic against a non-empty array always yields a defined entry.
+      const nextId = paneIds[(idx + 1) % paneIds.length];
+      const prevId = paneIds[(idx - 1 + paneIds.length) % paneIds.length];
+      if (nextId === undefined || prevId === undefined) return actions;
       actions.push(
         {
           id: "view.focusNextPane",

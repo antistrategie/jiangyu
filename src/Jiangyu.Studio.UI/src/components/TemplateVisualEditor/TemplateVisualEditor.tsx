@@ -11,18 +11,26 @@ import type {
 import { parseCrossMemberPayload } from "@lib/drag/crossMember.ts";
 import { parseCrossInstancePayload } from "@lib/drag/crossInstance.ts";
 import { rpcCall } from "@lib/rpc.ts";
+import { onKeyActivate } from "@lib/ui/a11y.ts";
 import styles from "./TemplateVisualEditor.module.css";
 
 // --- Stable UI IDs ---
 // Assigned on parse, stripped before serialise. Used for React keys,
-// collapse state, and drag payloads.
+// collapse state, and drag payloads. Stamped variants narrow `_uiId` to
+// required so the editor body doesn't have to assert non-null at every use.
 
 let _nextId = 0;
 function uiId(): string {
   return `_ui_${++_nextId}`;
 }
 
-function stampNodes(nodes: EditorNode[]): EditorNode[] {
+type StampedDirective = Omit<EditorDirective, "_uiId"> & { _uiId: string };
+type StampedNode = Omit<EditorNode, "_uiId" | "directives"> & {
+  _uiId: string;
+  directives: StampedDirective[];
+};
+
+function stampNodes(nodes: EditorNode[]): StampedNode[] {
   return nodes.map((n) => ({
     ...n,
     _uiId: n._uiId ?? uiId(),
@@ -164,9 +172,7 @@ async function getCachedEnumMembers(typeName: string): Promise<readonly string[]
 async function getCachedTemplateTypes(): Promise<readonly string[]> {
   if (templateTypesCache.types) return templateTypesCache.types;
   const result = await templatesSearch();
-  const types = result.instances
-    ? [...new Set(result.instances.map((i) => i.className))].sort()
-    : [];
+  const types = [...new Set(result.instances.map((i) => i.className))].sort();
   templateTypesCache.types = types;
   return types;
 }
@@ -197,7 +203,7 @@ export function TemplateVisualEditor({
   onChange,
   onRequestSourceMode,
 }: TemplateVisualEditorProps) {
-  const [nodes, setNodes] = useState<EditorNode[]>([]);
+  const [nodes, setNodes] = useState<StampedNode[]>([]);
   const [parseErrors, setParseErrors] = useState<EditorError[]>([]);
   const [rpcError, setRpcError] = useState<string | null>(null);
   const cacheKey = filePath ?? "";
@@ -208,9 +214,9 @@ export function TemplateVisualEditor({
   const serialiseVersion = useRef(0);
 
   // Undo/redo history
-  const undoStack = useRef<EditorNode[][]>([]);
-  const redoStack = useRef<EditorNode[][]>([]);
-  const nodesRef = useRef<EditorNode[]>(nodes);
+  const undoStack = useRef<StampedNode[][]>([]);
+  const redoStack = useRef<StampedNode[][]>([]);
+  const nodesRef = useRef<StampedNode[]>(nodes);
   nodesRef.current = nodes;
 
   // Parse via RPC when content changes externally
@@ -226,7 +232,7 @@ export function TemplateVisualEditor({
         undoStack.current = [];
         redoStack.current = [];
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         setRpcError(err instanceof Error ? err.message : "Parse RPC failed");
       });
   }, [content]);
@@ -235,7 +241,7 @@ export function TemplateVisualEditor({
   const serialiseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const serialiseNodes = useCallback(
-    (updated: EditorNode[]) => {
+    (updated: StampedNode[]) => {
       setNodes(updated);
       const version = ++serialiseVersion.current;
 
@@ -253,7 +259,7 @@ export function TemplateVisualEditor({
   );
 
   const serialiseAndEmit = useCallback(
-    (updated: EditorNode[]) => {
+    (updated: StampedNode[]) => {
       undoStack.current = [...undoStack.current, nodesRef.current];
       redoStack.current = [];
       invalidateProjectClonesCache();
@@ -303,14 +309,14 @@ export function TemplateVisualEditor({
   );
 
   const handleUpdateNode = useCallback(
-    (index: number, updated: EditorNode) => {
+    (index: number, updated: StampedNode) => {
       serialiseAndEmit(nodes.map((node, i) => (i === index ? updated : node)));
     },
     [nodes, serialiseAndEmit],
   );
 
   const handleUpdateDirective = useCallback(
-    (nodeIndex: number, dirIndex: number, directive: EditorDirective) => {
+    (nodeIndex: number, dirIndex: number, directive: StampedDirective) => {
       const updated = nodes.map((node, ni) => {
         if (ni !== nodeIndex) return node;
         return {
@@ -335,7 +341,7 @@ export function TemplateVisualEditor({
   );
 
   const handleAddDirective = useCallback(
-    (nodeIndex: number, directive: EditorDirective) => {
+    (nodeIndex: number, directive: StampedDirective) => {
       const updated = nodes.map((node, ni) => {
         if (ni !== nodeIndex) return node;
         return { ...node, directives: [...node.directives, directive] };
@@ -365,7 +371,7 @@ export function TemplateVisualEditor({
       const member = parseCrossMemberPayload(raw);
       if (!member) return;
       e.preventDefault();
-      const directive: EditorDirective = {
+      const directive: StampedDirective = {
         op: "Set",
         fieldPath: member.fieldPath,
         value: makeScalarDefault(member.patchScalarKind),
@@ -379,7 +385,7 @@ export function TemplateVisualEditor({
   // Add empty node
   const handleAddNode = useCallback(
     (kind: "Patch" | "Clone") => {
-      const newNode: EditorNode = {
+      const newNode: StampedNode = {
         kind,
         templateType: "",
         directives: [],
@@ -399,7 +405,8 @@ export function TemplateVisualEditor({
       const fromIndex = nodes.findIndex((n) => n._uiId === fromId);
       if (fromIndex === -1) return;
       const updated = [...nodes];
-      const moved = updated.splice(fromIndex, 1)[0]!;
+      const moved = updated.splice(fromIndex, 1)[0];
+      if (moved === undefined) return;
       const insertAt = toSlot > fromIndex ? toSlot - 1 : toSlot;
       updated.splice(insertAt, 0, moved);
       serialiseAndEmit(updated);
@@ -415,7 +422,8 @@ export function TemplateVisualEditor({
         const dirs = [...node.directives];
         const fromIdx = dirs.findIndex((d) => d._uiId === fromId);
         if (fromIdx === -1) return node;
-        const moved = dirs.splice(fromIdx, 1)[0]!;
+        const moved = dirs.splice(fromIdx, 1)[0];
+        if (moved === undefined) return node;
         const insertAt = toSlot > fromIdx ? toSlot - 1 : toSlot;
         dirs.splice(insertAt, 0, moved);
         return { ...node, directives: dirs };
@@ -435,7 +443,7 @@ export function TemplateVisualEditor({
       const inst = parseCrossInstancePayload(raw);
       if (!inst) return;
       e.preventDefault();
-      const newNode: EditorNode = {
+      const newNode: StampedNode = {
         kind: "Patch",
         templateType: inst.className,
         templateId: inst.name,
@@ -490,8 +498,8 @@ export function TemplateVisualEditor({
           )}
           <NodeCard
             node={node}
-            collapsed={collapsed.has(node._uiId!)}
-            onToggleCollapse={() => handleToggleCollapse(node._uiId!)}
+            collapsed={collapsed.has(node._uiId)}
+            onToggleCollapse={() => handleToggleCollapse(node._uiId)}
             onDelete={() => handleDeleteNode(ni)}
             onUpdateNode={(updated) => handleUpdateNode(ni, updated)}
             onUpdateDirective={(di, d) => handleUpdateDirective(ni, di, d)}
@@ -499,7 +507,7 @@ export function TemplateVisualEditor({
             onAddDirective={(d) => handleAddDirective(ni, d)}
             onDrop={(e) => handleCardDrop(ni, e)}
             isDragging={dragCardId === node._uiId}
-            onDragStart={() => setDragCardId(node._uiId!)}
+            onDragStart={() => setDragCardId(node._uiId)}
             onDragEnd={() => {
               setDragCardId(null);
               setDragCardSlot(null);
@@ -558,14 +566,14 @@ export function TemplateVisualEditor({
 // --- NodeCard ---
 
 interface NodeCardProps {
-  node: EditorNode;
+  node: StampedNode;
   collapsed: boolean;
   onToggleCollapse: () => void;
   onDelete: () => void;
-  onUpdateNode: (updated: EditorNode) => void;
-  onUpdateDirective: (dirIndex: number, directive: EditorDirective) => void;
+  onUpdateNode: (updated: StampedNode) => void;
+  onUpdateDirective: (dirIndex: number, directive: StampedDirective) => void;
   onDeleteDirective: (dirIndex: number) => void;
-  onAddDirective: (directive: EditorDirective) => void;
+  onAddDirective: (directive: StampedDirective) => void;
   onDrop: (e: React.DragEvent) => void;
   isDragging: boolean;
   onDragStart: () => void;
@@ -630,6 +638,7 @@ function NodeCard({
   return (
     <div
       className={`${styles.card} ${isDragging ? styles.cardDragging : ""}`}
+      role="presentation"
       onDragOver={onDragOverCard}
       onDrop={(e) => {
         e.preventDefault();
@@ -638,13 +647,20 @@ function NodeCard({
     >
       <div
         className={styles.cardHeader}
+        role="button"
+        tabIndex={0}
+        aria-expanded={!collapsed}
         onClick={() => {
           if (!justDragged.current) onToggleCollapse();
           justDragged.current = false;
         }}
+        onKeyDown={onKeyActivate(() => {
+          onToggleCollapse();
+        })}
       >
         <span
           className={styles.dragGrip}
+          role="presentation"
           draggable
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
@@ -652,7 +668,7 @@ function NodeCard({
             e.stopPropagation();
             justDragged.current = true;
             e.dataTransfer.effectAllowed = "move";
-            e.dataTransfer.setData("application/x-jiangyu-card-reorder", node._uiId!);
+            e.dataTransfer.setData("application/x-jiangyu-card-reorder", node._uiId);
             onDragStart();
           }}
           onDragEnd={onDragEnd}
@@ -691,7 +707,11 @@ function NodeCard({
               className={styles.cardIdInput}
             />
             <span className={styles.cardProp}>id</span>
-            <div className={styles.cardIdInput} onClick={(e) => e.stopPropagation()}>
+            <div
+              className={styles.cardIdInput}
+              role="presentation"
+              onClick={(e) => e.stopPropagation()}
+            >
               <CommitInput
                 type="text"
                 className={styles.setValueInput}
@@ -736,7 +756,7 @@ function NodeCard({
                   onChange={(updated) => onUpdateDirective(di, updated)}
                   onDelete={() => onDeleteDirective(di)}
                   isDragging={dragRowId === d._uiId}
-                  onDragStart={() => setDragRowId(d._uiId!)}
+                  onDragStart={() => setDragRowId(d._uiId)}
                   onDragEnd={() => {
                     setDragRowId(null);
                     setDragRowSlot(null);
@@ -777,9 +797,9 @@ function NodeCard({
 // --- SetRow ---
 
 interface SetRowProps {
-  directive: EditorDirective;
+  directive: StampedDirective;
   member?: TemplateMember | undefined;
-  onChange: (directive: EditorDirective) => void;
+  onChange: (directive: StampedDirective) => void;
   onDelete: () => void;
   isDragging: boolean;
   onDragStart: () => void;
@@ -844,7 +864,7 @@ function SetRow({
           onDragStart={(e) => {
             e.stopPropagation();
             e.dataTransfer.effectAllowed = "move";
-            e.dataTransfer.setData("application/x-jiangyu-row-reorder", directive._uiId!);
+            e.dataTransfer.setData("application/x-jiangyu-row-reorder", directive._uiId);
             onDragStart();
           }}
           onDragEnd={onDragEnd}
@@ -871,9 +891,14 @@ function SetRow({
                     type="button"
                     className={`${styles.setOpMenuItem} ${op === directive.op ? styles.setOpMenuItemActive : ""}`}
                     onClick={() => {
-                      const updated: EditorDirective =
+                      const updated: StampedDirective =
                         op === "Remove"
-                          ? { op, fieldPath: directive.fieldPath, index: directive.index ?? 0 }
+                          ? {
+                              op,
+                              fieldPath: directive.fieldPath,
+                              index: directive.index ?? 0,
+                              _uiId: directive._uiId,
+                            }
                           : {
                               ...directive,
                               op,
@@ -1151,12 +1176,11 @@ function CompositeEditor({ value, onChange }: CompositeEditorProps) {
   };
 
   const handleFieldRemove = (fieldName: string) => {
-    const next = { ...fields };
-    delete next[fieldName];
+    const { [fieldName]: _removed, ...next } = fields;
     onChange({ ...value, compositeFields: next });
   };
 
-  const handleAddField = (directive: EditorDirective) => {
+  const handleAddField = (directive: StampedDirective) => {
     // For composite sub-fields, we only use the fieldPath and value
     if (directive.value) {
       onChange({
@@ -1265,6 +1289,7 @@ function SuggestionCombobox({
     <div
       className={`${styles.refCombobox} ${className ?? ""}`}
       ref={wrapRef}
+      role="presentation"
       onClick={(e) => e.stopPropagation()}
     >
       <input
@@ -1329,7 +1354,7 @@ interface FieldAdderProps {
   members: readonly TemplateMember[];
   membersLoaded: boolean;
   existingFields: string[];
-  onAdd: (directive: EditorDirective) => void;
+  onAdd: (directive: StampedDirective) => void;
   onDrop?: (e: React.DragEvent) => void;
 }
 
@@ -1474,10 +1499,10 @@ function makeDefaultValue(member: TemplateMember): EditorValue {
   }
 }
 
-function makeDefaultDirective(member: TemplateMember): EditorDirective {
+function makeDefaultDirective(member: TemplateMember): StampedDirective {
   const value = makeDefaultValue(member);
   const op: DirectiveOp = member.isCollection ? "Append" : "Set";
-  return { op, fieldPath: member.name, value };
+  return { op, fieldPath: member.name, value, _uiId: uiId() };
 }
 
 function makeScalarDefault(scalarKind?: string): EditorValue {

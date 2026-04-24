@@ -2,3 +2,5 @@ node_modules/
 dist/
 generated/
 tsconfig.tsbuildinfo
+# use bun
+package-lock.json

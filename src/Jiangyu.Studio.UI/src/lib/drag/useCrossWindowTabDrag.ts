@@ -21,9 +21,10 @@ export function useCrossWindowTabDrag(
   }, []);
 
   useEffect(() => {
-    return subscribe<{ path: string }>("tabMovedOut", ({ path }) => {
+    return subscribe("tabMovedOut", (params) => {
+      const { path } = params as { path: string };
       const ticket = ticketRef.current;
-      if (ticket === null || ticket.path !== path) return;
+      if (ticket?.path !== path) return;
       ticketRef.current = null;
       onCloseTabs(ticket.paneId, [path]);
     });

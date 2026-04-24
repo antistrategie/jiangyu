@@ -316,7 +316,7 @@ function Stat({
       <div
         className={`${styles.statValue} ${mono === true ? styles.statValueMono : ""} ${tone === "warn" ? styles.statValueWarn : ""}`}
       >
-        {value === null ? "—" : value}
+        {value ?? "—"}
       </div>
     </div>
   );

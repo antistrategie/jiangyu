@@ -22,11 +22,16 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
     cleanupRef.current?.();
     setLoading(true);
 
-    let cancelled = false;
+    // Boxed in an object so the async-closure body sees a reference, not a
+    // narrowed literal — cleanup() flips `state.cancelled = true` on unmount.
+    // Indirected through `isCancelled()` so flow analysis can't conclude the
+    // condition is always-false between successive `await`s.
+    const state = { cancelled: false };
+    const isCancelled = () => state.cancelled;
 
     // Defer all heavy work so the browser can paint the spinner first.
     const frameId = requestAnimationFrame(() => {
-      if (cancelled) return;
+      if (isCancelled()) return;
 
       const w = container.clientWidth;
       const h = container.clientHeight;
@@ -120,11 +125,11 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
         try {
           const resp = await fetch(dataUrl);
           const buffer = await resp.arrayBuffer();
-          if (cancelled) return;
+          if (isCancelled()) return;
 
           const loader = new GLTFLoader();
           const gltf = await loader.parseAsync(buffer, "");
-          if (cancelled) return;
+          if (isCancelled()) return;
 
           scene.add(gltf.scene);
 
@@ -145,9 +150,9 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
           controls.target.copy(center);
           controls.update();
         } catch (err) {
-          if (!cancelled) console.error("[ModelViewer] GLB load error:", err);
+          if (!isCancelled()) console.error("[ModelViewer] GLB load error:", err);
         } finally {
-          if (!cancelled) setLoading(false);
+          if (!isCancelled()) setLoading(false);
         }
       })();
     });
@@ -155,7 +160,7 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
     let innerCleanup: (() => void) | undefined;
 
     const cleanup = () => {
-      cancelled = true;
+      state.cancelled = true;
       cancelAnimationFrame(frameId);
       innerCleanup?.();
     };

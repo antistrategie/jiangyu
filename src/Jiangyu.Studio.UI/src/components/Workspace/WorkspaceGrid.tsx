@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PALETTE_SCOPE, useRegisterActions, type PaletteAction } from "@lib/palette/actions.tsx";
+import { PALETTE_SCOPE, useRegisterActions, type PaletteAction } from "@lib/palette/actions.ts";
 import { columnWeight, getActiveCodePane, paneWeight, type Layout } from "@lib/layout.ts";
 import { fileTargetCommands } from "@lib/project/fileCommands.ts";
 import { useEditorContent } from "@lib/editor/content.ts";
@@ -8,7 +8,7 @@ import { CodePane } from "./CodePane.tsx";
 import { BrowserPane } from "./BrowserPane.tsx";
 import { EmptyPrompt } from "./EmptyPrompt.tsx";
 import { ResizeHandle } from "./ResizeHandle.tsx";
-import type { DropZone } from "./DropOverlay.tsx";
+import type { DropZone } from "./dropZone.ts";
 import { parseCrossTabPayload, completeTabMove, CROSS_TAB_MIME } from "@lib/drag/crossTab.ts";
 import { CROSS_PANE_MIME, completePaneMove, parseCrossPanePayload } from "@lib/drag/crossPane.ts";
 import {
@@ -200,7 +200,8 @@ export function WorkspaceGrid({
     const commands = fileTargetCommands(activeFile, projectPath, (paths) =>
       useLayoutStore.getState().closeTabsInPane(paneId, paths),
     );
-    const close = commands.find((c) => c.id === "close")!;
+    const close = commands.find((c) => c.id === "close");
+    if (close === undefined) return [];
     const extras = commands.filter((c) => c.id !== "close");
 
     const result: PaletteAction[] = [
@@ -327,7 +328,8 @@ export function WorkspaceGrid({
                   />
                 );
               if (pi === 0) return <Fragment key={pane.id}>{paneNode}</Fragment>;
-              const prev = col.panes[pi - 1]!;
+              const prev = col.panes[pi - 1];
+              if (prev === undefined) return <Fragment key={pane.id}>{paneNode}</Fragment>;
               return (
                 <Fragment key={pane.id}>
                   <ResizeHandle
@@ -365,7 +367,8 @@ export function WorkspaceGrid({
         );
 
         if (ci === 0) return colEl;
-        const prevCol = layout.columns[ci - 1]!;
+        const prevCol = layout.columns[ci - 1];
+        if (prevCol === undefined) return colEl;
         return (
           <Fragment key={col.id}>
             <ResizeHandle

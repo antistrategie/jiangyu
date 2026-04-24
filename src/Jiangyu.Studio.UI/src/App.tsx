@@ -16,7 +16,7 @@ import {
   useRegisterActions,
   useRegisteredActions,
   type PaletteAction,
-} from "@lib/palette/actions.tsx";
+} from "@lib/palette/actions.ts";
 import { buildProjectActions } from "@lib/palette/appActions.ts";
 import { usePaneActions } from "@lib/palette/paneActions.ts";
 import { useFileEntries } from "@lib/project/useFileEntries.ts";

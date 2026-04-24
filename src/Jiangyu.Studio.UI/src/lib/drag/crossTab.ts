@@ -29,16 +29,18 @@ export function parseCrossTabPayload(raw: string): string | null {
 }
 
 /** Source window declaring it's starting a cross-window tab drag. */
-export function beginTabMove(path: string): Promise<void> {
-  return rpcCall<void>("beginTabMove", { path });
+export async function beginTabMove(path: string): Promise<void> {
+  await rpcCall<null>("beginTabMove", { path });
 }
 
 /** Target window declaring it consumed a cross-window tab drop. */
-export function completeTabMove(path: string): Promise<void> {
-  return rpcCall<void>("completeTabMove", { path });
+export async function completeTabMove(path: string): Promise<void> {
+  await rpcCall<null>("completeTabMove", { path });
 }
 
 /** Subscribe to tab-moved-out notifications — the source window is told the tab was consumed. */
 export function subscribeTabMovedOut(callback: (path: string) => void): () => void {
-  return subscribe<{ path: string }>("tabMovedOut", ({ path }) => callback(path));
+  return subscribe("tabMovedOut", (params) => {
+    callback((params as { path: string }).path);
+  });
 }

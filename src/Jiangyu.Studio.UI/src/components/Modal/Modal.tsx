@@ -27,16 +27,27 @@ export function Modal({ onClose, ariaLabelledBy, children }: ModalProps) {
   }, [onClose]);
 
   return createPortal(
+    // Outer scrim is exposed to assistive tech as a "Close" button (Escape
+    // also closes via the global keydown above). The inner wrapper carries
+    // the dialog role + aria-modal so screen readers see the dialog as a
+    // single element regardless of children layout.
     <div
       className={styles.backdrop}
+      role="button"
+      tabIndex={-1}
+      aria-label="Close dialog"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={ariaLabelledBy}
     >
-      {children}
+      <div
+        className={styles.dialogContent}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={ariaLabelledBy}
+      >
+        {children}
+      </div>
     </div>,
     document.body,
   );

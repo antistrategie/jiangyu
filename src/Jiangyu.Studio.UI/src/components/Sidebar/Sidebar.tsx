@@ -183,7 +183,8 @@ export function Sidebar({
   }, []);
 
   useEffect(() => {
-    return subscribe<FileChangedEvent>("fileChanged", (event) => {
+    return subscribe("fileChanged", (params) => {
+      const event = params as FileChangedEvent;
       invalidateDir(dirname(event.path));
     });
   }, [invalidateDir]);
@@ -289,7 +290,15 @@ export function Sidebar({
             expansionTick={expansionTick}
           />
         </div>
-        <div className={styles.resizeHandle} onMouseDown={handleMouseDown} />
+        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- separator is the correct role; the rule doesn't recognise focusable separators. */}
+        <div
+          className={styles.resizeHandle}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          tabIndex={-1}
+          onMouseDown={handleMouseDown}
+        />
         {rootMenu && (
           <ContextMenu
             x={rootMenu.x}
@@ -689,7 +698,7 @@ function buildEntryMenu(entry: FileEntry, mctx: MenuBuildCtx): ContextMenuEntry[
     {
       label: "Reveal in File Explorer",
       onSelect: () => {
-        void rpcCall<null>("revealInExplorer", { path: entry.path }).catch((err) => {
+        void rpcCall<null>("revealInExplorer", { path: entry.path }).catch((err: unknown) => {
           reportRpcError(mctx.pushToast, "Reveal", err);
         });
       },

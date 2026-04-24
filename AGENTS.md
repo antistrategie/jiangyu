@@ -64,11 +64,22 @@ C# for the core stack — CLI compiler, MelonLoader loader, shared libraries. Ty
 If logic must compile in both the real IL2CPP/game-reference loader context and a normal SDK/test context, put it in `Jiangyu.Shared` instead of linking the same source file into multiple projects.
 
 - **Studio Host** (`Jiangyu.Studio.Host`) — .NET backend that bridges the React frontend to Core via JSON-RPC over InfiniFrame's message channel: requests `{id, method, params}`, responses `{id, result?, error?}`, host-pushed notifications `{method, params}` (no id). Handlers live in `RpcDispatcher.*.cs` partials; filesystem handlers gate on `EnsurePathInsideProject` (rejects paths outside the open project root) and `writeFile` is atomic via a sibling `.jiangyu.tmp` rename. `ProjectWatcher` pushes debounced `fileChanged` notifications; writes call `ProjectWatcher.SuppressFor(path)` so self-writes don't trigger the conflict banner. Recent projects live in the frontend's `localStorage`.
-- **Studio UI** (`Jiangyu.Studio.UI`) — React + TypeScript + Vite frontend at `src/Jiangyu.Studio.UI/`. Component-per-folder under `src/components/`. CSS Modules for scoped styles, with generated `.d.ts` via `@css-modules-kit/codegen` (output in `generated/`). Run `npx tsc --noEmit` for type-checking; regenerate CSS module types with `npx @css-modules-kit/codegen`.
+- **Studio UI** (`Jiangyu.Studio.UI`) — React + TypeScript + Vite frontend at `src/Jiangyu.Studio.UI/`. Component-per-folder under `src/components/`. CSS Modules for scoped styles, with generated `.d.ts` via `@css-modules-kit/codegen` (output in `generated/`). Use **bun**, not npm, for installs and scripts (`bun install`, `bun run lint`, `bun test`). Run `bunx tsc --noEmit` for type-checking; regenerate CSS module types with `bunx @css-modules-kit/codegen`.
 
 ### Path aliases
 
 Use the `@lib/*` and `@components/*` aliases rather than relative `../../lib/…` imports. Configured in both `tsconfig.json` (`paths`) and `vite.config.ts` (`resolve.alias`), and the tsconfig entry lists both the source dir and `generated/src/…` so aliased CSS-module imports resolve through cmk's generated `.d.ts` files. Same-folder sibling imports stay `./X` — the alias isn't meant to replace genuinely-local paths.
+
+### Lint
+
+ESLint flat config at `eslint.config.ts` (loaded via `jiti`). Extends `@eslint/js` recommended + `typescript-eslint` `strictTypeChecked` + `stylisticTypeChecked` + `eslint-plugin-jsx-a11y` recommended, with `react-hooks` and `react-refresh` plugins. Run `bun run lint`. Notable local choices:
+
+- Type-aware rules use `projectService` so each file picks up the nearest tsconfig automatically; the config file itself is in `allowDefaultProject`.
+- `no-unused-vars` is delegated to TS (`noUnusedLocals` / `noUnusedParameters`) to avoid double-reporting.
+- `restrict-template-expressions` allows `number` and `boolean` (the rule's purpose is catching `${someObject}` "[object Object]" accidents); `no-empty-function` allows arrow no-ops (`() => {}` event-handler idiom).
+- `no-floating-promises` is an error: every promise expression that isn't awaited must be marked with `void` or end with `.catch(...)`.
+- Tests have unsafe-* relaxed since fixtures and stubs need free-form casts.
+- Two `// eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions` markers exist on resize-handle separators and the image-viewer application surface; both have justifying comments. Don't add more without the same justification.
 
 ### Lib organisation
 
@@ -227,7 +238,7 @@ Located at `GlobalConfig.DefaultCacheDir` (XDG/LocalAppData-adaptive, overridabl
 
 - `tests/Jiangyu.Core.Tests/` — xUnit, .NET 10. Run with `dotnet test tests/Jiangyu.Core.Tests/`.
 - `tests/Jiangyu.Loader.Tests/` — xUnit, .NET 10. Pure tests for shared loader-side logic factored out of the live IL2CPP project. Run with `dotnet test tests/Jiangyu.Loader.Tests/`.
-- `src/Jiangyu.Studio.UI/` — vitest, Node environment. Run with `npm test` from that directory. Covers layout topology, path utilities, palette filtering, keyboard-shortcut matching, drop-zone geometry, zoom math, recent-projects storage, asset-kind guards, etc. No browser or host needed — the few places that touch `localStorage` stub it via `vi.stubGlobal`.
+- `src/Jiangyu.Studio.UI/` — vitest, Node environment. Run with `bun test` from that directory. Covers layout topology, path utilities, palette filtering, keyboard-shortcut matching, drop-zone geometry, zoom math, recent-projects storage, asset-kind guards, etc. No browser or host needed — the few places that touch `localStorage` stub it via `vi.stubGlobal`.
 
 Coverage across the .NET suites:
 

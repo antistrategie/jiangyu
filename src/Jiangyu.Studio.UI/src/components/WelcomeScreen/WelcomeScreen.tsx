@@ -51,11 +51,11 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
     }
   };
 
-  const hasGameError = config !== null && config.gamePath === null;
-  const hasEditorWarning = config !== null && config.unityEditorPath === null;
+  const hasGameError = config?.gamePath === null;
+  const hasEditorWarning = config?.unityEditorPath === null;
   const hasEditorVersionMismatch =
-    config !== null && config.unityEditorPath !== null && config.unityEditorError !== null;
-  const hasMelonWarning = config !== null && config.melonLoaderError !== null;
+    config?.unityEditorPath != null && config.unityEditorError !== null;
+  const hasMelonWarning = config?.melonLoaderError != null;
 
   return (
     <main className={styles.welcome}>
@@ -75,30 +75,27 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
           <details className={styles.configDetails}>
             <summary className={styles.configSummary}>Configuration</summary>
             <div className={styles.configContent}>
-              {config !== null && config.gamePath !== null && (
+              {config.gamePath !== null && (
                 <div className={styles.statusGroup}>
                   <div className={styles.statusLine}>
                     <span className={styles.statusText}>MENACE: {config.gamePath}</span>
                     <button
                       className={styles.configLinkInline}
                       type="button"
-                      onClick={handleSetGamePath}
+                      onClick={() => void handleSetGamePath()}
                     >
                       change
                     </button>
                   </div>
                   {!hasEditorWarning && !hasEditorVersionMismatch && (
                     <div className={styles.statusLine}>
-                      <span className={styles.statusText}>
-                        Unity:{" "}
-                        {config.unityEditorPath ?? <em className={styles.notSet}>not set</em>}
-                      </span>
+                      <span className={styles.statusText}>Unity: {config.unityEditorPath}</span>
                       <button
                         className={styles.configLinkInline}
                         type="button"
-                        onClick={handleSetUnityPath}
+                        onClick={() => void handleSetUnityPath()}
                       >
-                        {config.unityEditorPath ? "change" : "set"}
+                        change
                       </button>
                     </div>
                   )}
@@ -117,7 +114,7 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
                       <button
                         className={styles.setPathBtn}
                         type="button"
-                        onClick={handleSetGamePath}
+                        onClick={() => void handleSetGamePath()}
                       >
                         Set path…
                       </button>
@@ -140,27 +137,25 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
                       <button
                         className={styles.setPathBtn}
                         type="button"
-                        onClick={handleSetUnityPath}
+                        onClick={() => void handleSetUnityPath()}
                       >
                         Set path…
                       </button>
                     </div>
                   )}
-                  {hasEditorVersionMismatch &&
-                    config !== null &&
-                    config.unityEditorError !== null && (
-                      <div className={styles.statusLine}>
-                        <TriangleAlert size={14} className={styles.iconWarning} />
-                        <span className={styles.statusTextWarning}>{config.unityEditorError}</span>
-                        <button
-                          className={styles.configLinkInline}
-                          type="button"
-                          onClick={handleSetUnityPath}
-                        >
-                          change
-                        </button>
-                      </div>
-                    )}
+                  {hasEditorVersionMismatch && (
+                    <div className={styles.statusLine}>
+                      <TriangleAlert size={14} className={styles.iconWarning} />
+                      <span className={styles.statusTextWarning}>{config.unityEditorError}</span>
+                      <button
+                        className={styles.configLinkInline}
+                        type="button"
+                        onClick={() => void handleSetUnityPath()}
+                      >
+                        change
+                      </button>
+                    </div>
+                  )}
                   {hasMelonWarning && (
                     <div className={styles.statusLine}>
                       <TriangleAlert size={14} className={styles.iconWarning} />
@@ -178,10 +173,10 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
             </div>
           </details>
 
-          {config !== null && config.gamePath !== null && (
+          {config.gamePath !== null && (
             <div className={styles.actions}>
               <div className={styles.actionRow}>
-                <button className={styles.action} type="button" onClick={handleOpen}>
+                <button className={styles.action} type="button" onClick={() => void handleOpen()}>
                   Open Project
                 </button>
                 <button
@@ -196,20 +191,19 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
                 <ul className={styles.recentList}>
                   {recentProjects.slice(0, 5).map((p) => (
                     <li key={p} className={styles.recentRow}>
-                      <a
+                      <button
+                        type="button"
                         className={styles.recentLink}
-                        href="#"
-                        onClick={(e) => {
-                          e.preventDefault();
+                        onClick={() => {
                           void rpcCall<string>("openProject", { path: p })
                             .then(onOpenProject)
-                            .catch((err) => {
+                            .catch((err: unknown) => {
                               console.error("[Studio] openProject failed:", err);
                             });
                         }}
                       >
                         {p}
-                      </a>
+                      </button>
                       <button
                         type="button"
                         className={styles.recentRemove}

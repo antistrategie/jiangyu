@@ -106,7 +106,18 @@ export function AudioPlayer({ src }: Props) {
         )}
       </button>
       <span className={styles.audioTime}>{formatTime(currentTime)}</span>
-      <div className={styles.audioTrack} onMouseDown={handleTrackMouseDown}>
+      {/* Track scrubber — pointer-only; play/pause + arrow seek through the
+          play button is the keyboard-accessible path. */}
+      <div
+        className={styles.audioTrack}
+        role="slider"
+        aria-label="Audio scrubber"
+        aria-valuemin={0}
+        aria-valuemax={duration}
+        aria-valuenow={currentTime}
+        tabIndex={-1}
+        onMouseDown={handleTrackMouseDown}
+      >
         <div className={styles.audioProgress} style={{ width: `${progress * 100}%` }} />
       </div>
       <span className={styles.audioTime}>{formatTime(duration)}</span>

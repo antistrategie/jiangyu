@@ -226,7 +226,7 @@ export const useEditorContent = create<EditorContentState>((set, get) => ({
             : { contents: { ...prev.contents, [event.path]: text } },
         );
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         console.error("[editor.content] silent reload failed:", err);
       });
   },
@@ -234,19 +234,15 @@ export const useEditorContent = create<EditorContentState>((set, get) => ({
   remapPath: (oldPath, newPath) => {
     if (oldPath === newPath) return;
     set((s) => {
-      const contents = { ...s.contents };
-      const conflicts = { ...s.conflicts };
-      let changed = false;
-      if (oldPath in contents) {
-        contents[newPath] = contents[oldPath]!;
-        delete contents[oldPath];
-        changed = true;
-      }
-      if (oldPath in conflicts) {
-        conflicts[newPath] = conflicts[oldPath]!;
-        delete conflicts[oldPath];
-        changed = true;
-      }
+      const { [oldPath]: oldContent, ...restContents } = s.contents;
+      const { [oldPath]: oldConflict, ...restConflicts } = s.conflicts;
+      const contentsChanged = oldContent !== undefined;
+      const conflictsChanged = oldConflict !== undefined;
+      const contents = contentsChanged ? { ...restContents, [newPath]: oldContent } : s.contents;
+      const conflicts = conflictsChanged
+        ? { ...restConflicts, [newPath]: oldConflict }
+        : s.conflicts;
+      let changed = contentsChanged || conflictsChanged;
       let dirty: ReadonlySet<string> = s.dirty;
       if (s.dirty.has(oldPath)) {
         const next = new Set(s.dirty);
@@ -309,8 +305,8 @@ export const useEditorContent = create<EditorContentState>((set, get) => ({
 // the same handler N times.
 export function useEditorContentSync(): void {
   useEffect(() => {
-    return subscribe<FileChangedEvent>("fileChanged", (evt) => {
-      useEditorContent.getState().onFileChanged(evt);
+    return subscribe("fileChanged", (params) => {
+      useEditorContent.getState().onFileChanged(params as FileChangedEvent);
     });
   }, []);
 }

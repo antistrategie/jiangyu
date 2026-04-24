@@ -21,8 +21,10 @@ export const STICKER_POOLS: Record<StickerMood, readonly string[]> = {
 
 export const ALL_STICKERS: readonly string[] = Object.values(STICKER_POOLS).flat();
 
-/** Pick a random sticker for the given mood. */
+/** Pick a random sticker for the given mood. Pools are non-empty by construction. */
 export function pickSticker(mood: StickerMood): string {
   const pool = STICKER_POOLS[mood];
-  return pool[Math.floor(Math.random() * pool.length)]!;
+  const picked = pool[Math.floor(Math.random() * pool.length)];
+  if (picked === undefined) throw new Error(`Empty sticker pool for mood "${mood}"`);
+  return picked;
 }

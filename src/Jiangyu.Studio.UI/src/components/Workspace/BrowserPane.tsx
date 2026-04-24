@@ -6,7 +6,8 @@ import { useLayoutStore } from "@lib/panes/layoutStore.ts";
 import { AssetBrowser } from "@components/AssetBrowser/AssetBrowser.tsx";
 import { TemplateBrowser } from "@components/TemplateBrowser/TemplateBrowser.tsx";
 import { ContextMenu } from "@components/ContextMenu/ContextMenu.tsx";
-import { DropOverlay, type DropZone } from "./DropOverlay.tsx";
+import { DropOverlay } from "./DropOverlay.tsx";
+import type { DropZone } from "./dropZone.ts";
 import { PANE_DRAG_MIME, TAB_DRAG_MIME, type PaneDragPayload } from "./tabDrag.ts";
 import { CROSS_TAB_MIME } from "@lib/drag/crossTab.ts";
 import { CROSS_PANE_MIME } from "@lib/drag/crossPane.ts";
@@ -66,6 +67,7 @@ export function BrowserPane({
       ref={(el) => registerEl(pane.id, el)}
       className={`${styles.editor} ${isActive ? styles.editorActive : ""} ${isFullscreen ? styles.editorFullscreen : ""}`}
       style={{ flex }}
+      role="presentation"
       onMouseDown={setActive}
     >
       <div className={styles.tabbar}>
@@ -130,7 +132,7 @@ export function BrowserPane({
             initialState={pane.state as AssetBrowserState | undefined}
             onStateChange={(state) => useLayoutStore.getState().setBrowserPaneState(pane.id, state)}
           />
-        ) : pane.kind === "templateBrowser" ? (
+        ) : (
           <TemplateBrowser
             projectPath={projectPath}
             fileEntries={fileEntries}
@@ -141,8 +143,6 @@ export function BrowserPane({
             initialState={pane.state as TemplateBrowserState | undefined}
             onStateChange={(state) => useLayoutStore.getState().setBrowserPaneState(pane.id, state)}
           />
-        ) : (
-          <p className={styles.empty}>{meta.label} — coming soon</p>
         )}
         <DropOverlay
           active={dragActive}

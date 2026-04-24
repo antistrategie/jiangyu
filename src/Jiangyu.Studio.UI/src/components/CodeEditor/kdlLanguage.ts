@@ -95,5 +95,5 @@ export function registerKdlLanguage(m: typeof monaco): void {
     return;
   }
   m.languages.register({ id: "kdl", extensions: [".kdl"] });
-  m.languages.setMonarchTokensProvider("kdl", kdlLanguage as monaco.languages.IMonarchLanguage);
+  m.languages.setMonarchTokensProvider("kdl", kdlLanguage);
 }

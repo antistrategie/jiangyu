@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AssetBrowser } from "@components/AssetBrowser/AssetBrowser.tsx";
 import { TemplateBrowser } from "@components/TemplateBrowser/TemplateBrowser.tsx";
 import { TabbedMonacoEditor } from "@components/CodeEditor/TabbedMonacoEditor.tsx";
-import { rpcCall, subscribe, type FileChangedEvent } from "@lib/rpc.ts";
+import { rpcCall, subscribe } from "@lib/rpc.ts";
 import { useApplyUiFontScale } from "@lib/settings.ts";
 import { useEditorContent, useEditorContentSync } from "@lib/editor/content.ts";
 import {
@@ -102,7 +102,8 @@ function titleFor(kind: PaneKind | null, activeFilePath: string | null): string 
 function reorderTabs(tabs: readonly Tab[], path: string, targetIndex: number): Tab[] {
   const currentIndex = tabs.findIndex((t) => t.path === path);
   if (currentIndex === -1) return tabs as Tab[];
-  const tab = tabs[currentIndex]!;
+  const tab = tabs[currentIndex];
+  if (tab === undefined) return tabs as Tab[];
   const without = [...tabs.slice(0, currentIndex), ...tabs.slice(currentIndex + 1)];
   let insertAt = targetIndex > currentIndex ? targetIndex - 1 : targetIndex;
   insertAt = Math.max(0, Math.min(insertAt, without.length));
@@ -267,11 +268,12 @@ function CodePaneShell({
         }),
       );
       e.dataTransfer.effectAllowed = "move";
+      const firstTab = tabs[0];
       const label =
-        tabs.length === 0
+        firstTab === undefined
           ? "Empty pane"
           : tabs.length === 1
-            ? basename(tabs[0]!.path)
+            ? basename(firstTab.path)
             : `${tabs.length} tabs`;
       attachDragChip(e, label);
       void beginPaneMove().catch(() => {});
@@ -415,7 +417,9 @@ function TemplateBrowserShell({
 
   useEffect(() => {
     refresh();
-    const unsubscribe = subscribe<FileChangedEvent>("fileChanged", () => refresh());
+    const unsubscribe = subscribe("fileChanged", () => {
+      refresh();
+    });
     return unsubscribe;
   }, [refresh]);
 
@@ -429,7 +433,7 @@ function TemplateBrowserShell({
   const appendToFile = useCallback(async (path: string, snippet: string) => {
     const current = await rpcCall<string>("readFile", { path }).catch(() => "");
     const separator = current.length === 0 || current.endsWith("\n") ? "" : "\n";
-    await rpcCall<void>("writeFile", { path, content: current + separator + snippet });
+    await rpcCall<null>("writeFile", { path, content: current + separator + snippet });
   }, []);
 
   const { onStateChange, getPayload } = useBrowserPaneShell("templateBrowser", initialState);

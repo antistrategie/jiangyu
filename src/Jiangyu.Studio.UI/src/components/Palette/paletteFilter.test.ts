@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PALETTE_SCOPE, type PaletteAction } from "@lib/palette/actions.tsx";
+import { PALETTE_SCOPE, type PaletteAction } from "@lib/palette/actions.ts";
 import {
   FILES_SCOPE,
   MAX_RESULTS,

@@ -30,7 +30,7 @@ describe("fileTargetCommands", () => {
     expect(onClose).toHaveBeenCalledWith([path]);
   });
 
-  it("copyPath writes the absolute path to clipboard", async () => {
+  it("copyPath writes the absolute path to clipboard", () => {
     const writeText = vi.fn<(s: string) => Promise<void>>().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     const cmd = fileTargetCommands(path, projectPath, () => {}).find((c) => c.id === "copyPath")!;
@@ -39,7 +39,7 @@ describe("fileTargetCommands", () => {
     vi.unstubAllGlobals();
   });
 
-  it("copyRelativePath writes the relative path to clipboard", async () => {
+  it("copyRelativePath writes the relative path to clipboard", () => {
     const writeText = vi.fn<(s: string) => Promise<void>>().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     const cmd = fileTargetCommands(path, projectPath, () => {}).find(

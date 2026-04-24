@@ -15,6 +15,7 @@ export function buildTabMenu(
   onCloseFiles: (paths: string[]) => void,
 ): ContextMenuEntry[] {
   const [closeCmd, ...fileOps] = fileTargetCommands(targetPath, projectPath, onCloseFiles);
+  if (closeCmd === undefined) return [];
 
   const targetIndex = paneTabs.findIndex((f) => f.path === targetPath);
   const others = paneTabs.filter((f) => f.path !== targetPath).map((f) => f.path);
@@ -22,7 +23,7 @@ export function buildTabMenu(
   const all = paneTabs.map((f) => f.path);
 
   return [
-    entryFor(closeCmd!),
+    entryFor(closeCmd),
     {
       label: "Close Others",
       disabled: others.length === 0,

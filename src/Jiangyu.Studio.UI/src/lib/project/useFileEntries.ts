@@ -34,7 +34,7 @@ export function useFileEntries(
         .then((files) => {
           if (!cancelled) setFileEntries(files);
         })
-        .catch((err) => {
+        .catch((err: unknown) => {
           console.error("[useFileEntries] listAllFiles failed:", err);
         });
     };
@@ -42,7 +42,8 @@ export function useFileEntries(
     refreshRef.current = refresh;
     refresh();
 
-    const unsubscribe = subscribe<FileChangedEvent>("fileChanged", (event) => {
+    const unsubscribe = subscribe("fileChanged", (params) => {
+      const event = params as FileChangedEvent;
       if (event.kind === "deleted") onDeletedRef.current(event.path);
       if (refreshTimer !== null) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(refresh, 300);

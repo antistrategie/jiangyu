@@ -7,7 +7,8 @@ import { buildTabMenu } from "./tabMenu.ts";
 import type { CodePane as CodePaneModel } from "@lib/layout.ts";
 import { useEditorContent } from "@lib/editor/content.ts";
 import { useLayoutStore } from "@lib/panes/layoutStore.ts";
-import { DropOverlay, type DropZone } from "./DropOverlay.tsx";
+import { DropOverlay } from "./DropOverlay.tsx";
+import type { DropZone } from "./dropZone.ts";
 import { EmptyPrompt } from "./EmptyPrompt.tsx";
 import { PANE_DRAG_MIME, TAB_DRAG_MIME, type TabDragPayload } from "./tabDrag.ts";
 import {
@@ -76,19 +77,19 @@ function buildEditorMenu(editor: monacoEditor.IStandaloneCodeEditor): ContextMen
     { label: "Paste", shortcut: "Ctrl+V", onSelect: () => void pasteAtCursor(editor) },
   ];
 
+  const language = editor.getModel()?.getLanguageId();
+  const formatGroup: { id: string; shortcut?: string }[] = [];
+  if (language !== undefined && FORMATTABLE_LANGUAGES.has(language)) {
+    formatGroup.push({ id: "editor.action.formatDocument", shortcut: "Shift+Alt+F" });
+  }
   const monacoGroups: { id: string; shortcut?: string }[][] = [
     [
       { id: "actions.find", shortcut: "Ctrl+F" },
       { id: "editor.action.startFindReplaceAction", shortcut: "Ctrl+H" },
     ],
     [{ id: "editor.action.commentLine", shortcut: "Ctrl+/" }],
-    [],
+    formatGroup,
   ];
-
-  const language = editor.getModel()?.getLanguageId();
-  if (language !== undefined && FORMATTABLE_LANGUAGES.has(language)) {
-    monacoGroups[2]!.push({ id: "editor.action.formatDocument", shortcut: "Shift+Alt+F" });
-  }
 
   for (const group of monacoGroups) {
     const groupItems: ContextMenuEntry[] = [];
@@ -187,11 +188,12 @@ export function CodePane({
     (e: React.DragEvent<HTMLDivElement>) => {
       e.dataTransfer.setData(PANE_DRAG_MIME, JSON.stringify({ paneId: pane.id }));
       e.dataTransfer.effectAllowed = "move";
+      const firstTab = pane.tabs[0];
       const label =
-        pane.tabs.length === 0
+        firstTab === undefined
           ? "Empty pane"
           : pane.tabs.length === 1
-            ? basename(pane.tabs[0]!.path)
+            ? basename(firstTab.path)
             : `${pane.tabs.length} tabs`;
       attachDragChip(e, label);
       onPaneDragStart();

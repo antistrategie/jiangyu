@@ -73,9 +73,6 @@ export const INITIAL_COMPILE_STATE: CompileState = {
   finishedAt: null,
 };
 
-interface CompileStartedEvent {
-  readonly projectRoot: string;
-}
 interface CompilePhaseEvent {
   readonly phase: string;
 }
@@ -114,33 +111,38 @@ export function useCompile(): UseCompile {
   }, [pushToast]);
 
   useEffect(() => {
-    const unsubStarted = subscribe<CompileStartedEvent>("compileStarted", () => {
+    const unsubStarted = subscribe("compileStarted", () => {
       // Mark start time here so it reflects the host-side kickoff, not the
       // request serialisation on the client.
       const now = Date.now();
       startedAtRef.current = now;
       setState((prev) => ({ ...prev, startedAt: now }));
     });
-    const unsubPhase = subscribe<CompilePhaseEvent>("compilePhase", (e) => {
+    const unsubPhase = subscribe("compilePhase", (params) => {
+      const e = params as CompilePhaseEvent;
       setState((prev) => ({ ...prev, phase: e.phase, statusLine: null }));
     });
-    const unsubStatus = subscribe<CompileStatusEvent>("compileStatus", (e) => {
+    const unsubStatus = subscribe("compileStatus", (params) => {
+      const e = params as CompileStatusEvent;
       setState((prev) => ({ ...prev, statusLine: e.status }));
     });
-    const unsubProgress = subscribe<CompileProgressEvent>("compileProgress", (e) => {
+    const unsubProgress = subscribe("compileProgress", (params) => {
+      const e = params as CompileProgressEvent;
       setState((prev) => ({
         ...prev,
         progress: e.total === 0 ? null : { current: e.current, total: e.total },
       }));
     });
-    const unsubLog = subscribe<CompileLogEvent>("compileLog", (e) => {
+    const unsubLog = subscribe("compileLog", (params) => {
+      const e = params as CompileLogEvent;
       if (e.level === "warn") warnCountRef.current += 1;
       setState((prev) => ({
         ...prev,
         logs: [...prev.logs, { id: ++logIdRef.current, level: e.level, message: e.message }],
       }));
     });
-    const unsubFinished = subscribe<CompileFinishedEvent>("compileFinished", (e) => {
+    const unsubFinished = subscribe("compileFinished", (params) => {
+      const e = params as CompileFinishedEvent;
       const finishedAt = Date.now();
       setState((prev) => ({
         ...prev,

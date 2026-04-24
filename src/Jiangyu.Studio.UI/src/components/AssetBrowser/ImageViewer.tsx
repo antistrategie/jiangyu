@@ -141,10 +141,15 @@ export function ImageViewer({ src, alt }: Props) {
     setFitted(true);
   }, []);
 
+  // application role intentionally takes keyboard focus over to the embedded
+  // viewer; pan/double-click reset are pointer-only.
   return (
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <div
       ref={containerRef}
       className={styles.imageViewer}
+      role="application"
+      aria-label={`${alt} — pannable, double-click to reset zoom`}
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
     >

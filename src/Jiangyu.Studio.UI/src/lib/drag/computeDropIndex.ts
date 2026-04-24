@@ -10,8 +10,8 @@
  */
 export function computeTabDropIndex(container: Element, clientX: number): number {
   const tabEls = container.querySelectorAll<HTMLElement>("[data-tab-path]");
-  for (let i = 0; i < tabEls.length; i++) {
-    const rect = tabEls[i]!.getBoundingClientRect();
+  for (const [i, el] of tabEls.entries()) {
+    const rect = el.getBoundingClientRect();
     if (clientX < rect.left + rect.width / 2) return i;
   }
   return tabEls.length;

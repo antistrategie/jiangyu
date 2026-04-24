@@ -44,7 +44,7 @@ export function fileTargetCommands(
       id: "reveal",
       label: "Reveal in File Explorer",
       run: () => {
-        void rpcCall<null>("revealInExplorer", { path }).catch((err) => {
+        void rpcCall<null>("revealInExplorer", { path }).catch((err: unknown) => {
           console.error("[File] reveal failed:", err);
         });
       },

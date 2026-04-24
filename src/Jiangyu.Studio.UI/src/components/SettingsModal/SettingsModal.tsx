@@ -448,7 +448,7 @@ function PathsSection() {
             hint="Game installation directory"
             path={config.gamePath}
             missingIcon={<CircleX size={12} />}
-            onChange={handleSetGamePath}
+            onChange={() => void handleSetGamePath()}
           />
           <PathRow
             label="Unity Editor"
@@ -459,7 +459,7 @@ function PathsSection() {
             }
             path={config.unityEditorPath}
             missingIcon={<TriangleAlert size={12} />}
-            onChange={handleSetUnityPath}
+            onChange={() => void handleSetUnityPath()}
           />
           {config.unityEditorPath !== null && config.unityEditorError !== null && (
             <p className={styles.warning}>

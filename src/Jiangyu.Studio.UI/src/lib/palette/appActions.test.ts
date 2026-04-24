@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { PALETTE_SCOPE } from "@lib/palette/actions.tsx";
+import { PALETTE_SCOPE } from "@lib/palette/actions.ts";
 import { buildProjectActions, type ProjectActionHandlers } from "@lib/palette/appActions.ts";
 
 function makeHandlers(): ProjectActionHandlers & {
@@ -57,10 +57,10 @@ describe("buildProjectActions", () => {
     const actions = buildProjectActions("/home/a", ["/home/b"], h);
     const find = (id: string) => actions.find((a) => a.id === id)!;
 
-    find("app.openProject").run();
-    find("app.closeProject").run();
-    find("app.revealProject").run();
-    find("app.openRecent:/home/b").run();
+    void find("app.openProject").run();
+    void find("app.closeProject").run();
+    void find("app.revealProject").run();
+    void find("app.openRecent:/home/b").run();
 
     expect(h.calls).toEqual({ open: 1, close: 1, reveal: 1, switch: ["/home/b"] });
   });
@@ -81,7 +81,7 @@ describe("buildProjectActions", () => {
     const h = makeHandlers();
     const spy = vi.spyOn(h, "switchProject");
     const actions = buildProjectActions(null, ["/home/x"], h);
-    actions.find((a) => a.id === "app.openRecent:/home/x")!.run();
+    void actions.find((a) => a.id === "app.openRecent:/home/x")!.run();
     expect(spy).toHaveBeenCalledWith("/home/x");
   });
 });

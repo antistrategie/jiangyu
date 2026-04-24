@@ -1,5 +1,5 @@
 import uFuzzy from "@leeoniya/ufuzzy";
-import { PALETTE_SCOPE, type PaletteAction } from "@lib/palette/actions.tsx";
+import { PALETTE_SCOPE, type PaletteAction } from "@lib/palette/actions.ts";
 
 export const FILES_SCOPE = PALETTE_SCOPE.GoToFile;
 export const MAX_RESULTS = 60;
@@ -46,15 +46,20 @@ export function filterActions(
   const [idxs, info, order] = index.uf.search(index.haystack, query);
   if (idxs === null) return [];
   const out: PaletteAction[] = [];
-  if (info !== null && order !== null) {
+  if (info !== null) {
     for (const oi of order) {
-      const i = info.idx[oi]!;
-      out.push(index.actions[i]!);
+      const i = info.idx[oi];
+      if (i === undefined) continue;
+      const action = index.actions[i];
+      if (action === undefined) continue;
+      out.push(action);
       if (out.length >= MAX_RESULTS) break;
     }
   } else {
     for (const i of idxs) {
-      out.push(index.actions[i]!);
+      const action = index.actions[i];
+      if (action === undefined) continue;
+      out.push(action);
       if (out.length >= MAX_RESULTS) break;
     }
   }

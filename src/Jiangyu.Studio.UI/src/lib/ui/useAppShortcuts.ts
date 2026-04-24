@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { getActiveCodePane, getActivePane, getAllPanes } from "@lib/layout.ts";
-import type { PaletteAction } from "@lib/palette/actions.tsx";
+import type { PaletteAction } from "@lib/palette/actions.ts";
 import type { CompileState } from "@lib/compile/compile.ts";
 import { useLayoutStore } from "@lib/panes/layoutStore.ts";
 import { matchBinding, type KeyBinding } from "./shortcuts.ts";
@@ -41,7 +41,8 @@ export function useAppShortcuts({
       const active = getActivePane(layout);
       if (active === null || panes.length < 2) return false;
       const idx = panes.findIndex((p) => p.id === active.id);
-      const target = panes[(idx + direction + panes.length) % panes.length]!;
+      const target = panes[(idx + direction + panes.length) % panes.length];
+      if (target === undefined) return false;
       useLayoutStore.getState().setActivePane(target.id);
       return true;
     };
@@ -75,7 +76,7 @@ export function useAppShortcuts({
         binding: { mod: true, key: "w" },
         run: () => {
           const active = getActiveCodePane(useLayoutStore.getState().layout);
-          if (active === null || active.activeTab === null) return false;
+          if (active?.activeTab == null) return false;
           useLayoutStore.getState().closeTabsInPane(active.id, [active.activeTab]);
           return true;
         },
