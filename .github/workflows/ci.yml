@@ -75,7 +75,7 @@ jobs:
       - name: Extract MelonLoader
         run: |
           mkdir -p jiangyu/.ci/melonloader
-          unzip MelonLoader.linux.x64.zip -d /tmp/ml
+          unzip MelonLoader.Linux.x64.zip -d /tmp/ml
           cp /tmp/ml/net6/MelonLoader.dll jiangyu/.ci/melonloader/
           cp /tmp/ml/net6/0Harmony.dll jiangyu/.ci/melonloader/
           cp /tmp/ml/net6/Il2CppInterop.Runtime.dll jiangyu/.ci/melonloader/
