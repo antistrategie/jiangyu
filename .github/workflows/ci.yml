@@ -8,7 +8,6 @@ on:
     branches: [main]
 
 jobs:
-  # ── Always run ──────────────────────────────────────────────────────────────
   test-dotnet:
     runs-on: ubuntu-latest
     steps:
@@ -41,10 +40,15 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Lint
+        run: bun run lint
+
+      - name: Build
+        run: bun run build
+
       - name: Test
         run: bun run test
 
-  # ── Tag-only builds ─────────────────────────────────────────────────────────
   build-loader:
     if: startsWith(github.ref, 'refs/tags/')
     needs: [test-dotnet, test-studio-ui]
@@ -135,7 +139,7 @@ jobs:
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0.x"
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -151,7 +155,6 @@ jobs:
           name: jiangyu-studio-${{ matrix.platform }}
           path: publish/studio/
 
-  # ── Release ─────────────────────────────────────────────────────────────────
   release:
     if: startsWith(github.ref, 'refs/tags/')
     needs: [build-loader, build-cli, build-studio-host]
