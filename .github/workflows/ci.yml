@@ -98,7 +98,7 @@ jobs:
           - os: ubuntu-latest
             platform: linux-x64
           - os: windows-latest
-            platform: windows-x64
+            platform: win-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -127,7 +127,7 @@ jobs:
           - os: ubuntu-latest
             platform: linux-x64
           - os: windows-latest
-            platform: windows-x64
+            platform: win-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -179,7 +179,7 @@ jobs:
           files: |
             Jiangyu.Loader.dll/Jiangyu.Loader.dll
             jiangyu-cli-linux-x64.zip
-            jiangyu-cli-windows-x64.zip
+            jiangyu-cli-win-x64.zip
             jiangyu-studio-linux-x64.zip
-            jiangyu-studio-windows-x64.zip
+            jiangyu-studio-win-x64.zip
           fail_on_unmatched_files: true
