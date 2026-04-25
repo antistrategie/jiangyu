@@ -151,11 +151,7 @@ jobs:
           mkdir -p release/studio
           cp Jiangyu.Loader.dll/Jiangyu.Loader.dll release/
           cp -r jiangyu-cli/* release/
-          if [ -d jiangyu-studio ] && [ "$(ls -A jiangyu-studio)" ]; then
-            cp -r jiangyu-studio/* release/studio/
-          else
-            echo "::warning::Studio UI artefact missing or empty — skipping"
-          fi
+          cp -r jiangyu-studio/* release/studio/
           cd release && zip -r ../jiangyu-${{ github.ref_name }}.zip .
 
       - name: Create GitHub Release
