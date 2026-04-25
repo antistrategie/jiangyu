@@ -1,0 +1,161 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Always run ──────────────────────────────────────────────────────────────
+  test-dotnet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Test Jiangyu.Core.Tests
+        run: dotnet test tests/Jiangyu.Core.Tests/Jiangyu.Core.Tests.csproj
+
+      - name: Test Jiangyu.Loader.Tests
+        run: dotnet test tests/Jiangyu.Loader.Tests/Jiangyu.Loader.Tests.csproj
+
+  test-studio-ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/Jiangyu.Studio.UI
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Test
+        run: bun run test
+
+  # ── Tag-only builds ─────────────────────────────────────────────────────────
+  build-loader:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: jiangyu
+
+      - name: Checkout menace-ci-dependencies
+        uses: actions/checkout@v4
+        with:
+          repository: beanpuppy/menace-ci-dependencies
+          path: menace-ci-dependencies
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Download MelonLoader
+        uses: robinraju/release-downloader@v1.12
+        with:
+          repository: LavaGang/MelonLoader
+          fileName: MelonLoader.linux.x64.zip
+          tag: v0.7.2
+
+      - name: Extract MelonLoader
+        run: |
+          mkdir -p jiangyu/.ci/melonloader
+          unzip MelonLoader.linux.x64.zip -d /tmp/ml
+          cp /tmp/ml/net6/MelonLoader.dll jiangyu/.ci/melonloader/
+          cp /tmp/ml/net6/0Harmony.dll jiangyu/.ci/melonloader/
+          cp /tmp/ml/net6/Il2CppInterop.Runtime.dll jiangyu/.ci/melonloader/
+
+      - name: Build Loader
+        run: dotnet build jiangyu/src/Jiangyu.Loader/Jiangyu.Loader.csproj -c Release -p:MelonLoaderDir=jiangyu/.ci/melonloader -p:GameAssembliesDir=menace-ci-dependencies
+
+      - name: Upload Loader artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jiangyu.Loader.dll
+          path: jiangyu/src/Jiangyu.Loader/bin/Release/net6.0/Jiangyu.Loader.dll
+
+  build-cli:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish CLI
+        run: |
+          dotnet publish src/Jiangyu.Cli/Jiangyu.Cli.csproj -c Release -o publish/cli
+
+      - name: Upload CLI artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jiangyu-cli
+          path: publish/cli/
+
+  build-studio:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/Jiangyu.Studio.UI
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build Studio UI
+        run: bun run build
+
+      - name: Upload Studio artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jiangyu-studio
+          path: src/Jiangyu.Studio.UI/dist/
+
+  # ── Release ─────────────────────────────────────────────────────────────────
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-loader, build-cli, build-studio]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artefacts
+        uses: actions/download-artifact@v4
+
+      - name: Package release
+        run: |
+          mkdir release
+          cp Jiangyu.Loader.dll/Jiangyu.Loader.dll release/
+          cp -r jiangyu-cli/* release/
+          cp -r jiangyu-studio/* release/studio/
+          cd release && zip -r ../jiangyu-${{ github.ref_name }}.zip .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: jiangyu-${{ github.ref_name }}.zip
+          fail_on_unmatched_files: true

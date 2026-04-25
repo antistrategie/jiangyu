@@ -151,6 +151,39 @@ Loader-side mod discovery currently works in two phases: discover/validate manif
 - CLI references only `Jiangyu.Core` + `System.CommandLine`. No direct AssetRipper/SharpGLTF/AssetsTools.NET references.
 - `AssetRipperProgressAdapter` in Core bridges `IProgressSink` to AssetRipper's `ILogger`.
 
+## CI
+
+Workflow at `.github/workflows/ci.yml`.
+
+On push/PR to `main`: runs `Jiangyu.Core.Tests`, `Jiangyu.Loader.Tests`, and Studio UI tests.
+
+On tag push (e.g. `v1.0.0`): builds all release artefacts and creates a GitHub Release with
+auto-generated release notes:
+
+- **Jiangyu.Loader.dll** — single merged DLL built against stripped reference assemblies from
+  [`beanpuppy/menace-ci-dependencies`](https://github.com/beanpuppy/menace-ci-dependencies)
+  and MelonLoader 0.7.2 downloaded from GitHub releases. The Loader cannot be functionally
+  tested in CI (needs a live Unity/IL2CPP process), but the build verifies compilation and
+  ILRepack merge correctness.
+- **jiangyu CLI** — `dotnet publish` of `Jiangyu.Cli`.
+- **Studio UI bundle** — Vite production build.
+
+### menace-ci-dependencies
+
+[`beanpuppy/menace-ci-dependencies`](https://github.com/beanpuppy/menace-ci-dependencies)
+is a separate repo containing stripped reference assemblies for the 11 game DLLs that
+`Jiangyu.Loader.csproj` references under `$(GameAssembliesDir)`. These are the real MENACE
+Il2CppAssemblies with all method bodies, non-public types/members, and runtime attributes
+removed via [DeepStrip](https://git.sr.ht/~malicean/DeepStrip), preserving only the public
+API signatures the compiler and ILRepack need.
+
+MelonLoader DLLs (`MelonLoader.dll`, `0Harmony.dll`, `Il2CppInterop.Runtime.dll`) are
+**not** included; they are downloaded from [MelonLoader releases](https://github.com/LavaGang/MelonLoader/releases)
+during CI.
+
+To regenerate the stubs after a game update, run `./update.sh` (or `./update.ps1`) from a
+machine with MENACE installed. The script clones and builds DeepStrip on demand.
+
 ## Vendored dependencies
 
 - AssetRipper 1.3.12 lives at `vendor/AssetRipper/` as a **git subtree** (not a submodule).
@@ -235,6 +268,8 @@ Source project manifests should stay ergonomic for modders. Compiled manifests a
 Located at `GlobalConfig.DefaultCacheDir` (XDG/LocalAppData-adaptive, overridable via global config `cache` field). Holds the asset index and exported package cache.
 
 ## Tests
+
+Run locally:
 
 - `tests/Jiangyu.Core.Tests/` — xUnit, .NET 10. Run with `dotnet test tests/Jiangyu.Core.Tests/`.
 - `tests/Jiangyu.Loader.Tests/` — xUnit, .NET 10. Pure tests for shared loader-side logic factored out of the live IL2CPP project. Run with `dotnet test tests/Jiangyu.Loader.Tests/`.
