@@ -12,10 +12,10 @@ jobs:
   test-dotnet:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
 
@@ -31,7 +31,7 @@ jobs:
       run:
         working-directory: src/Jiangyu.Studio.UI
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -50,23 +50,23 @@ jobs:
     needs: [test-dotnet, test-studio-ui]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           path: jiangyu
 
       - name: Checkout menace-ci-dependencies
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: beanpuppy/menace-ci-dependencies
           path: menace-ci-dependencies
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
 
       - name: Download MelonLoader
-        uses: robinraju/release-downloader@v1.12
+        uses: robinraju/release-downloader@v1.13
         with:
           repository: LavaGang/MelonLoader
           fileName: MelonLoader.Linux.x64.zip
@@ -84,7 +84,7 @@ jobs:
         run: dotnet build jiangyu/src/Jiangyu.Loader/Jiangyu.Loader.csproj -c Release -p:MelonLoaderDir=${{ github.workspace }}/jiangyu/.ci/melonloader -p:GameAssembliesDir=${{ github.workspace }}/menace-ci-dependencies
 
       - name: Upload Loader artefact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Jiangyu.Loader.dll
           path: jiangyu/src/Jiangyu.Loader/bin/Release/net6.0/Jiangyu.Loader.dll
@@ -101,10 +101,10 @@ jobs:
             platform: win-x64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
 
@@ -113,7 +113,7 @@ jobs:
           dotnet publish src/Jiangyu.Cli/Jiangyu.Cli.csproj -c Release -r ${{ matrix.platform }} --self-contained -o publish/cli
 
       - name: Upload CLI artefact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jiangyu-cli-${{ matrix.platform }}
           path: publish/cli/
@@ -130,10 +130,10 @@ jobs:
             platform: win-x64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
@@ -146,7 +146,7 @@ jobs:
         run: dotnet publish src/Jiangyu.Studio.Host/Jiangyu.Studio.Host.csproj -c Release -r ${{ matrix.platform }} --self-contained -o publish/studio
 
       - name: Upload Studio artefact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jiangyu-studio-${{ matrix.platform }}
           path: publish/studio/
@@ -160,7 +160,7 @@ jobs:
       contents: write
     steps:
       - name: Download all artefacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
 
       - name: Package release artefacts
         run: |
@@ -172,7 +172,7 @@ jobs:
           done
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: ${{ github.ref_name }}
           generate_release_notes: true
