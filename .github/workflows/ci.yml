@@ -110,7 +110,7 @@ jobs:
 
       - name: Publish CLI
         run: |
-          dotnet publish src/Jiangyu.Cli/Jiangyu.Cli.csproj -c Release -o publish/cli
+          dotnet publish src/Jiangyu.Cli/Jiangyu.Cli.csproj -c Release -r ${{ matrix.platform }} --self-contained -p:PublishSingleFile=true -o publish/cli
 
       - name: Upload CLI artefact
         uses: actions/upload-artifact@v4
@@ -143,7 +143,7 @@ jobs:
           bun-version: latest
 
       - name: Publish Studio Host
-        run: dotnet publish src/Jiangyu.Studio.Host/Jiangyu.Studio.Host.csproj -c Release -o publish/studio
+        run: dotnet publish src/Jiangyu.Studio.Host/Jiangyu.Studio.Host.csproj -c Release -r ${{ matrix.platform }} --self-contained -p:PublishSingleFile=true -o publish/studio
 
       - name: Upload Studio artefact
         uses: actions/upload-artifact@v4
