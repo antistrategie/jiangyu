@@ -81,7 +81,7 @@ jobs:
           cp /tmp/ml/MelonLoader/net6/Il2CppInterop.Runtime.dll jiangyu/.ci/melonloader/
 
       - name: Build Loader
-        run: dotnet build jiangyu/src/Jiangyu.Loader/Jiangyu.Loader.csproj -c Release -p:MelonLoaderDir=jiangyu/.ci/melonloader -p:GameAssembliesDir=menace-ci-dependencies
+        run: dotnet build jiangyu/src/Jiangyu.Loader/Jiangyu.Loader.csproj -c Release -p:MelonLoaderDir=${{ github.workspace }}/jiangyu/.ci/melonloader -p:GameAssembliesDir=${{ github.workspace }}/menace-ci-dependencies
 
       - name: Upload Loader artefact
         uses: actions/upload-artifact@v4
