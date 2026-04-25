@@ -177,7 +177,7 @@ jobs:
           files: |
             Jiangyu.Loader.dll/Jiangyu.Loader.dll
             jiangyu-cli-linux-x64.zip
-            jiangyu-cli-win-x64.zip
+            jiangyu-cli-windows-x64.zip
             jiangyu-studio-linux-x64.zip
-            jiangyu-studio-win-x64.zip
+            jiangyu-studio-windows-x64.zip
           fail_on_unmatched_files: true
