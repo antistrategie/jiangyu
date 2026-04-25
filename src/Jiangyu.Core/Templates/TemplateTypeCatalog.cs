@@ -56,9 +56,8 @@ public sealed class TemplateTypeCatalog : IDisposable
         if (additionalSearchDirectories != null)
             searchDirectories.AddRange(additionalSearchDirectories);
 
-        var coreLibDir = typeof(object).Assembly.Location;
-        if (!string.IsNullOrEmpty(coreLibDir))
-            searchDirectories.Add(Path.GetDirectoryName(coreLibDir)!);
+        var runtimeDirectory = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
+        searchDirectories.Add(runtimeDirectory);
 
         var paths = new List<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
