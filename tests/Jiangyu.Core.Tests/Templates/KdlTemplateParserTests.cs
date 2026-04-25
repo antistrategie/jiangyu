@@ -282,7 +282,7 @@ public class KdlTemplateParserTests
     }
 
     [Fact]
-    public void ParseAll_EmptyPatchBody_IsError()
+    public void ParseAll_EmptyPatchBody_IsOk()
     {
         var dir = SetupKdl("empty.kdl", """
             patch "EntityTemplate" "player_squad.darby"
@@ -290,7 +290,9 @@ public class KdlTemplateParserTests
 
         var result = KdlTemplateParser.ParseAll(dir, _log);
 
-        Assert.True(result.ErrorCount > 0);
+        Assert.Equal(0, result.ErrorCount);
+        Assert.Single(result.Patches);
+        Assert.Empty(result.Patches[0].Set);
     }
 
     [Fact]

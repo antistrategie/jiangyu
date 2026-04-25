@@ -2,6 +2,7 @@ using Jiangyu.Core.Assets;
 using Jiangyu.Core.Models;
 using Jiangyu.Core.Abstractions;
 using System.Text.Json;
+using Jiangyu.Core.Il2Cpp;
 
 namespace Jiangyu.Core.Tests.Assets;
 
@@ -289,13 +290,14 @@ public class StructuralBaselineServiceTests
         Directory.CreateDirectory(cacheDir);
         File.WriteAllBytes(Path.Combine(gameDir, "GameAssembly.so"), [1, 2, 3, 4]);
         File.WriteAllText(Path.Combine(cacheDir, "template-index.json"), """{"classification":{"ruleVersion":"v1","ruleDescription":"test"},"templateTypes":[],"instances":[]}""");
+        File.WriteAllText(Path.Combine(cacheDir, "il2cpp-metadata.json"), """{"schemaVersion":3,"generatedAt":"2025-01-01T00:00:00Z","gameAssemblyMtime":"2025-01-01T00:00:00Z","metadataMtime":"2025-01-01T00:00:00Z","namedArrays":[],"fields":[]}""");
 
         try
         {
             string hash = ComputeHash(Path.Combine(gameDir, "GameAssembly.so"));
             var manifest = new TemplateIndexManifest
             {
-                FormatVersion = 2,
+                FormatVersion = 3,
                 GameAssemblyHash = hash,
                 IndexedAt = DateTimeOffset.UtcNow,
                 GameDataPath = dataDir,
@@ -340,13 +342,14 @@ public class StructuralBaselineServiceTests
         Directory.CreateDirectory(cacheDir);
         File.WriteAllBytes(Path.Combine(gameDir, "GameAssembly.so"), [1, 2, 3, 4]);
         File.WriteAllText(Path.Combine(cacheDir, "template-index.json"), """{"classification":{"ruleVersion":"v1","ruleDescription":"test"},"templateTypes":[],"instances":[]}""");
+        File.WriteAllText(Path.Combine(cacheDir, "il2cpp-metadata.json"), "{\"schemaVersion\":" + Il2CppMetadataSupplement.CurrentSchemaVersion + ",\"generatedAt\":\"2025-01-01T00:00:00Z\",\"gameAssemblyMtime\":\"2025-01-01T00:00:00Z\",\"metadataMtime\":\"2025-01-01T00:00:00Z\",\"namedArrays\":[],\"fields\":[]}");
 
         try
         {
             string hash = ComputeHash(Path.Combine(gameDir, "GameAssembly.so"));
             var manifest = new TemplateIndexManifest
             {
-                FormatVersion = 2,
+                FormatVersion = TemplateIndexService.CurrentFormatVersion,
                 GameAssemblyHash = hash,
                 IndexedAt = DateTimeOffset.UtcNow,
                 GameDataPath = dataDir,

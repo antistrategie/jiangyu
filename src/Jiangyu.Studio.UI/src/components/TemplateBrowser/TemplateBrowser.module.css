@@ -271,7 +271,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
   cursor: grab;
   color: var(--fg-muted);
   opacity: 0;
@@ -280,7 +279,7 @@
 }
 
 .row:hover .rowDragGrip,
-.memberRow:hover .rowDragGrip,
+.memberHeader:hover .rowDragGrip,
 .rowDragGrip:hover {
   opacity: 1;
 }
@@ -571,7 +570,7 @@
   flex-shrink: 0;
 }
 
-/* --- Member tree --- */
+/* --- Member tree (block layout) --- */
 
 .memberSection {
   display: flex;
@@ -593,18 +592,36 @@
   flex-direction: column;
 }
 
-.memberRow {
+/* --- Block container for one field --- */
+
+.memberBlock {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--rule-faint);
+}
+
+.memberBlock:last-child {
+  border-bottom: none;
+}
+
+/* --- Header row (expander + name + type + tags) --- */
+
+.memberHeader {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 2px var(--space-3);
+  padding: 1px var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
-  min-height: 24px;
+  min-height: 26px;
 }
 
-.memberRow:hover {
+.memberHeader:hover {
   background: var(--bg-sunken);
+}
+
+.memberHeaderExpandable {
+  cursor: pointer;
 }
 
 .memberName {
@@ -638,8 +655,40 @@
   line-height: 16px;
 }
 
-.memberRowExpandable {
+.memberExpander {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: var(--fs-base);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
+  color: var(--fg-muted);
+  flex-shrink: 0;
+  transition: transform var(--ease-fast);
+}
+
+.memberExpanderOpen {
+  transform: rotate(90deg);
+}
+
+/* --- Value row (line 2 of the block) --- */
+
+.memberValue {
+  margin: 0 0 0 calc(var(--space-2) + 12px + var(--space-2));
+  padding: 1px var(--space-1);
+  background-color: var(--paper-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  min-height: 20px;
+}
+
+/* --- Expanded detail area --- */
+
+.memberDetail {
+  padding-left: calc(var(--space-2) + 12px + var(--space-2));
 }
 
 .memberFieldInfo {
@@ -685,12 +734,138 @@
   line-height: 16px;
 }
 
+/* --- Nested value rows (named array elements, object fields, array items) --- */
+
+.memberNestedList {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 0;
+  background-color: var(--paper-1);
+}
+
+.memberNestedRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 1px var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  min-height: 20px;
+}
+
+.memberNestedRow:hover {
+  background: var(--bg-sunken);
+}
+
+.memberNestedLabel {
+  color: var(--fg-strong);
+  white-space: nowrap;
+}
+
+.memberNestedType {
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.memberNestedValue {
+  color: var(--fg);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memberNestedSubList {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--rule-faint);
+  margin-left: 16px;
+}
+
+.memberNestedSubRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 1px var(--space-2) 1px var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  min-height: 20px;
+  color: var(--fg-muted);
+}
+
+.memberNestedTruncated {
+  padding: 2px var(--space-3);
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+/* --- Value styling --- */
+
+.valueScalar {
+  color: var(--fg-strong);
+}
+
+.valueString {
+  color: var(--jade-1);
+}
+
+.valueNull {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.valueArray {
+  color: var(--fg);
+}
+
+.valueObject {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.valueRef {
+  color: var(--cinnabar-1);
+}
+
+.valueEmpty {
+  color: var(--fg-muted);
+}
+
+.valueUnknown {
+  color: var(--fg-muted);
+}
+
 .refChildren {
   border-left: 1px solid var(--rule-faint);
   margin-left: 18px;
 }
 
-.memberChildren {
-  border-left: 1px solid var(--rule-faint);
-  margin-left: 18px;
+.chevron {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 10px;
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-muted);
+  flex-shrink: 0;
+  cursor: pointer;
+  line-height: 1;
+  transition: transform var(--ease-fast);
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+.chevronSpacer {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
 }

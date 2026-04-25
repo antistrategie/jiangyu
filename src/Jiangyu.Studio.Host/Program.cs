@@ -31,6 +31,10 @@ public static class Program
 
         var app = builder.Build();
 
+        // Preload template caches on a background thread so the template browser
+        // doesn't freeze the app when it first mounts.
+        _ = Task.Run(() => RpcDispatcher.PreloadTemplateCaches());
+
         app.UseAutoServerClose();
         app.WebApp.UseStaticFiles();
 

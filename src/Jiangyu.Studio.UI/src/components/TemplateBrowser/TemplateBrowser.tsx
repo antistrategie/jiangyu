@@ -79,6 +79,46 @@ interface TemplateSearchResult {
   readonly referencedBy?: Readonly<Record<string, readonly TemplateReferenceEntry[]>>;
 }
 
+// --- templatesInspect types ---
+
+interface InspectedObjectIdentity {
+  readonly name: string;
+  readonly className: string;
+  readonly collection: string;
+  readonly pathId: number;
+}
+
+interface InspectedReference {
+  readonly fileId?: number;
+  readonly pathId?: number;
+  readonly name?: string;
+  readonly className?: string;
+}
+
+interface InspectedFieldNode {
+  readonly name?: string;
+  readonly kind: string;
+  readonly fieldTypeName?: string;
+  readonly null?: boolean;
+  readonly truncated?: boolean;
+  readonly value?: string | number | boolean | null;
+  readonly count?: number;
+  readonly reference?: InspectedReference;
+  readonly elements?: readonly InspectedFieldNode[];
+  readonly fields?: readonly InspectedFieldNode[];
+  readonly reason?: string;
+}
+
+interface ObjectInspectionResult {
+  readonly object: InspectedObjectIdentity;
+  readonly options: {
+    readonly maxDepth: number;
+    readonly maxArraySampleLength: number;
+    readonly truncated: boolean;
+  };
+  readonly fields: readonly InspectedFieldNode[];
+}
+
 interface TemplateMember {
   readonly name: string;
   readonly typeName: string;
@@ -125,6 +165,23 @@ function templatesSearch(): Promise<TemplateSearchResult> {
 
 function templatesQuery(typeName: string, fieldPath?: string): Promise<TemplateQueryResult> {
   return rpcCall<TemplateQueryResult>("templatesQuery", { typeName, fieldPath });
+}
+
+function templatesInspect(params: {
+  collection: string;
+  pathId: number;
+  maxDepth?: number;
+  maxArraySample?: number;
+}): Promise<ObjectInspectionResult> {
+  return rpcCall<ObjectInspectionResult>("templatesInspect", params);
+}
+
+interface EnumMembersResult {
+  readonly members: readonly { readonly name: string; readonly value: number }[];
+}
+
+function templatesEnumMembers(typeName: string): Promise<EnumMembersResult> {
+  return rpcCall<EnumMembersResult>("templatesEnumMembers", { typeName });
 }
 
 // --- Helpers ---
@@ -221,6 +278,15 @@ export function TemplateBrowser({
   const [memberData, setMemberData] = useState<TemplateQueryResult | null>(null);
   const [membersLoading, setMembersLoading] = useState(false);
   const memberTokenRef = useRef(0);
+
+  // Inspection values
+  const [inspectionValues, setInspectionValues] = useState<readonly InspectedFieldNode[] | null>(
+    null,
+  );
+  const [inspectionLoading, setInspectionLoading] = useState(false);
+  const [namedArrayEnums, setNamedArrayEnums] = useState<
+    Readonly<Record<string, readonly { readonly name: string; readonly value: number }[]>>
+  >({});
 
   // Resizable split
   const [listFraction, setListFraction] = useState(
@@ -341,14 +407,20 @@ export function TemplateBrowser({
   useEffect(() => {
     const token = ++memberTokenRef.current;
     setMemberData(null);
+    setInspectionValues(null);
 
     if (!focusedInstance) {
       setMembersLoading(false);
+      setInspectionLoading(false);
       return;
     }
 
     setMembersLoading(true);
-    void templatesQuery(focusedInstance.className)
+    setInspectionLoading(true);
+    const { className, identity } = focusedInstance;
+
+    // Fetch schema (existing)
+    void templatesQuery(className)
       .then((result) => {
         if (memberTokenRef.current !== token) return;
         setMemberData(result);
@@ -359,7 +431,56 @@ export function TemplateBrowser({
       .finally(() => {
         if (memberTokenRef.current === token) setMembersLoading(false);
       });
+
+    // Fetch serialised values (new)
+    // Depth 6: m_Structure (2), top-level fields (3), array elements (4), element fields (5), nested fields (6).
+    void templatesInspect({
+      collection: identity.collection,
+      pathId: identity.pathId,
+      maxDepth: 6,
+      maxArraySample: 0, // unlimited
+    })
+      .then((result) => {
+        if (memberTokenRef.current !== token) return;
+        // Extract m_Structure fields — the actual template data payload
+        const structure = result.fields.find((f) => f.name === "m_Structure");
+        setInspectionValues(structure?.fields ?? result.fields);
+      })
+      .catch((err: unknown) => {
+        console.warn("[TemplateBrowser] inspect failed:", err);
+      })
+      .finally(() => {
+        if (memberTokenRef.current === token) setInspectionLoading(false);
+      });
   }, [focusedInstance]);
+
+  // --- Collect named array enum types from the member tree and fetch members ---
+  const fetchedEnumRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (!memberData?.members) return;
+    const needed = new Set<string>();
+    for (const m of memberData.members) {
+      if (m.namedArrayEnumTypeName) needed.add(m.namedArrayEnumTypeName);
+    }
+    if (needed.size === 0) return;
+
+    let cancelled = false;
+    for (const enumName of needed) {
+      if (fetchedEnumRef.current.has(enumName)) continue;
+      fetchedEnumRef.current.add(enumName);
+      void templatesEnumMembers(enumName)
+        .then((result) => {
+          if (cancelled) return;
+          setNamedArrayEnums((prev) => ({ ...prev, [enumName]: result.members }));
+        })
+        .catch(() => {
+          // silently ignore; named arrays just won't get labels
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [memberData]);
 
   // --- Build index ---
   const handleBuildIndex = useCallback(async () => {
@@ -708,6 +829,9 @@ export function TemplateBrowser({
                 instance={focusedInstance}
                 memberData={memberData}
                 membersLoading={membersLoading}
+                inspectionValues={inspectionValues}
+                inspectionLoading={inspectionLoading}
+                namedArrayEnums={namedArrayEnums}
                 onCreatePatch={(inst) => handleCreatePatch(inst)}
                 onCreateClone={(inst) => handleCreateClone(inst)}
                 onPatchToFile={(inst) => handlePatchToFile(inst)}
@@ -751,6 +875,11 @@ interface TemplateDetailProps {
   instance: TemplateInstanceEntry;
   memberData: TemplateQueryResult | null;
   membersLoading: boolean;
+  inspectionValues: readonly InspectedFieldNode[] | null;
+  inspectionLoading: boolean;
+  namedArrayEnums: Readonly<
+    Record<string, readonly { readonly name: string; readonly value: number }[]>
+  >;
   onCreatePatch: (inst?: TemplateInstanceEntry) => void;
   onCreateClone: (inst?: TemplateInstanceEntry) => void;
   onPatchToFile: (inst?: TemplateInstanceEntry) => void;
@@ -770,6 +899,9 @@ function TemplateDetail({
   instance,
   memberData,
   membersLoading,
+  inspectionValues,
+  inspectionLoading,
+  namedArrayEnums,
   onCreatePatch,
   onCreateClone,
   onPatchToFile,
@@ -932,27 +1064,35 @@ function TemplateDetail({
         </div>
       )}
 
-      {(membersLoading || (memberData?.members && memberData.members.length > 0)) && (
+      {(membersLoading ||
+        inspectionLoading ||
+        (memberData?.members && memberData.members.length > 0)) && (
         <div className={styles.memberSection}>
           <SectionHeader>Fields</SectionHeader>
-          {membersLoading ? (
+          {(membersLoading || inspectionLoading) && !memberData?.members ? (
             <div className={styles.memberLoading}>
               <Spinner size={12} />
               <span>Loading fields…</span>
             </div>
-          ) : (
+          ) : memberData?.members ? (
             <div className={styles.memberList}>
-              {memberData?.members?.map((m) => (
-                <MemberRow
-                  key={m.name}
-                  member={m}
-                  depth={0}
-                  parentTypeName={instance.className}
-                  fieldPath={m.name}
-                />
-              ))}
+              {memberData.members.map((m) => {
+                const valueNode = inspectionValues?.find((v) => v.name === m.name) ?? null;
+                return (
+                  <MemberRow
+                    key={m.name}
+                    member={m}
+                    valueNode={valueNode}
+                    parentTypeName={instance.className}
+                    fieldPath={m.name}
+                    namedArrayEnums={namedArrayEnums}
+                    instanceLookup={instanceLookup}
+                    onNavigate={onNavigate}
+                  />
+                );
+              })}
             </div>
-          )}
+          ) : null}
         </div>
       )}
     </div>
@@ -1111,35 +1251,66 @@ function InstanceRow({
   );
 }
 
-interface MemberRowProps {
-  member: TemplateMember;
-  depth: number;
-  parentTypeName: string;
-  fieldPath: string;
+// --- Helpers for value rendering ---
+
+function formatValue(value: InspectedFieldNode | null): string {
+  if (!value) return "…";
+  if (value.null) return "null";
+  if (value.value !== undefined && value.value !== null) return String(value.value);
+  if (value.kind === "reference" && value.reference) {
+    return value.reference.name ?? `[pathId=${value.reference.pathId}]`;
+  }
+  if (value.kind === "string" && value.value !== null) return JSON.stringify(String(value.value));
+  if (value.kind === "array") {
+    const count = value.count ?? value.elements?.length ?? 0;
+    if (count === 0) return "[]";
+    // Check if elements are all simple scalars and short
+    const allSimple =
+      value.elements?.every((e) => e.value !== undefined || e.kind === "string" || e.null) ?? false;
+    if (allSimple && value.elements && value.elements.length <= 4 && value.elements.length > 0) {
+      return "[" + value.elements.map((e) => formatValue(e)).join(", ") + "]";
+    }
+    return `[${count} items]`;
+  }
+  if (value.kind === "object") {
+    const fieldCount = value.fields?.length ?? 0;
+    return `{ ${fieldCount} field${fieldCount !== 1 ? "s" : ""} }`;
+  }
+  return "";
 }
 
-function MemberRow({ member, depth, parentTypeName, fieldPath }: MemberRowProps) {
+interface MemberRowProps {
+  member: TemplateMember;
+  valueNode: InspectedFieldNode | null;
+  parentTypeName: string;
+  fieldPath: string;
+  namedArrayEnums: Readonly<
+    Record<string, readonly { readonly name: string; readonly value: number }[]>
+  >;
+  instanceLookup: ReadonlyMap<string, TemplateInstanceEntry>;
+  onNavigate: (key: string) => void;
+}
+
+function MemberRow({
+  member,
+  valueNode,
+  parentTypeName,
+  fieldPath,
+  namedArrayEnums,
+  instanceLookup,
+  onNavigate,
+}: MemberRowProps) {
   const [expanded, setExpanded] = useState(false);
-  const [fieldInfo, setFieldInfo] = useState<TemplateQueryResult | null>(null);
-  const [loading, setLoading] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const loadedRef = useRef(false);
 
   const isExpandable =
-    member.isScalar !== true || member.isCollection === true || member.isTemplateReference === true;
+    member.isScalar !== true ||
+    member.isCollection === true ||
+    member.isTemplateReference === true ||
+    valueNode?.kind === "object" ||
+    valueNode?.kind === "array";
 
-  const handleToggle = useCallback(() => {
-    const next = !expanded;
-    setExpanded(next);
-    if (next && !loadedRef.current) {
-      loadedRef.current = true;
-      setLoading(true);
-      void templatesQuery(parentTypeName, fieldPath)
-        .then((result) => setFieldInfo(result))
-        .catch(() => {})
-        .finally(() => setLoading(false));
-    }
-  }, [expanded, parentTypeName, fieldPath]);
+  const handleToggle = useCallback(() => setExpanded((prev) => !prev), []);
 
   const tags: string[] = [];
   if (!member.isWritable) tags.push("read-only");
@@ -1148,11 +1319,17 @@ function MemberRow({ member, depth, parentTypeName, fieldPath }: MemberRowProps)
   if (member.isTemplateReference) tags.push("ref");
 
   const isDraggable = member.isWritable || member.isCollection === true;
+  const isNamedArray = member.namedArrayEnumTypeName !== undefined && valueNode?.kind === "array";
+  const namedArrayLabelMap =
+    isNamedArray && member.namedArrayEnumTypeName
+      ? buildNamedArrayLabelMap(namedArrayEnums[member.namedArrayEnumTypeName])
+      : null;
 
   return (
-    <>
+    <div className={styles.memberBlock}>
+      {/* --- Header row --- */}
       <div
-        className={`${styles.memberRow} ${isExpandable ? styles.memberRowExpandable : ""} ${dragging ? styles.rowDragging : ""}`}
+        className={`${styles.memberHeader} ${isExpandable ? styles.memberHeaderExpandable : ""} ${dragging ? styles.rowDragging : ""}`}
         {...(isExpandable && {
           role: "button",
           tabIndex: 0,
@@ -1164,11 +1341,6 @@ function MemberRow({ member, depth, parentTypeName, fieldPath }: MemberRowProps)
           draggable: true,
           onDragStart: (e: React.DragEvent) => {
             e.dataTransfer.effectAllowed = "copy";
-            // Carry the full member schema so the drop site can build a
-            // correctly-typed directive (TemplateReference vs Enum vs scalar
-            // vs NamedArray-element) without re-querying the catalog. Undefined
-            // fields are stripped — exactOptionalPropertyTypes treats absent
-            // and undefined as distinct, and the payload's keys are readonly.
             const payload: Record<string, unknown> = {
               templateType: parentTypeName,
               fieldPath,
@@ -1211,14 +1383,12 @@ function MemberRow({ member, depth, parentTypeName, fieldPath }: MemberRowProps)
         {isExpandable ? (
           <button
             type="button"
-            className={`${styles.refExpander} ${expanded ? styles.refExpanderOpen : ""}`}
+            className={`${styles.memberExpander} ${expanded ? styles.memberExpanderOpen : ""}`}
             aria-label={expanded ? "Collapse" : "Expand"}
           >
             ▸
           </button>
-        ) : (
-          <span className={styles.refExpanderSpacer} />
-        )}
+        ) : null}
         <span className={styles.memberName}>{member.name}</span>
         <span className={styles.memberType}>{member.typeName}</span>
         {tags.length > 0 && (
@@ -1231,70 +1401,315 @@ function MemberRow({ member, depth, parentTypeName, fieldPath }: MemberRowProps)
           </span>
         )}
       </div>
-      {expanded && (
-        <div className={styles.memberChildren}>
-          {loading ? (
-            <div className={styles.memberLoading}>
-              <Spinner size={10} />
-              <span>Loading…</span>
-            </div>
-          ) : fieldInfo ? (
-            <>
-              {/* Patch info summary */}
-              {fieldInfo.kind === "leaf" && (
-                <div className={styles.memberFieldInfo}>
-                  {fieldInfo.patchScalarKind && (
-                    <span className={styles.fieldInfoItem}>
-                      Patch as: <strong>{fieldInfo.patchScalarKind}</strong>
-                    </span>
-                  )}
-                  {fieldInfo.referenceTargetTypeName && (
-                    <span className={styles.fieldInfoItem}>
-                      Target: <strong>{fieldInfo.referenceTargetTypeName}</strong>
-                    </span>
-                  )}
-                  {fieldInfo.isLikelyOdinOnly && (
-                    <span className={styles.fieldInfoItem}>Likely Odin-serialised only</span>
-                  )}
-                  {fieldInfo.enumMemberNames && fieldInfo.enumMemberNames.length > 0 && (
-                    <div className={styles.fieldInfoEnum}>
-                      <span className={styles.fieldInfoItem}>Values:</span>
-                      <div className={styles.enumValues}>
-                        {fieldInfo.enumMemberNames.map((name) => (
-                          <span key={name} className={styles.enumValue}>
-                            {name}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-              {/* Sub-members */}
-              {fieldInfo.members &&
-                fieldInfo.members.length > 0 &&
-                fieldInfo.members.map((sub) => (
-                  <MemberRow
-                    key={sub.name}
-                    member={sub}
-                    depth={depth + 1}
-                    parentTypeName={parentTypeName}
-                    fieldPath={`${fieldPath}.${sub.name}`}
-                  />
-                ))}
-              {fieldInfo.kind === "leaf" &&
-                !fieldInfo.patchScalarKind &&
-                !fieldInfo.referenceTargetTypeName &&
-                !fieldInfo.enumMemberNames && (
-                  <div className={styles.memberFieldInfo}>
-                    <span className={styles.fieldInfoItem}>Not directly patchable</span>
-                  </div>
-                )}
-            </>
-          ) : null}
+
+      {/* --- Value row(s) --- */}
+      {valueNode && !expanded && (
+        <div className={styles.memberValue}>
+          {renderValueLine(valueNode, member, namedArrayLabelMap)}
         </div>
       )}
-    </>
+
+      {/* --- Expanded detail --- */}
+      {expanded && (
+        <div className={styles.memberDetail}>
+          {/* Named array: show labelled rows with collapsible nested fields */}
+          {isNamedArray && valueNode.elements && valueNode.elements.length > 0 && (
+            <div className={styles.memberNestedList}>
+              {valueNode.elements.map((elem, idx) => {
+                const label = namedArrayLabelMap?.[idx] ?? `[${idx}]`;
+                const elemType = member.elementTypeName ?? "byte";
+                const elemSubFields: readonly InspectedFieldNode[] | null =
+                  elem.kind === "object" && elem.fields && elem.fields.length > 0
+                    ? elem.fields
+                    : null;
+                return (
+                  <ExpandableElementRow
+                    key={idx}
+                    elem={elem}
+                    label={label}
+                    typeName={elemType}
+                    subFields={elemSubFields}
+                  />
+                );
+              })}
+            </div>
+          )}
+
+          {/* Referenced template: show link */}
+          {valueNode?.kind === "reference" && valueNode.reference && (
+            <div className={styles.memberFieldInfo}>
+              <span className={styles.fieldInfoItem}>
+                Target:{" "}
+                <strong>
+                  {renderReferenceLink(valueNode.reference, instanceLookup, onNavigate)}
+                </strong>
+              </span>
+            </div>
+          )}
+
+          {/* Object: show nested fields with values */}
+          {valueNode?.kind === "object" && valueNode.fields && valueNode.fields.length > 0 && (
+            <div className={styles.memberNestedList}>
+              {valueNode.fields.map((subVal, i) => (
+                <div key={i} className={styles.memberNestedRow}>
+                  <span className={styles.chevronSpacer} />
+                  <span className={styles.memberNestedLabel}>{subVal.name ?? "<unnamed>"}</span>
+                  <span className={styles.memberNestedType}>{subVal.fieldTypeName ?? ""}</span>
+                  <span className={styles.memberNestedValue}>{formatValue(subVal)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Array of complex elements: show expandable rows */}
+          {valueNode?.kind === "array" &&
+            !isNamedArray &&
+            valueNode.elements &&
+            valueNode.elements.length > 0 && (
+              <div className={styles.memberNestedList}>
+                {valueNode.elements.map((elem, idx) => {
+                  const arrSubFields: readonly InspectedFieldNode[] | null =
+                    elem.kind === "object" && elem.fields && elem.fields.length > 0
+                      ? elem.fields
+                      : null;
+                  return (
+                    <ExpandableElementRow
+                      key={idx}
+                      elem={elem}
+                      label={`[${idx}]`}
+                      typeName={elem.fieldTypeName ?? ""}
+                      subFields={arrSubFields}
+                    />
+                  );
+                })}
+                {valueNode.truncated && (
+                  <div className={styles.memberNestedTruncated}>
+                    <span>… truncated (total {valueNode.count ?? "?"})</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+          {/* Scalar value with depth, when already at leaf */}
+          {valueNode && valueNodeKindIsScalar(valueNode) && (
+            <div className={styles.memberFieldInfo}>
+              <span className={styles.fieldInfoItem}>
+                Value: <strong>{formatValue(valueNode)}</strong>
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Value rendering helpers ---
+
+function renderValueLine(
+  value: InspectedFieldNode,
+  member: TemplateMember,
+  namedArrayLabelMap: Record<number, string> | null,
+): React.ReactNode {
+  if (value.null) {
+    return <span className={styles.valueNull}>null</span>;
+  }
+
+  // Named array: show summarised preview in collapsed state.
+  if (
+    member.namedArrayEnumTypeName &&
+    value.kind === "array" &&
+    value.elements &&
+    value.elements.length > 0
+  ) {
+    const preview = value.elements.slice(0, 3);
+    const rest = value.elements.length - preview.length;
+    return (
+      <span className={styles.valueArray}>
+        {preview.map((elem, idx) => {
+          const label = namedArrayLabelMap?.[idx] ?? `[${idx}]`;
+          return `${label}=${elem.value ?? "?"}${idx < preview.length - 1 ? ", " : ""}`;
+        })}
+        {rest > 0 && ` (+${rest} more)`}
+      </span>
+    );
+  }
+
+  if (value.kind === "array") {
+    const count = value.count ?? value.elements?.length ?? 0;
+    if (count === 0) return <span className={styles.valueEmpty}>[ ]</span>;
+    return <span className={styles.valueArray}>{formatValue(value)}</span>;
+  }
+
+  if (value.kind === "object") {
+    return <span className={styles.valueObject}>{formatValue(value)}</span>;
+  }
+
+  if (value.kind === "reference") {
+    return <span className={styles.valueRef}>{formatValue(value)}</span>;
+  }
+
+  if (value.kind === "string" || typeof value.value === "string") {
+    return <span className={styles.valueString}>{formatValue(value)}</span>;
+  }
+
+  if (value.value !== undefined && value.value !== null) {
+    return <span className={styles.valueScalar}>{String(value.value)}</span>;
+  }
+
+  return <span className={styles.valueUnknown}>?</span>;
+}
+
+function renderReferenceLink(
+  reference: InspectedReference,
+  instanceLookup: ReadonlyMap<string, TemplateInstanceEntry>,
+  onNavigate: (key: string) => void,
+): React.ReactNode {
+  if (!reference.pathId) return <span>{reference.name ?? "null"}</span>;
+  // Find the referenced template in the index by matching name + className,
+  // since the reference's fileId is a dependency index, not a collection name.
+  let targetKey: string | null = null;
+  for (const [k, inst] of instanceLookup) {
+    if (
+      inst.identity.pathId === reference.pathId &&
+      (reference.name === undefined || inst.name === reference.name)
+    ) {
+      targetKey = k;
+      break;
+    }
+  }
+  const target = targetKey ? instanceLookup.get(targetKey) : undefined;
+  const label = target
+    ? `${target.className}:${target.name}`
+    : (reference.name ?? reference.className ?? `[pathId=${reference.pathId}]`);
+  return (
+    <button
+      type="button"
+      className={styles.refLink}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (targetKey) onNavigate(targetKey);
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function valueNodeKindIsScalar(node: InspectedFieldNode): boolean {
+  return node.kind !== "array" && node.kind !== "object" && node.kind !== "reference";
+}
+
+function buildNamedArrayLabelMap(
+  members: readonly { readonly name: string; readonly value: number }[] | undefined,
+): Record<number, string> | null {
+  if (!members) return null;
+  const map: Record<number, string> = {};
+  for (const m of members) {
+    map[m.value] = m.name;
+  }
+  return map;
+}
+
+// --- Expandable element row (used by both named and regular arrays) ---
+
+function ExpandableElementRow({
+  elem,
+  label,
+  typeName,
+  subFields,
+}: {
+  elem: InspectedFieldNode;
+  label: string;
+  typeName: string;
+  subFields: readonly InspectedFieldNode[] | null;
+}) {
+  const [subExpanded, setSubExpanded] = useState(false);
+  const hasChildren = subFields !== null;
+
+  return (
+    <div>
+      <div
+        className={`${styles.memberNestedRow} ${hasChildren ? styles.memberHeaderExpandable : ""}`}
+        {...(hasChildren && {
+          role: "button",
+          tabIndex: 0,
+          "aria-expanded": subExpanded,
+          onClick: () => setSubExpanded(!subExpanded),
+          onKeyDown: onKeyActivate(() => setSubExpanded(!subExpanded)),
+        })}
+      >
+        {hasChildren ? (
+          <button
+            type="button"
+            className={`${styles.chevron} ${subExpanded ? styles.chevronOpen : ""}`}
+            aria-label={subExpanded ? "Collapse" : "Expand"}
+            tabIndex={-1}
+          >
+            ▸
+          </button>
+        ) : (
+          <span className={styles.chevronSpacer} />
+        )}
+        <span className={styles.memberNestedLabel}>{label}</span>
+        <span className={styles.memberNestedType}>{typeName}</span>
+        <span className={styles.memberNestedValue}>{formatValue(elem)}</span>
+      </div>
+      {subExpanded && subFields && (
+        <div className={styles.memberNestedSubList}>
+          {subFields.map((f, i) => (
+            <NestedValueRow key={i} value={f} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Recursive nested value row ---
+
+function NestedValueRow({ value }: { value: InspectedFieldNode }) {
+  const [open, setOpen] = useState(false);
+  const children =
+    value.kind === "object" && value.fields && value.fields.length > 0 ? value.fields : null;
+  const hasChildren = children !== null;
+
+  return (
+    <div>
+      <div
+        className={`${styles.memberNestedSubRow} ${hasChildren ? styles.memberHeaderExpandable : ""}`}
+        {...(hasChildren && {
+          role: "button",
+          tabIndex: 0,
+          "aria-expanded": open,
+          onClick: () => setOpen(!open),
+          onKeyDown: onKeyActivate(() => setOpen(!open)),
+        })}
+      >
+        {hasChildren ? (
+          <button
+            type="button"
+            className={`${styles.chevron} ${open ? styles.chevronOpen : ""}`}
+            aria-label={open ? "Collapse" : "Expand"}
+            tabIndex={-1}
+          >
+            ▸
+          </button>
+        ) : (
+          <span className={styles.chevronSpacer} />
+        )}
+        <span className={styles.memberNestedLabel}>{value.name ?? "?"}</span>
+        <span className={styles.memberNestedType}>{value.fieldTypeName ?? ""}</span>
+        <span className={styles.memberNestedValue}>{formatValue(value)}</span>
+      </div>
+      {open && children && (
+        <div className={styles.memberNestedSubList}>
+          {children.map((c, i) => (
+            <NestedValueRow key={i} value={c} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

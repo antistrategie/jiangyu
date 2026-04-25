@@ -7,7 +7,7 @@ public sealed class ObjectInspectionRequest
     public string? Name { get; init; }
     public string? ClassName { get; init; }
     public int MaxDepth { get; init; } = 4;
-    public int MaxArraySampleLength { get; init; } = 8;
+    public int MaxArraySampleLength { get; init; } = 0;
 }
 
 public sealed class ObjectInspectionResult

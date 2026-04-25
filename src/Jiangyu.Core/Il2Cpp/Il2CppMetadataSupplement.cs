@@ -16,7 +16,7 @@ public sealed class Il2CppMetadataSupplement
 {
     // Bumped every time the schema changes — cache files older than the
     // current version are treated as stale and rebuilt.
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     [JsonPropertyName("schemaVersion")]
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;

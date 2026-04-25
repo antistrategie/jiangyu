@@ -53,8 +53,15 @@ public static partial class RpcDispatcher
         if (!resolution.Success)
             throw new InvalidOperationException(resolution.Error ?? "Could not resolve game data path.");
 
-        var service = resolution.Context!.CreateTemplateIndexService(NullProgressSink.Instance, NullLogSink.Instance);
+        var ctx = resolution.Context!;
+        ClearIndexCaches();
+
+        var service = ctx.CreateTemplateIndexService(NullProgressSink.Instance, NullLogSink.Instance);
         service.BuildIndex();
+
+        // Build supplement AFTER template index — AssetRipper Level2 initialises
+        // LibCpp2IL first, then Cpp2IL can register instruction sets idempotently.
+        BuildSupplementIfStale(ctx);
 
         var manifest = service.LoadManifest();
         return JsonSerializer.SerializeToElement(new TemplateIndexStatusDto
@@ -76,7 +83,13 @@ public static partial class RpcDispatcher
             throw new InvalidOperationException(resolution.Error ?? "Could not resolve game data path.");
 
         var service = resolution.Context!.CreateTemplateIndexService(NullProgressSink.Instance, NullLogSink.Instance);
-        var index = service.LoadIndex() ?? throw new InvalidOperationException("Template index not found. Build it first.");
+        var cachePath = resolution.Context.CachePath;
+        if (_cachedIndex is null || _cachedIndexPath != cachePath)
+        {
+            _cachedIndex = service.LoadIndex();
+            _cachedIndexPath = cachePath;
+        }
+        var index = _cachedIndex ?? throw new InvalidOperationException("Template index not found. Build it first.");
 
         // If no query, return the full index (types + instances).
         // When className is set but query is empty, filter instances by class.
@@ -532,6 +545,131 @@ public static partial class RpcDispatcher
 
         [JsonPropertyName("file")]
         public required string File { get; set; }
+    }
+
+    private static readonly JsonSerializerOptions InspectJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    private static TemplateIndex? _cachedIndex;
+    private static string? _cachedIndexPath;
+    private static Dictionary<string, List<InspectedFieldNode>>? _cachedValues;
+    private static string? _cachedValuesPath;
+
+    private static void ClearIndexCaches()
+    {
+        _cachedIndex = null;
+        _cachedIndexPath = null;
+        _cachedValues = null;
+        _cachedValuesPath = null;
+    }
+
+    private static JsonElement HandleTemplatesInspect(IInfiniFrameWindow _, JsonElement? parameters)
+    {
+        var collection = RequireString(parameters, "collection");
+        var pathId = RequireLong(parameters, "pathId");
+
+        var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+        if (!resolution.Success)
+            throw new InvalidOperationException(resolution.Error ?? "Could not resolve game data path.");
+
+        var service = resolution.Context!.CreateTemplateIndexService(NullProgressSink.Instance, NullLogSink.Instance);
+
+        // Cache both the index and values in memory after first load.
+        var cachePath = resolution.Context.CachePath;
+        if (_cachedValues is null || _cachedValuesPath != cachePath)
+        {
+            _cachedValues = service.LoadValues();
+            _cachedValuesPath = cachePath;
+        }
+        var values = _cachedValues;
+
+        List<InspectedFieldNode> fields;
+        if (values is not null)
+        {
+            var key = $"{collection}:{pathId}";
+            fields = values.TryGetValue(key, out var cached) ? cached : [];
+        }
+        else
+        {
+            // Fall back to live inspection if values cache is missing.
+            var inspectionService = resolution.Context!.CreateObjectInspectionService(
+                NullProgressSink.Instance, NullLogSink.Instance);
+            var result = inspectionService.Inspect(new ObjectInspectionRequest
+            {
+                Collection = collection,
+                PathId = pathId,
+                MaxDepth = 4,
+                MaxArraySampleLength = 0,
+            });
+            var structure = result.Fields.FirstOrDefault(f =>
+                string.Equals(f.Name, "m_Structure", StringComparison.Ordinal));
+            fields = structure?.Fields ?? result.Fields;
+            return JsonSerializer.SerializeToElement(result, InspectJsonOptions);
+        }
+
+        // Return m_Structure fields directly — the frontend looks for m_Structure
+        // and falls back to the raw list, so pre-extracting is transparent.
+        return JsonSerializer.SerializeToElement(new ObjectInspectionResult
+        {
+            Object = new InspectedObjectIdentity
+            {
+                Name = $"template ({collection})",
+                ClassName = "Template",
+                Collection = collection,
+                PathId = pathId,
+            },
+            Options = new ObjectInspectionOptions
+            {
+                MaxDepth = 0,
+                MaxArraySampleLength = 0,
+                Truncated = false,
+            },
+            Fields = fields,
+        },
+        InspectJsonOptions);
+    }
+
+    internal static void PreloadTemplateCaches()
+    {
+        try
+        {
+            var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+            if (!resolution.Success) return;
+            var service = resolution.Context!.CreateTemplateIndexService(NullProgressSink.Instance, NullLogSink.Instance);
+            _cachedIndex = service.LoadIndex();
+            _cachedIndexPath = resolution.Context.CachePath;
+            _cachedValues = service.LoadValues();
+            _cachedValuesPath = resolution.Context.CachePath;
+        }
+        catch
+        {
+            // Silently ignore — caches will load on first RPC call instead.
+        }
+    }
+
+    private static void BuildSupplementIfStale(EnvironmentContext ctx)
+    {
+        var gameRoot = Path.GetDirectoryName(ctx.GameDataPath);
+        if (gameRoot is null) return;
+
+        var gameAssemblyPath = Path.Combine(gameRoot, "GameAssembly.so");
+        if (!File.Exists(gameAssemblyPath))
+            gameAssemblyPath = Path.Combine(gameRoot, "GameAssembly.dll");
+        if (!File.Exists(gameAssemblyPath)) return;
+
+        var metadataPath = Path.Combine(ctx.GameDataPath, "il2cpp_data", "Metadata", "global-metadata.dat");
+        if (!File.Exists(metadataPath)) return;
+
+        if (Il2CppMetadataCache.LoadIfFresh(ctx.CachePath, gameAssemblyPath, metadataPath) is not null)
+            return;
+
+        var unityVersion = GetGameUnityVersionCached(ctx.GameDataPath);
+        if (unityVersion is null) return;
+
+        Il2CppMetadataCache.BuildAndPersist(ctx.CachePath, gameAssemblyPath, metadataPath, unityVersion.Value, NullLogSink.Instance);
     }
 
 }

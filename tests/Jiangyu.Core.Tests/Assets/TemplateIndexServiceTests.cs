@@ -3,6 +3,7 @@ using System.Text.Json;
 using Jiangyu.Core.Assets;
 using Jiangyu.Core.Models;
 using Jiangyu.Core.Abstractions;
+using Jiangyu.Core.Il2Cpp;
 
 namespace Jiangyu.Core.Tests.Assets;
 
@@ -27,6 +28,11 @@ public sealed class TemplateIndexServiceTests : IDisposable
         Directory.CreateDirectory(_cacheDir);
 
         File.WriteAllBytes(Path.Combine(_gameRoot, "GameAssembly.so"), [1, 2, 3, 4]);
+
+        // Minimal valid IL2CPP supplement so IsIl2CppSupplementStale() returns false.
+        File.WriteAllText(
+            Path.Combine(_cacheDir, "il2cpp-metadata.json"),
+            "{\"schemaVersion\":" + Il2CppMetadataSupplement.CurrentSchemaVersion + ",\"generatedAt\":\"2025-01-01T00:00:00Z\",\"gameAssemblyMtime\":\"2025-01-01T00:00:00Z\",\"metadataMtime\":\"2025-01-01T00:00:00Z\",\"namedArrays\":[],\"fields\":[]}");
 
         _service = new TemplateIndexService(_gameDataPath, _cacheDir, NullProgressSink.Instance, NullLogSink.Instance);
     }
@@ -78,7 +84,7 @@ public sealed class TemplateIndexServiceTests : IDisposable
         WriteIndex();
         WriteManifest(new TemplateIndexManifest
         {
-            FormatVersion = 2,
+            FormatVersion = TemplateIndexService.CurrentFormatVersion,
             GameAssemblyHash = ComputeGameAssemblyHash(),
             IndexedAt = DateTimeOffset.UtcNow,
             GameDataPath = _gameDataPath,
@@ -97,7 +103,7 @@ public sealed class TemplateIndexServiceTests : IDisposable
         WriteIndex();
         WriteManifest(new TemplateIndexManifest
         {
-            FormatVersion = 2,
+            FormatVersion = TemplateIndexService.CurrentFormatVersion,
             GameAssemblyHash = ComputeGameAssemblyHash(),
             IndexedAt = DateTimeOffset.UtcNow,
             GameDataPath = _gameDataPath,

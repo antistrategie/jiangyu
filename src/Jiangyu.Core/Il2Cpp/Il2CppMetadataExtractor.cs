@@ -96,11 +96,13 @@ public static class Il2CppMetadataExtractor
         lock (StaticInitLock)
         {
             if (_staticInitDone) return;
-            InstructionSetRegistry.RegisterInstructionSet<X86InstructionSet>(DefaultInstructionSets.X86_32);
-            InstructionSetRegistry.RegisterInstructionSet<X86InstructionSet>(DefaultInstructionSets.X86_64);
-            InstructionSetRegistry.RegisterInstructionSet<WasmInstructionSet>(DefaultInstructionSets.WASM);
-            InstructionSetRegistry.RegisterInstructionSet<ArmV7InstructionSet>(DefaultInstructionSets.ARM_V7);
-            InstructionSetRegistry.RegisterInstructionSet<Arm64InstructionSet>(DefaultInstructionSets.ARM_V8);
+            // AssetRipper may have already registered these instruction sets
+            // (e.g. when the template index builds with Level2 before we run).
+            try { InstructionSetRegistry.RegisterInstructionSet<X86InstructionSet>(DefaultInstructionSets.X86_32); } catch (ArgumentException) { }
+            try { InstructionSetRegistry.RegisterInstructionSet<X86InstructionSet>(DefaultInstructionSets.X86_64); } catch (ArgumentException) { }
+            try { InstructionSetRegistry.RegisterInstructionSet<WasmInstructionSet>(DefaultInstructionSets.WASM); } catch (ArgumentException) { }
+            try { InstructionSetRegistry.RegisterInstructionSet<ArmV7InstructionSet>(DefaultInstructionSets.ARM_V7); } catch (ArgumentException) { }
+            try { InstructionSetRegistry.RegisterInstructionSet<Arm64InstructionSet>(DefaultInstructionSets.ARM_V8); } catch (ArgumentException) { }
             LibCpp2IlBinaryRegistry.RegisterBuiltInBinarySupport();
             _staticInitDone = true;
         }

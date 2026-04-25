@@ -273,15 +273,16 @@ public class KdlEditorRoundTripTests
     }
 
     [Fact]
-    public void EmptyPatch_ReportsError()
+    public void EmptyPatch_Accepted()
     {
         const string kdl = """
             patch "EntityTemplate" "test" {}
             """;
 
         var doc = KdlTemplateParser.ParseText(kdl);
-        // The parser requires at least one directive in a patch block
-        Assert.NotEmpty(doc.Errors);
+        Assert.Empty(doc.Errors);
+        Assert.Single(doc.Nodes);
+        Assert.Empty(doc.Nodes[0].Directives);
     }
 
     [Fact]

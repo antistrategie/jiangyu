@@ -1827,8 +1827,11 @@ function makeDefaultValue(member: TemplateMember): EditorValue {
       return { kind: "TemplateReference", referenceId: "" };
     default:
       // Non-scalar, non-ref → composite
-      if (member.isCollection && elementType) {
+      if (elementType) {
         return { kind: "Composite", compositeType: elementType, compositeFields: {} };
+      }
+      if (!member.isScalar && !member.isTemplateReference && member.typeName) {
+        return { kind: "Composite", compositeType: member.typeName, compositeFields: {} };
       }
       return { kind: "String", string: "" };
   }

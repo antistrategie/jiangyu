@@ -17,6 +17,7 @@ using AssetRipper.Processing.Scenes;
 using AssetRipper.SourceGenerated.Classes.ClassID_114;
 using AssetRipper.SourceGenerated.Extensions;
 using Jiangyu.Core.Abstractions;
+using Jiangyu.Core.Il2Cpp;
 using Jiangyu.Core.Models;
 
 namespace Jiangyu.Core.Assets;
@@ -25,7 +26,9 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
 {
     private const string IndexFileName = "template-index.json";
     private const string ManifestFileName = "template-index-manifest.json";
-    private const int CurrentFormatVersion = 2;
+    private const string ValuesFileName = "template-values.json";
+    internal const int CurrentFormatVersion = 3;
+    private const int ValuesInspectDepth = 6;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -73,12 +76,16 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
             || !string.Equals(currentHash, manifest.GameAssemblyHash, StringComparison.Ordinal)
             || !string.Equals(manifest.RuleVersion, classification.RuleVersion, StringComparison.Ordinal)
             || !string.Equals(manifest.RuleDescription, classification.RuleDescription, StringComparison.Ordinal)
-            || manifest.FormatVersion != CurrentFormatVersion)
+            || manifest.FormatVersion != CurrentFormatVersion
+            || IsIl2CppSupplementStale())
         {
+            var reason = IsIl2CppSupplementStale()
+                ? "IL2CPP metadata supplement is out of date. Rebuild the template index to refresh it."
+                : "Template index is missing or stale for the current game version.";
             return new CachedIndexStatus
             {
                 State = CachedIndexState.Stale,
-                Reason = "Template index is missing or stale for the current game version. Run 'jiangyu templates index' first.",
+                Reason = reason,
             };
         }
 
@@ -99,6 +106,7 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
         Logger.Add(adapter);
 
         TemplateIndex index;
+        Dictionary<string, List<InspectedFieldNode>> values = [];
         try
         {
             _progress.SetPhase("Loading assets");
@@ -119,6 +127,10 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
             _progress.SetPhase("Building template index");
             index = BuildTemplateIndex(gameData.GameBundle.FetchAssetCollections(), gameData.AssemblyManager);
             _progress.Finish();
+
+            _progress.SetPhase("Extracting template values");
+            values = ExtractTemplateValues(index, gameData);
+            _progress.Finish();
         }
         finally
         {
@@ -129,6 +141,10 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
         File.WriteAllText(
             Path.Combine(CachePath, IndexFileName),
             JsonSerializer.Serialize(index, JsonOptions));
+
+        File.WriteAllText(
+            Path.Combine(CachePath, ValuesFileName),
+            JsonSerializer.Serialize(values, JsonOptions));
 
         TemplateClassificationMetadata classification = TemplateClassifier.GetMetadata();
         var manifest = new TemplateIndexManifest
@@ -141,6 +157,7 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
             RuleDescription = classification.RuleDescription,
             TemplateTypeCount = index.TemplateTypes.Count,
             InstanceCount = index.Instances.Count,
+            ValueCount = values.Count,
         };
         File.WriteAllText(
             Path.Combine(CachePath, ManifestFileName),
@@ -427,5 +444,47 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
                 Edges.Add((fieldPath, targetCollection, targetPathId));
             }
         }
+    }
+
+    private bool IsIl2CppSupplementStale()
+    {
+        return Il2CppMetadataCache.LoadIfPresent(CachePath) is null;
+    }
+
+    public Dictionary<string, List<InspectedFieldNode>>? LoadValues()
+    {
+        var path = Path.Combine(CachePath, ValuesFileName);
+        if (!File.Exists(path)) return null;
+        return JsonSerializer.Deserialize<Dictionary<string, List<InspectedFieldNode>>>(File.ReadAllText(path), JsonOptions);
+    }
+
+    private static Dictionary<string, List<InspectedFieldNode>> ExtractTemplateValues(
+        TemplateIndex index, GameData gameData)
+    {
+        var values = new Dictionary<string, List<InspectedFieldNode>>();
+        foreach (var instance in index.Instances)
+        {
+            var key = TemplateIndex.IdentityKey(instance.Identity);
+            IUnityObjectBase? asset = null;
+            foreach (var collection in gameData.GameBundle.FetchAssetCollections())
+            {
+                if (string.Equals(collection.Name, instance.Identity.Collection, StringComparison.OrdinalIgnoreCase)
+                    && collection.TryGetAsset(instance.Identity.PathId, out asset))
+                    break;
+            }
+            if (asset is null) continue;
+
+            var inspection = ObjectFieldInspector.Inspect(asset, ValuesInspectDepth, 0);
+            if (asset is IMonoBehaviour mono)
+            {
+                ManagedTypeInspectionEnricher.Enrich(mono, gameData.AssemblyManager, inspection.Fields);
+            }
+
+            // Extract m_Structure fields as the template payload.
+            var structure = inspection.Fields.FirstOrDefault(f =>
+                string.Equals(f.Name, "m_Structure", StringComparison.Ordinal));
+            values[key] = structure?.Fields ?? inspection.Fields;
+        }
+        return values;
     }
 }

@@ -111,7 +111,9 @@ public static class ObjectFieldInspector
             }
             else
             {
-                int sampleCount = Math.Min(raw.Elements.Count, maxArraySampleLength);
+                int sampleCount = maxArraySampleLength <= 0
+                    ? raw.Elements.Count
+                    : Math.Min(raw.Elements.Count, maxArraySampleLength);
                 if (sampleCount < raw.Elements.Count)
                 {
                     localTruncated = true;

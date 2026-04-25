@@ -40,7 +40,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
     private const string ManifestFileName = "index-manifest.json";
     private const string PreviewDirName = "previews";
     private const int ThumbnailMaxDimension = 256;
-    private const int CurrentFormatVersion = 2;
+    internal const int CurrentFormatVersion = 2;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

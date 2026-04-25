@@ -144,6 +144,9 @@ public sealed class TemplateIndexManifest
 
     [JsonPropertyName("instanceCount")]
     public required int InstanceCount { get; init; }
+
+    [JsonPropertyName("valueCount")]
+    public int ValueCount { get; init; }
 }
 
 public enum TemplateResolutionStatus

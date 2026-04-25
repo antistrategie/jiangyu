@@ -618,12 +618,6 @@ public static class KdlTemplateParser
             return false;
         }
 
-        if (!node.HasChildren)
-        {
-            log.Error($"{pos}: 'patch' block for '{templateType}:{templateId}' has no operations.");
-            return false;
-        }
-
         var ops = new List<CompiledTemplateSetOperation>();
         var hasError = false;
         foreach (var child in node.Children)
@@ -1035,12 +1029,6 @@ public static class KdlTemplateParser
         out CompiledTemplateValue value)
     {
         value = null!;
-
-        if (!node.HasChildren)
-        {
-            log.Error($"{pos}: composite= requires child 'set' nodes for field values.");
-            return false;
-        }
 
         var fields = new Dictionary<string, CompiledTemplateValue>(StringComparer.Ordinal);
         foreach (var child in node.Children)
