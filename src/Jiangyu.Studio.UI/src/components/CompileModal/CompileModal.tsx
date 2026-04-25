@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef } from "react";
 import { FolderOpen, Play, X } from "lucide-react";
 import { Modal } from "@components/Modal/Modal.tsx";
 import { rpcCall } from "@lib/rpc.ts";
@@ -332,10 +332,10 @@ function SubStat({ label, value }: { label: string; value: string }) {
 }
 
 function useTickerWhileRunning(running: boolean): void {
-  const [, setTick] = useState(0);
+  const [, forceUpdate] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
     if (!running) return;
-    const handle = setInterval(() => setTick((n) => n + 1), 500);
+    const handle = setInterval(forceUpdate, 500);
     return () => clearInterval(handle);
   }, [running]);
 }

@@ -182,22 +182,26 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
       new Set(["Texture2D", "Sprite", "AudioClip", "GameObject", "PrefabHierarchyObject", "Mesh"]),
     [],
   );
-  useEffect(() => {
-    const token = ++previewTokenRef.current;
+  // Reset preview state synchronously off focusedKey identity so the panel
+  // clears the moment focus moves rather than one render after the effect.
+  const [prevFocusedKey, setPrevFocusedKey] = useState(focusedKey);
+  if (prevFocusedKey !== focusedKey) {
+    setPrevFocusedKey(focusedKey);
     setPreviewData(null);
+    const focused =
+      focusedKey !== null ? allAssets.find((a) => rowKey(a) === focusedKey) : undefined;
+    const className = focused?.className ?? "";
+    const previewable = focused?.collection !== undefined && PREVIEWABLE_CLASSES.has(className);
+    setPreviewLoading(previewable);
+  }
 
-    if (focusedKey === null) {
-      setPreviewLoading(false);
-      return;
-    }
+  useEffect(() => {
+    if (focusedKey === null) return;
     const focused = allAssets.find((a) => rowKey(a) === focusedKey);
     const className = focused?.className ?? "";
-    if (!focused?.collection || !PREVIEWABLE_CLASSES.has(className)) {
-      setPreviewLoading(false);
-      return;
-    }
+    if (!focused?.collection || !PREVIEWABLE_CLASSES.has(className)) return;
 
-    setPreviewLoading(true);
+    const token = ++previewTokenRef.current;
     void assetsPreview({ collection: focused.collection, pathId: focused.pathId, className })
       .then((result) => {
         if (previewTokenRef.current !== token) return;
@@ -216,17 +220,25 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
       });
   }, [focusedKey, allAssets, PREVIEWABLE_CLASSES]);
 
+  // Reset catalogue state synchronously off the status state so the list
+  // clears and the spinner shows the moment status changes.
+  const [prevStatusState, setPrevStatusState] = useState(status?.state);
+  if (prevStatusState !== status?.state) {
+    setPrevStatusState(status?.state);
+    if (status?.state === "current") {
+      setLoadingAssets(true);
+    } else {
+      setAllAssets([]);
+    }
+  }
+
   // Load the full index once the catalogue is current. All filtering + fuzzy
   // search happens client-side via uFuzzy against this list — the host's
   // Search only does substring matching, which misses the typical "type a
   // few letters" workflow.
   useEffect(() => {
-    if (status?.state !== "current") {
-      setAllAssets([]);
-      return;
-    }
+    if (status?.state !== "current") return;
     let cancelled = false;
-    setLoadingAssets(true);
     void assetsSearch({ limit: 200_000 })
       .then((rows) => {
         if (cancelled) return;
@@ -301,8 +313,11 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
   //
   // Skip while the catalogue hasn't loaded yet — on initial mount allAssets is
   // empty and would wipe a restored selection / focus before the data arrives.
-  useEffect(() => {
-    if (allAssets.length === 0) return;
+  // Computed off allAssets identity rather than via useEffect so pruning happens
+  // in the same render that surfaces the new catalogue.
+  const [prevAllAssets, setPrevAllAssets] = useState(allAssets);
+  if (prevAllAssets !== allAssets && allAssets.length > 0) {
+    setPrevAllAssets(allAssets);
     const keys = new Set(allAssets.map(rowKey));
     setSelection((prev) => {
       if (prev.size === 0) return prev;
@@ -315,9 +330,10 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
       return changed ? next : prev;
     });
     setFocusedKey((prev) => (prev !== null && keys.has(prev) ? prev : null));
-  }, [allAssets]);
+  }
 
   const listScrollRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual returns non-memoisable functions; the only API the library exposes.
   const virtualiser = useVirtualizer({
     count: results.length,
     getScrollElement: () => listScrollRef.current,

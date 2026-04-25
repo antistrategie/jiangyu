@@ -336,16 +336,23 @@ export function TemplateBrowser({
     };
   }, []);
 
-  // --- Load full index ---
-  useEffect(() => {
-    if (status?.state !== "current") {
+  // Reset catalogue state synchronously off status state.
+  const [prevStatusState, setPrevStatusState] = useState(status?.state);
+  if (prevStatusState !== status?.state) {
+    setPrevStatusState(status?.state);
+    if (status?.state === "current") {
+      setLoadingData(true);
+    } else {
       setAllTypes([]);
       setAllInstances([]);
       setReferencedBy({});
-      return;
     }
+  }
+
+  // --- Load full index ---
+  useEffect(() => {
+    if (status?.state !== "current") return;
     let cancelled = false;
-    setLoadingData(true);
     void templatesSearch()
       .then((result) => {
         if (cancelled) return;
@@ -404,19 +411,20 @@ export function TemplateBrowser({
     [focusedKey, allInstances],
   );
 
-  useEffect(() => {
-    const token = ++memberTokenRef.current;
+  // Reset member/inspection state synchronously off focusedInstance identity
+  // so the panel clears the moment focus moves rather than one render later.
+  const [prevFocusedInstance, setPrevFocusedInstance] = useState(focusedInstance);
+  if (prevFocusedInstance !== focusedInstance) {
+    setPrevFocusedInstance(focusedInstance);
     setMemberData(null);
     setInspectionValues(null);
+    setMembersLoading(focusedInstance !== null);
+    setInspectionLoading(focusedInstance !== null);
+  }
 
-    if (!focusedInstance) {
-      setMembersLoading(false);
-      setInspectionLoading(false);
-      return;
-    }
-
-    setMembersLoading(true);
-    setInspectionLoading(true);
+  useEffect(() => {
+    if (!focusedInstance) return;
+    const token = ++memberTokenRef.current;
     const { className, identity } = focusedInstance;
 
     // Fetch schema (existing)
@@ -654,6 +662,7 @@ export function TemplateBrowser({
 
   // --- Virtualiser ---
   const listRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual returns non-memoisable functions; the only API the library exposes.
   const rowVirtualizer = useVirtualizer({
     count: filtered.length,
     getScrollElement: () => listRef.current,
@@ -1021,18 +1030,18 @@ function TemplateDetail({
             <MetaRow
               label="Referenced by"
               value={refs.map((r, i) => {
-                const src = instanceLookup.get(`${r.source.collection}:${r.source.pathId}`);
-                const key = `${r.source.collection}:${r.source.pathId}`;
+                const srcKey = `${r.source.collection}:${r.source.pathId}`;
+                const src = instanceLookup.get(srcKey);
                 const isLast = i === refs.length - 1;
                 return (
-                  <Fragment key={i}>
+                  <Fragment key={`${r.fieldName}:${srcKey}`}>
                     <span className={styles.refEntry}>
                       <button
                         type="button"
                         className={styles.refLink}
-                        onClick={() => onNavigate(key)}
+                        onClick={() => onNavigate(srcKey)}
                       >
-                        {src ? `${src.name} (${src.className})` : key}
+                        {src ? `${src.name} (${src.className})` : srcKey}
                       </button>
                       {!isLast && ","}
                     </span>
@@ -1050,9 +1059,9 @@ function TemplateDetail({
         <div className={styles.refSection}>
           <SectionHeader>References</SectionHeader>
           <div className={styles.refTree}>
-            {instance.references.map((edge, i) => (
+            {instance.references.map((edge) => (
               <ReferenceNode
-                key={`${edge.target.collection}:${edge.target.pathId}:${i}`}
+                key={`${edge.fieldName}:${edge.target.collection}:${edge.target.pathId}`}
                 edge={edge}
                 depth={0}
                 instanceLookup={instanceLookup}
@@ -1159,9 +1168,9 @@ function ReferenceNode({
       </div>
       {expanded && hasChildren && (
         <div className={styles.refChildren}>
-          {target.references.map((childEdge, i) => (
+          {target.references.map((childEdge) => (
             <ReferenceNode
-              key={`${childEdge.target.collection}:${childEdge.target.pathId}:${i}`}
+              key={`${childEdge.fieldName}:${childEdge.target.collection}:${childEdge.target.pathId}`}
               edge={childEdge}
               depth={depth + 1}
               instanceLookup={instanceLookup}
@@ -1424,6 +1433,7 @@ function MemberRow({
                     : null;
                 return (
                   <ExpandableElementRow
+                    // eslint-disable-next-line @eslint-react/no-array-index-key -- idx is the named-array attribute index, not iteration order; stable across renders.
                     key={idx}
                     elem={elem}
                     label={label}
@@ -1451,7 +1461,7 @@ function MemberRow({
           {valueNode?.kind === "object" && valueNode.fields && valueNode.fields.length > 0 && (
             <div className={styles.memberNestedList}>
               {valueNode.fields.map((subVal, i) => (
-                <div key={i} className={styles.memberNestedRow}>
+                <div key={subVal.name ?? `unnamed-${i}`} className={styles.memberNestedRow}>
                   <span className={styles.chevronSpacer} />
                   <span className={styles.memberNestedLabel}>{subVal.name ?? "<unnamed>"}</span>
                   <span className={styles.memberNestedType}>{subVal.fieldTypeName ?? ""}</span>
@@ -1474,6 +1484,7 @@ function MemberRow({
                       : null;
                   return (
                     <ExpandableElementRow
+                      // eslint-disable-next-line @eslint-react/no-array-index-key -- idx is the array's semantic position in a fixed-shape inspection result, not iteration order.
                       key={idx}
                       elem={elem}
                       label={`[${idx}]`}
@@ -1658,7 +1669,7 @@ function ExpandableElementRow({
       {subExpanded && subFields && (
         <div className={styles.memberNestedSubList}>
           {subFields.map((f, i) => (
-            <NestedValueRow key={i} value={f} />
+            <NestedValueRow key={f.name ?? `unnamed-${i}`} value={f} />
           ))}
         </div>
       )}
@@ -1705,7 +1716,7 @@ function NestedValueRow({ value }: { value: InspectedFieldNode }) {
       {open && children && (
         <div className={styles.memberNestedSubList}>
           {children.map((c, i) => (
-            <NestedValueRow key={i} value={c} />
+            <NestedValueRow key={c.name ?? `unnamed-${i}`} value={c} />
           ))}
         </div>
       )}
@@ -1737,9 +1748,11 @@ function TypeCombobox({ types, totalCount, value, onChange }: TypeComboboxProps)
   }, [types, filter]);
 
   // Reset highlight when filter changes
-  useEffect(() => {
+  const [prevFilteredLen, setPrevFilteredLen] = useState(filtered.length);
+  if (prevFilteredLen !== filtered.length) {
+    setPrevFilteredLen(filtered.length);
     setHighlightIdx(0);
-  }, [filtered.length]);
+  }
 
   // Close on outside click
   useEffect(() => {

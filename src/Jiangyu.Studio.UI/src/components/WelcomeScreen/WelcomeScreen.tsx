@@ -14,14 +14,13 @@ interface WelcomeScreenProps {
 
 export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
   const [config, setConfig] = useState<ConfigStatus | null>(null);
-  const [recentProjects, setRecentProjects] = useState<readonly string[]>([]);
+  const [recentProjects, setRecentProjects] = useState<readonly string[]>(loadRecentProjects);
   const [showNewDialog, setShowNewDialog] = useState(false);
 
   useEffect(() => {
     void rpcCall<ConfigStatus>("getConfigStatus")
       .then(setConfig)
       .catch(() => {});
-    setRecentProjects(loadRecentProjects());
   }, []);
 
   const handleRemoveRecent = (path: string) => {

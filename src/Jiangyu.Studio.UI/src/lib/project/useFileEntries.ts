@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { rpcCall, subscribe, type FileChangedEvent } from "@lib/rpc.ts";
 
 // Keeps a flat list of all project files (for palette go-to-file) in sync
@@ -20,9 +20,16 @@ export function useFileEntries(
     onDeletedRef.current = onDeleted;
   }, [onDeleted]);
 
+  // Reset to empty synchronously when the project closes so palette
+  // searches don't briefly hit the previous project's files.
+  const [prevPath, setPrevPath] = useState(projectPath);
+  if (prevPath !== projectPath) {
+    setPrevPath(projectPath);
+    setFileEntries([]);
+  }
+
   useEffect(() => {
     if (projectPath === null) {
-      setFileEntries([]);
       refreshRef.current = () => {};
       return;
     }
@@ -58,6 +65,6 @@ export function useFileEntries(
 
   // Wrap refreshRef.current in a stable callback so consumers can pass it as
   // a prop without re-binding on every render.
-  const refreshFiles = useRef(() => refreshRef.current()).current;
+  const refreshFiles = useCallback(() => refreshRef.current(), []);
   return { fileEntries, refreshFiles };
 }

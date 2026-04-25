@@ -202,14 +202,12 @@ function findCodePane(layout: Layout): CodePane | null {
  */
 export function openFile(layout: Layout, path: string, paneId: string | null = null): Layout {
   const explicit = paneId !== null ? findPane(layout, paneId) : null;
-  let target: CodePane | null = null;
-  if (explicit !== null && explicit.kind === "code") {
-    target = explicit;
-  } else {
+  const target: CodePane | null = (() => {
+    if (explicit !== null && explicit.kind === "code") return explicit;
     const active = getActivePane(layout);
-    if (active !== null && active.kind === "code") target = active;
-    else target = findCodePane(layout);
-  }
+    if (active !== null && active.kind === "code") return active;
+    return findCodePane(layout);
+  })();
 
   if (target === null) {
     const pane = withTab(emptyPane("code") as CodePane, path);

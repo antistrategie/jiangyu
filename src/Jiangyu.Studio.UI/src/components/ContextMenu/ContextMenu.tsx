@@ -31,6 +31,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
     if (nx + rect.width > window.innerWidth) nx = Math.max(4, window.innerWidth - rect.width - 4);
     if (ny + rect.height > window.innerHeight)
       ny = Math.max(4, window.innerHeight - rect.height - 4);
+    // eslint-disable-next-line @eslint-react/set-state-in-effect -- legitimate post-layout measurement: read DOM rect, adjust if overflowing viewport. Cannot be derived during render.
     if (nx !== x || ny !== y) setPos({ x: nx, y: ny });
   }, [x, y]);
 
@@ -56,11 +57,16 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
 
   return createPortal(
     <div ref={ref} className={styles.menu} style={{ left: pos.x, top: pos.y }}>
+      {/* Index keys are safe here: a context menu's items list is built once
+          per open and doesn't reorder. Separators have no stable identity, so
+          positional index is the natural key. */}
       {items.map((item, i) =>
         item === "separator" ? (
+          // eslint-disable-next-line @eslint-react/no-array-index-key -- see comment above; menu items don't reorder during the menu's lifetime.
           <div key={`sep-${i}`} className={styles.separator} />
         ) : (
           <button
+            // eslint-disable-next-line @eslint-react/no-array-index-key -- see comment above; menu items don't reorder during the menu's lifetime.
             key={`${item.label}-${i}`}
             className={styles.item}
             type="button"

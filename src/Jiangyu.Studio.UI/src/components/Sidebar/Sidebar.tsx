@@ -1,12 +1,4 @@
-import {
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-  useContext,
-  createContext,
-  useMemo,
-} from "react";
+import { useState, useEffect, useCallback, useRef, use, createContext, useMemo } from "react";
 import {
   Folder,
   FolderOpen,
@@ -96,7 +88,7 @@ interface SidebarContextValue {
 }
 const SidebarContext = createContext<SidebarContextValue | null>(null);
 function useSidebar(): SidebarContextValue {
-  const ctx = useContext(SidebarContext);
+  const ctx = use(SidebarContext);
   if (!ctx) throw new Error("SidebarContext missing");
   return ctx;
 }
@@ -138,14 +130,18 @@ export function Sidebar({
   });
   const [clipboard, setClipboard] = useState<ClipboardState | null>(null);
   const [pendingNew, setPendingNew] = useState<PendingNew | null>(null);
-  const [expansionTick, setExpansionTick] = useState(0);
+  // Each expand request is a unique-id snapshot of paths-to-open. Children
+  // consume by id, so the same id never re-opens a folder the user closed.
+  const [expandRequest, setExpandRequest] = useState<{
+    id: number;
+    paths: ReadonlySet<string>;
+  } | null>(null);
   const [rootMenu, setRootMenu] = useState<{ x: number; y: number } | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const [highlightedPath, setHighlightedPath] = useState<string | null>(null);
-  const forceExpandRef = useRef<Set<string>>(new Set());
-  const dragging = useRef(false);
+  const draggingRef = useRef(false);
   const widthRef = useRef(width);
-  const refreshers = useRef<Map<string, Set<InvalidateCallback>>>(new Map());
+  const refreshersRef = useRef<Map<string, Set<InvalidateCallback>>>(new Map());
   const { push: pushToast } = useToast();
 
   const confirmDelete = useCallback((entry: FileEntry): Promise<boolean> => {
@@ -162,22 +158,22 @@ export function Sidebar({
   }, []);
 
   const registerRefresh = useCallback((path: string, cb: InvalidateCallback) => {
-    let set = refreshers.current.get(path);
+    let set = refreshersRef.current.get(path);
     if (!set) {
       set = new Set();
-      refreshers.current.set(path, set);
+      refreshersRef.current.set(path, set);
     }
     set.add(cb);
     return () => {
-      const s = refreshers.current.get(path);
+      const s = refreshersRef.current.get(path);
       if (!s) return;
       s.delete(cb);
-      if (s.size === 0) refreshers.current.delete(path);
+      if (s.size === 0) refreshersRef.current.delete(path);
     };
   }, []);
 
   const invalidateDir = useCallback((path: string) => {
-    const set = refreshers.current.get(path);
+    const set = refreshersRef.current.get(path);
     if (!set) return;
     for (const cb of set) cb();
   }, []);
@@ -190,43 +186,43 @@ export function Sidebar({
   }, [invalidateDir]);
 
   const expandDirectory = useCallback((path: string) => {
-    forceExpandRef.current.add(path);
-    setExpansionTick((t) => t + 1);
+    setExpandRequest((prev) => ({ id: (prev?.id ?? 0) + 1, paths: new Set([path]) }));
   }, []);
 
-  // Reveal file in tree: expand all ancestor dirs and highlight
-  useEffect(() => {
-    if (!revealPath) return;
-    const filePath = revealPath.path;
-    if (!filePath.startsWith(projectPath)) return;
-    const ancestors: string[] = [];
-    let cur = dirname(filePath);
-    while (cur !== projectPath && cur.length > projectPath.length) {
-      ancestors.push(cur);
-      cur = dirname(cur);
+  // Reveal file in tree: expand all ancestor dirs and highlight. Computed
+  // synchronously off revealPath identity rather than via useEffect so the
+  // expand request and highlight stay in lockstep.
+  const [prevReveal, setPrevReveal] = useState(revealPath);
+  if (prevReveal !== revealPath) {
+    setPrevReveal(revealPath);
+    if (revealPath?.path.startsWith(projectPath) === true) {
+      const filePath = revealPath.path;
+      const ancestors = new Set<string>();
+      let cur = dirname(filePath);
+      while (cur !== projectPath && cur.length > projectPath.length) {
+        ancestors.add(cur);
+        cur = dirname(cur);
+      }
+      if (ancestors.size > 0) {
+        setExpandRequest((prevReq) => ({ id: (prevReq?.id ?? 0) + 1, paths: ancestors }));
+      }
+      setHighlightedPath(filePath);
     }
-    for (const dir of ancestors) {
-      forceExpandRef.current.add(dir);
-    }
-    if (ancestors.length > 0) {
-      setExpansionTick((t) => t + 1);
-    }
-    setHighlightedPath(filePath);
-  }, [revealPath, projectPath]);
+  }
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    dragging.current = true;
+    draggingRef.current = true;
 
     const onMouseMove = (ev: MouseEvent) => {
-      if (dragging.current) {
+      if (draggingRef.current) {
         const w = Math.max(160, Math.min(ev.clientX, 600));
         widthRef.current = w;
         setWidth(w);
       }
     };
     const onMouseUp = () => {
-      dragging.current = false;
+      draggingRef.current = false;
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
       try {
@@ -274,7 +270,7 @@ export function Sidebar({
   );
 
   return (
-    <SidebarContext.Provider value={sidebarCtx}>
+    <SidebarContext value={sidebarCtx}>
       <aside className={styles.sidebar} style={{ width }}>
         <div
           className={styles.tree}
@@ -283,12 +279,7 @@ export function Sidebar({
             setRootMenu({ x: e.clientX, y: e.clientY });
           }}
         >
-          <TreeNode
-            path={projectPath}
-            depth={0}
-            forceExpand={forceExpandRef.current}
-            expansionTick={expansionTick}
-          />
+          <TreeNode path={projectPath} depth={0} expandRequest={expandRequest} />
         </div>
         {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- separator is the correct role; the rule doesn't recognise focusable separators. */}
         <div
@@ -300,10 +291,10 @@ export function Sidebar({
           onMouseDown={handleMouseDown}
         />
         {rootMenu && (
-          <ContextMenu
+          <RootContextMenu
             x={rootMenu.x}
             y={rootMenu.y}
-            items={buildRootMenu(sidebarCtx)}
+            ctx={sidebarCtx}
             onClose={() => setRootMenu(null)}
           />
         )}
@@ -324,18 +315,22 @@ export function Sidebar({
           />
         )}
       </aside>
-    </SidebarContext.Provider>
+    </SidebarContext>
   );
+}
+
+interface ExpandRequest {
+  id: number;
+  paths: ReadonlySet<string>;
 }
 
 interface TreeNodeProps {
   path: string;
   depth: number;
-  forceExpand: Set<string>;
-  expansionTick: number;
+  expandRequest: ExpandRequest | null;
 }
 
-function TreeNode({ path, depth, forceExpand, expansionTick }: TreeNodeProps) {
+function TreeNode({ path, depth, expandRequest }: TreeNodeProps) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const { registerRefresh, pendingNew } = useSidebar();
@@ -366,12 +361,7 @@ function TreeNode({ path, depth, forceExpand, expansionTick }: TreeNodeProps) {
       {entries.map((entry) => (
         <li key={entry.path}>
           {entry.isDirectory ? (
-            <DirectoryItem
-              entry={entry}
-              depth={depth}
-              forceExpand={forceExpand}
-              expansionTick={expansionTick}
-            />
+            <DirectoryItem entry={entry} depth={depth} expandRequest={expandRequest} />
           ) : (
             <FileItem entry={entry} />
           )}
@@ -384,11 +374,10 @@ function TreeNode({ path, depth, forceExpand, expansionTick }: TreeNodeProps) {
 interface DirectoryItemProps {
   entry: FileEntry;
   depth: number;
-  forceExpand: Set<string>;
-  expansionTick: number;
+  expandRequest: ExpandRequest | null;
 }
 
-function DirectoryItem({ entry, depth, forceExpand, expansionTick }: DirectoryItemProps) {
+function DirectoryItem({ entry, depth, expandRequest }: DirectoryItemProps) {
   const ctx = useSidebar();
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -396,12 +385,16 @@ function DirectoryItem({ entry, depth, forceExpand, expansionTick }: DirectoryIt
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const isCut = ctx.clipboard?.mode === "cut" && ctx.clipboard.paths.includes(entry.path);
 
-  useEffect(() => {
-    if (forceExpand.has(entry.path)) {
-      forceExpand.delete(entry.path);
+  // Consume each expand-request id at most once so the user can manually
+  // close a folder we auto-opened without it springing back on next render.
+  const requestId = expandRequest?.id ?? 0;
+  const [lastSeenRequestId, setLastSeenRequestId] = useState(requestId);
+  if (lastSeenRequestId !== requestId) {
+    setLastSeenRequestId(requestId);
+    if (expandRequest?.paths.has(entry.path) === true) {
       setOpen(true);
     }
-  }, [entry.path, forceExpand, expansionTick]);
+  }
 
   const handleDragOver = (e: React.DragEvent) => {
     if (!e.dataTransfer.types.includes(DRAG_MIME)) return;
@@ -452,14 +445,7 @@ function DirectoryItem({ entry, depth, forceExpand, expansionTick }: DirectoryIt
           <span className={styles.entryName}>{entry.name}</span>
         )}
       </button>
-      {open && (
-        <TreeNode
-          path={entry.path}
-          depth={depth + 1}
-          forceExpand={forceExpand}
-          expansionTick={expansionTick}
-        />
-      )}
+      {open && <TreeNode path={entry.path} depth={depth + 1} expandRequest={expandRequest} />}
       {menu && (
         <ContextMenu
           x={menu.x}
@@ -646,6 +632,21 @@ function NewEntryRow() {
 
 interface MenuBuildCtx extends SidebarContextValue {
   startRename: () => void;
+}
+
+function RootContextMenu({
+  x,
+  y,
+  ctx,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  ctx: SidebarContextValue;
+  onClose: () => void;
+}) {
+  const items = useMemo(() => buildRootMenu(ctx), [ctx]);
+  return <ContextMenu x={x} y={y} items={items} onClose={onClose} />;
 }
 
 function buildRootMenu(ctx: SidebarContextValue): ContextMenuEntry[] {

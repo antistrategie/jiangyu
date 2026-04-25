@@ -62,9 +62,11 @@ function PaletteDialog({ onClose, actions }: PaletteDialogProps) {
     return () => cancelAnimationFrame(id);
   }, []);
 
-  useEffect(() => {
+  const [prevQuery, setPrevQuery] = useState(query);
+  if (prevQuery !== query) {
+    setPrevQuery(query);
     setSelected(0);
-  }, [query]);
+  }
 
   useLayoutEffect(() => {
     const container = resultsRef.current;

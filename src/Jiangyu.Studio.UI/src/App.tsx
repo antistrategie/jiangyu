@@ -56,10 +56,9 @@ export function App() {
     if (!restoringProject) return;
     const store = useProjectStore.getState();
     const last = store.recentProjects[0];
-    if (last === undefined) {
-      setRestoringProject(false);
-      return;
-    }
+    // restoringProject's lazy init already verified recent[0] exists, so
+    // this branch shouldn't fire — but guard defensively.
+    if (last === undefined) return;
     void rpcCall<string>("openProject", { path: last })
       .then(() => {
         store.switchProject(last);
@@ -69,7 +68,9 @@ export function App() {
         setRestoringProject(false);
         console.error("[Studio] auto-restore failed:", err);
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // One-shot mount-time auto-restore. Including restoringProject in deps
+    // would re-run when the effect itself flips it to false.
+    // eslint-disable-next-line react-hooks/exhaustive-deps, @eslint-react/exhaustive-deps
   }, []);
 
   const projectPath = useProjectStore((s) => s.projectPath);

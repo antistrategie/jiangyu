@@ -15,11 +15,17 @@ import { rpcCall } from "@lib/rpc.ts";
 export function useGitBranch(projectPath: string | null): string | null {
   const [branch, setBranch] = useState<string | null>(null);
 
+  // Reset to null synchronously when the project changes so the indicator
+  // doesn't briefly show the previous project's branch while the next RPC is
+  // in flight.
+  const [prevPath, setPrevPath] = useState(projectPath);
+  if (prevPath !== projectPath) {
+    setPrevPath(projectPath);
+    setBranch(null);
+  }
+
   useEffect(() => {
-    if (projectPath === null) {
-      setBranch(null);
-      return;
-    }
+    if (projectPath === null) return;
     let cancelled = false;
 
     const fetchBranch = () => {

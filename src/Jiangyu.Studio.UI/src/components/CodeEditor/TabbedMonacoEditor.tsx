@@ -168,7 +168,7 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
   const [defaultEditorMode] = useTemplateEditorMode();
   const projectPath = useProjectStore((s) => s.projectPath);
   // Per-file mode overrides: paths in this set deviate from the global default.
-  const [modeOverrides, setModeOverrides] = useState<Set<string>>(new Set());
+  const [modeOverrides, setModeOverrides] = useState<Set<string>>(() => new Set());
   const vimStatusRef = useRef<HTMLDivElement>(null);
   const activeTabRef = useRef<HTMLButtonElement>(null);
 
@@ -273,7 +273,7 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
 
   // KDL parse diagnostics: run templatesParse on template KDL files and set
   // Monaco model markers so errors appear as squiggles in source mode.
-  const markerTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const markerTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     const monaco = monacoRef.current;
     const model = editor?.getModel();
@@ -283,8 +283,8 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
       return;
     }
     const text = activeContent ?? "";
-    clearTimeout(markerTimer.current);
-    markerTimer.current = setTimeout(() => {
+    clearTimeout(markerTimerRef.current);
+    markerTimerRef.current = setTimeout(() => {
       void rpcCall<{ errors: { message: string; line?: number }[] }>("templatesParse", { text })
         .then((doc) => {
           // Only set if model is still current
@@ -306,7 +306,7 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
           }
         });
     }, 300);
-    return () => clearTimeout(markerTimer.current);
+    return () => clearTimeout(markerTimerRef.current);
   }, [editor, isTemplateKdl, activeContent]);
 
   // Font family and padding come from design tokens (no user-visible control).

@@ -1,0 +1,3 @@
+[test]
+# Block `bun test` — this project uses vitest. See scripts/no-bun-test.ts.
+preload = ["./scripts/no-bun-test.ts"]

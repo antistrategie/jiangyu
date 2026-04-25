@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Pause, Play } from "lucide-react";
 import { formatTime } from "@lib/ui/formatTime.ts";
 import styles from "./AssetBrowser.module.css";
@@ -14,11 +14,13 @@ export function AudioPlayer({ src }: Props) {
   const [duration, setDuration] = useState(0);
   const [dragging, setDragging] = useState(false);
 
-  useEffect(() => {
+  const [prevSrc, setPrevSrc] = useState(src);
+  if (prevSrc !== src) {
+    setPrevSrc(src);
     setPlaying(false);
     setCurrentTime(0);
     setDuration(0);
-  }, [src]);
+  }
 
   const togglePlay = useCallback(() => {
     const el = audioRef.current;

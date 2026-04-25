@@ -80,9 +80,9 @@ function CommitInput({ value, onCommit, onKeyDown, ...rest }: CommitInputProps) 
   const ref = useRef<HTMLInputElement>(null);
   return (
     <input
+      key={String(value)}
       {...rest}
       ref={ref}
-      key={String(value)}
       defaultValue={value}
       onBlur={(e) => {
         if (e.target.value !== String(value)) onCommit(e.target.value);
@@ -241,18 +241,22 @@ export function TemplateVisualEditor({
   const [collapsed, setCollapsed] = useState<Set<string>>(
     () => collapsedCache.get(cacheKey) ?? new Set(),
   );
-  const lastSerialised = useRef<string>("");
-  const serialiseVersion = useRef(0);
+  const lastSerialisedRef = useRef<string>("");
+  const serialiseVersionRef = useRef(0);
 
   // Undo/redo history
-  const undoStack = useRef<StampedNode[][]>([]);
-  const redoStack = useRef<StampedNode[][]>([]);
+  const undoStackRef = useRef<StampedNode[][]>([]);
+  const redoStackRef = useRef<StampedNode[][]>([]);
+  // Mirror nodes into a ref so async callbacks see the latest value without
+  // stale closures. Synced via effect after each render.
   const nodesRef = useRef<StampedNode[]>(nodes);
-  nodesRef.current = nodes;
+  useEffect(() => {
+    nodesRef.current = nodes;
+  });
 
   // Parse via RPC when content changes externally
   useEffect(() => {
-    if (content === lastSerialised.current) return;
+    if (content === lastSerialisedRef.current) return;
 
     void templatesParse(content)
       .then((doc) => {
@@ -260,8 +264,8 @@ export function TemplateVisualEditor({
         setParseErrors(doc.errors);
         setRpcError(null);
         // External change resets undo history
-        undoStack.current = [];
-        redoStack.current = [];
+        undoStackRef.current = [];
+        redoStackRef.current = [];
       })
       .catch((err: unknown) => {
         setRpcError(err instanceof Error ? err.message : "Parse RPC failed");
@@ -269,26 +273,26 @@ export function TemplateVisualEditor({
   }, [content]);
 
   // Debounced serialise via RPC after local edits
-  const serialiseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const serialiseTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const serialiseNodes = useCallback(
     (updated: StampedNode[]) => {
       setNodes(updated);
-      const version = ++serialiseVersion.current;
+      const version = ++serialiseVersionRef.current;
 
-      clearTimeout(serialiseTimer.current);
-      serialiseTimer.current = setTimeout(() => {
+      clearTimeout(serialiseTimerRef.current);
+      serialiseTimerRef.current = setTimeout(() => {
         const doc: EditorDocument = { nodes: updated, errors: [] };
         void templatesSerialise(stripUiIds(doc)).then(async (result) => {
-          if (version !== serialiseVersion.current) return;
-          lastSerialised.current = result.text;
+          if (version !== serialiseVersionRef.current) return;
+          lastSerialisedRef.current = result.text;
           onChange(result.text);
           // Refresh validation errors after local edits — the parse-on-content
-          // path is gated by `content === lastSerialised.current` to avoid
+          // path is gated by `content === lastSerialisedRef.current` to avoid
           // clobbering in-progress nodes, so errors would otherwise go stale.
           try {
             const parsed = await templatesParse(result.text);
-            if (version !== serialiseVersion.current) return;
+            if (version !== serialiseVersionRef.current) return;
             setParseErrors(parsed.errors);
           } catch {
             /* keep previous errors — a failed re-parse shouldn't wipe them */
@@ -301,8 +305,8 @@ export function TemplateVisualEditor({
 
   const serialiseAndEmit = useCallback(
     (updated: StampedNode[]) => {
-      undoStack.current = [...undoStack.current, nodesRef.current];
-      redoStack.current = [];
+      undoStackRef.current = [...undoStackRef.current, nodesRef.current];
+      redoStackRef.current = [];
       invalidateProjectClonesCache();
       serialiseNodes(updated);
     },
@@ -327,14 +331,14 @@ export function TemplateVisualEditor({
       }
 
       if (e.shiftKey) {
-        const next = redoStack.current.pop();
+        const next = redoStackRef.current.pop();
         if (next === undefined) return;
-        undoStack.current = [...undoStack.current, nodesRef.current];
+        undoStackRef.current = [...undoStackRef.current, nodesRef.current];
         serialiseNodes(next);
       } else {
-        const prev = undoStack.current.pop();
+        const prev = undoStackRef.current.pop();
         if (prev === undefined) return;
-        redoStack.current = [...redoStack.current, nodesRef.current];
+        redoStackRef.current = [...redoStackRef.current, nodesRef.current];
         serialiseNodes(prev);
       }
     };
@@ -567,8 +571,8 @@ export function TemplateVisualEditor({
             )}
           </div>
           <div className={styles.errorList}>
-            {parseErrors.map((err, i) => (
-              <div key={i} className={styles.errorItem}>
+            {parseErrors.map((err) => (
+              <div key={`${err.line ?? "?"}:${err.message}`} className={styles.errorItem}>
                 {err.line != null && <span className={styles.errorLine}>line {err.line}</span>}
                 <span className={styles.errorMessage}>{err.message}</span>
               </div>
@@ -702,7 +706,7 @@ function NodeCard({
   const isPatch = node.kind === "Patch";
   const [members, setMembers] = useState<readonly TemplateMember[]>([]);
   const [membersLoaded, setMembersLoaded] = useState(false);
-  const justDragged = useRef(false);
+  const justDraggedRef = useRef(false);
 
   useEffect(() => {
     if (collapsed || membersLoaded) return;
@@ -750,8 +754,8 @@ function NodeCard({
         tabIndex={0}
         aria-expanded={!collapsed}
         onClick={() => {
-          if (!justDragged.current) onToggleCollapse();
-          justDragged.current = false;
+          if (!justDraggedRef.current) onToggleCollapse();
+          justDraggedRef.current = false;
         }}
         onKeyDown={onKeyActivate(() => {
           onToggleCollapse();
@@ -765,7 +769,7 @@ function NodeCard({
           onPointerDown={(e) => e.stopPropagation()}
           onDragStart={(e) => {
             e.stopPropagation();
-            justDragged.current = true;
+            justDraggedRef.current = true;
             e.dataTransfer.effectAllowed = "move";
             e.dataTransfer.setData("application/x-jiangyu-card-reorder", node._uiId);
             onDragStart();
@@ -1531,11 +1535,19 @@ function SuggestionCombobox({
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Reset cache when the fetch function changes (e.g. refType changed)
-  useEffect(() => {
+  // Reset cache when the fetch function changes (e.g. refType changed).
+  // React-docs prev-state pattern: synchronous setState in render bails out
+  // unless the prop changed, so this doesn't loop. The lint rule is named
+  // `set-state-in-effect` but currently misfires on this conditional pattern.
+  // https://react.dev/reference/react/useState#storing-information-from-previous-renders
+  const [prevFetchSuggestions, setPrevFetchSuggestions] = useState(() => fetchSuggestions);
+  if (prevFetchSuggestions !== fetchSuggestions) {
+    /* eslint-disable @eslint-react/set-state-in-effect -- prev-state pattern in render, not in an effect; see comment above. */
+    setPrevFetchSuggestions(() => fetchSuggestions);
     setLoaded(false);
     setItems([]);
-  }, [fetchSuggestions]);
+    /* eslint-enable @eslint-react/set-state-in-effect */
+  }
 
   useEffect(() => {
     if (!open || loaded) return;
@@ -1567,6 +1579,7 @@ function SuggestionCombobox({
   // single text+badge button at ~28px tall (matches `.fieldAdderItem`
   // padding + a single line of mono text).
   const dropdownRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual returns non-memoisable functions; the only API the library exposes.
   const rowVirtualizer = useVirtualizer({
     count: filtered.length,
     getScrollElement: () => dropdownRef.current,

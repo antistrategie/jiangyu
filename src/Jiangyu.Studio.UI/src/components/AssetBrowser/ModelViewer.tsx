@@ -15,12 +15,19 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
   const cleanupRef = useRef<(() => void) | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Flip loading on each dataUrl change synchronously off prop identity so the
+  // spinner shows immediately instead of one render after the effect fires.
+  const [prevDataUrl, setPrevDataUrl] = useState(dataUrl);
+  if (prevDataUrl !== dataUrl) {
+    setPrevDataUrl(dataUrl);
+    setLoading(true);
+  }
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     cleanupRef.current?.();
-    setLoading(true);
 
     // Boxed in an object so the async-closure body sees a reference, not a
     // narrowed literal — cleanup() flips `state.cancelled = true` on unmount.
@@ -68,11 +75,13 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
           e.stopImmediatePropagation();
         }
       };
+      // eslint-disable-next-line @eslint-react/web-api-no-leaked-event-listener -- removed in innerCleanup at the bottom of this rAF callback.
       renderer.domElement.addEventListener("wheel", wheelGuard, { capture: true });
 
       const stopAutoRotate = () => {
         controls.autoRotate = false;
       };
+      // eslint-disable-next-line @eslint-react/web-api-no-leaked-event-listener -- removed in innerCleanup at the bottom of this rAF callback.
       controls.addEventListener("start", stopAutoRotate);
 
       // Directional lights add shape on top of the environment probe.

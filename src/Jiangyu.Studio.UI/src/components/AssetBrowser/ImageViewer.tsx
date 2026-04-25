@@ -30,11 +30,13 @@ export function ImageViewer({ src, alt }: Props) {
   const [fitted, setFitted] = useState(true);
 
   // Reset when image changes.
-  useEffect(() => {
+  const [prevSrc, setPrevSrc] = useState(src);
+  if (prevSrc !== src) {
+    setPrevSrc(src);
     setZoom(1);
     setOffset({ x: 0, y: 0 });
     setFitted(true);
-  }, [src]);
+  }
 
   // Native non-passive wheel listener so preventDefault actually blocks the
   // browser's default Ctrl-wheel behaviour (page zoom). React's synthetic
@@ -94,22 +96,15 @@ export function ImageViewer({ src, alt }: Props) {
 
       // Snapshot the visual position before switching away from fitted.
       let startOffset: { x: number; y: number };
-      let startZoom: number;
       if (fitted) {
         const fs = readFittedState(container);
-        if (fs) {
-          startOffset = { x: fs.ox, y: fs.oy };
-          startZoom = fs.fitScale;
-        } else {
-          startOffset = { x: 0, y: 0 };
-          startZoom = 1;
-        }
+        const startZoom = fs ? fs.fitScale : 1;
+        startOffset = fs ? { x: fs.ox, y: fs.oy } : { x: 0, y: 0 };
         setZoom(startZoom);
         setOffset(startOffset);
         setFitted(false);
       } else {
         startOffset = { ...offset };
-        startZoom = zoom;
       }
 
       const prevCursor = document.body.style.cursor;
@@ -132,7 +127,7 @@ export function ImageViewer({ src, alt }: Props) {
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
     },
-    [offset, zoom, fitted],
+    [offset, fitted],
   );
 
   const handleDoubleClick = useCallback(() => {

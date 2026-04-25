@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useReducer, useState } from "react";
 import { CheckCircle, CircleDot, PanelLeft, PanelLeftClose, XCircle } from "lucide-react";
 import {
   formatDurationShort,
@@ -146,10 +146,10 @@ function IdleSegment() {
 
 /** Force a re-render every 500ms while running so the duration ticks. */
 function useTickerWhileRunning(running: boolean): void {
-  const [, setTick] = useState(0);
+  const [, forceUpdate] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
     if (!running) return;
-    const handle = setInterval(() => setTick((n) => n + 1), 500);
+    const handle = setInterval(forceUpdate, 500);
     return () => clearInterval(handle);
   }, [running]);
 }
@@ -162,9 +162,11 @@ function useTickerWhileRunning(running: boolean): void {
 function useDisplayStatus(state: CompileState): CompileStatus {
   const [override, setOverride] = useState<"idle" | null>(null);
 
-  useEffect(() => {
+  const [prevStatus, setPrevStatus] = useState(state.status);
+  if (prevStatus !== state.status) {
+    setPrevStatus(state.status);
     setOverride(null);
-  }, [state.status]);
+  }
 
   useEffect(() => {
     if (state.status !== "success") return;

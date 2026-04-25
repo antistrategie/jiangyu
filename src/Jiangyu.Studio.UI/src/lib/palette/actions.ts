@@ -55,12 +55,12 @@ export const usePaletteStore = create<PaletteStore>((set) => ({
  * actions only re-register when their identity or contents change.
  */
 export function useRegisterActions(actions: readonly PaletteAction[]): void {
-  const slot = useId();
+  const slotId = useId();
   useEffect(() => {
     const { register, unregister } = usePaletteStore.getState();
-    register(slot, actions);
-    return () => unregister(slot);
-  }, [slot, actions]);
+    register(slotId, actions);
+    return () => unregister(slotId);
+  }, [slotId, actions]);
 }
 
 /** Snapshot of all currently-registered actions, ordered by registration time. */
