@@ -9,9 +9,21 @@ export interface CrossMemberPayload {
   readonly m: typeof MARKER;
   readonly templateType: string;
   readonly fieldPath: string;
+  /**
+   * Schema hints copied from the source TemplateMember at drag-start so the
+   * drop site can build a correctly-typed default directive without a
+   * round-trip to the catalog. Drops that arrive in a window with no catalog
+   * still get the right value kind.
+   */
+  readonly typeName?: string;
   readonly patchScalarKind?: string;
-  readonly enumMemberNames?: readonly string[];
-  readonly referenceTargetTypeName?: string;
+  readonly elementTypeName?: string;
+  readonly enumTypeName?: string;
+  readonly referenceTypeName?: string;
+  readonly isCollection?: boolean;
+  readonly isScalar?: boolean;
+  readonly isTemplateReference?: boolean;
+  readonly namedArrayEnumTypeName?: string;
 }
 
 export function encodeCrossMemberPayload(payload: Omit<CrossMemberPayload, "m">): string {

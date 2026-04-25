@@ -43,6 +43,10 @@ public sealed class KdlEditorNode
     [JsonPropertyName("cloneId")]
     public string? CloneId { get; set; }
 
+    /// <summary>1-based source line of the node. Set by the parser for diagnostic output.</summary>
+    [JsonPropertyName("line")]
+    public int? Line { get; set; }
+
     [JsonPropertyName("directives")]
     public List<KdlEditorDirective> Directives { get; set; } = [];
 }
@@ -71,6 +75,10 @@ public sealed class KdlEditorDirective
     /// <summary>Absent for remove ops.</summary>
     [JsonPropertyName("value")]
     public KdlEditorValue? Value { get; set; }
+
+    /// <summary>1-based source line of the directive. Set by the parser for diagnostic output.</summary>
+    [JsonPropertyName("line")]
+    public int? Line { get; set; }
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

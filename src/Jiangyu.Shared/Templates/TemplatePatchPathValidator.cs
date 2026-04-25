@@ -58,10 +58,10 @@ public static class TemplatePatchPathValidator
     /// loader-side catalogue so hand-authored mods that skip compilation get
     /// the same checks as compiled bundles.
     /// <list type="bullet">
-    ///   <item><description><c>Set</c>: no <c>index</c> field; value required.</description></item>
+    ///   <item><description><c>Set</c>: <c>index</c> optional (required when targeting a collection element; forbidden on scalars — enforced by the catalog-aware validator); terminal not indexed; value required.</description></item>
     ///   <item><description><c>Append</c>: no <c>index</c> field; terminal not indexed; value required.</description></item>
     ///   <item><description><c>InsertAt</c>: <c>index</c> required and non-negative; terminal not indexed; value required.</description></item>
-    ///   <item><description><c>Remove</c>: no <c>index</c> field; terminal must be indexed; no value.</description></item>
+    ///   <item><description><c>Remove</c>: <c>index</c> required and non-negative; terminal not indexed; no value.</description></item>
     /// </list>
     /// </summary>
     public static bool TryValidateOpShape(
@@ -77,9 +77,14 @@ public static class TemplatePatchPathValidator
         switch (op.Op)
         {
             case CompiledTemplateOp.Set:
-                if (op.Index.HasValue)
+                if (op.Index.HasValue && op.Index.Value < 0)
                 {
-                    error = "op=Set cannot carry an 'index' field; index is only valid for InsertAt.";
+                    error = $"op=Set has negative index {op.Index.Value}.";
+                    return false;
+                }
+                if (terminalIndexed)
+                {
+                    error = "op=Set cannot have an indexed terminal segment; use 'set \"<Field>\" index=N' to write one collection element.";
                     return false;
                 }
                 return RequireValue(op.Value, out error);
@@ -116,14 +121,19 @@ public static class TemplatePatchPathValidator
                 return RequireValue(op.Value, out error);
 
             case CompiledTemplateOp.Remove:
-                if (op.Index.HasValue)
+                if (!op.Index.HasValue)
                 {
-                    error = "op=Remove cannot carry an 'index' field; encode the position in the terminal (e.g. Skills[2]).";
+                    error = "op=Remove requires an 'index' field.";
                     return false;
                 }
-                if (!terminalIndexed)
+                if (op.Index.Value < 0)
                 {
-                    error = "op=Remove requires an indexed terminal segment; encode the position in the path.";
+                    error = $"op=Remove has negative index {op.Index.Value}.";
+                    return false;
+                }
+                if (terminalIndexed)
+                {
+                    error = "op=Remove cannot have an indexed terminal segment; the position comes from the 'index' field.";
                     return false;
                 }
                 if (op.Value != null)

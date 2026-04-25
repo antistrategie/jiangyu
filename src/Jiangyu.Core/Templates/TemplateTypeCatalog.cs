@@ -1,4 +1,5 @@
 using System.Reflection;
+using Jiangyu.Core.Il2Cpp;
 
 namespace Jiangyu.Core.Templates;
 
@@ -34,14 +35,19 @@ public sealed class TemplateTypeCatalog : IDisposable
 
     private readonly MetadataLoadContext _context;
     private readonly Type[] _allTypes;
+    private readonly Il2CppMetadataSupplement? _supplement;
 
-    private TemplateTypeCatalog(MetadataLoadContext context, Type[] allTypes)
+    private TemplateTypeCatalog(MetadataLoadContext context, Type[] allTypes, Il2CppMetadataSupplement? supplement)
     {
         _context = context;
         _allTypes = allTypes;
+        _supplement = supplement;
     }
 
-    public static TemplateTypeCatalog Load(string assemblyPath, IEnumerable<string>? additionalSearchDirectories = null)
+    public static TemplateTypeCatalog Load(
+        string assemblyPath,
+        IEnumerable<string>? additionalSearchDirectories = null,
+        Il2CppMetadataSupplement? supplement = null)
     {
         if (!File.Exists(assemblyPath))
             throw new FileNotFoundException($"Assembly not found: {assemblyPath}", assemblyPath);
@@ -80,7 +86,7 @@ public sealed class TemplateTypeCatalog : IDisposable
             allTypes = ex.Types.Where(t => t != null).ToArray()!;
         }
 
-        return new TemplateTypeCatalog(context, allTypes);
+        return new TemplateTypeCatalog(context, allTypes, supplement);
     }
 
     /// <summary>
@@ -168,7 +174,8 @@ public sealed class TemplateTypeCatalog : IDisposable
                     DeclaringTypeFullName: current.FullName ?? current.Name,
                     IsInherited: !ReferenceEquals(current, type),
                     IsWritable: writable,
-                    IsLikelyOdinOnly: IsLikelyOdinOnly(property)));
+                    IsLikelyOdinOnly: IsLikelyOdinOnly(property),
+                    NamedArrayEnumTypeName: GetNamedArrayEnumShortName(property)));
             }
 
             foreach (var field in current.GetFields(flags))
@@ -187,7 +194,8 @@ public sealed class TemplateTypeCatalog : IDisposable
                     DeclaringTypeFullName: current.FullName ?? current.Name,
                     IsInherited: !ReferenceEquals(current, type),
                     IsWritable: writable,
-                    IsLikelyOdinOnly: IsLikelyOdinOnly(field)));
+                    IsLikelyOdinOnly: IsLikelyOdinOnly(field),
+                    NamedArrayEnumTypeName: GetNamedArrayEnumShortName(field)));
             }
         }
 
@@ -282,18 +290,34 @@ public sealed class TemplateTypeCatalog : IDisposable
         if (type.IsArray)
             return FriendlyName(type.GetElementType()!) + "[]";
 
+        // Non-generic Il2Cpp array wrapper (currently just Il2CppStringArray).
+        if (!type.IsGenericType && Il2CppArrayDefinitionFullNames.Contains(type.FullName ?? string.Empty))
+            return "String[]";
+
         if (type.IsGenericType)
         {
             var definition = type.GetGenericTypeDefinition();
+            var fullName = definition.FullName ?? string.Empty;
+
+            // Il2Cpp array wrappers are interop-level types with the same
+            // semantics (and same patch syntax) as the native primitive/ref
+            // array they wrap — render them as `T[]` so the UI doesn't leak
+            // implementation-level naming to modders.
+            if (Il2CppArrayDefinitionFullNames.Contains(fullName))
+            {
+                var inner = type.GenericTypeArguments.Length == 1
+                    ? FriendlyName(type.GenericTypeArguments[0])
+                    : "object";
+                return inner + "[]";
+            }
+
             var baseName = definition.Name;
             var tickIndex = baseName.IndexOf('`');
             if (tickIndex >= 0)
                 baseName = baseName[..tickIndex];
 
-            if (definition.FullName == Il2CppSystemListFullName || definition.FullName == BclListFullName)
+            if (fullName == Il2CppSystemListFullName || fullName == BclListFullName)
                 baseName = "List";
-            else if (Il2CppArrayDefinitionFullNames.Contains(definition.FullName ?? string.Empty))
-                baseName = "Il2CppArray";
 
             var args = string.Join(", ", type.GenericTypeArguments.Select(FriendlyName));
             return $"{baseName}<{args}>";
@@ -315,6 +339,52 @@ public sealed class TemplateTypeCatalog : IDisposable
             "System.String" => "String",
             _ => type.Name,
         };
+    }
+
+    /// <summary>
+    /// Returns the member list with attribute-derived hints overlaid from the
+    /// IL2CPP metadata supplement (e.g. <c>NamedArrayEnumTypeName</c>). When
+    /// no supplement is loaded, the input list is returned unchanged.
+    /// Members are matched by declaring-type short name + member name —
+    /// FullName matching breaks down when comparing Il2CppInterop wrappers
+    /// (`Il2Cpp…`-prefixed) against Cpp2IL output (raw names).
+    /// </summary>
+    public IReadOnlyList<MemberShape> EnrichMembers(Type declaringType, IReadOnlyList<MemberShape> members)
+    {
+        if (_supplement is null) return members;
+        if (_supplement.NamedArrays.Count == 0 && _supplement.Fields.Count == 0) return members;
+
+        var typeShortName = declaringType.Name;
+        var enriched = new List<MemberShape>(members.Count);
+        foreach (var member in members)
+        {
+            var current = member;
+
+            // NamedArray pairing.
+            if (current.NamedArrayEnumTypeName is null
+                && _supplement.TryFindNamedArrayEnum(typeShortName, current.Name, out var enumName)
+                && enumName is not null)
+            {
+                current = current with { NamedArrayEnumTypeName = enumName };
+            }
+
+            // Per-field attribute hints (Range/Min/Tooltip/HideInInspector/SoundID).
+            var meta = _supplement.FindFieldMetadata(typeShortName, current.Name);
+            if (meta is not null)
+            {
+                current = current with
+                {
+                    NumericMin = meta.RangeMin ?? meta.MinValue ?? current.NumericMin,
+                    NumericMax = meta.RangeMax ?? current.NumericMax,
+                    Tooltip = meta.Tooltip ?? current.Tooltip,
+                    IsHiddenInInspector = current.IsHiddenInInspector || meta.HideInInspector == true,
+                    IsSoundIdField = current.IsSoundIdField || meta.IsSoundId == true,
+                };
+            }
+
+            enriched.Add(current);
+        }
+        return enriched;
     }
 
     public void Dispose() => _context.Dispose();
@@ -358,6 +428,51 @@ public sealed class TemplateTypeCatalog : IDisposable
         catch
         {
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Detects the game's <c>[NamedArray(typeof(X))]</c> convention — a
+    /// primitive-element array whose slots correspond 1:1 to the members of
+    /// an enum. Matches on attribute *shape* rather than name: any attribute
+    /// on a primitive-element array member that carries <c>typeof(SomeEnum)</c>
+    /// as a constructor argument is treated as the paired-enum declaration.
+    /// Shape-based matching means this keeps working if the game renames the
+    /// attribute, moves its namespace, or if Il2CppInterop wraps/mangles the
+    /// attribute type.
+    /// </summary>
+    private static string? GetNamedArrayEnumShortName(MemberInfo member)
+    {
+        try
+        {
+            var memberType = member switch
+            {
+                FieldInfo f => f.FieldType,
+                PropertyInfo p => p.PropertyType,
+                _ => null,
+            };
+            if (memberType is null) return null;
+
+            // Only primitive-element collections (byte[], int[], Il2CppStructArray<byte>, …)
+            // are plausibly enum-indexed. Reject non-collection members and
+            // reference arrays to avoid matching unrelated attributes that
+            // happen to take a typeof(enum) argument.
+            var elementType = GetElementType(memberType);
+            if (elementType is null || !IsScalar(elementType) || elementType.IsEnum) return null;
+
+            foreach (var attribute in CustomAttributeData.GetCustomAttributes(member))
+            {
+                foreach (var arg in attribute.ConstructorArguments)
+                {
+                    if (arg.Value is Type enumType && enumType.IsEnum)
+                        return enumType.Name;
+                }
+            }
+            return null;
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -434,4 +549,26 @@ public sealed record MemberShape(
     string DeclaringTypeFullName,
     bool IsInherited,
     bool IsWritable,
-    bool IsLikelyOdinOnly = false);
+    bool IsLikelyOdinOnly = false,
+    /// <summary>
+    /// When the member is decorated with <c>[NamedArray(typeof(T))]</c> (a
+    /// game convention that binds a primitive-array field to a specific enum
+    /// — each slot corresponds to one enum member), this is the short name of
+    /// the paired enum type. Consumers treat these arrays as fixed-size
+    /// lookups keyed by the enum, not as growable lists.
+    /// </summary>
+    string? NamedArrayEnumTypeName = null,
+    /// <summary>Inclusive lower bound from <c>[Range]</c> or <c>[Min]</c>.</summary>
+    double? NumericMin = null,
+    /// <summary>Inclusive upper bound from <c>[Range]</c>.</summary>
+    double? NumericMax = null,
+    /// <summary>Hover hint from <c>[Tooltip]</c>.</summary>
+    string? Tooltip = null,
+    /// <summary>True when the field carries <c>[HideInInspector]</c>.
+    /// Modder-facing UI hides these by default — the game itself keeps them
+    /// out of the Unity inspector for a reason.</summary>
+    bool IsHiddenInInspector = false,
+    /// <summary>True when the field carries the game's SoundID marker
+    /// (<c>Stem.SoundIDAttribute</c>). Field type is <c>Stem.ID</c>; UI may
+    /// label these or eventually offer a sound-bus picker.</summary>
+    bool IsSoundIdField = false);

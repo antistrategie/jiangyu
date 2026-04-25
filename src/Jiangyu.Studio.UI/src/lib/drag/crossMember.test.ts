@@ -14,18 +14,18 @@ describe("encode/parseCrossMemberPayload", () => {
     });
   });
 
-  it("preserves optional descriptors (scalar kind, enum members, ref target)", () => {
+  it("preserves optional descriptors (scalar kind, enum type, ref target)", () => {
     const raw = encodeCrossMemberPayload({
       templateType: "UnitLeaderTemplate",
       fieldPath: "Faction",
       patchScalarKind: "Enum",
-      enumMemberNames: ["Rebel", "Loyalist"],
-      referenceTargetTypeName: "PerkTreeTemplate",
+      enumTypeName: "FactionTag",
+      referenceTypeName: "PerkTreeTemplate",
     });
     const parsed = parseCrossMemberPayload(raw);
     expect(parsed?.patchScalarKind).toBe("Enum");
-    expect(parsed?.enumMemberNames).toEqual(["Rebel", "Loyalist"]);
-    expect(parsed?.referenceTargetTypeName).toBe("PerkTreeTemplate");
+    expect(parsed?.enumTypeName).toBe("FactionTag");
+    expect(parsed?.referenceTypeName).toBe("PerkTreeTemplate");
   });
 
   it("returns null for empty input", () => {

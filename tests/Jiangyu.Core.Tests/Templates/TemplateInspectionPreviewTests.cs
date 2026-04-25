@@ -85,7 +85,7 @@ public sealed class TemplateInspectionPreviewTests : IDisposable
             ],
             reference => new TemplatePreviewResolvedReference
             {
-                TemplateType = reference.TemplateType,
+                TemplateType = reference.TemplateType ?? string.Empty,
                 TemplateId = reference.TemplateId,
                 Collection = "resources.assets",
                 PathId = 2002,
@@ -109,7 +109,7 @@ public sealed class TemplateInspectionPreviewTests : IDisposable
     }
 
     [Fact]
-    public void TextRenderer_UsesNamedArraySugar_AndStableReferenceIdentity()
+    public void TextRenderer_PreservesStableReferenceIdentity()
     {
         ObjectInspectionResult result = CreateUnitLeaderResult("clone.beta");
         string text = TemplateInspectionTextRenderer.Render(
@@ -141,7 +141,6 @@ public sealed class TemplateInspectionPreviewTests : IDisposable
 
         Assert.Contains("preview: /tmp/mod/jiangyu.json", text);
         Assert.Contains("odin-only fields: CustomCondition", text);
-        Assert.Contains("Vitality: 40", text);
         Assert.Contains("PerkTreeTemplate:perk_tree.darby", text);
     }
 

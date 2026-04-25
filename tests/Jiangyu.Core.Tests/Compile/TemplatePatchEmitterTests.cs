@@ -7,7 +7,7 @@ namespace Jiangyu.Core.Tests.Compile;
 public class TemplatePatchEmitterTests
 {
     [Fact]
-    public void NullOrEmptyInput_ReturnsSuccessWithNoRewrites()
+    public void NullOrEmptyInput_ReturnsSuccess()
     {
         var log = new RecordingLogSink();
 
@@ -15,45 +15,53 @@ public class TemplatePatchEmitterTests
         var resultForEmpty = TemplatePatchEmitter.Emit([], log);
 
         Assert.True(resultForNull.Success);
-        Assert.Equal(0, resultForNull.RewriteCount);
         Assert.True(resultForEmpty.Success);
         Assert.Empty(log.Errors);
     }
 
     [Fact]
-    public void SugarPath_IsRewrittenToCanonicalIndexedForm()
+    public void SetOp_WithIndex_PassesThrough()
     {
         var log = new RecordingLogSink();
         var patches = new List<CompiledTemplatePatch>
         {
-            BuildPatch("UnitLeaderTemplate", "hero.elena", "InitialAttributes.Vitality", Byte(12)),
+            new()
+            {
+                TemplateType = "UnitLeaderTemplate",
+                TemplateId = "hero.elena",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "InitialAttributes",
+                    Index = 4,
+                    Value = Byte(12),
+                }],
+            },
         };
 
         var result = TemplatePatchEmitter.Emit(patches, log);
 
         Assert.True(result.Success);
-        Assert.Equal(1, result.RewriteCount);
         var emitted = Assert.Single(result.Patches!);
         var op = Assert.Single(emitted.Set);
-        Assert.Equal("InitialAttributes[4]", op.FieldPath);
+        Assert.Equal("InitialAttributes", op.FieldPath);
+        Assert.Equal(4, op.Index);
         Assert.Empty(log.Errors);
     }
 
     [Fact]
-    public void AlreadyIndexedPath_PassesThroughWithoutRewrite()
+    public void SetOp_IndexedTerminal_Errors()
     {
         var log = new RecordingLogSink();
         var patches = new List<CompiledTemplatePatch>
         {
-            BuildPatch("UnitLeaderTemplate", "hero.elena", "InitialAttributes[2]", Byte(8)),
+            BuildPatch("UnitLeaderTemplate", "hero.elena", "InitialAttributes[4]", Byte(12)),
         };
 
         var result = TemplatePatchEmitter.Emit(patches, log);
 
-        Assert.True(result.Success);
-        Assert.Equal(0, result.RewriteCount);
-        var op = Assert.Single(result.Patches!.Single().Set);
-        Assert.Equal("InitialAttributes[2]", op.FieldPath);
+        Assert.False(result.Success);
+        Assert.Contains("op=Set cannot have an indexed terminal", log.Errors[0]);
     }
 
     [Fact]
@@ -62,34 +70,16 @@ public class TemplatePatchEmitterTests
         var log = new RecordingLogSink();
         var patches = new List<CompiledTemplatePatch>
         {
-            BuildPatch("UnitLeaderTemplate", "hero.elena", "InitialAttributes.Precision", Byte(5)),
+            BuildPatch("UnitLeaderTemplate", "hero.elena", "Health", Byte(5)),
         };
 
         var first = TemplatePatchEmitter.Emit(patches, log);
-        Assert.Equal(1, first.RewriteCount);
+        Assert.True(first.Success);
 
         var second = TemplatePatchEmitter.Emit(first.Patches, log);
 
         Assert.True(second.Success);
-        Assert.Equal(0, second.RewriteCount);
-        Assert.Equal("InitialAttributes[5]", second.Patches!.Single().Set.Single().FieldPath);
-    }
-
-    [Fact]
-    public void UnknownSugarAttribute_EscalatesToCompileError()
-    {
-        var log = new RecordingLogSink();
-        var patches = new List<CompiledTemplatePatch>
-        {
-            BuildPatch("UnitLeaderTemplate", "hero.elena", "InitialAttributes.NopeNotAThing", Byte(1)),
-        };
-
-        var result = TemplatePatchEmitter.Emit(patches, log);
-
-        Assert.False(result.Success);
-        Assert.Equal(1, result.ErrorCount);
-        Assert.Single(log.Errors);
-        Assert.Contains("NopeNotAThing", log.Errors[0]);
+        Assert.Equal("Health", second.Patches!.Single().Set.Single().FieldPath);
     }
 
     [Fact]
@@ -167,30 +157,13 @@ public class TemplatePatchEmitterTests
     }
 
     [Fact]
-    public void NonSugarTemplateType_LeavesPathUntouched()
-    {
-        var log = new RecordingLogSink();
-        var patches = new List<CompiledTemplatePatch>
-        {
-            BuildPatch("EntityTemplate", "unit.marine", "InitialAttributes.Agility", Byte(7)),
-        };
-
-        var result = TemplatePatchEmitter.Emit(patches, log);
-
-        Assert.True(result.Success);
-        Assert.Equal(0, result.RewriteCount);
-        Assert.Equal("InitialAttributes.Agility", result.Patches!.Single().Set.Single().FieldPath);
-    }
-
-    [Fact]
     public void MixedValidAndInvalid_AggregatesAllErrors()
     {
         var log = new RecordingLogSink();
         var patches = new List<CompiledTemplatePatch>
         {
-            BuildPatch("UnitLeaderTemplate", "hero.elena", "InitialAttributes.Bogus", Byte(1)),
-            BuildPatch("UnitLeaderTemplate", "hero.zara", "InitialAttributes.Agility", Byte(9)),
             BuildPatch("EntityTemplate", "unit.marine", "Skills(0)", Int32(1)),
+            BuildPatch("EntityTemplate", "unit.grunt", "Skills(1)", Int32(2)),
         };
 
         var result = TemplatePatchEmitter.Emit(patches, log);
@@ -374,16 +347,35 @@ public class TemplatePatchEmitterTests
     }
 
     [Fact]
-    public void SetOp_WithIndexField_Errors()
+    public void SetOp_WithIndex_PassesThroughPathValidator()
     {
+        // Element-set uses `set "Field" index=N <value>`. The path validator
+        // doesn't know whether the target is a collection (that's the
+        // catalog-aware check), so at this layer the shape is legal as long
+        // as the terminal isn't also indexed.
         var log = new RecordingLogSink();
         var patches = SinglePatch("EntityTemplate", "unit.marine",
             new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Set, FieldPath = "Skills", Index = 1, Value = Int32(10) });
 
         var result = TemplatePatchEmitter.Emit(patches, log);
 
+        Assert.True(result.Success);
+        var op = result.Patches!.Single().Set.Single();
+        Assert.Equal(1, op.Index);
+        Assert.Equal("Skills", op.FieldPath);
+    }
+
+    [Fact]
+    public void SetOp_NegativeIndex_Errors()
+    {
+        var log = new RecordingLogSink();
+        var patches = SinglePatch("EntityTemplate", "unit.marine",
+            new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Set, FieldPath = "Skills", Index = -1, Value = Int32(10) });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
         Assert.False(result.Success);
-        Assert.Contains("op=Set cannot carry an 'index'", log.Errors[0]);
+        Assert.Contains("op=Set has negative index", log.Errors[0]);
     }
 
     [Fact]
@@ -445,44 +437,19 @@ public class TemplatePatchEmitterTests
     {
         var log = new RecordingLogSink();
         var patches = SinglePatch("EntityTemplate", "unit.marine",
-            new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Remove, FieldPath = "Skills[2]" });
+            new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Remove, FieldPath = "Skills", Index = 2 });
 
         var result = TemplatePatchEmitter.Emit(patches, log);
 
         Assert.True(result.Success);
         var op = result.Patches!.Single().Set.Single();
         Assert.Equal(CompiledTemplateOp.Remove, op.Op);
-        Assert.Equal("Skills[2]", op.FieldPath);
+        Assert.Equal("Skills", op.FieldPath);
+        Assert.Equal(2, op.Index);
     }
 
     [Fact]
-    public void RemoveOp_NonIndexedTerminal_Errors()
-    {
-        var log = new RecordingLogSink();
-        var patches = SinglePatch("EntityTemplate", "unit.marine",
-            new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Remove, FieldPath = "Skills" });
-
-        var result = TemplatePatchEmitter.Emit(patches, log);
-
-        Assert.False(result.Success);
-        Assert.Contains("op=Remove requires an indexed terminal", log.Errors[0]);
-    }
-
-    [Fact]
-    public void RemoveOp_WithValue_Errors()
-    {
-        var log = new RecordingLogSink();
-        var patches = SinglePatch("EntityTemplate", "unit.marine",
-            new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Remove, FieldPath = "Skills[2]", Value = Int32(10) });
-
-        var result = TemplatePatchEmitter.Emit(patches, log);
-
-        Assert.False(result.Success);
-        Assert.Contains("op=Remove cannot carry a value", log.Errors[0]);
-    }
-
-    [Fact]
-    public void RemoveOp_WithIndexField_Errors()
+    public void RemoveOp_IndexedTerminal_Errors()
     {
         var log = new RecordingLogSink();
         var patches = SinglePatch("EntityTemplate", "unit.marine",
@@ -491,7 +458,46 @@ public class TemplatePatchEmitterTests
         var result = TemplatePatchEmitter.Emit(patches, log);
 
         Assert.False(result.Success);
-        Assert.Contains("op=Remove cannot carry an 'index'", log.Errors[0]);
+        Assert.Contains("op=Remove cannot have an indexed terminal", log.Errors[0]);
+    }
+
+    [Fact]
+    public void RemoveOp_WithValue_Errors()
+    {
+        var log = new RecordingLogSink();
+        var patches = SinglePatch("EntityTemplate", "unit.marine",
+            new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Remove, FieldPath = "Skills", Index = 2, Value = Int32(10) });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.False(result.Success);
+        Assert.Contains("op=Remove cannot carry a value", log.Errors[0]);
+    }
+
+    [Fact]
+    public void RemoveOp_MissingIndex_Errors()
+    {
+        var log = new RecordingLogSink();
+        var patches = SinglePatch("EntityTemplate", "unit.marine",
+            new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Remove, FieldPath = "Skills" });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.False(result.Success);
+        Assert.Contains("op=Remove requires an 'index'", log.Errors[0]);
+    }
+
+    [Fact]
+    public void RemoveOp_NegativeIndex_Errors()
+    {
+        var log = new RecordingLogSink();
+        var patches = SinglePatch("EntityTemplate", "unit.marine",
+            new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Remove, FieldPath = "Skills", Index = -1 });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.False(result.Success);
+        Assert.Contains("op=Remove has negative index", log.Errors[0]);
     }
 
     [Fact]

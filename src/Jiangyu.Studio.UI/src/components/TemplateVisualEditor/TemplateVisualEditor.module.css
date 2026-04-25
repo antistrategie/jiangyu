@@ -195,6 +195,22 @@
   white-space: nowrap;
 }
 
+/* Inline tag for surfacing schema hints next to a directive's field name —
+   e.g. "sound" on Stem.SoundIDAttribute fields. Same hairline-box vibe as
+   cardBadge but smaller. */
+.fieldBadge {
+  display: inline-block;
+  margin-left: var(--space-1);
+  padding: 0 var(--space-1);
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  border: 1px solid var(--rule);
+  vertical-align: middle;
+}
+
 .setValue {
   flex: 1 1 80px;
   min-width: 0;
@@ -353,12 +369,42 @@
   background: var(--bg);
   color: var(--fg);
   border: 1px solid var(--rule);
+  border-radius: 0;
   outline: none;
   flex-shrink: 0;
 }
 
 .setIndexInput:focus {
   border-color: var(--cinnabar-1);
+}
+
+/* Named-array enum dropdown: same hairline / sharp-edged shell as the other
+   inputs, but wider for enum member names and with the OS appearance stripped
+   in favour of an inline chevron matching the rest of the design system. */
+.setIndexSelect {
+  composes: setIndexInput;
+  width: auto;
+  min-width: 80px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 18px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--fg-muted) 50%),
+    linear-gradient(135deg, var(--fg-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 9px) 50%,
+    calc(100% - 5px) 50%;
+  background-size:
+    4px 4px,
+    4px 4px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+.setIndexSelect:hover {
+  border-color: var(--fg-muted);
 }
 
 .setInsertRow {
@@ -564,21 +610,36 @@
 
 /* --- Add node area --- */
 
+/* Two side-by-side drop zones — one for Patch, one for Clone. Each is its
+   own drop target so the modder can drag a template anywhere into the zone,
+   not just onto the centred button. */
 .addNodeArea {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.addNodeZone {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-3);
   border: 1px dashed var(--rule);
   transition:
     border-color var(--ease-fast),
     background var(--ease-fast);
 }
 
-.addNodeAreaDragOver {
+.addNodeZoneDragOver {
   border-color: var(--cinnabar-1);
   background: color-mix(in srgb, var(--cinnabar-1) 8%, transparent);
+}
+
+.addNodeZoneDragReject {
+  border-color: var(--ink-4);
+  background: color-mix(in srgb, var(--ink-4) 4%, transparent);
+  cursor: not-allowed;
 }
 
 .addNodeBtn {
@@ -609,6 +670,12 @@
 .fieldAdderDragOver {
   background: color-mix(in srgb, var(--cinnabar-1) 8%, transparent);
   border-color: var(--cinnabar-1);
+}
+
+.fieldAdderDragReject {
+  background: color-mix(in srgb, var(--ink-4) 4%, transparent);
+  border-color: var(--ink-4);
+  cursor: not-allowed;
 }
 
 /* --- Parse error banner --- */
@@ -730,8 +797,21 @@
   overflow-y: auto;
   background: var(--bg);
   border: 1px solid var(--rule);
-  display: flex;
-  flex-direction: column;
+  /* No flex layout — the virtualised content is absolute-positioned inside a
+     fixed-height spacer, so flex would just confuse the scrollbar math. */
+}
+
+/* Virtualised dropdown row. Exact, fixed height (matches the virtualizer's
+   estimateSize) so the total scroll height stays constant — otherwise the
+   scrollbar thumb shrinks as the browser re-measures. box-sizing: border-box
+   keeps the height honest regardless of the .fieldAdderItem padding. */
+.refComboboxRow {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 28px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 /* --- Reference value inline --- */

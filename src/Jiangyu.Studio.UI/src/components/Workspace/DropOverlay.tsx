@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { zoneFor, type DropZone } from "./dropZone.ts";
+import { acceptsPaneDropDragData } from "./dropOverlayDragData.ts";
 import styles from "./Workspace.module.css";
 
 interface DropOverlayProps {
@@ -8,18 +9,13 @@ interface DropOverlayProps {
   onDrop: (zone: DropZone, e: React.DragEvent) => void;
 }
 
-function hasAcceptedMime(types: readonly string[], accepted: readonly string[]): boolean {
-  for (const t of accepted) if (types.includes(t)) return true;
-  return false;
-}
-
 export function DropOverlay({ active, acceptedMimes, onDrop }: DropOverlayProps) {
   const [zone, setZone] = useState<DropZone | null>(null);
 
   if (!active) return null;
 
   const handleDragOver = (e: React.DragEvent) => {
-    if (!hasAcceptedMime(e.dataTransfer.types, acceptedMimes)) return;
+    if (!acceptsPaneDropDragData(e.dataTransfer, acceptedMimes)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     const rect = e.currentTarget.getBoundingClientRect();

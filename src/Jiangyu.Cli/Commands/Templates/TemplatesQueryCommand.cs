@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Jiangyu.Core.Config;
+using Jiangyu.Core.Il2Cpp;
 using Jiangyu.Core.Templates;
 using Jiangyu.Shared.Templates;
 
@@ -56,6 +57,7 @@ public static class TemplatesQueryCommand
 
             string? assemblyPath = assemblyOverride;
             string? gamePath = null;
+            string? cachePath = null;
             if (string.IsNullOrWhiteSpace(assemblyPath))
             {
                 var resolution = EnvironmentContext.ResolveFromGlobalConfig();
@@ -73,6 +75,7 @@ public static class TemplatesQueryCommand
                 }
 
                 assemblyPath = Path.Combine(gamePath, DefaultAssemblyRelativePath);
+                cachePath = resolution.Context!.CachePath;
             }
             else
             {
@@ -106,7 +109,8 @@ public static class TemplatesQueryCommand
 
             try
             {
-                using var catalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirectories);
+                var supplement = cachePath is not null ? Il2CppMetadataCache.LoadIfPresent(cachePath) : null;
+                using var catalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirectories, supplement);
                 var result = TemplateMemberQuery.Run(catalog, path);
 
                 return result.Kind switch

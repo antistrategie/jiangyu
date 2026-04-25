@@ -1,3 +1,4 @@
+using Jiangyu.Core.Il2Cpp;
 using Jiangyu.Core.Templates;
 using Jiangyu.Core.Tests.Templates.Fixtures.Gameplay;
 
@@ -9,6 +10,9 @@ public class TemplateTypeCatalogTests
         typeof(FixtureEntity).Assembly.Location;
 
     private static TemplateTypeCatalog Load() => TemplateTypeCatalog.Load(FixtureAssemblyPath);
+
+    private static TemplateTypeCatalog LoadWithSupplement(Il2CppMetadataSupplement supplement)
+        => TemplateTypeCatalog.Load(FixtureAssemblyPath, supplement: supplement);
 
     [Fact]
     public void ResolveType_AcceptsShortName()
@@ -196,5 +200,75 @@ public class TemplateTypeCatalogTests
         var type = catalog.ResolveType("FixtureDamageType", out _, out _)!;
 
         Assert.Equal(["Ballistic", "Blunt", "Plasma"], TemplateTypeCatalog.GetEnumMemberNames(type));
+    }
+
+    [Fact]
+    public void EnrichMembers_OverlaysNamedArrayPairingsFromSupplement()
+    {
+        var supplement = new Il2CppMetadataSupplement
+        {
+            NamedArrays =
+            [
+                new NamedArrayPairing
+                {
+                    TemplateTypeShortName = "FixtureEntity",
+                    TemplateTypeFullName = "Jiangyu.Core.Tests.Templates.Fixtures.Gameplay.FixtureEntity",
+                    FieldName = "BoneIndices",
+                    EnumTypeShortName = "FixtureAttribute",
+                },
+            ],
+        };
+
+        using var catalog = LoadWithSupplement(supplement);
+        var type = catalog.ResolveType("FixtureEntity", out _, out _)!;
+        var members = TemplateTypeCatalog.GetMembers(type);
+
+        var enriched = catalog.EnrichMembers(type, members);
+
+        var boneIndices = enriched.Single(member => member.Name == "BoneIndices");
+        Assert.Equal("FixtureAttribute", boneIndices.NamedArrayEnumTypeName);
+    }
+
+    [Fact]
+    public void EnrichMembers_OverlaysFieldMetadataHintsFromSupplement()
+    {
+        var supplement = new Il2CppMetadataSupplement
+        {
+            Fields =
+            [
+                new FieldMetadata
+                {
+                    TemplateTypeShortName = "FixtureEntity",
+                    TemplateTypeFullName = "Jiangyu.Core.Tests.Templates.Fixtures.Gameplay.FixtureEntity",
+                    FieldName = "HudYOffsetScale",
+                    RangeMin = 0.1,
+                    RangeMax = 3.5,
+                    Tooltip = "HUD offset factor",
+                },
+                new FieldMetadata
+                {
+                    TemplateTypeShortName = "FixtureEntity",
+                    TemplateTypeFullName = "Jiangyu.Core.Tests.Templates.Fixtures.Gameplay.FixtureEntity",
+                    FieldName = "InitialSkill",
+                    HideInInspector = true,
+                    IsSoundId = true,
+                },
+            ],
+        };
+
+        using var catalog = LoadWithSupplement(supplement);
+        var type = catalog.ResolveType("FixtureEntity", out _, out _)!;
+        var members = TemplateTypeCatalog.GetMembers(type);
+
+        var enriched = catalog.EnrichMembers(type, members);
+
+        var hud = enriched.Single(member => member.Name == "HudYOffsetScale");
+        Assert.Equal(0.1, hud.NumericMin);
+        Assert.Equal(3.5, hud.NumericMax);
+        Assert.Equal("HUD offset factor", hud.Tooltip);
+
+        var initialSkill = enriched.Single(member => member.Name == "InitialSkill");
+        Assert.True(initialSkill.IsHiddenInInspector);
+        Assert.True(initialSkill.IsSoundIdField);
     }
 }

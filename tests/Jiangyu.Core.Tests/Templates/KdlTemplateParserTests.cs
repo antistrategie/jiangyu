@@ -97,30 +97,37 @@ public class KdlTemplateParserTests
         Assert.Equal(6, ops.Count);
 
         // Float
-        Assert.Equal(CompiledTemplateValueKind.Single, ops[0].Value!.Kind);
-        Assert.Equal(3.14f, ops[0].Value.Single);
+        var floatValue = Assert.IsType<CompiledTemplateValue>(ops[0].Value);
+        Assert.Equal(CompiledTemplateValueKind.Single, floatValue.Kind);
+        Assert.Equal(3.14f, floatValue.Single);
 
         // Boolean
-        Assert.Equal(CompiledTemplateValueKind.Boolean, ops[1].Value!.Kind);
-        Assert.True(ops[1].Value.Boolean);
+        var boolValue = Assert.IsType<CompiledTemplateValue>(ops[1].Value);
+        Assert.Equal(CompiledTemplateValueKind.Boolean, boolValue.Kind);
+        Assert.True(boolValue.Boolean == true);
 
-        // Integer → Int32
-        Assert.Equal(CompiledTemplateValueKind.Int32, ops[2].Value!.Kind);
-        Assert.Equal(42, ops[2].Value.Int32);
+        // Integer -> Int32
+        var intValue = Assert.IsType<CompiledTemplateValue>(ops[2].Value);
+        Assert.Equal(CompiledTemplateValueKind.Int32, intValue.Kind);
+        Assert.Equal(42, intValue.Int32);
 
         // String
-        Assert.Equal(CompiledTemplateValueKind.String, ops[3].Value!.Kind);
-        Assert.Equal("hello", ops[3].Value.String);
+        var stringValue = Assert.IsType<CompiledTemplateValue>(ops[3].Value);
+        Assert.Equal(CompiledTemplateValueKind.String, stringValue.Kind);
+        Assert.Equal("hello", stringValue.String);
 
         // TemplateReference
-        Assert.Equal(CompiledTemplateValueKind.TemplateReference, ops[4].Value!.Kind);
-        Assert.Equal("PerkTreeTemplate", ops[4].Value.Reference!.TemplateType);
-        Assert.Equal("perk_tree.greifinger", ops[4].Value.Reference.TemplateId);
+        var referenceValue = Assert.IsType<CompiledTemplateValue>(ops[4].Value);
+        Assert.Equal(CompiledTemplateValueKind.TemplateReference, referenceValue.Kind);
+        var reference = Assert.IsType<CompiledTemplateReference>(referenceValue.Reference);
+        Assert.Equal("PerkTreeTemplate", reference.TemplateType);
+        Assert.Equal("perk_tree.greifinger", reference.TemplateId);
 
         // Enum
-        Assert.Equal(CompiledTemplateValueKind.Enum, ops[5].Value!.Kind);
-        Assert.Equal("MovementType", ops[5].Value.EnumType);
-        Assert.Equal("Sprint", ops[5].Value.EnumValue);
+        var enumValue = Assert.IsType<CompiledTemplateValue>(ops[5].Value);
+        Assert.Equal(CompiledTemplateValueKind.Enum, enumValue.Kind);
+        Assert.Equal("MovementType", enumValue.EnumType);
+        Assert.Equal("Sprint", enumValue.EnumValue);
     }
 
     [Fact]

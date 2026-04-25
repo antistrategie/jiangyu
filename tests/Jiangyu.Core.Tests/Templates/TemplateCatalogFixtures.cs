@@ -25,6 +25,19 @@ namespace Menace.Tools
     }
 }
 
+namespace Menace.Tools
+{
+    // Minimal stand-in for the game's [NamedArray(typeof(T))] attribute used
+    // on enum-indexed primitive arrays. The catalog detects this by short
+    // name, so the containing namespace only needs to be distinct enough not
+    // to collide with Sirenix / Unity attributes.
+    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
+    public sealed class NamedArrayAttribute(Type enumType) : Attribute
+    {
+        public Type EnumType { get; } = enumType;
+    }
+}
+
 namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
 {
     public enum FixtureDamageType
@@ -32,6 +45,32 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
         Blunt,
         Ballistic,
         Plasma,
+    }
+
+    public enum FixtureAttribute
+    {
+        Agility = 0,
+        WeaponSkill = 1,
+        Vitality = 2,
+    }
+
+    public class FixtureNamedArrayHolder : Menace.Tools.DataTemplate
+    {
+        [Menace.Tools.NamedArray(typeof(FixtureAttribute))]
+        public byte[] Attributes { get; set; } = new byte[3];
+    }
+
+    // For the "ref-required-when-polymorphic" validator path: an abstract
+    // DataTemplate base (modder must specify ref=) and a holder template
+    // that exposes both a polymorphic and a concrete reference field.
+    public abstract class FixtureBaseDataTemplate : Menace.Tools.DataTemplate
+    {
+    }
+
+    public class FixtureRefHolder : Menace.Tools.DataTemplate
+    {
+        public FixtureBaseDataTemplate? PolymorphicRef { get; set; }
+        public FixtureSkillTemplate? ConcreteRef { get; set; }
     }
 
     public class FixtureProperties

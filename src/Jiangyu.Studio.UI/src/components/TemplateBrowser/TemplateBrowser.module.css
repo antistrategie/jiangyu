@@ -264,6 +264,35 @@
   user-select: none;
 }
 
+/* Faint grip glyph that appears on hover for draggable browser rows. Matches
+   the visual editor's `.dragGrip` styling so the drag affordance reads the
+   same on both sides of the drop. */
+.rowDragGrip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  cursor: grab;
+  color: var(--fg-muted);
+  opacity: 0;
+  transition: opacity var(--ease-fast);
+  flex-shrink: 0;
+}
+
+.row:hover .rowDragGrip,
+.memberRow:hover .rowDragGrip,
+.rowDragGrip:hover {
+  opacity: 1;
+}
+
+.rowDragGrip:active {
+  cursor: grabbing;
+}
+
+.rowDragging {
+  opacity: 0.35;
+}
+
 .row:hover {
   background: var(--bg-sunken);
 }

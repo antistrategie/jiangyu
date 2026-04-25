@@ -65,12 +65,10 @@ Sources imported from MenaceAssetPacker at
 
 ## Jiangyu Implementation
 
-- Offset table lives in `src/Jiangyu.Shared/Templates/TemplateFieldPathSugar.cs`
-  and is reviewable in one place.
-- Applied at mod-ingestion time via `TemplatePatchCatalog`, so the rewrite
-  happens before path validation and the runtime applier only ever sees the
-  canonical indexed form. Unknown attribute names fail loudly with a listing
-  of valid names.
+Modders patch attributes by their integer offset (`InitialAttributes[0]`
+through `InitialAttributes[6]`). There is no `.AttributeName` sugar — the
+loader and compiler both expect canonical indexed paths. Use the
+offset-to-attribute table above when authoring.
 
 ## Scope Limits
 

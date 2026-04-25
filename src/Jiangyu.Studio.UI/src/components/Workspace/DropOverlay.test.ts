@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { zoneFor } from "./dropZone.ts";
+import { acceptsPaneDropDragData } from "./dropOverlayDragData.ts";
 
 // 100x100 grid; edge band is the outer 25% (EDGE_FRACTION in zoneFor).
 const W = 100;
@@ -38,5 +39,56 @@ describe("zoneFor", () => {
     expect(zoneFor(10, 100, 400, 200)).toBe("left");
     expect(zoneFor(200, 100, 400, 200)).toBe("centre");
     expect(zoneFor(390, 100, 400, 200)).toBe("right");
+  });
+});
+
+describe("acceptsPaneDropDragData", () => {
+  const ACCEPTED = ["application/x-jiangyu-tab", "application/x-jiangyu-pane"] as const;
+
+  function data(types: readonly string[], plain = "") {
+    return {
+      types,
+      getData: (format: string) => (format === "text/plain" ? plain : ""),
+    };
+  }
+
+  it("accepts known pane/tab drag MIME types", () => {
+    expect(acceptsPaneDropDragData(data(["application/x-jiangyu-tab"]), ACCEPTED)).toBe(true);
+    expect(acceptsPaneDropDragData(data(["application/x-jiangyu-pane"]), ACCEPTED)).toBe(true);
+  });
+
+  it("rejects template drag tag MIME", () => {
+    expect(
+      acceptsPaneDropDragData(
+        data(["application/x-jiangyu-template-drag", "application/x-jiangyu-tab"]),
+        ACCEPTED,
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects template payload markers carried in text/plain", () => {
+    const instanceRaw = JSON.stringify({
+      m: "jiangyu-instance-drag/1",
+      name: "unit.alpha",
+      className: "EntityTemplate",
+    });
+    const memberRaw = JSON.stringify({
+      m: "jiangyu-member-drag/1",
+      templateType: "EntityTemplate",
+      fieldPath: "Health",
+    });
+
+    expect(acceptsPaneDropDragData(data(["text/plain"], instanceRaw), ACCEPTED)).toBe(false);
+    expect(acceptsPaneDropDragData(data(["text/plain"], memberRaw), ACCEPTED)).toBe(false);
+  });
+
+  it("ignores unrelated text/plain payloads", () => {
+    expect(acceptsPaneDropDragData(data(["text/plain"], "random"), ACCEPTED)).toBe(false);
+    expect(
+      acceptsPaneDropDragData(
+        data(["application/x-jiangyu-tab", "text/plain"], "random"),
+        ACCEPTED,
+      ),
+    ).toBe(true);
   });
 });

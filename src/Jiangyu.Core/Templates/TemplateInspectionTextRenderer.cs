@@ -1,7 +1,6 @@
 using System.Text;
 using System.Text.Json;
 using Jiangyu.Core.Models;
-using Jiangyu.Shared.Templates;
 
 namespace Jiangyu.Core.Templates;
 
@@ -59,26 +58,6 @@ public static class TemplateInspectionTextRenderer
 
         if (string.Equals(node.Kind, "array", StringComparison.Ordinal))
         {
-            IReadOnlyList<string> namedElements = TemplateFieldPathSugar.GetNamedArrayElementNames(context.TemplateType, label);
-            if (namedElements.Count > 0)
-            {
-                builder.AppendLine($"{indent}{label}: {{");
-
-                List<InspectedFieldNode> elements = node.Elements ?? [];
-                for (int i = 0; i < Math.Min(namedElements.Count, elements.Count); i++)
-                {
-                    builder.AppendLine($"{indent}  {namedElements[i]}: {FormatInline(elements[i], context, GetElementTypeName(node.FieldTypeName))}");
-                }
-
-                if (node.Truncated == true)
-                {
-                    builder.AppendLine($"{indent}  <truncated count={node.Count}>");
-                }
-
-                builder.AppendLine($"{indent}}}");
-                return;
-            }
-
             builder.AppendLine($"{indent}{label}: [");
             foreach (InspectedFieldNode element in node.Elements ?? [])
             {

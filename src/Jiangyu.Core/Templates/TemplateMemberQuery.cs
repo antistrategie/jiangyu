@@ -37,7 +37,7 @@ public static class TemplateMemberQuery
         var fieldSegments = segments.Skip(typeCutoff).ToArray();
 
         if (fieldSegments.Length == 0)
-            return TypeNodeFor(resolvedType, typeName);
+            return TypeNodeFor(catalog, resolvedType, typeName);
 
         var fieldPath = string.Join('.', fieldSegments);
         if (!TemplatePatchPathValidator.IsSupportedFieldPath(fieldPath))
@@ -89,14 +89,14 @@ public static class TemplateMemberQuery
         return bestLen;
     }
 
-    private static QueryResult TypeNodeFor(Type type, string resolvedPath)
+    private static QueryResult TypeNodeFor(TemplateTypeCatalog catalog, Type type, string resolvedPath)
     {
         return new QueryResult
         {
             Kind = QueryResultKind.TypeNode,
             ResolvedPath = resolvedPath,
             CurrentType = type,
-            Members = TemplateTypeCatalog.GetMembers(type, includeReadOnly: true),
+            Members = catalog.EnrichMembers(type, TemplateTypeCatalog.GetMembers(type, includeReadOnly: true)),
         };
     }
 
@@ -113,6 +113,7 @@ public static class TemplateMemberQuery
         bool lastWritable = true;
         bool lastOdinOnly = false;
         bool lastSegmentHadIndexer = false;
+        string? lastNamedArrayEnum = null;
 
         for (var i = 0; i < fieldSegments.Length; i++)
         {
@@ -122,7 +123,7 @@ public static class TemplateMemberQuery
             var hasIndexer = bracketIndex != -1;
             lastSegmentHadIndexer = hasIndexer;
 
-            var members = TemplateTypeCatalog.GetMembers(currentType, includeReadOnly: true);
+            var members = catalog.EnrichMembers(currentType, TemplateTypeCatalog.GetMembers(currentType, includeReadOnly: true));
             var member = members.FirstOrDefault(m => m.Name == memberName);
             if (member == null)
             {
@@ -135,6 +136,13 @@ public static class TemplateMemberQuery
             lastMemberType = member.MemberType;
             lastWritable = member.IsWritable;
             lastOdinOnly = member.IsLikelyOdinOnly;
+            // Only carry the NamedArray enum forward when the terminal step
+            // actually lands on the array itself — a path like
+            // `InitialAttributes.Foo` that navigates past the array element
+            // is no longer the NamedArray itself.
+            lastNamedArrayEnum = (i == fieldSegments.Length - 1 && !hasIndexer)
+                ? member.NamedArrayEnumTypeName
+                : null;
             unwrappedFrom = null;
 
             var memberType = member.MemberType;
@@ -175,6 +183,8 @@ public static class TemplateMemberQuery
                 PatchScalarKind = MapScalarKind(lastMemberType),
                 EnumMemberNames = TemplateTypeCatalog.GetEnumMemberNames(lastMemberType),
                 IsLikelyOdinOnly = lastOdinOnly,
+                UnwrappedFrom = unwrappedFrom,
+                NamedArrayEnumTypeName = lastNamedArrayEnum,
             };
         }
 
@@ -191,6 +201,7 @@ public static class TemplateMemberQuery
                 PatchScalarKind = CompiledTemplateValueKind.TemplateReference,
                 ReferenceTargetTypeName = catalog.FriendlyName(lastMemberType),
                 IsLikelyOdinOnly = lastOdinOnly,
+                UnwrappedFrom = unwrappedFrom,
             };
         }
 
@@ -199,7 +210,8 @@ public static class TemplateMemberQuery
             Kind = QueryResultKind.TypeNode,
             ResolvedPath = resolvedPath,
             CurrentType = currentType,
-            Members = TemplateTypeCatalog.GetMembers(currentType, includeReadOnly: true),
+            NamedArrayEnumTypeName = lastNamedArrayEnum,
+            Members = catalog.EnrichMembers(currentType, TemplateTypeCatalog.GetMembers(currentType, includeReadOnly: true)),
             IsWritable = lastWritable,
             UnwrappedFrom = unwrappedFrom,
             PatchScalarKind = lastMemberType != null
@@ -253,6 +265,13 @@ public sealed class QueryResult
     public string? ReferenceTargetTypeName { get; init; }
     public bool IsLikelyOdinOnly { get; init; }
     public string? ErrorMessage { get; init; }
+    /// <summary>
+    /// When the terminal member is a <c>[NamedArray(typeof(T))]</c> primitive
+    /// array, the short name of the paired enum. Non-null implies the array
+    /// is fixed-size and enum-indexed — append/insert/remove are semantically
+    /// invalid on these fields.
+    /// </summary>
+    public string? NamedArrayEnumTypeName { get; init; }
 
     public static QueryResult FromError(string message) => new()
     {

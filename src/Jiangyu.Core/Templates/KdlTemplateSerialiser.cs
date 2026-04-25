@@ -90,7 +90,7 @@ public static class KdlTemplateSerialiser
 
         sb.Append($"{op} \"{Esc(d.FieldPath)}\"");
 
-        if (d.Op == KdlEditorOp.Insert && d.Index != null)
+        if ((d.Op == KdlEditorOp.Insert || d.Op == KdlEditorOp.Set) && d.Index != null)
             sb.Append(CultureInfo.InvariantCulture, $" index={d.Index.Value}");
 
         if (d.Op == KdlEditorOp.Remove)
@@ -138,7 +138,14 @@ public static class KdlTemplateSerialiser
                 break;
 
             case KdlEditorValueKind.TemplateReference:
-                sb.Append($"ref=\"{Esc(v.ReferenceType ?? "")}\" \"{Esc(v.ReferenceId ?? "")}\"");
+                // The reference type is implicit on concrete fields — only
+                // emit `ref="…"` when the modder explicitly chose a type
+                // (polymorphic destination). Loader and validator derive the
+                // type from the declared field otherwise.
+                if (!string.IsNullOrEmpty(v.ReferenceType))
+                    sb.Append($"ref=\"{Esc(v.ReferenceType)}\" \"{Esc(v.ReferenceId ?? "")}\"");
+                else
+                    sb.Append($"\"{Esc(v.ReferenceId ?? "")}\"");
                 break;
 
             case KdlEditorValueKind.Composite:

@@ -321,7 +321,10 @@ public static class TemplatesInspectCommand
         TemplateModPreviewPlan previewPlan,
         CompiledTemplateReference reference)
     {
-        TemplatePreviewKey key = new(reference.TemplateType, reference.TemplateId);
+        string templateType = string.IsNullOrWhiteSpace(reference.TemplateType)
+            ? "EntityTemplate"
+            : reference.TemplateType.Trim();
+        TemplatePreviewKey key = new(templateType, reference.TemplateId);
 
         if (previewPlan.TryGetClone(key, out _))
         {
@@ -332,7 +335,7 @@ public static class TemplatesInspectCommand
             };
         }
 
-        TemplateResolutionResult resolution = new TemplateResolver(index).Resolve(reference.TemplateType, reference.TemplateId);
+        TemplateResolutionResult resolution = new TemplateResolver(index).Resolve(templateType, reference.TemplateId);
         if (resolution.Status != TemplateResolutionStatus.Success)
         {
             return null;
@@ -340,7 +343,7 @@ public static class TemplatesInspectCommand
 
         return new TemplatePreviewResolvedReference
         {
-            TemplateType = reference.TemplateType,
+            TemplateType = templateType,
             TemplateId = reference.TemplateId,
             Collection = resolution.Resolved!.Identity.Collection,
             PathId = resolution.Resolved.Identity.PathId,

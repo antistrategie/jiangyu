@@ -11,6 +11,7 @@ import { ResizeHandle } from "./ResizeHandle.tsx";
 import type { DropZone } from "./dropZone.ts";
 import { parseCrossTabPayload, completeTabMove, CROSS_TAB_MIME } from "@lib/drag/crossTab.ts";
 import { CROSS_PANE_MIME, completePaneMove, parseCrossPanePayload } from "@lib/drag/crossPane.ts";
+import { isTemplateDragPayload } from "@lib/drag/templateDrag.ts";
 import {
   PANE_DRAG_MIME,
   TAB_DRAG_MIME,
@@ -85,6 +86,10 @@ export function WorkspaceGrid({
       const types = e.dataTransfer?.types;
       if (types === undefined) return;
       const arr = Array.from(types);
+      // Template-browser drags target the visual editor, not pane splits.
+      // Tag MIME is reliable same-window; cross-window we best-effort inspect
+      // text/plain to detect the template payload marker.
+      if (e.dataTransfer !== null && isTemplateDragPayload(e.dataTransfer)) return;
       if (arr.includes(CROSS_TAB_MIME) || arr.includes(CROSS_PANE_MIME)) {
         setDragActive(true);
       }

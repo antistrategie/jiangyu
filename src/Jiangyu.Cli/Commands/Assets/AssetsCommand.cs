@@ -2,7 +2,9 @@ using System.CommandLine;
 using Jiangyu.Core.Assets;
 using Jiangyu.Core.Compile;
 using Jiangyu.Core.Config;
+using Jiangyu.Core.Il2Cpp;
 using Jiangyu.Core.Models;
+using Jiangyu.Core.Unity;
 
 namespace Jiangyu.Cli.Commands.Assets;
 
@@ -33,11 +35,58 @@ public static class AssetsCommand
                 return 1;
             }
 
-            var service = resolution.Context!.CreateAssetPipelineService(new ConsoleProgressSink(), new ConsoleLogSink());
+            var ctx = resolution.Context!;
+            var log = new ConsoleLogSink();
+            var service = ctx.CreateAssetPipelineService(new ConsoleProgressSink(), log);
             service.BuildIndex();
+
+            BuildIl2CppMetadataSupplement(ctx, log);
             return 0;
         });
         return command;
+    }
+
+    /// <summary>
+    /// IL2CPP metadata supplement build — runs alongside the asset index so
+    /// `assets index` is the single "refresh everything Jiangyu derives from
+    /// the game files" command. Failure is non-fatal: catalog falls back to
+    /// the wrapper-only view if the supplement isn't available.
+    /// </summary>
+    private static void BuildIl2CppMetadataSupplement(EnvironmentContext ctx, ConsoleLogSink log)
+    {
+        var gameRoot = Path.GetDirectoryName(ctx.GameDataPath);
+        if (gameRoot is null)
+        {
+            log.Warning("Could not derive game install root; skipping IL2CPP metadata extract.");
+            return;
+        }
+
+        var gameAssemblyPath = Path.Combine(gameRoot, "GameAssembly.dll");
+        var metadataPath = Path.Combine(ctx.GameDataPath, "il2cpp_data", "Metadata", "global-metadata.dat");
+        if (!File.Exists(gameAssemblyPath) || !File.Exists(metadataPath))
+        {
+            log.Info("IL2CPP metadata files not found (Mono build?); skipping IL2CPP metadata extract.");
+            return;
+        }
+
+        var unityVersion = UnityVersionValidationService.DetectGameVersion(ctx.GameDataPath);
+        if (unityVersion is null || unityVersion.Value == default)
+        {
+            log.Warning("Could not detect Unity version; skipping IL2CPP metadata extract.");
+            return;
+        }
+
+        try
+        {
+            Il2CppMetadataCache.BuildAndPersist(ctx.CachePath, gameAssemblyPath, metadataPath, unityVersion.Value, log);
+        }
+        catch (Exception ex)
+        {
+            // Don't fail the asset index just because Cpp2IL stumbled — the
+            // catalog will keep working without the supplement, just without
+            // attribute-derived hints like NamedArray pairings.
+            log.Warning($"IL2CPP metadata extract failed (catalog will fall back): {ex.Message}");
+        }
     }
 
     private static Command CreateSearchCommand()

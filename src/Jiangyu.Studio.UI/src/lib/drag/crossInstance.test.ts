@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { encodeCrossInstancePayload, parseCrossInstancePayload } from "@lib/drag/crossInstance.ts";
+import {
+  beginTemplateDrag,
+  encodeCrossInstancePayload,
+  endTemplateDrag,
+  getActiveTemplateDrag,
+  parseCrossInstancePayload,
+} from "@lib/drag/crossInstance.ts";
 
 describe("encode/parseCrossInstancePayload", () => {
   it("round-trips an instance drag payload", () => {
@@ -51,5 +57,37 @@ describe("encode/parseCrossInstancePayload", () => {
   it("returns null for JSON primitives without throwing", () => {
     expect(parseCrossInstancePayload("123")).toBeNull();
     expect(parseCrossInstancePayload('"hello"')).toBeNull();
+  });
+});
+
+describe("same-window drag context", () => {
+  it("tracks active template drag until endTemplateDrag is called", () => {
+    endTemplateDrag();
+    expect(getActiveTemplateDrag()).toBeNull();
+
+    beginTemplateDrag({
+      kind: "instance",
+      name: "player_squad.darby",
+      className: "EntityTemplate",
+    });
+    expect(getActiveTemplateDrag()).toEqual({
+      kind: "instance",
+      name: "player_squad.darby",
+      className: "EntityTemplate",
+    });
+
+    beginTemplateDrag({
+      kind: "member",
+      templateType: "EntityTemplate",
+      fieldPath: "Properties.Accuracy",
+    });
+    expect(getActiveTemplateDrag()).toEqual({
+      kind: "member",
+      templateType: "EntityTemplate",
+      fieldPath: "Properties.Accuracy",
+    });
+
+    endTemplateDrag();
+    expect(getActiveTemplateDrag()).toBeNull();
   });
 });

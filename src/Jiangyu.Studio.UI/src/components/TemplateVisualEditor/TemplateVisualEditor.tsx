@@ -1,15 +1,24 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, GripVertical, Plus, X } from "lucide-react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import type { CrossMemberPayload } from "@lib/drag/crossMember.ts";
 import type {
   EditorNode,
   EditorDirective,
   DirectiveOp,
   EditorValue,
+  EditorValueKind,
   EditorDocument,
   EditorError,
 } from "@lib/templateVisual/types.ts";
 import { parseCrossMemberPayload } from "@lib/drag/crossMember.ts";
-import { parseCrossInstancePayload } from "@lib/drag/crossInstance.ts";
+import {
+  parseCrossInstancePayload,
+  INSTANCE_DRAG_TAG,
+  MEMBER_DRAG_TAG,
+  getActiveTemplateDrag,
+} from "@lib/drag/crossInstance.ts";
+import { useToastStore } from "@lib/toast/toast.tsx";
 import { rpcCall } from "@lib/rpc.ts";
 import { onKeyActivate } from "@lib/ui/a11y.ts";
 import styles from "./TemplateVisualEditor.module.css";
@@ -101,6 +110,18 @@ interface TemplateMember {
   readonly elementTypeName?: string;
   readonly enumTypeName?: string;
   readonly referenceTypeName?: string;
+  /** Short name of the enum paired with a [NamedArray(typeof(T))] field. */
+  readonly namedArrayEnumTypeName?: string;
+  /** Inclusive numeric lower bound from [Range(min, max)] or [Min(value)]. */
+  readonly numericMin?: number;
+  /** Inclusive numeric upper bound from [Range(min, max)]. */
+  readonly numericMax?: number;
+  /** Tooltip text from Unity's [Tooltip("...")]. */
+  readonly tooltip?: string;
+  /** Field is decorated with [HideInInspector] — hide from the field adder. */
+  readonly isHiddenInInspector?: boolean;
+  /** Field carries the game's SoundID marker — UI renders a sound badge. */
+  readonly isSoundIdField?: boolean;
 }
 
 interface TemplateQueryResult {
@@ -126,8 +147,13 @@ function templatesSearch(className?: string): Promise<TemplateSearchResult> {
   return rpcCall<TemplateSearchResult>("templatesSearch", className ? { className } : undefined);
 }
 
+interface EnumMemberEntry {
+  readonly name: string;
+  readonly value: number;
+}
+
 interface EnumMembersResult {
-  readonly members: readonly string[];
+  readonly members: readonly EnumMemberEntry[];
 }
 
 function templatesEnumMembers(typeName: string): Promise<EnumMembersResult> {
@@ -135,7 +161,7 @@ function templatesEnumMembers(typeName: string): Promise<EnumMembersResult> {
 }
 
 // Simple in-memory cache for enum members and template type lists to avoid repeated RPCs
-const enumMembersCache = new Map<string, readonly string[]>();
+const enumMembersCache = new Map<string, readonly EnumMemberEntry[]>();
 const templateTypesCache = { types: null as readonly string[] | null };
 
 interface ProjectCloneEntry {
@@ -161,12 +187,17 @@ function invalidateProjectClonesCache() {
   projectClonesCache = null;
 }
 
-async function getCachedEnumMembers(typeName: string): Promise<readonly string[]> {
+async function getCachedEnumEntries(typeName: string): Promise<readonly EnumMemberEntry[]> {
   const cached = enumMembersCache.get(typeName);
   if (cached) return cached;
   const result = await templatesEnumMembers(typeName);
   enumMembersCache.set(typeName, result.members);
   return result.members;
+}
+
+async function getCachedEnumMembers(typeName: string): Promise<readonly string[]> {
+  const entries = await getCachedEnumEntries(typeName);
+  return entries.map((e) => e.name);
 }
 
 async function getCachedTemplateTypes(): Promise<readonly string[]> {
@@ -248,10 +279,20 @@ export function TemplateVisualEditor({
       clearTimeout(serialiseTimer.current);
       serialiseTimer.current = setTimeout(() => {
         const doc: EditorDocument = { nodes: updated, errors: [] };
-        void templatesSerialise(stripUiIds(doc)).then((result) => {
+        void templatesSerialise(stripUiIds(doc)).then(async (result) => {
           if (version !== serialiseVersion.current) return;
           lastSerialised.current = result.text;
           onChange(result.text);
+          // Refresh validation errors after local edits — the parse-on-content
+          // path is gated by `content === lastSerialised.current` to avoid
+          // clobbering in-progress nodes, so errors would otherwise go stale.
+          try {
+            const parsed = await templatesParse(result.text);
+            if (version !== serialiseVersion.current) return;
+            setParseErrors(parsed.errors);
+          } catch {
+            /* keep previous errors — a failed re-parse shouldn't wipe them */
+          }
         });
       }, 150);
     },
@@ -364,22 +405,43 @@ export function TemplateVisualEditor({
     [cacheKey],
   );
 
-  // Card-level drop: accept member drags to add set directives
+  // Card-level drop: accept member drags to add set directives. Drop-time
+  // checks cover the cross-window case where the dragOver-time context isn't
+  // available; same-window drops already got rejected visually by the
+  // FieldAdder's own dragOver gate.
   const handleCardDrop = useCallback(
     (nodeIndex: number, e: React.DragEvent) => {
       const raw = e.dataTransfer.getData("text/plain");
       const member = parseCrossMemberPayload(raw);
       if (!member) return;
       e.preventDefault();
-      const directive: StampedDirective = {
-        op: "Set",
-        fieldPath: member.fieldPath,
-        value: makeScalarDefault(member.patchScalarKind),
-        _uiId: uiId(),
-      };
-      handleAddDirective(nodeIndex, directive);
+      const node = nodes[nodeIndex];
+      if (!node) return;
+      const toast = useToastStore.getState().push;
+      if (node.templateType !== "" && member.templateType !== node.templateType) {
+        toast({
+          variant: "error",
+          message: `Field "${member.fieldPath}" belongs to ${member.templateType}`,
+          detail: `This node is ${node.templateType}.`,
+        });
+        return;
+      }
+      if (node.directives.some((d) => d.fieldPath === member.fieldPath)) {
+        toast({
+          variant: "info",
+          message: `"${member.fieldPath}" is already on this node`,
+        });
+        return;
+      }
+      // Build the directive from the SAME helper the field-adder dropdown
+      // uses, so a dragged ref field drops in as a TemplateReference (not a
+      // raw string), an enum field gets the right enumType, a NamedArray
+      // field defaults to Set+index=0, etc. The drag payload now carries the
+      // full schema needed to construct the synthetic TemplateMember.
+      const synthMember = synthMemberFromPayload(member);
+      handleAddDirective(nodeIndex, makeDefaultDirective(synthMember));
     },
-    [handleAddDirective],
+    [handleAddDirective, nodes],
   );
 
   // Add empty node
@@ -433,23 +495,47 @@ export function TemplateVisualEditor({
     [nodes, serialiseAndEmit],
   );
 
-  // Bottom instance drop (on the add-node area)
-  const [bottomDragOver, setBottomDragOver] = useState(false);
+  // Bottom instance drop (on the add-node area). "accept" = instance drag,
+  // "reject" = member drag (wrong kind), false = no drag.
+  // Per-button drag state: which button (if any) is currently the active
+  // drop target, or "reject" when the dragged kind doesn't fit either button.
+  const [bottomDragOver, setBottomDragOver] = useState<"Patch" | "Clone" | "reject" | false>(false);
 
   const handleBottomDrop = useCallback(
-    (e: React.DragEvent) => {
+    (kind: "Patch" | "Clone", e: React.DragEvent) => {
       setBottomDragOver(false);
       const raw = e.dataTransfer.getData("text/plain");
       const inst = parseCrossInstancePayload(raw);
-      if (!inst) return;
+      if (!inst) {
+        // Cross-window fallback accepted any text/plain; if it wasn't an
+        // instance payload (e.g. a field drag), surface the mismatch.
+        if (parseCrossMemberPayload(raw)) {
+          useToastStore.getState().push({
+            variant: "error",
+            message: "Fields can't be dropped on the node area",
+            detail: "Drag the template instance instead.",
+          });
+        }
+        return;
+      }
       e.preventDefault();
-      const newNode: StampedNode = {
-        kind: "Patch",
-        templateType: inst.className,
-        templateId: inst.name,
-        directives: [],
-        _uiId: uiId(),
-      };
+      const newNode: StampedNode =
+        kind === "Patch"
+          ? {
+              kind: "Patch",
+              templateType: inst.className,
+              templateId: inst.name,
+              directives: [],
+              _uiId: uiId(),
+            }
+          : {
+              kind: "Clone",
+              templateType: inst.className,
+              sourceId: inst.name,
+              cloneId: "",
+              directives: [],
+              _uiId: uiId(),
+            };
       serialiseAndEmit([...nodes, newNode]);
     },
     [nodes, serialiseAndEmit],
@@ -540,24 +626,37 @@ export function TemplateVisualEditor({
         </div>
       )}
 
-      <div
-        className={`${styles.addNodeArea} ${bottomDragOver ? styles.addNodeAreaDragOver : ""}`}
-        onDragOver={(e) => {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "copy";
-          setBottomDragOver(true);
-        }}
-        onDragLeave={() => setBottomDragOver(false)}
-        onDrop={handleBottomDrop}
-      >
-        <button type="button" className={styles.addNodeBtn} onClick={() => handleAddNode("Patch")}>
-          <Plus size={12} />
-          Add Patch
-        </button>
-        <button type="button" className={styles.addNodeBtn} onClick={() => handleAddNode("Clone")}>
-          <Plus size={12} />
-          Add Clone
-        </button>
+      <div className={styles.addNodeArea}>
+        {(["Patch", "Clone"] as const).map((kind) => (
+          <div
+            key={kind}
+            className={`${styles.addNodeZone} ${bottomDragOver === kind ? styles.addNodeZoneDragOver : ""} ${bottomDragOver === "reject" ? styles.addNodeZoneDragReject : ""}`}
+            onDragOver={(e) => {
+              const types = e.dataTransfer.types;
+              if (types.includes(INSTANCE_DRAG_TAG)) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "copy";
+                setBottomDragOver(kind);
+              } else if (types.includes(MEMBER_DRAG_TAG)) {
+                // Member drags don't make sense as new nodes — show reject
+                // styling and don't preventDefault so onDrop never fires.
+                setBottomDragOver("reject");
+              } else if (types.includes("text/plain")) {
+                // Cross-window fallback — kind tag doesn't cross WebKitGTK.
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "copy";
+                setBottomDragOver(kind);
+              }
+            }}
+            onDragLeave={() => setBottomDragOver(false)}
+            onDrop={(e) => handleBottomDrop(kind, e)}
+          >
+            <button type="button" className={styles.addNodeBtn} onClick={() => handleAddNode(kind)}>
+              <Plus size={12} />
+              Add {kind}
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -785,6 +884,7 @@ function NodeCard({
             members={members}
             membersLoaded={membersLoaded}
             existingFields={node.directives.map((d) => d.fieldPath)}
+            targetTemplateType={node.templateType}
             onAdd={onAddDirective}
             onDrop={onDrop}
           />
@@ -810,11 +910,31 @@ interface SetRowProps {
 
 const SCALAR_OPS: DirectiveOp[] = ["Set"];
 const COLLECTION_OPS: DirectiveOp[] = ["Set", "Append", "Insert", "Remove"];
+// Named arrays are fixed-size enum-indexed — only per-slot Set makes sense.
+const NAMED_ARRAY_OPS: DirectiveOp[] = ["Set"];
 const OP_LABELS: Record<DirectiveOp, string> = {
   Set: "set",
   Append: "append",
   Insert: "insert",
   Remove: "remove",
+};
+
+/**
+ * Display-only labels for value kinds in the row's right-side chip. The
+ * canonical wire-format names (TemplateReference, etc.) are too long /
+ * jargon-y for a tiny UI label; this mapping is a single source of truth so
+ * any future renames stay in one place. Storage / serialisation are
+ * unaffected.
+ */
+const VALUE_KIND_LABELS: Record<EditorValueKind, string> = {
+  Boolean: "Boolean",
+  Byte: "Byte",
+  Int32: "Int32",
+  Single: "Single",
+  String: "String",
+  Enum: "Enum",
+  TemplateReference: "Ref",
+  Composite: "Composite",
 };
 
 function SetRow({
@@ -841,12 +961,18 @@ function SetRow({
     return () => document.removeEventListener("mousedown", handler);
   }, [opOpen]);
 
-  const ops = isCollection ? COLLECTION_OPS : SCALAR_OPS;
+  const namedArrayEnum = member?.namedArrayEnumTypeName;
+  const ops = namedArrayEnum ? NAMED_ARRAY_OPS : isCollection ? COLLECTION_OPS : SCALAR_OPS;
   const isRemove = directive.op === "Remove";
   const isComposite = directive.value?.kind === "Composite";
 
   // Kind label: hide for remove, hide for composite (shown inline)
-  const kindLabel = isRemove || isComposite ? null : (directive.value?.kind ?? null);
+  const kindLabel =
+    isRemove || isComposite
+      ? null
+      : directive.value
+        ? VALUE_KIND_LABELS[directive.value.kind]
+        : null;
 
   return (
     <div
@@ -872,7 +998,7 @@ function SetRow({
         >
           <GripVertical size={10} />
         </span>
-        {isCollection ? (
+        {ops.length > 1 ? (
           <div className={styles.setOpWrap} ref={opRef}>
             <button
               type="button"
@@ -908,7 +1034,10 @@ function SetRow({
                                   ? makeDefaultValue(member)
                                   : { kind: "String", string: "" }),
                             };
-                      if ((op === "Insert" || op === "Remove") && updated.index === undefined)
+                      if (
+                        (op === "Insert" || op === "Remove" || op === "Set") &&
+                        updated.index === undefined
+                      )
                         updated.index = 0;
                       onChange(updated);
                       setOpOpen(false);
@@ -925,8 +1054,14 @@ function SetRow({
         )}
         {isRemove ? (
           <>
-            <span className={styles.setField} title={directive.fieldPath}>
+            <span
+              className={styles.setField}
+              title={
+                member?.tooltip ? `${directive.fieldPath} — ${member.tooltip}` : directive.fieldPath
+              }
+            >
               {directive.fieldPath}
+              {member?.isSoundIdField && <span className={styles.fieldBadge}>sound</span>}
             </span>
             <div className={styles.setValue}>
               <div className={styles.setInsertRow}>
@@ -944,21 +1079,35 @@ function SetRow({
           </>
         ) : (
           <>
-            <span className={styles.setField} title={directive.fieldPath}>
+            <span
+              className={styles.setField}
+              title={
+                member?.tooltip ? `${directive.fieldPath} — ${member.tooltip}` : directive.fieldPath
+              }
+            >
               {directive.fieldPath}
+              {member?.isSoundIdField && <span className={styles.fieldBadge}>sound</span>}
             </span>
             <div className={styles.setValue}>
-              {directive.op === "Insert" ? (
+              {directive.op === "Insert" || (directive.op === "Set" && isCollection) ? (
                 <div className={styles.setInsertRow}>
                   <span className={styles.setInsertAt}>at</span>
-                  <CommitInput
-                    type="number"
-                    className={styles.setIndexInput}
-                    value={directive.index ?? 0}
-                    min={0}
-                    step={1}
-                    onCommit={(v) => onChange({ ...directive, index: Number(v) })}
-                  />
+                  {namedArrayEnum ? (
+                    <NamedArrayIndexPicker
+                      enumTypeName={namedArrayEnum}
+                      index={directive.index ?? 0}
+                      onChange={(i) => onChange({ ...directive, index: i })}
+                    />
+                  ) : (
+                    <CommitInput
+                      type="number"
+                      className={styles.setIndexInput}
+                      value={directive.index ?? 0}
+                      min={0}
+                      step={1}
+                      onCommit={(v) => onChange({ ...directive, index: Number(v) })}
+                    />
+                  )}
                   {directive.value && !isComposite ? (
                     <ValueEditor
                       value={directive.value}
@@ -1001,6 +1150,67 @@ function SetRow({
   );
 }
 
+// --- NamedArrayIndexPicker ---
+//
+// Dropdown picker for `set "Field" index=N` on a [NamedArray(typeof(T))]
+// member. Fetches the paired enum's members via the cached
+// templatesEnumMembers RPC and labels each option by name; stores the
+// ordinal value on the directive.
+
+interface NamedArrayIndexPickerProps {
+  enumTypeName: string;
+  index: number;
+  onChange: (index: number) => void;
+}
+
+function NamedArrayIndexPicker({ enumTypeName, index, onChange }: NamedArrayIndexPickerProps) {
+  const [entries, setEntries] = useState<readonly EnumMemberEntry[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void getCachedEnumEntries(enumTypeName).then((m) => {
+      if (!cancelled) setEntries(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [enumTypeName]);
+
+  if (entries === null || entries.length === 0) {
+    // Fall back to numeric while loading, or when the enum isn't resolvable.
+    return (
+      <CommitInput
+        type="number"
+        className={styles.setIndexInput}
+        value={index}
+        min={0}
+        step={1}
+        onCommit={(v) => onChange(Number(v))}
+      />
+    );
+  }
+
+  return (
+    <select
+      className={styles.setIndexSelect}
+      value={index}
+      onChange={(e) => onChange(Number(e.target.value))}
+    >
+      {entries.map((entry) => (
+        <option key={entry.name} value={entry.value}>
+          {entry.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+// Row height for the virtualised suggestion dropdown — matches
+// `.fieldAdderItem`'s vertical box (space-1 padding × 2 + a single line of
+// monospace text). Kept in sync with the CSS by visual inspection only;
+// estimateSize is just a hint, the actual layout is content-driven once
+// rendered.
+const SUGGESTION_ROW_HEIGHT = 28;
+
 // --- ValueEditor ---
 
 interface ValueEditorProps {
@@ -1022,15 +1232,18 @@ function ValueEditor({ value, onChange, member }: ValueEditorProps) {
       );
 
     case "Byte": {
+      // [Range]/[Min] tightens the default 0..255 byte range; never widens it.
+      const min = Math.max(0, member?.numericMin ?? 0);
+      const max = Math.min(255, member?.numericMax ?? 255);
       const num = value.int32 ?? 0;
-      const invalid = num < 0 || num > 255 || !Number.isInteger(num);
+      const invalid = num < min || num > max || !Number.isInteger(num);
       return (
         <CommitInput
           type="number"
           className={`${styles.setValueInput} ${invalid ? styles.setValueInvalid : ""}`}
           value={num}
-          min={0}
-          max={255}
+          min={min}
+          max={max}
           step={1}
           onCommit={(v) => onChange({ kind: "Byte", int32: Number(v) })}
         />
@@ -1039,28 +1252,42 @@ function ValueEditor({ value, onChange, member }: ValueEditorProps) {
 
     case "Int32": {
       const num = value.int32 ?? 0;
-      const invalid = !Number.isInteger(num);
+      const min = member?.numericMin;
+      const max = member?.numericMax;
+      const invalid =
+        !Number.isInteger(num) ||
+        (min !== undefined && num < min) ||
+        (max !== undefined && num > max);
       return (
         <CommitInput
           type="number"
           className={`${styles.setValueInput} ${invalid ? styles.setValueInvalid : ""}`}
           value={num}
+          min={min}
+          max={max}
           step={1}
           onCommit={(v) => onChange({ kind: "Int32", int32: Number(v) })}
         />
       );
     }
 
-    case "Single":
+    case "Single": {
+      const num = value.single ?? 0;
+      const min = member?.numericMin;
+      const max = member?.numericMax;
+      const invalid = (min !== undefined && num < min) || (max !== undefined && num > max);
       return (
         <CommitInput
           type="number"
-          className={styles.setValueInput}
-          value={value.single ?? 0}
+          className={`${styles.setValueInput} ${invalid ? styles.setValueInvalid : ""}`}
+          value={num}
+          min={min}
+          max={max}
           step={0.01}
           onCommit={(v) => onChange({ kind: "Single", single: Number(v) })}
         />
       );
+    }
 
     case "String":
       return (
@@ -1114,7 +1341,16 @@ function EnumValueEditor({ value, onChange, member }: ValueEditorProps) {
 }
 
 function RefValueEditor({ value, onChange, member }: ValueEditorProps) {
-  const refType = value.referenceType ?? member?.referenceTypeName ?? "";
+  // The catalog tells us the destination field's declared reference type.
+  // Concrete fields don't need (or want) the modder to retype it — the type
+  // selector is hidden and the lookup type is implicit. The selector only
+  // appears for polymorphic destinations (where member.referenceTypeName is
+  // missing or the modder explicitly authored a `ref="…"` to disambiguate).
+  const declaredRefType = member?.referenceTypeName ?? "";
+  const explicitRefType = value.referenceType ?? "";
+  const showTypeSelector = declaredRefType === "" || explicitRefType !== "";
+  const refType = explicitRefType !== "" ? explicitRefType : declaredRefType;
+
   const fetchRefInstances = useCallback(async (): Promise<readonly SuggestionItem[]> => {
     if (!refType) return [];
     const [searchResult, projectClones] = await Promise.all([
@@ -1128,19 +1364,29 @@ function RefValueEditor({ value, onChange, member }: ValueEditorProps) {
       .map((c) => ({ label: c.id, tag: "clone" }));
     return [...cloneItems, ...gameItems];
   }, [refType]);
+
   return (
     <div className={styles.setRefRow}>
-      <span className={styles.setRefLabel}>ref</span>
-      <SuggestionCombobox
-        value={refType}
-        placeholder="Type"
-        fetchSuggestions={getCachedTemplateTypes}
-        onChange={(t) => onChange({ ...value, referenceType: t })}
-        className={styles.setRefTypeInput}
-      />
+      {showTypeSelector && (
+        <>
+          <span className={styles.setRefLabel}>ref</span>
+          <SuggestionCombobox
+            value={refType}
+            placeholder="Type"
+            fetchSuggestions={getCachedTemplateTypes}
+            onChange={(t) => {
+              const next: EditorValue = { ...value };
+              if (t === "" || t === declaredRefType) delete next.referenceType;
+              else next.referenceType = t;
+              onChange(next);
+            }}
+            className={styles.setRefTypeInput}
+          />
+        </>
+      )}
       <SuggestionCombobox
         value={value.referenceId ?? ""}
-        placeholder="ID"
+        placeholder={refType ? `${refType} id` : "ID"}
         fetchSuggestions={fetchRefInstances}
         onChange={(id) => onChange({ ...value, referenceId: id })}
       />
@@ -1190,6 +1436,33 @@ function CompositeEditor({ value, onChange }: CompositeEditorProps) {
     }
   };
 
+  const compositeType = value.compositeType ?? "";
+  const handleFieldDrop = (e: React.DragEvent) => {
+    const raw = e.dataTransfer.getData("text/plain");
+    const member = parseCrossMemberPayload(raw);
+    if (!member) return;
+    e.preventDefault();
+    const toast = useToastStore.getState().push;
+    if (compositeType !== "" && member.templateType !== compositeType) {
+      toast({
+        variant: "error",
+        message: `Field "${member.fieldPath}" belongs to ${member.templateType}`,
+        detail: `This composite is ${compositeType}.`,
+      });
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(fields, member.fieldPath)) {
+      toast({
+        variant: "info",
+        message: `"${member.fieldPath}" is already in this composite`,
+      });
+      return;
+    }
+    // Same as handleCardDrop — build through the kind-aware helper so the
+    // dropped composite sub-field gets the right value shape (ref/enum/etc).
+    handleAddField(makeDefaultDirective(synthMemberFromPayload(member)));
+  };
+
   const memberMap = new Map(members.map((m) => [m.name, m]));
 
   return (
@@ -1207,7 +1480,7 @@ function CompositeEditor({ value, onChange }: CompositeEditorProps) {
               member={memberMap.get(name)}
             />
           </div>
-          <span className={styles.setKind}>{fieldValue.kind}</span>
+          <span className={styles.setKind}>{VALUE_KIND_LABELS[fieldValue.kind]}</span>
           <button
             type="button"
             className={styles.compositeFieldDelete}
@@ -1222,7 +1495,9 @@ function CompositeEditor({ value, onChange }: CompositeEditorProps) {
         members={members}
         membersLoaded={membersLoaded}
         existingFields={Object.keys(fields)}
+        targetTemplateType={compositeType}
         onAdd={handleAddField}
+        onDrop={handleFieldDrop}
       />
     </div>
   );
@@ -1282,8 +1557,22 @@ function SuggestionCombobox({
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const lowerQuery = value.toLowerCase();
-  const filtered = items.filter((item) => item.label.toLowerCase().includes(lowerQuery));
+  const filtered = useMemo(() => {
+    const lowerQuery = value.toLowerCase();
+    return items.filter((item) => item.label.toLowerCase().includes(lowerQuery));
+  }, [items, value]);
+
+  // Virtualise the dropdown so the user gets all matches at every scale —
+  // template-instance lists in MENACE run into the thousands. Each row is a
+  // single text+badge button at ~28px tall (matches `.fieldAdderItem`
+  // padding + a single line of mono text).
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => dropdownRef.current,
+    estimateSize: () => SUGGESTION_ROW_HEIGHT,
+    overscan: 8,
+  });
 
   return (
     <div
@@ -1317,26 +1606,34 @@ function SuggestionCombobox({
         }}
       />
       {open && loaded && filtered.length > 0 && (
-        <div className={styles.refComboboxDropdown}>
-          {filtered.slice(0, 50).map((item) => (
-            <button
-              key={`${item.label}${item.tag ?? ""}`}
-              type="button"
-              className={`${styles.fieldAdderItem} ${item.label === value ? styles.setOpMenuItemActive : ""}`}
-              onClick={() => {
-                onChange(item.label);
-                setOpen(false);
-              }}
-            >
-              <span className={styles.fieldAdderItemName}>{item.label}</span>
-              {item.tag && <span className={styles.suggestionTag}>{item.tag}</span>}
-            </button>
-          ))}
-          {filtered.length > 50 && (
-            <div className={styles.fieldAdderHint}>
-              {filtered.length - 50} more — type to filter
-            </div>
-          )}
+        <div className={styles.refComboboxDropdown} ref={dropdownRef}>
+          <div
+            style={{
+              height: `${rowVirtualizer.getTotalSize()}px`,
+              position: "relative",
+              width: "100%",
+            }}
+          >
+            {rowVirtualizer.getVirtualItems().map((row) => {
+              const item = filtered[row.index];
+              if (!item) return null;
+              return (
+                <button
+                  key={`${item.label}${item.tag ?? ""}`}
+                  type="button"
+                  className={`${styles.fieldAdderItem} ${styles.refComboboxRow} ${item.label === value ? styles.setOpMenuItemActive : ""}`}
+                  style={{ transform: `translateY(${row.start}px)` }}
+                  onClick={() => {
+                    onChange(item.label);
+                    setOpen(false);
+                  }}
+                >
+                  <span className={styles.fieldAdderItemName}>{item.label}</span>
+                  {item.tag && <span className={styles.suggestionTag}>{item.tag}</span>}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
       {open && loaded && filtered.length === 0 && value.length > 0 && (
@@ -1354,14 +1651,24 @@ interface FieldAdderProps {
   members: readonly TemplateMember[];
   membersLoaded: boolean;
   existingFields: string[];
+  /** Template type (or composite type) this adder belongs to. Used to reject
+   *  drags of fields from unrelated templates. Empty string = accept any. */
+  targetTemplateType: string;
   onAdd: (directive: StampedDirective) => void;
   onDrop?: (e: React.DragEvent) => void;
 }
 
-function FieldAdder({ members, membersLoaded, existingFields, onAdd, onDrop }: FieldAdderProps) {
+function FieldAdder({
+  members,
+  membersLoaded,
+  existingFields,
+  targetTemplateType,
+  onAdd,
+  onDrop,
+}: FieldAdderProps) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
-  const [fieldDragOver, setFieldDragOver] = useState(false);
+  const [fieldDragOver, setFieldDragOver] = useState<"accept" | "reject" | false>(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -1377,7 +1684,10 @@ function FieldAdder({ members, membersLoaded, existingFields, onAdd, onDrop }: F
   const existingSet = new Set(existingFields);
   const lowerQuery = query.toLowerCase();
   const filtered = members.filter(
-    (m) => (m.isWritable || m.isCollection) && m.name.toLowerCase().includes(lowerQuery),
+    (m) =>
+      (m.isWritable || m.isCollection) &&
+      !m.isHiddenInInspector &&
+      m.name.toLowerCase().includes(lowerQuery),
   );
   const available = filtered.filter((m) => !existingSet.has(m.name));
   const alreadyAdded = filtered.filter((m) => existingSet.has(m.name));
@@ -1400,12 +1710,34 @@ function FieldAdder({ members, membersLoaded, existingFields, onAdd, onDrop }: F
 
   return (
     <div
-      className={`${styles.fieldAdder} ${fieldDragOver ? styles.fieldAdderDragOver : ""}`}
+      className={`${styles.fieldAdder} ${fieldDragOver === "accept" ? styles.fieldAdderDragOver : ""} ${fieldDragOver === "reject" ? styles.fieldAdderDragReject : ""}`}
       ref={wrapRef}
       onDragOver={(e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "copy";
-        setFieldDragOver(true);
+        const types = e.dataTransfer.types;
+        if (types.includes(MEMBER_DRAG_TAG)) {
+          // Same-window: use the drag context to validate against the target
+          // template type and existing fields. Cross-window (active === null)
+          // falls through to accept; drop handler re-validates with a toast.
+          const active = getActiveTemplateDrag();
+          const mismatch =
+            active?.kind === "member" &&
+            targetTemplateType !== "" &&
+            active.templateType !== targetTemplateType;
+          const duplicate = active?.kind === "member" && existingFields.includes(active.fieldPath);
+          if (mismatch || duplicate) {
+            setFieldDragOver("reject");
+          } else {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+            setFieldDragOver("accept");
+          }
+        } else if (types.includes(INSTANCE_DRAG_TAG)) {
+          setFieldDragOver("reject");
+        } else if (types.includes("text/plain")) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+          setFieldDragOver("accept");
+        }
       }}
       onDragLeave={() => setFieldDragOver(false)}
       onDrop={(e) => {
@@ -1489,7 +1821,10 @@ function makeDefaultValue(member: TemplateMember): EditorValue {
     case "Enum":
       return { kind: "Enum", enumType: elementType ?? member.typeName, enumValue: "" };
     case "TemplateReference":
-      return { kind: "TemplateReference", referenceType: elementType ?? "", referenceId: "" };
+      // Leave referenceType undefined — the lookup type is implicit and the
+      // catalog/loader derive it from the declared field. The modder only
+      // sets it explicitly for polymorphic destinations.
+      return { kind: "TemplateReference", referenceId: "" };
     default:
       // Non-scalar, non-ref → composite
       if (member.isCollection && elementType) {
@@ -1500,9 +1835,47 @@ function makeDefaultValue(member: TemplateMember): EditorValue {
 }
 
 function makeDefaultDirective(member: TemplateMember): StampedDirective {
+  // NamedArray fields are fixed-size enum-indexed lookups — they only accept
+  // `set "Field" index=N <value>`, so default to Set-at-0 and let the picker
+  // drive the ordinal. Plain collections default to Append; scalars to Set.
+  if (member.namedArrayEnumTypeName) {
+    return {
+      op: "Set",
+      fieldPath: member.name,
+      index: 0,
+      value: makeScalarDefault(member.patchScalarKind),
+      _uiId: uiId(),
+    };
+  }
   const value = makeDefaultValue(member);
   const op: DirectiveOp = member.isCollection ? "Append" : "Set";
   return { op, fieldPath: member.name, value, _uiId: uiId() };
+}
+
+// Build a TemplateMember from a cross-member drag payload. Strips undefined
+// keys so the resulting object satisfies exactOptionalPropertyTypes — which
+// would otherwise reject `{ patchScalarKind: undefined }` even though the
+// field is optional on the target type.
+function synthMemberFromPayload(payload: CrossMemberPayload): TemplateMember {
+  return {
+    name: payload.fieldPath,
+    typeName: payload.typeName ?? "",
+    isWritable: true,
+    ...(payload.patchScalarKind !== undefined ? { patchScalarKind: payload.patchScalarKind } : {}),
+    ...(payload.elementTypeName !== undefined ? { elementTypeName: payload.elementTypeName } : {}),
+    ...(payload.enumTypeName !== undefined ? { enumTypeName: payload.enumTypeName } : {}),
+    ...(payload.referenceTypeName !== undefined
+      ? { referenceTypeName: payload.referenceTypeName }
+      : {}),
+    ...(payload.isCollection !== undefined ? { isCollection: payload.isCollection } : {}),
+    ...(payload.isScalar !== undefined ? { isScalar: payload.isScalar } : {}),
+    ...(payload.isTemplateReference !== undefined
+      ? { isTemplateReference: payload.isTemplateReference }
+      : {}),
+    ...(payload.namedArrayEnumTypeName !== undefined
+      ? { namedArrayEnumTypeName: payload.namedArrayEnumTypeName }
+      : {}),
+  };
 }
 
 function makeScalarDefault(scalarKind?: string): EditorValue {

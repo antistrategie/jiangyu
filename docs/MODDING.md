@@ -218,12 +218,12 @@ materialised.
       "templateType": "UnitLeaderTemplate",
       "templateId": "squad_leader.darby",
       "set": [
-        { "fieldPath": "InitialAttributes.Agility", "value": { "kind": "Byte", "byte": 100 } },
+        { "fieldPath": "InitialAttributes[0]", "value": { "kind": "Byte", "byte": 100 } },
         {
           "fieldPath": "PerkTrees[0]",
           "value": {
             "kind": "TemplateReference",
-            "reference": { "templateType": "PerkTreeTemplate", "templateId": "perk_tree.greifinger" }
+            "reference": { "templateId": "perk_tree.greifinger" }
           }
         }
       ]
@@ -251,7 +251,7 @@ materialised.
 | `Single`            | `single`          |                                                                         |
 | `String`            | `string`          | Targets `System.String` fields; Il2CppSystem.String not yet supported   |
 | `Enum`              | `enumValue`       | Optional `enumType` to assert the target enum name                      |
-| `TemplateReference` | `reference`       | Object with `templateType` + `templateId` — resolves a live wrapper     |
+| `TemplateReference` | `reference`       | Object with `templateId`; `templateType` is implicit (derived from the field) and only required when the destination is polymorphic (an abstract base) — the catalog validator and loader derive it from the declared field type otherwise |
 
 A patch fails loudly at load or apply when a path is malformed, a target
 template doesn't exist, a member is missing, or a value kind doesn't match the
@@ -288,21 +288,17 @@ text view for authoring. If the text view flags a member as Odin-only, that
 member is not patchable through Jiangyu's current reflection-based template
 applier.
 
-### UnitLeader attribute sugar
+### UnitLeader attributes
 
-`UnitLeaderTemplate.InitialAttributes` is a 7-byte array where each offset is
-one of the `UnitLeaderAttribute` enum values. Jiangyu accepts either form:
+`UnitLeaderTemplate.InitialAttributes` is a 7-byte array where each offset
+corresponds to a `UnitLeaderAttribute` enum value. Patch it by index:
 
 ```json
-{ "fieldPath": "InitialAttributes.Agility", "value": { "kind": "Byte", "byte": 100 } }
-{ "fieldPath": "InitialAttributes[0]",      "value": { "kind": "Byte", "byte": 100 } }
+{ "fieldPath": "InitialAttributes[0]", "value": { "kind": "Byte", "byte": 100 } }
 ```
 
-The sugar rewrites the named form to `InitialAttributes[N]` at compile time
-(or at load time for hand-authored mods that skip compilation);
-unknown attribute names fail loudly with a listing of valid names. See
-[`research/verified/unitleader-initial-attributes.md`](research/verified/unitleader-initial-attributes.md)
-for the verified offset table and source citations.
+See [`research/verified/unitleader-initial-attributes.md`](research/verified/unitleader-initial-attributes.md)
+for the verified offset-to-attribute table and source citations.
 
 ### Save-frozen vs render-per-frame
 

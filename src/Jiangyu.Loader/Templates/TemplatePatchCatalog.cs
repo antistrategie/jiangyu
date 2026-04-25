@@ -116,21 +116,7 @@ internal sealed class TemplatePatchCatalog
             return;
         }
 
-        // Sugar rewriting also happens in the compile-side emitter
-        // (TemplatePatchEmitter), so bundles that go through `jiangyu compile`
-        // ship canonical indexed form and fall through here unchanged.
-        // Hand-authored mods dropped directly into Mods/ skip compilation, so
-        // the loader still rewrites to keep `fieldPath: "InitialAttributes.Name"`
-        // working at runtime as documented in docs/MODDING.md.
-        var rewrite = TemplateFieldPathSugar.Rewrite(templateType, op.FieldPath);
-        if (rewrite.Error != null)
-        {
-            log.Warning(
-                $"Mod '{mod.Name}': template patch '{templateType}:{templateId}.{op.FieldPath}' — {rewrite.Error}");
-            return;
-        }
-
-        var effectivePath = rewrite.Path!;
+        var effectivePath = op.FieldPath;
         if (!TemplatePatchPathValidator.IsSupportedFieldPath(effectivePath))
         {
             log.Warning(

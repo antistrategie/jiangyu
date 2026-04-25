@@ -241,6 +241,32 @@ internal sealed class TemplatePatchApplier
                 return ApplyOutcome.MemberMissing;
             }
         }
+        else if (op.Op == CompiledTemplateOp.Set && op.Index.HasValue)
+        {
+            // Set one collection element via `set "Field" index=N <value>`.
+            // Terminal is non-indexed (validator enforces); resolve the
+            // collection then bind the element at op.Index.
+            if (!TryReadMember(current, terminal.Name, out var arrayValue, out var arrayType, out var readError))
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"cannot read terminal collection '{terminal.Name}': {readError}");
+                return ApplyOutcome.MemberMissing;
+            }
+
+            if (arrayValue == null)
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"terminal collection '{terminal.Name}' ({arrayType.FullName}) is null on this template.");
+                return ApplyOutcome.MemberMissing;
+            }
+
+            if (!TryBindArrayElement(arrayValue, op.Index.Value, out terminalType, out setter, out getter, out var elementError))
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"cannot bind '{terminal.Name}' index={op.Index.Value}: {elementError}");
+                return ApplyOutcome.MemberMissing;
+            }
+        }
         else if (terminal.Index.HasValue)
         {
             if (!TryReadMember(current, terminal.Name, out var arrayValue, out var arrayType, out var readError))
@@ -1114,6 +1140,41 @@ internal sealed class TemplatePatchApplier
     private static bool TryConvertScalar(
         CompiledTemplateValue value, Type targetType, out object converted, out string error)
     {
+        if (value == null)
+        {
+            converted = null;
+            error = "value payload is null.";
+            return false;
+        }
+
+        // Numeric normalisation shared with compile/editor validation:
+        // allow canonical narrowing/widening between Byte/Int32/Single before
+        // strict target-type checks below.
+        if (targetType == typeof(byte))
+        {
+            if (!TemplateValueCoercion.TryCoerceNumericKind(value, CompiledTemplateValueKind.Byte, out error))
+            {
+                converted = null;
+                return false;
+            }
+        }
+        else if (targetType == typeof(int))
+        {
+            if (!TemplateValueCoercion.TryCoerceNumericKind(value, CompiledTemplateValueKind.Int32, out error))
+            {
+                converted = null;
+                return false;
+            }
+        }
+        else if (targetType == typeof(float))
+        {
+            if (!TemplateValueCoercion.TryCoerceNumericKind(value, CompiledTemplateValueKind.Single, out error))
+            {
+                converted = null;
+                return false;
+            }
+        }
+
         converted = null;
         error = null;
 
@@ -1141,21 +1202,6 @@ internal sealed class TemplatePatchApplier
                 if (targetType == typeof(int))
                 {
                     converted = value.Int32.Value;
-                    return true;
-                }
-
-                // Coerce Int32 → Byte for KDL authoring convenience (KDL emits
-                // all integers as Int32; the runtime narrows when the target is byte).
-                if (targetType == typeof(byte))
-                {
-                    var raw = value.Int32.Value;
-                    if (raw is < 0 or > 255)
-                    {
-                        error = $"value {raw} is out of Byte range (0–255).";
-                        return false;
-                    }
-
-                    converted = (byte)raw;
                     return true;
                 }
 
@@ -1306,13 +1352,20 @@ internal sealed class TemplatePatchApplier
             return false;
         }
 
+        // TemplateType is optional in the canonical schema — when omitted the
+        // destination field's declared type IS the lookup type. Fall back to
+        // targetType.Name so the rest of the resolution path stays unchanged.
+        var lookupTypeName = string.IsNullOrWhiteSpace(reference.TemplateType)
+            ? targetType.Name
+            : reference.TemplateType;
+
         if (!TemplateRuntimeAccess.TryGetTemplateById(
-                reference.TemplateType, reference.TemplateId,
+                lookupTypeName, reference.TemplateId,
                 out var resolvedTemplate, out var resolvedType, out var resolveError))
         {
             error = resolvedType == null
-                ? $"TemplateReference '{reference.TemplateType}:{reference.TemplateId}' — {resolveError}"
-                : $"TemplateReference: no live {reference.TemplateType} with id '{reference.TemplateId}' found.";
+                ? $"TemplateReference '{lookupTypeName}:{reference.TemplateId}' — {resolveError}"
+                : $"TemplateReference: no live {lookupTypeName} with id '{reference.TemplateId}' found.";
             return false;
         }
 

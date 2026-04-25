@@ -5,6 +5,7 @@ using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Assets;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
+using Jiangyu.Core.Il2Cpp;
 using Jiangyu.Core.Templates;
 
 namespace Jiangyu.Studio.Host;
@@ -81,12 +82,12 @@ public static partial class RpcDispatcher
         // When className is set but query is empty, filter instances by class.
         if (string.IsNullOrWhiteSpace(query))
         {
-            var instances = string.IsNullOrWhiteSpace(className)
-                ? index.Instances
-                : index.Instances
+            List<TemplateInstanceEntry> instances = string.IsNullOrWhiteSpace(className)
+                ? [.. index.Instances]
+                : [.. index.Instances
                     .Where(i => string.Equals(i.ClassName, className, StringComparison.OrdinalIgnoreCase))
                     .OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
+                ];
 
             return JsonSerializer.SerializeToElement(new TemplateSearchResultDto
             {
@@ -128,7 +129,8 @@ public static partial class RpcDispatcher
         if (Directory.Exists(melonNet6))
             additionalSearchDirs.Add(melonNet6);
 
-        using var catalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirs);
+        var supplement = Il2CppMetadataCache.LoadIfPresent(resolution.Context!.CachePath);
+        using var catalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirs, supplement);
 
         var queryPath = string.IsNullOrWhiteSpace(fieldPath)
             ? typeName
@@ -142,10 +144,66 @@ public static partial class RpcDispatcher
         return JsonSerializer.SerializeToElement(MapQueryResult(catalog, result));
     }
 
+    // Catalog loads are expensive (reflection over Assembly-CSharp.dll), and the
+    // source-view parse RPC fires on every debounced keystroke. Cache the
+    // catalog per assembly path so repeated parses reuse one instance; reload
+    // only when the game path changes.
+    private static TemplateTypeCatalog? _cachedCatalog;
+    private static string? _cachedCatalogPath;
+    private static readonly Lock _catalogLock = new();
+
+    private static TemplateTypeCatalog? TryGetCachedCatalog()
+    {
+        var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+        if (!resolution.Success) return null;
+
+        var gamePath = Path.GetDirectoryName(resolution.Context!.GameDataPath);
+        if (gamePath is null) return null;
+
+        var assemblyPath = Path.Combine(gamePath, DefaultAssemblyRelativePath);
+        if (!File.Exists(assemblyPath)) return null;
+
+        lock (_catalogLock)
+        {
+            if (_cachedCatalog != null && _cachedCatalogPath == assemblyPath)
+                return _cachedCatalog;
+
+            _cachedCatalog?.Dispose();
+            _cachedCatalog = null;
+            _cachedCatalogPath = null;
+
+            var additionalSearchDirs = new List<string>();
+            var melonNet6 = Path.Combine(gamePath, MelonLoaderNet6RelativePath);
+            if (Directory.Exists(melonNet6))
+                additionalSearchDirs.Add(melonNet6);
+
+            try
+            {
+                var supplement = Il2CppMetadataCache.LoadIfPresent(resolution.Context!.CachePath);
+                _cachedCatalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirs, supplement);
+                _cachedCatalogPath = assemblyPath;
+                return _cachedCatalog;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"templatesParse: failed to load template catalog: {ex.Message}");
+                return null;
+            }
+        }
+    }
+
     private static JsonElement HandleTemplatesParse(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var text = RequireString(parameters, "text");
         var document = KdlTemplateParser.ParseText(text);
+
+        // Validate node/directive shapes against the template type catalogue
+        // when available. Failures are non-fatal: if the catalog can't load
+        // (no game configured, bad path), we just return parse errors only.
+        var catalog = TryGetCachedCatalog();
+        if (catalog != null)
+            TemplateCatalogValidator.ValidateEditorDocument(document, catalog);
+
         return JsonSerializer.SerializeToElement(document);
     }
 
@@ -192,9 +250,9 @@ public static partial class RpcDispatcher
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Skip files that fail to parse.
+                Console.Error.WriteLine($"templatesProjectClones: failed to parse '{file}': {ex.Message}");
             }
         }
 
@@ -228,11 +286,28 @@ public static partial class RpcDispatcher
         if (type == null || !type.IsEnum)
             throw new InvalidOperationException(error ?? $"'{typeName}' is not a known enum type.");
 
-        var members = TemplateTypeCatalog.GetEnumMemberNames(type);
+        var members = type
+            .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Select(f => new EnumMemberEntry
+            {
+                Name = f.Name,
+                Value = Convert.ToInt32(f.GetRawConstantValue(), System.Globalization.CultureInfo.InvariantCulture),
+            })
+            .OrderBy(e => e.Value)
+            .ToList();
         return JsonSerializer.SerializeToElement(new { members });
     }
 
-    private static string? ComputeMemberPatchScalarKind(TemplateTypeCatalog catalog, MemberShape m)
+    internal sealed class EnumMemberEntry
+    {
+        [JsonPropertyName("name")]
+        public required string Name { get; set; }
+
+        [JsonPropertyName("value")]
+        public required int Value { get; set; }
+    }
+
+    private static string? ComputeMemberPatchScalarKind(MemberShape m)
     {
         // For the member's effective leaf type, determine what patch value kind it uses.
         var memberType = m.MemberType;
@@ -306,10 +381,16 @@ public static partial class RpcDispatcher
                 IsCollection = TemplateTypeCatalog.GetElementType(m.MemberType) != null ? true : null,
                 IsScalar = TemplateTypeCatalog.IsScalar(m.MemberType) ? true : null,
                 IsTemplateReference = TemplateTypeCatalog.IsTemplateReferenceTarget(m.MemberType) ? true : null,
-                PatchScalarKind = ComputeMemberPatchScalarKind(catalog, m),
+                PatchScalarKind = ComputeMemberPatchScalarKind(m),
                 ElementTypeName = ComputeElementTypeName(catalog, m),
                 EnumTypeName = ComputeEnumTypeName(catalog, m),
                 ReferenceTypeName = ComputeReferenceTypeName(catalog, m),
+                NamedArrayEnumTypeName = m.NamedArrayEnumTypeName,
+                NumericMin = m.NumericMin,
+                NumericMax = m.NumericMax,
+                Tooltip = m.Tooltip,
+                IsHiddenInInspector = m.IsHiddenInInspector ? true : null,
+                IsSoundIdField = m.IsSoundIdField ? true : null,
             }).ToList(),
         };
     }
@@ -419,6 +500,26 @@ public static partial class RpcDispatcher
 
         [JsonPropertyName("referenceTypeName")]
         public string? ReferenceTypeName { get; set; }
+
+        /// <summary>Short name of the enum paired with a
+        /// <c>[NamedArray(typeof(T))]</c> array member; null otherwise.</summary>
+        [JsonPropertyName("namedArrayEnumTypeName")]
+        public string? NamedArrayEnumTypeName { get; set; }
+
+        [JsonPropertyName("numericMin")]
+        public double? NumericMin { get; set; }
+
+        [JsonPropertyName("numericMax")]
+        public double? NumericMax { get; set; }
+
+        [JsonPropertyName("tooltip")]
+        public string? Tooltip { get; set; }
+
+        [JsonPropertyName("isHiddenInInspector")]
+        public bool? IsHiddenInInspector { get; set; }
+
+        [JsonPropertyName("isSoundIdField")]
+        public bool? IsSoundIdField { get; set; }
     }
 
     internal sealed class ProjectCloneEntryDto

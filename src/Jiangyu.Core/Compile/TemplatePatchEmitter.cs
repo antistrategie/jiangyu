@@ -5,18 +5,16 @@ namespace Jiangyu.Core.Compile;
 
 /// <summary>
 /// Compile-time emitter for the template payload blocks of
-/// <c>compiled/jiangyu.json</c>. Runs authored patches through
-/// <see cref="TemplateFieldPathSugar"/>, validates path syntax and value
-/// completeness via <see cref="TemplatePatchPathValidator"/>, and validates
-/// clone directives for required fields and batch-internal uniqueness.
-/// Errors escalate to compile failures so modders fix malformed inputs at
-/// compile time rather than discovering silent drops at load time.
+/// <c>compiled/jiangyu.json</c>. Validates path syntax and value completeness
+/// via <see cref="TemplatePatchPathValidator"/> and validates clone
+/// directives for required fields and batch-internal uniqueness. Errors
+/// escalate to compile failures so modders fix malformed inputs at compile
+/// time rather than discovering silent drops at load time.
 /// </summary>
 public static class TemplatePatchEmitter
 {
     public readonly record struct EmitResult(
         List<CompiledTemplatePatch>? Patches,
-        int RewriteCount,
         int ErrorCount)
     {
         public bool Success => ErrorCount == 0;
@@ -32,10 +30,9 @@ public static class TemplatePatchEmitter
     public static EmitResult Emit(List<CompiledTemplatePatch>? patches, ILogSink log)
     {
         if (patches is null || patches.Count == 0)
-            return new EmitResult(patches, 0, 0);
+            return new EmitResult(patches, 0);
 
         var emitted = new List<CompiledTemplatePatch>(patches.Count);
-        var rewriteCount = 0;
         var errorCount = 0;
 
         foreach (var patch in patches)
@@ -70,14 +67,12 @@ public static class TemplatePatchEmitter
             var emittedOps = new List<CompiledTemplateSetOperation>(patch.Set.Count);
             foreach (var op in patch.Set)
             {
-                if (!TryEmitOperation(templateLabel, patch.TemplateId, templateType, op, log, out var emittedOp, out var rewritten))
+                if (!TryEmitOperation(templateLabel, patch.TemplateId, op, log, out var emittedOp))
                 {
                     errorCount++;
                     continue;
                 }
 
-                if (rewritten)
-                    rewriteCount++;
                 emittedOps.Add(emittedOp);
             }
 
@@ -92,7 +87,7 @@ public static class TemplatePatchEmitter
             });
         }
 
-        return new EmitResult(emitted, rewriteCount, errorCount);
+        return new EmitResult(emitted, errorCount);
     }
 
     public static CloneEmitResult EmitClones(List<CompiledTemplateClone>? clones, ILogSink log)
@@ -168,14 +163,11 @@ public static class TemplatePatchEmitter
     private static bool TryEmitOperation(
         string templateLabel,
         string templateId,
-        string? templateTypeForSugar,
         CompiledTemplateSetOperation? op,
         ILogSink log,
-        out CompiledTemplateSetOperation emitted,
-        out bool rewritten)
+        out CompiledTemplateSetOperation emitted)
     {
         emitted = default!;
-        rewritten = false;
 
         if (op is null)
         {
@@ -189,16 +181,7 @@ public static class TemplatePatchEmitter
             return false;
         }
 
-        var rewrite = TemplateFieldPathSugar.Rewrite(templateTypeForSugar, op.FieldPath);
-        if (rewrite.Error != null)
-        {
-            log.Error(
-                $"Template patch '{templateLabel}:{templateId}.{op.FieldPath}' — {rewrite.Error}");
-            return false;
-        }
-
-        var effectivePath = rewrite.Path!;
-        rewritten = rewrite.Rewritten;
+        var effectivePath = op.FieldPath;
 
         if (!TemplatePatchPathValidator.IsSupportedFieldPath(effectivePath))
         {

@@ -163,7 +163,10 @@ public static class KdlTemplateParser
                 case "patch":
                     if (TryParsePatchNode(node, pos, log, out var patch))
                     {
-                        doc.Nodes.Add(CompiledPatchToEditor(patch));
+                        var patchNode = CompiledPatchToEditor(patch);
+                        patchNode.Line = line;
+                        StampDirectiveLines(patchNode.Directives, node.Children, lineOffset);
+                        doc.Nodes.Add(patchNode);
                     }
                     else
                     {
@@ -180,11 +183,13 @@ public static class KdlTemplateParser
                             TemplateType = clone.TemplateType ?? string.Empty,
                             SourceId = clone.SourceId,
                             CloneId = clone.CloneId,
+                            Line = line,
                         };
                         if (clonePatches != null)
                         {
                             foreach (var op in clonePatches.Set)
                                 editorNode.Directives.Add(CompiledOpToEditor(op));
+                            StampDirectiveLines(editorNode.Directives, node.Children, lineOffset);
                         }
                         doc.Nodes.Add(editorNode);
                     }
@@ -303,6 +308,55 @@ public static class KdlTemplateParser
         return int.TryParse(lineSpan, out var line2) ? line2 : null;
     }
 
+    /// <summary>
+    /// Pair each editor directive with its source child node so the line
+    /// number survives through to validation-time diagnostics. Relies on the
+    /// 1:1 ordering between parsed directives and source children; only called
+    /// after TryParsePatchNode/TryParseCloneNode have already succeeded.
+    /// </summary>
+    private static void StampDirectiveLines(
+        List<KdlEditorDirective> directives,
+        IList<KdlNode> sourceChildren,
+        int lineOffset)
+    {
+        var pairs = Math.Min(directives.Count, sourceChildren.Count);
+        for (var i = 0; i < pairs; i++)
+        {
+            var local = sourceChildren[i].SourcePosition?.Line;
+            directives[i].Line = local.HasValue ? local.Value + lineOffset : null;
+        }
+    }
+
+    /// <summary>
+    /// Converts an editor directive into the compiled patch operation model.
+    /// Used by semantic validation on the editor AST so Host and compile share
+    /// one operation/value shape.
+    /// </summary>
+    public static CompiledTemplateSetOperation EditorDirectiveToCompiled(KdlEditorDirective directive)
+    {
+        ArgumentNullException.ThrowIfNull(directive);
+        return new CompiledTemplateSetOperation
+        {
+            Op = directive.Op switch
+            {
+                KdlEditorOp.Set => CompiledTemplateOp.Set,
+                KdlEditorOp.Append => CompiledTemplateOp.Append,
+                KdlEditorOp.Insert => CompiledTemplateOp.InsertAt,
+                KdlEditorOp.Remove => CompiledTemplateOp.Remove,
+                _ => CompiledTemplateOp.Set,
+            },
+            FieldPath = directive.FieldPath,
+            Index = directive.Index,
+            Value = directive.Value != null ? EditorValueToCompiled(directive.Value) : null,
+        };
+    }
+
+    /// <summary>
+    /// Converts a compiled patch operation into editor directive form.
+    /// </summary>
+    public static KdlEditorDirective CompiledOpToEditorDirective(CompiledTemplateSetOperation op)
+        => CompiledOpToEditor(op);
+
     private static KdlEditorNode CompiledPatchToEditor(CompiledTemplatePatch patch)
     {
         var node = new KdlEditorNode
@@ -331,6 +385,71 @@ public static class KdlTemplateParser
             FieldPath = op.FieldPath,
             Index = op.Index,
             Value = op.Value != null ? CompiledValueToEditor(op.Value) : null,
+        };
+    }
+
+    private static CompiledTemplateValue EditorValueToCompiled(KdlEditorValue value)
+    {
+        return value.Kind switch
+        {
+            KdlEditorValueKind.Boolean => new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.Boolean,
+                Boolean = value.Boolean,
+            },
+            KdlEditorValueKind.Byte => new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.Byte,
+                Int32 = value.Int32,
+                Byte = value.Int32 is >= byte.MinValue and <= byte.MaxValue
+                    ? (byte)value.Int32.Value
+                    : null,
+            },
+            KdlEditorValueKind.Int32 => new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.Int32,
+                Int32 = value.Int32,
+            },
+            KdlEditorValueKind.Single => new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.Single,
+                Single = value.Single,
+            },
+            KdlEditorValueKind.String => new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.String,
+                String = value.String,
+            },
+            KdlEditorValueKind.Enum => new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.Enum,
+                EnumType = value.EnumType,
+                EnumValue = value.EnumValue,
+            },
+            KdlEditorValueKind.TemplateReference => new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.TemplateReference,
+                Reference = new CompiledTemplateReference
+                {
+                    TemplateType = value.ReferenceType,
+                    TemplateId = value.ReferenceId ?? string.Empty,
+                },
+            },
+            KdlEditorValueKind.Composite => new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.Composite,
+                Composite = new CompiledTemplateComposite
+                {
+                    TypeName = value.CompositeType ?? string.Empty,
+                    Fields = value.CompositeFields?.ToDictionary(kv => kv.Key, kv => EditorValueToCompiled(kv.Value))
+                        ?? [],
+                },
+            },
+            _ => new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.String,
+                String = string.Empty,
+            },
         };
     }
 
@@ -389,8 +508,7 @@ public static class KdlTemplateParser
     /// <summary>Captures log messages as strings for the editor RPC path.</summary>
     private sealed class ListLogSink(List<string> target) : ILogSink
     {
-        public void Info(string message) { }
-        public void Msg(string message) { }
+        public void Info(string _) { }
         public void Warning(string message) => target.Add(message);
         public void Error(string message) => target.Add(message);
     }
@@ -607,7 +725,8 @@ public static class KdlTemplateParser
         return true;
     }
 
-    // set "fieldPath" <value>
+    // set "fieldPath" <value>              — scalar or whole-member set
+    // set "fieldPath" index=N <value>      — element set on a collection
     // append "fieldPath" <value>
     // insert "fieldPath" index=N <value>
     // remove "fieldPath" index=N
@@ -662,8 +781,9 @@ public static class KdlTemplateParser
             return true;
         }
 
-        // InsertAt needs index= property
-        int? insertIndex = null;
+        // InsertAt requires index=, Set accepts an optional index= for
+        // element-set on a collection. Append takes no index.
+        int? parsedIndex = null;
         if (opKind == CompiledTemplateOp.InsertAt)
         {
             var indexProp = GetPropertyValue(node, "index");
@@ -673,7 +793,29 @@ public static class KdlTemplateParser
                 return false;
             }
 
-            insertIndex = indexProp.AsInt32();
+            parsedIndex = indexProp.AsInt32();
+        }
+        else if (opKind == CompiledTemplateOp.Set)
+        {
+            var indexProp = GetPropertyValue(node, "index");
+            if (indexProp != null)
+            {
+                var parsed = indexProp.AsInt32();
+                if (parsed == null)
+                {
+                    log.Error($"{pos}: 'set' index= must be a non-negative integer.");
+                    return false;
+                }
+                parsedIndex = parsed;
+            }
+        }
+        else if (opKind == CompiledTemplateOp.Append)
+        {
+            if (GetPropertyValue(node, "index") != null)
+            {
+                log.Error($"{pos}: 'append' does not take an index= property; use 'insert' for positional writes.");
+                return false;
+            }
         }
 
         // Parse the value
@@ -684,7 +826,7 @@ public static class KdlTemplateParser
         {
             Op = opKind,
             FieldPath = fieldPath,
-            Index = insertIndex,
+            Index = parsedIndex,
             Value = value,
         };
         return true;

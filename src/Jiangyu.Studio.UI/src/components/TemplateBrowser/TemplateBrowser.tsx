@@ -1,5 +1,6 @@
 import uFuzzy from "@leeoniya/ufuzzy";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { GripVertical } from "lucide-react";
 import {
   Fragment,
   useCallback,
@@ -10,7 +11,17 @@ import {
   useState,
 } from "react";
 import { rpcCall } from "@lib/rpc.ts";
+import { attachDragChip } from "@lib/drag/chip.ts";
 import { generatePatchKdl, generateCloneKdl } from "@lib/kdlSnippets.ts";
+import {
+  encodeCrossInstancePayload,
+  TEMPLATE_DRAG_TAG,
+  INSTANCE_DRAG_TAG,
+  MEMBER_DRAG_TAG,
+  beginTemplateDrag,
+  endTemplateDrag,
+} from "@lib/drag/crossInstance.ts";
+import { encodeCrossMemberPayload } from "@lib/drag/crossMember.ts";
 import { useToast } from "@lib/toast/toast.tsx";
 import {
   DEFAULT_TEMPLATE_BROWSER_STATE,
@@ -78,6 +89,11 @@ interface TemplateMember {
   readonly isCollection?: boolean;
   readonly isScalar?: boolean;
   readonly isTemplateReference?: boolean;
+  readonly patchScalarKind?: string;
+  readonly elementTypeName?: string;
+  readonly enumTypeName?: string;
+  readonly referenceTypeName?: string;
+  readonly namedArrayEnumTypeName?: string;
 }
 
 interface TemplateQueryResult {
@@ -664,26 +680,15 @@ export function TemplateBrowser({
                     pushNav(key);
                   };
                   return (
-                    <div
+                    <InstanceRow
                       key={key}
-                      className={`${styles.row} ${focused ? styles.rowFocused : ""}`}
-                      title={ownerInst ? `${inst.name} ← ${ownerInst.name}` : inst.name}
-                      role="button"
-                      tabIndex={0}
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        height: `${vRow.size}px`,
-                        transform: `translateY(${vRow.start}px)`,
-                      }}
-                      onClick={select}
-                      onKeyDown={onKeyActivate(select)}
-                    >
-                      <span className={styles.rowName}>{inst.name}</span>
-                      {ownerInst && <span className={styles.rowOwner}>← {ownerInst.name}</span>}
-                    </div>
+                      inst={inst}
+                      ownerInst={ownerInst}
+                      focused={focused}
+                      virtualSize={vRow.size}
+                      virtualStart={vRow.start}
+                      onSelect={select}
+                    />
                   );
                 })}
               </div>
@@ -1032,6 +1037,80 @@ function ReferenceNode({
 
 // --- Member row ---
 
+interface InstanceRowProps {
+  inst: TemplateInstanceEntry;
+  ownerInst: TemplateInstanceEntry | undefined;
+  focused: boolean;
+  virtualSize: number;
+  virtualStart: number;
+  onSelect: () => void;
+}
+
+/// Instance row in the list panel — virtualised, draggable into the visual
+/// editor. Pulled into its own component so each row can hold its own drag
+/// state and render the hover-revealed grip glyph without lifting that state
+/// to the (already-busy) parent component.
+function InstanceRow({
+  inst,
+  ownerInst,
+  focused,
+  virtualSize,
+  virtualStart,
+  onSelect,
+}: InstanceRowProps) {
+  const [dragging, setDragging] = useState(false);
+  return (
+    <div
+      className={`${styles.row} ${focused ? styles.rowFocused : ""} ${dragging ? styles.rowDragging : ""}`}
+      title={ownerInst ? `${inst.name} ← ${ownerInst.name}` : inst.name}
+      role="button"
+      tabIndex={0}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "copy";
+        e.dataTransfer.setData(
+          "text/plain",
+          encodeCrossInstancePayload({ name: inst.name, className: inst.className }),
+        );
+        e.dataTransfer.setData(TEMPLATE_DRAG_TAG, "1");
+        e.dataTransfer.setData(INSTANCE_DRAG_TAG, "1");
+        // The virtualised row is `position: absolute` over a sparse parent,
+        // and the browser-default drag image of that ends up clipped /
+        // invisible under WebKitGTK. Use the design-system chip helper that
+        // tab/pane drags already use — keeps the floating affordance visible
+        // and consistent across every drag source.
+        attachDragChip(e, inst.name);
+        beginTemplateDrag({
+          kind: "instance",
+          name: inst.name,
+          className: inst.className,
+        });
+        setDragging(true);
+      }}
+      onDragEnd={() => {
+        setDragging(false);
+        endTemplateDrag();
+      }}
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: `${virtualSize}px`,
+        transform: `translateY(${virtualStart}px)`,
+      }}
+      onClick={onSelect}
+      onKeyDown={onKeyActivate(onSelect)}
+    >
+      <span className={styles.rowDragGrip} aria-hidden>
+        <GripVertical size={10} />
+      </span>
+      <span className={styles.rowName}>{inst.name}</span>
+      {ownerInst && <span className={styles.rowOwner}>← {ownerInst.name}</span>}
+    </div>
+  );
+}
+
 interface MemberRowProps {
   member: TemplateMember;
   depth: number;
@@ -1043,6 +1122,7 @@ function MemberRow({ member, depth, parentTypeName, fieldPath }: MemberRowProps)
   const [expanded, setExpanded] = useState(false);
   const [fieldInfo, setFieldInfo] = useState<TemplateQueryResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const loadedRef = useRef(false);
 
   const isExpandable =
@@ -1067,10 +1147,12 @@ function MemberRow({ member, depth, parentTypeName, fieldPath }: MemberRowProps)
   if (member.isCollection) tags.push("collection");
   if (member.isTemplateReference) tags.push("ref");
 
+  const isDraggable = member.isWritable || member.isCollection === true;
+
   return (
     <>
       <div
-        className={`${styles.memberRow} ${isExpandable ? styles.memberRowExpandable : ""}`}
+        className={`${styles.memberRow} ${isExpandable ? styles.memberRowExpandable : ""} ${dragging ? styles.rowDragging : ""}`}
         {...(isExpandable && {
           role: "button",
           tabIndex: 0,
@@ -1078,7 +1160,54 @@ function MemberRow({ member, depth, parentTypeName, fieldPath }: MemberRowProps)
           onClick: handleToggle,
           onKeyDown: onKeyActivate(handleToggle),
         })}
+        {...(isDraggable && {
+          draggable: true,
+          onDragStart: (e: React.DragEvent) => {
+            e.dataTransfer.effectAllowed = "copy";
+            // Carry the full member schema so the drop site can build a
+            // correctly-typed directive (TemplateReference vs Enum vs scalar
+            // vs NamedArray-element) without re-querying the catalog. Undefined
+            // fields are stripped — exactOptionalPropertyTypes treats absent
+            // and undefined as distinct, and the payload's keys are readonly.
+            const payload: Record<string, unknown> = {
+              templateType: parentTypeName,
+              fieldPath,
+              typeName: member.typeName,
+            };
+            if (member.patchScalarKind !== undefined)
+              payload.patchScalarKind = member.patchScalarKind;
+            if (member.elementTypeName !== undefined)
+              payload.elementTypeName = member.elementTypeName;
+            if (member.enumTypeName !== undefined) payload.enumTypeName = member.enumTypeName;
+            if (member.referenceTypeName !== undefined)
+              payload.referenceTypeName = member.referenceTypeName;
+            if (member.isCollection !== undefined) payload.isCollection = member.isCollection;
+            if (member.isScalar !== undefined) payload.isScalar = member.isScalar;
+            if (member.isTemplateReference !== undefined)
+              payload.isTemplateReference = member.isTemplateReference;
+            if (member.namedArrayEnumTypeName !== undefined)
+              payload.namedArrayEnumTypeName = member.namedArrayEnumTypeName;
+            e.dataTransfer.setData(
+              "text/plain",
+              encodeCrossMemberPayload(payload as Parameters<typeof encodeCrossMemberPayload>[0]),
+            );
+            e.dataTransfer.setData(TEMPLATE_DRAG_TAG, "1");
+            e.dataTransfer.setData(MEMBER_DRAG_TAG, "1");
+            attachDragChip(e, fieldPath);
+            beginTemplateDrag({ kind: "member", templateType: parentTypeName, fieldPath });
+            setDragging(true);
+          },
+          onDragEnd: () => {
+            setDragging(false);
+            endTemplateDrag();
+          },
+        })}
       >
+        {isDraggable && (
+          <span className={styles.rowDragGrip} aria-hidden>
+            <GripVertical size={10} />
+          </span>
+        )}
         {isExpandable ? (
           <button
             type="button"

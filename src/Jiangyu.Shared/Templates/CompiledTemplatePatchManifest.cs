@@ -149,16 +149,22 @@ public sealed class CompiledTemplateComposite
 /// <summary>
 /// Payload for a <see cref="CompiledTemplateValueKind.TemplateReference"/>
 /// value — identifies an existing live DataTemplate by
-/// <c>(templateType, templateId)</c>. The applier resolves this to an Il2Cpp
+/// <c>(templateType?, templateId)</c>. The applier resolves this to an Il2Cpp
 /// wrapper at apply time via <c>TemplateRuntimeAccess</c>; unknown types and
-/// missing IDs fail loudly. Used for ref-typed element replacements into
-/// arrays/lists of templates (e.g. swap a <c>SkillTemplate</c> in
-/// <c>EntityTemplate.Skills</c>).
+/// missing IDs fail loudly.
+///
+/// <para><c>TemplateType</c> is optional. The single source of truth for the
+/// lookup type is the catalog: when the destination field's declared type
+/// is concrete (e.g. <c>PerkTemplate</c>), the modder doesn't need to repeat
+/// it and the applier derives the lookup type from the field. When the field
+/// is polymorphic (declared as an abstract base like <c>DataTemplate</c>),
+/// <c>TemplateType</c> must be specified — otherwise the lookup is
+/// ambiguous. The compile-time validator enforces this.</para>
 /// </summary>
 public sealed class CompiledTemplateReference
 {
     [JsonPropertyName("templateType")]
-    public string TemplateType { get; set; } = string.Empty;
+    public string? TemplateType { get; set; }
 
     [JsonPropertyName("templateId")]
     public string TemplateId { get; set; } = string.Empty;

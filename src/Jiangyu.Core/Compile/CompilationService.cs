@@ -4,6 +4,7 @@ using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Assets;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Glb;
+using Jiangyu.Core.Il2Cpp;
 using Jiangyu.Core.Models;
 using Jiangyu.Core.Templates;
 using Jiangyu.Core.Unity;
@@ -156,8 +157,35 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var totalEmitErrors = templatePatchResult.ErrorCount + templateCloneResult.ErrorCount;
         if (totalEmitErrors > 0)
             return Fail($"Template compilation failed with {totalEmitErrors} error(s). See errors above.");
-        if (templatePatchResult.RewriteCount > 0)
-            _log.Info($"  Rewrote {templatePatchResult.RewriteCount} template patch path(s) to canonical indexed form.");
+
+        // Catalog-aware semantic validation: unknown template types / fields,
+        // op-shape rules that depend on collection-vs-scalar (Set on a whole
+        // collection, etc.), and NamedArray restrictions. The supplement is
+        // optional — when it's present, NamedArray pairings flow through and
+        // append/insert/remove on those fields fail loudly here too.
+        var assemblyDir = Path.GetDirectoryName(gameDataPath);
+        if (assemblyDir is not null
+            && (templatePatchResult.Patches?.Count > 0 || templateCloneResult.Clones?.Count > 0))
+        {
+            var assemblyPath = Path.Combine(assemblyDir, "MelonLoader", "Il2CppAssemblies", "Assembly-CSharp.dll");
+            if (File.Exists(assemblyPath))
+            {
+                var additionalSearchDirs = new List<string>();
+                var melonNet6 = Path.Combine(assemblyDir, "MelonLoader", "net6");
+                if (Directory.Exists(melonNet6))
+                    additionalSearchDirs.Add(melonNet6);
+
+                var supplement = Il2CppMetadataCache.LoadIfPresent(input.Config.GetCachePath());
+                using var catalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirs, supplement);
+                var catalogErrors = TemplateCatalogValidator.Validate(
+                    templatePatchResult.Patches,
+                    templateCloneResult.Clones,
+                    catalog,
+                    _log);
+                if (catalogErrors > 0)
+                    return Fail($"Template validation failed with {catalogErrors} error(s). See errors above.");
+            }
+        }
         _log.Info($"  [timing] Template compilation: {phaseSw.Elapsed.TotalSeconds:F1}s");
 
         var compiledManifest = ModManifest.FromJson(manifest.ToJson());
