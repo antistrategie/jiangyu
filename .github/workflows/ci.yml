@@ -92,7 +92,14 @@ jobs:
   build-cli:
     if: startsWith(github.ref, 'refs/tags/')
     needs: [test-dotnet, test-studio-ui]
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x64
+          - os: windows-latest
+            platform: windows-x64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -108,13 +115,20 @@ jobs:
       - name: Upload CLI artefact
         uses: actions/upload-artifact@v4
         with:
-          name: jiangyu-cli
+          name: jiangyu-cli-${{ matrix.platform }}
           path: publish/cli/
 
   build-studio-host:
     if: startsWith(github.ref, 'refs/tags/')
     needs: [test-dotnet, test-studio-ui]
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x64
+          - os: windows-latest
+            platform: windows-x64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -134,7 +148,7 @@ jobs:
       - name: Upload Studio artefact
         uses: actions/upload-artifact@v4
         with:
-          name: jiangyu-studio
+          name: jiangyu-studio-${{ matrix.platform }}
           path: publish/studio/
 
   # ── Release ─────────────────────────────────────────────────────────────────
@@ -146,18 +160,24 @@ jobs:
       - name: Download all artefacts
         uses: actions/download-artifact@v4
 
-      - name: Package release
+      - name: Package release artefacts
         run: |
-          mkdir -p release/studio
-          cp Jiangyu.Loader.dll/Jiangyu.Loader.dll release/
-          cp -r jiangyu-cli/* release/
-          cp -r jiangyu-studio/* release/studio/
-          cd release && zip -r ../jiangyu-${{ github.ref_name }}.zip .
+          for dir in jiangyu-cli-*; do
+            (cd "$dir" && zip -r "../${dir}.zip" .)
+          done
+          for dir in jiangyu-studio-*; do
+            (cd "$dir" && zip -r "../${dir}.zip" .)
+          done
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
           generate_release_notes: true
-          files: jiangyu-${{ github.ref_name }}.zip
+          files: |
+            Jiangyu.Loader.dll/Jiangyu.Loader.dll
+            jiangyu-cli-linux-x64.zip
+            jiangyu-cli-win-x64.zip
+            jiangyu-studio-linux-x64.zip
+            jiangyu-studio-win-x64.zip
           fail_on_unmatched_files: true
