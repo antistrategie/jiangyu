@@ -6,6 +6,29 @@ updates:
       interval: weekly
     exclude-paths:
       - "vendor/**"
+    ignore:
+      # Vendor-only packages (used by AssetRipper under vendor/), kept as a
+      # belt-and-braces defence because dependabot-core's NuGet updater
+      # transitively follows ProjectReferences out of `directory:` / past
+      # `exclude-paths`. Drop entries here as src/tests start using them.
+      - dependency-name: "AsmResolver.*"
+      - dependency-name: "AssetRipper.*"
+      - dependency-name: "NAudio.*"
+      - dependency-name: "NUnit*"
+      - dependency-name: "Microsoft.CodeAnalysis.*"
+      - dependency-name: "Microsoft.AspNetCore.OpenApi"
+      - dependency-name: "Microsoft.OpenApi"
+      - dependency-name: "Swashbuckle.AspNetCore"
+      - dependency-name: "Ookii.CommandLine"
+      - dependency-name: "Moq"
+      - dependency-name: "PolySharp"
+      - dependency-name: "SharpCompress"
+      - dependency-name: "Fmod5Sharp"
+      - dependency-name: "K4os.Compression.LZ4"
+      - dependency-name: "StbImageWriteSharp"
+      - dependency-name: "ZstdSharp.Port"
+      - dependency-name: "SourceGenerator.Foundations"
+      - dependency-name: "oqo0.SwaggerThemes"
     groups:
       dotnet:
         patterns:

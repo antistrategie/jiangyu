@@ -186,9 +186,9 @@ machine with MENACE installed. The script clones and builds DeepStrip on demand.
 
 ## Vendored dependencies
 
-- AssetRipper 1.3.12 lives at `vendor/AssetRipper/` as a **git subtree** (not a submodule).
+- AssetRipper 1.3.14 lives at `vendor/AssetRipper/` as a **git subtree** (not a submodule).
 - Patches are applied directly to files under `vendor/AssetRipper/` as normal commits.
-- Current version: 1.3.12. Pull from versioned tags, not main.
+- Current version: 1.3.14. Pull from versioned tags, not main.
 - To pull upstream updates: `git subtree pull --prefix=vendor/AssetRipper --squash https://github.com/AssetRipper/AssetRipper.git <version-tag>`
 - `Jiangyu.Core` references AssetRipper as in-process project references (`Import`, `Processing`, `Export.Modules.Models`, `Export.Modules.Textures`), not via HTTP server or NuGet.
 
