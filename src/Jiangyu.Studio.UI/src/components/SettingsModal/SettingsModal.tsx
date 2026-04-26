@@ -36,11 +36,11 @@ interface SettingsModalProps {
 }
 
 const NAV_SECTIONS: readonly { readonly id: SectionId; readonly label: string }[] = [
-  { id: "appearance", label: "Appearance" },
-  { id: "session", label: "Session" },
-  { id: "editor", label: "Editor" },
-  { id: "paths", label: "Paths" },
-  { id: "about", label: "About" },
+  { id: "appearance", label: "Appearance · 外观" },
+  { id: "session", label: "Session · 会话" },
+  { id: "editor", label: "Editor · 编辑器" },
+  { id: "paths", label: "Paths · 路径" },
+  { id: "about", label: "About · 关于" },
 ];
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
@@ -248,7 +248,7 @@ function AppearanceSection() {
 
   return (
     <>
-      <SectionHeader title="Appearance" />
+      <SectionHeader title="Appearance · 外观" />
       <Field
         label="UI font size"
         hint={`${UI_FONT_SCALE_MIN}–${UI_FONT_SCALE_MAX}%`}
@@ -278,7 +278,7 @@ function SessionSection() {
 
   return (
     <>
-      <SectionHeader title="Session" />
+      <SectionHeader title="Session · 会话" />
       <Field
         label="Restore project on launch"
         hint="Reopen the most recent project automatically."
@@ -329,7 +329,7 @@ function EditorSection() {
 
   return (
     <>
-      <SectionHeader title="Editor" />
+      <SectionHeader title="Editor · 编辑器" />
       <Field
         label="Font size"
         hint={`${EDITOR_FONT_SIZE_MIN}–${EDITOR_FONT_SIZE_MAX}px`}
@@ -438,7 +438,7 @@ function PathsSection() {
 
   return (
     <>
-      <SectionHeader title="Paths" />
+      <SectionHeader title="Paths · 路径" />
       {loadError !== null && <p className={styles.error}>Failed to load config: {loadError}</p>}
       {config === null && loadError === null && <p className={styles.muted}>Loading…</p>}
       {config !== null && (
@@ -571,7 +571,7 @@ const CREDIT_GROUPS: readonly CreditGroup[] = [
 function AboutSection() {
   return (
     <>
-      <SectionHeader title="About" />
+      <SectionHeader title="About · 关于" />
       <div className={styles.aboutHero}>
         <span className={styles.aboutGlyph}>绛雨</span>
         <span className={styles.aboutEyebrow}>Jiangyu Studio</span>
@@ -590,7 +590,7 @@ function AboutSection() {
           {REPO_URL}
         </button>
       </Field>
-      <SectionHeader title="Credits" />
+      <SectionHeader title="Credits · 致谢" />
       <p className={styles.muted}>
         Jiangyu Studio builds on open-source work. AssetRipper is distributed under GPL-3.0; see{" "}
         <code>vendor/AssetRipper/LICENSE.md</code> for the full text.

@@ -169,7 +169,7 @@ function InfoPanel({
 
   return (
     <div className={styles.info}>
-      <Section title="Mod · 模块">
+      <Section title="Mod · 模组">
         {summary === null ? (
           <p className={styles.placeholder}>Loading…</p>
         ) : summary.modName === null ? (

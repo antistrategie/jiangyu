@@ -51,7 +51,7 @@ export function NewProjectDialog({ onCreated, onCancel }: NewProjectDialogProps)
     <Modal onClose={onCancel} ariaLabelledBy="new-project-title">
       <div className={styles.dialog}>
         <div id="new-project-title" className={styles.header}>
-          New Project
+          New Project · 新项目
         </div>
         <div className={styles.body}>
           <label className={styles.label} htmlFor="new-project-name">
