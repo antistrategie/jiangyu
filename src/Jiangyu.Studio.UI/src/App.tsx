@@ -144,8 +144,6 @@ export function App() {
   const { fileEntries, refreshFiles } = useFileEntries(projectPath, handleDeletedPath);
   const gitBranch = useGitBranch(projectPath);
 
-  const recentProjects = useProjectStore((s) => s.recentProjects);
-
   const { handleCrossDragStart } = useCrossWindowTabDrag((paneId, paths) =>
     useLayoutStore.getState().closeTabsInPane(paneId, paths),
   );
@@ -159,11 +157,10 @@ export function App() {
   const actions = useMemo<PaletteAction[]>(() => {
     const ps = useProjectStore.getState();
     const result: PaletteAction[] = [
-      ...buildProjectActions(projectPath, recentProjects, {
+      ...buildProjectActions(projectPath, {
         openProject: () => void ps.openProject(),
         closeProject: ps.closeProject,
         revealProject: ps.revealProject,
-        switchProject: ps.switchProject,
       }),
       {
         id: "app.openSettings",
@@ -198,7 +195,7 @@ export function App() {
       }
     }
     return result;
-  }, [projectPath, recentProjects, fileEntries, paneActions]);
+  }, [projectPath, fileEntries, paneActions]);
 
   useRegisterActions(actions);
 

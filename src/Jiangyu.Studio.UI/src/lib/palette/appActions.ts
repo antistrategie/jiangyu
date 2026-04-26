@@ -1,5 +1,4 @@
 import { PALETTE_SCOPE, type PaletteAction } from "@lib/palette/actions";
-import { basename } from "@lib/path";
 
 const PROJECT_SCOPE = PALETTE_SCOPE.Project;
 
@@ -7,17 +6,14 @@ export interface ProjectActionHandlers {
   readonly openProject: () => void;
   readonly closeProject: () => void;
   readonly revealProject: () => void;
-  readonly switchProject: (path: string) => void;
 }
 
 /**
  * Build the PROJECT palette actions for the current app state: always-present
- * "Open Project…", "Close Project" / "Reveal Project" when a project is open,
- * and one "Open Recent" entry per recent project (excluding the active one).
+ * "Open Project…", and "Close Project" / "Reveal Project" when a project is open.
  */
 export function buildProjectActions(
   projectPath: string | null,
-  recentProjects: readonly string[],
   handlers: ProjectActionHandlers,
 ): PaletteAction[] {
   const actions: PaletteAction[] = [
@@ -43,16 +39,6 @@ export function buildProjectActions(
       scope: PROJECT_SCOPE,
       cn: "显示",
       run: handlers.revealProject,
-    });
-  }
-  for (const recent of recentProjects) {
-    if (recent === projectPath) continue;
-    actions.push({
-      id: `app.openRecent:${recent}`,
-      label: `Open Recent: ${basename(recent)}`,
-      scope: PROJECT_SCOPE,
-      desc: recent,
-      run: () => handlers.switchProject(recent),
     });
   }
   return actions;

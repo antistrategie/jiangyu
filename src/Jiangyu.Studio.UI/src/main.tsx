@@ -28,6 +28,16 @@ self.MonacoEnvironment = {
 initRpc();
 initSettings();
 
+// Prevent the browser from navigating to files dropped onto the window.
+// Internal drag handlers (tab dragging, template dragging, drop zones)
+// already call preventDefault on their own elements.
+document.addEventListener("dragover", (e) => {
+  e.preventDefault();
+});
+document.addEventListener("drop", (e) => {
+  e.preventDefault();
+});
+
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root element");
 

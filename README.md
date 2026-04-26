@@ -1,21 +1,32 @@
 # Jiangyu
 
-Jiangyu is a modkit for MENACE.
+General-purpose modkit for MENACE (Unity 6, IL2CPP). Mods are files: drop replacement assets by name, patch DataTemplates with KDL if you need to, compile in Studio.
+
+## For modders
+
+See the [Jiangyu docs site](https://antistrategie.github.io/jiangyu/) for the full workflow, path conventions, and KDL reference.
 
 ## Requirements
 
 - MENACE
-- .NET SDK:
-  - .NET 10 SDK for `Jiangyu.Cli`
-  - .NET 6 runtime/tooling for `Jiangyu.Loader`
-- MelonLoader `0.7.2`
-- Unity Editor `6000.0.63f1` (when building Unity-native assets such as AssetBundles)
+- .NET 10 SDK (CLI), .NET 6 runtime (Loader)
+- MelonLoader 0.7.2
+- Unity Editor 6000.0.63f1 (when building AssetBundles)
+- bun (Studio UI and docs site)
 
-See the [Jiangyu docs site](https://antistrategie.github.io/jiangyu/) for the current modder-facing workflow and path conventions. The site sources live under `site/` (VitePress) and ship via the `pages` GitHub Actions workflow.
+## Development
 
-## Jiangyu Development
+This repo uses [mise](https://mise.jdx.dev/) as a task runner:
 
-`Directory.Build.props` assumes a standard MENACE install path for local Jiangyu development. If your game is installed elsewhere, create a gitignored `local.props` file in the repo root with your override:
+```bash
+mise run build        # Build the full solution
+mise run test         # Run all tests
+mise run studio       # Build and run Jiangyu Studio
+mise run studio:dev   # Run Studio with Vite HMR
+mise run format       # Roslyn + Prettier formatting
+```
+
+If your MENACE install path differs from the default in `Directory.Build.props`, create a gitignored `local.props`:
 
 ```xml
 <Project>
@@ -24,7 +35,3 @@ See the [Jiangyu docs site](https://antistrategie.github.io/jiangyu/) for the cu
   </PropertyGroup>
 </Project>
 ```
-
-`local.props` is only for building Jiangyu itself. Runtime commands use Jiangyu's global config for `game`, `unityEditor`, and `cache`.
-
-This repo uses `mise` as a task runner for common development commands. Use `mise tasks` to see the available tasks in `mise.toml`.
