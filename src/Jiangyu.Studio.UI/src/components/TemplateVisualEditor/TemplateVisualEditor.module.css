@@ -228,6 +228,18 @@
   min-width: 0;
 }
 
+.setValueInputWrap {
+  display: flex;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 0;
+}
+
+.setValueInputWrap .setValueInput {
+  flex: 1 1 0;
+}
+
 .setValueInput:focus {
   border-color: var(--cinnabar-1);
 }
@@ -260,6 +272,16 @@
   color: var(--fg-muted);
   flex-shrink: 0;
   text-align: right;
+}
+
+.rangeHint {
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  color: var(--fg-muted);
+  flex-shrink: 0;
+  margin-left: var(--space-1);
+  white-space: nowrap;
 }
 
 /* Hide kind label in narrow containers */

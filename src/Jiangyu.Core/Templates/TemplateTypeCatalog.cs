@@ -354,22 +354,31 @@ public sealed class TemplateTypeCatalog : IDisposable
         if (_supplement is null) return members;
         if (_supplement.NamedArrays.Count == 0 && _supplement.Fields.Count == 0) return members;
 
-        var typeShortName = declaringType.Name;
+        var rootShortName = declaringType.Name;
         var enriched = new List<MemberShape>(members.Count);
         foreach (var member in members)
         {
             var current = member;
 
-            // NamedArray pairing.
-            if (current.NamedArrayEnumTypeName is null
-                && _supplement.TryFindNamedArrayEnum(typeShortName, current.Name, out var enumName)
-                && enumName is not null)
+            // Use the member's own declaring type short name so inherited
+            // fields (e.g. Rarity declared on BaseItemTemplate) match the
+            // supplement entry keyed under their actual declaring type.
+            var memberDeclarerShort = ShortNameFromFull(member.DeclaringTypeFullName);
+
+            // NamedArray pairing — try root type first (declared directly),
+            // then fall back to the member's own declaring type.
+            if (current.NamedArrayEnumTypeName is null)
             {
-                current = current with { NamedArrayEnumTypeName = enumName };
+                bool found = _supplement.TryFindNamedArrayEnum(rootShortName, current.Name, out var enumName);
+                if (!found)
+                    found = _supplement.TryFindNamedArrayEnum(memberDeclarerShort, current.Name, out enumName);
+                if (found && enumName is not null)
+                    current = current with { NamedArrayEnumTypeName = enumName };
             }
 
             // Per-field attribute hints (Range/Min/Tooltip/HideInInspector/SoundID).
-            var meta = _supplement.FindFieldMetadata(typeShortName, current.Name);
+            var meta = _supplement.FindFieldMetadata(rootShortName, current.Name)
+                        ?? _supplement.FindFieldMetadata(memberDeclarerShort, current.Name);
             if (meta is not null)
             {
                 current = current with
@@ -385,6 +394,18 @@ public sealed class TemplateTypeCatalog : IDisposable
             enriched.Add(current);
         }
         return enriched;
+    }
+
+    /// <summary>
+    /// Extracts the short type name from a full name like
+    /// <c>Il2CppMenace.Items.BaseItemTemplate</c>.
+    /// </summary>
+    private static string ShortNameFromFull(string fullName)
+    {
+        var lastDot = fullName.LastIndexOf('.');
+        return lastDot >= 0 && lastDot < fullName.Length - 1
+            ? fullName[(lastDot + 1)..]
+            : fullName;
     }
 
     public void Dispose() => _context.Dispose();

@@ -425,8 +425,8 @@ export function TemplateVisualEditor({
       if (node.templateType !== "" && member.templateType !== node.templateType) {
         toast({
           variant: "error",
-          message: `Field "${member.fieldPath}" belongs to ${member.templateType}`,
-          detail: `This node is ${node.templateType}.`,
+          message: `Field does not belong to ${node.templateType}`,
+          detail: `"${member.fieldPath}" belongs to ${member.templateType}`,
         });
         return;
       }
@@ -1223,6 +1223,27 @@ interface ValueEditorProps {
   member?: TemplateMember | undefined;
 }
 
+interface RangeHintProps {
+  readonly min: number | null | undefined;
+  readonly max: number | null | undefined;
+}
+
+function RangeHint({ min, max }: RangeHintProps) {
+  if (min == null && max == null) return null;
+  let text: string;
+  if (min != null && max != null) {
+    text = `${min}\u2013${max}`;
+  } else if (min != null) {
+    text = `\u2265${min}`;
+  } else if (max != null) {
+    text = `\u2264${max}`;
+  } else {
+    // Unreachable — the first guard already returned for (null, null).
+    return null;
+  }
+  return <span className={styles.rangeHint}>{text}</span>;
+}
+
 function ValueEditor({ value, onChange, member }: ValueEditorProps) {
   switch (value.kind) {
     case "Boolean":
@@ -1242,15 +1263,18 @@ function ValueEditor({ value, onChange, member }: ValueEditorProps) {
       const num = value.int32 ?? 0;
       const invalid = num < min || num > max || !Number.isInteger(num);
       return (
-        <CommitInput
-          type="number"
-          className={`${styles.setValueInput} ${invalid ? styles.setValueInvalid : ""}`}
-          value={num}
-          min={min}
-          max={max}
-          step={1}
-          onCommit={(v) => onChange({ kind: "Byte", int32: Number(v) })}
-        />
+        <span className={styles.setValueInputWrap}>
+          <CommitInput
+            type="number"
+            className={`${styles.setValueInput} ${invalid ? styles.setValueInvalid : ""}`}
+            value={num}
+            min={min}
+            max={max}
+            step={1}
+            onCommit={(v) => onChange({ kind: "Byte", int32: Number(v) })}
+          />
+          <RangeHint min={min} max={max} />
+        </span>
       );
     }
 
@@ -1259,19 +1283,20 @@ function ValueEditor({ value, onChange, member }: ValueEditorProps) {
       const min = member?.numericMin;
       const max = member?.numericMax;
       const invalid =
-        !Number.isInteger(num) ||
-        (min !== undefined && num < min) ||
-        (max !== undefined && num > max);
+        !Number.isInteger(num) || (min != null && num < min) || (max != null && num > max);
       return (
-        <CommitInput
-          type="number"
-          className={`${styles.setValueInput} ${invalid ? styles.setValueInvalid : ""}`}
-          value={num}
-          min={min}
-          max={max}
-          step={1}
-          onCommit={(v) => onChange({ kind: "Int32", int32: Number(v) })}
-        />
+        <span className={styles.setValueInputWrap}>
+          <CommitInput
+            type="number"
+            className={`${styles.setValueInput} ${invalid ? styles.setValueInvalid : ""}`}
+            value={num}
+            min={min}
+            max={max}
+            step={1}
+            onCommit={(v) => onChange({ kind: "Int32", int32: Number(v) })}
+          />
+          <RangeHint min={min} max={max} />
+        </span>
       );
     }
 
@@ -1279,17 +1304,20 @@ function ValueEditor({ value, onChange, member }: ValueEditorProps) {
       const num = value.single ?? 0;
       const min = member?.numericMin;
       const max = member?.numericMax;
-      const invalid = (min !== undefined && num < min) || (max !== undefined && num > max);
+      const invalid = (min != null && num < min) || (max != null && num > max);
       return (
-        <CommitInput
-          type="number"
-          className={`${styles.setValueInput} ${invalid ? styles.setValueInvalid : ""}`}
-          value={num}
-          min={min}
-          max={max}
-          step={0.01}
-          onCommit={(v) => onChange({ kind: "Single", single: Number(v) })}
-        />
+        <span className={styles.setValueInputWrap}>
+          <CommitInput
+            type="number"
+            className={`${styles.setValueInput} ${invalid ? styles.setValueInvalid : ""}`}
+            value={num}
+            min={min}
+            max={max}
+            step={0.01}
+            onCommit={(v) => onChange({ kind: "Single", single: Number(v) })}
+          />
+          <RangeHint min={min} max={max} />
+        </span>
       );
     }
 

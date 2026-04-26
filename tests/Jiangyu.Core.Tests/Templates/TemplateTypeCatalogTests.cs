@@ -271,4 +271,53 @@ public class TemplateTypeCatalogTests
         Assert.True(initialSkill.IsHiddenInInspector);
         Assert.True(initialSkill.IsSoundIdField);
     }
+
+    [Fact]
+    public void EnrichMembers_MatchesInheritedMembersByTheirDeclaringType()
+    {
+        // FixtureEntity inherits m_ID / m_Name from FixtureBaseEntity.
+        // The supplement entries are keyed under the base type, so the
+        // enrichment must fall back to the member's own declaring type.
+        var supplement = new Il2CppMetadataSupplement
+        {
+            NamedArrays =
+            [
+                new NamedArrayPairing
+                {
+                    TemplateTypeShortName = "FixtureBaseEntity",
+                    TemplateTypeFullName = "Jiangyu.Core.Tests.Templates.Fixtures.Gameplay.FixtureBaseEntity",
+                    FieldName = "m_ID",
+                    EnumTypeShortName = "FixtureAttribute",
+                },
+            ],
+            Fields =
+            [
+                new FieldMetadata
+                {
+                    TemplateTypeShortName = "FixtureBaseEntity",
+                    TemplateTypeFullName = "Jiangyu.Core.Tests.Templates.Fixtures.Gameplay.FixtureBaseEntity",
+                    FieldName = "m_Name",
+                    RangeMin = 0,
+                    RangeMax = 128,
+                    Tooltip = "Base entity name",
+                },
+            ],
+        };
+
+        using var catalog = LoadWithSupplement(supplement);
+        var type = catalog.ResolveType("FixtureEntity", out _, out _)!;
+        var members = TemplateTypeCatalog.GetMembers(type);
+
+        var enriched = catalog.EnrichMembers(type, members);
+
+        var id = enriched.Single(m => m.Name == "m_ID");
+        Assert.True(id.IsInherited);
+        Assert.Equal("FixtureAttribute", id.NamedArrayEnumTypeName);
+
+        var name = enriched.Single(m => m.Name == "m_Name");
+        Assert.True(name.IsInherited);
+        Assert.Equal(0, name.NumericMin);
+        Assert.Equal(128, name.NumericMax);
+        Assert.Equal("Base entity name", name.Tooltip);
+    }
 }

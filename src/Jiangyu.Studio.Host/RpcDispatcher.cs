@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using AssetRipper.Primitives;
 using InfiniFrame;
 using Jiangyu.Core.Config;
+using Jiangyu.Core.Models;
 using Jiangyu.Core.Unity;
 
 namespace Jiangyu.Studio.Host;
@@ -66,6 +67,8 @@ public static partial class RpcDispatcher
         Register("completeTabMove", HandleCompleteTabMove);
         Register("beginPaneMove", HandleBeginPaneMove);
         Register("completePaneMove", HandleCompletePaneMove);
+        Register("getStudioSettings", HandleGetStudioSettings);
+        Register("setStudioSetting", HandleSetStudioSetting);
     }
 
     private static void Register(string method, Func<IInfiniFrameWindow, JsonElement?, JsonElement> handler)
@@ -245,6 +248,9 @@ public static partial class RpcDispatcher
 
     private static void OpenProject(IInfiniFrameWindow window, string path)
     {
+        if (!File.Exists(Path.Combine(path, ModManifest.FileName)))
+            throw new ArgumentException($"Not a Jiangyu project — missing {ModManifest.FileName} in: {path}");
+
         ProjectWatcher.Start(window, path);
     }
 

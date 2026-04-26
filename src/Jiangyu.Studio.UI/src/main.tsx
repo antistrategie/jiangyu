@@ -4,6 +4,7 @@ import { App } from "./App.tsx";
 import { PaneWindow } from "@components/PaneWindow/PaneWindow.tsx";
 import { ToastContainer } from "@components/Toast/Toast.tsx";
 import { initRpc } from "@lib/rpc.ts";
+import { initSettings } from "@lib/settings.ts";
 import { getWindowParams } from "@lib/panes/role.ts";
 import "./styles/global.css";
 
@@ -25,6 +26,7 @@ self.MonacoEnvironment = {
 };
 
 initRpc();
+initSettings();
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root element");

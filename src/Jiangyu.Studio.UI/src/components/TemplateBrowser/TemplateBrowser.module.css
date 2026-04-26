@@ -597,11 +597,6 @@
 .memberBlock {
   display: flex;
   flex-direction: column;
-  border-bottom: 1px solid var(--rule-faint);
-}
-
-.memberBlock:last-child {
-  border-bottom: none;
 }
 
 /* --- Header row (expander + name + type + tags) --- */

@@ -1,17 +1,19 @@
 /**
- * User preferences persisted to localStorage. UI-only — machine-level paths
- * (game, Unity) stay in `GlobalConfig.json` on the host since the CLI and
- * compiler read them too.
+ * Studio UI user preferences. The source of truth is the host filesystem
+ * (persisted via RPC to `studio.json` alongside `config.json` in the
+ * Jiangyu config directory). localStorage is a fast mirror — read
+ * synchronously on startup for instant paint, then reconciled against
+ * the authoritative values fetched via RPC.
  *
- * Each setting has its own load/save pair so that clamp/validate logic lives
- * next to the setting; a single malformed entry falls back to the default
- * instead of wiping the whole blob.
+ * Each setting has its own load/save pair so that clamp/validate logic
+ * lives next to the setting; a single malformed entry falls back to the
+ * default instead of wiping the whole blob.
  *
  * Hook updates are broadcast via a local pub-sub so multiple editor panes
- * reading the same setting stay in lock-step within one window. The `storage`
- * event covers the rare cross-window case.
+ * reading the same setting stay in lock-step within one window.
  */
 import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { rpcCall } from "@lib/rpc.ts";
 
 const STORAGE_PREFIX = "jiangyu:setting:";
 
@@ -26,12 +28,6 @@ function subscribe(fn: () => void): () => void {
 
 function notify(): void {
   for (const fn of subscribers) fn();
-}
-
-if (typeof window !== "undefined") {
-  window.addEventListener("storage", (e) => {
-    if (e.key?.startsWith(STORAGE_PREFIX)) notify();
-  });
 }
 
 function parseBool(raw: unknown, fallback: boolean): boolean {
@@ -63,12 +59,8 @@ export function loadEditorFontSize(): number {
 
 export function saveEditorFontSize(value: number): void {
   const clamped = clampEditorFontSize(value);
-  try {
-    localStorage.setItem(EDITOR_FONT_SIZE_KEY, JSON.stringify(clamped));
-  } catch {
-    // quota exceeded / storage unavailable — the setting won't persist but
-    // the in-memory subscribers still see the change this session.
-  }
+  localStorage.setItem(EDITOR_FONT_SIZE_KEY, JSON.stringify(clamped));
+  void persistSetting("editorFontSize", clamped);
   notify();
 }
 
@@ -96,11 +88,8 @@ export function loadUiFontScale(): number {
 
 export function saveUiFontScale(value: number): void {
   const clamped = clampUiFontScale(value);
-  try {
-    localStorage.setItem(UI_FONT_SCALE_KEY, JSON.stringify(clamped));
-  } catch {
-    // see note on saveEditorFontSize.
-  }
+  localStorage.setItem(UI_FONT_SCALE_KEY, JSON.stringify(clamped));
+  void persistSetting("uiFontScale", clamped);
   notify();
 }
 
@@ -125,11 +114,8 @@ export function loadEditorWordWrap(): EditorWordWrap {
 }
 
 export function saveEditorWordWrap(value: EditorWordWrap): void {
-  try {
-    localStorage.setItem(EDITOR_WORD_WRAP_KEY, JSON.stringify(value));
-  } catch {
-    // see note on saveEditorFontSize.
-  }
+  localStorage.setItem(EDITOR_WORD_WRAP_KEY, JSON.stringify(value));
+  void persistSetting("editorWordWrap", value);
   notify();
 }
 
@@ -149,11 +135,8 @@ export function loadSidebarHidden(): boolean {
 }
 
 export function saveSidebarHidden(value: boolean): void {
-  try {
-    localStorage.setItem(SIDEBAR_HIDDEN_KEY, JSON.stringify(value));
-  } catch {
-    // see note on saveEditorFontSize.
-  }
+  localStorage.setItem(SIDEBAR_HIDDEN_KEY, JSON.stringify(value));
+  void persistSetting("sidebarHidden", value);
   notify();
 }
 
@@ -175,11 +158,8 @@ export function loadSessionRestoreProject(): boolean {
 }
 
 export function saveSessionRestoreProject(value: boolean): void {
-  try {
-    localStorage.setItem(SESSION_RESTORE_PROJECT_KEY, JSON.stringify(value));
-  } catch {
-    // see note on saveEditorFontSize.
-  }
+  localStorage.setItem(SESSION_RESTORE_PROJECT_KEY, JSON.stringify(value));
+  void persistSetting("sessionRestoreProject", value);
   notify();
 }
 
@@ -194,11 +174,8 @@ export function loadSessionRestoreTabs(): boolean {
 }
 
 export function saveSessionRestoreTabs(value: boolean): void {
-  try {
-    localStorage.setItem(SESSION_RESTORE_TABS_KEY, JSON.stringify(value));
-  } catch {
-    // see note on saveEditorFontSize.
-  }
+  localStorage.setItem(SESSION_RESTORE_TABS_KEY, JSON.stringify(value));
+  void persistSetting("sessionRestoreTabs", value);
   notify();
 }
 
@@ -223,11 +200,8 @@ export function loadEditorKeybindMode(): EditorKeybindMode {
 }
 
 export function saveEditorKeybindMode(value: EditorKeybindMode): void {
-  try {
-    localStorage.setItem(EDITOR_KEYBIND_MODE_KEY, JSON.stringify(value));
-  } catch {
-    // see note on saveEditorFontSize.
-  }
+  localStorage.setItem(EDITOR_KEYBIND_MODE_KEY, JSON.stringify(value));
+  void persistSetting("editorKeybindMode", value);
   notify();
 }
 
@@ -252,12 +226,78 @@ export function loadTemplateEditorMode(): TemplateEditorMode {
 }
 
 export function saveTemplateEditorMode(value: TemplateEditorMode): void {
-  try {
-    localStorage.setItem(TEMPLATE_EDITOR_MODE_KEY, JSON.stringify(value));
-  } catch {
-    // see note on saveEditorFontSize.
-  }
+  localStorage.setItem(TEMPLATE_EDITOR_MODE_KEY, JSON.stringify(value));
+  void persistSetting("templateEditorMode", value);
   notify();
+}
+
+// --- RPC persistence -------------------------------------------------------
+
+// Mirrors C# StudioSettings property-for-property. Must be updated when
+// StudioSettings.cs gains or renames a persisted field.
+interface StudioSettingsShape {
+  editorFontSize: number;
+  uiFontScale: number;
+  editorWordWrap: string;
+  sidebarHidden: boolean;
+  sessionRestoreProject: boolean;
+  sessionRestoreTabs: boolean;
+  editorKeybindMode: string;
+  templateEditorMode: string;
+}
+
+/**
+ * Call once at app startup (after initRpc) to reconcile the localStorage
+ * mirror against the authoritative filesystem values. Runs async and
+ * does not block first paint — components read localStorage instantly.
+ */
+export function initSettings(): void {
+  rpcCall<StudioSettingsShape>("getStudioSettings")
+    .then((settings) => {
+      // Write the authoritative values into localStorage so subsequent
+      // synchronous reads (including next launch) see the filesystem state.
+      syncToLocalStorage(settings);
+      notify();
+    })
+    .catch(() => {
+      // Host not available (e.g. running in a browser during dev).
+      // localStorage values are the best we have.
+    });
+}
+
+function syncToLocalStorage(settings: StudioSettingsShape): void {
+  localStorage.setItem(EDITOR_FONT_SIZE_KEY, JSON.stringify(settings.editorFontSize));
+  localStorage.setItem(UI_FONT_SCALE_KEY, JSON.stringify(settings.uiFontScale));
+  localStorage.setItem(EDITOR_WORD_WRAP_KEY, JSON.stringify(settings.editorWordWrap));
+  localStorage.setItem(SIDEBAR_HIDDEN_KEY, JSON.stringify(settings.sidebarHidden));
+  localStorage.setItem(SESSION_RESTORE_PROJECT_KEY, JSON.stringify(settings.sessionRestoreProject));
+  localStorage.setItem(SESSION_RESTORE_TABS_KEY, JSON.stringify(settings.sessionRestoreTabs));
+  localStorage.setItem(EDITOR_KEYBIND_MODE_KEY, JSON.stringify(settings.editorKeybindMode));
+  localStorage.setItem(TEMPLATE_EDITOR_MODE_KEY, JSON.stringify(settings.templateEditorMode));
+}
+
+/**
+ * Persist a single setting to the host filesystem. Fire-and-forget —
+ * the synchronous localStorage write in the save* function handles the
+ * in-session mirror; this call backfills the durable store.
+ *
+ * Rapid successive saves on different keys race (each host-side
+ * read-modify-write loads the file, applies one change, and writes back
+ * independently). The last writer wins; the earlier change lands in
+ * localStorage but may be absent from the file until the next save
+ * triggers a fresh round-trip. For user preferences this is acceptable.
+ */
+async function persistSetting(key: string, value: number | boolean | string): Promise<void> {
+  try {
+    const settings = await rpcCall<StudioSettingsShape>("setStudioSetting", { key, value });
+    // Reconcile: the host returned the full settings object. Write it back
+    // so we pick up any clamping the host applied, and so other settings
+    // changed by a concurrent window are reflected.
+    syncToLocalStorage(settings);
+  } catch {
+    // Host not available — the localStorage write in the save* function
+    // is sufficient for this session.
+  }
 }
 
 // --- hooks -----------------------------------------------------------------

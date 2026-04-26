@@ -154,7 +154,7 @@ public static partial class RpcDispatcher
         if (result.Kind == QueryResultKind.Error)
             throw new InvalidOperationException(result.ErrorMessage ?? "Query failed.");
 
-        return JsonSerializer.SerializeToElement(MapQueryResult(catalog, result));
+        return JsonSerializer.SerializeToElement(MapQueryResult(catalog, result), TemplatesJsonOptions);
     }
 
     // Catalog loads are expensive (reflection over Assembly-CSharp.dll), and the
@@ -548,6 +548,18 @@ public static partial class RpcDispatcher
     }
 
     private static readonly JsonSerializerOptions InspectJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    /// <summary>
+    /// Options used for templatesQuery / templatesParse / templatesSerialise responses.
+    /// Omits nulls so the frontend sees <c>undefined</c> (not <c>null</c>) for absent
+    /// optional fields like numericMin/numericMax — null-on-the-wire false-triggers
+    /// numeric validation range checks.
+    /// </summary>
+    private static readonly JsonSerializerOptions TemplatesJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
