@@ -2,7 +2,7 @@
 
 Replace any `Sprite` in the game by name. Sprites ride on texture mutation: the new pixels reach every UI element, `SpriteRenderer`, and `Image` component that already references the sprite, automatically.
 
-Most sprites in MENACE are packed into atlases. Jiangyu handles atlases for you at compile time; you author your replacement at the sprite's region size and the compiler composites it into the atlas without disturbing the other sprites packed alongside it. See [Atlas-backed sprites](#atlas-backed-sprites) below.
+Most sprites in MENACE are packed into atlases. Jiangyu handles atlases for you at compile time. You author your replacement at the sprite's region size and the compiler composites it into the atlas without disturbing the other sprites packed alongside it. See [Atlas-backed sprites](#atlas-backed-sprites) below.
 
 ## Studio workflow
 
@@ -59,7 +59,7 @@ A few rules to keep in mind:
 
 When the same name covers multiple `Sprite` assets in the game, all of them are replaced. For non-atlas sprites, each backing texture is mutated independently. For atlas-backed sprites, each atlas's region for that name is composited.
 
-Compile logs a warning enumerating every affected sprite, the same way [textures](./textures.md#shared-names) do. Treat the warning as a checklist; if any of the listed instances shouldn't change, your name is too ambiguous to replace safely.
+Compile logs a warning enumerating every affected sprite, the same way [textures](./textures.md#shared-names) do. Treat the warning as a checklist. If any of the listed instances shouldn't change, your name is too ambiguous to replace safely.
 
 ## Compile-time errors
 
@@ -77,4 +77,4 @@ jiangyu assets search UICheckMark --type Sprite
 jiangyu assets export sprite UICheckMark
 ```
 
-Studio is the recommended surface for authoring; the CLI is intended for build pipelines and scripting.
+```

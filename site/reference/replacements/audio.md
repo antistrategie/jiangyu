@@ -38,7 +38,7 @@ The basename (without extension) is the **target name** and must match the `Audi
 
 Unity resamples mismatched audio at runtime, which pitch-shifts the sound. Match the vanilla clip's frequency and channel count when you save your replacement. Studio's detail panel shows both values; on the CLI, `assets search <name> --type AudioClip` includes them in the output.
 
-If you author a replacement at 48 kHz stereo for a target that ships as 44.1 kHz mono, the sound will play back too fast and high. Mono targets need mono replacements; stereo targets need stereo replacements.
+If you author a replacement at 48 kHz stereo for a target that ships as 44.1 kHz mono, the sound will play back too fast and high. Mono targets need mono replacements. Stereo targets need stereo replacements.
 
 ## Shared names
 
@@ -70,4 +70,4 @@ jiangyu assets search mortar_incoming_whistle_04 --type AudioClip
 jiangyu assets export audio mortar_incoming_whistle_04
 ```
 
-`assets search` shows each clip's frequency and channels alongside its suggested replacement path. Studio is the recommended surface for authoring; the CLI is intended for build pipelines and scripting.
+`assets search` shows each clip's frequency and channels alongside its suggested replacement path.

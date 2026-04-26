@@ -2,7 +2,7 @@
 
 Template patches let you tweak the data MENACE ships with: unit stats, skill parameters, weapon damage, perk trees, anything stored in a `DataTemplate`. Edits live in `templates/*.kdl` files in your project. The compiler reads them at build time and emits patches the loader applies at runtime.
 
-Templates are MENACE's authored game data. There are dozens of subtypes (`EntityTemplate`, `UnitLeaderTemplate`, `WeaponTemplate`, `SkillTemplate`, `PerkTreeTemplate`, and so on), each with its own field schema. Patches apply at runtime; they don't modify your `resources.assets` file. Removing a mod restores vanilla behaviour next launch.
+Templates are MENACE's authored game data. There are dozens of subtypes (`EntityTemplate`, `UnitLeaderTemplate`, `WeaponTemplate`, `SkillTemplate`, `PerkTreeTemplate`, and so on), each with its own field schema. Patches apply at runtime. They don't modify your `resources.assets` file. Removing a mod restores vanilla behaviour next launch.
 
 ## Studio workflow
 
@@ -131,4 +131,4 @@ jiangyu templates query EntityTemplate.Properties.Accuracy
 jiangyu compile
 ```
 
-`templates query` is a jq-like navigator that emits copy-pasteable KDL snippets for leaf fields. Studio is the recommended surface for authoring; the CLI is intended for build pipelines and scripting.
+`templates query` is a jq-like navigator that emits copy-pasteable KDL snippets for leaf fields.

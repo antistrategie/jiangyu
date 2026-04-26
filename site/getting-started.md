@@ -12,8 +12,8 @@ You need:
     - [`Jiangyu.Loader.dll`](https://github.com/antistrategie/jiangyu/releases/latest/download/Jiangyu.Loader.dll), the in-game loader.
     - **Studio** for your platform: [Windows](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-studio-win-x64.zip) or [Linux](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-studio-linux-x64.zip).
     - **CLI** (optional, for scripting): [Windows](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-cli-win-x64.zip) or [Linux](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-cli-linux-x64.zip).
-- **Unity Editor** (optional). Required only when you compile asset replacements (textures, sprites, models, audio). Template-only mods don't need it. Studio shows the expected version when you set the path; install via [Unity Hub](https://unity.com/download).
-- **An image editor** (anything that exports PNG: GIMP, Photoshop, Krita, Aseprite).
+- **Unity Editor** (optional). Required only when you compile asset replacements (textures, sprites, models, audio). Template-only mods don't need it. Install via [Unity Hub](https://unity.com/download). Jiangyu expects 6000.0.72f1, which you download from the [Unity archive](https://unity.com/releases/editor/archive) and add to Hub. Studio shows the exact version when you set its path. If the version here differs, trust Studio. Jiangyu auto-detects MENACE's Unity version and requires editor updates when MENACE updates its Unity version.
+- **An image editor** (anything that exports PNG: GIMP, Photoshop, Krita).
 
 ## Install the Jiangyu Loader
 
@@ -27,11 +27,11 @@ You only do this once per MENACE install. Updating Jiangyu means replacing this 
 
 ## Configure Studio
 
-Launch **Jiangyu Studio**. The Welcome screen appears. Expand the **Configuration** panel; that's where Studio surfaces missing prerequisites and lets you set the relevant paths.
+Launch **Jiangyu Studio**. The Welcome screen appears. Expand the **Configuration** panel. That's where Studio surfaces missing prerequisites and lets you set the relevant paths.
 
 - **MENACE not found**: click **Set path…** and pick the directory containing `MENACE.exe`. The **Open Project** and **New Project** buttons only appear once this is set.
-- **Unity Editor not found**: click **Set path…** and pick your Unity Editor binary. The tooltip shows the expected version. Skip this if you only plan to ship template-only mods; this tutorial replaces a texture, so set it now.
-- **MelonLoader not installed**: indicates MelonLoader isn't present in your MENACE folder. Mods don't run without it; install MelonLoader before continuing.
+- **Unity Editor not found**: click **Set path…** and pick your Unity Editor binary. The tooltip shows the expected version. Skip this if you only plan to ship template-only mods. This tutorial replaces a texture, so set it now.
+- **MelonLoader not installed**: indicates MelonLoader isn't present in your MENACE folder. Mods don't run without it. Install MelonLoader before continuing.
 
 The Welcome screen writes these into a global config file shared with the `jiangyu` CLI. After a project is loaded, the same fields appear in the Settings dialog (palette → **Settings**).
 
@@ -45,14 +45,14 @@ RedLogo/
   .gitignore
 ```
 
-`jiangyu.json` is the manifest. See [Manifest](./reference/manifest.md) for the full reference; for now the defaults are fine.
+`jiangyu.json` is the manifest. See [Manifest](./reference/manifest.md) for the full reference. For now the defaults are fine.
 
 ## Find a target asset
 
 You're going to replace `menace_logo_main_menue`, the logo MENACE shows on the main menu. (The spelling `menue` is the actual name of the asset; use it as-is.)
 
 1. Open the [Asset Browser](./reference/studio.md#asset-browser) from the palette: press **Ctrl+Shift+P** and run **Open Asset Browser**.
-2. The first time, the browser shows a gate with an **Index assets** button. Click it. The first build takes a few minutes; later searches read the cached index instantly.
+2. The first time, the browser shows a gate with an **Index assets** button. Click it. The first build takes a few minutes. Later searches read the cached index instantly.
 3. Once the index finishes building, type `menace_logo_main_menue` in the search box.
 4. Filter the type to **Texture** if you want to narrow the results.
 5. Click the matching row.
@@ -82,7 +82,7 @@ That's the full path the Studio detail panel showed you, prefixed with `assets/r
 
 ## Compile
 
-Press **Ctrl+Shift+B** in Studio. The compile runs in the background; the status bar shows progress.
+Press **Ctrl+Shift+B** in Studio. The compile runs in the background. The status bar shows progress.
 
 When compile finishes, Studio pushes a toast with a **Reveal** action. Click it to open `compiled/` in your file manager. That folder is your shippable mod.
 
@@ -102,7 +102,7 @@ Copy your project's `compiled/` folder into MENACE's `Mods/` directory, renaming
 
 Launch MENACE and watch the main menu. The logo should now be a solid red square. If you see it, the round-trip works: your replacement reached the game, the loader matched it by name, and the texture mutation applied.
 
-If something looks wrong, check `<MENACE>/MelonLoader/Latest.log`. Jiangyu logs everything it does on scene load; failures, warnings, and skipped targets all appear there.
+If something looks wrong, check `<MENACE>/MelonLoader/Latest.log`. Jiangyu logs everything it does on scene load. Failures, warnings, and skipped targets all appear there.
 
 ## Next steps
 

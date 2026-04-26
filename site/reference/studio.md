@@ -24,7 +24,7 @@ The workspace is built around drag-and-drop. Most layout work is done by grabbin
 
 ### Resizing panes
 
-Every divider between panes is a resize handle. Drag the divider left/right or up/down to repartition space. Resizes persist with the project; they're restored next time you open it.
+Every divider between panes is a resize handle. Drag the divider left/right or up/down to repartition space. Resizes persist with the project. They're restored next time you open it.
 
 ### Moving tabs
 
@@ -34,7 +34,7 @@ Drag a tab by its title:
 - Drop it onto another pane's tab strip to **move** the tab there.
 - Drop it onto another pane's body to enter the drop overlay (see below).
 
-To break a pane out into its own window, click the **Move pane to new window** button in the tab strip. The pane moves out of the main window and the secondary window takes over its tabs. Drag tabs or panes from a secondary window's tab strip back into the main workspace to dock them in; the same drop zones apply. Studio remembers your open secondary windows per project and re-spawns them next time you load the project.
+To break a pane out into its own window, click the **Move pane to new window** button in the tab strip. The pane moves out of the main window and the secondary window takes over its tabs. Drag tabs or panes from a secondary window's tab strip back into the main workspace to dock them in. The same drop zones apply. Studio remembers your open secondary windows per project and re-spawns them next time you load the project.
 
 ### Splitting and rearranging panes
 
@@ -69,7 +69,7 @@ Key uses:
 - **Layout actions**: split right or down, focus the next or previous pane, toggle fullscreen, toggle the sidebar.
 - **Go to file**: fuzzy navigation across the project tree.
 
-Actions are grouped by scope (**App**, **Project**, **View**, **File**, **Editor**, **Go to file**). Some show a keyboard shortcut on the right; running the palette entry is equivalent to pressing the shortcut.
+Actions are grouped by scope (**App**, **Project**, **View**, **File**, **Editor**, **Go to file**). Some show a keyboard shortcut on the right. Running the palette entry is equivalent to pressing the shortcut.
 
 ## Asset Browser
 
@@ -126,4 +126,4 @@ The Settings dialog (palette → **Settings**) configures both global and per-pr
 - **Asset export path** (per-project): default destination for `Export → Project` in the Asset Browser. Stored in the project's local config, not global.
 - **Restore open tabs**: when on, Studio reopens the panes and tabs from your last session.
 
-The same global config is what `jiangyu` CLI reads; edits in Studio and the CLI share one file.
+The same global config is what `jiangyu` CLI reads. Edits in Studio and the CLI share one file.

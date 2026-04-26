@@ -12,7 +12,7 @@ Replace any 3D model in the game by name. Jiangyu accepts authored glTF or GLB f
     models/el.local_forces_basic_soldier_white/model.gltf (.glb)
     ```
 
-    The `(.glb)` part means the compiler accepts either format; pick whichever your DCC tool exports.
+    The `(.glb)` part means the compiler accepts either format. Pick whichever your DCC tool exports.
 
 4. Click **Export** to pull the vanilla model out as a starting point. Studio writes a self-contained model package to your chosen destination: a directory named after the target, containing a cleaned `model.gltf` plus any auxiliary textures.
 5. Open the exported `model.gltf` in Blender, edit the meshes, save it back into your project's `assets/replacements/models/<target-name>/` directory.
@@ -58,7 +58,7 @@ Jiangyu doesn't rewrite vertex weights. Whatever the authored glTF ships is what
 - **Rigid-skinned vanilla meshes** (every vertex 100% bound to a single bone, typical of mechanical rigs like vehicle chassis where each wheel vert follows its own wheel bone) export as rigid weights. Author rigid-skinned replacements.
 - **Blended-skinned vanilla meshes** (vertices influenced by multiple bones, typical of character rigs where joints need smooth deformation) export with the per-vertex weight mix preserved. Author blended-skinned replacements.
 
-Mixing them up is the most common cause of visual artefacts. If a mechanical part looks like it's growing and shrinking while moving, you've blended a rig that should be rigid; rework it with hard parenting in Blender.
+Mixing them up is the most common cause of visual artefacts. If a mechanical part looks like it's growing and shrinking while moving, you've blended a rig that should be rigid. Rework it with hard parenting in Blender.
 
 ## LODs
 
@@ -85,7 +85,7 @@ Materials in your glTF can reference texture files alongside `model.gltf`. The c
 | `_EffectMap` | linear     |
 | anything else | sRGB      |
 
-A normal map saved without one of the linear suffixes will be treated as sRGB and the resulting lighting will be wrong. The exported package's textures are already named correctly; keep their names when you save changes.
+A normal map saved without one of the linear suffixes will be treated as sRGB and the resulting lighting will be wrong. The exported package's textures are already named correctly. Keep their names when you save changes.
 
 ## Compile-time errors
 
@@ -105,4 +105,4 @@ jiangyu assets search el.local_forces_basic_soldier_white --type PrefabHierarchy
 jiangyu assets export model el.local_forces_basic_soldier_white
 ```
 
-`assets export model` accepts `--path-id` (and `--collection`) to pick a specific instance when the name is ambiguous, and `--raw` to keep the native AssetRipper representation for inspection (don't author against `--raw`; use the default cleaned export). Studio is the recommended surface for authoring; the CLI is intended for build pipelines and scripting.
+`assets export model` accepts `--path-id` (and `--collection`) to pick a specific instance when the name is ambiguous, and `--raw` to keep the native AssetRipper representation for inspection (don't author against `--raw`; use the default cleaned export).

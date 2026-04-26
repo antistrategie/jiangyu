@@ -11,7 +11,7 @@ See the [Jiangyu docs site](https://antistrategie.github.io/jiangyu/) for the fu
 - MENACE
 - .NET 10 SDK (CLI), .NET 6 runtime (Loader)
 - MelonLoader 0.7.2
-- Unity Editor 6000.0.63f1 (when building AssetBundles)
+- Unity Editor 6000.0.72f1 (when building AssetBundles)
 - bun (Studio UI and docs site)
 
 ## Development

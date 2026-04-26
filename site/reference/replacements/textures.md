@@ -1,6 +1,6 @@
 # Texture replacements
 
-Replace any `Texture2D` in the game by name. The new pixels reach every consumer that already references the texture (materials, UGUI, UI Toolkit, manager caches) automatically; you don't have to enumerate them.
+Replace any `Texture2D` in the game by name. The new pixels reach every consumer that already references the texture (materials, UGUI, UI Toolkit, manager caches) automatically. You don't have to enumerate them.
 
 ## Studio workflow
 
@@ -12,7 +12,7 @@ Replace any `Texture2D` in the game by name. The new pixels reach every consumer
     textures/window_background.png
     ```
 
-    If the name is shared by more than one texture in the game, the detail panel also shows an `Affects` row with the count. All matching instances are painted together; see [Shared names](#shared-names) below.
+    If the name is shared by more than one texture in the game, the detail panel also shows an `Affects` row with the count. All matching instances are painted together. See [Shared names](#shared-names) below.
 
 4. Click **Export** to pull the vanilla pixels out as a starting point.
 5. Open the exported PNG in your image editor, make your changes, save it under your project's `assets/replacements/` directory at the path Studio showed. For the example above, that's `assets/replacements/textures/window_background.png`.
@@ -50,7 +50,7 @@ warning: replacement 'Font Texture' will paint 12 Texture2D instances:
   unity_default_resources/Texture2D/Font_Texture--10103
 ```
 
-Treat the warning as a checklist. If any of those instances shouldn't change, your name is too ambiguous to replace safely; you'll have to leave that target alone or live with the side effects.
+Treat the warning as a checklist. If any of those instances shouldn't change, your name is too ambiguous to replace safely. You'll have to leave that target alone or live with the side effects.
 
 ## Compile-time errors
 
@@ -70,4 +70,4 @@ jiangyu assets search window_background --type Texture2D
 jiangyu assets export texture window_background
 ```
 
-`--path-id` on `assets export texture` picks which vanilla asset to read pixels from when the name is shared. The replacement filename you save afterwards never carries a pathId suffix. Studio is the recommended surface for authoring; the CLI is intended for build pipelines and scripting.
+`--path-id` on `assets export texture` picks which vanilla asset to read pixels from when the name is shared. The replacement filename you save afterwards never carries a pathId suffix.

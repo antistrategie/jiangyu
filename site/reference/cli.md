@@ -2,7 +2,7 @@
 
 The `jiangyu` CLI mirrors most of Studio's authoring operations. Its job is to make Jiangyu scriptable: build pipelines, CI checks, batch exports, ad-hoc inspection. For interactive authoring, [Studio](./studio.md) is the better surface.
 
-All commands run from your project directory. Run `jiangyu <command> --help` for the authoritative flag listing; this page covers what each command is *for*.
+All commands run from your project directory. Run `jiangyu <command> --help` for the authoritative flag listing. This page covers what each command is *for*.
 
 ## Project commands
 
@@ -53,10 +53,10 @@ Exports a vanilla asset as a starting point for your replacement. Four kinds:
 
 Common options:
 
-- `--path-id <id>` picks a specific asset when the name matches more than one. Required for ambiguous names; the error tells you when.
+- `--path-id <id>` picks a specific asset when the name matches more than one. Required for ambiguous names. The error tells you when.
 - `--collection <name>` filters by source collection alongside `--path-id`.
 - `--output <path>` overrides the default output location (defaults under `<cache>/exports/`).
-- `assets export model` also accepts `--raw` to keep the native AssetRipper representation. Don't author against `--raw`; it's for inspection only.
+- `assets export model` also accepts `--raw` to keep the native AssetRipper representation. Don't author against `--raw`. It's for inspection only.
 
 ### `jiangyu assets inspect <subcommand>`
 
