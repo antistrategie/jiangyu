@@ -1,33 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Topbar } from "@components/Topbar/Topbar.tsx";
-import { Sidebar } from "@components/Sidebar/Sidebar.tsx";
-import { WorkspaceGrid } from "@components/Workspace/WorkspaceGrid.tsx";
-import { WelcomeScreen } from "@components/WelcomeScreen/WelcomeScreen.tsx";
-import { Palette } from "@components/Palette/Palette.tsx";
-import { SettingsModal } from "@components/SettingsModal/SettingsModal.tsx";
-import { CompileModal } from "@components/CompileModal/CompileModal.tsx";
-import { StatusBar } from "@components/StatusBar/StatusBar.tsx";
-import { useCompile } from "@lib/compile/compile.ts";
-import { rpcCall } from "@lib/rpc.ts";
-import { loadSessionRestoreProject, useApplyUiFontScale, useSidebarHidden } from "@lib/settings.ts";
-import { basename, join, remapPath } from "@lib/path.ts";
+import { Topbar } from "@components/Topbar/Topbar";
+import { Sidebar } from "@components/Sidebar/Sidebar";
+import { WorkspaceGrid } from "@components/Workspace/WorkspaceGrid";
+import { WelcomeScreen } from "@components/WelcomeScreen/WelcomeScreen";
+import { Palette } from "@components/Palette/Palette";
+import { SettingsModal } from "@components/SettingsModal/SettingsModal";
+import { CompileModal } from "@components/CompileModal/CompileModal";
+import { StatusBar } from "@components/StatusBar/StatusBar";
+import { useCompile } from "@lib/compile";
+import { rpcCall } from "@lib/rpc";
+import { loadSessionRestoreProject, useApplyUiFontScale, useSidebarHidden } from "@lib/settings";
+import { basename, join, remapPath } from "@lib/path";
 import {
   PALETTE_SCOPE,
   useRegisterActions,
   useRegisteredActions,
   type PaletteAction,
-} from "@lib/palette/actions.ts";
-import { buildProjectActions } from "@lib/palette/appActions.ts";
-import { usePaneActions } from "@lib/palette/paneActions.ts";
-import { useFileEntries } from "@lib/project/useFileEntries.ts";
-import { useGitBranch } from "@lib/project/gitBranch.ts";
-import { useProjectStore } from "@lib/project/store.ts";
-import { useEditorContent, useEditorContentSync } from "@lib/editor/content.ts";
-import { usePaneWindowStore, useSyncPaneWindowProject } from "@lib/panes/paneWindowStore.ts";
-import { useLayoutStore } from "@lib/panes/layoutStore.ts";
-import { useCrossWindowTabDrag } from "@lib/drag/useCrossWindowTabDrag.ts";
-import { useAppShortcuts } from "@lib/ui/useAppShortcuts.ts";
-import { findPane } from "@lib/layout.ts";
+} from "@lib/palette/actions";
+import { buildProjectActions } from "@lib/palette/appActions";
+import { usePaneActions } from "@lib/palette/paneActions";
+import { useFileEntries } from "@lib/project/useFileEntries";
+import { useGitBranch } from "@lib/project/gitBranch";
+import { useProjectStore } from "@lib/project/store";
+import { useEditorContent, useEditorContentSync } from "@lib/editor/content";
+import { usePaneWindowStore, useSyncPaneWindowProject } from "@lib/panes/paneWindowStore";
+import { useLayoutStore } from "@lib/panes/layoutStore";
+import { useCrossWindowTabDrag } from "@lib/drag/useCrossWindowTabDrag";
+import { useAppShortcuts } from "@lib/ui/useAppShortcuts";
+import { findPane } from "@lib/layout";
 import styles from "./App.module.css";
 
 export function App() {

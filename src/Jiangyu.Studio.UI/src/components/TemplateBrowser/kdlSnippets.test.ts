@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generatePatchKdl, generateCloneKdl } from "./kdlSnippets.ts";
+import { generatePatchKdl, generateCloneKdl } from "./kdlSnippets";
 
 describe("generatePatchKdl", () => {
   it("generates a patch block with type and id", () => {

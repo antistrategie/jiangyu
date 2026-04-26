@@ -1,6 +1,6 @@
-import { rpcCall, subscribe } from "@lib/rpc.ts";
-import type { PaneKind } from "@lib/layout.ts";
-import type { AssetBrowserState, TemplateBrowserState } from "@lib/panes/browserState.ts";
+import { rpcCall, subscribe } from "@lib/rpc";
+import type { PaneKind } from "@lib/layout";
+import type { AssetBrowserState, TemplateBrowserState } from "@lib/panes/browserState";
 
 // Cross-window pane drag: used when a secondary window's whole pane (its tabs
 // or its browser state) is dragged back into the primary. Rides on text/plain

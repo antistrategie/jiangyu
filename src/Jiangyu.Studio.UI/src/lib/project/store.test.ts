@@ -12,8 +12,8 @@ function stubStorage() {
 }
 
 // Mock the RPC channel — revealProject/closeAllPaneWindows call through it.
-vi.mock("@lib/rpc.ts", async (orig) => {
-  const actual = await orig<typeof import("@lib/rpc.ts")>();
+vi.mock("@lib/rpc", async (orig) => {
+  const actual = await orig<typeof import("@lib/rpc")>();
   return {
     ...actual,
     rpcCall: vi.fn().mockResolvedValue(null),
@@ -22,16 +22,16 @@ vi.mock("@lib/rpc.ts", async (orig) => {
 });
 
 // The project picker RPC wrapper — stub it so tests don't open a dialog.
-vi.mock("./commands.ts", () => ({
+vi.mock("./commands", () => ({
   pickProjectFolder: vi.fn(),
 }));
 
-import { rpcCall } from "@lib/rpc.ts";
-import { pickProjectFolder } from "./commands.ts";
-import { useProjectStore } from "./store.ts";
-import { useLayoutStore } from "@lib/panes/layoutStore.ts";
-import { usePaneWindowStore } from "@lib/panes/paneWindowStore.ts";
-import { EMPTY_LAYOUT } from "@lib/layout.ts";
+import { rpcCall } from "@lib/rpc";
+import { pickProjectFolder } from "./commands";
+import { useProjectStore } from "./store";
+import { useLayoutStore } from "@lib/panes/layoutStore";
+import { usePaneWindowStore } from "@lib/panes/paneWindowStore";
+import { EMPTY_LAYOUT } from "@lib/layout";
 
 const mockRpc = vi.mocked(rpcCall);
 const mockPick = vi.mocked(pickProjectFolder);

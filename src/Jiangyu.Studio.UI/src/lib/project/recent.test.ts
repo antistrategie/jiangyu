@@ -4,7 +4,7 @@ import {
   loadRecentProjects,
   recordRecentProject,
   removeRecentProject,
-} from "@lib/project/recent.ts";
+} from "@lib/project/recent";
 
 beforeEach(() => {
   const store = new Map<string, string>();

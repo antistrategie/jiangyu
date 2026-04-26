@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { PALETTE_SCOPE } from "@lib/palette/actions.ts";
-import { buildProjectActions, type ProjectActionHandlers } from "@lib/palette/appActions.ts";
+import { PALETTE_SCOPE } from "@lib/palette/actions";
+import { buildProjectActions, type ProjectActionHandlers } from "@lib/palette/appActions";
 
 function makeHandlers(): ProjectActionHandlers & {
   calls: { open: number; close: number; reveal: number; switch: string[] };

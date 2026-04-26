@@ -7,6 +7,7 @@ using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
 using Jiangyu.Core.Il2Cpp;
 using Jiangyu.Core.Templates;
+using Jiangyu.Shared;
 
 namespace Jiangyu.Studio.Host;
 
@@ -20,7 +21,7 @@ public static partial class RpcDispatcher
         var resolution = EnvironmentContext.ResolveFromGlobalConfig();
         if (!resolution.Success)
         {
-            return JsonSerializer.SerializeToElement(new TemplateIndexStatusDto
+            return JsonSerializer.SerializeToElement(new TemplateIndexStatus
             {
                 State = "noGame",
                 Reason = resolution.Error,
@@ -31,7 +32,7 @@ public static partial class RpcDispatcher
         var status = service.GetIndexStatus();
         var manifest = service.LoadManifest();
 
-        return JsonSerializer.SerializeToElement(new TemplateIndexStatusDto
+        return JsonSerializer.SerializeToElement(new TemplateIndexStatus
         {
             State = status.State switch
             {
@@ -64,7 +65,7 @@ public static partial class RpcDispatcher
         BuildSupplementIfStale(ctx);
 
         var manifest = service.LoadManifest();
-        return JsonSerializer.SerializeToElement(new TemplateIndexStatusDto
+        return JsonSerializer.SerializeToElement(new TemplateIndexStatus
         {
             State = "current",
             InstanceCount = manifest?.InstanceCount,
@@ -102,7 +103,7 @@ public static partial class RpcDispatcher
                     .OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
                 ];
 
-            return JsonSerializer.SerializeToElement(new TemplateSearchResultDto
+            return JsonSerializer.SerializeToElement(new TemplateSearchResult
             {
                 Types = string.IsNullOrWhiteSpace(className) ? index.TemplateTypes : [],
                 Instances = instances,
@@ -113,7 +114,7 @@ public static partial class RpcDispatcher
         var searchService = new TemplateSearchService(index);
         var result = searchService.Search(query ?? "", className);
 
-        return JsonSerializer.SerializeToElement(new TemplateSearchResultDto
+        return JsonSerializer.SerializeToElement(new TemplateSearchResult
         {
             Types = result.MatchingTypes,
             Instances = result.MatchingInstances,
@@ -242,7 +243,7 @@ public static partial class RpcDispatcher
         if (!Directory.Exists(templatesDir))
             return JsonSerializer.SerializeToElement(new { clones = Array.Empty<object>() });
 
-        var clones = new List<ProjectCloneEntryDto>();
+        var results = new List<ProjectCloneEntry>();
         foreach (var file in Directory.EnumerateFiles(templatesDir, "*.kdl", SearchOption.AllDirectories))
         {
             try
@@ -254,7 +255,7 @@ public static partial class RpcDispatcher
                 {
                     if (node.Kind == KdlEditorNodeKind.Clone && !string.IsNullOrEmpty(node.CloneId))
                     {
-                        clones.Add(new ProjectCloneEntryDto
+                        results.Add(new ProjectCloneEntry
                         {
                             TemplateType = node.TemplateType,
                             Id = node.CloneId,
@@ -269,7 +270,7 @@ public static partial class RpcDispatcher
             }
         }
 
-        return JsonSerializer.SerializeToElement(new { clones });
+        return JsonSerializer.SerializeToElement(new { clones = results });
     }
 
     private static JsonElement HandleTemplatesEnumMembers(IInfiniFrameWindow _, JsonElement? parameters)
@@ -308,9 +309,17 @@ public static partial class RpcDispatcher
             })
             .OrderBy(e => e.Value)
             .ToList();
-        return JsonSerializer.SerializeToElement(new { members });
+        return JsonSerializer.SerializeToElement(new EnumMembersResult { Members = members });
     }
 
+    [RpcType]
+    internal sealed class EnumMembersResult
+    {
+        [JsonPropertyName("members")]
+        public required List<EnumMemberEntry> Members { get; set; }
+    }
+
+    [RpcType]
     internal sealed class EnumMemberEntry
     {
         [JsonPropertyName("name")]
@@ -370,9 +379,9 @@ public static partial class RpcDispatcher
             ? catalog.FriendlyName(leafType) : null;
     }
 
-    private static TemplateQueryResultDto MapQueryResult(TemplateTypeCatalog catalog, QueryResult result)
+    private static TemplateQueryResult MapQueryResult(TemplateTypeCatalog catalog, QueryResult result)
     {
-        return new TemplateQueryResultDto
+        return new TemplateQueryResult
         {
             Kind = result.Kind.ToString().ToLowerInvariant(),
             ResolvedPath = result.ResolvedPath,
@@ -383,7 +392,7 @@ public static partial class RpcDispatcher
             EnumMemberNames = result.EnumMemberNames.Count > 0 ? [.. result.EnumMemberNames] : null,
             ReferenceTargetTypeName = result.ReferenceTargetTypeName,
             IsLikelyOdinOnly = result.IsLikelyOdinOnly ? true : null,
-            Members = result.Members?.Select(m => new TemplateMemberDto
+            Members = result.Members?.Select(m => new TemplateMember
             {
                 Name = m.Name,
                 TypeName = catalog.FriendlyName(m.MemberType),
@@ -410,7 +419,8 @@ public static partial class RpcDispatcher
 
     // --- DTOs ---
 
-    internal sealed class TemplateIndexStatusDto
+    [RpcType]
+    internal sealed class TemplateIndexStatus
     {
         [JsonPropertyName("state")]
         public required string State { get; set; }
@@ -428,7 +438,8 @@ public static partial class RpcDispatcher
         public DateTimeOffset? IndexedAt { get; set; }
     }
 
-    internal sealed class TemplateSearchResultDto
+    [RpcType]
+    internal sealed class TemplateSearchResult
     {
         [JsonPropertyName("types")]
         public required List<TemplateTypeEntry> Types { get; set; }
@@ -440,7 +451,8 @@ public static partial class RpcDispatcher
         public Dictionary<string, List<TemplateReferenceEntry>>? ReferencedBy { get; set; }
     }
 
-    internal sealed class TemplateQueryResultDto
+    [RpcType]
+    internal sealed class TemplateQueryResult
     {
         [JsonPropertyName("kind")]
         public required string Kind { get; set; }
@@ -470,10 +482,11 @@ public static partial class RpcDispatcher
         public bool? IsLikelyOdinOnly { get; set; }
 
         [JsonPropertyName("members")]
-        public List<TemplateMemberDto>? Members { get; set; }
+        public List<TemplateMember>? Members { get; set; }
     }
 
-    internal sealed class TemplateMemberDto
+    [RpcType]
+    internal sealed class TemplateMember
     {
         [JsonPropertyName("name")]
         public required string Name { get; set; }
@@ -535,7 +548,8 @@ public static partial class RpcDispatcher
         public bool? IsSoundIdField { get; set; }
     }
 
-    internal sealed class ProjectCloneEntryDto
+    [RpcType]
+    internal sealed class ProjectCloneEntry
     {
         [JsonPropertyName("templateType")]
         public required string TemplateType { get; set; }

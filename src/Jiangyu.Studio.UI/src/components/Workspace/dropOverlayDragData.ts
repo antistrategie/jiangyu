@@ -1,4 +1,4 @@
-import { isTemplateDragPayload } from "@lib/drag/templateDrag.ts";
+import { isTemplateDragPayload } from "@lib/drag/templateDrag";
 
 interface DragDataLike {
   readonly types: readonly string[];

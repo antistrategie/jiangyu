@@ -144,6 +144,8 @@ export function rpcCall<T = unknown>(method: string, params?: unknown): Promise<
   });
 }
 
+export type * from "./types";
+
 /**
  * Subscribe to a notification method pushed from the host. The payload is
  * `unknown`; callers that know the shape should narrow with a type assertion

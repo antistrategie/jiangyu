@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Jiangyu.Shared;
 
 namespace Jiangyu.Core.Models;
 
@@ -62,6 +63,7 @@ public sealed class TemplateClassificationMetadata
     public required string RuleDescription { get; init; }
 }
 
+[RpcType]
 public sealed class TemplateTypeEntry
 {
     [JsonPropertyName("className")]
@@ -77,6 +79,7 @@ public sealed class TemplateTypeEntry
     public string? TemplateAncestor { get; init; }
 }
 
+[RpcType]
 public sealed class TemplateIdentity
 {
     [JsonPropertyName("collection")]
@@ -86,6 +89,7 @@ public sealed class TemplateIdentity
     public required long PathId { get; init; }
 }
 
+[RpcType]
 public sealed class TemplateInstanceEntry
 {
     [JsonPropertyName("name")]
@@ -101,6 +105,7 @@ public sealed class TemplateInstanceEntry
     public List<TemplateEdge>? References { get; set; }
 }
 
+[RpcType]
 public sealed class TemplateEdge
 {
     [JsonPropertyName("fieldName")]
@@ -110,6 +115,7 @@ public sealed class TemplateEdge
     public required TemplateIdentity Target { get; init; }
 }
 
+[RpcType]
 public sealed class TemplateReferenceEntry
 {
     [JsonPropertyName("source")]

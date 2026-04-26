@@ -27,10 +27,10 @@ import {
   type Layout,
   type PaneKind,
   type SplitEdge,
-} from "@lib/layout.ts";
-import type { AssetBrowserState, TemplateBrowserState } from "./browserState.ts";
-import type { CrossPanePayload } from "@lib/drag/crossPane.ts";
-import { loadSessionRestoreTabs } from "@lib/settings.ts";
+} from "@lib/layout";
+import type { AssetBrowserState, TemplateBrowserState } from "./browserState";
+import type { CrossPanePayload } from "@lib/drag/crossPane";
+import { loadSessionRestoreTabs } from "@lib/settings";
 
 interface RevealRequest {
   readonly path: string;

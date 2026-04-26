@@ -44,7 +44,7 @@ beforeEach(() => {
 describe("rpcCall", () => {
   it("round-trips a request and resolves with result", async () => {
     const { posted, emit } = setupHost();
-    const { initRpc, rpcCall } = await import("./rpc.ts");
+    const { initRpc, rpcCall } = await import("./index");
     initRpc();
 
     const p = rpcCall<string>("readFile", { path: "x" });
@@ -61,7 +61,7 @@ describe("rpcCall", () => {
 
   it("rejects when response contains error", async () => {
     const { posted, emit } = setupHost();
-    const { initRpc, rpcCall } = await import("./rpc.ts");
+    const { initRpc, rpcCall } = await import("./index");
     initRpc();
 
     const p = rpcCall("writeFile", { path: "x", content: "y" });
@@ -73,13 +73,13 @@ describe("rpcCall", () => {
 
   it("rejects when host is not available", async () => {
     clearHost();
-    const { rpcCall } = await import("./rpc.ts");
+    const { rpcCall } = await import("./index");
     await expect(rpcCall("foo")).rejects.toThrow(/not available/);
   });
 
   it("silently drops responses for unknown ids", async () => {
     const { posted, emit } = setupHost();
-    const { initRpc, rpcCall } = await import("./rpc.ts");
+    const { initRpc, rpcCall } = await import("./index");
     initRpc();
 
     const p = rpcCall("foo");
@@ -95,7 +95,7 @@ describe("rpcCall", () => {
 describe("subscribe", () => {
   it("dispatches notifications to matching subscribers", async () => {
     const { emit } = setupHost();
-    const { initRpc, subscribe } = await import("./rpc.ts");
+    const { initRpc, subscribe } = await import("./index");
     initRpc();
 
     const received: unknown[] = [];
@@ -109,7 +109,7 @@ describe("subscribe", () => {
 
   it("ignores notifications for unsubscribed methods", async () => {
     const { emit } = setupHost();
-    const { initRpc, subscribe } = await import("./rpc.ts");
+    const { initRpc, subscribe } = await import("./index");
     initRpc();
 
     const received: unknown[] = [];
@@ -123,7 +123,7 @@ describe("subscribe", () => {
 
   it("unsubscribe stops further dispatches", async () => {
     const { emit } = setupHost();
-    const { initRpc, subscribe } = await import("./rpc.ts");
+    const { initRpc, subscribe } = await import("./index");
     initRpc();
 
     const received: unknown[] = [];
@@ -139,7 +139,7 @@ describe("subscribe", () => {
 
   it("supports multiple subscribers for the same method", async () => {
     const { emit } = setupHost();
-    const { initRpc, subscribe } = await import("./rpc.ts");
+    const { initRpc, subscribe } = await import("./index");
     initRpc();
 
     const a: unknown[] = [];
@@ -158,7 +158,7 @@ describe("subscribe", () => {
 
   it("silently drops malformed JSON", async () => {
     const { emit } = setupHost();
-    const { initRpc, subscribe } = await import("./rpc.ts");
+    const { initRpc, subscribe } = await import("./index");
     initRpc();
 
     const received: unknown[] = [];

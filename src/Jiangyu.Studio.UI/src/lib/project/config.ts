@@ -1,4 +1,4 @@
-import { rpcCall } from "@lib/rpc.ts";
+import { rpcCall } from "@lib/rpc";
 
 export interface ProjectConfig {
   readonly assetExportPath?: string | null;

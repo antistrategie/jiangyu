@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isTemplateDragPayload } from "@lib/drag/templateDrag.ts";
+import { isTemplateDragPayload } from "@lib/drag/templateDrag";
 
 describe("isTemplateDragPayload", () => {
   function dragData(types: readonly string[], plain = "") {

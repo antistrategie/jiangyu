@@ -36,15 +36,15 @@ import {
   type CodePane,
   type Layout,
   type Pane,
-} from "./layout.ts";
+} from "./layout";
 import {
   DEFAULT_ASSET_BROWSER_STATE,
   DEFAULT_TEMPLATE_BROWSER_STATE,
-} from "@lib/panes/browserState.ts";
+} from "@lib/panes/browserState";
 
-const A = "/proj/src/A.tsx";
-const B = "/proj/src/B.tsx";
-const C = "/proj/src/C.tsx";
+const A = "/proj/src/A";
+const B = "/proj/src/B";
+const C = "/proj/src/C";
 
 function asCode(pane: Pane | null | undefined): CodePane {
   if (pane?.kind !== "code") {
@@ -353,9 +353,9 @@ describe("remapPaths", () => {
     const { layout } = withTwoTabs();
     const next = remapPaths(layout, (p) => p.replace("/proj/src/", "/proj/lib/"));
     const pane = getActiveCodePane(next)!;
-    expect(pane.tabs.map((t) => t.path)).toEqual(["/proj/lib/A.tsx", "/proj/lib/B.tsx"]);
-    expect(pane.tabs.map((t) => t.name)).toEqual(["A.tsx", "B.tsx"]);
-    expect(pane.activeTab).toBe("/proj/lib/B.tsx");
+    expect(pane.tabs.map((t) => t.path)).toEqual(["/proj/lib/A", "/proj/lib/B"]);
+    expect(pane.tabs.map((t) => t.name)).toEqual(["A", "B"]);
+    expect(pane.activeTab).toBe("/proj/lib/B");
   });
 
   it("returns the same layout when no path changes", () => {
@@ -801,7 +801,7 @@ describe("insertPaneAtEdge", () => {
     const newPane: CodePane = {
       id: "new-1",
       kind: "code",
-      tabs: [{ path: B, name: "B.tsx" }],
+      tabs: [{ path: B, name: "B" }],
       activeTab: B,
     };
     const next = insertPaneAtEdge(l, toId, newPane, "right");

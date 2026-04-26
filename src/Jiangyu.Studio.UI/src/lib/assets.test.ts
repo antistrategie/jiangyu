@@ -11,7 +11,7 @@ import {
   type AssetEntry,
   type AudioClipAsset,
   type SpriteAsset,
-} from "./assets.ts";
+} from "./assets";
 
 const BASE = {
   name: "foo",

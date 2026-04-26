@@ -1,5 +1,5 @@
 import uFuzzy from "@leeoniya/ufuzzy";
-import { PALETTE_SCOPE, type PaletteAction } from "@lib/palette/actions.ts";
+import { PALETTE_SCOPE, type PaletteAction } from "@lib/palette/actions";
 
 export const FILES_SCOPE = PALETTE_SCOPE.GoToFile;
 export const MAX_RESULTS = 60;

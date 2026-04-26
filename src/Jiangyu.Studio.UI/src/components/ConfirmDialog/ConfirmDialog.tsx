@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Modal } from "@components/Modal/Modal.tsx";
+import { Modal } from "@components/Modal/Modal";
 import styles from "./ConfirmDialog.module.css";
 
 export type ConfirmVariant = "default" | "danger";

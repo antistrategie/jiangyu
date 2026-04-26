@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDurationShort, buildSuccessDetail, INITIAL_COMPILE_STATE } from "./compile.ts";
+import { formatDurationShort, buildSuccessDetail, INITIAL_COMPILE_STATE } from "./index";
 
 describe("formatDurationShort", () => {
   it("formats zero as 0s", () => {

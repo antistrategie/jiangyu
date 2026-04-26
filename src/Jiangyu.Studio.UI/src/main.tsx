@@ -1,11 +1,11 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./App.tsx";
-import { PaneWindow } from "@components/PaneWindow/PaneWindow.tsx";
-import { ToastContainer } from "@components/Toast/Toast.tsx";
-import { initRpc } from "@lib/rpc.ts";
-import { initSettings } from "@lib/settings.ts";
-import { getWindowParams } from "@lib/panes/role.ts";
+import { App } from "./App";
+import { PaneWindow } from "@components/PaneWindow/PaneWindow";
+import { ToastContainer } from "@components/Toast/Toast";
+import { initRpc } from "@lib/rpc";
+import { initSettings } from "@lib/settings";
+import { getWindowParams } from "@lib/panes/role";
 import "./styles/global.css";
 
 // Monaco editor web worker setup for Vite

@@ -1,5 +1,5 @@
-import type { PaneKind } from "@lib/layout.ts";
-import type { AssetBrowserState, TemplateBrowserState } from "@lib/panes/browserState.ts";
+import type { PaneKind } from "@lib/layout";
+import type { AssetBrowserState, TemplateBrowserState } from "@lib/panes/browserState";
 
 // Persistent descriptor of a pane window open against a project. The runtime
 // windowId that InfiniFrame assigns isn't stored because it's process-local;

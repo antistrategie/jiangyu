@@ -5,7 +5,7 @@ import {
   endTemplateDrag,
   getActiveTemplateDrag,
   parseCrossInstancePayload,
-} from "@lib/drag/crossInstance.ts";
+} from "@lib/drag/crossInstance";
 
 describe("encode/parseCrossInstancePayload", () => {
   it("round-trips an instance drag payload", () => {

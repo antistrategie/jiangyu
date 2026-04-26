@@ -25,7 +25,7 @@ import {
   saveSessionRestoreTabs,
   saveSidebarHidden,
   saveUiFontScale,
-} from "./settings.ts";
+} from "./settings";
 
 beforeEach(() => {
   const store = new Map<string, string>();

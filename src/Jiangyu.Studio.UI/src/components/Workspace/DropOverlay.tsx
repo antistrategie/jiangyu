@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { zoneFor, type DropZone } from "./dropZone.ts";
-import { acceptsPaneDropDragData } from "./dropOverlayDragData.ts";
+import { zoneFor, type DropZone } from "./dropZone";
+import { acceptsPaneDropDragData } from "./dropOverlayDragData";
 import styles from "./Workspace.module.css";
 
 interface DropOverlayProps {

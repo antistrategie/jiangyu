@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { CircleX, Minus, Plus, RotateCcw, TriangleAlert, X } from "lucide-react";
-import { Modal } from "@components/Modal/Modal.tsx";
-import { SegmentedControl } from "@components/SegmentedControl/SegmentedControl.tsx";
-import { rpcCall } from "@lib/rpc.ts";
-import type { ConfigStatus } from "@lib/compile/configStatus.ts";
+import { Modal } from "@components/Modal/Modal";
+import { SegmentedControl } from "@components/SegmentedControl/SegmentedControl";
+import { rpcCall } from "@lib/rpc";
+import type { ConfigStatus } from "@lib/compile/configStatus";
 import {
   EDITOR_FONT_SIZE_DEFAULT,
   EDITOR_FONT_SIZE_MAX,
@@ -26,7 +26,7 @@ import {
   type EditorKeybindMode,
   type EditorWordWrap,
   type TemplateEditorMode,
-} from "@lib/settings.ts";
+} from "@lib/settings";
 import styles from "./SettingsModal.module.css";
 
 type SectionId = "appearance" | "session" | "editor" | "paths" | "about";
@@ -537,7 +537,7 @@ const CREDIT_GROUPS: readonly CreditGroup[] = [
       { name: "monaco-vim", license: "MIT", note: "Vim keybindings for Monaco." },
       { name: "TanStack Virtual", license: "MIT", note: "Virtualised asset / template lists." },
       { name: "uFuzzy", license: "MIT", note: "Fuzzy search." },
-      { name: "three.js", license: "MIT", note: "GLB / model preview." },
+      { name: "three", license: "MIT", note: "GLB / model preview." },
       { name: "Lucide", license: "ISC", note: "Icon set." },
       { name: "JetBrains Mono", license: "OFL-1.1", note: "Editor typeface." },
       { name: "Barlow Condensed", license: "OFL-1.1", note: "Label & eyebrow typeface." },

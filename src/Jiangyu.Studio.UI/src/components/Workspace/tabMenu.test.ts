@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
-import { buildTabMenu } from "./tabMenu.ts";
+import { buildTabMenu } from "./tabMenu";
 import type { ContextMenuEntry, ContextMenuItem } from "@components/ContextMenu/ContextMenu";
-import type { Tab } from "@lib/layout.ts";
+import type { Tab } from "@lib/layout";
 
 const files: Tab[] = [
   { path: "/p/a.txt", name: "a.txt" },

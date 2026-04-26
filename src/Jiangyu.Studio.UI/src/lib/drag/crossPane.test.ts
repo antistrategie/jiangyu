@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { encodeCrossPanePayload, parseCrossPanePayload } from "@lib/drag/crossPane.ts";
-import { DEFAULT_ASSET_BROWSER_STATE } from "@lib/panes/browserState.ts";
+import { encodeCrossPanePayload, parseCrossPanePayload } from "@lib/drag/crossPane";
+import { DEFAULT_ASSET_BROWSER_STATE } from "@lib/panes/browserState";
 
 describe("encode/parseCrossPanePayload", () => {
   it("round-trips a code pane payload with tabs + active tab", () => {
     const raw = encodeCrossPanePayload({
       kind: "code",
-      filePaths: ["/a.tsx", "/b.tsx"],
-      activeFilePath: "/b.tsx",
+      filePaths: ["/a", "/b"],
+      activeFilePath: "/b",
     });
     expect(parseCrossPanePayload(raw)).toEqual({
       m: "jiangyu-pane-drag/1",
       kind: "code",
-      filePaths: ["/a.tsx", "/b.tsx"],
-      activeFilePath: "/b.tsx",
+      filePaths: ["/a", "/b"],
+      activeFilePath: "/b",
     });
   });
 

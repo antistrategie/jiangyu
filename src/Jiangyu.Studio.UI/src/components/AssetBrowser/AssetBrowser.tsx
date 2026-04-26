@@ -21,21 +21,21 @@ import {
   type AssetEntry,
   type AssetIndexStatus,
   type AssetKindGroup,
-} from "@lib/assets.ts";
+} from "@lib/assets";
 import {
   getProjectConfig,
   setProjectAssetExportPath,
   type ProjectConfig,
-} from "@lib/project/config.ts";
-import { isAbsolute, join, normalise } from "@lib/path.ts";
-import { useToast } from "@lib/toast/toast.tsx";
-import { DEFAULT_ASSET_BROWSER_STATE, type AssetBrowserState } from "@lib/panes/browserState.ts";
-import { useDebouncedScrollTop } from "@lib/ui/useDebouncedScrollTop.ts";
-import { AudioPlayer } from "./AudioPlayer.tsx";
-import { ImageViewer } from "./ImageViewer.tsx";
-import { ModelViewer } from "./ModelViewer.tsx";
-import { Spinner } from "@components/Spinner/Spinner.tsx";
-import { DetailTitle, MetaBlock, MetaRow } from "@components/DetailPanel/DetailPanel.tsx";
+} from "@lib/project/config";
+import { isAbsolute, join, normalise } from "@lib/path";
+import { useToast } from "@lib/toast";
+import { DEFAULT_ASSET_BROWSER_STATE, type AssetBrowserState } from "@lib/panes/browserState";
+import { useDebouncedScrollTop } from "@lib/ui/useDebouncedScrollTop";
+import { AudioPlayer } from "./AudioPlayer";
+import { ImageViewer } from "./ImageViewer";
+import { ModelViewer } from "./ModelViewer";
+import { Spinner } from "@components/Spinner/Spinner";
+import { DetailTitle, MetaBlock, MetaRow } from "@components/DetailPanel/DetailPanel";
 import styles from "./AssetBrowser.module.css";
 
 interface AssetBrowserProps {

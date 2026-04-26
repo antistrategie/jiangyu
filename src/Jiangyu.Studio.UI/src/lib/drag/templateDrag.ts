@@ -3,8 +3,8 @@ import {
   INSTANCE_DRAG_TAG,
   MEMBER_DRAG_TAG,
   parseCrossInstancePayload,
-} from "./crossInstance.ts";
-import { parseCrossMemberPayload } from "./crossMember.ts";
+} from "./crossInstance";
+import { parseCrossMemberPayload } from "./crossMember";
 
 interface DragDataLike {
   readonly types: readonly string[];

@@ -11,8 +11,8 @@ function stubStorage() {
   return store;
 }
 
-vi.mock("@lib/rpc.ts", async (orig) => {
-  const actual = await orig<typeof import("@lib/rpc.ts")>();
+vi.mock("@lib/rpc", async (orig) => {
+  const actual = await orig<typeof import("@lib/rpc")>();
   return {
     ...actual,
     rpcCall: vi.fn(),
@@ -20,16 +20,16 @@ vi.mock("@lib/rpc.ts", async (orig) => {
   };
 });
 
-import { rpcCall } from "@lib/rpc.ts";
-import { usePaneWindowStore } from "./paneWindowStore.ts";
-import { savePaneWindows, type PaneWindowDescriptor } from "./paneWindowStorage.ts";
+import { rpcCall } from "@lib/rpc";
+import { usePaneWindowStore } from "./paneWindowStore";
+import { savePaneWindows, type PaneWindowDescriptor } from "./paneWindowStorage";
 
 const mockRpc = vi.mocked(rpcCall);
 
 const codeDesc: PaneWindowDescriptor = {
   kind: "code",
-  filePaths: ["/a.tsx"],
-  activeFilePath: "/a.tsx",
+  filePaths: ["/a"],
+  activeFilePath: "/a",
 };
 
 describe("paneWindowStore", () => {
@@ -93,20 +93,18 @@ describe("paneWindowStore", () => {
       usePaneWindowStore.setState({
         windows: { "win-1": { ...codeDesc, browserState: undefined } },
       });
-      usePaneWindowStore
-        .getState()
-        ._handleTabsChanged("win-1", ["/new.tsx", "/other.tsx"], "/new.tsx");
+      usePaneWindowStore.getState()._handleTabsChanged("win-1", ["/new", "/other"], "/new");
       const d = usePaneWindowStore.getState().windows["win-1"]!;
       expect(d.kind).toBe("code");
-      expect(d.filePaths).toEqual(["/new.tsx", "/other.tsx"]);
-      expect(d.activeFilePath).toBe("/new.tsx");
+      expect(d.filePaths).toEqual(["/new", "/other"]);
+      expect(d.activeFilePath).toBe("/new");
     });
 
     it("creates a default code descriptor when the windowId wasn't tracked", () => {
-      usePaneWindowStore.getState()._handleTabsChanged("new-win", ["/a.tsx"], "/a.tsx");
+      usePaneWindowStore.getState()._handleTabsChanged("new-win", ["/a"], "/a");
       const d = usePaneWindowStore.getState().windows["new-win"]!;
       expect(d.kind).toBe("code");
-      expect(d.filePaths).toEqual(["/a.tsx"]);
+      expect(d.filePaths).toEqual(["/a"]);
     });
   });
 

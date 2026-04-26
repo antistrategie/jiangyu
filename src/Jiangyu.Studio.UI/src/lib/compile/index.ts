@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { rpcCall, subscribe } from "@lib/rpc.ts";
-import { useToast } from "@lib/toast/toast.tsx";
+import { rpcCall, subscribe } from "@lib/rpc";
+import { useToast } from "@lib/toast";
 
 export interface CompileSummary {
   readonly modName: string | null;

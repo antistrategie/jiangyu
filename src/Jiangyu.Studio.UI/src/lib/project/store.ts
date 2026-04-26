@@ -1,9 +1,9 @@
 import { create } from "zustand";
-import { rpcCall } from "@lib/rpc.ts";
-import { useLayoutStore } from "@lib/panes/layoutStore.ts";
-import { usePaneWindowStore } from "@lib/panes/paneWindowStore.ts";
-import { pickProjectFolder } from "./commands.ts";
-import { loadRecentProjects, recordRecentProject } from "./recent.ts";
+import { rpcCall } from "@lib/rpc";
+import { useLayoutStore } from "@lib/panes/layoutStore";
+import { usePaneWindowStore } from "@lib/panes/paneWindowStore";
+import { pickProjectFolder } from "./commands";
+import { loadRecentProjects, recordRecentProject } from "./recent";
 
 interface ProjectStore {
   /** Absolute path to the open project root, or null when none is open. */

@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { Pause, Play } from "lucide-react";
-import { formatTime } from "@lib/ui/formatTime.ts";
+import { formatTime } from "@lib/ui/formatTime";
 import styles from "./AssetBrowser.module.css";
 
 interface Props {

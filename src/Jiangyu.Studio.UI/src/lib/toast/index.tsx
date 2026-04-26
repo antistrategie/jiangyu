@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
-import { pickSticker } from "@lib/toast/stickers.ts";
+import { pickSticker } from "@lib/toast/stickers";
 
 export interface ToastAction {
   readonly label: string;

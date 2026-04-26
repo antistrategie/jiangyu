@@ -1,27 +1,27 @@
 import { useCallback, useState } from "react";
 import { ExternalLink, Maximize2, Minimize2, SplitSquareHorizontal, X } from "lucide-react";
 import type { editor as monacoEditor } from "monaco-editor";
-import { ContextMenu, type ContextMenuEntry } from "@components/ContextMenu/ContextMenu.tsx";
-import { TabbedMonacoEditor } from "@components/CodeEditor/TabbedMonacoEditor.tsx";
-import { buildTabMenu } from "./tabMenu.ts";
-import type { CodePane as CodePaneModel } from "@lib/layout.ts";
-import { useEditorContent } from "@lib/editor/content.ts";
-import { useLayoutStore } from "@lib/panes/layoutStore.ts";
-import { DropOverlay } from "./DropOverlay.tsx";
-import type { DropZone } from "./dropZone.ts";
-import { EmptyPrompt } from "./EmptyPrompt.tsx";
-import { PANE_DRAG_MIME, TAB_DRAG_MIME, type TabDragPayload } from "./tabDrag.ts";
+import { ContextMenu, type ContextMenuEntry } from "@components/ContextMenu/ContextMenu";
+import { TabbedMonacoEditor } from "@components/CodeEditor/TabbedMonacoEditor";
+import { buildTabMenu } from "./tabMenu";
+import type { CodePane as CodePaneModel } from "@lib/layout";
+import { useEditorContent } from "@lib/editor/content";
+import { useLayoutStore } from "@lib/panes/layoutStore";
+import { DropOverlay } from "./DropOverlay";
+import type { DropZone } from "./dropZone";
+import { EmptyPrompt } from "./EmptyPrompt";
+import { PANE_DRAG_MIME, TAB_DRAG_MIME, type TabDragPayload } from "./tabDrag";
 import {
   CROSS_TAB_MIME,
   beginTabMove,
   completeTabMove,
   encodeCrossTabPayload,
   parseCrossTabPayload,
-} from "@lib/drag/crossTab.ts";
-import { CROSS_PANE_MIME } from "@lib/drag/crossPane.ts";
-import { attachDragChip } from "@lib/drag/chip.ts";
-import { computeTabDropIndex } from "@lib/drag/computeDropIndex.ts";
-import { basename } from "@lib/path.ts";
+} from "@lib/drag/crossTab";
+import { CROSS_PANE_MIME } from "@lib/drag/crossPane";
+import { attachDragChip } from "@lib/drag/chip";
+import { computeTabDropIndex } from "@lib/drag/computeDropIndex";
+import { basename } from "@lib/path";
 import styles from "./Workspace.module.css";
 
 function getSelectedText(editor: monacoEditor.IStandaloneCodeEditor): string {

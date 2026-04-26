@@ -1,4 +1,5 @@
-import { rpcCall } from "./rpc.ts";
+import { rpcCall } from "@lib/rpc";
+import type { AssetExportResult, AssetPreviewResult } from "@lib/rpc";
 
 export type AssetKind =
   | "GameObject"
@@ -55,10 +56,6 @@ export interface AssetIndexStatus {
   readonly reason?: string | null;
   readonly assetCount?: number | null;
   readonly indexedAt?: string | null;
-}
-
-export interface AssetExportResult {
-  readonly outputPath: string;
 }
 
 export interface AssetSearchParams {
@@ -212,11 +209,6 @@ export function assetsSearch(params: AssetSearchParams): Promise<AssetEntry[]> {
 
 export function assetsExport(params: AssetExportParams): Promise<AssetExportResult> {
   return rpcCall<AssetExportResult>("assetsExport", params);
-}
-
-export interface AssetPreviewResult {
-  readonly data: string;
-  readonly mimeType: string;
 }
 
 export function assetsPreview(params: {

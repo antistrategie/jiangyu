@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AssetBrowser } from "@components/AssetBrowser/AssetBrowser.tsx";
-import { TemplateBrowser } from "@components/TemplateBrowser/TemplateBrowser.tsx";
-import { TabbedMonacoEditor } from "@components/CodeEditor/TabbedMonacoEditor.tsx";
-import { rpcCall, subscribe } from "@lib/rpc.ts";
-import { useApplyUiFontScale } from "@lib/settings.ts";
-import { useEditorContent, useEditorContentSync } from "@lib/editor/content.ts";
+import { AssetBrowser } from "@components/AssetBrowser/AssetBrowser";
+import { TemplateBrowser } from "@components/TemplateBrowser/TemplateBrowser";
+import { TabbedMonacoEditor } from "@components/CodeEditor/TabbedMonacoEditor";
+import { rpcCall, subscribe } from "@lib/rpc";
+import { useApplyUiFontScale } from "@lib/settings";
+import { useEditorContent, useEditorContentSync } from "@lib/editor/content";
 import {
   CROSS_TAB_MIME,
   beginTabMove,
@@ -12,18 +12,18 @@ import {
   encodeCrossTabPayload,
   parseCrossTabPayload,
   subscribeTabMovedOut,
-} from "@lib/drag/crossTab.ts";
+} from "@lib/drag/crossTab";
 import {
   CROSS_PANE_MIME,
   beginPaneMove,
   encodeCrossPanePayload,
   subscribePaneMovedOut,
-} from "@lib/drag/crossPane.ts";
-import type { PaneKind, Tab } from "@lib/layout.ts";
-import type { AssetBrowserState, TemplateBrowserState } from "@lib/panes/browserState.ts";
-import { attachDragChip } from "@lib/drag/chip.ts";
-import { computeTabDropIndex } from "@lib/drag/computeDropIndex.ts";
-import { basename } from "@lib/path.ts";
+} from "@lib/drag/crossPane";
+import type { PaneKind, Tab } from "@lib/layout";
+import type { AssetBrowserState, TemplateBrowserState } from "@lib/panes/browserState";
+import { attachDragChip } from "@lib/drag/chip";
+import { computeTabDropIndex } from "@lib/drag/computeDropIndex";
+import { basename } from "@lib/path";
 import editorStyles from "@components/Workspace/Workspace.module.css";
 import styles from "./PaneWindow.module.css";
 

@@ -5,9 +5,9 @@ import {
   getAllPanes,
   type BrowserPane,
   type Layout,
-} from "@lib/layout.ts";
-import { useLayoutStore } from "@lib/panes/layoutStore.ts";
-import { PALETTE_SCOPE, type PaletteAction } from "./actions.ts";
+} from "@lib/layout";
+import { useLayoutStore } from "@lib/panes/layoutStore";
+import { PALETTE_SCOPE, type PaletteAction } from "./actions";
 
 interface UsePaneActionsParams {
   readonly projectPath: string | null;

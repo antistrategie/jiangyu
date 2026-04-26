@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { CircleX, TriangleAlert, Info, X } from "lucide-react";
-import { rpcCall } from "@lib/rpc.ts";
-import { pickProjectFolder } from "@lib/project/commands.ts";
-import { loadRecentProjects, removeRecentProject } from "@lib/project/recent.ts";
-import { Spinner } from "@components/Spinner/Spinner.tsx";
-import { NewProjectDialog } from "@components/NewProjectDialog/NewProjectDialog.tsx";
-import type { ConfigStatus } from "@lib/compile/configStatus.ts";
+import { rpcCall } from "@lib/rpc";
+import { pickProjectFolder } from "@lib/project/commands";
+import { loadRecentProjects, removeRecentProject } from "@lib/project/recent";
+import { Spinner } from "@components/Spinner/Spinner";
+import { NewProjectDialog } from "@components/NewProjectDialog/NewProjectDialog";
+import type { ConfigStatus } from "@lib/compile/configStatus";
 import styles from "./WelcomeScreen.module.css";
 
 interface WelcomeScreenProps {

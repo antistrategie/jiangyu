@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { ExternalLink, Maximize2, Minimize2, SplitSquareHorizontal, X } from "lucide-react";
-import { BROWSER_KIND_META, type BrowserPane as BrowserPaneModel } from "@lib/layout.ts";
-import type { AssetBrowserState, TemplateBrowserState } from "@lib/panes/browserState.ts";
-import { useLayoutStore } from "@lib/panes/layoutStore.ts";
-import { AssetBrowser } from "@components/AssetBrowser/AssetBrowser.tsx";
-import { TemplateBrowser } from "@components/TemplateBrowser/TemplateBrowser.tsx";
-import { ContextMenu } from "@components/ContextMenu/ContextMenu.tsx";
-import { DropOverlay } from "./DropOverlay.tsx";
-import type { DropZone } from "./dropZone.ts";
-import { PANE_DRAG_MIME, TAB_DRAG_MIME, type PaneDragPayload } from "./tabDrag.ts";
-import { CROSS_TAB_MIME } from "@lib/drag/crossTab.ts";
-import { CROSS_PANE_MIME } from "@lib/drag/crossPane.ts";
-import { attachDragChip } from "@lib/drag/chip.ts";
+import { BROWSER_KIND_META, type BrowserPane as BrowserPaneModel } from "@lib/layout";
+import type { AssetBrowserState, TemplateBrowserState } from "@lib/panes/browserState";
+import { useLayoutStore } from "@lib/panes/layoutStore";
+import { AssetBrowser } from "@components/AssetBrowser/AssetBrowser";
+import { TemplateBrowser } from "@components/TemplateBrowser/TemplateBrowser";
+import { ContextMenu } from "@components/ContextMenu/ContextMenu";
+import { DropOverlay } from "./DropOverlay";
+import type { DropZone } from "./dropZone";
+import { PANE_DRAG_MIME, TAB_DRAG_MIME, type PaneDragPayload } from "./tabDrag";
+import { CROSS_TAB_MIME } from "@lib/drag/crossTab";
+import { CROSS_PANE_MIME } from "@lib/drag/crossPane";
+import { attachDragChip } from "@lib/drag/chip";
 import styles from "./Workspace.module.css";
 
 interface BrowserPaneProps {

@@ -1,5 +1,5 @@
-import { rpcCall } from "@lib/rpc.ts";
-import { relative } from "@lib/path.ts";
+import { rpcCall } from "@lib/rpc";
+import { relative } from "@lib/path";
 
 export interface FileCommand {
   readonly id: "close" | "copyPath" | "copyRelativePath" | "reveal";

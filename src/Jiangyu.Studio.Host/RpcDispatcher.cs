@@ -5,6 +5,7 @@ using InfiniFrame;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
 using Jiangyu.Core.Unity;
+using Jiangyu.Shared;
 
 namespace Jiangyu.Studio.Host;
 
@@ -727,6 +728,7 @@ public static partial class RpcDispatcher
         }
     }
 
+    [RpcType]
     internal sealed class FileEntry
     {
         [JsonPropertyName("name")]
@@ -856,6 +858,7 @@ public static partial class RpcDispatcher
         return HandleGetConfigStatus(window, null);
     }
 
+    [RpcType]
     internal sealed class ConfigStatus
     {
         [JsonPropertyName("gamePath")]

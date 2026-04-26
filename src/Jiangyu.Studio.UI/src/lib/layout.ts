@@ -1,5 +1,5 @@
-import { basename } from "./path.ts";
-import type { AssetBrowserState, TemplateBrowserState } from "@lib/panes/browserState.ts";
+import { basename } from "./path";
+import type { AssetBrowserState, TemplateBrowserState } from "@lib/panes/browserState";
 
 export interface Tab {
   readonly path: string;

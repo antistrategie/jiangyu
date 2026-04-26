@@ -1,5 +1,5 @@
-import type { PaneKind } from "@lib/layout.ts";
-import type { AssetBrowserState, TemplateBrowserState } from "@lib/panes/browserState.ts";
+import type { PaneKind } from "@lib/layout";
+import type { AssetBrowserState, TemplateBrowserState } from "@lib/panes/browserState";
 
 export type WindowRole = "main" | "pane";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeTabDropIndex } from "./computeDropIndex.ts";
+import { computeTabDropIndex } from "./computeDropIndex";
 
 // Fake DOM container that returns a canned NodeList of tab stubs with
 // predictable bounding rects — avoids spinning up jsdom just for geometry.

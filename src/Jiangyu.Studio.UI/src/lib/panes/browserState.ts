@@ -1,4 +1,4 @@
-import type { AssetKindGroup } from "@lib/assets.ts";
+import type { AssetKindGroup } from "@lib/assets";
 
 // Controlled state emitted by AssetBrowser / TemplateBrowser so the parent
 // can persist, restore, or transfer it (between panes, windows, or sessions).

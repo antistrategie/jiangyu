@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getWindowParams } from "@lib/panes/role.ts";
-import { DEFAULT_TEMPLATE_BROWSER_STATE } from "@lib/panes/browserState.ts";
+import { getWindowParams } from "@lib/panes/role";
+import { DEFAULT_TEMPLATE_BROWSER_STATE } from "@lib/panes/browserState";
 
 function stubSearch(search: string) {
   vi.stubGlobal("window", {
@@ -28,14 +28,14 @@ describe("getWindowParams", () => {
   it("parses a code pane window with tabs and an active file", () => {
     stubSearch(
       "?window=pane&kind=code&projectPath=/proj" +
-        "&filePath=/proj/a.tsx&filePath=/proj/b.tsx&activeFilePath=/proj/b.tsx",
+        "&filePath=/proj/a.tsx&filePath=/proj/b.tsx&activeFilePath=/proj/b",
     );
     const params = getWindowParams();
     expect(params.role).toBe("pane");
     expect(params.paneKind).toBe("code");
     expect(params.projectPath).toBe("/proj");
     expect(params.filePaths).toEqual(["/proj/a.tsx", "/proj/b.tsx"]);
-    expect(params.activeFilePath).toBe("/proj/b.tsx");
+    expect(params.activeFilePath).toBe("/proj/b");
   });
 
   it("parses a browserState JSON blob when present", () => {

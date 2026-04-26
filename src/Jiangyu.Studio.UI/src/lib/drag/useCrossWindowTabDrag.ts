@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { subscribe } from "@lib/rpc.ts";
+import { subscribe } from "@lib/rpc";
 
 interface Ticket {
   readonly paneId: string;

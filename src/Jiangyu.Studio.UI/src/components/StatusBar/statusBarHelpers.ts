@@ -1,8 +1,4 @@
-import {
-  formatDurationShort,
-  type CompileState,
-  type CompileStatus,
-} from "@lib/compile/compile.ts";
+import { formatDurationShort, type CompileState, type CompileStatus } from "@lib/compile";
 
 export const SUCCESS_LINGER_MS = 5_000;
 

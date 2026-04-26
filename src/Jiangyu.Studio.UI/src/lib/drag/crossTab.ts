@@ -1,4 +1,4 @@
-import { rpcCall, subscribe } from "@lib/rpc.ts";
+import { rpcCall, subscribe } from "@lib/rpc";
 
 // Shared "mime" for cross-window tab drag. Custom mimetypes don't bridge
 // reliably across webview processes (WebKitGTK's X11 DnD drops them); text/plain

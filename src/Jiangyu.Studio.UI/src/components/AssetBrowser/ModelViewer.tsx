@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { Spinner } from "@components/Spinner/Spinner.tsx";
+import { Spinner } from "@components/Spinner/Spinner";
 import styles from "./AssetBrowser.module.css";
 
 interface ModelViewerProps {

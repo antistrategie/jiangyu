@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import type { editor as monacoEditor } from "monaco-editor";
-import { rpcCall, subscribe, type FileChangeKind, type FileChangedEvent } from "@lib/rpc.ts";
+import { rpcCall, subscribe, type FileChangeKind, type FileChangedEvent } from "@lib/rpc";
 
 // In-memory editor state for this window: content buffers, dirty flags,
 // conflict banners, and live Monaco editor instances keyed by pane id.

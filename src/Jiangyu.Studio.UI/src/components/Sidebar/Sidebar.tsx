@@ -9,13 +9,13 @@ import {
   FileAudio,
   Box,
 } from "lucide-react";
-import { rpcCall, subscribe, type FileChangedEvent } from "@lib/rpc.ts";
-import { dirname, basename, join, relative, isDescendant } from "@lib/path.ts";
-import { CROSS_TAB_MIME, encodeCrossTabPayload } from "@lib/drag/crossTab.ts";
-import { attachDragChip } from "@lib/drag/chip.ts";
-import { ContextMenu, type ContextMenuEntry } from "@components/ContextMenu/ContextMenu.tsx";
-import { ConfirmDialog } from "@components/ConfirmDialog/ConfirmDialog.tsx";
-import { useToast } from "@lib/toast/toast.tsx";
+import { rpcCall, subscribe, type FileChangedEvent } from "@lib/rpc";
+import { dirname, basename, join, relative, isDescendant } from "@lib/path";
+import { CROSS_TAB_MIME, encodeCrossTabPayload } from "@lib/drag/crossTab";
+import { attachDragChip } from "@lib/drag/chip";
+import { ContextMenu, type ContextMenuEntry } from "@components/ContextMenu/ContextMenu";
+import { ConfirmDialog } from "@components/ConfirmDialog/ConfirmDialog";
+import { useToast } from "@lib/toast";
 import styles from "./Sidebar.module.css";
 
 const DRAG_MIME = "application/x-jiangyu-path";

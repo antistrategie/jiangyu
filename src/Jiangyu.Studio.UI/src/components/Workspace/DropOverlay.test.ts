@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { zoneFor } from "./dropZone.ts";
-import { acceptsPaneDropDragData } from "./dropOverlayDragData.ts";
+import { zoneFor } from "./dropZone";
+import { acceptsPaneDropDragData } from "./dropOverlayDragData";
 
 // 100x100 grid; edge band is the outer 25% (EDGE_FRACTION in zoneFor).
 const W = 100;

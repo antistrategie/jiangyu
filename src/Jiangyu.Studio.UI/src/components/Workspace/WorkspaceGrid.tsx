@@ -1,25 +1,25 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PALETTE_SCOPE, useRegisterActions, type PaletteAction } from "@lib/palette/actions.ts";
-import { columnWeight, getActiveCodePane, paneWeight, type Layout } from "@lib/layout.ts";
-import { fileTargetCommands } from "@lib/project/fileCommands.ts";
-import { useEditorContent } from "@lib/editor/content.ts";
-import { useLayoutStore } from "@lib/panes/layoutStore.ts";
-import { CodePane } from "./CodePane.tsx";
-import { BrowserPane } from "./BrowserPane.tsx";
-import { EmptyPrompt } from "./EmptyPrompt.tsx";
-import { ResizeHandle } from "./ResizeHandle.tsx";
-import type { DropZone } from "./dropZone.ts";
-import { parseCrossTabPayload, completeTabMove, CROSS_TAB_MIME } from "@lib/drag/crossTab.ts";
-import { CROSS_PANE_MIME, completePaneMove, parseCrossPanePayload } from "@lib/drag/crossPane.ts";
-import { isTemplateDragPayload } from "@lib/drag/templateDrag.ts";
+import { PALETTE_SCOPE, useRegisterActions, type PaletteAction } from "@lib/palette/actions";
+import { columnWeight, getActiveCodePane, paneWeight, type Layout } from "@lib/layout";
+import { fileTargetCommands } from "@lib/project/fileCommands";
+import { useEditorContent } from "@lib/editor/content";
+import { useLayoutStore } from "@lib/panes/layoutStore";
+import { CodePane } from "./CodePane";
+import { BrowserPane } from "./BrowserPane";
+import { EmptyPrompt } from "./EmptyPrompt";
+import { ResizeHandle } from "./ResizeHandle";
+import type { DropZone } from "./dropZone";
+import { parseCrossTabPayload, completeTabMove, CROSS_TAB_MIME } from "@lib/drag/crossTab";
+import { CROSS_PANE_MIME, completePaneMove, parseCrossPanePayload } from "@lib/drag/crossPane";
+import { isTemplateDragPayload } from "@lib/drag/templateDrag";
 import {
   PANE_DRAG_MIME,
   TAB_DRAG_MIME,
   type PaneDragPayload,
   type TabDragPayload,
-} from "./tabDrag.ts";
-import { isBinaryFile } from "@components/CodeEditor/fileTypes.ts";
-import { isUsefulMonacoAction } from "@components/CodeEditor/monacoActionFilter.ts";
+} from "./tabDrag";
+import { isBinaryFile } from "@components/CodeEditor/fileTypes";
+import { isUsefulMonacoAction } from "@components/CodeEditor/monacoActionFilter";
 import styles from "./Workspace.module.css";
 
 interface WorkspaceGridProps {

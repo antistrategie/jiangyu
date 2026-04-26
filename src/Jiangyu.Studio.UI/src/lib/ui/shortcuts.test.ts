@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchBinding } from "./shortcuts.ts";
+import { matchBinding } from "./shortcuts";
 
 // `matchBinding` only reads key / ctrlKey / metaKey / shiftKey / altKey, so a
 // plain struct cast to KeyboardEvent is enough — avoids pulling in jsdom.

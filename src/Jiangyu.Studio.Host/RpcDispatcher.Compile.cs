@@ -5,6 +5,7 @@ using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Compile;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
+using Jiangyu.Shared;
 
 namespace Jiangyu.Studio.Host;
 
@@ -220,30 +221,35 @@ public static partial class RpcDispatcher
             => SafeSend(window, "compileProgress", new CompileProgressEvent { Current = 0, Total = 0 });
     }
 
+    [RpcType]
     internal sealed class CompileStartedAck
     {
         [JsonPropertyName("started")]
         public required bool Started { get; set; }
     }
 
+    [RpcType]
     internal sealed class CompileStartedEvent
     {
         [JsonPropertyName("projectRoot")]
         public required string ProjectRoot { get; set; }
     }
 
+    [RpcType]
     internal sealed class CompilePhaseEvent
     {
         [JsonPropertyName("phase")]
         public required string Phase { get; set; }
     }
 
+    [RpcType]
     internal sealed class CompileStatusEvent
     {
         [JsonPropertyName("status")]
         public required string Status { get; set; }
     }
 
+    [RpcType]
     internal sealed class CompileProgressEvent
     {
         [JsonPropertyName("current")]
@@ -253,6 +259,7 @@ public static partial class RpcDispatcher
         public required int Total { get; set; }
     }
 
+    [RpcType]
     internal sealed class CompileLogEventPayload
     {
         [JsonPropertyName("level")]
@@ -262,6 +269,7 @@ public static partial class RpcDispatcher
         public required string Message { get; set; }
     }
 
+    [RpcType]
     internal sealed class CompileFinishedEvent
     {
         [JsonPropertyName("success")]
@@ -274,6 +282,7 @@ public static partial class RpcDispatcher
         public string? ErrorMessage { get; set; }
     }
 
+    [RpcType]
     internal sealed class CompileSummary
     {
         [JsonPropertyName("modName")]

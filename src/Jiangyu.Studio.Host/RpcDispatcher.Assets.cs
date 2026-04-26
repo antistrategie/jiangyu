@@ -6,6 +6,7 @@ using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Assets;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
+using Jiangyu.Shared;
 
 namespace Jiangyu.Studio.Host;
 
@@ -54,7 +55,7 @@ public static partial class RpcDispatcher
         var resolution = EnvironmentContext.ResolveFromGlobalConfig();
         if (!resolution.Success)
         {
-            return JsonSerializer.SerializeToElement(new AssetIndexStatusDto
+            return JsonSerializer.SerializeToElement(new AssetIndexStatus
             {
                 State = "noGame",
                 Reason = resolution.Error,
@@ -65,7 +66,7 @@ public static partial class RpcDispatcher
         var status = service.GetIndexStatus();
         var manifest = service.LoadManifest();
 
-        return JsonSerializer.SerializeToElement(new AssetIndexStatusDto
+        return JsonSerializer.SerializeToElement(new AssetIndexStatus
         {
             State = status.State switch
             {
@@ -96,7 +97,7 @@ public static partial class RpcDispatcher
         service.BuildIndexFromGameData(gameData);
 
         var manifest = service.LoadManifest();
-        return JsonSerializer.SerializeToElement(new AssetIndexStatusDto
+        return JsonSerializer.SerializeToElement(new AssetIndexStatus
         {
             State = "current",
             AssetCount = manifest?.AssetCount,
@@ -185,7 +186,7 @@ public static partial class RpcDispatcher
                 throw new ArgumentException($"Unsupported asset kind: {kind}");
         }
 
-        return JsonSerializer.SerializeToElement(new AssetExportResultDto { OutputPath = outputPath });
+        return JsonSerializer.SerializeToElement(new AssetExportResult { OutputPath = outputPath });
     }
 
     private static JsonElement HandleAssetsPreview(IInfiniFrameWindow _, JsonElement? parameters)
@@ -206,7 +207,7 @@ public static partial class RpcDispatcher
         if (result is null)
             return NullElement;
 
-        return JsonSerializer.SerializeToElement(new AssetPreviewDto
+        return JsonSerializer.SerializeToElement(new AssetPreviewResult
         {
             Data = Convert.ToBase64String(result.Data),
             MimeType = result.MimeType,
@@ -222,7 +223,8 @@ public static partial class RpcDispatcher
         return JsonSerializer.SerializeToElement(path);
     }
 
-    internal sealed class AssetIndexStatusDto
+    [RpcType]
+    internal sealed class AssetIndexStatus
     {
         [JsonPropertyName("state")]
         public required string State { get; set; }
@@ -237,13 +239,15 @@ public static partial class RpcDispatcher
         public DateTimeOffset? IndexedAt { get; set; }
     }
 
-    internal sealed class AssetExportResultDto
+    [RpcType]
+    internal sealed class AssetExportResult
     {
         [JsonPropertyName("outputPath")]
         public required string OutputPath { get; set; }
     }
 
-    internal sealed class AssetPreviewDto
+    [RpcType]
+    internal sealed class AssetPreviewResult
     {
         [JsonPropertyName("data")]
         public required string Data { get; set; }

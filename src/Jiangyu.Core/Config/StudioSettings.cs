@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Jiangyu.Shared;
 
 namespace Jiangyu.Core.Config;
 
@@ -10,6 +11,7 @@ namespace Jiangyu.Core.Config;
 /// launch, so localStorage origin is ephemeral — settings were lost on
 /// restart. Stored at {GlobalConfig.ConfigDir}/studio.json.
 /// </summary>
+[RpcType]
 public sealed class StudioSettings
 {
     private static readonly JsonSerializerOptions JsonOptions = new()

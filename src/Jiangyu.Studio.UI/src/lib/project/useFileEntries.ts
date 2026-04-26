@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { rpcCall, subscribe, type FileChangedEvent } from "@lib/rpc.ts";
+import { rpcCall, subscribe, type FileChangedEvent } from "@lib/rpc";
 
 // Keeps a flat list of all project files (for palette go-to-file) in sync
 // with the filesystem. A single `fileChanged` subscription fans out to both

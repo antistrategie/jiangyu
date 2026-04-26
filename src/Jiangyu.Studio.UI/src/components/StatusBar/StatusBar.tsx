@@ -1,13 +1,9 @@
 import { useEffect, useReducer, useState } from "react";
 import { CheckCircle, CircleDot, PanelLeft, PanelLeftClose, XCircle } from "lucide-react";
-import {
-  formatDurationShort,
-  type CompileState,
-  type CompileStatus,
-} from "@lib/compile/compile.ts";
-import { useSidebarHidden } from "@lib/settings.ts";
-import { Spinner } from "@components/Spinner/Spinner.tsx";
-import { SUCCESS_LINGER_MS, computeProgressPct, formatDurationLive } from "./statusBarHelpers.ts";
+import { formatDurationShort, type CompileState, type CompileStatus } from "@lib/compile";
+import { useSidebarHidden } from "@lib/settings";
+import { Spinner } from "@components/Spinner/Spinner";
+import { SUCCESS_LINGER_MS, computeProgressPct, formatDurationLive } from "./statusBarHelpers";
 import styles from "./StatusBar.module.css";
 
 interface StatusBarProps {

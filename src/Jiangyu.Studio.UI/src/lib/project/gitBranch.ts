@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { rpcCall } from "@lib/rpc.ts";
+import { rpcCall } from "@lib/rpc";
 
 /**
  * Resolves the current git branch for a project root. Returns null when

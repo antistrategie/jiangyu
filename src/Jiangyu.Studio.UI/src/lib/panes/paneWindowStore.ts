@@ -1,12 +1,8 @@
 import { useEffect } from "react";
 import { create } from "zustand";
-import { rpcCall, subscribe } from "@lib/rpc.ts";
-import {
-  loadPaneWindows,
-  savePaneWindows,
-  type PaneWindowDescriptor,
-} from "./paneWindowStorage.ts";
-import type { AssetBrowserState, TemplateBrowserState } from "./browserState.ts";
+import { rpcCall, subscribe } from "@lib/rpc";
+import { loadPaneWindows, savePaneWindows, type PaneWindowDescriptor } from "./paneWindowStorage";
+import type { AssetBrowserState, TemplateBrowserState } from "./browserState";
 
 interface PaneWindowStore {
   /** windowId → descriptor for every pane window spawned this session. */

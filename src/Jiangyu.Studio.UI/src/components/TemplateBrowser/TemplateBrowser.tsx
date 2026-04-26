@@ -10,9 +10,23 @@ import {
   useRef,
   useState,
 } from "react";
-import { rpcCall } from "@lib/rpc.ts";
-import { attachDragChip } from "@lib/drag/chip.ts";
-import { generatePatchKdl, generateCloneKdl } from "@lib/kdlSnippets.ts";
+import { rpcCall } from "@lib/rpc";
+import type {
+  EnumMembersResult,
+  InspectedFieldNode,
+  InspectedReference,
+  ObjectInspectionResult,
+  TemplateEdge,
+  TemplateIndexStatus,
+  TemplateInstanceEntry,
+  TemplateMember,
+  TemplateQueryResult,
+  TemplateReferenceEntry,
+  TemplateSearchResult,
+  TemplateTypeEntry,
+} from "@lib/rpc";
+import { attachDragChip } from "@lib/drag/chip";
+import { generatePatchKdl, generateCloneKdl } from "./kdlSnippets";
 import {
   encodeCrossInstancePayload,
   TEMPLATE_DRAG_TAG,
@@ -20,134 +34,26 @@ import {
   MEMBER_DRAG_TAG,
   beginTemplateDrag,
   endTemplateDrag,
-} from "@lib/drag/crossInstance.ts";
-import { encodeCrossMemberPayload } from "@lib/drag/crossMember.ts";
-import { useToast } from "@lib/toast/toast.tsx";
-import {
-  DEFAULT_TEMPLATE_BROWSER_STATE,
-  type TemplateBrowserState,
-} from "@lib/panes/browserState.ts";
-import { useDebouncedScrollTop } from "@lib/ui/useDebouncedScrollTop.ts";
-import { onKeyActivate } from "@lib/ui/a11y.ts";
-import { Spinner } from "@components/Spinner/Spinner.tsx";
+} from "@lib/drag/crossInstance";
+import { encodeCrossMemberPayload } from "@lib/drag/crossMember";
+import { useToast } from "@lib/toast";
+import { DEFAULT_TEMPLATE_BROWSER_STATE, type TemplateBrowserState } from "@lib/panes/browserState";
+import { useDebouncedScrollTop } from "@lib/ui/useDebouncedScrollTop";
+import { onKeyActivate } from "@lib/ui/a11y";
+import { Spinner } from "@components/Spinner/Spinner";
 import {
   TemplateFilePicker,
   type PickerResult,
-} from "@components/TemplateFilePicker/TemplateFilePicker.tsx";
+} from "@components/TemplateFilePicker/TemplateFilePicker";
 import {
   DetailTitle,
   MetaBlock,
   MetaRow,
   SectionHeader,
-} from "@components/DetailPanel/DetailPanel.tsx";
+} from "@components/DetailPanel/DetailPanel";
 import styles from "./TemplateBrowser.module.css";
 
 // --- RPC types ---
-
-interface TemplateIndexStatus {
-  readonly state: "current" | "stale" | "missing" | "noGame";
-  readonly reason?: string;
-  readonly instanceCount?: number;
-  readonly typeCount?: number;
-}
-
-interface TemplateTypeEntry {
-  readonly className: string;
-  readonly count: number;
-}
-
-interface TemplateInstanceEntry {
-  readonly name: string;
-  readonly className: string;
-  readonly identity: { readonly collection: string; readonly pathId: number };
-  readonly references?: readonly TemplateEdge[];
-}
-
-interface TemplateEdge {
-  readonly fieldName: string;
-  readonly target: { readonly collection: string; readonly pathId: number };
-}
-
-interface TemplateReferenceEntry {
-  readonly source: { readonly collection: string; readonly pathId: number };
-  readonly fieldName: string;
-}
-
-interface TemplateSearchResult {
-  readonly types: readonly TemplateTypeEntry[];
-  readonly instances: readonly TemplateInstanceEntry[];
-  readonly referencedBy?: Readonly<Record<string, readonly TemplateReferenceEntry[]>>;
-}
-
-// --- templatesInspect types ---
-
-interface InspectedObjectIdentity {
-  readonly name: string;
-  readonly className: string;
-  readonly collection: string;
-  readonly pathId: number;
-}
-
-interface InspectedReference {
-  readonly fileId?: number;
-  readonly pathId?: number;
-  readonly name?: string;
-  readonly className?: string;
-}
-
-interface InspectedFieldNode {
-  readonly name?: string;
-  readonly kind: string;
-  readonly fieldTypeName?: string;
-  readonly null?: boolean;
-  readonly truncated?: boolean;
-  readonly value?: string | number | boolean | null;
-  readonly count?: number;
-  readonly reference?: InspectedReference;
-  readonly elements?: readonly InspectedFieldNode[];
-  readonly fields?: readonly InspectedFieldNode[];
-  readonly reason?: string;
-}
-
-interface ObjectInspectionResult {
-  readonly object: InspectedObjectIdentity;
-  readonly options: {
-    readonly maxDepth: number;
-    readonly maxArraySampleLength: number;
-    readonly truncated: boolean;
-  };
-  readonly fields: readonly InspectedFieldNode[];
-}
-
-interface TemplateMember {
-  readonly name: string;
-  readonly typeName: string;
-  readonly typeFullName?: string;
-  readonly isWritable: boolean;
-  readonly isInherited: boolean;
-  readonly isLikelyOdinOnly?: boolean;
-  readonly isCollection?: boolean;
-  readonly isScalar?: boolean;
-  readonly isTemplateReference?: boolean;
-  readonly patchScalarKind?: string;
-  readonly elementTypeName?: string;
-  readonly enumTypeName?: string;
-  readonly referenceTypeName?: string;
-  readonly namedArrayEnumTypeName?: string;
-}
-
-interface TemplateQueryResult {
-  readonly kind: "typenode" | "leaf";
-  readonly resolvedPath?: string;
-  readonly typeName?: string;
-  readonly typeFullName?: string;
-  readonly isWritable: boolean;
-  readonly patchScalarKind?: string;
-  readonly enumMemberNames?: readonly string[];
-  readonly referenceTargetTypeName?: string;
-  readonly isLikelyOdinOnly?: boolean;
-  readonly members?: readonly TemplateMember[];
-}
 
 // --- RPC calls ---
 
@@ -174,10 +80,6 @@ function templatesInspect(params: {
   maxArraySample?: number;
 }): Promise<ObjectInspectionResult> {
   return rpcCall<ObjectInspectionResult>("templatesInspect", params);
-}
-
-interface EnumMembersResult {
-  readonly members: readonly { readonly name: string; readonly value: number }[];
 }
 
 function templatesEnumMembers(typeName: string): Promise<EnumMembersResult> {
@@ -1168,7 +1070,7 @@ function ReferenceNode({
       </div>
       {expanded && hasChildren && (
         <div className={styles.refChildren}>
-          {target.references.map((childEdge) => (
+          {(target.references ?? []).map((childEdge) => (
             <ReferenceNode
               key={`${childEdge.fieldName}:${childEdge.target.collection}:${childEdge.target.pathId}`}
               edge={childEdge}
@@ -1265,6 +1167,7 @@ function InstanceRow({
 function formatValue(value: InspectedFieldNode | null): string {
   if (!value) return "…";
   if (value.null) return "null";
+  // eslint-disable-next-line @typescript-eslint/no-base-to-string -- String() handles unknown at runtime, and the guard above excludes null/undefined.
   if (value.value !== undefined && value.value !== null) return String(value.value);
   if (value.kind === "reference" && value.reference) {
     return value.reference.name ?? `[pathId=${value.reference.pathId}]`;
@@ -1539,6 +1442,7 @@ function renderValueLine(
       <span className={styles.valueArray}>
         {preview.map((elem, idx) => {
           const label = namedArrayLabelMap?.[idx] ?? `[${idx}]`;
+          // eslint-disable-next-line @typescript-eslint/no-base-to-string, @typescript-eslint/restrict-template-expressions -- guarded field preview.
           return `${label}=${elem.value ?? "?"}${idx < preview.length - 1 ? ", " : ""}`;
         })}
         {rest > 0 && ` (+${rest} more)`}
@@ -1565,6 +1469,7 @@ function renderValueLine(
   }
 
   if (value.value !== undefined && value.value !== null) {
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string -- String() handles unknown at runtime.
     return <span className={styles.valueScalar}>{String(value.value)}</span>;
   }
 

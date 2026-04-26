@@ -1,6 +1,6 @@
-import type { ContextMenuEntry } from "@components/ContextMenu/ContextMenu.tsx";
-import type { Tab } from "@lib/layout.ts";
-import { fileTargetCommands, type FileCommand } from "@lib/project/fileCommands.ts";
+import type { ContextMenuEntry } from "@components/ContextMenu/ContextMenu";
+import type { Tab } from "@lib/layout";
+import { fileTargetCommands, type FileCommand } from "@lib/project/fileCommands";
 
 function entryFor(cmd: FileCommand): ContextMenuEntry {
   return cmd.shortcut !== undefined

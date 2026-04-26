@@ -1,4 +1,4 @@
-import { BROWSER_KIND_META, type BrowserPane } from "@lib/layout.ts";
+import { BROWSER_KIND_META, type BrowserPane } from "@lib/layout";
 import styles from "./Workspace.module.css";
 
 interface EmptyPromptProps {

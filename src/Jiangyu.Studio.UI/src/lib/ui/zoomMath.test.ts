@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampZoom, zoomTowardsCursor } from "./zoomMath.ts";
+import { clampZoom, zoomTowardsCursor } from "./zoomMath";
 
 describe("clampZoom", () => {
   it("returns the value when within bounds", () => {

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { PALETTE_SCOPE, type PaletteAction } from "@lib/palette/actions.ts";
+import { PALETTE_SCOPE, type PaletteAction } from "@lib/palette/actions";
 import {
   FILES_SCOPE,
   MAX_RESULTS,
   buildSearchIndex,
   filterActions,
   groupByScope,
-} from "./paletteFilter.ts";
+} from "./paletteFilter";
 
 const noop = () => {};
 
@@ -26,9 +26,9 @@ describe("filterActions", () => {
   ];
 
   const files: readonly PaletteAction[] = [
-    action({ id: "file:src/App.tsx", label: "src/App.tsx", scope: FILES_SCOPE }),
-    action({ id: "file:src/main.tsx", label: "src/main.tsx", scope: FILES_SCOPE }),
-    action({ id: "file:src/lib/path.ts", label: "src/lib/path.ts", scope: FILES_SCOPE }),
+    action({ id: "file:src/App", label: "src/App", scope: FILES_SCOPE }),
+    action({ id: "file:src/main", label: "src/main", scope: FILES_SCOPE }),
+    action({ id: "file:src/lib/path", label: "src/lib/path", scope: FILES_SCOPE }),
   ];
 
   const all = [...commands, ...files];
@@ -51,7 +51,7 @@ describe("filterActions", () => {
 
   it("matches files by path", () => {
     const result = filterActions("main", all, buildSearchIndex(all));
-    expect(result.some((a) => a.id === "file:src/main.tsx")).toBe(true);
+    expect(result.some((a) => a.id === "file:src/main")).toBe(true);
   });
 
   it("tolerates typos via fuzzy matching", () => {
@@ -99,9 +99,9 @@ describe("groupByScope", () => {
 
   it("pins the files scope to the bottom regardless of insertion order", () => {
     const actions: readonly PaletteAction[] = [
-      action({ id: "f1", label: "a.ts", scope: FILES_SCOPE }),
+      action({ id: "f1", label: "a", scope: FILES_SCOPE }),
       action({ id: "1", label: "cmd", scope: PALETTE_SCOPE.Editor }),
-      action({ id: "f2", label: "b.ts", scope: FILES_SCOPE }),
+      action({ id: "f2", label: "b", scope: FILES_SCOPE }),
       action({ id: "2", label: "other", scope: PALETTE_SCOPE.File }),
     ];
     const groups = groupByScope(actions);

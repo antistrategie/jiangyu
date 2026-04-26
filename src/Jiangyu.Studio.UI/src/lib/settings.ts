@@ -13,7 +13,7 @@
  * reading the same setting stay in lock-step within one window.
  */
 import { useCallback, useEffect, useSyncExternalStore } from "react";
-import { rpcCall } from "@lib/rpc.ts";
+import { rpcCall, type StudioSettings } from "@lib/rpc";
 
 const STORAGE_PREFIX = "jiangyu:setting:";
 
@@ -233,26 +233,13 @@ export function saveTemplateEditorMode(value: TemplateEditorMode): void {
 
 // --- RPC persistence -------------------------------------------------------
 
-// Mirrors C# StudioSettings property-for-property. Must be updated when
-// StudioSettings.cs gains or renames a persisted field.
-interface StudioSettingsShape {
-  editorFontSize: number;
-  uiFontScale: number;
-  editorWordWrap: string;
-  sidebarHidden: boolean;
-  sessionRestoreProject: boolean;
-  sessionRestoreTabs: boolean;
-  editorKeybindMode: string;
-  templateEditorMode: string;
-}
-
 /**
  * Call once at app startup (after initRpc) to reconcile the localStorage
  * mirror against the authoritative filesystem values. Runs async and
  * does not block first paint — components read localStorage instantly.
  */
 export function initSettings(): void {
-  rpcCall<StudioSettingsShape>("getStudioSettings")
+  rpcCall<StudioSettings>("getStudioSettings")
     .then((settings) => {
       // Write the authoritative values into localStorage so subsequent
       // synchronous reads (including next launch) see the filesystem state.
@@ -265,7 +252,7 @@ export function initSettings(): void {
     });
 }
 
-function syncToLocalStorage(settings: StudioSettingsShape): void {
+function syncToLocalStorage(settings: StudioSettings): void {
   localStorage.setItem(EDITOR_FONT_SIZE_KEY, JSON.stringify(settings.editorFontSize));
   localStorage.setItem(UI_FONT_SCALE_KEY, JSON.stringify(settings.uiFontScale));
   localStorage.setItem(EDITOR_WORD_WRAP_KEY, JSON.stringify(settings.editorWordWrap));
@@ -289,7 +276,7 @@ function syncToLocalStorage(settings: StudioSettingsShape): void {
  */
 async function persistSetting(key: string, value: number | boolean | string): Promise<void> {
   try {
-    const settings = await rpcCall<StudioSettingsShape>("setStudioSetting", { key, value });
+    const settings = await rpcCall<StudioSettings>("setStudioSetting", { key, value });
     // Reconcile: the host returned the full settings object. Write it back
     // so we pick up any clamping the host applied, and so other settings
     // changed by a concurrent window are reflected.

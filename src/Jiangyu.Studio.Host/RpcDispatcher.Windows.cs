@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using InfiniFrame;
+using Jiangyu.Shared;
 
 namespace Jiangyu.Studio.Host;
 
@@ -351,6 +352,7 @@ public static partial class RpcDispatcher
         }
     }
 
+    [RpcType]
     internal sealed class PaneWindowOpenedAck
     {
         [JsonPropertyName("opened")]

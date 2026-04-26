@@ -3,7 +3,7 @@ import {
   loadPaneWindows,
   savePaneWindows,
   type PaneWindowDescriptor,
-} from "@lib/panes/paneWindowStorage.ts";
+} from "@lib/panes/paneWindowStorage";
 
 function stubStorage() {
   const store = new Map<string, string>();
@@ -18,8 +18,8 @@ function stubStorage() {
 
 const CODE: PaneWindowDescriptor = {
   kind: "code",
-  filePaths: ["/proj/a.tsx", "/proj/b.tsx"],
-  activeFilePath: "/proj/b.tsx",
+  filePaths: ["/proj/a", "/proj/b"],
+  activeFilePath: "/proj/b",
 };
 
 const ASSET_BROWSER: PaneWindowDescriptor = {

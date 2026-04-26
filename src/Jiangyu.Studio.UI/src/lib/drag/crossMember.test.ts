@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { encodeCrossMemberPayload, parseCrossMemberPayload } from "@lib/drag/crossMember.ts";
+import { encodeCrossMemberPayload, parseCrossMemberPayload } from "@lib/drag/crossMember";
 
 describe("encode/parseCrossMemberPayload", () => {
   it("round-trips a minimal member drag payload", () => {

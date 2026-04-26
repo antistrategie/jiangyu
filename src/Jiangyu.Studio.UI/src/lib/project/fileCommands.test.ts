@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { fileTargetCommands } from "@lib/project/fileCommands.ts";
+import { fileTargetCommands } from "@lib/project/fileCommands";
 
 describe("fileTargetCommands", () => {
-  const path = "/home/justin/dev/project/src/App.tsx";
+  const path = "/home/justin/dev/project/src/App";
   const projectPath = "/home/justin/dev/project";
 
   it("returns close/copyPath/copyRelativePath/reveal in that order", () => {
@@ -20,7 +20,7 @@ describe("fileTargetCommands", () => {
     const cmd = fileTargetCommands(path, projectPath, () => {}).find(
       (c) => c.id === "copyRelativePath",
     )!;
-    expect(cmd.desc).toBe("src/App.tsx");
+    expect(cmd.desc).toBe("src/App");
   });
 
   it("close runs onCloseFiles with just the target path", () => {
@@ -46,7 +46,7 @@ describe("fileTargetCommands", () => {
       (c) => c.id === "copyRelativePath",
     )!;
     cmd.run();
-    expect(writeText).toHaveBeenCalledWith("src/App.tsx");
+    expect(writeText).toHaveBeenCalledWith("src/App");
     vi.unstubAllGlobals();
   });
 

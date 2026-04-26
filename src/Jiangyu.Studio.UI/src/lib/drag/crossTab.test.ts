@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { encodeCrossTabPayload, parseCrossTabPayload } from "@lib/drag/crossTab.ts";
+import { encodeCrossTabPayload, parseCrossTabPayload } from "@lib/drag/crossTab";
 
 describe("encode/parseCrossTabPayload", () => {
   it("round-trips a file path", () => {
-    const raw = encodeCrossTabPayload("/proj/src/A.tsx");
-    expect(parseCrossTabPayload(raw)).toBe("/proj/src/A.tsx");
+    const raw = encodeCrossTabPayload("/proj/src/A");
+    expect(parseCrossTabPayload(raw)).toBe("/proj/src/A");
   });
 
   it("returns null for an empty string (plain text drop on the editor)", () => {

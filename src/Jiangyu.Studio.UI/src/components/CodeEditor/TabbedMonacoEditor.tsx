@@ -3,23 +3,23 @@ import { X } from "lucide-react";
 import Editor, { type OnChange, type OnMount } from "@monaco-editor/react";
 import type * as monacoNs from "monaco-editor";
 import type { editor as monacoEditor } from "monaco-editor";
-import { ContextMenu, type ContextMenuEntry } from "@components/ContextMenu/ContextMenu.tsx";
-import { buildJiangyuTheme } from "@components/CodeEditor/jiangyuTheme.ts";
-import { registerKdlLanguage } from "@components/CodeEditor/kdlLanguage.ts";
-import { getLanguage, isBinaryFile } from "@components/CodeEditor/fileTypes.ts";
-import { computeTabDropIndex } from "@lib/drag/computeDropIndex.ts";
-import { onKeyActivate } from "@lib/ui/a11y.ts";
-import { TemplateVisualEditor } from "@components/TemplateVisualEditor/TemplateVisualEditor.tsx";
-import type { Tab } from "@lib/layout.ts";
-import { rpcCall, type FileChangeKind } from "@lib/rpc.ts";
+import { ContextMenu, type ContextMenuEntry } from "@components/ContextMenu/ContextMenu";
+import { buildJiangyuTheme } from "@components/CodeEditor/jiangyuTheme";
+import { registerKdlLanguage } from "@components/CodeEditor/kdlLanguage";
+import { getLanguage, isBinaryFile } from "@components/CodeEditor/fileTypes";
+import { computeTabDropIndex } from "@lib/drag/computeDropIndex";
+import { onKeyActivate } from "@lib/ui/a11y";
+import { TemplateVisualEditor } from "@components/TemplateVisualEditor/TemplateVisualEditor";
+import type { Tab } from "@lib/layout";
+import { rpcCall, type FileChangeKind } from "@lib/rpc";
 import {
   useEditorFontSize,
   useEditorKeybindMode,
   useEditorWordWrap,
   useTemplateEditorMode,
   type TemplateEditorMode,
-} from "@lib/settings.ts";
-import { useProjectStore } from "@lib/project/store.ts";
+} from "@lib/settings";
+import { useProjectStore } from "@lib/project/store";
 import styles from "@components/Workspace/Workspace.module.css";
 
 export interface TabDragSlots {

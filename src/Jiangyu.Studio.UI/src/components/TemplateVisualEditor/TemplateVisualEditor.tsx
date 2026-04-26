@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, GripVertical, Plus, X } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { CrossMemberPayload } from "@lib/drag/crossMember.ts";
+import type { CrossMemberPayload } from "@lib/drag/crossMember";
 import type {
   EditorNode,
   EditorDirective,
@@ -10,17 +10,24 @@ import type {
   EditorValueKind,
   EditorDocument,
   EditorError,
-} from "@lib/templateVisual/types.ts";
-import { parseCrossMemberPayload } from "@lib/drag/crossMember.ts";
+} from "./types";
+import type {
+  EnumMemberEntry,
+  EnumMembersResult,
+  TemplateMember,
+  TemplateQueryResult,
+  TemplateSearchResult,
+} from "@lib/rpc";
+import { parseCrossMemberPayload } from "@lib/drag/crossMember";
 import {
   parseCrossInstancePayload,
   INSTANCE_DRAG_TAG,
   MEMBER_DRAG_TAG,
   getActiveTemplateDrag,
-} from "@lib/drag/crossInstance.ts";
-import { useToastStore } from "@lib/toast/toast.tsx";
-import { rpcCall } from "@lib/rpc.ts";
-import { onKeyActivate } from "@lib/ui/a11y.ts";
+} from "@lib/drag/crossInstance";
+import { useToastStore } from "@lib/toast";
+import { rpcCall } from "@lib/rpc";
+import { onKeyActivate } from "@lib/ui/a11y";
 import styles from "./TemplateVisualEditor.module.css";
 
 // --- Stable UI IDs ---
@@ -99,61 +106,12 @@ function CommitInput({ value, onCommit, onKeyDown, ...rest }: CommitInputProps) 
 
 // --- RPC helpers ---
 
-interface TemplateMember {
-  readonly name: string;
-  readonly typeName: string;
-  readonly isWritable: boolean;
-  readonly isCollection?: boolean;
-  readonly isScalar?: boolean;
-  readonly isTemplateReference?: boolean;
-  readonly patchScalarKind?: string;
-  readonly elementTypeName?: string;
-  readonly enumTypeName?: string;
-  readonly referenceTypeName?: string;
-  /** Short name of the enum paired with a [NamedArray(typeof(T))] field. */
-  readonly namedArrayEnumTypeName?: string;
-  /** Inclusive numeric lower bound from [Range(min, max)] or [Min(value)]. */
-  readonly numericMin?: number;
-  /** Inclusive numeric upper bound from [Range(min, max)]. */
-  readonly numericMax?: number;
-  /** Tooltip text from Unity's [Tooltip("...")]. */
-  readonly tooltip?: string;
-  /** Field is decorated with [HideInInspector] — hide from the field adder. */
-  readonly isHiddenInInspector?: boolean;
-  /** Field carries the game's SoundID marker — UI renders a sound badge. */
-  readonly isSoundIdField?: boolean;
-}
-
-interface TemplateQueryResult {
-  readonly kind: "typenode" | "leaf";
-  readonly patchScalarKind?: string;
-  readonly members?: readonly TemplateMember[];
-}
-
 function templatesQuery(typeName: string): Promise<TemplateQueryResult> {
   return rpcCall<TemplateQueryResult>("templatesQuery", { typeName });
 }
 
-interface TemplateInstanceEntry {
-  readonly name: string;
-  readonly className: string;
-}
-
-interface TemplateSearchResult {
-  readonly instances: readonly TemplateInstanceEntry[];
-}
-
 function templatesSearch(className?: string): Promise<TemplateSearchResult> {
   return rpcCall<TemplateSearchResult>("templatesSearch", className ? { className } : undefined);
-}
-
-interface EnumMemberEntry {
-  readonly name: string;
-  readonly value: number;
-}
-
-interface EnumMembersResult {
-  readonly members: readonly EnumMemberEntry[];
 }
 
 function templatesEnumMembers(typeName: string): Promise<EnumMembersResult> {
@@ -1280,8 +1238,8 @@ function ValueEditor({ value, onChange, member }: ValueEditorProps) {
 
     case "Int32": {
       const num = value.int32 ?? 0;
-      const min = member?.numericMin;
-      const max = member?.numericMax;
+      const min = member?.numericMin ?? undefined;
+      const max = member?.numericMax ?? undefined;
       const invalid =
         !Number.isInteger(num) || (min != null && num < min) || (max != null && num > max);
       return (
@@ -1302,8 +1260,8 @@ function ValueEditor({ value, onChange, member }: ValueEditorProps) {
 
     case "Single": {
       const num = value.single ?? 0;
-      const min = member?.numericMin;
-      const max = member?.numericMax;
+      const min = member?.numericMin ?? undefined;
+      const max = member?.numericMax ?? undefined;
       const invalid = (min != null && num < min) || (max != null && num > max);
       return (
         <span className={styles.setValueInputWrap}>
@@ -1887,7 +1845,7 @@ function makeDefaultDirective(member: TemplateMember): StampedDirective {
       op: "Set",
       fieldPath: member.name,
       index: 0,
-      value: makeScalarDefault(member.patchScalarKind),
+      value: makeScalarDefault(member.patchScalarKind ?? undefined),
       _uiId: uiId(),
     };
   }
@@ -1905,6 +1863,7 @@ function synthMemberFromPayload(payload: CrossMemberPayload): TemplateMember {
     name: payload.fieldPath,
     typeName: payload.typeName ?? "",
     isWritable: true,
+    isInherited: false,
     ...(payload.patchScalarKind !== undefined ? { patchScalarKind: payload.patchScalarKind } : {}),
     ...(payload.elementTypeName !== undefined ? { elementTypeName: payload.elementTypeName } : {}),
     ...(payload.enumTypeName !== undefined ? { enumTypeName: payload.enumTypeName } : {}),

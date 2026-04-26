@@ -8,7 +8,7 @@ import {
   remapPath,
   isAbsolute,
   normalise,
-} from "./path.ts";
+} from "./path";
 
 describe("isAbsolute", () => {
   it("returns true for POSIX absolute paths", () => {
@@ -24,7 +24,7 @@ describe("isAbsolute", () => {
   });
 
   it("returns false for relative paths", () => {
-    expect(isAbsolute("src/lib/path.ts")).toBe(false);
+    expect(isAbsolute("src/lib/path")).toBe(false);
     expect(isAbsolute("./relative")).toBe(false);
     expect(isAbsolute("")).toBe(false);
   });

@@ -1,9 +1,9 @@
 import { useEffect } from "react";
-import { getActiveCodePane, getActivePane, getAllPanes } from "@lib/layout.ts";
-import type { PaletteAction } from "@lib/palette/actions.ts";
-import type { CompileState } from "@lib/compile/compile.ts";
-import { useLayoutStore } from "@lib/panes/layoutStore.ts";
-import { matchBinding, type KeyBinding } from "./shortcuts.ts";
+import { getActiveCodePane, getActivePane, getAllPanes } from "@lib/layout";
+import type { PaletteAction } from "@lib/palette/actions";
+import type { CompileState } from "@lib/compile";
+import { useLayoutStore } from "@lib/panes/layoutStore";
+import { matchBinding, type KeyBinding } from "./shortcuts";
 
 interface UseAppShortcutsParams {
   readonly setPaletteOpen: React.Dispatch<React.SetStateAction<boolean>>;

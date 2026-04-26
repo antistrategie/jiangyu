@@ -1,3 +1,5 @@
+using Jiangyu.Shared;
+
 namespace Jiangyu.Core.Models;
 
 public sealed class ObjectInspectionRequest
@@ -10,6 +12,7 @@ public sealed class ObjectInspectionRequest
     public int MaxArraySampleLength { get; init; } = 0;
 }
 
+[RpcType]
 public sealed class ObjectInspectionResult
 {
     public required InspectedObjectIdentity Object { get; init; }
@@ -17,6 +20,7 @@ public sealed class ObjectInspectionResult
     public required List<InspectedFieldNode> Fields { get; init; }
 }
 
+[RpcType]
 public sealed class InspectedObjectIdentity
 {
     public required string Name { get; init; }
@@ -25,6 +29,7 @@ public sealed class InspectedObjectIdentity
     public required long PathId { get; init; }
 }
 
+[RpcType]
 public sealed class ObjectInspectionOptions
 {
     public required int MaxDepth { get; init; }
@@ -32,6 +37,7 @@ public sealed class ObjectInspectionOptions
     public required bool Truncated { get; init; }
 }
 
+[RpcType]
 public sealed class InspectedFieldNode
 {
     public string? Name { get; set; }
@@ -47,6 +53,7 @@ public sealed class InspectedFieldNode
     public string? Reason { get; set; }
 }
 
+[RpcType]
 public sealed class InspectedReference
 {
     public int? FileId { get; init; }

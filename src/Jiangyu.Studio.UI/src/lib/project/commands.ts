@@ -1,4 +1,4 @@
-import { rpcCall } from "@lib/rpc.ts";
+import { rpcCall } from "@lib/rpc";
 
 /** Prompt the user for a project folder. Returns null if cancelled. */
 export async function pickProjectFolder(): Promise<string | null> {
