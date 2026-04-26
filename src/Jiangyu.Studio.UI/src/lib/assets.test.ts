@@ -4,6 +4,7 @@ import {
   buildReplacementAlias,
   buildReplacementPath,
   classifyAsset,
+  countAssetInstances,
   isAssetNameUnique,
   isAudioClip,
   isSprite,
@@ -59,6 +60,26 @@ describe("isSprite", () => {
       expect(s.spriteBackingTextureName).toBe("hero_atlas");
     }
   });
+
+  it("exposes textureRect fields for atlas-backed sprites", () => {
+    const s: AssetEntry = {
+      ...BASE,
+      className: "Sprite",
+      spriteBackingTextureName: "hero_atlas",
+      spriteTextureRectX: 10,
+      spriteTextureRectY: 20,
+      spriteTextureRectWidth: 64,
+      spriteTextureRectHeight: 32,
+      spritePackingRotation: 0,
+    };
+    if (isSprite(s)) {
+      expect(s.spriteTextureRectWidth).toBe(64);
+      expect(s.spriteTextureRectHeight).toBe(32);
+      expect(s.spriteTextureRectX).toBe(10);
+      expect(s.spriteTextureRectY).toBe(20);
+      expect(s.spritePackingRotation).toBe(0);
+    }
+  });
 });
 
 describe("classifyAsset", () => {
@@ -108,9 +129,24 @@ describe("buildReplacementPath", () => {
     expect(buildReplacementPath(entry, true)).toBe("audio/foo.wav");
   });
 
-  it("includes pathId when not unique", () => {
+  it("keeps Texture2D path bare even when name is ambiguous", () => {
     const entry: AssetEntry = { ...BASE, className: "Texture2D", pathId: 42 };
-    expect(buildReplacementPath(entry, false)).toBe("textures/foo--42.png");
+    expect(buildReplacementPath(entry, false)).toBe("textures/foo.png");
+  });
+
+  it("keeps Sprite path bare even when name is ambiguous", () => {
+    const entry: AssetEntry = { ...BASE, className: "Sprite", pathId: 42 };
+    expect(buildReplacementPath(entry, false)).toBe("sprites/foo.png");
+  });
+
+  it("keeps AudioClip path bare even when name is ambiguous", () => {
+    const entry: AssetEntry = { ...BASE, className: "AudioClip", pathId: 42 };
+    expect(buildReplacementPath(entry, false)).toBe("audio/foo.wav");
+  });
+
+  it("includes pathId for ambiguous PrefabHierarchyObject", () => {
+    const entry: AssetEntry = { ...BASE, className: "PrefabHierarchyObject", pathId: 42 };
+    expect(buildReplacementPath(entry, false)).toBe("models/foo--42/model.gltf (.glb)");
   });
 
   it("returns null for Mesh", () => {
@@ -153,6 +189,26 @@ describe("buildNameUniquenessMap", () => {
     ];
     const map = buildNameUniquenessMap(assets);
     expect(map.get("PrefabHierarchyObject\0soldier")).toBe(3);
+  });
+});
+
+describe("countAssetInstances", () => {
+  it("returns the count for the entry's (className, name) bucket", () => {
+    const map = new Map([["Texture2D\0tex_a", 3]]);
+    const entry: AssetEntry = { ...BASE, className: "Texture2D", name: "tex_a" };
+    expect(countAssetInstances(entry, map)).toBe(3);
+  });
+
+  it("returns 0 for entries with no name or class", () => {
+    const map = new Map<string, number>();
+    const entry: AssetEntry = { ...BASE, className: null };
+    expect(countAssetInstances(entry, map)).toBe(0);
+  });
+
+  it("collapses GameObject lookups into the PHO bucket", () => {
+    const map = new Map([["PrefabHierarchyObject\0soldier", 2]]);
+    const entry: AssetEntry = { ...BASE, className: "GameObject", name: "soldier" };
+    expect(countAssetInstances(entry, map)).toBe(2);
   });
 });
 

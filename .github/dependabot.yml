@@ -25,7 +25,6 @@ updates:
       - dependency-name: "SharpCompress"
       - dependency-name: "Fmod5Sharp"
       - dependency-name: "K4os.Compression.LZ4"
-      - dependency-name: "StbImageWriteSharp"
       - dependency-name: "ZstdSharp.Port"
       - dependency-name: "SourceGenerator.Foundations"
       - dependency-name: "oqo0.SwaggerThemes"
@@ -39,6 +38,18 @@ updates:
 
   - package-ecosystem: bun
     directory: src/Jiangyu.Studio.UI
+    schedule:
+      interval: weekly
+    groups:
+      bun:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: bun
+    directory: site
     schedule:
       interval: weekly
     groups:

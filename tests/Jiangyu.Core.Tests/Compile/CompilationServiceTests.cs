@@ -109,32 +109,32 @@ public class ModelReplacementAliasTests
     }
 
     [Fact]
-    public void BuildTextureReplacementRelativePath_UsesTargetNameAndPathId()
+    public void BuildTextureReplacementRelativePath_UsesBareTargetName()
     {
-        var path = CompilationService.BuildTextureReplacementRelativePath("local_forces_basic_soldier_BaseMap", 1234);
+        var path = CompilationService.BuildTextureReplacementRelativePath("local_forces_basic_soldier_BaseMap");
 
         Assert.Equal(
-            "assets/replacements/textures/local_forces_basic_soldier_BaseMap--1234.png",
+            "assets/replacements/textures/local_forces_basic_soldier_BaseMap.png",
             path);
     }
 
     [Fact]
-    public void BuildAudioReplacementRelativePath_UsesTargetNameAndPathId()
+    public void BuildAudioReplacementRelativePath_UsesBareTargetName()
     {
-        var path = CompilationService.BuildAudioReplacementRelativePath("sfx_rifle_fire", 4321);
+        var path = CompilationService.BuildAudioReplacementRelativePath("sfx_rifle_fire");
 
         Assert.Equal(
-            "assets/replacements/audio/sfx_rifle_fire--4321.wav",
+            "assets/replacements/audio/sfx_rifle_fire.wav",
             path);
     }
 
     [Fact]
-    public void BuildSpriteReplacementRelativePath_UsesTargetNameAndPathId()
+    public void BuildSpriteReplacementRelativePath_UsesBareTargetName()
     {
-        var path = CompilationService.BuildSpriteReplacementRelativePath("MenaceFontIcons_0", 9876);
+        var path = CompilationService.BuildSpriteReplacementRelativePath("MenaceFontIcons_0");
 
         Assert.Equal(
-            "assets/replacements/sprites/MenaceFontIcons_0--9876.png",
+            "assets/replacements/sprites/MenaceFontIcons_0.png",
             path);
     }
 }
@@ -230,30 +230,6 @@ public class ReplacementAliasParsingTests
         var path = CompilationService.BuildModelReplacementRelativePath("soldier", (long?)null);
 
         Assert.Equal("assets/replacements/models/soldier/model.gltf", path);
-    }
-
-    [Fact]
-    public void BuildTextureReplacementRelativePath_BareNameOverload()
-    {
-        var path = CompilationService.BuildTextureReplacementRelativePath("tex_BaseMap", (long?)null);
-
-        Assert.Equal("assets/replacements/textures/tex_BaseMap.png", path);
-    }
-
-    [Fact]
-    public void BuildSpriteReplacementRelativePath_BareNameOverload()
-    {
-        var path = CompilationService.BuildSpriteReplacementRelativePath("icon_0", (long?)null);
-
-        Assert.Equal("assets/replacements/sprites/icon_0.png", path);
-    }
-
-    [Fact]
-    public void BuildAudioReplacementRelativePath_BareNameOverload()
-    {
-        var path = CompilationService.BuildAudioReplacementRelativePath("sfx_fire", (long?)null);
-
-        Assert.Equal("assets/replacements/audio/sfx_fire.wav", path);
     }
 }
 

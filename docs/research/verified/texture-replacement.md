@@ -4,8 +4,7 @@ Convention-first `Texture2D` replacement is validated end-to-end against live ME
 
 ## Contract
 
-- Modder drops a replacement image at `assets/replacements/textures/<target-name>--<pathId>.<ext>` in a mod project.
-- `<target-name>--<pathId>` identifies a `Texture2D` asset in the Jiangyu asset index.
+- Modder drops a replacement image at `assets/replacements/textures/<target-name>.<ext>` in a mod project. `<target-name>` is the texture's runtime `name` (find it via `jiangyu assets search`).
 - Jiangyu compiles that image into the mod's AssetBundle as a `Texture2D` asset named `<target-name>`.
 - At runtime, the loader finds every loaded game `Texture2D` whose `name` equals `<target-name>` and mutates its pixel data in place. The mutation path:
   1. `Graphics.Blit` the replacement into an sRGB `ARGB32` `RenderTexture` sized to the destination, with mipmap auto-generation matching the destination's chain.
@@ -28,8 +27,8 @@ This breadth is inherent to in-place mutation and is a strict improvement over t
 
 ## Compile-time validation
 
-- The texture target must resolve to exactly one `Texture2D` entry in the asset index by name and pathId (`ResolveReplacementTextureTarget`).
-- The texture's runtime `name` must be globally unique across the index; ambiguous names are rejected at compile time (`ValidateUniqueRuntimeTextureNames`). The loader matches by `texture.name` alone, so ambiguity would corrupt unrelated textures.
+- The texture target must resolve to one or more `Texture2D` entries in the asset index by name (`ResolveReplacementTextureTarget`).
+- When the name matches multiple `Texture2D` entries, the compiler logs a warning listing every instance the replacement will paint and continues. The loader matches by `texture.name` alone, so a single replacement intentionally paints every loaded texture sharing that name. Modders relying on this should verify the warning's listed candidates match their intent.
 
 ## Validation
 
@@ -44,6 +43,6 @@ Full experiment details: [`../investigations/2026-04-18-sprite-audio-runtime-rou
 
 ## Out of scope for this contract
 
-- Sprite replacement for atlas-backed sprites. Covered separately: see [`sprite-replacement.md`](sprite-replacement.md).
+- Sprite replacement (unique-backed and atlas-backed). Covered separately: see [`sprite-replacement.md`](sprite-replacement.md).
 - `AudioClip` replacement. Blocked on an Il2CppInterop `float[]` marshalling bug. See the investigation note above.
 - `Texture` subtypes other than `Texture2D` (e.g. `Texture2DArray`, `Cubemap`, `RenderTexture`). Not currently targeted.

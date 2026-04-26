@@ -94,9 +94,25 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var replacementRoot = Path.Combine(projectDir, "assets", "replacements");
         var additionRoot = Path.Combine(projectDir, "assets", "additions");
         var replacementEntries = DiscoverReplacementMeshEntries(projectDir, replacementRoot, config.GetCachePath(), gameDataPath, assetPipeline);
-        var replacementTextures = DiscoverReplacementTextureEntries(projectDir, replacementRoot, config.GetCachePath());
-        var replacementSprites = DiscoverReplacementSpriteEntries(projectDir, replacementRoot, config.GetCachePath());
-        var replacementAudio = DiscoverReplacementAudioEntries(projectDir, replacementRoot, config.GetCachePath());
+        var replacementTextures = DiscoverReplacementTextureEntries(projectDir, replacementRoot, config.GetCachePath(), _log);
+        var spriteDiscovery = DiscoverReplacementSpriteEntries(projectDir, replacementRoot, config.GetCachePath(), _log);
+        var replacementSprites = spriteDiscovery.UniqueSprites;
+        var replacementAudio = DiscoverReplacementAudioEntries(projectDir, replacementRoot, config.GetCachePath(), _log);
+
+        // Atlas compositing: for atlas-backed sprite replacements, composite the modder's
+        // images into a copy of the original atlas and emit as Texture2D replacements.
+        if (spriteDiscovery.AtlasGroups.Count > 0)
+        {
+            var atlasTextures = AtlasCompositor.Composite(
+                spriteDiscovery.AtlasGroups,
+                replacementTextures,
+                (name, collection, pathId) => LoadAtlasBitmap(assetPipeline, name, collection, pathId, _log),
+                _log);
+            replacementTextures.AddRange(atlasTextures);
+        }
+
+        var totalSpriteCount = replacementSprites.Count + spriteDiscovery.AtlasGroups.Sum(g => g.Replacements.Count);
+
         _log.Info($"  [timing] Discovery: {phaseSw.Elapsed.TotalSeconds:F1}s");
         var replacementModelFiles = replacementEntries
             .Select(entry => entry.SourceFilePath)
@@ -108,7 +124,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             .Concat(additionModelFiles)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var replacementAssetCount = replacementEntries.Count + replacementTextures.Count + replacementSprites.Count + replacementAudio.Count;
+        var replacementAssetCount = replacementEntries.Count + replacementTextures.Count + totalSpriteCount + replacementAudio.Count;
         var totalCompileInputCount = modelFiles.Count + replacementTextures.Count + replacementSprites.Count + replacementAudio.Count;
 
         // Discover KDL template authoring files
@@ -124,7 +140,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         _log.Info($"Compiling {manifest.Name}...");
         _log.Info(
-            $"  {modelFiles.Count} model file(s), {replacementTextures.Count} texture replacement(s), {replacementSprites.Count} sprite replacement(s), {replacementAudio.Count} audio replacement(s), {replacementEntries.Count} replacement mesh target(s)");
+            $"  {modelFiles.Count} model file(s), {replacementTextures.Count} texture replacement(s), {totalSpriteCount} sprite replacement(s), {replacementAudio.Count} audio replacement(s), {replacementEntries.Count} replacement mesh target(s)");
 
         var bundleName = manifest.Name.ToLowerInvariant().Replace(" ", "_");
         var outputDir = Path.Combine(projectDir, "compiled");
@@ -301,28 +317,16 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         => Path.Combine("assets", "replacements", "models", BuildReplacementAlias(targetName, pathId), fileName)
             .Replace(Path.DirectorySeparatorChar, '/');
 
-    public static string BuildTextureReplacementRelativePath(string targetName, long pathId, string extension = ".png")
-        => Path.Combine("assets", "replacements", "textures", $"{BuildModelReplacementAlias(targetName, pathId)}{NormalizeReplacementExtension(extension)}")
+    public static string BuildTextureReplacementRelativePath(string targetName, string extension = ".png")
+        => Path.Combine("assets", "replacements", "textures", $"{targetName}{NormalizeReplacementExtension(extension)}")
             .Replace(Path.DirectorySeparatorChar, '/');
 
-    public static string BuildTextureReplacementRelativePath(string targetName, long? pathId, string extension = ".png")
-        => Path.Combine("assets", "replacements", "textures", $"{BuildReplacementAlias(targetName, pathId)}{NormalizeReplacementExtension(extension)}")
+    public static string BuildSpriteReplacementRelativePath(string targetName, string extension = ".png")
+        => Path.Combine("assets", "replacements", "sprites", $"{targetName}{NormalizeReplacementExtension(extension)}")
             .Replace(Path.DirectorySeparatorChar, '/');
 
-    public static string BuildSpriteReplacementRelativePath(string targetName, long pathId, string extension = ".png")
-        => Path.Combine("assets", "replacements", "sprites", $"{BuildModelReplacementAlias(targetName, pathId)}{NormalizeReplacementExtension(extension)}")
-            .Replace(Path.DirectorySeparatorChar, '/');
-
-    public static string BuildSpriteReplacementRelativePath(string targetName, long? pathId, string extension = ".png")
-        => Path.Combine("assets", "replacements", "sprites", $"{BuildReplacementAlias(targetName, pathId)}{NormalizeReplacementExtension(extension)}")
-            .Replace(Path.DirectorySeparatorChar, '/');
-
-    public static string BuildAudioReplacementRelativePath(string targetName, long pathId, string extension = ".wav")
-        => Path.Combine("assets", "replacements", "audio", $"{BuildModelReplacementAlias(targetName, pathId)}{NormalizeReplacementExtension(extension)}")
-            .Replace(Path.DirectorySeparatorChar, '/');
-
-    public static string BuildAudioReplacementRelativePath(string targetName, long? pathId, string extension = ".wav")
-        => Path.Combine("assets", "replacements", "audio", $"{BuildReplacementAlias(targetName, pathId)}{NormalizeReplacementExtension(extension)}")
+    public static string BuildAudioReplacementRelativePath(string targetName, string extension = ".wav")
+        => Path.Combine("assets", "replacements", "audio", $"{targetName}{NormalizeReplacementExtension(extension)}")
             .Replace(Path.DirectorySeparatorChar, '/');
 
     /// <summary>
@@ -502,7 +506,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             .ThenBy(entry => entry.BundleMeshName, StringComparer.Ordinal)];
     }
 
-    private static List<GlbMeshBundleCompiler.CompiledTexture> DiscoverReplacementTextureEntries(string projectDir, string replacementsRoot, string cachePath)
+    private static List<GlbMeshBundleCompiler.CompiledTexture> DiscoverReplacementTextureEntries(string projectDir, string replacementsRoot, string cachePath, ILogSink log)
     {
         var texturesRoot = Path.Combine(replacementsRoot, "textures");
         if (!Directory.Exists(texturesRoot))
@@ -519,15 +523,8 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var entries = new List<GlbMeshBundleCompiler.CompiledTexture>();
         foreach (var file in files)
         {
-            var alias = Path.GetFileNameWithoutExtension(file);
-            if (!TryParseReplacementAlias(alias, out var targetName, out var targetPathId))
-            {
-                throw new InvalidOperationException(
-                    $"Replacement texture '{Path.GetRelativePath(projectDir, file)}' has an invalid name.");
-            }
-
-            var target = ResolveReplacementTextureTarget(index, alias, targetName, targetPathId);
-            ValidateUniqueRuntimeTextureNames(index, target);
+            var targetName = Path.GetFileNameWithoutExtension(file);
+            var target = ResolveReplacementTextureTarget(index, targetName, targetName, targetPathId: null, log);
 
             entries.Add(new GlbMeshBundleCompiler.CompiledTexture
             {
@@ -553,11 +550,25 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         return [.. entries.OrderBy(entry => entry.Name, StringComparer.Ordinal)];
     }
 
-    private static List<GlbMeshBundleCompiler.ImportedSpriteAsset> DiscoverReplacementSpriteEntries(string projectDir, string replacementsRoot, string cachePath)
+    /// <summary>Result of sprite discovery: unique-backed sprites go through the normal pipeline,
+    /// atlas-backed sprites are grouped for compile-time compositing.</summary>
+    internal sealed class SpriteDiscoveryResult
     {
+        public required List<GlbMeshBundleCompiler.ImportedSpriteAsset> UniqueSprites { get; init; }
+        public required List<AtlasCompositor.AtlasGroup> AtlasGroups { get; init; }
+    }
+
+    private static SpriteDiscoveryResult DiscoverReplacementSpriteEntries(string projectDir, string replacementsRoot, string cachePath, ILogSink log)
+    {
+        var emptyResult = new SpriteDiscoveryResult
+        {
+            UniqueSprites = [],
+            AtlasGroups = [],
+        };
+
         var spritesRoot = Path.Combine(replacementsRoot, "sprites");
         if (!Directory.Exists(spritesRoot))
-            return [];
+            return emptyResult;
 
         var index = LoadAssetIndex(cachePath)
             ?? throw new InvalidOperationException(
@@ -565,36 +576,43 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         var files = CollectAssetFiles(spritesRoot, "*.png", "*.jpg", "*.jpeg");
         if (files.Length == 0)
-            return [];
+            return emptyResult;
 
-        var entries = new List<GlbMeshBundleCompiler.ImportedSpriteAsset>();
+        // Check for duplicate targets first
+        var targetNames = new List<(string Name, string File)>();
+        var uniqueEntries = new List<GlbMeshBundleCompiler.ImportedSpriteAsset>();
+        var atlasReplacements = new Dictionary<(long PathId, string Collection), List<(ReplacementSpriteTarget Target, SpriteBackingClassification Classification, string File)>>();
+
         foreach (var file in files)
         {
-            var alias = Path.GetFileNameWithoutExtension(file);
-            if (!TryParseReplacementAlias(alias, out var targetName, out var targetPathId))
+            var targetName = Path.GetFileNameWithoutExtension(file);
+            var (target, classification) = ResolveAndClassifySpriteTarget(index, targetName, targetName, targetPathId: null, log);
+            targetNames.Add((target.Name, file));
+
+            if (classification.IsAtlasBacked)
             {
-                throw new InvalidOperationException(
-                    $"Replacement sprite '{Path.GetRelativePath(projectDir, file)}' has an invalid name.");
+                var key = (classification.BackingTexturePathId, classification.BackingTextureCollection ?? string.Empty);
+                if (!atlasReplacements.TryGetValue(key, out var list))
+                {
+                    list = [];
+                    atlasReplacements[key] = list;
+                }
+                list.Add((target, classification, file));
             }
-
-            var target = ResolveAndValidateSpriteTarget(index, alias, targetName, targetPathId);
-
-            entries.Add(new GlbMeshBundleCompiler.ImportedSpriteAsset
+            else
             {
-                Name = target.Name,
-                SourceFilePath = file,
-                Extension = Path.GetExtension(file),
-                // Staging filename carries the clean target name so the Unity-side
-                // template (which strips the "sprite_source__" prefix) recovers
-                // exactly the runtime sprite.name the loader will look up. Using
-                // the alias (target--pathId) would bake the pathId into the bundled
-                // sprite.name and break catalog lookups.
-                StagingName = $"sprite_source__{target.Name}",
-            });
+                uniqueEntries.Add(new GlbMeshBundleCompiler.ImportedSpriteAsset
+                {
+                    Name = target.Name,
+                    SourceFilePath = file,
+                    Extension = Path.GetExtension(file),
+                    StagingName = $"sprite_source__{target.Name}",
+                });
+            }
         }
 
-        var duplicateTargets = entries
-            .GroupBy(entry => entry.Name, StringComparer.Ordinal)
+        var duplicateTargets = targetNames
+            .GroupBy(t => t.Name, StringComparer.Ordinal)
             .Where(group => group.Count() > 1)
             .Select(group => group.Key)
             .OrderBy(name => name, StringComparer.Ordinal)
@@ -606,10 +624,42 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 $"Multiple replacement sprite files resolve to the same target name under assets/replacements/sprites: {string.Join(", ", duplicateTargets)}");
         }
 
-        return [.. entries.OrderBy(entry => entry.Name, StringComparer.Ordinal)];
+        // Build atlas groups
+        var atlasGroups = atlasReplacements
+            .Select(kvp =>
+            {
+                var first = kvp.Value[0].Classification;
+                return new AtlasCompositor.AtlasGroup
+                {
+                    AtlasName = first.BackingTextureName ?? $"pathId={first.BackingTexturePathId}",
+                    AtlasPathId = first.BackingTexturePathId,
+                    AtlasCollection = first.BackingTextureCollection ?? string.Empty,
+                    Replacements = kvp.Value
+                        .OrderBy(r => r.Target.Name, StringComparer.Ordinal)
+                        .Select(r => new AtlasCompositor.AtlasSpriteReplacement
+                        {
+                            SpriteName = r.Target.Name,
+                            SourceFilePath = r.File,
+                            TextureRectX = r.Classification.TextureRectX,
+                            TextureRectY = r.Classification.TextureRectY,
+                            TextureRectWidth = r.Classification.TextureRectWidth,
+                            TextureRectHeight = r.Classification.TextureRectHeight,
+                            PackingRotation = r.Classification.PackingRotation,
+                        })
+                        .ToList(),
+                };
+            })
+            .OrderBy(g => g.AtlasName, StringComparer.Ordinal)
+            .ToList();
+
+        return new SpriteDiscoveryResult
+        {
+            UniqueSprites = [.. uniqueEntries.OrderBy(entry => entry.Name, StringComparer.Ordinal)],
+            AtlasGroups = atlasGroups,
+        };
     }
 
-    private static List<GlbMeshBundleCompiler.ImportedAudioAsset> DiscoverReplacementAudioEntries(string projectDir, string replacementsRoot, string cachePath)
+    private static List<GlbMeshBundleCompiler.ImportedAudioAsset> DiscoverReplacementAudioEntries(string projectDir, string replacementsRoot, string cachePath, ILogSink log)
     {
         var audioRoot = Path.Combine(replacementsRoot, "audio");
         if (!Directory.Exists(audioRoot))
@@ -626,14 +676,8 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var entries = new List<GlbMeshBundleCompiler.ImportedAudioAsset>();
         foreach (var file in files)
         {
-            var alias = Path.GetFileNameWithoutExtension(file);
-            if (!TryParseReplacementAlias(alias, out var targetName, out var targetPathId))
-            {
-                throw new InvalidOperationException(
-                    $"Replacement audio '{Path.GetRelativePath(projectDir, file)}' has an invalid name.");
-            }
-
-            var target = ResolveAndValidateAudioTarget(index, alias, targetName, targetPathId, file);
+            var targetName = Path.GetFileNameWithoutExtension(file);
+            var target = ResolveAndValidateAudioTarget(index, targetName, targetName, targetPathId: null, file, log);
 
             entries.Add(new GlbMeshBundleCompiler.ImportedAudioAsset
             {
@@ -666,6 +710,29 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             return null;
 
         return JsonSerializer.Deserialize<AssetIndex>(File.ReadAllText(indexPath));
+    }
+
+    /// <summary>
+    /// Loads the original atlas Texture2D from game data and returns its decoded RGBA32 pixels.
+    /// Used by atlas compositing to obtain the base image that sprite replacements are
+    /// composited into.
+    /// </summary>
+    private static (int Width, int Height, byte[] Rgba)? LoadAtlasBitmap(
+        AssetPipelineService assetPipeline,
+        string atlasName,
+        string collection,
+        long pathId,
+        ILogSink log)
+    {
+        try
+        {
+            return assetPipeline.LoadTexture2dRgba(atlasName, collection, pathId);
+        }
+        catch (Exception ex)
+        {
+            log.Error($"Failed to load atlas texture '{atlasName}' (pathId={pathId}): {ex.Message}");
+            return null;
+        }
     }
 
     private static ReplacementModelTarget ResolveReplacementModelTarget(AssetIndex index, string alias, string targetName, long? targetPathId)
@@ -713,7 +780,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         return new ReplacementModelTarget(alias, finalResolved.Name ?? targetName, finalResolved.PathId, finalResolved.Collection ?? string.Empty, finalResolved.CanonicalPath);
     }
 
-    private static ReplacementTextureTarget ResolveReplacementTextureTarget(AssetIndex index, string alias, string targetName, long? targetPathId)
+    internal static ReplacementTextureTarget ResolveReplacementTextureTarget(AssetIndex index, string alias, string targetName, long? targetPathId, ILogSink log)
     {
         var candidates = index.Assets?
             .Where(entry =>
@@ -729,19 +796,22 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         if (candidates.Count > 1)
         {
-            var matches = candidates
+            var canonicalPaths = candidates
                 .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/Texture2D/{entry.Name}--{entry.PathId}")
-                .OrderBy(path => path, StringComparer.Ordinal);
-            throw new InvalidOperationException(
-                $"Replacement target '{alias}' is ambiguous in the asset index. " +
-                $"Disambiguate with '--pathId', e.g. '{targetName}--<pathId>'. Candidates: {string.Join(", ", matches)}");
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .ToArray();
+            log.Warning(
+                $"Replacement '{targetName}' will paint {candidates.Count} Texture2D instances: {string.Join(", ", canonicalPaths)}");
         }
 
-        var candidate = candidates[0];
-        return new ReplacementTextureTarget(alias, candidate.Name ?? targetName, candidate.PathId, candidate.Collection ?? string.Empty, candidate.CanonicalPath);
+        // The runtime paints every loaded Texture2D whose `name` matches, so the chosen
+        // canonical entry only affects compile-log identity strings. Pick lowest pathId
+        // for deterministic output.
+        var canonical = candidates.OrderBy(entry => entry.PathId).First();
+        return new ReplacementTextureTarget(alias, canonical.Name ?? targetName, canonical.PathId, canonical.Collection ?? string.Empty, canonical.CanonicalPath);
     }
 
-    private static ReplacementAudioTarget ResolveReplacementAudioTarget(AssetIndex index, string alias, string targetName, long? targetPathId)
+    private static ReplacementAudioTarget ResolveReplacementAudioTarget(AssetIndex index, string alias, string targetName, long? targetPathId, ILogSink log)
     {
         var candidates = index.Assets?
             .Where(entry =>
@@ -757,19 +827,21 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         if (candidates.Count > 1)
         {
-            var matches = candidates
+            var canonicalPaths = candidates
                 .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/AudioClip/{entry.Name}--{entry.PathId}")
-                .OrderBy(path => path, StringComparer.Ordinal);
-            throw new InvalidOperationException(
-                $"Replacement target '{alias}' is ambiguous in the asset index. " +
-                $"Disambiguate with '--pathId', e.g. '{targetName}--<pathId>'. Candidates: {string.Join(", ", matches)}");
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .ToArray();
+            log.Warning(
+                $"Replacement '{targetName}' will substitute {candidates.Count} AudioClip instances: {string.Join(", ", canonicalPaths)}");
         }
 
-        var candidate = candidates[0];
-        return new ReplacementAudioTarget(alias, candidate.Name ?? targetName, candidate.PathId, candidate.Collection ?? string.Empty, candidate.CanonicalPath);
+        // Runtime substitution is by `clip.name`, so the chosen canonical only labels
+        // log output. Lowest pathId for deterministic builds.
+        var canonical = candidates.OrderBy(entry => entry.PathId).First();
+        return new ReplacementAudioTarget(alias, canonical.Name ?? targetName, canonical.PathId, canonical.Collection ?? string.Empty, canonical.CanonicalPath);
     }
 
-    private static ReplacementSpriteTarget ResolveReplacementSpriteTarget(AssetIndex index, string alias, string targetName, long? targetPathId)
+    private static ReplacementSpriteTarget ResolveReplacementSpriteTarget(AssetIndex index, string alias, string targetName, long? targetPathId, ILogSink log)
     {
         var candidates = index.Assets?
             .Where(entry =>
@@ -785,16 +857,18 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         if (candidates.Count > 1)
         {
-            var matches = candidates
+            var canonicalPaths = candidates
                 .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/Sprite/{entry.Name}--{entry.PathId}")
-                .OrderBy(path => path, StringComparer.Ordinal);
-            throw new InvalidOperationException(
-                $"Replacement target '{alias}' is ambiguous in the asset index. " +
-                $"Disambiguate with '--pathId', e.g. '{targetName}--<pathId>'. Candidates: {string.Join(", ", matches)}");
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .ToArray();
+            log.Warning(
+                $"Replacement '{targetName}' will paint {candidates.Count} Sprite instances: {string.Join(", ", canonicalPaths)}");
         }
 
-        var candidate = candidates[0];
-        return new ReplacementSpriteTarget(alias, candidate.Name ?? targetName, candidate.PathId, candidate.Collection ?? string.Empty, candidate.CanonicalPath);
+        // Runtime resolution is by `sprite.name`, so the canonical entry is purely a label.
+        // Lowest pathId for deterministic builds.
+        var canonical = candidates.OrderBy(entry => entry.PathId).First();
+        return new ReplacementSpriteTarget(alias, canonical.Name ?? targetName, canonical.PathId, canonical.Collection ?? string.Empty, canonical.CanonicalPath);
     }
 
     private static HashSet<string> GetAmbiguousRuntimeMeshNames(AssetIndex index, IReadOnlyList<string> expectedMeshNames)
@@ -812,56 +886,13 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             .Distinct(StringComparer.Ordinal)];
     }
 
-    private static void ValidateUniqueRuntimeTextureNames(AssetIndex index, ReplacementTextureTarget target)
-    {
-        var matches = index.Assets?
-            .Where(entry =>
-                string.Equals(entry.ClassName, "Texture2D", StringComparison.Ordinal) &&
-                string.Equals(entry.Name, target.Name, StringComparison.Ordinal))
-            .ToList()
-            ?? [];
-
-        if (matches.Count <= 1)
-            return;
-
-        var canonicalPaths = matches
-            .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/Texture2D/{entry.Name}--{entry.PathId}")
-            .OrderBy(path => path, StringComparer.Ordinal);
-
-        throw new InvalidOperationException(
-            $"Replacement target '{target.Alias}' cannot be compiled safely because texture name '{target.Name}' is ambiguous at runtime. " +
-            $"The loader currently matches live textures by texture.name. Ambiguous texture assets: {string.Join(", ", canonicalPaths)}");
-    }
-
-    private static void ValidateUniqueRuntimeSpriteNames(AssetIndex index, ReplacementSpriteTarget target)
-    {
-        var collisions = index.Assets?
-            .Where(entry =>
-                string.Equals(entry.ClassName, "Sprite", StringComparison.Ordinal) &&
-                string.Equals(entry.Name, target.Name, StringComparison.Ordinal) &&
-                entry.PathId != target.PathId)
-            .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/Sprite/{entry.Name}--{entry.PathId}")
-            .OrderBy(path => path, StringComparer.Ordinal)
-            .ToArray()
-            ?? [];
-
-        if (collisions.Length == 0)
-            return;
-
-        throw new InvalidOperationException(
-            $"Replacement sprite target '{target.Alias}' resolves to runtime sprite name '{target.Name}', but that sprite name is ambiguous across indexed assets. " +
-            $"Current target: {target.CanonicalPath ?? $"{target.Collection}/Sprite/{target.Name}--{target.PathId}"}. " +
-            $"Conflicts: {string.Join(", ", collisions)}. " +
-            "Jiangyu currently resolves live sprite replacements by sprite name at runtime, so ambiguous sprite targets must be rejected until a stronger runtime identity exists.");
-    }
-
     /// <summary>
-    /// Rejects sprite targets whose backing Texture2D is shared by more than one indexed Sprite.
-    /// Sprite replacement lands via in-place mutation of the sprite's backing Texture2D (see
-    /// docs/research/verified/sprite-replacement.md); an atlas-backed sprite cannot be
-    /// individually replaced without corrupting every other sprite drawn from the same atlas.
+    /// Classifies whether a sprite target's backing Texture2D is unique (no co-tenants)
+    /// or atlas-backed (shared with other sprites). Returns the classification with the
+    /// backing texture identity and co-tenant count. For atlas-backed sprites, the caller
+    /// routes through compile-time atlas compositing instead of rejecting.
     /// </summary>
-    internal static void ValidateSpriteBackingTextureIsUnique(AssetIndex index, ReplacementSpriteTarget target)
+    internal static SpriteBackingClassification ClassifySpriteBackingTexture(AssetIndex index, ReplacementSpriteTarget target)
     {
         var targetEntry = index.Assets?.FirstOrDefault(entry =>
             string.Equals(entry.ClassName, "Sprite", StringComparison.Ordinal) &&
@@ -869,14 +900,21 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             entry.PathId == target.PathId);
 
         if (targetEntry is null)
-            return;
+            return new SpriteBackingClassification { IsAtlasBacked = false };
 
         if (targetEntry.SpriteBackingTexturePathId is null)
         {
             throw new InvalidOperationException(
                 $"Replacement sprite target '{target.Alias}' is missing backing-texture information in the asset index. " +
-                "Rebuild the index with 'jiangyu assets index' so the compiler can verify that the sprite is not atlas-backed. " +
-                "Sprite replacement now requires backing-texture identity to reject atlas-backed targets safely.");
+                "Rebuild the index with 'jiangyu assets index' so the compiler can verify sprite atlas membership. " +
+                "Sprite replacement now requires backing-texture identity for atlas compositing.");
+        }
+
+        if (targetEntry.SpriteTextureRectWidth is null || targetEntry.SpriteTextureRectHeight is null)
+        {
+            throw new InvalidOperationException(
+                $"Replacement sprite target '{target.Alias}' is missing textureRect metadata in the asset index. " +
+                "Rebuild the index with 'jiangyu assets index' (the index format has been updated to include sprite atlas metadata).");
         }
 
         var backingPathId = targetEntry.SpriteBackingTexturePathId.Value;
@@ -889,64 +927,49 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 string.Equals(entry.SpriteBackingTextureCollection, backingCollection, StringComparison.Ordinal) &&
                 !(entry.PathId == target.PathId &&
                   string.Equals(entry.Collection, target.Collection, StringComparison.Ordinal)))
-            .OrderBy(entry => entry.Name, StringComparer.Ordinal)
-            .ThenBy(entry => entry.PathId)
             .ToList()
             ?? [];
 
-        if (coTenants.Count == 0)
-            return;
-
-        const int previewCount = 5;
-        var previewNames = coTenants
-            .Take(previewCount)
-            .Select(entry => entry.Name ?? $"pathId={entry.PathId}")
-            .ToArray();
-        var preview = string.Join(", ", previewNames);
-        if (coTenants.Count > previewCount)
-            preview += $", and {coTenants.Count - previewCount} more";
-
-        var backingLabel = !string.IsNullOrWhiteSpace(targetEntry.SpriteBackingTextureName)
-            ? $"{targetEntry.SpriteBackingTextureName} (pathId={backingPathId})"
-            : $"pathId={backingPathId}";
-
-        throw new InvalidOperationException(
-            $"Replacement sprite target '{target.Alias}' is backed by Texture2D '{backingLabel}', which is also the backing texture for {coTenants.Count} other indexed Sprite(s): {preview}. " +
-            $"This texture is a shared atlas, so mutating it to replace '{target.Name}' would corrupt the other sprites. " +
-            "Atlas-backed sprites cannot be individually replaced — only sprites backed by a unique Texture2D can be replaced via in-place mutation.");
+        return new SpriteBackingClassification
+        {
+            IsAtlasBacked = coTenants.Count > 0,
+            BackingTexturePathId = backingPathId,
+            BackingTextureCollection = backingCollection,
+            BackingTextureName = targetEntry.SpriteBackingTextureName,
+            CoTenantCount = coTenants.Count,
+            TextureRectX = targetEntry.SpriteTextureRectX!.Value,
+            TextureRectY = targetEntry.SpriteTextureRectY!.Value,
+            TextureRectWidth = targetEntry.SpriteTextureRectWidth!.Value,
+            TextureRectHeight = targetEntry.SpriteTextureRectHeight!.Value,
+            PackingRotation = targetEntry.SpritePackingRotation ?? 0,
+        };
     }
 
-    internal static ReplacementSpriteTarget ResolveAndValidateSpriteTarget(
+    /// <summary>Result of <see cref="ClassifySpriteBackingTexture"/>.</summary>
+    internal sealed class SpriteBackingClassification
+    {
+        public bool IsAtlasBacked { get; init; }
+        public long BackingTexturePathId { get; init; }
+        public string? BackingTextureCollection { get; init; }
+        public string? BackingTextureName { get; init; }
+        public int CoTenantCount { get; init; }
+        public float TextureRectX { get; init; }
+        public float TextureRectY { get; init; }
+        public float TextureRectWidth { get; init; }
+        public float TextureRectHeight { get; init; }
+        public int PackingRotation { get; init; }
+    }
+
+    internal static (ReplacementSpriteTarget Target, SpriteBackingClassification Classification) ResolveAndClassifySpriteTarget(
         AssetIndex index,
         string alias,
         string targetName,
-        long? targetPathId)
+        long? targetPathId,
+        ILogSink log)
     {
-        var target = ResolveReplacementSpriteTarget(index, alias, targetName, targetPathId);
-        ValidateUniqueRuntimeSpriteNames(index, target);
-        ValidateSpriteBackingTextureIsUnique(index, target);
-        return target;
-    }
-
-    private static void ValidateUniqueRuntimeAudioNames(AssetIndex index, ReplacementAudioTarget target)
-    {
-        var matches = index.Assets?
-            .Where(entry =>
-                string.Equals(entry.ClassName, "AudioClip", StringComparison.Ordinal) &&
-                string.Equals(entry.Name, target.Name, StringComparison.Ordinal))
-            .ToList()
-            ?? [];
-
-        if (matches.Count <= 1)
-            return;
-
-        var canonicalPaths = matches
-            .Select(entry => entry.CanonicalPath ?? $"{entry.Collection}/AudioClip/{entry.Name}--{entry.PathId}")
-            .OrderBy(path => path, StringComparer.Ordinal);
-
-        throw new InvalidOperationException(
-            $"Replacement target '{target.Alias}' cannot be compiled safely because audio clip name '{target.Name}' is ambiguous at runtime. " +
-            $"The loader currently matches live audio by clip.name. Ambiguous audio assets: {string.Join(", ", canonicalPaths)}");
+        var target = ResolveReplacementSpriteTarget(index, alias, targetName, targetPathId, log);
+        var classification = ClassifySpriteBackingTexture(index, target);
+        return (target, classification);
     }
 
     /// <summary>
@@ -988,10 +1011,10 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         string alias,
         string targetName,
         long? targetPathId,
-        string filePath)
+        string filePath,
+        ILogSink log)
     {
-        var target = ResolveReplacementAudioTarget(index, alias, targetName, targetPathId);
-        ValidateUniqueRuntimeAudioNames(index, target);
+        var target = ResolveReplacementAudioTarget(index, alias, targetName, targetPathId, log);
         ValidateAudioFileMatchesTarget(index, target, filePath);
         return target;
     }

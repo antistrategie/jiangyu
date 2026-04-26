@@ -11,6 +11,8 @@
     <PackageReference Include="AssetsTools.NET" Version="3.0.4" />
     <PackageReference Include="KdlSharp" Version="1.1.0" />
     <PackageReference Include="SharpGLTF.Core" Version="1.0.6" />
+    <PackageReference Include="StbImageSharp" Version="2.30.15" />
+    <PackageReference Include="StbImageWriteSharp" Version="1.16.7" />
     <PackageReference Include="System.Reflection.MetadataLoadContext" Version="10.0.7" />
   </ItemGroup>
 

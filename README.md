@@ -11,7 +11,7 @@ Jiangyu is a modkit for MENACE.
 - MelonLoader `0.7.2`
 - Unity Editor `6000.0.63f1` (when building Unity-native assets such as AssetBundles)
 
-See [docs/MODDING.md](docs/MODDING.md) for the current modder-facing workflow and path conventions.
+See the [Jiangyu docs site](https://antistrategie.github.io/jiangyu/) for the current modder-facing workflow and path conventions. The site sources live under `site/` (VitePress) and ship via the `pages` GitHub Actions workflow.
 
 ## Jiangyu Development
 

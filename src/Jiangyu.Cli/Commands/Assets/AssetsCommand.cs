@@ -126,20 +126,19 @@ public static class AssetsCommand
                 return 0;
             }
 
-            // Build a (className, name) → count map from the full index so we
-            // can suggest bare names for unique assets and pathId-qualified
-            // names for ambiguous ones. The search result page is capped at 50
-            // rows, so inferring uniqueness from it alone would be unreliable.
+            // Only model targets need pathId disambiguation in the suggested
+            // path; tex/sprite/audio replacements always use the bare name.
+            // PHO and GameObject share a count bucket because they collapse
+            // to the same effective model target.
             var fullIndex = service.LoadIndex();
-            var classNameCounts = new Dictionary<(string, string), int>();
+            var modelNameCounts = new Dictionary<string, int>(StringComparer.Ordinal);
             if (fullIndex?.Assets is not null)
             {
                 foreach (var entry in fullIndex.Assets)
                 {
-                    if (string.IsNullOrWhiteSpace(entry.ClassName) || string.IsNullOrWhiteSpace(entry.Name))
-                        continue;
-                    var key = (entry.ClassName, entry.Name);
-                    classNameCounts[key] = classNameCounts.GetValueOrDefault(key) + 1;
+                    if (string.IsNullOrWhiteSpace(entry.Name)) continue;
+                    if (entry.ClassName != "PrefabHierarchyObject" && entry.ClassName != "GameObject") continue;
+                    modelNameCounts[entry.Name] = modelNameCounts.GetValueOrDefault(entry.Name) + 1;
                 }
             }
 
@@ -164,29 +163,14 @@ public static class AssetsCommand
                 if (string.IsNullOrWhiteSpace(entry.Name))
                     continue;
 
-                // For replaceable asset types, determine whether the name is
-                // unique within its class. Model targets count PHO + GO
-                // together since they collapse to the same effective target.
-                var isUnique = entry.ClassName switch
-                {
-                    "PrefabHierarchyObject" =>
-                        classNameCounts.GetValueOrDefault(("PrefabHierarchyObject", entry.Name)) +
-                        classNameCounts.GetValueOrDefault(("GameObject", entry.Name)) <= 2,
-                    "GameObject" =>
-                        classNameCounts.GetValueOrDefault(("PrefabHierarchyObject", entry.Name)) +
-                        classNameCounts.GetValueOrDefault(("GameObject", entry.Name)) <= 2,
-                    _ when entry.ClassName is not null && entry.Name is not null =>
-                        classNameCounts.GetValueOrDefault((entry.ClassName, entry.Name)) <= 1,
-                    _ => false,
-                };
-                long? suggestedPathId = isUnique ? null : entry.PathId;
-
                 var replacementTarget = entry.ClassName switch
                 {
-                    "PrefabHierarchyObject" => CompilationService.BuildModelReplacementRelativePath(entry.Name!, suggestedPathId),
-                    "Texture2D" => CompilationService.BuildTextureReplacementRelativePath(entry.Name!, suggestedPathId),
-                    "Sprite" => CompilationService.BuildSpriteReplacementRelativePath(entry.Name!, suggestedPathId),
-                    "AudioClip" => CompilationService.BuildAudioReplacementRelativePath(entry.Name!, suggestedPathId),
+                    "PrefabHierarchyObject" => CompilationService.BuildModelReplacementRelativePath(
+                        entry.Name!,
+                        modelNameCounts.GetValueOrDefault(entry.Name) > 2 ? entry.PathId : null),
+                    "Texture2D" => CompilationService.BuildTextureReplacementRelativePath(entry.Name!),
+                    "Sprite" => CompilationService.BuildSpriteReplacementRelativePath(entry.Name!),
+                    "AudioClip" => CompilationService.BuildAudioReplacementRelativePath(entry.Name!),
                     _ => null,
                 };
 
@@ -328,6 +312,7 @@ public static class AssetsCommand
             // Audio is written into a directory; the decoder picks the file extension.
             defaultFileName: null,
             invoke: (service, name, output, collection, pathId) => service.ExportAudio(name, output, collection, pathId) is not null));
+        exportCommand.Add(CreateAtlasExportCommand());
 
         return exportCommand;
     }
@@ -415,6 +400,77 @@ public static class AssetsCommand
             }
 
             return invoke(service, assetName, resolvedOutput, collection, match.PathId) ? 0 : 1;
+        });
+
+        return command;
+    }
+
+    private static Command CreateAtlasExportCommand()
+    {
+        var nameArg = new Argument<string>("name") { Description = "Atlas texture name to export" };
+        var outputOption = new Option<string?>("--output") { Description = "Output file path" };
+        var pathIdOption = new Option<long?>("--path-id") { Description = "Asset path ID (from 'assets search'). Required when the name matches more than one asset." };
+        var collectionOption = new Option<string?>("--collection") { Description = "Asset collection (from 'assets search'). Optional narrowing filter." };
+
+        var command = new Command("atlas", "Export an atlas texture as PNG with sprite outlines")
+        {
+            nameArg,
+            outputOption,
+            pathIdOption,
+            collectionOption
+        };
+
+        command.SetAction((parseResult) =>
+        {
+            var assetName = parseResult.GetRequiredValue(nameArg);
+            var output = parseResult.GetValue(outputOption);
+            var pathIdFilter = parseResult.GetValue(pathIdOption);
+            var collectionFilter = parseResult.GetValue(collectionOption);
+
+            var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+            if (!resolution.Success)
+            {
+                Console.Error.WriteLine(resolution.Error);
+                return 1;
+            }
+
+            var service = resolution.Context!.CreateAssetPipelineService(new ConsoleProgressSink(), new ConsoleLogSink());
+            CachedIndexStatus indexStatus = service.GetIndexStatus();
+            if (!indexStatus.IsCurrent)
+            {
+                Console.Error.WriteLine($"Error: {indexStatus.Reason}");
+                return 1;
+            }
+
+            var candidates = service.FindAssets(assetName, ["Texture2D"], collectionFilter, pathIdFilter);
+            if (candidates.Count == 0)
+            {
+                Console.Error.WriteLine($"Error: no Texture2D named '{assetName}' in the index" +
+                    (pathIdFilter.HasValue ? $" with pathId={pathIdFilter.Value}" : "") +
+                    (collectionFilter is not null ? $" in collection '{collectionFilter}'" : "") +
+                    ".");
+                Console.Error.WriteLine("Run 'jiangyu assets search <name> --type Texture2D' to find available assets.");
+                return 1;
+            }
+
+            if (candidates.Count > 1)
+            {
+                Console.Error.WriteLine($"Error: '{assetName}' matches {candidates.Count} assets. Pass --path-id to pick one:");
+                foreach (var candidate in candidates)
+                    Console.Error.WriteLine($"  {candidate.Name} in {candidate.Collection} [pathId={candidate.PathId}]");
+                return 1;
+            }
+
+            var match = candidates[0];
+            var collection = match.Collection ?? "";
+            Console.WriteLine($"Found in index: {match.Name} ({match.ClassName}) in {collection} [pathId={match.PathId}]");
+
+            var fallback = Path.Combine(service.CachePath, "exports", $"{assetName}-atlas.png");
+            var target = output ?? fallback;
+            if (Directory.Exists(target) || target.EndsWith(Path.DirectorySeparatorChar) || target.EndsWith(Path.AltDirectorySeparatorChar))
+                target = Path.Combine(target, $"{assetName}-atlas.png");
+
+            return service.ExportAtlas(assetName, target, collection, match.PathId) ? 0 : 1;
         });
 
         return command;

@@ -4,8 +4,7 @@
 
 ## Contract
 
-- Modder drops a replacement audio file at `assets/replacements/audio/<target-name>--<pathId>.<ext>` in a mod project. Supported extensions: `.wav`, `.ogg`, `.mp3`.
-- `<target-name>--<pathId>` identifies an `AudioClip` asset in the Jiangyu asset index.
+- Modder drops a replacement audio file at `assets/replacements/audio/<target-name>.<ext>` in a mod project. `<target-name>` is the clip's runtime `name` (find it via `jiangyu assets search`). Supported extensions: `.wav`, `.ogg`, `.mp3`.
 - Jiangyu compiles the file into the mod's AssetBundle as an `AudioClip` asset named `<target-name>`.
 - At runtime, the loader installs Harmony prefixes on `AudioSource`'s six play entry points (`Play`, `PlayOneShot(AudioClip)`, `PlayOneShot(AudioClip, float)`, `PlayDelayed`, `PlayScheduled`, and the static `PlayClipAtPoint`). Each prefix inspects the clip about to play — either the `AudioClip` argument or the `AudioSource.clip` field — and if its `.name` matches a registered replacement target, substitutes the modder's clip before the original method proceeds.
 
@@ -34,8 +33,8 @@ Verified 2026-04-18 with `RedSoldierTest`'s `button_click_01` replacement (880 H
 
 ## Compile-time validation
 
-- Target resolution: the `<pathId>` must resolve to exactly one `AudioClip` entry in the asset index (`ResolveReplacementAudioTarget`).
-- Runtime name uniqueness: ambiguous target names are rejected by `ValidateUniqueRuntimeAudioNames`. The loader matches by `clip.name` at runtime, so ambiguous names would silently replace the wrong clip.
+- Target resolution: the name must resolve to one or more `AudioClip` entries in the asset index (`ResolveReplacementAudioTarget`).
+- When the name matches multiple `AudioClip` entries, the compiler logs a warning listing every instance the replacement will substitute and continues. The Harmony prefixes match by `clip.name`, so a single replacement intentionally substitutes every clip sharing that name. Modders relying on this should verify the warning's listed candidates match their intent.
 
 Sample-rate and channel-count matching are **not** currently enforced at compile time. Unity resamples a replacement clip to the target's mixer settings automatically, but a mismatch can audibly pitch-shift the sound. Modders should match the target's frequency and channel count. Check the target's values via `jiangyu assets search <name> --type AudioClip` (target metadata is recorded in the asset index).
 

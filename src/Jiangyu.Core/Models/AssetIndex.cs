@@ -44,6 +44,33 @@ public sealed class AssetEntry
     [JsonPropertyName("spriteBackingTextureName")]
     public string? SpriteBackingTextureName { get; set; }
 
+    /// <summary>
+    /// For Sprite entries, the atlas-space rectangle (x, y, width, height in pixels) that
+    /// defines where this sprite's pixel data lives inside the backing Texture2D. Used by
+    /// compile-time atlas compositing to blit modder images into the correct region.
+    /// Coordinates follow Unity conventions: origin at bottom-left of the texture.
+    /// </summary>
+    [JsonPropertyName("spriteTextureRectX")]
+    public float? SpriteTextureRectX { get; set; }
+
+    [JsonPropertyName("spriteTextureRectY")]
+    public float? SpriteTextureRectY { get; set; }
+
+    [JsonPropertyName("spriteTextureRectWidth")]
+    public float? SpriteTextureRectWidth { get; set; }
+
+    [JsonPropertyName("spriteTextureRectHeight")]
+    public float? SpriteTextureRectHeight { get; set; }
+
+    /// <summary>
+    /// Raw <c>SpritePackingRotation</c> enum value extracted from the sprite's
+    /// <c>SettingsRaw</c> field. Non-zero means the sprite region is stored rotated
+    /// or flipped in the atlas; the compiler must apply the matching transform to the
+    /// modder's image before compositing.
+    /// </summary>
+    [JsonPropertyName("spritePackingRotation")]
+    public int? SpritePackingRotation { get; set; }
+
     [JsonPropertyName("audioFrequency")]
     public int? AudioFrequency { get; set; }
 

@@ -10,6 +10,7 @@ import {
   buildNameUniquenessMap,
   buildReplacementPath,
   classifyAsset,
+  countAssetInstances,
   isAssetNameUnique,
   isAudioClip,
   isSprite,
@@ -851,6 +852,13 @@ function AssetDetails({
 
   const unique = isAssetNameUnique(focused, nameUniqueness);
   const replacementPath = buildReplacementPath(focused, unique);
+  const instanceCount = countAssetInstances(focused, nameUniqueness);
+  const showAffects =
+    !unique &&
+    instanceCount > 1 &&
+    (focused.className === "Texture2D" ||
+      focused.className === "Sprite" ||
+      focused.className === "AudioClip");
 
   return (
     <>
@@ -940,7 +948,16 @@ function AssetDetails({
           {isSprite(focused) && focused.spriteBackingTextureName && (
             <MetaRow label="Atlas" value={focused.spriteBackingTextureName} />
           )}
+          {isSprite(focused) &&
+            focused.spriteTextureRectWidth != null &&
+            focused.spriteTextureRectHeight != null && (
+              <MetaRow
+                label="Rect"
+                value={`${String(Math.round(focused.spriteTextureRectWidth))} \u00d7 ${String(Math.round(focused.spriteTextureRectHeight))} px`}
+              />
+            )}
           {replacementPath != null && <MetaRow label="Replace" value={replacementPath} />}
+          {showAffects && <MetaRow label="Affects" value={`${String(instanceCount)} instances`} />}
         </MetaBlock>
         {exportProgress && exporting && exportProgress.total > 1 && (
           <div className={styles.exportProgress}>

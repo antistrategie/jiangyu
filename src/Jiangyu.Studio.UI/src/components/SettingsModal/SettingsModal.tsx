@@ -511,6 +511,7 @@ function PathRow({ label, hint, path, missingIcon, onChange }: PathRowProps) {
 // no tag has been cut yet.
 const STUDIO_VERSION = __STUDIO_VERSION__;
 const REPO_URL = "https://github.com/antistrategie/jiangyu";
+const DOCS_URL = "https://antistrategie.github.io/jiangyu/";
 
 interface Credit {
   readonly name: string;
@@ -588,6 +589,19 @@ function AboutSection() {
           }}
         >
           {REPO_URL}
+        </button>
+      </Field>
+      <Field label="Documentation">
+        <button
+          type="button"
+          className={styles.repoLink}
+          onClick={() => {
+            void rpcCall<null>("openExternal", { url: DOCS_URL }).catch((err: unknown) => {
+              console.error("[Settings] openExternal failed:", err);
+            });
+          }}
+        >
+          {DOCS_URL}
         </button>
       </Field>
       <SectionHeader title="Credits · 致谢" />

@@ -1,3 +1,4 @@
+using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Compile;
 using Jiangyu.Core.Models;
 
@@ -13,7 +14,7 @@ public class AudioTargetValidationTests
 
         try
         {
-            var target = CompilationService.ResolveAndValidateAudioTarget(index, "button_click_01--15854", "button_click_01", 15854, wavPath);
+            var target = CompilationService.ResolveAndValidateAudioTarget(index, "button_click_01", "button_click_01", 15854, wavPath, NullLogSink.Instance);
 
             Assert.Equal("button_click_01", target.Name);
             Assert.Equal(15854, target.PathId);
@@ -33,7 +34,7 @@ public class AudioTargetValidationTests
         try
         {
             var ex = Assert.Throws<InvalidOperationException>(() =>
-                CompilationService.ResolveAndValidateAudioTarget(index, "button_click_01--15854", "button_click_01", 15854, wavPath));
+                CompilationService.ResolveAndValidateAudioTarget(index, "button_click_01", "button_click_01", 15854, wavPath, NullLogSink.Instance));
 
             Assert.Contains("44100Hz", ex.Message);
             Assert.Contains("48000Hz", ex.Message);
@@ -54,7 +55,7 @@ public class AudioTargetValidationTests
         try
         {
             var ex = Assert.Throws<InvalidOperationException>(() =>
-                CompilationService.ResolveAndValidateAudioTarget(index, "button_click_01--15854", "button_click_01", 15854, wavPath));
+                CompilationService.ResolveAndValidateAudioTarget(index, "button_click_01", "button_click_01", 15854, wavPath, NullLogSink.Instance));
 
             Assert.Contains("1ch", ex.Message);
             Assert.Contains("2ch", ex.Message);
@@ -75,7 +76,7 @@ public class AudioTargetValidationTests
 
         try
         {
-            var target = CompilationService.ResolveAndValidateAudioTarget(index, "button_click_01--15854", "button_click_01", 15854, oggPath);
+            var target = CompilationService.ResolveAndValidateAudioTarget(index, "button_click_01", "button_click_01", 15854, oggPath, NullLogSink.Instance);
 
             Assert.Equal("button_click_01", target.Name);
         }
@@ -106,7 +107,7 @@ public class AudioTargetValidationTests
 
         try
         {
-            var target = CompilationService.ResolveAndValidateAudioTarget(index, "button_click_01--15854", "button_click_01", 15854, wavPath);
+            var target = CompilationService.ResolveAndValidateAudioTarget(index, "button_click_01", "button_click_01", 15854, wavPath, NullLogSink.Instance);
 
             Assert.Equal("button_click_01", target.Name);
         }

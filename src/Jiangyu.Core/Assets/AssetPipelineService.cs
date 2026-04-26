@@ -40,7 +40,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
     private const string ManifestFileName = "index-manifest.json";
     private const string PreviewDirName = "previews";
     private const int ThumbnailMaxDimension = 256;
-    internal const int CurrentFormatVersion = 2;
+    internal const int CurrentFormatVersion = 3;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -433,6 +433,26 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
     }
 
     /// <summary>
+    /// Loads the indexed Texture2D asset and decodes it to RGBA32 pixel data.
+    /// Used by compile-time atlas compositing to obtain the original atlas image.
+    /// </summary>
+    public (int Width, int Height, byte[] Rgba)? LoadTexture2dRgba(string assetName, string collection, long pathId)
+    {
+        (int Width, int Height, byte[] Rgba)? result = null;
+        ExportAssetFromIndexed<ITexture2D>(assetName, collection, pathId, "Texture2D", (texture) =>
+        {
+            if (!TextureConverter.TryConvertToBitmap(texture, out DirectBitmap bitmap) || bitmap.IsEmpty)
+            {
+                _log.Error($"Failed to decode Texture2D '{texture.Name}'.");
+                return false;
+            }
+            result = (bitmap.Width, bitmap.Height, bitmap.ToRgba32());
+            return true;
+        });
+        return result;
+    }
+
+    /// <summary>
     /// Decodes the indexed Sprite asset to a PNG at <paramref name="outputFilePath"/>. Produces
     /// the sprite's framed rect (not the full atlas backing texture); atlas-backed sprites still
     /// decode to just their own region.
@@ -486,6 +506,137 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
             return true;
         });
         return success ? writtenPath : null;
+    }
+
+    /// <summary>
+    /// Exports the atlas Texture2D as a PNG with coloured sprite-region outlines drawn over it,
+    /// plus a companion legend file mapping outline colours to sprite names and rects. Intended
+    /// for modders who want to see which sprite occupies which region of the atlas.
+    /// </summary>
+    public bool ExportAtlas(string atlasName, string outputFilePath, string collection, long pathId)
+    {
+        return ExportAssetFromIndexed<ITexture2D>(atlasName, collection, pathId, "Texture2D", (texture) =>
+        {
+            if (!TextureConverter.TryConvertToBitmap(texture, out DirectBitmap bitmap) || bitmap.IsEmpty)
+            {
+                _log.Error($"Failed to decode Texture2D '{texture.Name}'.");
+                return false;
+            }
+
+            var rgba = bitmap.ToRgba32();
+            int width = bitmap.Width;
+            int height = bitmap.Height;
+
+            var index = LoadIndex();
+            var sprites = index?.Assets?
+                .Where(a =>
+                    string.Equals(a.ClassName, "Sprite", StringComparison.Ordinal) &&
+                    a.SpriteBackingTexturePathId == pathId &&
+                    string.Equals(a.SpriteBackingTextureCollection, collection, StringComparison.Ordinal) &&
+                    a.SpriteTextureRectWidth.HasValue &&
+                    a.SpriteTextureRectHeight.HasValue)
+                .OrderBy(a => a.Name, StringComparer.Ordinal)
+                .ToList()
+                ?? [];
+
+            if (sprites.Count == 0)
+            {
+                _log.Info("No sprites reference this texture; exporting plain atlas.");
+            }
+
+            // Distinct palette for outlines, cycling if there are more sprites than colours.
+            ReadOnlySpan<(byte R, byte G, byte B)> palette =
+            [
+                (255,  50,  50),  // red
+                ( 50, 200,  50),  // green
+                ( 50, 100, 255),  // blue
+                (255, 200,  50),  // yellow
+                (255,  50, 200),  // magenta
+                ( 50, 220, 220),  // cyan
+                (255, 140,  50),  // orange
+                (180,  50, 255),  // purple
+            ];
+
+            var legendLines = new List<string> { $"Atlas: {atlasName} ({width} x {height})", "" };
+
+            for (int i = 0; i < sprites.Count; i++)
+            {
+                var sprite = sprites[i];
+                var (cr, cg, cb) = palette[i % palette.Length];
+
+                int rx = (int)Math.Round(sprite.SpriteTextureRectX ?? 0);
+                int ry = (int)Math.Round(sprite.SpriteTextureRectY ?? 0);
+                int rw = (int)Math.Round(sprite.SpriteTextureRectWidth ?? 0);
+                int rh = (int)Math.Round(sprite.SpriteTextureRectHeight ?? 0);
+
+                // Unity textureRect: bottom-left origin. RGBA buffer: top-left origin.
+                int topLeftY = height - ry - rh;
+                DrawRectOutline(rgba, width, height, rx, topLeftY, rw, rh, cr, cg, cb);
+
+                legendLines.Add($"  [{i + 1}] {sprite.Name ?? "(unnamed)"}  rect=({rx}, {ry}, {rw}, {rh})  colour=#{cr:X2}{cg:X2}{cb:X2}");
+            }
+
+            if (sprites.Count > 0)
+            {
+                legendLines.Add("");
+                legendLines.Add($"{sprites.Count} sprite(s) outlined.");
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(outputFilePath)!);
+
+            using (var stream = File.Create(outputFilePath))
+            {
+                var writer = new StbImageWriteSharp.ImageWriter();
+                writer.WritePng(rgba, width, height, StbImageWriteSharp.ColorComponents.RedGreenBlueAlpha, stream);
+            }
+
+            var legendPath = Path.ChangeExtension(outputFilePath, ".txt");
+            File.WriteAllLines(legendPath, legendLines);
+
+            _log.Info($"  -> {outputFilePath} ({width}x{height}, {sprites.Count} sprite outlines)");
+            _log.Info($"  -> {legendPath} (legend)");
+            return true;
+        });
+    }
+
+    /// <summary>
+    /// Draws a 2px outlined rectangle into an RGBA buffer (top-left origin). The outer ring is
+    /// drawn in black for contrast, the inner ring in the specified colour.
+    /// </summary>
+    private static void DrawRectOutline(byte[] rgba, int imgWidth, int imgHeight,
+        int x, int y, int w, int h, byte r, byte g, byte b)
+    {
+        // Outer ring (black, 1px)
+        DrawHollowRect(rgba, imgWidth, imgHeight, x, y, w, h, 0, 0, 0, 255);
+        // Inner ring (colour, 1px inset)
+        if (w > 2 && h > 2)
+            DrawHollowRect(rgba, imgWidth, imgHeight, x + 1, y + 1, w - 2, h - 2, r, g, b, 255);
+    }
+
+    private static void DrawHollowRect(byte[] rgba, int imgWidth, int imgHeight,
+        int x, int y, int w, int h, byte r, byte g, byte b, byte a)
+    {
+        for (int dx = 0; dx < w; dx++)
+        {
+            SetPixel(rgba, imgWidth, imgHeight, x + dx, y, r, g, b, a);
+            SetPixel(rgba, imgWidth, imgHeight, x + dx, y + h - 1, r, g, b, a);
+        }
+        for (int dy = 0; dy < h; dy++)
+        {
+            SetPixel(rgba, imgWidth, imgHeight, x, y + dy, r, g, b, a);
+            SetPixel(rgba, imgWidth, imgHeight, x + w - 1, y + dy, r, g, b, a);
+        }
+    }
+
+    private static void SetPixel(byte[] rgba, int imgWidth, int imgHeight,
+        int px, int py, byte r, byte g, byte b, byte a)
+    {
+        if (px < 0 || px >= imgWidth || py < 0 || py >= imgHeight) return;
+        int offset = (py * imgWidth + px) * 4;
+        rgba[offset] = r;
+        rgba[offset + 1] = g;
+        rgba[offset + 2] = b;
+        rgba[offset + 3] = a;
     }
 
     private bool ExportAssetFromIndexed<T>(
@@ -1323,6 +1474,8 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
                         entry.SpriteBackingTextureCollection = backing.Collection.Name;
                         entry.SpriteBackingTextureName = backing.GetBestName();
                     }
+
+                    PopulateSpriteAtlasMetadata(sprite, entry);
                 }
                 else if (asset is IAudioClip audioClip)
                 {
@@ -1394,6 +1547,36 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
             return null;
 
         return atlasData.Texture.TryGetAsset(atlas.Collection);
+    }
+
+    /// <summary>
+    /// Extracts the sprite's atlas-space textureRect and packing rotation from either the
+    /// SpriteAtlas RenderDataMap (for atlas-packed sprites) or the sprite's own RenderData
+    /// (for standalone sprites). Populates the corresponding <see cref="AssetEntry"/> fields.
+    /// </summary>
+    private static void PopulateSpriteAtlasMetadata(ISprite sprite, AssetEntry entry)
+    {
+        var atlas = sprite.SpriteAtlasP;
+        if (atlas is not null && sprite.Has_RenderDataKey()
+            && atlas.RenderDataMap.TryGetValue(sprite.RenderDataKey, out var atlasData))
+        {
+            var rect = atlasData.TextureRect;
+            entry.SpriteTextureRectX = rect.X;
+            entry.SpriteTextureRectY = rect.Y;
+            entry.SpriteTextureRectWidth = rect.Width;
+            entry.SpriteTextureRectHeight = rect.Height;
+            entry.SpritePackingRotation = (int)(atlasData.SettingsRaw >> 2 & 0xF);
+        }
+        else
+        {
+            var rd = sprite.RD;
+            var rect = rd.TextureRect;
+            entry.SpriteTextureRectX = rect.X;
+            entry.SpriteTextureRectY = rect.Y;
+            entry.SpriteTextureRectWidth = rect.Width;
+            entry.SpriteTextureRectHeight = rect.Height;
+            entry.SpritePackingRotation = (int)(rd.SettingsRaw >> 2 & 0xF);
+        }
     }
 
     private static void RunProcessors(GameData gameData)
