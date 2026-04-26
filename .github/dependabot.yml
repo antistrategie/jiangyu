@@ -28,6 +28,11 @@ updates:
       - dependency-name: "ZstdSharp.Port"
       - dependency-name: "SourceGenerator.Foundations"
       - dependency-name: "oqo0.SwaggerThemes"
+      # Pinned to 8.0.5 — net6.0 is the last version with a net6.0 target.
+      # The Loader runs on MelonLoader's net6.0 runtime. Newer versions
+      # pull in Microsoft.Bcl.AsyncInterfaces net10-only and break ILRepack.
+      - dependency-name: "System.Text.Json"
+      - dependency-name: "System.Text.Encodings.Web"
     groups:
       dotnet:
         patterns:
