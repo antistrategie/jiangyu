@@ -1,4 +1,5 @@
 import { defineConfig } from "vitepress";
+import kdlGrammar from "./grammars/kdl.tmLanguage.json" with { type: "json" };
 
 export default defineConfig({
   title: "Jiangyu",
@@ -8,9 +9,29 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
 
+  markdown: {
+    languages: [kdlGrammar as never],
+  },
+
   head: [
-    ["link", { rel: "icon", type: "image/png", sizes: "32x32", href: "/jiangyu/favicon-32.png" }],
-    ["link", { rel: "icon", type: "image/png", sizes: "144x144", href: "/jiangyu/favicon.png" }],
+    [
+      "link",
+      {
+        rel: "icon",
+        type: "image/png",
+        sizes: "32x32",
+        href: "/jiangyu/favicon-32.png",
+      },
+    ],
+    [
+      "link",
+      {
+        rel: "icon",
+        type: "image/png",
+        sizes: "144x144",
+        href: "/jiangyu/favicon.png",
+      },
+    ],
   ],
 
   themeConfig: {
@@ -24,7 +45,7 @@ export default defineConfig({
       {
         text: "Start here",
         items: [
-          { text: "Introduction", link: "/" },
+          { text: "What is Jiangyu?", link: "/what-is-jiangyu" },
           { text: "Getting started", link: "/getting-started" },
         ],
       },
@@ -32,7 +53,6 @@ export default defineConfig({
         text: "Reference",
         items: [
           { text: "Studio", link: "/reference/studio" },
-          { text: "Manifest (jiangyu.json)", link: "/reference/manifest" },
           {
             text: "Replacements",
             collapsed: false,
@@ -44,6 +64,7 @@ export default defineConfig({
             ],
           },
           { text: "Templates (KDL)", link: "/reference/templates" },
+          { text: "Manifest (jiangyu.json)", link: "/reference/manifest" },
           { text: "CLI", link: "/reference/cli" },
         ],
       },

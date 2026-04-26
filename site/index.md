@@ -4,9 +4,12 @@ layout: home
 hero:
   name: Jiangyu
   text: Modkit for MENACE
-  tagline: Mods as files. Replace assets by name, patch templates with KDL, compile in Studio.
+  tagline: "A general-purpose modkit: asset replacements, template patches, visual editor."
   actions:
     - theme: brand
+      text: What is Jiangyu?
+      link: /what-is-jiangyu
+    - theme: alt
       text: Get started
       link: /getting-started
     - theme: alt

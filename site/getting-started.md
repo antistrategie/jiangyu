@@ -12,8 +12,12 @@ You need:
     - [`Jiangyu.Loader.dll`](https://github.com/antistrategie/jiangyu/releases/latest/download/Jiangyu.Loader.dll), the in-game loader.
     - **Studio** for your platform: [Windows](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-studio-win-x64.zip) or [Linux](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-studio-linux-x64.zip).
     - **CLI** (optional, for scripting): [Windows](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-cli-win-x64.zip) or [Linux](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-cli-linux-x64.zip).
-- **Unity Editor** (optional). Required only when you compile asset replacements (textures, sprites, models, audio). Template-only mods don't need it. Install via [Unity Hub](https://unity.com/download). Jiangyu expects 6000.0.72f1, which you download from the [Unity archive](https://unity.com/releases/editor/archive) and add to Hub. Studio shows the exact version when you set its path. If the version here differs, trust Studio. Jiangyu auto-detects MENACE's Unity version and requires editor updates when MENACE updates its Unity version.
+- **Unity Editor** (optional). Required for asset replacements (textures, sprites, models, audio); template-only mods don't need it. Install via [Unity Hub](https://unity.com/download), download `6000.0.72f1` from the [Unity archive](https://unity.com/releases/editor/archive), and add it to Hub.
 - **An image editor** (anything that exports PNG: GIMP, Photoshop, Krita).
+
+::: tip Unity version
+Studio shows the exact version Jiangyu expects once its path is set; trust Studio over the docs if they differ. The expected version tracks MENACE's Unity build, so an editor update may be needed when MENACE updates.
+:::
 
 ## Install the Jiangyu Loader
 
