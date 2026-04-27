@@ -110,6 +110,12 @@ public static partial class RpcDispatcher
     private static bool IsStrictDescendantPath(string ancestor, string descendant)
         => descendant.StartsWith(ancestor + Path.DirectorySeparatorChar, StringComparison.Ordinal);
 
+    // The UI's path utilities and Monaco model URIs expect forward slashes on
+    // every platform. Native APIs return backslashes on Windows, so normalise
+    // at the host boundary before sending paths to the frontend.
+    internal static string NormaliseSeparators(string path)
+        => path.Replace(Path.DirectorySeparatorChar, '/');
+
     // Defence-in-depth: filesystem ops must target paths inside the currently open
     // project. Today the frontend is trusted and would never send paths outside,
     // but a malicious mod rendering into a shared surface or a bug in the editor
@@ -234,7 +240,7 @@ public static partial class RpcDispatcher
             return JsonSerializer.SerializeToElement<string?>(null);
 
         OpenProject(window, path);
-        return JsonSerializer.SerializeToElement(path);
+        return JsonSerializer.SerializeToElement(NormaliseSeparators(path));
     }
 
     private static JsonElement HandleOpenProject(IInfiniFrameWindow window, JsonElement? parameters)
@@ -244,7 +250,7 @@ public static partial class RpcDispatcher
             throw new ArgumentException($"Directory not found: {path}");
 
         OpenProject(window, path);
-        return JsonSerializer.SerializeToElement(path);
+        return JsonSerializer.SerializeToElement(NormaliseSeparators(path));
     }
 
     private static void OpenProject(IInfiniFrameWindow window, string path)
@@ -276,7 +282,7 @@ public static partial class RpcDispatcher
         ProjectScaffold.InitAsync(projectDir).GetAwaiter().GetResult();
 
         OpenProject(window, projectDir);
-        return JsonSerializer.SerializeToElement(projectDir);
+        return JsonSerializer.SerializeToElement(NormaliseSeparators(projectDir));
     }
 
     /// <summary>
@@ -344,12 +350,12 @@ public static partial class RpcDispatcher
             var name = Path.GetFileName(dir);
             if (name == ".git")
                 continue;
-            entries.Add(new FileEntry { Name = name, Path = dir, IsDirectory = true });
+            entries.Add(new FileEntry { Name = name, Path = NormaliseSeparators(dir), IsDirectory = true });
         }
 
         foreach (var file in Directory.GetFiles(path).Order())
         {
-            entries.Add(new FileEntry { Name = Path.GetFileName(file), Path = file, IsDirectory = false });
+            entries.Add(new FileEntry { Name = Path.GetFileName(file), Path = NormaliseSeparators(file), IsDirectory = false });
         }
 
         var ignored = GetIgnoredSet(path, entries);

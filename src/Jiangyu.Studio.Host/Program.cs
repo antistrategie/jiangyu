@@ -16,11 +16,16 @@ public static class Program
         // In dev mode, point the webview at the Vite dev server for HMR.
         var devUrl = Environment.GetEnvironmentVariable("JIANGYU_DEV_URL");
 
-        // In production, bind to a random free loopback port so the app
-        // window is the only practical consumer.
+        // In production, prefer a stable loopback port so the WebView's origin
+        // (scheme + host + port) is the same across launches. localStorage is
+        // origin-scoped, so a random port would wipe recent projects, sidebar
+        // width, per-project layouts and pane windows on every relaunch. Falls
+        // back to a random port if the preferred one is taken (e.g. a second
+        // instance is already running).
         if (string.IsNullOrEmpty(devUrl))
         {
-            var port = FindFreePort();
+            const int preferredPort = 41697;
+            var port = IsPortAvailable(preferredPort) ? preferredPort : FindFreePort();
             Environment.SetEnvironmentVariable("ASPNETCORE_URLS", $"http://127.0.0.1:{port}");
             devUrl = $"http://127.0.0.1:{port}";
         }
@@ -60,5 +65,20 @@ public static class Program
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
         return port;
+    }
+
+    private static bool IsPortAvailable(int port)
+    {
+        try
+        {
+            var listener = new TcpListener(IPAddress.Loopback, port);
+            listener.Start();
+            listener.Stop();
+            return true;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
     }
 }

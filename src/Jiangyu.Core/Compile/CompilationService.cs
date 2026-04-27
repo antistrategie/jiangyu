@@ -84,15 +84,22 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             return Fail(versionValidation.ErrorMessage ?? "Unity version validation failed.");
 
         var assetPipeline = new AssetPipelineService(gameDataPath, config.GetCachePath(), _progress, _log);
-        var assetIndexStatus = assetPipeline.GetIndexStatus();
-        if (!assetIndexStatus.IsCurrent)
-            return Fail(assetIndexStatus.Reason ?? "Asset index is missing or stale. Run 'jiangyu assets index' first.");
-
-        _log.Info($"  [timing] Setup/validation: {phaseSw.Elapsed.TotalSeconds:F1}s");
-        phaseSw.Restart();
 
         var replacementRoot = Path.Combine(projectDir, "assets", "replacements");
         var additionRoot = Path.Combine(projectDir, "assets", "additions");
+
+        // The asset index is only consulted when resolving replacement/addition
+        // targets. Template-only mods and empty projects don't need it, so don't
+        // force the modder to build it just to compile.
+        if (HasAnyAssetSources(replacementRoot, additionRoot))
+        {
+            var assetIndexStatus = assetPipeline.GetIndexStatus();
+            if (!assetIndexStatus.IsCurrent)
+                return Fail(assetIndexStatus.Reason ?? "Asset index is missing or stale. Run 'jiangyu assets index' first.");
+        }
+
+        _log.Info($"  [timing] Setup/validation: {phaseSw.Elapsed.TotalSeconds:F1}s");
+        phaseSw.Restart();
         var replacementEntries = DiscoverReplacementMeshEntries(projectDir, replacementRoot, config.GetCachePath(), gameDataPath, assetPipeline);
         var replacementTextures = DiscoverReplacementTextureEntries(projectDir, replacementRoot, config.GetCachePath(), _log);
         var spriteDiscovery = DiscoverReplacementSpriteEntries(projectDir, replacementRoot, config.GetCachePath(), _log);
@@ -370,6 +377,17 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             return string.Empty;
 
         return extension.StartsWith('.') ? extension : $".{extension}";
+    }
+
+    internal static bool HasAnyAssetSources(string replacementRoot, string additionRoot)
+    {
+        return DirectoryHasAnyFile(replacementRoot) || DirectoryHasAnyFile(additionRoot);
+    }
+
+    private static bool DirectoryHasAnyFile(string path)
+    {
+        return Directory.Exists(path)
+            && Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).Any();
     }
 
     private List<GlbMeshBundleCompiler.MeshSourceEntry> DiscoverReplacementMeshEntries(string projectDir, string replacementsRoot, string cachePath, string gameDataPath, AssetPipelineService assetPipeline)

@@ -528,3 +528,70 @@ public class ReplacementMeshPrimitiveContractTests
         scene.ToGltf2().SaveGLTF(path);
     }
 }
+
+public class HasAnyAssetSourcesTests : IDisposable
+{
+    private readonly string _root = Path.Combine(Path.GetTempPath(), $"jiangyu-asset-sources-{Guid.NewGuid():N}");
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_root))
+            Directory.Delete(_root, recursive: true);
+    }
+
+    [Fact]
+    public void ReturnsFalse_WhenNeitherDirectoryExists()
+    {
+        var replacementRoot = Path.Combine(_root, "assets", "replacements");
+        var additionRoot = Path.Combine(_root, "assets", "additions");
+
+        Assert.False(CompilationService.HasAnyAssetSources(replacementRoot, additionRoot));
+    }
+
+    [Fact]
+    public void ReturnsFalse_WhenBothDirectoriesExistButAreEmpty()
+    {
+        var replacementRoot = Path.Combine(_root, "assets", "replacements");
+        var additionRoot = Path.Combine(_root, "assets", "additions");
+        Directory.CreateDirectory(replacementRoot);
+        Directory.CreateDirectory(additionRoot);
+
+        Assert.False(CompilationService.HasAnyAssetSources(replacementRoot, additionRoot));
+    }
+
+    [Fact]
+    public void ReturnsFalse_WhenOnlyEmptySubdirectoriesExist()
+    {
+        // Scaffolding tools may pre-create assets/replacements/textures/ etc.
+        // Empty subdirectories must not trigger the asset index requirement.
+        var replacementRoot = Path.Combine(_root, "assets", "replacements");
+        Directory.CreateDirectory(Path.Combine(replacementRoot, "textures"));
+        Directory.CreateDirectory(Path.Combine(replacementRoot, "models"));
+        var additionRoot = Path.Combine(_root, "assets", "additions");
+
+        Assert.False(CompilationService.HasAnyAssetSources(replacementRoot, additionRoot));
+    }
+
+    [Fact]
+    public void ReturnsTrue_WhenReplacementRootHasNestedFile()
+    {
+        var replacementRoot = Path.Combine(_root, "assets", "replacements");
+        var texturesDir = Path.Combine(replacementRoot, "textures");
+        Directory.CreateDirectory(texturesDir);
+        File.WriteAllBytes(Path.Combine(texturesDir, "soldier_BaseMap.png"), [0x89, 0x50, 0x4E, 0x47]);
+        var additionRoot = Path.Combine(_root, "assets", "additions");
+
+        Assert.True(CompilationService.HasAnyAssetSources(replacementRoot, additionRoot));
+    }
+
+    [Fact]
+    public void ReturnsTrue_WhenAdditionRootHasFile()
+    {
+        var replacementRoot = Path.Combine(_root, "assets", "replacements");
+        var additionRoot = Path.Combine(_root, "assets", "additions");
+        Directory.CreateDirectory(additionRoot);
+        File.WriteAllBytes(Path.Combine(additionRoot, "new_prop.glb"), [0x67, 0x6C, 0x54, 0x46]);
+
+        Assert.True(CompilationService.HasAnyAssetSources(replacementRoot, additionRoot));
+    }
+}

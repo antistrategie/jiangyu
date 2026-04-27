@@ -197,7 +197,7 @@ internal static class ProjectWatcher
 
         var exists = File.Exists(path) || Directory.Exists(path);
         var kind = exists ? "changed" : "deleted";
-        var payload = new FileChangedEvent { Path = path, Kind = kind };
+        var payload = new FileChangedEvent { Path = path.Replace(Path.DirectorySeparatorChar, '/'), Kind = kind };
 
         foreach (var window in windows)
         {
