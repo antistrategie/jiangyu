@@ -85,10 +85,12 @@ public static partial class RpcDispatcher
 
         var service = resolution.Context!.CreateTemplateIndexService(NullProgressSink.Instance, NullLogSink.Instance);
         var cachePath = resolution.Context.CachePath;
-        if (_cachedIndex is null || _cachedIndexPath != cachePath)
+        var indexMtime = File.GetLastWriteTimeUtc(service.IndexPath);
+        if (_cachedIndex is null || _cachedIndexPath != cachePath || _cachedIndexMtime != indexMtime)
         {
             _cachedIndex = service.LoadIndex();
             _cachedIndexPath = cachePath;
+            _cachedIndexMtime = indexMtime;
         }
         var index = _cachedIndex ?? throw new InvalidOperationException("Template index not found. Build it first.");
 
@@ -581,15 +583,19 @@ public static partial class RpcDispatcher
 
     private static TemplateIndex? _cachedIndex;
     private static string? _cachedIndexPath;
+    private static DateTime _cachedIndexMtime;
     private static Dictionary<string, List<InspectedFieldNode>>? _cachedValues;
     private static string? _cachedValuesPath;
+    private static DateTime _cachedValuesMtime;
 
     private static void ClearIndexCaches()
     {
         _cachedIndex = null;
         _cachedIndexPath = null;
+        _cachedIndexMtime = default;
         _cachedValues = null;
         _cachedValuesPath = null;
+        _cachedValuesMtime = default;
     }
 
     private static JsonElement HandleTemplatesInspect(IInfiniFrameWindow _, JsonElement? parameters)
@@ -604,11 +610,14 @@ public static partial class RpcDispatcher
         var service = resolution.Context!.CreateTemplateIndexService(NullProgressSink.Instance, NullLogSink.Instance);
 
         // Cache both the index and values in memory after first load.
+        // Mtime check picks up CLI rebuilds while the Studio is running.
         var cachePath = resolution.Context.CachePath;
-        if (_cachedValues is null || _cachedValuesPath != cachePath)
+        var valuesMtime = File.GetLastWriteTimeUtc(service.ValuesPath);
+        if (_cachedValues is null || _cachedValuesPath != cachePath || _cachedValuesMtime != valuesMtime)
         {
             _cachedValues = service.LoadValues();
             _cachedValuesPath = cachePath;
+            _cachedValuesMtime = valuesMtime;
         }
         var values = _cachedValues;
 
@@ -667,8 +676,10 @@ public static partial class RpcDispatcher
             var service = resolution.Context!.CreateTemplateIndexService(NullProgressSink.Instance, NullLogSink.Instance);
             _cachedIndex = service.LoadIndex();
             _cachedIndexPath = resolution.Context.CachePath;
+            _cachedIndexMtime = File.GetLastWriteTimeUtc(service.IndexPath);
             _cachedValues = service.LoadValues();
             _cachedValuesPath = resolution.Context.CachePath;
+            _cachedValuesMtime = File.GetLastWriteTimeUtc(service.ValuesPath);
         }
         catch
         {

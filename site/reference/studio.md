@@ -18,7 +18,7 @@ The main editing area is a grid of panes. Each pane has tabs, and each tab is on
 
 - **Code**: a text editor for any project file. Used for `jiangyu.json`, `templates/*.kdl`, and any other file you want to edit by hand.
 - **Asset Browser**: search and preview game assets. See [below](#asset-browser).
-- **Template Browser**: search and edit MENACE templates. See [below](#template-browser).
+- **Template Browser**: search MENACE templates and scaffold patches or clones. See [below](#template-browser).
 
 The workspace is built around drag-and-drop. Most layout work is done by grabbing things and moving them, not by clicking menu items.
 
@@ -89,17 +89,17 @@ The Template Browser searches the template index built by `jiangyu templates ind
 - **Search box**: substring match across template type names, ids, and collections.
 - **Type filter**: narrow to one template subtype (`UnitLeaderTemplate`, `WeaponTemplate`, etc.).
 - **Results list**: each row is one template id within its subtype.
-- **Open**: clicking a row opens the template in the [Template Visual Editor](#template-visual-editor) in a new tab.
+- **Detail panel**: selecting a row shows the template in the right-hand detail panel: its type, collection, pathId, the fields on the type with their current vanilla values, and any other templates that reference it. Clicking a reference navigates to that template. **←** and **→** walk your navigation history.
+- **Scaffold dropdown**: the **Scaffold** button in the detail panel emits a starter KDL snippet for the focused template. **Create Patch** and **Create Clone** append to the template file you're currently editing if it's under `templates/` and ends in `.kdl`, otherwise they open a picker so you can choose an existing `templates/*.kdl` file or create a new one. **Add patch to file…** and **Add clone to file…** always go through the picker. The resulting `.kdl` file opens in a code pane, where you fill it in via the [Template Visual Editor](#template-visual-editor) or as raw KDL.
 
 Studio caches the template index alongside the asset index. Re-run **Index templates** when MENACE updates.
 
 ## Template Visual Editor
 
-The visual editor edits KDL patches and clones with structured controls instead of free-form text.
+When you open a `templates/*.kdl` file in a code pane, the editor bar shows a **Visual** / **Source** toggle. The Visual mode edits the same patches and clones with structured controls instead of free-form text. The default mode is set under [Settings → Template editor](#settings); the toggle remembers per-file overrides.
 
-- **Visual tab**: every field on the template appears as a row. Edits add `set` operations (or `append`/`insert`/`remove` for collection fields) to the underlying patch. The current vanilla value is shown next to your edit so you always know what you're overriding.
-- **Source tab**: switch to the raw KDL text for the same patch. Edits in either tab round-trip through the parser, so you can pop into Source for a fiddly edit and back to Visual without losing structure.
-- **Save target**: by default Studio saves into `templates/<type>-<id>.kdl` in your project. The first time you edit a template, Studio asks where to save.
+- **Visual**: every field on the template appears as a row. Edits add `set` operations (or `append`/`insert`/`remove` for collection fields) to the underlying patch. The current vanilla value is shown next to your edit so you always know what you're overriding.
+- **Source**: the raw KDL text for the same file. Edits in either mode round-trip through the parser, so you can pop into Source for a fiddly edit and back to Visual without losing structure.
 
 The fastest way to author is by **dragging from the Template Browser** into the editor:
 
@@ -124,6 +124,7 @@ The Settings dialog (palette → **Settings**) configures both global and per-pr
 - **Game path**: directory containing `MENACE.exe`. Required for indexing and compilation. Studio detects the game's Unity version and shows it next to the field.
 - **Unity Editor path**: a Unity Editor binary. The compile step uses it to build AssetBundles. Studio shows the expected version next to the field and warns if your install doesn't match.
 - **Asset export path** (per-project): default destination for `Export → Project` in the Asset Browser. Stored in the project's local config, not global.
+- **Template editor**: default mode for `.kdl` template files in the editor pane (Visual or Source). Per-file toggles in the editor bar override this.
 - **Restore open tabs**: when on, Studio reopens the panes and tabs from your last session.
 
 The same global config is what `jiangyu` CLI reads. Edits in Studio and the CLI share one file.

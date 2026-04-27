@@ -39,6 +39,9 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
     public string GameDataPath { get; } = gameDataPath;
     public string CachePath { get; } = cachePath;
 
+    public string IndexPath => Path.Combine(CachePath, IndexFileName);
+    public string ValuesPath => Path.Combine(CachePath, ValuesFileName);
+
     private readonly IProgressSink _progress = progress;
     private readonly ILogSink _log = log;
 

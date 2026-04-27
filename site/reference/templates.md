@@ -7,9 +7,9 @@ Templates are MENACE's authored game data. There are dozens of subtypes (`Entity
 ## Studio workflow
 
 1. Open the [Template Browser](./studio.md#template-browser) pane.
-2. Type the template id or type in the search box. Pick the template you want to edit.
-3. Studio opens the template in the [Template Visual Editor](./studio.md#template-visual-editor). Switch to the Source tab to author the same patch as raw KDL text. Both modes round-trip, so edits in one show up in the other.
-4. Make your changes. Studio saves them into `templates/<some-name>.kdl` in your project.
+2. Type the template id or type in the search box. Pick the template you want to edit. The browser shows its fields and current values in the detail panel.
+3. Open the **Scaffold** dropdown in the detail panel and pick **Create Patch** or **Create Clone**. Studio generates the KDL snippet and either appends it to the template file you're currently editing, opens a picker so you can choose an existing `templates/*.kdl` file, or creates a new one. **Add patch to file…** and **Add clone to file…** in the same dropdown always go through the picker.
+4. Studio opens the resulting KDL file in the code editor. Edit it directly to author the patch or clone.
 5. [Compile](./studio.md#compile).
 
 ## File layout
