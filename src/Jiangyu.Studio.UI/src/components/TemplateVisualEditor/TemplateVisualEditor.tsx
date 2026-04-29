@@ -871,7 +871,7 @@ interface SetRowProps {
 }
 
 const SCALAR_OPS: DirectiveOp[] = ["Set"];
-const COLLECTION_OPS: DirectiveOp[] = ["Set", "Append", "Insert", "Remove"];
+const COLLECTION_OPS: DirectiveOp[] = ["Set", "Append", "Insert", "Remove", "Clear"];
 // Named arrays are fixed-size enum-indexed — only per-slot Set makes sense.
 const NAMED_ARRAY_OPS: DirectiveOp[] = ["Set"];
 const OP_LABELS: Record<DirectiveOp, string> = {
@@ -879,6 +879,7 @@ const OP_LABELS: Record<DirectiveOp, string> = {
   Append: "append",
   Insert: "insert",
   Remove: "remove",
+  Clear: "clear",
 };
 
 /**
@@ -926,11 +927,12 @@ function SetRow({
   const namedArrayEnum = member?.namedArrayEnumTypeName;
   const ops = namedArrayEnum ? NAMED_ARRAY_OPS : isCollection ? COLLECTION_OPS : SCALAR_OPS;
   const isRemove = directive.op === "Remove";
+  const isClear = directive.op === "Clear";
   const isComposite = directive.value?.kind === "Composite";
 
-  // Kind label: hide for remove, hide for composite (shown inline)
+  // Kind label: hide for remove/clear (no value), hide for composite (shown inline)
   const kindLabel =
-    isRemove || isComposite
+    isRemove || isClear || isComposite
       ? null
       : directive.value
         ? VALUE_KIND_LABELS[directive.value.kind]
@@ -979,23 +981,32 @@ function SetRow({
                     type="button"
                     className={`${styles.setOpMenuItem} ${op === directive.op ? styles.setOpMenuItemActive : ""}`}
                     onClick={() => {
+                      // Remove and Clear both drop the value; Clear drops the
+                      // index as well. Other ops keep / synthesise a value
+                      // and set a default index when the op needs one.
                       const updated: StampedDirective =
-                        op === "Remove"
+                        op === "Clear"
                           ? {
                               op,
                               fieldPath: directive.fieldPath,
-                              index: directive.index ?? 0,
                               _uiId: directive._uiId,
                             }
-                          : {
-                              ...directive,
-                              op,
-                              value:
-                                directive.value ??
-                                (member
-                                  ? makeDefaultValue(member)
-                                  : { kind: "String", string: "" }),
-                            };
+                          : op === "Remove"
+                            ? {
+                                op,
+                                fieldPath: directive.fieldPath,
+                                index: directive.index ?? 0,
+                                _uiId: directive._uiId,
+                              }
+                            : {
+                                ...directive,
+                                op,
+                                value:
+                                  directive.value ??
+                                  (member
+                                    ? makeDefaultValue(member)
+                                    : { kind: "String", string: "" }),
+                              };
                       if (
                         (op === "Insert" || op === "Remove" || op === "Set") &&
                         updated.index === undefined
@@ -1039,6 +1050,16 @@ function SetRow({
               </div>
             </div>
           </>
+        ) : isClear ? (
+          <span
+            className={styles.setField}
+            title={
+              member?.tooltip ? `${directive.fieldPath} — ${member.tooltip}` : directive.fieldPath
+            }
+          >
+            {directive.fieldPath}
+            {member?.isSoundIdField && <span className={styles.fieldBadge}>sound</span>}
+          </span>
         ) : (
           <>
             <span
@@ -1304,42 +1325,102 @@ function ValueEditor({ value, onChange, member }: ValueEditorProps) {
   }
 }
 
+// C# enums are sealed by language: every enum field has exactly one valid
+// enum type, taken from the catalog. There's no polymorphic case (unlike
+// template references). On commit, we realign the serialised enumType to
+// the declared type so saved KDL is canonical (enum="ItemSlot" "..."). When
+// the catalog can't supply a type (rare; would mean the field's enum type
+// isn't loadable), fall back to whatever the value already carried so we
+// don't drop information.
+export function resolveEnumCommitType(
+  declaredEnumType: string | undefined,
+  fallback: string | undefined,
+): string | undefined {
+  if (declaredEnumType !== undefined && declaredEnumType !== "") return declaredEnumType;
+  return fallback;
+}
+
 function EnumValueEditor({ value, onChange, member }: ValueEditorProps) {
-  const enumType = value.enumType ?? member?.enumTypeName ?? "";
+  // Mirrors RefValueEditor: when the catalog supplies the declared enum type
+  // we hide the "enum"/type chrome entirely and only show the value picker.
+  // The placeholder carries the type hint instead. C# enums are sealed so
+  // there's no polymorphic case; the type label only appears as a fallback
+  // when the catalog couldn't resolve a declared type (rare).
+  const declaredEnumType = member?.enumTypeName ?? "";
+  const showTypeSpan = declaredEnumType === "";
   const fetchEnumValues = useCallback(
-    () => (enumType ? getCachedEnumMembers(enumType) : Promise.resolve([])),
-    [enumType],
+    () => (declaredEnumType ? getCachedEnumMembers(declaredEnumType) : Promise.resolve([])),
+    [declaredEnumType],
   );
   return (
     <div className={styles.setRefRow}>
-      <span className={styles.setRefLabel}>enum</span>
-      <SuggestionCombobox
-        value={enumType}
-        placeholder="Type"
-        fetchSuggestions={getCachedTemplateTypes}
-        onChange={(t) => onChange({ ...value, enumType: t })}
-        className={styles.setRefTypeInput}
-      />
+      {showTypeSpan && (
+        <>
+          <span className={styles.setRefLabel}>enum</span>
+          <span className={styles.setRefTypeInput}>{value.enumType ?? "?"}</span>
+        </>
+      )}
       <SuggestionCombobox
         value={value.enumValue ?? ""}
-        placeholder="Value"
+        placeholder={declaredEnumType ? `${declaredEnumType} value` : "Value"}
         fetchSuggestions={fetchEnumValues}
-        onChange={(v) => onChange({ ...value, enumValue: v })}
+        onChange={(v) => {
+          const next: EditorValue = { ...value, enumValue: v };
+          const committedType = resolveEnumCommitType(declaredEnumType, value.enumType);
+          if (committedType === undefined) delete next.enumType;
+          else next.enumType = committedType;
+          onChange(next);
+        }}
       />
     </div>
   );
 }
 
+// Decides whether the ref-type combobox should be shown. Hidden for
+// monomorphic destinations (catalog supplies a concrete type and modder
+// can't pick anything else); visible when:
+//  - the catalog couldn't supply a declared type (rare; fallback authoring)
+//  - the declared type is an abstract base with multiple concrete subtypes
+//    (e.g. RewardTableTemplate.Items → BaseItemTemplate, where the modder
+//    must pick ModularVehicleWeaponTemplate / ArmorTemplate / …)
+//  - the value already carries an explicit ref type (preserve user intent)
+export function shouldShowRefTypeSelector(
+  declaredRefType: string,
+  isPolymorphic: boolean,
+  explicitRefType: string,
+): boolean {
+  return declaredRefType === "" || isPolymorphic || explicitRefType !== "";
+}
+
+// What text the ref-type combobox should display.
+//
+// Monomorphic case: fall back to the declared concrete type. The selector is
+// usually hidden anyway; if shown (because the value already carried an
+// explicit type) the declared type is the right idle value.
+//
+// Polymorphic case: track ONLY the explicit type. Falling back to the
+// declared (abstract) type re-fills the combobox after the modder clears it,
+// looking like the delete didn't take. The modder must pick a concrete type;
+// the abstract base is never a valid display value here.
+export function resolveRefTypeDisplay(
+  declaredRefType: string,
+  isPolymorphic: boolean,
+  explicitRefType: string,
+): string {
+  if (isPolymorphic) return explicitRefType;
+  return explicitRefType !== "" ? explicitRefType : declaredRefType;
+}
+
 function RefValueEditor({ value, onChange, member }: ValueEditorProps) {
-  // The catalog tells us the destination field's declared reference type.
-  // Concrete fields don't need (or want) the modder to retype it — the type
-  // selector is hidden and the lookup type is implicit. The selector only
-  // appears for polymorphic destinations (where member.referenceTypeName is
-  // missing or the modder explicitly authored a `ref="…"` to disambiguate).
   const declaredRefType = member?.referenceTypeName ?? "";
+  const isPolymorphic = member?.isReferenceTypePolymorphic === true;
   const explicitRefType = value.referenceType ?? "";
-  const showTypeSelector = declaredRefType === "" || explicitRefType !== "";
-  const refType = explicitRefType !== "" ? explicitRefType : declaredRefType;
+  const showTypeSelector = shouldShowRefTypeSelector(
+    declaredRefType,
+    isPolymorphic,
+    explicitRefType,
+  );
+  const refType = resolveRefTypeDisplay(declaredRefType, isPolymorphic, explicitRefType);
 
   const fetchRefInstances = useCallback(async (): Promise<readonly SuggestionItem[]> => {
     if (!refType) return [];
@@ -1366,7 +1447,14 @@ function RefValueEditor({ value, onChange, member }: ValueEditorProps) {
             fetchSuggestions={getCachedTemplateTypes}
             onChange={(t) => {
               const next: EditorValue = { ...value };
-              if (t === "" || t === declaredRefType) delete next.referenceType;
+              // For polymorphic destinations the explicit type IS the
+              // disambiguation; never drop it, even when the modder happens
+              // to pick a value that matches the (abstract) declared type.
+              // For monomorphic destinations clearing or matching the
+              // declared type is safe — the loader infers the type from
+              // the field, so the explicit type is redundant.
+              if (t === "") delete next.referenceType;
+              else if (!isPolymorphic && t === declaredRefType) delete next.referenceType;
               else next.referenceType = t;
               onChange(next);
             }}

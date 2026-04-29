@@ -333,24 +333,13 @@ public static partial class RpcDispatcher
 
     private static string? ComputeMemberPatchScalarKind(MemberShape m)
     {
-        // For the member's effective leaf type, determine what patch value kind it uses.
+        // Single source of truth: TemplateMemberQuery.MapScalarKind
         var memberType = m.MemberType;
         var elementType = TemplateTypeCatalog.GetElementType(memberType);
         var leafType = elementType ?? memberType;
 
         if (TemplateTypeCatalog.IsScalar(leafType))
-        {
-            if (leafType.IsEnum) return "Enum";
-            return leafType.FullName switch
-            {
-                "System.Boolean" => "Boolean",
-                "System.Byte" => "Byte",
-                "System.Int32" => "Int32",
-                "System.Single" => "Single",
-                "System.String" => "String",
-                _ => null,
-            };
-        }
+            return TemplateMemberQuery.MapScalarKind(leafType)?.ToString();
 
         if (TemplateTypeCatalog.IsTemplateReferenceTarget(leafType))
             return "TemplateReference";
@@ -381,6 +370,26 @@ public static partial class RpcDispatcher
             ? catalog.FriendlyName(leafType) : null;
     }
 
+    /// <summary>
+    /// True when the destination's reference target has descendant reference
+    /// types in the assembly, so the modder needs to disambiguate with an
+    /// explicit concrete type. The editor uses this to keep the ref-type
+    /// combobox visible. Structural check (any strict ref-target descendant)
+    /// rather than <see cref="Type.IsAbstract"/> because Il2CppInterop
+    /// wrappers strip the abstract bit on generation. Null when the field is
+    /// not a reference target or the leaf type is the only ref target in its
+    /// branch (selector hidden).
+    /// </summary>
+    private static bool? ComputeReferenceTypeIsPolymorphic(TemplateTypeCatalog catalog, MemberShape m)
+    {
+        var memberType = m.MemberType;
+        var elementType = TemplateTypeCatalog.GetElementType(memberType);
+        var leafType = elementType ?? memberType;
+        if (!TemplateTypeCatalog.IsTemplateReferenceTarget(leafType))
+            return null;
+        return catalog.HasReferenceSubtype(leafType) ? true : null;
+    }
+
     private static TemplateQueryResult MapQueryResult(TemplateTypeCatalog catalog, QueryResult result)
     {
         return new TemplateQueryResult
@@ -409,6 +418,7 @@ public static partial class RpcDispatcher
                 ElementTypeName = ComputeElementTypeName(catalog, m),
                 EnumTypeName = ComputeEnumTypeName(catalog, m),
                 ReferenceTypeName = ComputeReferenceTypeName(catalog, m),
+                IsReferenceTypePolymorphic = ComputeReferenceTypeIsPolymorphic(catalog, m),
                 NamedArrayEnumTypeName = m.NamedArrayEnumTypeName,
                 NumericMin = m.NumericMin,
                 NumericMax = m.NumericMax,
@@ -528,6 +538,13 @@ public static partial class RpcDispatcher
 
         [JsonPropertyName("referenceTypeName")]
         public string? ReferenceTypeName { get; set; }
+
+        /// <summary>True when <see cref="ReferenceTypeName"/> is an abstract
+        /// base. The editor keeps the ref-type combobox visible so the modder
+        /// can pick a concrete subtype; null for monomorphic / non-reference
+        /// fields so JSON omits the property.</summary>
+        [JsonPropertyName("isReferenceTypePolymorphic")]
+        public bool? IsReferenceTypePolymorphic { get; set; }
 
         /// <summary>Short name of the enum paired with a
         /// <c>[NamedArray(typeof(T))]</c> array member; null otherwise.</summary>

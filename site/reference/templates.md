@@ -62,8 +62,9 @@ Inside a `patch` or `clone` block, operations modify fields on the targeted temp
 | `append "<field>" <value>`                 | Append to a collection field.                        |
 | `insert "<field>" index=N <value>`         | Insert into a collection field at position N.        |
 | `remove "<field>" index=N`                 | Remove element N from a collection field.            |
+| `clear "<field>"`                          | Empty a collection field. Composes with `append` for "replace the whole list". |
 
-Indexes are zero-based. `append` doesn't take an `index=` property; use `insert` for positional writes.
+Indexes are zero-based. `append` doesn't take an `index=` property; use `insert` for positional writes. `clear` takes neither index nor value.
 
 ## Field paths
 

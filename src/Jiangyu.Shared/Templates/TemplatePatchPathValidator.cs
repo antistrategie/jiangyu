@@ -62,6 +62,7 @@ public static class TemplatePatchPathValidator
     ///   <item><description><c>Append</c>: no <c>index</c> field; terminal not indexed; value required.</description></item>
     ///   <item><description><c>InsertAt</c>: <c>index</c> required and non-negative; terminal not indexed; value required.</description></item>
     ///   <item><description><c>Remove</c>: <c>index</c> required and non-negative; terminal not indexed; no value.</description></item>
+    ///   <item><description><c>Clear</c>: no <c>index</c>; terminal not indexed; no value.</description></item>
     /// </list>
     /// </summary>
     public static bool TryValidateOpShape(
@@ -144,6 +145,25 @@ public static class TemplatePatchPathValidator
                 error = null;
                 return true;
 
+            case CompiledTemplateOp.Clear:
+                if (op.Index.HasValue)
+                {
+                    error = "op=Clear cannot carry an 'index' field; Clear empties the whole collection.";
+                    return false;
+                }
+                if (terminalIndexed)
+                {
+                    error = "op=Clear cannot have an indexed terminal segment; drop the [N] suffix.";
+                    return false;
+                }
+                if (op.Value != null)
+                {
+                    error = "op=Clear cannot carry a value; Clear takes no value.";
+                    return false;
+                }
+                error = null;
+                return true;
+
             default:
                 error = $"unknown op '{op.Op}'.";
                 return false;
@@ -190,9 +210,13 @@ public static class TemplatePatchPathValidator
             CompiledTemplateValueKind.Single => value.Single.HasValue,
             CompiledTemplateValueKind.String => value.String != null,
             CompiledTemplateValueKind.Enum => !string.IsNullOrWhiteSpace(value.EnumValue),
+            // TemplateType is optional. The compile-time validator coerces a
+            // bare-string author into TemplateReference{TemplateType=null} for
+            // monomorphic ref fields, and the runtime applier derives the
+            // lookup type from the destination field at apply time. Only
+            // TemplateId is load-bearing here.
             CompiledTemplateValueKind.TemplateReference =>
                 value.Reference != null
-                && !string.IsNullOrWhiteSpace(value.Reference.TemplateType)
                 && !string.IsNullOrWhiteSpace(value.Reference.TemplateId),
             CompiledTemplateValueKind.Composite => IsSupportedComposite(value.Composite, depth),
             _ => false,

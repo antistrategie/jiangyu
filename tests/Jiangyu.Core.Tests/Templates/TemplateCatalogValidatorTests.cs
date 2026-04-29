@@ -436,4 +436,254 @@ public class TemplateCatalogValidatorTests
         Assert.Equal(44, error.Line);
         Assert.Contains("op=Append is not supported", error.Message);
     }
+
+    // --- Enum value validation (catches the AddItemSlot/ItemSlot mistake) ---
+
+    private static CompiledTemplatePatch[] EnumPatch(CompiledTemplateValue value) =>
+    [
+        new CompiledTemplatePatch
+        {
+            TemplateType = "FixtureEntity",
+            TemplateId = "unit.x",
+            Set = [new CompiledTemplateSetOperation
+            {
+                Op = CompiledTemplateOp.Set,
+                FieldPath = "Properties.DamageType",
+                Value = value,
+            }],
+        },
+    ];
+
+    [Fact]
+    public void Enum_MatchingTypeAndDefinedMember_Passes()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = EnumPatch(new CompiledTemplateValue
+        {
+            Kind = CompiledTemplateValueKind.Enum,
+            EnumType = "FixtureDamageType",
+            EnumValue = "Plasma",
+        });
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+    }
+
+    [Fact]
+    public void Enum_NoExplicitTypeAndDefinedMember_Passes()
+    {
+        // Editor-emitted form for monomorphic enums: type is implicit.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = EnumPatch(new CompiledTemplateValue
+        {
+            Kind = CompiledTemplateValueKind.Enum,
+            EnumType = null,
+            EnumValue = "Ballistic",
+        });
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+    }
+
+    [Fact]
+    public void Enum_NumericMemberValue_AcceptedWhenDefined()
+    {
+        // Mirrors the runtime applier's Enum.Parse numeric fallback. "1" maps
+        // to Ballistic in FixtureDamageType (Blunt=0, Ballistic=1, Plasma=2).
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = EnumPatch(new CompiledTemplateValue
+        {
+            Kind = CompiledTemplateValueKind.Enum,
+            EnumType = "FixtureDamageType",
+            EnumValue = "1",
+        });
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+    }
+
+    [Fact]
+    public void Enum_MismatchedTypeName_Errors()
+    {
+        // The user's exact mistake: enum="AddItemSlot" "8" on a field declared
+        // as ItemSlot. Catch at compile time before the loader sees it.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = EnumPatch(new CompiledTemplateValue
+        {
+            Kind = CompiledTemplateValueKind.Enum,
+            EnumType = "FixtureAttribute",
+            EnumValue = "Blunt",
+        });
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("FixtureAttribute", log.Errors[0]);
+        Assert.Contains("FixtureDamageType", log.Errors[0]);
+        // Mismatch error lists the declared members so the modder can
+        // immediately see the right set instead of round-tripping back to docs.
+        Assert.Contains("known members", log.Errors[0]);
+        Assert.Contains("Plasma", log.Errors[0]);
+    }
+
+    [Fact]
+    public void Enum_UndefinedMemberName_Errors()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = EnumPatch(new CompiledTemplateValue
+        {
+            Kind = CompiledTemplateValueKind.Enum,
+            EnumType = "FixtureDamageType",
+            EnumValue = "Sonic",
+        });
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("Sonic", log.Errors[0]);
+        Assert.Contains("FixtureDamageType", log.Errors[0]);
+    }
+
+    [Fact]
+    public void Enum_NumericValueOutsideDefinedSet_Errors()
+    {
+        // FixtureDamageType has 0/1/2; 99 isn't a defined member even though
+        // it parses as a long. Match the loader's strict-membership intent.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = EnumPatch(new CompiledTemplateValue
+        {
+            Kind = CompiledTemplateValueKind.Enum,
+            EnumType = "FixtureDamageType",
+            EnumValue = "99",
+        });
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("99", log.Errors[0]);
+    }
+
+    [Fact]
+    public void Enum_OnNonEnumField_Errors()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "IsEnabled", // Boolean, not enum
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.Enum,
+                        EnumType = "FixtureDamageType",
+                        EnumValue = "Plasma",
+                    },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("non-enum destination", log.Errors[0]);
+    }
+
+    // --- Clear ---
+
+    [Fact]
+    public void Clear_OnCollectionField_Passes()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Clear,
+                    FieldPath = "Skills",
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+    }
+
+    [Fact]
+    public void Clear_OnScalarField_Errors()
+    {
+        // Modders sometimes typo a path; pointing Clear at a scalar should
+        // surface a clear error instead of silently no-opping.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Clear,
+                    FieldPath = "IsEnabled",
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("non-collection field", log.Errors[0]);
+    }
+
+    [Fact]
+    public void Clear_OnNamedArray_Errors()
+    {
+        // NamedArray fields are fixed-size enum-indexed lookups; clearing
+        // would break the slot-to-enum invariant.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureNamedArrayHolder",
+                TemplateId = "x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Clear,
+                    FieldPath = "Attributes",
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("FixtureAttribute-indexed array", log.Errors[0]);
+    }
 }

@@ -228,7 +228,15 @@ public static class TemplateMemberQuery
         };
     }
 
-    private static CompiledTemplateValueKind? MapScalarKind(Type type)
+    /// <summary>
+    /// Canonical scalar-kind mapping. Folds sibling integer widths (sbyte/
+    /// short/ushort/uint/long/ulong) onto <see cref="CompiledTemplateValueKind.Int32"/>
+    /// and <see cref="double"/> onto <see cref="CompiledTemplateValueKind.Single"/>;
+    /// the loader applier range-checks at apply time. Public so RPC layers
+    /// (member listings) can consult the same table — keeps the editor's
+    /// "Repetitions" UInt16 → Int32 control choice in sync with leaf queries.
+    /// </summary>
+    public static CompiledTemplateValueKind? MapScalarKind(Type type)
     {
         if (type.IsEnum)
             return CompiledTemplateValueKind.Enum;
@@ -238,7 +246,16 @@ public static class TemplateMemberQuery
             "System.Boolean" => CompiledTemplateValueKind.Boolean,
             "System.Byte" => CompiledTemplateValueKind.Byte,
             "System.Int32" => CompiledTemplateValueKind.Int32,
+            // Sibling integer widths share the Int32 patch kind: editor input
+            // is the same and the loader range-checks on apply.
+            "System.SByte" => CompiledTemplateValueKind.Int32,
+            "System.Int16" => CompiledTemplateValueKind.Int32,
+            "System.UInt16" => CompiledTemplateValueKind.Int32,
+            "System.UInt32" => CompiledTemplateValueKind.Int32,
+            "System.Int64" => CompiledTemplateValueKind.Int32,
+            "System.UInt64" => CompiledTemplateValueKind.Int32,
             "System.Single" => CompiledTemplateValueKind.Single,
+            "System.Double" => CompiledTemplateValueKind.Single,
             "System.String" => CompiledTemplateValueKind.String,
             _ => null,
         };

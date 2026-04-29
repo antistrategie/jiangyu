@@ -85,6 +85,7 @@ public static class KdlTemplateSerialiser
             KdlEditorOp.Append => "append",
             KdlEditorOp.Insert => "insert",
             KdlEditorOp.Remove => "remove",
+            KdlEditorOp.Clear => "clear",
             _ => "set",
         };
 
@@ -99,6 +100,11 @@ public static class KdlTemplateSerialiser
                 sb.Append(CultureInfo.InvariantCulture, $" index={d.Index.Value}");
             return;
         }
+
+        // Clear has neither index nor value — the fieldPath alone is the
+        // whole directive. Bail before the value branch.
+        if (d.Op == KdlEditorOp.Clear)
+            return;
 
         if (d.Value != null)
         {

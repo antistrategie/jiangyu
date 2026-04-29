@@ -320,4 +320,34 @@ public class TemplateTypeCatalogTests
         Assert.Equal(128, name.NumericMax);
         Assert.Equal("Base entity name", name.Tooltip);
     }
+
+    // --- HasReferenceSubtype: structural polymorphism check used by the
+    // editor to decide whether to show the ref-type combobox. The Type.IsAbstract
+    // bit is unreliable across the IL2CPP wrapper boundary, so we look for
+    // any strict descendant that is itself a reference target.
+
+    [Fact]
+    public void HasReferenceSubtype_TrueWhenStrictRefDescendantExists()
+    {
+        // FixtureBaseDataTemplate has FixtureConcreteDerived as a subtype.
+        // This mirrors the BaseItemTemplate / ModularVehicleWeaponTemplate
+        // case that surfaced the editor bug.
+        using var catalog = Load();
+        var baseType = catalog.ResolveType("FixtureBaseDataTemplate", out _, out _)!;
+
+        Assert.True(catalog.HasReferenceSubtype(baseType));
+    }
+
+    [Fact]
+    public void HasReferenceSubtype_FalseForLeafTemplateWithoutDescendants()
+    {
+        // FixtureConcreteDerived is itself the leaf — no further descendants
+        // in the fixture assembly.
+        using var catalog = Load();
+        var leaf = catalog.ResolveType(
+            "Jiangyu.Core.Tests.Templates.Fixtures.Gameplay.FixtureConcreteDerived",
+            out _, out _)!;
+
+        Assert.False(catalog.HasReferenceSubtype(leaf));
+    }
 }

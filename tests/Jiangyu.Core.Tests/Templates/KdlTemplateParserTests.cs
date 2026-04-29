@@ -138,6 +138,7 @@ public class KdlTemplateParserTests
                 append "SkillsGranted" ref="SkillTemplate" "active.aimed_shot"
                 insert "PerkTrees" index=0 ref="PerkTreeTemplate" "perk_tree.tech"
                 remove "PerkTrees" index=2
+                clear "SkillsGranted"
             }
             """);
 
@@ -145,7 +146,7 @@ public class KdlTemplateParserTests
 
         Assert.Equal(0, result.ErrorCount);
         var ops = result.Patches[0].Set;
-        Assert.Equal(3, ops.Count);
+        Assert.Equal(4, ops.Count);
 
         // Append
         Assert.Equal(CompiledTemplateOp.Append, ops[0].Op);
@@ -163,6 +164,42 @@ public class KdlTemplateParserTests
         Assert.Equal("PerkTrees", ops[2].FieldPath);
         Assert.Equal(2, ops[2].Index);
         Assert.Null(ops[2].Value);
+
+        // Clear: no index, no value
+        Assert.Equal(CompiledTemplateOp.Clear, ops[3].Op);
+        Assert.Equal("SkillsGranted", ops[3].FieldPath);
+        Assert.Null(ops[3].Index);
+        Assert.Null(ops[3].Value);
+    }
+
+    [Fact]
+    public void ParseAll_ClearRejectsIndex()
+    {
+        var dir = SetupKdl("clear-with-index.kdl", """
+            patch "WeaponTemplate" "weapon.test" {
+                clear "SkillsGranted" index=0
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.NotEqual(0, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("'clear' does not take an index"));
+    }
+
+    [Fact]
+    public void ParseAll_ClearRejectsValue()
+    {
+        var dir = SetupKdl("clear-with-value.kdl", """
+            patch "WeaponTemplate" "weapon.test" {
+                clear "SkillsGranted" "extra"
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.NotEqual(0, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("'clear' takes no value"));
     }
 
     [Fact]

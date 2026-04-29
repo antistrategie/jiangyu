@@ -129,6 +129,7 @@ export interface TemplateMember {
   elementTypeName?: string | null;
   enumTypeName?: string | null;
   referenceTypeName?: string | null;
+  isReferenceTypePolymorphic?: boolean | null;
   namedArrayEnumTypeName?: string | null;
   numericMin?: number | null;
   numericMax?: number | null;

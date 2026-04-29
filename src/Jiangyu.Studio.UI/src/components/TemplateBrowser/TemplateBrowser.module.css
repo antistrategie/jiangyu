@@ -803,6 +803,11 @@
   color: var(--fg-strong);
 }
 
+.valueEnumIndex {
+  color: var(--fg-muted);
+  font-size: 0.85em;
+}
+
 .valueString {
   color: var(--jade-1);
 }

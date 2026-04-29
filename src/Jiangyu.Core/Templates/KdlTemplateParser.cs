@@ -343,6 +343,7 @@ public static class KdlTemplateParser
                 KdlEditorOp.Append => CompiledTemplateOp.Append,
                 KdlEditorOp.Insert => CompiledTemplateOp.InsertAt,
                 KdlEditorOp.Remove => CompiledTemplateOp.Remove,
+                KdlEditorOp.Clear => CompiledTemplateOp.Clear,
                 _ => CompiledTemplateOp.Set,
             },
             FieldPath = directive.FieldPath,
@@ -380,6 +381,7 @@ public static class KdlTemplateParser
                 CompiledTemplateOp.Append => KdlEditorOp.Append,
                 CompiledTemplateOp.InsertAt => KdlEditorOp.Insert,
                 CompiledTemplateOp.Remove => KdlEditorOp.Remove,
+                CompiledTemplateOp.Clear => KdlEditorOp.Clear,
                 _ => KdlEditorOp.Set,
             },
             FieldPath = op.FieldPath,
@@ -738,8 +740,9 @@ public static class KdlTemplateParser
             case "append": opKind = CompiledTemplateOp.Append; break;
             case "insert": opKind = CompiledTemplateOp.InsertAt; break;
             case "remove": opKind = CompiledTemplateOp.Remove; break;
+            case "clear": opKind = CompiledTemplateOp.Clear; break;
             default:
-                log.Error($"{pos}: unknown operation '{opName}'. Expected 'set', 'append', 'insert', or 'remove'.");
+                log.Error($"{pos}: unknown operation '{opName}'. Expected 'set', 'append', 'insert', 'remove', or 'clear'.");
                 return false;
         }
 
@@ -754,6 +757,28 @@ public static class KdlTemplateParser
         {
             log.Error($"{pos}: '{opName}' fieldPath must be a non-empty string.");
             return false;
+        }
+
+        // Clear takes neither index nor value — empties the whole collection.
+        if (opKind == CompiledTemplateOp.Clear)
+        {
+            if (GetPropertyValue(node, "index") != null)
+            {
+                log.Error($"{pos}: 'clear' does not take an index= property; clear empties the whole collection.");
+                return false;
+            }
+            if (node.Arguments.Count > 1)
+            {
+                log.Error($"{pos}: 'clear' takes no value; only the fieldPath argument is allowed.");
+                return false;
+            }
+
+            op = new CompiledTemplateSetOperation
+            {
+                Op = opKind,
+                FieldPath = fieldPath,
+            };
+            return true;
         }
 
         // Remove needs index= property, no value

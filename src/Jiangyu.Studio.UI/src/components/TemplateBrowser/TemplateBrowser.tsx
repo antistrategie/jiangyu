@@ -364,13 +364,18 @@ export function TemplateBrowser({
       });
   }, [focusedInstance]);
 
-  // --- Collect named array enum types from the member tree and fetch members ---
+  // --- Collect enum types from the member tree and fetch members ---
+  // Two uses for the resulting map:
+  //  - named arrays: turn array indices into named-array labels in previews.
+  //  - enum-leaf scalars (e.g. SlotType: ItemSlot): turn the numeric value
+  //    surfaced by the inspector into the readable enum-member name.
   const fetchedEnumRef = useRef(new Set<string>());
   useEffect(() => {
     if (!memberData?.members) return;
     const needed = new Set<string>();
     for (const m of memberData.members) {
       if (m.namedArrayEnumTypeName) needed.add(m.namedArrayEnumTypeName);
+      if (m.enumTypeName) needed.add(m.enumTypeName);
     }
     if (needed.size === 0) return;
 
@@ -1236,6 +1241,13 @@ function MemberRow({
     isNamedArray && member.namedArrayEnumTypeName
       ? buildNamedArrayLabelMap(namedArrayEnums[member.namedArrayEnumTypeName])
       : null;
+  // For enum-leaf scalars (member.enumTypeName set, value is the numeric
+  // index), provide the value→name lookup so renderValueLine can surface the
+  // enum member name instead of the bare integer.
+  const enumLabelMap =
+    member.enumTypeName && namedArrayEnums[member.enumTypeName]
+      ? buildNamedArrayLabelMap(namedArrayEnums[member.enumTypeName])
+      : null;
 
   return (
     <div className={styles.memberBlock}>
@@ -1317,7 +1329,7 @@ function MemberRow({
       {/* --- Value row(s) --- */}
       {valueNode && !expanded && (
         <div className={styles.memberValue}>
-          {renderValueLine(valueNode, member, namedArrayLabelMap)}
+          {renderValueLine(valueNode, member, namedArrayLabelMap, enumLabelMap)}
         </div>
       )}
 
@@ -1420,10 +1432,24 @@ function MemberRow({
 
 // --- Value rendering helpers ---
 
+// Looks up the enum member name for a numeric leaf value. Returns null when
+// the value isn't a finite integer or isn't a defined member of the enum;
+// callers fall back to displaying the raw value so unusual values stay
+// visible rather than disappearing into "?".
+export function resolveEnumLeafLabel(
+  rawValue: unknown,
+  labelMap: Record<number, string> | null,
+): string | null {
+  if (!labelMap) return null;
+  if (typeof rawValue !== "number" || !Number.isFinite(rawValue)) return null;
+  return labelMap[rawValue] ?? null;
+}
+
 function renderValueLine(
   value: InspectedFieldNode,
   member: TemplateMember,
   namedArrayLabelMap: Record<number, string> | null,
+  enumLabelMap: Record<number, string> | null,
 ): React.ReactNode {
   if (value.null) {
     return <span className={styles.valueNull}>null</span>;
@@ -1469,6 +1495,20 @@ function renderValueLine(
   }
 
   if (value.value !== undefined && value.value !== null) {
+    // Enum-leaf field: the inspector returns the numeric index; surface the
+    // member name when we can resolve it, with the raw value alongside as a
+    // disambiguator for the modder. Falls through to the plain scalar render
+    // when the enum member set hasn't loaded yet or the value isn't defined.
+    const enumLabel = resolveEnumLeafLabel(value.value, enumLabelMap);
+    if (enumLabel !== null) {
+      return (
+        <span className={styles.valueScalar}>
+          {enumLabel}
+          {/* eslint-disable-next-line @typescript-eslint/no-base-to-string -- numeric scalar */}
+          <span className={styles.valueEnumIndex}> ({String(value.value)})</span>
+        </span>
+      );
+    }
     // eslint-disable-next-line @typescript-eslint/no-base-to-string -- String() handles unknown at runtime.
     return <span className={styles.valueScalar}>{String(value.value)}</span>;
   }

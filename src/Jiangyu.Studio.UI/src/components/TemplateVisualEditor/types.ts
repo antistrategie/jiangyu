@@ -25,7 +25,7 @@ export interface EditorValue {
   compositeFields?: Record<string, EditorValue>;
 }
 
-export type DirectiveOp = "Set" | "Append" | "Insert" | "Remove";
+export type DirectiveOp = "Set" | "Append" | "Insert" | "Remove" | "Clear";
 
 export interface EditorDirective {
   op: DirectiveOp;

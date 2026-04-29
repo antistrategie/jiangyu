@@ -249,6 +249,28 @@ public sealed class TemplateTypeCatalog : IDisposable
         return false;
     }
 
+    /// <summary>
+    /// True when the assembly contains at least one strict descendant of
+    /// <paramref name="baseType"/> that is itself a reference target. Used to
+    /// detect polymorphic destinations (e.g. <c>BaseItemTemplate</c> with
+    /// <c>WeaponTemplate</c>/<c>ArmorTemplate</c>/... subtypes) — the modder
+    /// has to pick a concrete type because <c>DataTemplateLoader</c>'s
+    /// <c>m_TemplateMaps</c> is keyed by concrete type, not by inheritance.
+    /// Doesn't rely on <see cref="Type.IsAbstract"/>: Il2CppInterop wrappers
+    /// don't preserve the abstract bit, so the structural check is the only
+    /// reliable polymorphism signal across the IL2CPP boundary.
+    /// </summary>
+    public bool HasReferenceSubtype(Type baseType)
+    {
+        foreach (var candidate in _allTypes)
+        {
+            if (candidate == baseType) continue;
+            if (!baseType.IsAssignableFrom(candidate)) continue;
+            if (IsTemplateReferenceTarget(candidate)) return true;
+        }
+        return false;
+    }
+
     public static bool IsTemplateReferenceTarget(Type type)
     {
         for (var current = type; current != null; current = current.BaseType)

@@ -58,6 +58,7 @@ public enum KdlEditorOp
     Append,
     Insert,
     Remove,
+    Clear,
 }
 
 public sealed class KdlEditorDirective

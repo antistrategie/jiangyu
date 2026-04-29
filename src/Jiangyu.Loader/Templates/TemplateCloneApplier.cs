@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Runtime.InteropServices;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
@@ -122,6 +123,19 @@ internal sealed class TemplateCloneApplier
                 continue;
 
             innerMap[directive.CloneId] = clone;
+
+            // Also extend m_TemplateArrays so DataTemplateLoader.GetAll<T>()
+            // sees the clone. Without this, gameplay code that enumerates all
+            // templates of a type skips clones even though TryGet<T>(id) finds
+            // them. Failure here is non-fatal: patches still apply via the
+            // m_TemplateMaps entry; only GetAll<T> consumers miss the clone.
+            if (!TryExtendTemplateArray(resolvedType, clone, log))
+            {
+                log.Warning(
+                    $"Template clone '{templateTypeName}:{directive.CloneId}': "
+                    + "GetAll<T> enumeration won't see this clone; check earlier diagnostics for cause.");
+            }
+
             log.Msg(
                 $"Template clone registered: {templateTypeName}:{directive.SourceId} -> {directive.CloneId} "
                 + $"(mod '{directive.OwnerLabel}').");
@@ -241,6 +255,200 @@ internal sealed class TemplateCloneApplier
         }
 
         return IntPtr.Zero;
+    }
+
+    private static readonly Type[] IntPtrCtorSignature = { typeof(IntPtr) };
+
+    // Appends the clone to DataTemplateLoader.m_TemplateArrays[resolvedType].
+    //
+    // Why a fresh native allocation: IL2CPP arrays are immutable in length, so
+    // we allocate a length+1 array, copy the existing element pointers across,
+    // append the clone, and replace the dict entry.
+    //
+    // Why il2cpp_array_new with the original's element class: an earlier
+    // attempt used `new Il2CppReferenceArray<DataTemplate>(managedArray)`,
+    // whose ctor allocates with element class = DataTemplate (the wrapper's
+    // generic T). The dict actually stores arrays whose IL2CPP element class
+    // is the concrete subtype (UnitLeaderTemplate, BaseItemTemplate, ...), so
+    // the rebuilt array's element class mismatched the original's. The game's
+    // own GetAll<T> consumer then hung on it (frozen new-game start, 2026-04-20).
+    // Reading the element class off the original's native pointer keeps the
+    // replacement byte-identical to what the dict slot expects.
+    //
+    // The wrapper itself uses the original's runtime type so the dict's
+    // typed indexer setter accepts the assignment regardless of whether the
+    // game stores base-typed (Il2CppReferenceArray<DataTemplate>) or
+    // concrete-typed wrappers.
+    private static bool TryExtendTemplateArray(
+        Type resolvedType, Il2CppObjectBase clone, MelonLogger.Instance log)
+    {
+        var singleton = DataTemplateLoader.GetSingleton();
+        if (singleton == null)
+            return false;
+
+        var arraysProperty = typeof(DataTemplateLoader).GetProperty(
+            "m_TemplateArrays", BindingFlags.Public | BindingFlags.Instance);
+        if (arraysProperty == null)
+        {
+            log.Warning("Template clone array extend: DataTemplateLoader.m_TemplateArrays property not found.");
+            return false;
+        }
+
+        var arrays = arraysProperty.GetValue(singleton);
+        if (arrays == null)
+            return false;
+
+        var arraysType = arrays.GetType();
+        var il2CppType = Il2CppType.From(resolvedType);
+        if (il2CppType == null)
+            return false;
+
+        var tryGetValue = FindTryGetValue(arraysType);
+        if (tryGetValue == null)
+        {
+            log.Warning($"Template clone array extend: TryGetValue not found on {arraysType.FullName}.");
+            return false;
+        }
+
+        var lookup = new object[] { il2CppType, null };
+        if (!(bool)tryGetValue.Invoke(arrays, lookup) || lookup[1] is not Il2CppObjectBase oldArray)
+            return false;
+
+        var oldArrayType = oldArray.GetType();
+        var lengthProperty = oldArrayType.GetProperty("Length")
+            ?? oldArrayType.GetProperty("Count");
+        if (lengthProperty == null)
+        {
+            log.Warning($"Template clone array extend: no Length/Count on {oldArrayType.FullName}.");
+            return false;
+        }
+
+        int oldLength;
+        try
+        {
+            oldLength = (int)lengthProperty.GetValue(oldArray)!;
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Template clone array extend: read Length threw: {ex.Message}");
+            return false;
+        }
+
+        var oldArrayPointer = oldArray.Pointer;
+        if (oldArrayPointer == IntPtr.Zero)
+            return false;
+
+        var arrayClass = IL2CPP.il2cpp_object_get_class(oldArrayPointer);
+        var elementClass = IL2CPP.il2cpp_class_get_element_class(arrayClass);
+        if (elementClass == IntPtr.Zero)
+        {
+            log.Warning($"Template clone array extend: il2cpp_class_get_element_class returned null for {oldArrayType.FullName}.");
+            return false;
+        }
+
+        var newNativeArray = IL2CPP.il2cpp_array_new(elementClass, (ulong)(oldLength + 1));
+        if (newNativeArray == IntPtr.Zero)
+        {
+            log.Warning($"Template clone array extend: il2cpp_array_new returned null for {oldArrayType.FullName}.");
+            return false;
+        }
+
+        var wrapperCtor = oldArrayType.GetConstructor(IntPtrCtorSignature);
+        if (wrapperCtor == null)
+        {
+            log.Warning($"Template clone array extend: {oldArrayType.FullName} has no (IntPtr) ctor.");
+            return false;
+        }
+
+        object newArray;
+        try
+        {
+            newArray = wrapperCtor.Invoke(new object[] { newNativeArray });
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Template clone array extend: (IntPtr) ctor threw: {ex.InnerException?.Message ?? ex.Message}");
+            return false;
+        }
+
+        var indexer = FindIntIndexer(oldArrayType);
+        if (indexer == null)
+        {
+            log.Warning($"Template clone array extend: no int-indexer on {oldArrayType.FullName}.");
+            return false;
+        }
+
+        try
+        {
+            var slot = new object[1];
+            for (var i = 0; i < oldLength; i++)
+            {
+                slot[0] = i;
+                var element = indexer.GetValue(oldArray, slot);
+                indexer.SetValue(newArray, element, slot);
+            }
+
+            slot[0] = oldLength;
+            indexer.SetValue(newArray, clone, slot);
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Template clone array extend: indexer copy threw: {ex.InnerException?.Message ?? ex.Message}");
+            return false;
+        }
+
+        var dictIndexer = FindIndexerWithKey(arraysType, il2CppType.GetType());
+        if (dictIndexer == null)
+        {
+            log.Warning($"Template clone array extend: no Il2CppType-keyed indexer on {arraysType.FullName}.");
+            return false;
+        }
+
+        try
+        {
+            dictIndexer.SetValue(arrays, newArray, new object[] { il2CppType });
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Template clone array extend: dict indexer set threw: {ex.InnerException?.Message ?? ex.Message}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static MethodInfo FindTryGetValue(Type dictType)
+    {
+        foreach (var method in dictType.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (method.Name != "TryGetValue") continue;
+            var parameters = method.GetParameters();
+            if (parameters.Length == 2 && parameters[1].ParameterType.IsByRef)
+                return method;
+        }
+        return null;
+    }
+
+    private static PropertyInfo FindIntIndexer(Type type)
+    {
+        foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            var parameters = property.GetIndexParameters();
+            if (parameters.Length == 1 && parameters[0].ParameterType == typeof(int))
+                return property;
+        }
+        return null;
+    }
+
+    private static PropertyInfo FindIndexerWithKey(Type type, Type keyType)
+    {
+        foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            var parameters = property.GetIndexParameters();
+            if (parameters.Length == 1 && parameters[0].ParameterType == keyType)
+                return property;
+        }
+        return null;
     }
 
 }

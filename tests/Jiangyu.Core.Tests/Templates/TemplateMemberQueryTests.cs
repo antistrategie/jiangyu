@@ -111,6 +111,34 @@ public class TemplateMemberQueryTests
         Assert.Equal(CompiledTemplateValueKind.Boolean, result.PatchScalarKind);
     }
 
+    // Wider integer family folds onto Int32 patch kind so the editor renders a
+    // number control and the loader runs range-checked widening at apply time.
+    [Theory]
+    [InlineData("FixtureEntity.Repetitions")]
+    [InlineData("FixtureEntity.SignedShort")]
+    [InlineData("FixtureEntity.UInt32Field")]
+    [InlineData("FixtureEntity.Int64Field")]
+    [InlineData("FixtureEntity.UInt64Field")]
+    [InlineData("FixtureEntity.SByteField")]
+    public void IntegerFamilyLeaf_ReturnsInt32Scalar(string path)
+    {
+        using var catalog = Load();
+        var result = TemplateMemberQuery.Run(catalog, path);
+
+        Assert.Equal(QueryResultKind.Leaf, result.Kind);
+        Assert.Equal(CompiledTemplateValueKind.Int32, result.PatchScalarKind);
+    }
+
+    [Fact]
+    public void DoubleLeaf_ReturnsSingleScalar()
+    {
+        using var catalog = Load();
+        var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.DoubleField");
+
+        Assert.Equal(QueryResultKind.Leaf, result.Kind);
+        Assert.Equal(CompiledTemplateValueKind.Single, result.PatchScalarKind);
+    }
+
     [Fact]
     public void IndexedLeaf_AfterUnwrap_WorksForElementScalar()
     {

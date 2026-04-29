@@ -90,6 +90,35 @@ public class TemplatePatchPathValidatorTests
                     TemplateId = "skill.some_skill",
                 },
             },
+            // TemplateType=null: monomorphic ref field, lookup type derived
+            // from the destination at apply time.
+            new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.TemplateReference,
+                Reference = new CompiledTemplateReference
+                {
+                    TemplateType = null,
+                    TemplateId = "skill.some_skill",
+                },
+            },
+            new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.TemplateReference,
+                Reference = new CompiledTemplateReference
+                {
+                    TemplateType = "",
+                    TemplateId = "skill.some_skill",
+                },
+            },
+            new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.TemplateReference,
+                Reference = new CompiledTemplateReference
+                {
+                    TemplateType = "  ",
+                    TemplateId = "skill.some_skill",
+                },
+            },
         };
 
     [Theory]
@@ -114,17 +143,17 @@ public class TemplatePatchPathValidatorTests
             new CompiledTemplateValue
             {
                 Kind = CompiledTemplateValueKind.TemplateReference,
-                Reference = new CompiledTemplateReference { TemplateType = "", TemplateId = "skill.foo" },
-            },
-            new CompiledTemplateValue
-            {
-                Kind = CompiledTemplateValueKind.TemplateReference,
                 Reference = new CompiledTemplateReference { TemplateType = "SkillTemplate", TemplateId = "" },
             },
             new CompiledTemplateValue
             {
                 Kind = CompiledTemplateValueKind.TemplateReference,
                 Reference = new CompiledTemplateReference { TemplateType = " ", TemplateId = "   " },
+            },
+            new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.TemplateReference,
+                Reference = new CompiledTemplateReference { TemplateType = null, TemplateId = "" },
             },
         };
 
@@ -145,5 +174,69 @@ public class TemplatePatchPathValidatorTests
             Single = 3.14f,
         };
         Assert.False(TemplatePatchPathValidator.IsSupportedValue(value));
+    }
+
+    // --- Op-shape: Clear ---
+
+    [Fact]
+    public void OpShape_Clear_AcceptsBareFieldPath()
+    {
+        var op = new CompiledTemplateSetOperation
+        {
+            Op = CompiledTemplateOp.Clear,
+            FieldPath = "Skills",
+        };
+
+        var ok = TemplatePatchPathValidator.TryValidateOpShape(op, op.FieldPath, out var error);
+        Assert.True(ok, error);
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void OpShape_Clear_RejectsIndex()
+    {
+        var op = new CompiledTemplateSetOperation
+        {
+            Op = CompiledTemplateOp.Clear,
+            FieldPath = "Skills",
+            Index = 0,
+        };
+
+        var ok = TemplatePatchPathValidator.TryValidateOpShape(op, op.FieldPath, out var error);
+        Assert.False(ok);
+        Assert.Contains("op=Clear cannot carry an 'index' field", error);
+    }
+
+    [Fact]
+    public void OpShape_Clear_RejectsValue()
+    {
+        var op = new CompiledTemplateSetOperation
+        {
+            Op = CompiledTemplateOp.Clear,
+            FieldPath = "Skills",
+            Value = new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.Int32,
+                Int32 = 0,
+            },
+        };
+
+        var ok = TemplatePatchPathValidator.TryValidateOpShape(op, op.FieldPath, out var error);
+        Assert.False(ok);
+        Assert.Contains("op=Clear cannot carry a value", error);
+    }
+
+    [Fact]
+    public void OpShape_Clear_RejectsIndexedTerminal()
+    {
+        var op = new CompiledTemplateSetOperation
+        {
+            Op = CompiledTemplateOp.Clear,
+            FieldPath = "Skills[0]",
+        };
+
+        var ok = TemplatePatchPathValidator.TryValidateOpShape(op, op.FieldPath, out var error);
+        Assert.False(ok);
+        Assert.Contains("indexed terminal segment", error);
     }
 }

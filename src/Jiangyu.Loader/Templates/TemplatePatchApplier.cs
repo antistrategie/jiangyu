@@ -1,4 +1,5 @@
 using System.Reflection;
+using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using Jiangyu.Shared.Templates;
 using MelonLoader;
@@ -221,6 +222,9 @@ internal sealed class TemplatePatchApplier
 
         if (op.Op == CompiledTemplateOp.Remove)
             return TryApplyRemove(current, terminal, templateTypeName, templateId, op, log);
+
+        if (op.Op == CompiledTemplateOp.Clear)
+            return TryApplyClear(current, terminal, templateTypeName, templateId, op, log);
 
         if (op.Op == CompiledTemplateOp.Append || op.Op == CompiledTemplateOp.InsertAt)
         {
@@ -1027,6 +1031,91 @@ internal sealed class TemplatePatchApplier
         return ApplyOutcome.Applied;
     }
 
+    // Clear empties the terminal collection in place. List<T> uses the
+    // built-in Clear(); native IL2CPP arrays are immutable, so we rebuild a
+    // zero-length array of the same element type and write it back through
+    // the parent's setter. A null collection is treated as missing — the
+    // loader's missing-field path warns the modder rather than silently
+    // materialising an empty list.
+    private static ApplyOutcome TryApplyClear(
+        object current, PathSegment terminal, string templateTypeName, string templateId,
+        LoadedPatchOperation op, MelonLogger.Instance log)
+    {
+        if (!TryReadMember(current, terminal.Name, out var collection, out var collectionType, out var readError))
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"cannot read terminal collection '{terminal.Name}': {readError}");
+            return ApplyOutcome.MemberMissing;
+        }
+
+        if (collection == null)
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"terminal collection '{terminal.Name}' ({collectionType.FullName}) is null; nothing to clear.");
+            return ApplyOutcome.MemberMissing;
+        }
+
+        if (!TryGetCollectionShape(collectionType, out var shape, out var elementType))
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"collection type {collectionType.FullName} is not supported for Clear.");
+            return ApplyOutcome.MemberMissing;
+        }
+
+        if (!TryGetWritableMember(current, terminal.Name, out _, out var fieldSetter, out _))
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"parent {current.GetType().FullName} has no writable '{terminal.Name}' for clear.");
+            return ApplyOutcome.MemberMissing;
+        }
+
+        try
+        {
+            switch (shape)
+            {
+                case CollectionShape.List:
+                    ClearList(collection, collectionType);
+                    break;
+
+                case CollectionShape.ReferenceArray:
+                case CollectionShape.StructArray:
+                    var emptied = BuildEmptyArray(collectionType, elementType);
+                    fieldSetter(emptied);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"clear threw: {ex.Message}");
+            return ApplyOutcome.ConversionFailed;
+        }
+
+        log.Msg(FormatPrefix(templateTypeName, templateId, op)
+            + $"cleared {collectionType.Name}.");
+        return ApplyOutcome.Applied;
+    }
+
+    private static void ClearList(object list, Type listType)
+    {
+        var clear = listType.GetMethod(
+            "Clear",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+            binder: null, types: Type.EmptyTypes, modifiers: null)
+            ?? throw new InvalidOperationException(
+                $"{listType.FullName} has no Clear() method.");
+        clear.Invoke(list, null);
+    }
+
+    private static object BuildEmptyArray(Type arrayType, Type elementType)
+    {
+        var ctor = arrayType.GetConstructor(new[] { elementType.MakeArrayType() })
+            ?? throw new InvalidOperationException(
+                $"{arrayType.FullName} missing managed-array ctor for clear.");
+        var managed = Array.CreateInstance(elementType, 0);
+        return ctor.Invoke(new[] { managed });
+    }
+
     private static void RemoveFromList(object list, Type listType, int index)
     {
         var removeAt = listType.GetMethod(
@@ -1149,7 +1238,10 @@ internal sealed class TemplatePatchApplier
 
         // Numeric normalisation shared with compile/editor validation:
         // allow canonical narrowing/widening between Byte/Int32/Single before
-        // strict target-type checks below.
+        // strict target-type checks below. Integer-family destinations (short,
+        // ushort, uint, long, ulong, sbyte) all normalise to the Int32 patch
+        // kind here; the kind=Int32 branch below range-checks and widens to
+        // the actual member type. Double normalises through Single.
         if (targetType == typeof(byte))
         {
             if (!TemplateValueCoercion.TryCoerceNumericKind(value, CompiledTemplateValueKind.Byte, out error))
@@ -1158,7 +1250,7 @@ internal sealed class TemplatePatchApplier
                 return false;
             }
         }
-        else if (targetType == typeof(int))
+        else if (TemplateValueCoercion.IsIntegerFamilyTarget(targetType))
         {
             if (!TemplateValueCoercion.TryCoerceNumericKind(value, CompiledTemplateValueKind.Int32, out error))
             {
@@ -1166,7 +1258,7 @@ internal sealed class TemplatePatchApplier
                 return false;
             }
         }
-        else if (targetType == typeof(float))
+        else if (targetType == typeof(float) || targetType == typeof(double))
         {
             if (!TemplateValueCoercion.TryCoerceNumericKind(value, CompiledTemplateValueKind.Single, out error))
             {
@@ -1199,23 +1291,21 @@ internal sealed class TemplatePatchApplier
                 return true;
 
             case CompiledTemplateValueKind.Int32:
-                if (targetType == typeof(int))
-                {
-                    converted = value.Int32.Value;
-                    return true;
-                }
-
-                error = $"value kind Int32 but member type is {targetType.FullName}.";
-                return false;
+                return TemplateValueCoercion.TryWidenInt32(value.Int32.Value, targetType, out converted, out error);
 
             case CompiledTemplateValueKind.Single:
-                if (targetType != typeof(float))
+                if (targetType == typeof(float))
                 {
-                    error = $"value kind Single but member type is {targetType.FullName}.";
-                    return false;
+                    converted = value.Single.Value;
+                    return true;
                 }
-                converted = value.Single.Value;
-                return true;
+                if (targetType == typeof(double))
+                {
+                    converted = (double)value.Single.Value;
+                    return true;
+                }
+                error = $"value kind Single but member type is {targetType.FullName}.";
+                return false;
 
             case CompiledTemplateValueKind.String:
                 if (targetType != typeof(string))
@@ -1240,7 +1330,18 @@ internal sealed class TemplatePatchApplier
                 }
                 try
                 {
-                    converted = Enum.Parse(targetType, value.EnumValue, ignoreCase: false);
+                    var parsed = Enum.Parse(targetType, value.EnumValue, ignoreCase: false);
+                    // Strict membership, mirroring the compile-time validator.
+                    // Enum.Parse accepts any numeric form in the underlying
+                    // type's range (e.g. "99" → an undefined ItemSlot value);
+                    // reject those so a hand-edited compiled manifest can't
+                    // sneak an undefined value past the loader.
+                    if (!Enum.IsDefined(targetType, parsed))
+                    {
+                        error = $"enum value '{value.EnumValue}' is not a defined member of {targetType.Name}.";
+                        return false;
+                    }
+                    converted = parsed;
                     return true;
                 }
                 catch (Exception ex)
@@ -1263,9 +1364,14 @@ internal sealed class TemplatePatchApplier
 
     // Constructs a fresh instance of the composite's typeName and recursively
     // writes each authored field via the same TryConvertScalar conversion.
-    // Dispatches construction by base class: ScriptableObject subtypes use
-    // ScriptableObject.CreateInstance (runs Unity's OnEnable etc.); plain
-    // support types use the wrapper's parameterless ctor via Activator.
+    // Dispatches construction by base class:
+    //  - ScriptableObject subtypes: ScriptableObject.CreateInstance (runs
+    //    Unity's OnEnable etc.).
+    //  - Il2CppObjectBase subtypes (e.g. LocalizedLine, plain Il2CppSystem.*
+    //    support types): allocate via il2cpp_object_new on the IL2CPP class
+    //    pointer, then wrap with the generated (IntPtr) ctor. Skips running
+    //    any IL2CPP-side ctor — fields are written individually below.
+    //  - Pure managed types: Activator.CreateInstance (parameterless ctor).
     private static bool TryConstructComposite(
         CompiledTemplateComposite composite, Type targetType, out object converted, out string error)
     {
@@ -1293,9 +1399,22 @@ internal sealed class TemplatePatchApplier
         object instance;
         try
         {
-            instance = typeof(UnityEngine.ScriptableObject).IsAssignableFrom(resolvedType)
-                ? UnityEngine.ScriptableObject.CreateInstance(Il2CppInterop.Runtime.Il2CppType.From(resolvedType))
-                : Activator.CreateInstance(resolvedType)!;
+            if (typeof(UnityEngine.ScriptableObject).IsAssignableFrom(resolvedType))
+            {
+                instance = UnityEngine.ScriptableObject.CreateInstance(Il2CppInterop.Runtime.Il2CppType.From(resolvedType));
+            }
+            else if (typeof(Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase).IsAssignableFrom(resolvedType))
+            {
+                if (!TryAllocateIl2CppInstance(resolvedType, out instance, out var il2cppError))
+                {
+                    error = $"Composite: construction of {resolvedType.FullName} failed: {il2cppError}";
+                    return false;
+                }
+            }
+            else
+            {
+                instance = Activator.CreateInstance(resolvedType)!;
+            }
         }
         catch (Exception ex)
         {
@@ -1334,6 +1453,118 @@ internal sealed class TemplatePatchApplier
         converted = instance;
         error = null;
         return true;
+    }
+
+    // Cached per-type lookups for IL2CPP allocation. Filled lazily on first
+    // composite construction of each wrapper type. Plain Dictionary is fine:
+    // template apply runs from JiangyuMod's scene-load coroutine on the Unity
+    // main thread, so reads and writes are serialised. A null entry in
+    // Il2CppIntPtrCtorCache is the cached "no (IntPtr) ctor" sentinel; reuse
+    // it on subsequent lookups instead of re-resolving.
+    private static readonly Dictionary<Type, IntPtr> Il2CppClassPtrCache = new();
+    private static readonly Dictionary<Type, ConstructorInfo> Il2CppIntPtrCtorCache = new();
+    private static readonly Type[] IntPtrCtorSignature = new[] { typeof(IntPtr) };
+
+    private static IntPtr ResolveIl2CppClassPtr(Type t)
+    {
+        try
+        {
+            var storeType = typeof(Il2CppClassPointerStore<>).MakeGenericType(t);
+            var field = storeType.GetField(
+                "NativeClassPtr",
+                BindingFlags.Public | BindingFlags.Static);
+            if (field == null)
+                return IntPtr.Zero;
+            var raw = field.GetValue(null);
+            return raw == null ? IntPtr.Zero : (IntPtr)raw;
+        }
+        catch
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    private static ConstructorInfo ResolveIntPtrCtor(Type t)
+    {
+        return t.GetConstructor(IntPtrCtorSignature);
+    }
+
+    // Allocates an IL2CPP object for an Il2CppInterop wrapper type
+    // (descendant of Il2CppObjectBase) and runs the type's IL2CPP-side
+    // parameterless ctor so default-state invariants are established before
+    // composite field writes overwrite individual members.
+    //
+    // Steps:
+    //  1. il2cpp_object_new on the resolved native class pointer — allocates
+    //     and zero-fills the IL2CPP object, sets up the vtable.
+    //  2. il2cpp_runtime_object_init — invokes the type's parameterless
+    //     instance ctor on the IL2CPP runtime so any defaults (backing
+    //     lists, default flags) are populated. Best-effort: if no
+    //     parameterless ctor exists or the ctor throws, we proceed against
+    //     the zero-initialised object — fields the modder authored will be
+    //     overwritten next, and unauthored fields keep their zero defaults.
+    //  3. Wrap with the generated managed (IntPtr) ctor so the result is a
+    //     usable Il2CppObjectBase wrapper.
+    private static bool TryAllocateIl2CppInstance(Type wrapperType, out object instance, out string error)
+    {
+        instance = null;
+        error = null;
+
+        if (!Il2CppClassPtrCache.TryGetValue(wrapperType, out var classPtr))
+        {
+            classPtr = ResolveIl2CppClassPtr(wrapperType);
+            Il2CppClassPtrCache[wrapperType] = classPtr;
+        }
+
+        if (classPtr == IntPtr.Zero)
+        {
+            error = $"Il2CppClassPointerStore<{wrapperType.FullName}>.NativeClassPtr not found.";
+            return false;
+        }
+
+        if (!Il2CppIntPtrCtorCache.TryGetValue(wrapperType, out var ctor))
+        {
+            ctor = ResolveIntPtrCtor(wrapperType);
+            Il2CppIntPtrCtorCache[wrapperType] = ctor;
+        }
+
+        if (ctor == null)
+        {
+            error = $"{wrapperType.FullName} has no (IntPtr) constructor; cannot wrap a fresh IL2CPP allocation.";
+            return false;
+        }
+
+        var instancePtr = IL2CPP.il2cpp_object_new(classPtr);
+        if (instancePtr == IntPtr.Zero)
+        {
+            error = $"il2cpp_object_new returned null for {wrapperType.FullName}.";
+            return false;
+        }
+
+        // Best-effort IL2CPP-side ctor. Some wrapper types (pure data shells
+        // with no parameterless .ctor on the native side) will throw here;
+        // that's acceptable because authored field writes follow. Swallowing
+        // matches the previous "skip ctor" behaviour as a fallback while
+        // preserving correct init for the common case.
+        try
+        {
+            IL2CPP.il2cpp_runtime_object_init(instancePtr);
+        }
+        catch
+        {
+            // Intentionally ignored; see comment above.
+        }
+
+        try
+        {
+            instance = ctor.Invoke(new object[] { instancePtr });
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"(IntPtr) ctor invocation threw: {ex.InnerException?.Message ?? ex.Message}";
+            return false;
+        }
     }
 
     // Resolves a modder-authored (templateType, templateId) pair to the live

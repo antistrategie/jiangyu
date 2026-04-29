@@ -177,17 +177,30 @@ public static class TemplateCatalogValidator
 
         // NamedArray fields ([NamedArray(typeof(T))] byte[]) are fixed-size
         // lookups keyed by the enum — one slot per enum member. Append/Insert/
-        // Remove would shift the slot-to-enum correspondence and break the
-        // invariant, so only Set with an in-range index makes sense.
+        // Remove/Clear would shift the slot-to-enum correspondence and break
+        // the invariant, so only Set with an in-range index makes sense.
         if (result.NamedArrayEnumTypeName is not null
             && (op.Op == CompiledTemplateOp.Append
                 || op.Op == CompiledTemplateOp.InsertAt
-                || op.Op == CompiledTemplateOp.Remove))
+                || op.Op == CompiledTemplateOp.Remove
+                || op.Op == CompiledTemplateOp.Clear))
         {
             reportError(
                 $"op={op.Op} is not supported on the "
                 + $"fixed-size {result.NamedArrayEnumTypeName}-indexed array '{op.FieldPath}'; "
                 + "use 'set' with index= to change one slot.");
+            return 1;
+        }
+
+        // Clear is collection-only. UnwrappedFrom is non-null exactly when the
+        // resolved terminal is a collection, so the absence of unwrapping
+        // means the modder pointed Clear at a scalar field — likely a typo.
+        if (op.Op == CompiledTemplateOp.Clear && result.UnwrappedFrom is null)
+        {
+            reportError(
+                $"op=Clear targets a non-collection field "
+                + $"(declared {catalog.FriendlyName(result.CurrentType ?? typeof(object))}); "
+                + "Clear empties a list/array, so the destination must be a collection.");
             return 1;
         }
 
@@ -279,12 +292,87 @@ public static class TemplateCatalogValidator
                     return 1;
                 }
             }
+            else if (op.Value.Kind == CompiledTemplateValueKind.Enum)
+            {
+                if (ValidateEnumValue(op.Value, declaredType, result.EnumMemberNames, reportError))
+                    return 1;
+            }
         }
 
         if (op.Value?.Kind == CompiledTemplateValueKind.Composite && op.Value.Composite != null)
             return ValidateCompositeValue(op.Value.Composite, op.FieldPath, catalog, reportError);
 
         return 0;
+    }
+
+    /// <summary>
+    /// Cross-checks an authored <see cref="CompiledTemplateValueKind.Enum"/>
+    /// value against the destination field's declared enum type. Catches the
+    /// common authoring mistakes at compile time so they don't reach the
+    /// loader: wrong enum type name (typo from a similar-shaped class),
+    /// undefined member, or enum= on a non-enum destination.
+    ///
+    /// Returns <c>true</c> when an error was reported. The caller should
+    /// short-circuit on <c>true</c>.
+    /// </summary>
+    private static bool ValidateEnumValue(
+        CompiledTemplateValue value,
+        Type? declaredType,
+        IReadOnlyList<string> declaredMembers,
+        Action<string> reportError)
+    {
+        if (declaredType is null || !declaredType.IsEnum)
+        {
+            reportError(
+                $"enum= value on a non-enum destination "
+                + $"(declared {declaredType?.FullName ?? "<unknown>"}).");
+            return true;
+        }
+
+        var declaredName = declaredType.Name;
+
+        if (!string.IsNullOrWhiteSpace(value.EnumType)
+            && !string.Equals(value.EnumType, declaredName, StringComparison.Ordinal))
+        {
+            reportError(
+                $"enum=\"{value.EnumType}\" does not match the declared enum type "
+                + $"'{declaredName}' (known members: {string.Join(", ", declaredMembers)}).");
+            return true;
+        }
+
+        var enumValue = value.EnumValue;
+        if (string.IsNullOrWhiteSpace(enumValue))
+        {
+            reportError($"enum value is empty for {declaredName}.");
+            return true;
+        }
+
+        if (declaredMembers.Contains(enumValue, StringComparer.Ordinal))
+            return false;
+
+        // Numeric form: Enum.Parse accepts "8" → ItemSlot.ModularVehicleLight,
+        // matching the loader's behaviour. Confirm the value is a defined
+        // member rather than just any integer in range — modders shouldn't
+        // be able to author a numerically-valid-but-undefined value. Reads
+        // member constants via reflection so this works on types loaded via
+        // MetadataLoadContext (Enum.TryParse rejects those).
+        if (long.TryParse(enumValue, out var numeric))
+        {
+            foreach (var name in declaredMembers)
+            {
+                var field = declaredType.GetField(name);
+                if (field?.GetRawConstantValue() is { } raw
+                    && Convert.ToInt64(raw) == numeric)
+                {
+                    return false;
+                }
+            }
+        }
+
+        reportError(
+            $"'{enumValue}' is not a defined member of enum '{declaredName}' "
+            + $"(known members: {string.Join(", ", declaredMembers)}).");
+        return true;
     }
 
     private static int ValidateCompositeValue(

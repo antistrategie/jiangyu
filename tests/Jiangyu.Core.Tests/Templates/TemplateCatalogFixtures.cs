@@ -67,6 +67,15 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
     {
     }
 
+    // Concrete subtype of FixtureBaseDataTemplate. The catalog's polymorphism
+    // detector sees this as a strict reference-target descendant, so any
+    // field typed FixtureBaseDataTemplate is reported as polymorphic — even
+    // though Il2CppInterop wrappers strip the abstract bit on generation.
+    public class FixtureConcreteDerived : FixtureBaseDataTemplate
+    {
+        public int DerivedField { get; set; }
+    }
+
     public class FixtureRefHolder : Menace.Tools.DataTemplate
     {
         public FixtureBaseDataTemplate? PolymorphicRef { get; set; }
@@ -123,6 +132,17 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
         public int[] BoneIndices { get; set; } = [];
         public bool IsEnabled { get; set; }
         public float HudYOffsetScale { get; set; }
+
+        // Wider integer family — exercise scalar-kind mapping and applier
+        // range-checked widening for sibling integer widths. Real game data
+        // uses these (e.g. UInt16 for SkillTemplate.Repetitions).
+        public ushort Repetitions { get; set; }
+        public short SignedShort { get; set; }
+        public uint UInt32Field { get; set; }
+        public long Int64Field { get; set; }
+        public ulong UInt64Field { get; set; }
+        public sbyte SByteField { get; set; }
+        public double DoubleField { get; set; }
         [Sirenix.Serialization.OdinSerialize]
         public FixtureCondition? CustomCondition { get; set; }
         public int ReadOnlyCount { get; } = 0;

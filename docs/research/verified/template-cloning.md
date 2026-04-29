@@ -24,6 +24,19 @@ the newly registered `cloneId`. Compile-time validation in
 `sourceId`/`cloneId`, `sourceId == cloneId`, and batch-internal duplicate
 cloneIds.
 
+A `clone` block in KDL may carry inline `set`/`append`/`insert`/`remove`/
+`clear` ops as children. The parser splits each such block into a
+`CompiledTemplateClone` directive plus a synthetic `CompiledTemplatePatch`
+targeting the new `cloneId`, so the inline ops apply against the freshly
+registered clone after the clone phase finishes. Authoring shape:
+
+```kdl
+clone "WeaponTemplate" from="weapon.foo" id="weapon.foo_buffed" {
+    set "Damage" 50.0
+    set "Range" 100
+}
+```
+
 Clone-backed saves are supported by re-registering configured clones on every
 session before MENACE's save-slot discovery and save-load paths touch template
 IDs. The save does not persist the clone object itself; it persists the
@@ -54,8 +67,17 @@ Implemented in `src/Jiangyu.Loader/Templates/TemplateCloneApplier.cs`:
    `ManagedStringToIl2Cpp` pointer at that offset.
 6. Insert into `DataTemplateLoader.GetSingleton().m_TemplateMaps[type][cloneId]`
    via direct typed property access on the Il2CppInterop-generated wrapper.
-   Only `m_TemplateMaps` (the name-lookup store) is written; see "Scope
-   limits" for why `m_TemplateArrays` is not touched.
+7. Allocate a length+1 native IL2CPP array via `il2cpp_array_new(elementClass,
+   newLength)`, copy existing element pointers across, append the clone,
+   wrap it in the original wrapper's runtime type via the generated
+   `(IntPtr)` ctor, and replace the entry in `m_TemplateArrays[type]`. The
+   element class comes from the original native array
+   (`il2cpp_class_get_element_class(il2cpp_object_get_class(oldArrayPtr))`),
+   not from the wrapper's generic `T`. This is the load-bearing detail: a
+   prior attempt that allocated via `new Il2CppReferenceArray<DataTemplate>(managedArray)`
+   used the base type's class and the game's own `GetAll<T>` consumer hung
+   on the result. Using the original's element class keeps the replacement
+   byte-identical to what the dict slot expects.
 
 ## Session re-registration
 
@@ -79,20 +101,6 @@ Each prefix clears the per-type "already applied" set and re-runs
 `SceneStateSettings.Awake`: on the 2026-04-20 cold-restart smoke run it fired
 before save-slot discovery and before the later save-load path, so the clone
 IDs referenced by the save were already present in `m_TemplateMaps`.
-
-## Patch applier switch to TryGet
-
-Template patching was previously an enumerate-then-match design:
-`GetAll<T>` → build `byId` dictionary → per-patch lookup. After this slice,
-`TemplatePatchApplier.TryApplyType` instead uses
-`TemplateRuntimeAccess.TryGetTemplateById`, which calls
-`DataTemplateLoader.TryGet<T>(id, out template)` via a reflection-resolved
-generic method. Benefits:
-
-- O(1) per-patch lookup instead of O(N) enumeration.
-- Reads from `m_TemplateMaps`, so it sees both game-native templates and
-  Jiangyu-registered clones.
-- Avoids the need to write to `m_TemplateArrays`.
 
 ## Verification
 
@@ -152,27 +160,19 @@ Jiangyu diverges by:
 
 ## Scope limits
 
-- **`m_TemplateArrays` is not updated.** `DataTemplateLoader.GetAll<T>()`
-  reads from `m_TemplateArrays` and will not include clones in its
-  enumeration. This was deliberate after an earlier attempt: rebuilding via
-  `new Il2CppReferenceArray<DataTemplate>(managedArray)` produced a native
-  IL2CPP array the game's own `GetAll<T>` enumeration hung on (froze
-  new-game start, 2026-04-20). The `TryGet<T>`-based patch applier does not
-  need enumeration, so leaving `m_TemplateArrays` untouched is correct for
-  patch targeting. Gameplay code that enumerates `GetAll<T>` for a given
-  template type will not see clones; if that becomes limiting, the
-  enumeration backing store can be handled with a safer array-construction
-  approach (e.g. `il2cpp_array_new` + element copy via raw pointer writes).
 - **Non-serialised fields beyond `m_ID` stay at their pre-clone values.**
   `Instantiate` does not copy `[NonSerialized]` fields; only `m_ID` is
-  rewritten. Additional non-serialised fields on a specific template type
-  will need the same IL2CPP offset-write pattern if they need to be reset.
+  rewritten. A specific non-serialised field that needs resetting on clone
+  carries a `JIANGYU-CONTRACT:` marker at its IL2CPP offset-write site and
+  documents the reason; there's no generic "reset all non-serialised"
+  primitive because most such fields hold legitimate derived state that
+  the source's value is correct for.
 - **No cascade cloning.** Cloning a template whose referenced sub-templates
-  also need to be cloned is not supported; modder authors separate clone
-  directives for each.
-- **No value overrides in the clone directive.** Authoring shape is "clone,
-  then optionally patch" — combining clone + inline set into a single block
-  is a future ergonomics pass.
+  should also be cloned is authored explicitly: one `clone` directive per
+  template that needs an independent identity. There is no automatic
+  deep-walk because most cross-template references are intentionally
+  shared (icons, damage types, shared sub-templates) and a generic
+  cascade would over-clone them.
 
 ## Jiangyu Implementation
 

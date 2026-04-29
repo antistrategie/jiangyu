@@ -91,6 +91,15 @@ public enum CompiledTemplateOp
     /// from the collection at fieldPath. No value is required.
     /// </summary>
     Remove,
+
+    /// <summary>
+    /// Empty the collection at fieldPath. No value, no index. Composes with
+    /// subsequent <see cref="Append"/> ops on the same field for a
+    /// "replace the whole list" pattern. A null collection at apply time is
+    /// treated the same as a missing field; the loader's missing-field path
+    /// surfaces it instead of silently materialising an empty list.
+    /// </summary>
+    Clear,
 }
 
 public sealed class CompiledTemplateValue
