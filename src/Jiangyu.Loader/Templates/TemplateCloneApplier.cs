@@ -17,9 +17,13 @@ namespace Jiangyu.Loader.Templates;
 // declared on the DataTemplate base), and registers the clone into
 // DataTemplateLoader.m_TemplateMaps[type][cloneId] so Get<T>(id) / TryGet<T>
 // resolve it. HideFlags.DontUnloadUnusedAsset prevents scene-change GC.
-// m_TemplateArrays (the GetAll<T> enumeration backing store) is not written;
-// consumers that need to see the clone look it up by ID. Contract rationale
-// and verification live in docs/research/verified/template-cloning.md.
+// m_TemplateArrays (the GetAll<T> enumeration backing store) is extended in
+// the same pass so GetAll<T>() consumers see the clone. The clone is also
+// mirrored into every ancestor m_TemplateMaps / m_TemplateArrays slot up to
+// DataTemplate that the game has already materialised, because both dicts
+// are keyed by exact runtime type and gameplay code typically enumerates by
+// a base type (e.g. GetAll<BaseItemTemplate>() for the BlackMarket pool).
+// Contract rationale and verification live in docs/research/verified/template-cloning.md.
 
 /// <summary>
 /// Applies merged template clone directives at runtime by deep-copying live
@@ -30,6 +34,9 @@ namespace Jiangyu.Loader.Templates;
 internal sealed class TemplateCloneApplier
 {
     private readonly TemplateCloneCatalog _catalog;
+
+    // Tracks types whose apply pass has run this tick-cycle. Per-directive
+    // idempotency lives in TryApplyType's innerMap.TryGetValue check, not here.
     private readonly HashSet<string> _appliedTypes = new(StringComparer.Ordinal);
 
     public TemplateCloneApplier(TemplateCloneCatalog catalog)
@@ -106,44 +113,86 @@ internal sealed class TemplateCloneApplier
         var applied = 0;
         foreach (var directive in directives.Values)
         {
-            if (innerMap.ContainsKey(directive.CloneId))
+            if (!innerMap.TryGetValue(directive.CloneId, out var clone))
             {
-                continue;
+                if (!innerMap.TryGetValue(directive.SourceId, out var source))
+                {
+                    log.Warning(
+                        $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
+                        + "source template not found in DataTemplateLoader.");
+                    continue;
+                }
+
+                if (!TryCloneTemplate(source, directive.CloneId, log, out clone))
+                    continue;
+
+                RegisterCloneIntoSlot(resolvedType, innerMap, resolvedType, directive.CloneId, clone, log);
+
+                log.Msg(
+                    $"Template clone registered: {templateTypeName}:{directive.SourceId} -> {directive.CloneId} "
+                    + $"(mod '{directive.OwnerLabel}').");
+                applied++;
             }
 
-            if (!innerMap.TryGetValue(directive.SourceId, out var source))
-            {
-                log.Warning(
-                    $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
-                    + "source template not found in DataTemplateLoader.");
-                continue;
-            }
-
-            if (!TryCloneTemplate(source, directive.CloneId, log, out var clone))
-                continue;
-
-            innerMap[directive.CloneId] = clone;
-
-            // Also extend m_TemplateArrays so DataTemplateLoader.GetAll<T>()
-            // sees the clone. Without this, gameplay code that enumerates all
-            // templates of a type skips clones even though TryGet<T>(id) finds
-            // them. Failure here is non-fatal: patches still apply via the
-            // m_TemplateMaps entry; only GetAll<T> consumers miss the clone.
-            if (!TryExtendTemplateArray(resolvedType, clone, log))
-            {
-                log.Warning(
-                    $"Template clone '{templateTypeName}:{directive.CloneId}': "
-                    + "GetAll<T> enumeration won't see this clone; check earlier diagnostics for cause.");
-            }
-
-            log.Msg(
-                $"Template clone registered: {templateTypeName}:{directive.SourceId} -> {directive.CloneId} "
-                + $"(mod '{directive.OwnerLabel}').");
-            applied++;
+            MirrorCloneToAncestors(resolvedType, directive.CloneId, clone, log);
         }
 
         _appliedTypes.Add(templateTypeName);
         return applied;
+    }
+
+    // Inserts <clone> at <cloneId> into the type slot's m_TemplateMaps inner
+    // dict and extends the corresponding m_TemplateArrays bucket. Array-extend
+    // failure is non-fatal: m_TemplateMaps still resolves Get<T>(id)/TryGet<T>;
+    // only GetAll<slotType> consumers miss the clone. Caller gates idempotency,
+    // since calling twice for the same cloneId would double-extend the array.
+    private static void RegisterCloneIntoSlot(
+        Type slotType,
+        Il2CppDictionary slotMap,
+        Type declaredType,
+        string cloneId,
+        DataTemplate clone,
+        MelonLogger.Instance log)
+    {
+        slotMap[cloneId] = clone;
+
+        if (!TryExtendTemplateArray(slotType, clone, log))
+        {
+            log.Warning(
+                $"Template clone '{declaredType.Name}:{cloneId}': failed to extend "
+                + $"m_TemplateArrays[{slotType.Name}]; GetAll<{slotType.Name}> consumers "
+                + "won't see this clone (see earlier warnings for cause).");
+        }
+    }
+
+    /// <summary>
+    /// Mirrors <paramref name="clone"/> into every ancestor
+    /// <c>m_TemplateMaps</c>/<c>m_TemplateArrays</c> slot the game has already
+    /// materialised, walking <paramref name="resolvedType"/>.<c>BaseType</c>
+    /// upward to <c>DataTemplate</c>. Caller must have registered the clone
+    /// into the most-derived slot first; this method handles ancestors only.
+    /// Idempotent: each ancestor is independently gated on
+    /// <c>ContainsKey(cloneId)</c>, so re-registration ticks fill in slots
+    /// the game materialises later than the first apply pass. The walk only
+    /// writes to slots already in the outer dict; it never creates new
+    /// ancestor-keyed slots, so its visible destinations are bounded by what
+    /// the game itself populates.
+    /// </summary>
+    private static void MirrorCloneToAncestors(
+        Type resolvedType, string cloneId, DataTemplate clone, MelonLogger.Instance log)
+    {
+        var dataTemplateType = typeof(DataTemplate);
+        var current = resolvedType.BaseType;
+        while (current != null && dataTemplateType.IsAssignableFrom(current))
+        {
+            if (TryGetTemplateMap(current, out var ancestorMap)
+                && !ancestorMap.ContainsKey(cloneId))
+            {
+                RegisterCloneIntoSlot(current, ancestorMap, resolvedType, cloneId, clone, log);
+            }
+
+            current = current.BaseType;
+        }
     }
 
     private static bool TryGetTemplateMap(Type resolvedType, out Il2CppDictionary templateMap)

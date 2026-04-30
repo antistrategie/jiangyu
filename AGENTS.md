@@ -73,7 +73,7 @@ Response types that reach the frontend are annotated with `[RpcType]` (attribute
 
 ### Mods
 
-Individual mods are just data; `.bundle` files, JSON patches, no code needed. Mods that need custom logic ship their own MelonLoader DLL alongside the data.
+Individual mods compose from `.bundle` files, JSON/KDL patches and clones, and (where needed) companion MelonLoader DLLs alongside the data. The intended-modder tiers in `docs/PRINCIPLES.md` describe the progression: asset replacement, template patching/cloning, Unity-authored content, and runtime code via the planned SDK. Simple-things-stay-simple keeps content-only mods code-free; advanced cases reach for code paths.
 
 Loader-side mod discovery works in two phases. Discover and validate manifests first, then load bundles only for unblocked mods. Bundle load order is deterministic lexical mod-folder order; later-loaded mods win conflicts explicitly.
 

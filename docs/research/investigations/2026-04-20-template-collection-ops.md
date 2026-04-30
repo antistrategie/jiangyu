@@ -80,7 +80,6 @@ If the terminal collection field is `null`:
 - **Composite / construct-in-place values** are still out of scope. Appending a newly-constructed support-type (e.g. a new `Perk { Skill = X, Tier = 3 }`) requires Il2Cpp object construction from C# — a separate slice with its own factory investigation. Today's append primitive only takes references to existing live objects (via `TemplateReference`) or scalar values.
 - **Cross-template cascade cloning** not supported. If an appended reference belongs to a template that also needs cloning, the modder writes both operations explicitly.
 - **Value-type elements inside collections** can't currently be mutated in place (pre-existing limitation in the intermediate-segment walk). Set on `Skills[0]` for a value-type element is rejected; ref-type elements replace fine.
-- **Clone-registered templates are visible via `Get<T>(id)` and our fixed-up enumerate paths but not via `DataTemplateLoader.GetAll<T>()`** (see `template-cloning.md`). Same caveat applies when appending a clone as a collection element elsewhere — the reference works, enumeration paths elsewhere in the game may not see it.
 
 ## Jiangyu Implementation
 

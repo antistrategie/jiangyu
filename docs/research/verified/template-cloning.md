@@ -7,8 +7,10 @@ confirmed via EntityPatchSmoke + ClonePersistenceSmoke, 2026-04-20).
 
 Jiangyu's template cloning primitive deep-copies an existing live
 `DataTemplate`-derived `ScriptableObject` and registers the copy under a new
-`m_ID` so `DataTemplateLoader.Get<T>` / `TryGet<T>` resolve it. Modders drive
-it via a top-level `templateClones` block in `jiangyu.json`:
+`m_ID`, so it resolves through the same surfaces vanilla templates do:
+`Get<T>` / `TryGet<T>` for direct lookup, and `GetAll<T>` for any `T` from
+the most-derived type up to `DataTemplate`. Modders drive it via a top-level
+`templateClones` block in `jiangyu.json`:
 
 ```json
 "templateClones": [
@@ -78,6 +80,21 @@ Implemented in `src/Jiangyu.Loader/Templates/TemplateCloneApplier.cs`:
    used the base type's class and the game's own `GetAll<T>` consumer hung
    on the result. Using the original's element class keeps the replacement
    byte-identical to what the dict slot expects.
+8. Walk `resolvedType.BaseType` upward while
+   `typeof(DataTemplate).IsAssignableFrom(current)`. For each ancestor whose
+   `Il2CppType` key already exists in `m_TemplateMaps`, insert the clone into
+   the ancestor's inner map and run the same length+1 array extension on the
+   corresponding `m_TemplateArrays` slot. This mirrors vanilla: a vanilla
+   `WeaponTemplate` instance lives at the same native pointer in both
+   `m_TemplateMaps[WeaponTemplate]` and `m_TemplateMaps[BaseItemTemplate]`,
+   so consumers calling `GetAll<BaseItemTemplate>()` (e.g. the BlackMarket
+   pool, filtered by `BlackMarketMaxQuantity > 0`) see clones the same way
+   they see vanilla. The walk only writes to slots the game has already
+   materialised; it never creates new ancestor-keyed slots, so its visible
+   destinations are bounded by what the game itself populates. The walk is
+   idempotent across re-registration ticks: an ancestor slot the game
+   materialises later than the first apply pass is filled in on a
+   subsequent tick.
 
 ## Session re-registration
 
@@ -142,6 +159,29 @@ That proves Jiangyu's shipped clone contract is not "new game only": clone IDs
 referenced by a save survive a cold restart because the loader restores the
 `m_TemplateMaps` entries before MENACE consumes them.
 
+Ancestor visibility was confirmed end-to-end against the live game,
+2026-04-30:
+
+1. WoMENACE LRM5 directive
+   (`templateType: ModularVehicleWeaponTemplate`,
+   `sourceId: mod_weapon.medium.rocket_launcher`,
+   `cloneId: mod_weapon.medium.lrm5`) reaches the BlackMarket pool, which
+   enumerates `GetAll<BaseItemTemplate>()` filtered by
+   `BlackMarketMaxQuantity > 0`.
+2. Inspect dump (`UserData/jiangyu-inspect/*-templates-*.json`) showed 259
+   distinct vanilla native pointers registered under more than one
+   `m_TemplateMaps` slot in a typical Strategy scene. The source for the
+   smoke (`mod_weapon.medium.rocket_launcher`, native pointer
+   `0x74D2BC40`) appears under both `BaseItemTemplate` and
+   `WeaponTemplate`. The walk reproduces this multi-key registration for
+   clones.
+3. Loader log on the validated run reports the
+   `Template clone registered: ModularVehicleWeaponTemplate:... -> mod_weapon.medium.lrm5`
+   line and zero `failed to mirror into m_TemplateArrays[<ancestor>]`
+   warnings. Idempotent re-registration ticks report
+   `applied 0 clone registration(s)`, confirming the walk does not
+   double-insert.
+
 ## Reference cross-check
 
 Same-game prior art: `p0ss/MenaceAssetPacker`'s
@@ -184,6 +224,8 @@ Jiangyu diverges by:
   `src/Jiangyu.Loader/Templates/TemplateCloneCatalog.cs`.
 - Runtime applier:
   `src/Jiangyu.Loader/Templates/TemplateCloneApplier.cs`.
+- Ancestor mirror walk:
+  `src/Jiangyu.Loader/Templates/TemplateCloneApplier.cs:MirrorCloneToAncestors`.
 - Session re-registration hooks:
   `src/Jiangyu.Loader/Templates/TemplateCloneEarlyInjectionPatch.cs`.
 - Direct-lookup helper:
