@@ -53,7 +53,25 @@ public static class Program
         _ = Task.Run(() => RpcDispatcher.PreloadTemplateCaches());
 
         app.UseAutoServerClose();
-        app.WebApp.UseStaticFiles();
+        // The host pins itself to a stable loopback port (above) so the WebView
+        // origin survives across launches and localStorage stays intact. The
+        // tradeoff is that the WebView's HTTP cache also survives, so without
+        // explicit cache headers Chromium falls back to heuristic freshness on
+        // index.html and serves the previous version's bundle until the user
+        // hard-refreshes. Vite hashes everything under /assets, so those are
+        // safe to cache forever; index.html and other unhashed files must
+        // always revalidate so upgrades take effect on the next launch.
+        app.WebApp.UseStaticFiles(new StaticFileOptions
+        {
+            OnPrepareResponse = ctx =>
+            {
+                var path = ctx.Context.Request.Path.Value;
+                var headers = ctx.Context.Response.Headers;
+                headers.CacheControl = path != null && path.StartsWith("/assets/", StringComparison.Ordinal)
+                    ? "public, max-age=31536000, immutable"
+                    : "no-cache, must-revalidate";
+            },
+        });
 
         app.Run();
     }

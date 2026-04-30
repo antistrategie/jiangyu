@@ -37,6 +37,25 @@ export default defineConfig({
   build: {
     outDir: "../Jiangyu.Studio.Host/wwwroot",
     emptyOutDir: true,
+    // The monaco-editor chunk lands around 2.6 MB minified; the host serves
+    // it from disk with immutable cache headers, so the size is fine. Keep
+    // the warning threshold above it so it doesn't drown out genuine
+    // regressions in smaller chunks.
+    chunkSizeWarningLimit: 3000,
+    rollupOptions: {
+      output: {
+        // Peel heavy vendor libs into their own chunks so app-code edits don't
+        // invalidate them on upgrade. Combined with the host's immutable
+        // cache headers on /assets, only the small app chunk redownloads
+        // when users update.
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("/monaco-editor/") || id.includes("/@monaco-editor/")) return "monaco";
+          if (id.includes("/three/")) return "three";
+          return undefined;
+        },
+      },
+    },
   },
   test: {
     environment: "node",
