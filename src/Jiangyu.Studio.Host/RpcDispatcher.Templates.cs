@@ -83,16 +83,8 @@ public static partial class RpcDispatcher
         if (!resolution.Success)
             throw new InvalidOperationException(resolution.Error ?? "Could not resolve game data path.");
 
-        var service = resolution.Context!.CreateTemplateIndexService(NullProgressSink.Instance, NullLogSink.Instance);
-        var cachePath = resolution.Context.CachePath;
-        var indexMtime = File.GetLastWriteTimeUtc(service.IndexPath);
-        if (_cachedIndex is null || _cachedIndexPath != cachePath || _cachedIndexMtime != indexMtime)
-        {
-            _cachedIndex = service.LoadIndex();
-            _cachedIndexPath = cachePath;
-            _cachedIndexMtime = indexMtime;
-        }
-        var index = _cachedIndex ?? throw new InvalidOperationException("Template index not found. Build it first.");
+        var index = EnsureIndexCached(resolution.Context!)
+            ?? throw new InvalidOperationException("Template index not found. Build it first.");
 
         // If no query, return the full index (types + instances).
         // When className is set but query is empty, filter instances by class.
@@ -157,7 +149,9 @@ public static partial class RpcDispatcher
         if (result.Kind == QueryResultKind.Error)
             throw new InvalidOperationException(result.ErrorMessage ?? "Query failed.");
 
-        return JsonSerializer.SerializeToElement(MapQueryResult(catalog, result), TemplatesJsonOptions);
+        EnsureIndexCached(resolution.Context!);
+        return JsonSerializer.SerializeToElement(
+            MapQueryResult(catalog, result, _cachedInstantiatedClassNames), TemplatesJsonOptions);
     }
 
     // Catalog loads are expensive (reflection over Assembly-CSharp.dll), and the
@@ -380,17 +374,35 @@ public static partial class RpcDispatcher
     /// not a reference target or the leaf type is the only ref target in its
     /// branch (selector hidden).
     /// </summary>
-    private static bool? ComputeReferenceTypeIsPolymorphic(TemplateTypeCatalog catalog, MemberShape m)
+    private static bool? ComputeReferenceTypeIsPolymorphic(
+        TemplateTypeCatalog catalog,
+        MemberShape m,
+        IReadOnlySet<string> instantiatedClassNames)
     {
         var memberType = m.MemberType;
         var elementType = TemplateTypeCatalog.GetElementType(memberType);
         var leafType = elementType ?? memberType;
         if (!TemplateTypeCatalog.IsTemplateReferenceTarget(leafType))
             return null;
-        return catalog.HasReferenceSubtype(leafType) ? true : null;
+        if (!catalog.HasReferenceSubtype(leafType))
+            return null;
+        // Refine: structural subtype existence alone over-flags concrete
+        // first-class types whose descendants happen to inherit from them
+        // (e.g. PerkTemplate : SkillTemplate, even though SkillTemplate has
+        // its own 500+ instances and modders don't pick a subtype here).
+        // Only treat as polymorphic when the leaf type has zero direct
+        // instances in the index, the same shape an abstract base like
+        // BaseItemTemplate has.
+        var leafFriendlyName = catalog.FriendlyName(leafType);
+        if (instantiatedClassNames.Contains(leafFriendlyName))
+            return null;
+        return true;
     }
 
-    private static TemplateQueryResult MapQueryResult(TemplateTypeCatalog catalog, QueryResult result)
+    private static TemplateQueryResult MapQueryResult(
+        TemplateTypeCatalog catalog,
+        QueryResult result,
+        IReadOnlySet<string> instantiatedClassNames)
     {
         return new TemplateQueryResult
         {
@@ -418,7 +430,7 @@ public static partial class RpcDispatcher
                 ElementTypeName = ComputeElementTypeName(catalog, m),
                 EnumTypeName = ComputeEnumTypeName(catalog, m),
                 ReferenceTypeName = ComputeReferenceTypeName(catalog, m),
-                IsReferenceTypePolymorphic = ComputeReferenceTypeIsPolymorphic(catalog, m),
+                IsReferenceTypePolymorphic = ComputeReferenceTypeIsPolymorphic(catalog, m, instantiatedClassNames),
                 NamedArrayEnumTypeName = m.NamedArrayEnumTypeName,
                 NumericMin = m.NumericMin,
                 NumericMax = m.NumericMax,
@@ -580,6 +592,29 @@ public static partial class RpcDispatcher
         public required string File { get; set; }
     }
 
+    [RpcType]
+    internal sealed class TemplateValueResult
+    {
+        /// <summary>
+        /// True when the (typeName, id) tuple resolved to a known template
+        /// instance and its serialised values were loaded. False when the
+        /// tuple does not match any vanilla template (e.g. a clone the modder
+        /// just authored, or a misspelt id), in which case <see cref="Fields"/>
+        /// is an empty list.
+        /// </summary>
+        [JsonPropertyName("found")]
+        public required bool Found { get; set; }
+
+        /// <summary>
+        /// Top-level serialised fields of the matched template's m_Structure
+        /// (or the whole inspection tree for non-MonoBehaviour templates).
+        /// Empty when <see cref="Found"/> is false or when the values cache
+        /// has not been built (caller should fall back to neutral defaults).
+        /// </summary>
+        [JsonPropertyName("fields")]
+        public required List<InspectedFieldNode> Fields { get; set; }
+    }
+
     private static readonly JsonSerializerOptions InspectJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -605,14 +640,75 @@ public static partial class RpcDispatcher
     private static string? _cachedValuesPath;
     private static DateTime _cachedValuesMtime;
 
+    // Derived projections rebuilt alongside _cachedIndex so per-RPC reads stay
+    // O(1): membership lookup for the polymorphism heuristic, and
+    // (className, name)-keyed instance lookup for templatesValue. Without
+    // these the visual editor pays an O(instances) scan per NodeCard mount.
+    private static HashSet<string> _cachedInstantiatedClassNames = new(StringComparer.Ordinal);
+    private static Dictionary<(string ClassName, string Name), TemplateInstanceEntry> _cachedInstanceLookup = new();
+
     private static void ClearIndexCaches()
     {
         _cachedIndex = null;
         _cachedIndexPath = null;
         _cachedIndexMtime = default;
+        _cachedInstantiatedClassNames.Clear();
+        _cachedInstanceLookup.Clear();
         _cachedValues = null;
         _cachedValuesPath = null;
         _cachedValuesMtime = default;
+    }
+
+    // Reloads <see cref="_cachedIndex"/> from disk when the file's mtime
+    // diverges from the cached one (handles CLI rebuilds during a Studio
+    // session). Also rebuilds the derived class-name set and instance-lookup
+    // caches so callers can read them directly. Returns the cached index
+    // (possibly null when the index file doesn't exist yet).
+    private static TemplateIndex? EnsureIndexCached(EnvironmentContext ctx)
+    {
+        var service = ctx.CreateTemplateIndexService(NullProgressSink.Instance, NullLogSink.Instance);
+        var cachePath = ctx.CachePath;
+        DateTime indexMtime;
+        try { indexMtime = File.GetLastWriteTimeUtc(service.IndexPath); }
+        catch { return _cachedIndex; }
+
+        if (_cachedIndex is not null && _cachedIndexPath == cachePath && _cachedIndexMtime == indexMtime)
+            return _cachedIndex;
+
+        _cachedIndex = service.LoadIndex();
+        _cachedIndexPath = cachePath;
+        _cachedIndexMtime = indexMtime;
+        _cachedInstantiatedClassNames.Clear();
+        _cachedInstanceLookup.Clear();
+        if (_cachedIndex is not null)
+        {
+            foreach (var instance in _cachedIndex.Instances)
+            {
+                _cachedInstantiatedClassNames.Add(instance.ClassName);
+                _cachedInstanceLookup[(instance.ClassName, instance.Name)] = instance;
+            }
+        }
+        return _cachedIndex;
+    }
+
+    // Reloads <see cref="_cachedValues"/> from disk when the file's mtime
+    // diverges from the cached one. Returns the cached values dictionary
+    // (possibly null when no values file exists yet).
+    private static Dictionary<string, List<InspectedFieldNode>>? EnsureValuesCached(EnvironmentContext ctx)
+    {
+        var service = ctx.CreateTemplateIndexService(NullProgressSink.Instance, NullLogSink.Instance);
+        var cachePath = ctx.CachePath;
+        DateTime valuesMtime;
+        try { valuesMtime = File.GetLastWriteTimeUtc(service.ValuesPath); }
+        catch { return _cachedValues; }
+
+        if (_cachedValues is not null && _cachedValuesPath == cachePath && _cachedValuesMtime == valuesMtime)
+            return _cachedValues;
+
+        _cachedValues = service.LoadValues();
+        _cachedValuesPath = cachePath;
+        _cachedValuesMtime = valuesMtime;
+        return _cachedValues;
     }
 
     private static JsonElement HandleTemplatesInspect(IInfiniFrameWindow _, JsonElement? parameters)
@@ -624,19 +720,7 @@ public static partial class RpcDispatcher
         if (!resolution.Success)
             throw new InvalidOperationException(resolution.Error ?? "Could not resolve game data path.");
 
-        var service = resolution.Context!.CreateTemplateIndexService(NullProgressSink.Instance, NullLogSink.Instance);
-
-        // Cache both the index and values in memory after first load.
-        // Mtime check picks up CLI rebuilds while the Studio is running.
-        var cachePath = resolution.Context.CachePath;
-        var valuesMtime = File.GetLastWriteTimeUtc(service.ValuesPath);
-        if (_cachedValues is null || _cachedValuesPath != cachePath || _cachedValuesMtime != valuesMtime)
-        {
-            _cachedValues = service.LoadValues();
-            _cachedValuesPath = cachePath;
-            _cachedValuesMtime = valuesMtime;
-        }
-        var values = _cachedValues;
+        var values = EnsureValuesCached(resolution.Context!);
 
         List<InspectedFieldNode> fields;
         if (values is not null)
@@ -684,23 +768,48 @@ public static partial class RpcDispatcher
         InspectJsonOptions);
     }
 
+    private static JsonElement HandleTemplatesValue(IInfiniFrameWindow _, JsonElement? parameters)
+    {
+        var typeName = RequireString(parameters, "typeName");
+        var id = RequireString(parameters, "id");
+
+        var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+        if (!resolution.Success)
+        {
+            // No game configured: caller falls back to neutral defaults.
+            return JsonSerializer.SerializeToElement(
+                new TemplateValueResult { Found = false, Fields = [] }, InspectJsonOptions);
+        }
+
+        var ctx = resolution.Context!;
+        if (EnsureIndexCached(ctx) is null
+            || !_cachedInstanceLookup.TryGetValue((typeName, id), out var instance))
+        {
+            return JsonSerializer.SerializeToElement(
+                new TemplateValueResult { Found = false, Fields = [] }, InspectJsonOptions);
+        }
+
+        var values = EnsureValuesCached(ctx);
+        var key = TemplateIndex.IdentityKey(instance.Identity);
+        var fields = (values is not null && values.TryGetValue(key, out var cached)) ? cached : [];
+
+        return JsonSerializer.SerializeToElement(
+            new TemplateValueResult { Found = fields.Count > 0, Fields = fields },
+            InspectJsonOptions);
+    }
+
     internal static void PreloadTemplateCaches()
     {
         try
         {
             var resolution = EnvironmentContext.ResolveFromGlobalConfig();
             if (!resolution.Success) return;
-            var service = resolution.Context!.CreateTemplateIndexService(NullProgressSink.Instance, NullLogSink.Instance);
-            _cachedIndex = service.LoadIndex();
-            _cachedIndexPath = resolution.Context.CachePath;
-            _cachedIndexMtime = File.GetLastWriteTimeUtc(service.IndexPath);
-            _cachedValues = service.LoadValues();
-            _cachedValuesPath = resolution.Context.CachePath;
-            _cachedValuesMtime = File.GetLastWriteTimeUtc(service.ValuesPath);
+            EnsureIndexCached(resolution.Context!);
+            EnsureValuesCached(resolution.Context!);
         }
         catch
         {
-            // Silently ignore — caches will load on first RPC call instead.
+            // Caches will load on first RPC call instead.
         }
     }
 

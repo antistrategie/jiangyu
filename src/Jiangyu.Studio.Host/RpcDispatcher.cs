@@ -58,6 +58,7 @@ public static partial class RpcDispatcher
         Register("templatesEnumMembers", HandleTemplatesEnumMembers);
         Register("templatesProjectClones", HandleTemplatesProjectClones);
         Register("templatesInspect", HandleTemplatesInspect);
+        Register("templatesValue", HandleTemplatesValue);
         Register("openPaneWindow", HandleOpenPaneWindow);
         Register("closeAllPaneWindows", HandleCloseAllPaneWindows);
         Register("updatePaneWindowTabs", HandleUpdatePaneWindowTabs);

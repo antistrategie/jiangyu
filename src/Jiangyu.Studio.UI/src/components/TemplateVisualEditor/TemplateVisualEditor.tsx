@@ -14,9 +14,11 @@ import type {
 import type {
   EnumMemberEntry,
   EnumMembersResult,
+  InspectedFieldNode,
   TemplateMember,
   TemplateQueryResult,
   TemplateSearchResult,
+  TemplateValueResult,
 } from "@lib/rpc";
 import { parseCrossMemberPayload } from "@lib/drag/crossMember";
 import {
@@ -121,6 +123,187 @@ function templatesEnumMembers(typeName: string): Promise<EnumMembersResult> {
 // Simple in-memory cache for enum members and template type lists to avoid repeated RPCs
 const enumMembersCache = new Map<string, readonly EnumMemberEntry[]>();
 const templateTypesCache = { types: null as readonly string[] | null };
+
+// Per-(typeName, id) Promise cache so multiple cards targeting the same vanilla
+// template share one RPC and stay consistent. Lifetime is the editor session;
+// rebuilding the index requires reopening the editor to pick up new values.
+const templateValuesCache = new Map<string, Promise<TemplateValueResult>>();
+
+// U+0000 separator can't appear in either a C# identifier (so the class
+// name is safe) or a Unity template id, so this composite key uniquely
+// encodes the (typeName, id) tuple without collision risk between sites.
+function vanillaCacheKey(typeName: string, id: string): string {
+  return `${typeName}\u0000${id}`;
+}
+
+function templatesValue(typeName: string, id: string): Promise<TemplateValueResult> {
+  const key = vanillaCacheKey(typeName, id);
+  let cached = templateValuesCache.get(key);
+  if (!cached) {
+    cached = rpcCall<TemplateValueResult>("templatesValue", { typeName, id });
+    templateValuesCache.set(key, cached);
+  }
+  return cached;
+}
+
+// Converts a vanilla InspectedFieldNode into the editor's EditorValue shape.
+// `member` carries the declared kind so we honour `Byte` vs `Int32` and emit
+// the correct enum/reference shape; the inspected node alone wouldn't be
+// enough (its scalar `kind` is just `int`/`string`/etc).
+//
+// Returns undefined for shapes that don't map to a single EditorValue
+// (collections appended one element at a time, null/missing values), so the
+// caller falls back to the existing neutral default.
+export function inspectedFieldToEditorValue(
+  node: InspectedFieldNode | undefined,
+  member: TemplateMember,
+): EditorValue | undefined {
+  if (!node || node.null === true) return undefined;
+
+  const scalarKind = member.patchScalarKind;
+  switch (scalarKind) {
+    case "Boolean":
+      return typeof node.value === "boolean" ? { kind: "Boolean", boolean: node.value } : undefined;
+    case "Byte":
+      return typeof node.value === "number"
+        ? { kind: "Byte", int32: Math.trunc(node.value) }
+        : undefined;
+    case "Int32":
+      return typeof node.value === "number"
+        ? { kind: "Int32", int32: Math.trunc(node.value) }
+        : undefined;
+    case "Single":
+      return typeof node.value === "number" ? { kind: "Single", single: node.value } : undefined;
+    case "String":
+      return typeof node.value === "string" ? { kind: "String", string: node.value } : undefined;
+    case "Enum": {
+      if (typeof node.value !== "string" || node.value === "") return undefined;
+      const enumType = member.elementTypeName ?? member.typeName;
+      return { kind: "Enum", enumType, enumValue: node.value };
+    }
+    case "TemplateReference": {
+      const refName = node.reference?.name;
+      if (!refName) return undefined;
+      const value: EditorValue = { kind: "TemplateReference", referenceId: refName };
+      // Only attach referenceType for polymorphic destinations; otherwise the
+      // catalog/loader resolves the field's declared element type and the
+      // explicit setter would be redundant noise.
+      if (member.isReferenceTypePolymorphic === true && node.reference?.className) {
+        value.referenceType = node.reference.className;
+      }
+      return value;
+    }
+    case null:
+    case undefined: {
+      // Member is non-scalar non-ref, so the inspected node should be a
+      // composite. Recurse into sub-fields with low-fidelity mapping;
+      // sub-field member shapes aren't loaded here, so the byKind helper
+      // emits scalars/refs without their declared types.
+      if (node.kind !== "object" || !node.fields) return undefined;
+      const compositeType = member.elementTypeName ?? member.typeName;
+      if (!compositeType) return undefined;
+      const compositeFields: Record<string, EditorValue> = {};
+      for (const sub of node.fields) {
+        if (!sub.name) continue;
+        const subValue = inspectedFieldToEditorValueByKind(sub);
+        if (subValue) compositeFields[sub.name] = subValue;
+      }
+      return { kind: "Composite", compositeType, compositeFields };
+    }
+    default:
+      // Unknown patchScalarKind (host added a kind the frontend hasn't
+      // caught up to): bail to neutral default rather than guessing.
+      return undefined;
+  }
+}
+
+// Lower-fidelity converter used inside composite recursion where the parent
+// hasn't loaded sub-field member shapes yet. Maps the inspected node's
+// raw kind to the closest EditorValue kind. Numeric ints default to Int32
+// (Byte distinction is lost without a member shape; the visual editor will
+// still serialise correctly via the parent composite's catalog validation).
+function inspectedFieldToEditorValueByKind(node: InspectedFieldNode): EditorValue | undefined {
+  if (node.null === true) return undefined;
+  switch (node.kind) {
+    case "bool":
+      return typeof node.value === "boolean" ? { kind: "Boolean", boolean: node.value } : undefined;
+    case "int":
+      return typeof node.value === "number"
+        ? { kind: "Int32", int32: Math.trunc(node.value) }
+        : undefined;
+    case "float":
+      return typeof node.value === "number" ? { kind: "Single", single: node.value } : undefined;
+    case "string":
+      return typeof node.value === "string" ? { kind: "String", string: node.value } : undefined;
+    case "enum":
+      // We don't know the enum type without member shape; skip.
+      return undefined;
+    case "reference": {
+      const refName = node.reference?.name;
+      return refName ? { kind: "TemplateReference", referenceId: refName } : undefined;
+    }
+    case "object": {
+      // Use fieldTypeName as the composite type label when present.
+      const compositeType = node.fieldTypeName ?? "";
+      if (!compositeType || !node.fields) return undefined;
+      const compositeFields: Record<string, EditorValue> = {};
+      for (const sub of node.fields) {
+        if (!sub.name) continue;
+        const subValue = inspectedFieldToEditorValueByKind(sub);
+        if (subValue) compositeFields[sub.name] = subValue;
+      }
+      return { kind: "Composite", compositeType, compositeFields };
+    }
+    default:
+      return undefined;
+  }
+}
+
+// Empty lookup returned when no target is selected or the RPC hasn't
+// resolved yet. Module-level constant so consumers' useMemo dependency
+// arrays stay stable on the empty case.
+const EMPTY_VANILLA_FIELDS: ReadonlyMap<string, InspectedFieldNode> = new Map();
+
+// Hook: fetches vanilla field values for the (typeName, id) target and returns
+// a name → InspectedFieldNode lookup map. Empty until the RPC resolves; falls
+// back to empty on failure (callers use neutral defaults). Tagged by lookup
+// key so a stale resolution from a previous (typeName, id) doesn't surface
+// after the inputs change; the empty fallback is returned until the new
+// effect resolves.
+function useVanillaFields(
+  typeName: string | undefined,
+  id: string | undefined,
+): ReadonlyMap<string, InspectedFieldNode> {
+  const [resolved, setResolved] = useState<{
+    key: string;
+    map: Map<string, InspectedFieldNode>;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!typeName || !id) return;
+    const key = vanillaCacheKey(typeName, id);
+    let cancelled = false;
+    void templatesValue(typeName, id)
+      .then((result) => {
+        if (cancelled) return;
+        const map = new Map<string, InspectedFieldNode>();
+        for (const f of result.fields) {
+          if (f.name) map.set(f.name, f);
+        }
+        setResolved({ key, map });
+      })
+      .catch(() => {
+        if (!cancelled) setResolved({ key, map: new Map() });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [typeName, id]);
+
+  if (!typeName || !id) return EMPTY_VANILLA_FIELDS;
+  const expectedKey = vanillaCacheKey(typeName, id);
+  return resolved?.key === expectedKey ? resolved.map : EMPTY_VANILLA_FIELDS;
+}
 
 interface ProjectCloneEntry {
   readonly templateType: string;
@@ -367,45 +550,6 @@ export function TemplateVisualEditor({
     [cacheKey],
   );
 
-  // Card-level drop: accept member drags to add set directives. Drop-time
-  // checks cover the cross-window case where the dragOver-time context isn't
-  // available; same-window drops already got rejected visually by the
-  // FieldAdder's own dragOver gate.
-  const handleCardDrop = useCallback(
-    (nodeIndex: number, e: React.DragEvent) => {
-      const raw = e.dataTransfer.getData("text/plain");
-      const member = parseCrossMemberPayload(raw);
-      if (!member) return;
-      e.preventDefault();
-      const node = nodes[nodeIndex];
-      if (!node) return;
-      const toast = useToastStore.getState().push;
-      if (node.templateType !== "" && member.templateType !== node.templateType) {
-        toast({
-          variant: "error",
-          message: `Field does not belong to ${node.templateType}`,
-          detail: `"${member.fieldPath}" belongs to ${member.templateType}`,
-        });
-        return;
-      }
-      if (node.directives.some((d) => d.fieldPath === member.fieldPath)) {
-        toast({
-          variant: "info",
-          message: `"${member.fieldPath}" is already on this node`,
-        });
-        return;
-      }
-      // Build the directive from the SAME helper the field-adder dropdown
-      // uses, so a dragged ref field drops in as a TemplateReference (not a
-      // raw string), an enum field gets the right enumType, a NamedArray
-      // field defaults to Set+index=0, etc. The drag payload now carries the
-      // full schema needed to construct the synthetic TemplateMember.
-      const synthMember = synthMemberFromPayload(member);
-      handleAddDirective(nodeIndex, makeDefaultDirective(synthMember));
-    },
-    [handleAddDirective, nodes],
-  );
-
   // Add empty node
   const handleAddNode = useCallback(
     (kind: "Patch" | "Clone") => {
@@ -553,7 +697,6 @@ export function TemplateVisualEditor({
             onUpdateDirective={(di, d) => handleUpdateDirective(ni, di, d)}
             onDeleteDirective={(di) => handleDeleteDirective(ni, di)}
             onAddDirective={(d) => handleAddDirective(ni, d)}
-            onDrop={(e) => handleCardDrop(ni, e)}
             isDragging={dragCardId === node._uiId}
             onDragStart={() => setDragCardId(node._uiId)}
             onDragEnd={() => {
@@ -635,7 +778,6 @@ interface NodeCardProps {
   onUpdateDirective: (dirIndex: number, directive: StampedDirective) => void;
   onDeleteDirective: (dirIndex: number) => void;
   onAddDirective: (directive: StampedDirective) => void;
-  onDrop: (e: React.DragEvent) => void;
   isDragging: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
@@ -653,7 +795,6 @@ function NodeCard({
   onUpdateDirective,
   onDeleteDirective,
   onAddDirective,
-  onDrop,
   isDragging,
   onDragStart,
   onDragEnd,
@@ -676,7 +817,47 @@ function NodeCard({
       .catch(() => setMembersLoaded(true));
   }, [collapsed, membersLoaded, node.templateType]);
 
+  // Vanilla values for pre-filling newly-added directives. Patch targets the
+  // node's templateId; Clone targets the source the new clone copies from.
+  // Lookup is empty until the RPC resolves; consumers fall back to neutral
+  // defaults in that window.
+  const vanillaTargetId = isPatch ? node.templateId : node.sourceId;
+  const vanillaFields = useVanillaFields(node.templateType, vanillaTargetId);
+
   const memberMap = new Map(members.map((m) => [m.name, m]));
+
+  // Card-level drop: accept member drags to add set directives. Drop-time
+  // checks cover the cross-window case where the dragOver-time context isn't
+  // available; same-window drops already got rejected visually by the
+  // FieldAdder's own dragOver gate.
+  const handleNodeDrop = useCallback(
+    (e: React.DragEvent) => {
+      const raw = e.dataTransfer.getData("text/plain");
+      const member = parseCrossMemberPayload(raw);
+      if (!member) return;
+      e.preventDefault();
+      const toast = useToastStore.getState().push;
+      if (node.templateType !== "" && member.templateType !== node.templateType) {
+        toast({
+          variant: "error",
+          message: `Field does not belong to ${node.templateType}`,
+          detail: `"${member.fieldPath}" belongs to ${member.templateType}`,
+        });
+        return;
+      }
+      if (node.directives.some((d) => d.fieldPath === member.fieldPath)) {
+        toast({
+          variant: "info",
+          message: `"${member.fieldPath}" is already on this node`,
+        });
+        return;
+      }
+      const synthMember = synthMemberFromPayload(member);
+      const vanilla = vanillaFields.get(member.fieldPath);
+      onAddDirective(makeDefaultDirective(synthMember, vanilla));
+    },
+    [node, vanillaFields, onAddDirective],
+  );
 
   const fetchInstances = useCallback(async (): Promise<readonly SuggestionItem[]> => {
     if (!node.templateType) return [];
@@ -814,6 +995,7 @@ function NodeCard({
                 <SetRow
                   directive={d}
                   member={memberMap.get(baseName)}
+                  vanillaNode={vanillaFields.get(baseName)}
                   onChange={(updated) => onUpdateDirective(di, updated)}
                   onDelete={() => onDeleteDirective(di)}
                   isDragging={dragRowId === d._uiId}
@@ -848,7 +1030,8 @@ function NodeCard({
             existingFields={node.directives.map((d) => d.fieldPath)}
             targetTemplateType={node.templateType}
             onAdd={onAddDirective}
-            onDrop={onDrop}
+            onDrop={handleNodeDrop}
+            vanillaFields={vanillaFields}
           />
         </div>
       )}
@@ -861,6 +1044,10 @@ function NodeCard({
 interface SetRowProps {
   directive: StampedDirective;
   member?: TemplateMember | undefined;
+  /** Vanilla template's value tree for this directive's top-level field, when
+   *  available. Threaded into nested CompositeEditors so their inner
+   *  FieldAdder can pre-fill sub-fields with the same vanilla data. */
+  vanillaNode?: InspectedFieldNode | undefined;
   onChange: (directive: StampedDirective) => void;
   onDelete: () => void;
   isDragging: boolean;
@@ -903,6 +1090,7 @@ const VALUE_KIND_LABELS: Record<EditorValueKind, string> = {
 function SetRow({
   directive,
   member,
+  vanillaNode,
   onChange,
   onDelete,
   isDragging,
@@ -1127,6 +1315,7 @@ function SetRow({
         <CompositeEditor
           value={directive.value}
           onChange={(v) => onChange({ ...directive, value: v })}
+          vanillaNode={vanillaNode}
         />
       )}
     </div>
@@ -1383,13 +1572,21 @@ function EnumValueEditor({ value, onChange, member }: ValueEditorProps) {
 //  - the declared type is an abstract base with multiple concrete subtypes
 //    (e.g. RewardTableTemplate.Items → BaseItemTemplate, where the modder
 //    must pick ModularVehicleWeaponTemplate / ArmorTemplate / …)
-//  - the value already carries an explicit ref type (preserve user intent)
+//  - the value carries an explicit ref type that doesn't match the declared
+//    type (data inconsistency the modder needs to see and fix)
 export function shouldShowRefTypeSelector(
   declaredRefType: string,
   isPolymorphic: boolean,
   explicitRefType: string,
 ): boolean {
-  return declaredRefType === "" || isPolymorphic || explicitRefType !== "";
+  if (declaredRefType === "") return true;
+  if (isPolymorphic) return true;
+  // Monomorphic destination with a redundant explicit type (e.g. KDL written
+  // as `ref="SkillTemplate"` for a field already declared as
+  // ReferenceArray<SkillTemplate>) hides the selector: the modder has no
+  // meaningful alternative to pick. A mismatched explicit type still shows
+  // so the inconsistency is visible.
+  return explicitRefType !== "" && explicitRefType !== declaredRefType;
 }
 
 // What text the ref-type combobox should display.
@@ -1477,9 +1674,16 @@ function RefValueEditor({ value, onChange, member }: ValueEditorProps) {
 interface CompositeEditorProps {
   value: EditorValue;
   onChange: (value: EditorValue) => void;
+  /** Vanilla composite node from the parent template, when available. Its
+   *  `fields` (sub-field nodes) drive vanilla pre-fill for newly-added
+   *  sub-fields. Sub-fields nested deeper than one composite level fall back
+   *  to neutral defaults (we don't propagate further; the structure is
+   *  unbounded and the high-fidelity converter wants member shapes we don't
+   *  have at that depth). */
+  vanillaNode?: InspectedFieldNode | undefined;
 }
 
-function CompositeEditor({ value, onChange }: CompositeEditorProps) {
+function CompositeEditor({ value, onChange, vanillaNode }: CompositeEditorProps) {
   const fields = value.compositeFields ?? {};
   const entries = Object.entries(fields);
   const [members, setMembers] = useState<readonly TemplateMember[]>([]);
@@ -1514,6 +1718,19 @@ function CompositeEditor({ value, onChange }: CompositeEditorProps) {
     }
   };
 
+  // Vanilla sub-field lookup (composite's vanillaNode.fields → name→node).
+  // Stays empty when vanillaNode is missing or doesn't expose object fields,
+  // so the inner FieldAdder falls through to neutral defaults transparently.
+  const vanillaSubFields = useMemo(() => {
+    const map = new Map<string, InspectedFieldNode>();
+    if (vanillaNode?.kind === "object" && vanillaNode.fields) {
+      for (const f of vanillaNode.fields) {
+        if (f.name) map.set(f.name, f);
+      }
+    }
+    return map;
+  }, [vanillaNode]);
+
   const compositeType = value.compositeType ?? "";
   const handleFieldDrop = (e: React.DragEvent) => {
     const raw = e.dataTransfer.getData("text/plain");
@@ -1536,9 +1753,12 @@ function CompositeEditor({ value, onChange }: CompositeEditorProps) {
       });
       return;
     }
-    // Same as handleCardDrop — build through the kind-aware helper so the
-    // dropped composite sub-field gets the right value shape (ref/enum/etc).
-    handleAddField(makeDefaultDirective(synthMemberFromPayload(member)));
+    // Build through the kind-aware helper so the dropped composite sub-field
+    // gets the right value shape (ref/enum/etc), and pre-fill from the parent
+    // template's vanilla composite when possible.
+    const synthMember = synthMemberFromPayload(member);
+    const vanilla = vanillaSubFields.get(member.fieldPath);
+    handleAddField(makeDefaultDirective(synthMember, vanilla));
   };
 
   const memberMap = new Map(members.map((m) => [m.name, m]));
@@ -1576,6 +1796,7 @@ function CompositeEditor({ value, onChange }: CompositeEditorProps) {
         targetTemplateType={compositeType}
         onAdd={handleAddField}
         onDrop={handleFieldDrop}
+        vanillaFields={vanillaSubFields}
       />
     </div>
   );
@@ -1743,6 +1964,11 @@ interface FieldAdderProps {
   targetTemplateType: string;
   onAdd: (directive: StampedDirective) => void;
   onDrop?: (e: React.DragEvent) => void;
+  /** Optional vanilla-value lookup (top-level field name → vanilla node). When
+   *  provided, picking a field pre-fills the directive with that field's
+   *  serialised value from the target template instead of the type's neutral
+   *  default. Empty / missing entries fall back to the neutral default. */
+  vanillaFields?: ReadonlyMap<string, InspectedFieldNode>;
 }
 
 function FieldAdder({
@@ -1752,6 +1978,7 @@ function FieldAdder({
   targetTemplateType,
   onAdd,
   onDrop,
+  vanillaFields,
 }: FieldAdderProps) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -1780,7 +2007,8 @@ function FieldAdder({
   const alreadyAdded = filtered.filter((m) => existingSet.has(m.name));
 
   const handleSelect = (member: TemplateMember) => {
-    onAdd(makeDefaultDirective(member));
+    const vanilla = vanillaFields?.get(member.name);
+    onAdd(makeDefaultDirective(member, vanilla));
     setQuery("");
     setOpen(false);
   };
@@ -1924,20 +2152,30 @@ function makeDefaultValue(member: TemplateMember): EditorValue {
   }
 }
 
-function makeDefaultDirective(member: TemplateMember): StampedDirective {
+function makeDefaultDirective(
+  member: TemplateMember,
+  vanillaNode?: InspectedFieldNode,
+): StampedDirective {
   // NamedArray fields are fixed-size enum-indexed lookups — they only accept
   // `set "Field" index=N <value>`, so default to Set-at-0 and let the picker
   // drive the ordinal. Plain collections default to Append; scalars to Set.
   if (member.namedArrayEnumTypeName) {
-    return {
-      op: "Set",
-      fieldPath: member.name,
-      index: 0,
-      value: makeScalarDefault(member.patchScalarKind ?? undefined),
-      _uiId: uiId(),
-    };
+    let value = makeScalarDefault(member.patchScalarKind ?? undefined);
+    if (vanillaNode?.kind === "array" && vanillaNode.elements && vanillaNode.elements.length > 0) {
+      const vanillaFirst = inspectedFieldToEditorValue(vanillaNode.elements[0], member);
+      if (vanillaFirst) value = vanillaFirst;
+    }
+    return { op: "Set", fieldPath: member.name, index: 0, value, _uiId: uiId() };
   }
-  const value = makeDefaultValue(member);
+  // Plain collections stay on neutral defaults — Append takes one new element,
+  // and pre-filling it from a vanilla peer would imply the modder wants a
+  // duplicate of an existing entry, which is rarely true.
+  const useVanilla = !member.isCollection;
+  let value = makeDefaultValue(member);
+  if (useVanilla) {
+    const vanillaValue = inspectedFieldToEditorValue(vanillaNode, member);
+    if (vanillaValue) value = vanillaValue;
+  }
   const op: DirectiveOp = member.isCollection ? "Append" : "Set";
   return { op, fieldPath: member.name, value, _uiId: uiId() };
 }

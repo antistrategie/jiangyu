@@ -144,6 +144,11 @@ export interface ProjectCloneEntry {
   file: string;
 }
 
+export interface TemplateValueResult {
+  found: boolean;
+  fields: InspectedFieldNode[];
+}
+
 export interface PaneWindowOpenedAck {
   opened: boolean;
   windowId: string;

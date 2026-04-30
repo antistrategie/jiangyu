@@ -22,13 +22,25 @@ describe("shouldShowRefTypeSelector", () => {
     expect(shouldShowRefTypeSelector("", false, "")).toBe(true);
   });
 
-  // Existing explicit ref="..." authored value: keep showing the selector
-  // so the modder can change or clear it without re-loading the row.
-  it("shows the selector when an explicit ref type is present on the value", () => {
-    expect(shouldShowRefTypeSelector("PerkTemplate", false, "PerkTemplate")).toBe(true);
+  // Polymorphic destination with explicit type: keep showing — the explicit
+  // value IS the disambiguation and changing it is a meaningful operation.
+  it("shows the selector for polymorphic destinations with an explicit type", () => {
     expect(
       shouldShowRefTypeSelector("BaseItemTemplate", true, "ModularVehicleWeaponTemplate"),
     ).toBe(true);
+  });
+
+  // Monomorphic destination where the explicit type is redundant (matches the
+  // declared concrete type): hide. The modder has no other valid choice; the
+  // dropdown is misleading noise.
+  it("hides the selector when an explicit ref type matches the declared monomorphic type", () => {
+    expect(shouldShowRefTypeSelector("SkillTemplate", false, "SkillTemplate")).toBe(false);
+  });
+
+  // Monomorphic destination but the explicit type doesn't match: show so the
+  // modder sees the inconsistency and can fix it.
+  it("shows the selector when an explicit ref type contradicts the declared monomorphic type", () => {
+    expect(shouldShowRefTypeSelector("SkillTemplate", false, "WeaponTemplate")).toBe(true);
   });
 });
 
