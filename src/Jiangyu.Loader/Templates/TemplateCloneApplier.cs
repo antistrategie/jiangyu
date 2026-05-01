@@ -455,6 +455,21 @@ internal sealed class TemplateCloneApplier
     /// adds new owned-element fields.
     /// </summary>
     internal static bool IsOwnedElementType(Type elementType)
+        => IsOwnedElementTypeCore(elementType, typeof(DataTemplate), typeof(UnityEngine.ScriptableObject));
+
+    // Parameterised core, factored out so tests can pass synthetic base
+    // types instead of typeof(DataTemplate) / typeof(UnityEngine.ScriptableObject).
+    // Production calls the no-arg IsOwnedElementType which binds the
+    // real game types — resolving those at JIT time pulls in
+    // Assembly-CSharp + the full Il2Cpp* transitive closure, which works
+    // at game runtime but breaks in CI (the stripped game DLLs we ship
+    // there can't fully resolve). The test runtime only sees plain
+    // managed fixtures and the parameterised overload, so JIT never
+    // touches a game-type token.
+    internal static bool IsOwnedElementTypeCore(
+        Type elementType,
+        Type dataTemplateBase,
+        Type scriptableObjectBase)
     {
         if (OwnedElementTypeCache.TryGetValue(elementType, out var cached))
             return cached;
@@ -462,9 +477,9 @@ internal sealed class TemplateCloneApplier
         bool decision;
         try
         {
-            if (typeof(DataTemplate).IsAssignableFrom(elementType))
+            if (dataTemplateBase != null && dataTemplateBase.IsAssignableFrom(elementType))
                 decision = false;
-            else if (!typeof(UnityEngine.ScriptableObject).IsAssignableFrom(elementType))
+            else if (scriptableObjectBase == null || !scriptableObjectBase.IsAssignableFrom(elementType))
                 decision = false;
             else
                 decision = HasStrictDescendant(elementType);

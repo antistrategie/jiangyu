@@ -32,32 +32,17 @@
   </ItemGroup>
 
   <!--
-    Stripped game/MelonLoader assemblies, mirrored from the loader's
-    HintPath setup so test code can reference Il2Cpp wrapper types
-    (Il2CppMenace.*, Il2CppSystem.*, UnityEngine.*) directly. Tests only
-    use these types as Type metadata for IsAssignableFrom / GetTypes
-    walks; they never invoke any runtime methods, which is why running
-    on a normal .NET host (not the IL2CPP-bound game runtime) is fine.
+    Test code uses synthetic fixtures that derive only from System.Object
+    (PolymorphicReferenceArrayHelperFixtures.cs), so no game-shaped DLLs
+    need to be on the test load path. The helper under test is
+    parameterised over the DataTemplate / ScriptableObject base types;
+    production calls it with the real typeof(), tests pass synthetic
+    bases. MelonLoader is referenced because Jiangyu.Loader transitively
+    depends on it for [MelonInfo] etc.
   -->
   <ItemGroup>
     <Reference Include="MelonLoader">
       <HintPath>$(MelonLoaderDir)/MelonLoader.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="Il2CppInterop.Runtime">
-      <HintPath>$(MelonLoaderDir)/Il2CppInterop.Runtime.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="Il2Cppmscorlib">
-      <HintPath>$(GameAssembliesDir)/Il2Cppmscorlib.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="Assembly-CSharp">
-      <HintPath>$(GameAssembliesDir)/Assembly-CSharp.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="UnityEngine.CoreModule">
-      <HintPath>$(GameAssembliesDir)/UnityEngine.CoreModule.dll</HintPath>
       <Private>true</Private>
     </Reference>
   </ItemGroup>

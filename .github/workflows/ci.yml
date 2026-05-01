@@ -15,12 +15,12 @@ jobs:
         with:
           path: jiangyu
 
-      # Loader.Tests references the loader project to exercise its pure-
-      # reflection helpers against real game wrapper types (e.g.
-      # Il2CppMenace.Tactical.Skills.SkillEventHandlerTemplate). The tests
-      # don't invoke the IL2CPP runtime, but they do need the stripped
-      # game assemblies and Il2CppInterop on the test runtime path. Same
-      # setup as build-loader below.
+      # Loader.Tests references Jiangyu.Loader (project reference), and
+      # the loader compiles against MelonLoader + the stripped game
+      # assemblies via HintPath. The tests themselves use plain managed
+      # synthetic fixtures and don't touch any IL2CPP runtime, but they
+      # still need the loader to compile so we set up the build deps the
+      # same way build-loader does below.
       - name: Checkout menace-ci-dependencies
         uses: actions/checkout@v6
         with:
@@ -46,6 +46,15 @@ jobs:
           cp /tmp/ml/MelonLoader/net6/MelonLoader.dll jiangyu/.ci/melonloader/
           cp /tmp/ml/MelonLoader/net6/0Harmony.dll jiangyu/.ci/melonloader/
           cp /tmp/ml/MelonLoader/net6/Il2CppInterop.Runtime.dll jiangyu/.ci/melonloader/
+
+      # Build the loader in Release so MergedLoaderDependencyGuardTests
+      # actually runs against a merged Jiangyu.Loader.dll. Without this,
+      # the guard test silently SkippableFact-skips in CI and forbidden-
+      # reference regressions (e.g. an inadvertent System.IO.Pipelines
+      # transitive dep) only get caught at tag-push time during the
+      # build-loader job below.
+      - name: Build Jiangyu.Loader (Release) for guard test
+        run: dotnet build jiangyu/src/Jiangyu.Loader/Jiangyu.Loader.csproj -c Release -p:MelonLoaderDir=${{ github.workspace }}/jiangyu/.ci/melonloader -p:GameAssembliesDir=${{ github.workspace }}/menace-ci-dependencies
 
       - name: Test Jiangyu.Core.Tests
         run: dotnet test jiangyu/tests/Jiangyu.Core.Tests/Jiangyu.Core.Tests.csproj

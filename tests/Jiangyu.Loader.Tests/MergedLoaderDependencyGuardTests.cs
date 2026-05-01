@@ -12,8 +12,9 @@ namespace Jiangyu.Loader.Tests;
 /// pulls a net10-only assembly into the merged loader.
 ///
 /// Marked Skipped (not Passed) when the Release DLL isn't on disk, so local
-/// Debug iteration shows yellow rather than green. CI builds Release before
-/// running tests, so the guard fires there.
+/// Debug iteration shows yellow rather than green. CI's <c>test-dotnet</c>
+/// job builds Release before running tests so the guard fires there too;
+/// without that step it would silently skip on every PR.
 /// </summary>
 public class MergedLoaderDependencyGuardTests
 {
