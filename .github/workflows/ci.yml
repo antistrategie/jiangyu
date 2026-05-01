@@ -12,17 +12,46 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          path: jiangyu
+
+      # Loader.Tests references the loader project to exercise its pure-
+      # reflection helpers against real game wrapper types (e.g.
+      # Il2CppMenace.Tactical.Skills.SkillEventHandlerTemplate). The tests
+      # don't invoke the IL2CPP runtime, but they do need the stripped
+      # game assemblies and Il2CppInterop on the test runtime path. Same
+      # setup as build-loader below.
+      - name: Checkout menace-ci-dependencies
+        uses: actions/checkout@v6
+        with:
+          repository: beanpuppy/menace-ci-dependencies
+          path: menace-ci-dependencies
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
 
+      - name: Download MelonLoader
+        uses: robinraju/release-downloader@v1.13
+        with:
+          repository: LavaGang/MelonLoader
+          fileName: MelonLoader.Linux.x64.zip
+          tag: v0.7.2
+
+      - name: Extract MelonLoader
+        run: |
+          mkdir -p jiangyu/.ci/melonloader
+          unzip -q MelonLoader.Linux.x64.zip -d /tmp/ml
+          cp /tmp/ml/MelonLoader/net6/MelonLoader.dll jiangyu/.ci/melonloader/
+          cp /tmp/ml/MelonLoader/net6/0Harmony.dll jiangyu/.ci/melonloader/
+          cp /tmp/ml/MelonLoader/net6/Il2CppInterop.Runtime.dll jiangyu/.ci/melonloader/
+
       - name: Test Jiangyu.Core.Tests
-        run: dotnet test tests/Jiangyu.Core.Tests/Jiangyu.Core.Tests.csproj
+        run: dotnet test jiangyu/tests/Jiangyu.Core.Tests/Jiangyu.Core.Tests.csproj
 
       - name: Test Jiangyu.Loader.Tests
-        run: dotnet test tests/Jiangyu.Loader.Tests/Jiangyu.Loader.Tests.csproj
+        run: dotnet test jiangyu/tests/Jiangyu.Loader.Tests/Jiangyu.Loader.Tests.csproj -p:MelonLoaderDir=${{ github.workspace }}/jiangyu/.ci/melonloader -p:GameAssembliesDir=${{ github.workspace }}/menace-ci-dependencies
 
   test-studio-ui:
     runs-on: ubuntu-latest

@@ -666,7 +666,7 @@ internal sealed class TemplatePatchApplier
     /// finds nothing — covers cross-namespace subclassing cases. Returns
     /// null when no candidate matches.
     /// </summary>
-    private static Type ResolveIl2CppSubtype(Type elementType, string shortName)
+    internal static Type ResolveIl2CppSubtype(Type elementType, string shortName)
     {
         var ns = elementType.Namespace ?? string.Empty;
         var cacheKey = ns + "::" + shortName;
@@ -674,13 +674,19 @@ internal sealed class TemplatePatchApplier
             return cached;
 
         // Same-namespace lookup first. Wrap in try/catch so a partial-load
-        // assembly doesn't bypass the global fallback.
+        // assembly doesn't bypass the global fallback. Match by name AND
+        // assignability — otherwise an unrelated same-namespace type
+        // (e.g. SkillGroup in the same namespace as SkillEventHandlerTemplate)
+        // wins the fast path and the caller sees a misleading "type X
+        // does not derive from base" error downstream.
         Type same = null;
         try
         {
             same = elementType.Assembly
                 .GetTypes()
-                .FirstOrDefault(t => t.Name == shortName && t.Namespace == ns);
+                .FirstOrDefault(t => t.Name == shortName
+                    && t.Namespace == ns
+                    && elementType.IsAssignableFrom(t));
         }
         catch { /* fall through */ }
 

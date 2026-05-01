@@ -19,6 +19,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Jiangyu.Loader.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="MelonLoader">
       <HintPath>$(MelonLoaderDir)/MelonLoader.dll</HintPath>
       <Private>false</Private>

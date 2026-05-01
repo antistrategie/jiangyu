@@ -449,9 +449,12 @@ internal sealed class TemplateCloneApplier
     /// subclasses that aren't DataTemplate. SkillEventHandlerTemplate matches
     /// (abstract, has 119+ subclasses, no m_ID); concrete wrappers like
     /// SkillGroup don't (no subtypes); DataTemplate elements don't (intentional
-    /// registry sharing).
+    /// registry sharing). Internal so the test project (via
+    /// InternalsVisibleTo) can exercise the structural decision against
+    /// fixture types — the rule is what determines correctness when MENACE
+    /// adds new owned-element fields.
     /// </summary>
-    private static bool IsOwnedElementType(Type elementType)
+    internal static bool IsOwnedElementType(Type elementType)
     {
         if (OwnedElementTypeCache.TryGetValue(elementType, out var cached))
             return cached;
@@ -475,7 +478,7 @@ internal sealed class TemplateCloneApplier
         return decision;
     }
 
-    private static bool HasStrictDescendant(Type baseType)
+    internal static bool HasStrictDescendant(Type baseType)
     {
         Type[] types;
         try { types = baseType.Assembly.GetTypes(); }
@@ -489,7 +492,7 @@ internal sealed class TemplateCloneApplier
         return false;
     }
 
-    private static Type GetIl2CppListElementType(Type collectionType)
+    internal static Type GetIl2CppListElementType(Type collectionType)
     {
         if (collectionType == null) return null;
         if (!collectionType.IsGenericType) return null;

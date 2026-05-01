@@ -17,6 +17,49 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Jiangyu.Shared\Jiangyu.Shared.csproj" />
+    <!--
+      Reference the loader to exercise its pure-reflection helpers from
+      tests. The loader targets net6 and pulls in IL2CPP-bound dependencies
+      via HintPath; the test project is net10. .NET resolves cross-target
+      consumption for compatible APIs, but the IL2CPP-bound code paths
+      (Cast<T>, CreateInstance, native pointer reads) cannot run without a
+      live game runtime. Tests that touch those paths must stay live-game
+      smokes; tests against the pure helpers (IsOwnedElementType,
+      HasStrictDescendant, GetIl2CppListElementType, ResolveIl2CppSubtype,
+      etc.) work because they only do managed reflection over Type.
+    -->
+    <ProjectReference Include="..\..\src\Jiangyu.Loader\Jiangyu.Loader.csproj" />
+  </ItemGroup>
+
+  <!--
+    Stripped game/MelonLoader assemblies, mirrored from the loader's
+    HintPath setup so test code can reference Il2Cpp wrapper types
+    (Il2CppMenace.*, Il2CppSystem.*, UnityEngine.*) directly. Tests only
+    use these types as Type metadata for IsAssignableFrom / GetTypes
+    walks; they never invoke any runtime methods, which is why running
+    on a normal .NET host (not the IL2CPP-bound game runtime) is fine.
+  -->
+  <ItemGroup>
+    <Reference Include="MelonLoader">
+      <HintPath>$(MelonLoaderDir)/MelonLoader.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>$(MelonLoaderDir)/Il2CppInterop.Runtime.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>$(GameAssembliesDir)/Il2Cppmscorlib.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameAssembliesDir)/Assembly-CSharp.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameAssembliesDir)/UnityEngine.CoreModule.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
   </ItemGroup>
 
 </Project>

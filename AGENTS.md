@@ -90,7 +90,7 @@ Workflow at `.github/workflows/ci.yml`. On push/PR to `main`, it runs `Jiangyu.C
 
 The docs site is deployed by `.github/workflows/pages.yml` on changes under `site/`.
 
-Loader CI builds against stripped reference assemblies from [`beanpuppy/menace-ci-dependencies`](https://github.com/beanpuppy/menace-ci-dependencies); MelonLoader DLLs are downloaded from upstream releases. The Loader cannot be functionally tested in CI (it needs a live Unity/IL2CPP process); CI verifies compilation and ILRepack merge correctness only.
+Loader CI builds against stripped reference assemblies from [`beanpuppy/menace-ci-dependencies`](https://github.com/beanpuppy/menace-ci-dependencies); MelonLoader DLLs are downloaded from upstream releases. The IL2CPP-bound code paths (Cast<T>, ScriptableObject.CreateInstance, native pointer reads) cannot run in CI without a live Unity/IL2CPP process; those stay live-game smokes. Pure-reflection helpers (IsOwnedElementType, HasStrictDescendant, GetIl2CppListElementType, ResolveIl2CppSubtype, etc.) **are** testable in CI: `Jiangyu.Loader.Tests` references `Jiangyu.Loader` directly and walks Type metadata against the real stripped Assembly-CSharp.dll, catching structural-rule regressions (e.g. a refactor that breaks the abstract-polymorphic detection).
 
 ## Vendored dependencies
 
@@ -139,7 +139,7 @@ Loader CI builds against stripped reference assemblies from [`beanpuppy/menace-c
 ## Tests
 
 - `tests/Jiangyu.Core.Tests/`: xUnit, .NET 10. `dotnet test tests/Jiangyu.Core.Tests/`.
-- `tests/Jiangyu.Loader.Tests/`: xUnit, .NET 10. Pure tests for loader-side logic factored out of the live IL2CPP project. `dotnet test tests/Jiangyu.Loader.Tests/`.
+- `tests/Jiangyu.Loader.Tests/`: xUnit, .NET 10. Tests for loader code that doesn't invoke the IL2CPP runtime — path validators, mod load planning, and pure-reflection helpers in the loader project (called via `InternalsVisibleTo`). `dotnet test tests/Jiangyu.Loader.Tests/` (locally needs `MelonLoaderDir`/`GameAssembliesDir` env or default install at `~/.local/share/Steam/steamapps/common/Menace`).
 - `src/Jiangyu.Studio.UI/`: vitest, Node environment. `bun run test` from that directory. (Plain `bun test` runs Bun's native runner and produces false failures.)
 
 No tests require game data or Unity. All fast and deterministic.
