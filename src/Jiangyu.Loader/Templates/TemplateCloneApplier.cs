@@ -126,6 +126,17 @@ internal sealed class TemplateCloneApplier
                 if (!TryCloneTemplate(source, directive.CloneId, log, out clone))
                     continue;
 
+                // Object.Instantiate shallow-copies PPtr lists, so the clone's
+                // owned-element collections (EventHandlers and any future
+                // abstract-polymorphic ScriptableObject-element list) point to
+                // the same handler assets as the source. Patches through the
+                // clone would mutate the source's handlers. Deep-copy each
+                // owned element so the clone has its own. resolvedType is the
+                // concrete managed wrapper type (e.g. PerkTemplate); the
+                // clone variable is DataTemplate-typed, so reflection on it
+                // sees only base-class members. We re-cast inside the helper.
+                DeepCopyOwnedReferences(clone, resolvedType, directive.CloneId, log);
+
                 RegisterCloneIntoSlot(resolvedType, innerMap, resolvedType, directive.CloneId, clone, log);
 
                 log.Msg(
@@ -215,6 +226,278 @@ internal sealed class TemplateCloneApplier
             return false;
 
         return templateMaps.TryGetValue(il2CppType, out templateMap) && templateMap != null;
+    }
+
+    // Cache: per-element-type, "is this element type abstract polymorphic
+    // and non-DataTemplate" decision. Element-type set is small (~the
+    // SerializedScriptableObject family on the Skill/Perk side).
+    private static readonly Dictionary<Type, bool> OwnedElementTypeCache = new();
+
+    /// <summary>
+    /// After <see cref="UnityEngine.Object.Instantiate"/> creates the clone,
+    /// walk every collection-typed member and deep-copy each element of any
+    /// list whose element type is an abstract-polymorphic non-DataTemplate
+    /// ScriptableObject. This is the &quot;owned&quot; pattern: the parent
+    /// declares a <c>List&lt;AbstractBase&gt;</c> and live concrete elements
+    /// are unique to that parent. Without this pass, clone and source share
+    /// PPtrs and any patch through the clone leaks into the source.
+    /// DataTemplate-element lists (Skills, Items) and concrete-element
+    /// wrapper lists (SkillGroups, DefectGroups) stay shared because those
+    /// are intentional registry references.
+    /// </summary>
+    private static void DeepCopyOwnedReferences(DataTemplate clone, Type concreteType, string cloneId, MelonLogger.Instance log)
+    {
+        if (clone == null)
+        {
+            log.Msg($"Template clone '{cloneId}': deep-copy skipped, clone is null.");
+            return;
+        }
+
+        // The clone arrives as a DataTemplate wrapper; reflection on it sees
+        // only base-class members. Re-cast to the concrete wrapper so the
+        // subclass's own collection fields (e.g. PerkTemplate.EventHandlers)
+        // become visible to GetProperties / GetFields.
+        object reflectionTarget = clone;
+        if (concreteType != null && concreteType != typeof(DataTemplate))
+        {
+            try
+            {
+                var tryCast = typeof(Il2CppObjectBase)
+                    .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+                    .FirstOrDefault(m => m.Name == "TryCast"
+                        && m.IsGenericMethodDefinition
+                        && m.GetParameters().Length == 0)
+                    ?.MakeGenericMethod(concreteType);
+                if (tryCast != null)
+                {
+                    var cast = tryCast.Invoke(clone, null);
+                    if (cast != null) reflectionTarget = cast;
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Template clone '{cloneId}': TryCast<{concreteType.FullName}> threw: {ex.Message}");
+            }
+        }
+
+        var type = reflectionTarget.GetType();
+        var deepCopiedCount = 0;
+        var listsTouched = 0;
+
+        // GetProperties / GetFields without DeclaredOnly already return
+        // inherited members on the concrete wrapper, so a single pass on the
+        // leaf type covers SkillTemplate.EventHandlers via PerkTemplate and
+        // similar inheritance shapes. Walking the BaseType chain in addition
+        // would visit the same member multiple times.
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var prop in type.GetProperties(flags))
+        {
+            if (prop.GetIndexParameters().Length != 0) continue;
+            if (!prop.CanRead) continue;
+            if (!seen.Add("P:" + prop.Name)) continue;
+
+            var elementType = GetIl2CppListElementType(prop.PropertyType);
+            if (elementType == null) continue;
+            if (!IsOwnedElementType(elementType)) continue;
+
+            if (TryDeepCopyMember(reflectionTarget, elementType, () => prop.GetValue(reflectionTarget), prop.Name, cloneId, log, out var copied)
+                && copied > 0)
+            {
+                listsTouched++;
+                deepCopiedCount += copied;
+            }
+        }
+
+        foreach (var field in type.GetFields(flags))
+        {
+            if (!seen.Add("F:" + field.Name)) continue;
+
+            var elementType = GetIl2CppListElementType(field.FieldType);
+            if (elementType == null) continue;
+            if (!IsOwnedElementType(elementType)) continue;
+
+            if (TryDeepCopyMember(reflectionTarget, elementType, () => field.GetValue(reflectionTarget), field.Name, cloneId, log, out var copied)
+                && copied > 0)
+            {
+                listsTouched++;
+                deepCopiedCount += copied;
+            }
+        }
+
+        if (deepCopiedCount > 0)
+        {
+            log.Msg(
+                $"Template clone '{cloneId}': deep-copied {deepCopiedCount} owned-PPtr element(s) "
+                + $"across {listsTouched} list field(s) so clone-side patches don't leak into the source.");
+        }
+    }
+
+    private static bool TryDeepCopyMember(
+        object clone,
+        Type elementType,
+        Func<object> reader,
+        string memberName,
+        string cloneId,
+        MelonLogger.Instance log,
+        out int copiedCount)
+    {
+        copiedCount = 0;
+
+        object listObject;
+        try { listObject = reader(); }
+        catch { return false; }
+        if (listObject == null) return false;
+
+        var listType = listObject.GetType();
+        var countProp = listType.GetProperty("Count", BindingFlags.Instance | BindingFlags.Public);
+        var indexer = listType.GetProperty("Item", BindingFlags.Instance | BindingFlags.Public);
+        if (countProp == null || indexer == null) return false;
+
+        int count;
+        try { count = (int)countProp.GetValue(listObject); }
+        catch { return false; }
+
+        // Indexer.SetValue requires the value to be the wrapper type that
+        // matches the list's declared element. Object.Instantiate gives us a
+        // UnityEngine.Object wrapper; we have to TryCast back to the
+        // element-type wrapper before assigning. Cache the TryCast<element>
+        // method handle once per element type — same reflection cost as the
+        // path-walk applier's runtime cast.
+        MethodInfo tryCastToElement;
+        try
+        {
+            tryCastToElement = typeof(Il2CppObjectBase)
+                .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+                .FirstOrDefault(m => m.Name == "TryCast"
+                    && m.IsGenericMethodDefinition
+                    && m.GetParameters().Length == 0)
+                ?.MakeGenericMethod(elementType);
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Template clone '{cloneId}': could not bind TryCast<{elementType.Name}>: {ex.Message}");
+            return false;
+        }
+        if (tryCastToElement == null)
+        {
+            log.Warning($"Template clone '{cloneId}': TryCast<{elementType.Name}> not found.");
+            return false;
+        }
+
+        for (var i = 0; i < count; i++)
+        {
+            object element;
+            try { element = indexer.GetValue(listObject, new object[] { i }); }
+            catch (Exception ex)
+            {
+                log.Warning($"Template clone '{cloneId}': read of '{memberName}[{i}]' threw: {ex.Message}");
+                continue;
+            }
+            if (element is not Il2CppObjectBase il2cpp) continue;
+
+            UnityEngine.Object asUnity;
+            try { asUnity = il2cpp.Cast<UnityEngine.Object>(); }
+            catch (Exception ex)
+            {
+                log.Warning($"Template clone '{cloneId}': cast of '{memberName}[{i}]' to UnityEngine.Object threw: {ex.Message}");
+                continue;
+            }
+
+            UnityEngine.Object instance;
+            try { instance = UnityEngine.Object.Instantiate(asUnity); }
+            catch (Exception ex)
+            {
+                log.Warning($"Template clone '{cloneId}': Object.Instantiate on '{memberName}[{i}]' threw: {ex.Message}");
+                continue;
+            }
+
+            try { instance.hideFlags = HideFlags.DontUnloadUnusedAsset; } catch { }
+
+            // Cast the freshly-instantiated UnityEngine.Object back to the
+            // element type so the typed indexer accepts it.
+            object instanceAsElement;
+            try { instanceAsElement = tryCastToElement.Invoke(instance, null); }
+            catch (Exception ex)
+            {
+                log.Warning($"Template clone '{cloneId}': TryCast<{elementType.Name}> on instantiated '{memberName}[{i}]' threw: {(ex.InnerException ?? ex).Message}");
+                continue;
+            }
+            if (instanceAsElement == null)
+            {
+                log.Warning($"Template clone '{cloneId}': TryCast<{elementType.Name}> on instantiated '{memberName}[{i}]' returned null.");
+                continue;
+            }
+
+            try { indexer.SetValue(listObject, instanceAsElement, new object[] { i }); }
+            catch (Exception ex)
+            {
+                log.Warning($"Template clone '{cloneId}': write of '{memberName}[{i}]' threw: {ex.Message}");
+                continue;
+            }
+
+            copiedCount++;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Element types we treat as &quot;owned by parent&quot; and therefore
+    /// deep-copy when cloning the parent: abstract-polymorphic ScriptableObject
+    /// subclasses that aren't DataTemplate. SkillEventHandlerTemplate matches
+    /// (abstract, has 119+ subclasses, no m_ID); concrete wrappers like
+    /// SkillGroup don't (no subtypes); DataTemplate elements don't (intentional
+    /// registry sharing).
+    /// </summary>
+    private static bool IsOwnedElementType(Type elementType)
+    {
+        if (OwnedElementTypeCache.TryGetValue(elementType, out var cached))
+            return cached;
+
+        bool decision;
+        try
+        {
+            if (typeof(DataTemplate).IsAssignableFrom(elementType))
+                decision = false;
+            else if (!typeof(UnityEngine.ScriptableObject).IsAssignableFrom(elementType))
+                decision = false;
+            else
+                decision = HasStrictDescendant(elementType);
+        }
+        catch
+        {
+            decision = false;
+        }
+
+        OwnedElementTypeCache[elementType] = decision;
+        return decision;
+    }
+
+    private static bool HasStrictDescendant(Type baseType)
+    {
+        Type[] types;
+        try { types = baseType.Assembly.GetTypes(); }
+        catch { return false; }
+
+        foreach (var t in types)
+        {
+            if (ReferenceEquals(t, baseType)) continue;
+            if (baseType.IsAssignableFrom(t)) return true;
+        }
+        return false;
+    }
+
+    private static Type GetIl2CppListElementType(Type collectionType)
+    {
+        if (collectionType == null) return null;
+        if (!collectionType.IsGenericType) return null;
+        var def = collectionType.GetGenericTypeDefinition().FullName ?? string.Empty;
+        if (def != "Il2CppSystem.Collections.Generic.List`1"
+            && def != "System.Collections.Generic.List`1")
+            return null;
+        return collectionType.GenericTypeArguments.FirstOrDefault();
     }
 
     private static bool TryCloneTemplate(

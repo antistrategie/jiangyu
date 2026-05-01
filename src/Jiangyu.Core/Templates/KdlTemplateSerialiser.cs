@@ -48,12 +48,7 @@ public static class KdlTemplateSerialiser
         }
 
         sb.AppendLine(" {");
-        foreach (var d in node.Directives)
-        {
-            sb.Append("    ");
-            WriteDirective(sb, d);
-            sb.AppendLine();
-        }
+        WriteDirectiveBlock(sb, node.Directives, indent: 1);
         sb.AppendLine("}");
     }
 
@@ -68,16 +63,177 @@ public static class KdlTemplateSerialiser
         }
 
         sb.AppendLine(" {");
-        foreach (var d in node.Directives)
-        {
-            sb.Append("    ");
-            WriteDirective(sb, d);
-            sb.AppendLine();
-        }
+        WriteDirectiveBlock(sb, node.Directives, indent: 1);
         sb.AppendLine("}");
     }
 
-    private static void WriteDirective(StringBuilder sb, KdlEditorDirective d)
+    /// <summary>
+    /// Emit a list of directives, grouping consecutive same-prefix descent
+    /// ops under a single outer <c>set "Field" index=N type="X" { ... }</c>
+    /// block. Order is preserved — non-descent and differently-prefixed
+    /// descent directives interleave at the original positions.
+    /// </summary>
+    private static void WriteDirectiveBlock(StringBuilder sb, IList<KdlEditorDirective> directives, int indent)
+    {
+        var i = 0;
+        while (i < directives.Count)
+        {
+            var d = directives[i];
+            if (TryPeelDescentSegment(d, out var prefix, out var index, out var hint, out var residual))
+            {
+                // Gather a run of consecutive directives that share the same
+                // outer (prefix, index, hint) so they all fold into one block.
+                // A break in the run flushes the current group; later runs
+                // with the same outer key still emit as separate blocks (we
+                // never reorder — modder ordering is intentional).
+                var group = new List<KdlEditorDirective> { residual };
+                while (i + 1 < directives.Count
+                       && TryPeelDescentSegment(directives[i + 1], out var p2, out var i2, out var h2, out var r2)
+                       && p2 == prefix
+                       && i2 == index
+                       && h2 == hint)
+                {
+                    i++;
+                    group.Add(r2);
+                }
+
+                WriteIndent(sb, indent);
+                sb.Append($"set \"{Esc(prefix)}\" index={index!.Value.ToString(CultureInfo.InvariantCulture)}");
+                if (!string.IsNullOrEmpty(hint))
+                    sb.Append($" type=\"{Esc(hint)}\"");
+                sb.AppendLine(" {");
+                WriteDirectiveBlock(sb, group, indent + 1);
+                WriteIndent(sb, indent);
+                sb.AppendLine("}");
+            }
+            else if (TryPeelTerminalIndexer(d, out var terminalField, out var terminalIndex))
+            {
+                // Path ends in [N] with nothing after — equivalent to a
+                // top-level set with index= property. Rewrite to the
+                // canonical KDL form so emission and parser stay in lockstep.
+                WriteIndent(sb, indent);
+                sb.Append($"set \"{Esc(terminalField)}\" index={terminalIndex.ToString(CultureInfo.InvariantCulture)}");
+                if (d.Value != null)
+                {
+                    sb.Append(' ');
+                    WriteValue(sb, d.Value);
+                }
+                sb.AppendLine();
+            }
+            else
+            {
+                WriteIndent(sb, indent);
+                WriteFlatDirective(sb, d);
+                sb.AppendLine();
+            }
+
+            i++;
+        }
+    }
+
+    /// <summary>
+    /// True when the directive's path begins with <c>Field[N].rest</c> — i.e.
+    /// has a leading indexer with at least one further segment. Returns the
+    /// peeled <paramref name="prefix"/> and <paramref name="index"/>, the
+    /// outer <paramref name="hint"/> from <c>SubtypeHints[0]</c> if any, and
+    /// a <paramref name="residual"/> directive whose <c>FieldPath</c> is the
+    /// remainder, with <c>SubtypeHints</c> shifted down by one segment.
+    /// </summary>
+    private static bool TryPeelDescentSegment(
+        KdlEditorDirective d,
+        out string prefix,
+        out int? index,
+        out string? hint,
+        out KdlEditorDirective residual)
+    {
+        prefix = string.Empty;
+        index = null;
+        hint = null;
+        residual = null!;
+
+        var path = d.FieldPath;
+        var bracketOpen = path.IndexOf('[');
+        if (bracketOpen <= 0) return false;
+        var bracketClose = path.IndexOf(']', bracketOpen + 1);
+        if (bracketClose <= bracketOpen) return false;
+
+        // Need a continuation segment after the indexer; bare Field[N] is the
+        // terminal-indexer case and is handled separately so we can rewrite
+        // it as the canonical index= property form.
+        if (bracketClose == path.Length - 1) return false;
+        if (path[bracketClose + 1] != '.') return false;
+
+        var indexText = path[(bracketOpen + 1)..bracketClose];
+        if (!int.TryParse(indexText, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedIndex))
+            return false;
+
+        prefix = path[..bracketOpen];
+        index = parsedIndex;
+
+        if (d.SubtypeHints != null && d.SubtypeHints.TryGetValue(0, out var outerHint))
+            hint = outerHint;
+
+        var residualPath = path[(bracketClose + 2)..];
+        Dictionary<int, string>? residualHints = null;
+        if (d.SubtypeHints != null)
+        {
+            residualHints = new Dictionary<int, string>();
+            foreach (var (k, v) in d.SubtypeHints)
+            {
+                if (k > 0) residualHints[k - 1] = v;
+            }
+            if (residualHints.Count == 0) residualHints = null;
+        }
+
+        residual = new KdlEditorDirective
+        {
+            Op = d.Op,
+            FieldPath = residualPath,
+            Index = d.Index,
+            SubtypeHints = residualHints,
+            Value = d.Value,
+            Line = d.Line,
+        };
+        return true;
+    }
+
+    /// <summary>
+    /// True when the directive's path is a bare <c>Field[N]</c> with no
+    /// descent — needs to be rewritten as <c>set "Field" index=N value</c>.
+    /// </summary>
+    private static bool TryPeelTerminalIndexer(
+        KdlEditorDirective d,
+        out string field,
+        out int index)
+    {
+        field = string.Empty;
+        index = 0;
+
+        // Only Set ops can carry a terminal-indexer rewrite — append/insert/
+        // remove/clear all use the index= property at parse time and never
+        // produce paths with [N] at the end.
+        if (d.Op != KdlEditorOp.Set) return false;
+
+        var path = d.FieldPath;
+        var bracketOpen = path.IndexOf('[');
+        if (bracketOpen <= 0) return false;
+        var bracketClose = path.IndexOf(']', bracketOpen + 1);
+        if (bracketClose != path.Length - 1) return false;
+
+        var indexText = path[(bracketOpen + 1)..bracketClose];
+        if (!int.TryParse(indexText, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedIndex))
+            return false;
+
+        field = path[..bracketOpen];
+        index = parsedIndex;
+        return true;
+    }
+
+    /// <summary>
+    /// Emit a directive whose <c>FieldPath</c> contains no bracket indexers.
+    /// This is the simple case: scalar set, append, insert, remove, clear.
+    /// </summary>
+    private static void WriteFlatDirective(StringBuilder sb, KdlEditorDirective d)
     {
         var op = d.Op switch
         {
@@ -101,8 +257,6 @@ public static class KdlTemplateSerialiser
             return;
         }
 
-        // Clear has neither index nor value — the fieldPath alone is the
-        // whole directive. Bail before the value branch.
         if (d.Op == KdlEditorOp.Clear)
             return;
 
@@ -111,6 +265,12 @@ public static class KdlTemplateSerialiser
             sb.Append(' ');
             WriteValue(sb, d.Value);
         }
+    }
+
+    private static void WriteIndent(StringBuilder sb, int indent)
+    {
+        for (var i = 0; i < indent; i++)
+            sb.Append("    ");
     }
 
     private static void WriteValue(StringBuilder sb, KdlEditorValue v)
@@ -155,14 +315,18 @@ public static class KdlTemplateSerialiser
                 break;
 
             case KdlEditorValueKind.Composite:
-                WriteComposite(sb, v);
+                WriteFieldBag(sb, "composite", v);
+                break;
+
+            case KdlEditorValueKind.HandlerConstruction:
+                WriteFieldBag(sb, "handler", v);
                 break;
         }
     }
 
-    private static void WriteComposite(StringBuilder sb, KdlEditorValue v)
+    private static void WriteFieldBag(StringBuilder sb, string keyword, KdlEditorValue v)
     {
-        sb.Append($"composite=\"{Esc(v.CompositeType ?? "")}\"");
+        sb.Append($"{keyword}=\"{Esc(v.CompositeType ?? "")}\"");
 
         if (v.CompositeFields == null || v.CompositeFields.Count == 0)
         {

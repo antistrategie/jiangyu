@@ -55,29 +55,83 @@ Clones run before patches at load time, so the clone's id is targetable by `ref=
 
 Inside a `patch` or `clone` block, operations modify fields on the targeted template.
 
-| Operation                                  | Purpose                                              |
-| ------------------------------------------ | ---------------------------------------------------- |
-| `set "<field>" <value>`                    | Set a scalar, ref, enum, or composite field.         |
-| `set "<field>" index=N <value>`            | Set element N of a collection field.                 |
-| `append "<field>" <value>`                 | Append to a collection field.                        |
-| `insert "<field>" index=N <value>`         | Insert into a collection field at position N.        |
-| `remove "<field>" index=N`                 | Remove element N from a collection field.            |
-| `clear "<field>"`                          | Empty a collection field. Composes with `append` for "replace the whole list". |
+| Operation                                            | Purpose                                              |
+| ---------------------------------------------------- | ---------------------------------------------------- |
+| `set "<field>" <value>`                              | Set a scalar, ref, enum, or composite field.         |
+| `set "<field>" index=N <value>`                      | Set element N of a collection field.                 |
+| `set "<field>" index=N { ... }`                      | Descend into element N to edit its sub-fields.       |
+| `set "<field>" index=N handler="<X>" { ... }`        | Replace element N with a new constructed handler X.  |
+| `append "<field>" <value>`                           | Append to a collection field.                        |
+| `append "<field>" handler="<X>" { ... }`             | Construct a new handler X and append it.             |
+| `insert "<field>" index=N <value>`                   | Insert into a collection field at position N.        |
+| `insert "<field>" index=N handler="<X>" { ... }`     | Construct a new handler X and insert it at N.        |
+| `remove "<field>" index=N`                           | Remove element N from a collection field.            |
+| `clear "<field>"`                                    | Empty a collection field. Composes with `append` for "replace the whole list". |
 
 Indexes are zero-based. `append` doesn't take an `index=` property; use `insert` for positional writes. `clear` takes neither index nor value.
 
 ## Field paths
 
-Field paths navigate into nested members and collection elements:
+Field paths navigate into nested members:
 
 | Form                       | Meaning                                              |
 | -------------------------- | ---------------------------------------------------- |
-| `Properties.Accuracy`      | Dotted member access.                                |
-| `Skills[0]`                | Indexer on a collection (zero-based).                |
-| `Skills[0].Uses`           | Combined: indexer then dotted member.                |
-| `InitialAttributes[3]`     | Element 3 of a collection.                           |
+| `Properties.Accuracy`      | Dotted member access on a single object.             |
+| `InitialAttributes`        | Whole-collection field (with `index=N` for elements).|
 
-The `[N]` indexer form is interchangeable with the `index=N` property on a `set` operation. Studio's visual editor outputs the property form; both parse identically.
+## Descent: editing inside a collection element
+
+When you need to edit fields *inside* an element of a collection, wrap the inner edits in a `set "<field>" index=N { ... }` block. The outer `set` carries no value of its own; it just navigates. Inner directives operate on the element's own fields.
+
+```kdl
+patch "EntityTemplate" "player_squad.darby" {
+    set "Properties" index=0 {
+        set "Accuracy" 80.0
+        set "AccuracyMult" 1.5
+    }
+}
+```
+
+Each inner `set` flattens to a single compiled patch op behind the scenes; the descent block is purely an authoring shape that keeps deeply-indexed paths readable.
+
+### Polymorphic descent: type=
+
+When the collection's declared element type is an abstract base with multiple concrete subclasses (for example, `SkillTemplate.EventHandlers` is `List<SkillEventHandlerTemplate>` but the actual elements are `Attack`, `AddSkill`, `ChangeProperty`, etc.), the compiler can't see the concrete subclass's fields from the abstract base alone. Add `type="<ConcreteType>"` to declare which subclass lives at this slot:
+
+```kdl
+patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
+    set "EventHandlers" index=0 type="AddSkill" {
+        set "ShowHUDText" #true
+    }
+}
+```
+
+The `type=` hint is required at any polymorphic-abstract descent boundary; the compiler errors loudly when it's missing, naming the available subclasses. For non-polymorphic collections (where the element type is concrete and unambiguous), `type=` is unnecessary.
+
+Descent blocks may nest: each inner `set "<field>" index=N type="..." { ... }` works the same way, descending one level further.
+
+## Construction: adding new collection elements
+
+To add a brand-new element to a polymorphic-reference collection (most commonly an event handler on a skill or perk), use `handler="<SubtypeName>" { ... }` on `append`, `insert`, or `set` (with `index=`). The constructed element gets a fresh `ScriptableObject` instance, populated with the inner field values, and pushed/inserted/replaced into the named collection at apply time.
+
+```kdl
+patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
+    append "EventHandlers" handler="AddSkill" {
+        set "Event" enum="AddEvent" "OnAttack"
+        set "SkillToAdd" ref="SkillTemplate" "effect.bleeding"
+        set "ShowHUDText" #true
+    }
+}
+```
+
+Differences vs. descent:
+
+- **`type=` on `set` with index** descends into an *existing* element to edit its fields in place. The element keeps its identity.
+- **`handler=` on `append`, `insert`, or `set` with index** constructs a *new* element. On `set` with `index=`, the old element at N is replaced; on `append` and `insert`, no existing element is disturbed.
+
+Inner `set` directives inside a `handler=` block configure top-level fields of the constructed element — scalars, refs, enums, composites. Indexed writes (`set "TargetTags" index=0 ...`) and further descent are not supported inside the construction block; use a follow-up patch with descent against the now-existing element if you need to populate a list-typed field on it.
+
+The `handler=` subtype name is required when the array's element type is abstract polymorphic (the common case for event handlers). It can be omitted when the element type is monomorphic (the array's declared element type is the only construction option). The compiler errors when the subtype is missing for a polymorphic destination, when the named subtype isn't a subclass of the destination's element type, or when an inner field doesn't exist on the constructed type.
 
 ## Value kinds
 
@@ -90,9 +144,12 @@ A value at the end of a `set`, `append`, or `insert` line is one of:
 | String              | quoted string                                            | `set "InitialPerk" "perk.assassin"`                      |
 | Template reference  | `ref="<TemplateType>" "<templateId>"`                    | `append "PerkTrees" ref="PerkTreeTemplate" "perk_tree.tech"` |
 | Enum                | `enum="<EnumType>" "<value>"`                            | `set "Tier" enum="PerkTier" "Advanced"`                  |
-| Composite           | `composite="<TypeName>" { ...nested set ops... }`        | see the `AIRole` example above                           |
+| Composite           | `composite="<TypeName>" { ...nested set ops... }`        | inline value-type composite (e.g. `RoleData`)            |
+| Handler construction | `handler="<SubtypeName>" { ...nested set ops... }`      | construct a new ScriptableObject element (see above)     |
 
-The compiler infers numeric width (Byte, Int32, Single) from the destination field's type. For polymorphic destinations (an abstract base type with multiple concrete subclasses), specify the type explicitly via `ref=` or `composite=`. Otherwise the type is implicit.
+`composite=` builds an inline value embedded in the parent's serialised data; `handler=` constructs a separate ScriptableObject asset that the parent references via PPtr. The two are dispatched by the runtime based on the value kind, not just the syntax.
+
+The compiler infers numeric width (Byte, Int32, Single) from the destination field's type. For polymorphic destinations (an abstract base type with multiple concrete subclasses), specify the type explicitly via `ref=`, `composite=`, `handler=`, or `type=` as appropriate.
 
 ## Discovering templates
 

@@ -64,6 +64,18 @@ public sealed class CompiledTemplateSetOperation
     [JsonPropertyName("index")]
     public int? Index { get; set; }
 
+    /// <summary>
+    /// Concrete subtype names for polymorphic-abstract descent points along
+    /// <see cref="FieldPath"/>. Keyed by zero-based segment index of the
+    /// fieldPath: when navigating segment <c>k</c> auto-unwraps to an
+    /// abstract polymorphic base (e.g. <c>SkillEventHandlerTemplate</c>),
+    /// the validator switches to the type named in <c>SubtypeHints[k]</c>.
+    /// Produced by the KDL parser when modders write
+    /// <c>set "Field" index=N type="X" { ... }</c> child blocks.
+    /// </summary>
+    [JsonPropertyName("subtypeHints")]
+    public Dictionary<int, string>? SubtypeHints { get; set; }
+
     [JsonPropertyName("value")]
     public CompiledTemplateValue? Value { get; set; }
 }
@@ -134,6 +146,17 @@ public sealed class CompiledTemplateValue
 
     [JsonPropertyName("composite")]
     public CompiledTemplateComposite? Composite { get; set; }
+
+    /// <summary>
+    /// Payload for <see cref="CompiledTemplateValueKind.HandlerConstruction"/>.
+    /// Same field-bag shape as <see cref="Composite"/>, but signals
+    /// "construct a new ScriptableObject" at apply time rather than
+    /// "build an inline value". Used to add a freshly-instantiated handler
+    /// (e.g. AddSkill) into a polymorphic-reference array such as
+    /// <c>SkillTemplate.EventHandlers</c>.
+    /// </summary>
+    [JsonPropertyName("handlerConstruction")]
+    public CompiledTemplateComposite? HandlerConstruction { get; set; }
 }
 
 /// <summary>
@@ -189,4 +212,14 @@ public enum CompiledTemplateValueKind
     Enum,
     TemplateReference,
     Composite,
+
+    /// <summary>
+    /// Construct a new ScriptableObject of a named subclass and populate
+    /// its fields. Used to add a freshly-instantiated handler (or other
+    /// SerializedScriptableObject element) to a polymorphic-reference
+    /// array. The runtime applier dispatches via
+    /// <c>ScriptableObject.CreateInstance&lt;T&gt;()</c> reflectively;
+    /// inline composites stay on the <see cref="Composite"/> path.
+    /// </summary>
+    HandlerConstruction,
 }

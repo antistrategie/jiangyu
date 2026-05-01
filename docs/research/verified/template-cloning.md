@@ -198,6 +198,53 @@ Jiangyu diverges by:
 - routing the patch applier through `DataTemplateLoader.TryGet<T>` so clones
   and vanilla templates resolve through the same API.
 
+## Owned-reference deep-copy
+
+`Object.Instantiate` deep-copies the asset's serialised data but *shallow-
+copies* PPtr lists: the clone's reference arrays start out pointing at the
+source's referenced assets. For most cross-template references this is
+correct (icons, damage types, shared sub-templates, registry entries
+identified by `m_ID`). For one specific shape it is not: collections whose
+element type is an abstract-polymorphic non-`DataTemplate` ScriptableObject
+(currently `SkillEventHandlerTemplate` on `SkillTemplate.EventHandlers` and
+`PerkTemplate.EventHandlers`) are conceptually *owned* by their parent —
+each parent has its own handler instances configuring its own behaviour.
+Sharing those PPtrs across a clone means clone-side patches mutate the
+source's handlers.
+
+Immediately after the `Instantiate` step and before
+`m_TemplateMaps`/`m_TemplateArrays` registration, the applier walks the
+concrete-typed clone's collection-typed properties and fields. For each
+collection whose element type matches the owned shape:
+
+1. `Object.Instantiate(element)` → fresh asset.
+2. `hideFlags = HideFlags.DontUnloadUnusedAsset` so scene-change GC doesn't
+   sweep the freshly-created handler.
+3. `TryCast<element-type>` to get the indexer-compatible wrapper, then
+   write back into the same list slot via the `Item` indexer.
+
+The owned shape is detected structurally: element type descends from
+`UnityEngine.ScriptableObject`, does *not* descend from `DataTemplate`
+(those are intentional registry sharing), and has at least one strict
+subtype in the same assembly (concrete wrappers like `SkillGroup` and
+`DefectGroup` carry no subtypes and stay shared). The decision is cached
+per element type. The applier reflects against the concrete wrapper type
+(via `TryCast<concreteType>`) because the `clone` variable arrives as a
+`DataTemplate` wrapper and base-typed reflection misses subtype-declared
+collections like `PerkTemplate.EventHandlers`.
+
+Verified in-game 2026-05-01: cloning Darby's
+`perk.unique_darby_high_value_targets` produces a clone whose
+`EventHandlers[0]` PPtr is a fresh `AddSkill(Clone)` asset at a different
+native pointer from the source's handler. Loader log on the validated
+run reads:
+
+```
+Template clone 'perk.unique_darby_high_value_targets_clone_leak_smoke':
+    deep-copied 1 owned-PPtr element(s) across 1 list field(s) so
+    clone-side patches don't leak into the source.
+```
+
 ## Scope limits
 
 - **Non-serialised fields beyond `m_ID` stay at their pre-clone values.**
@@ -207,12 +254,15 @@ Jiangyu diverges by:
   documents the reason; there's no generic "reset all non-serialised"
   primitive because most such fields hold legitimate derived state that
   the source's value is correct for.
-- **No cascade cloning.** Cloning a template whose referenced sub-templates
-  should also be cloned is authored explicitly: one `clone` directive per
-  template that needs an independent identity. There is no automatic
-  deep-walk because most cross-template references are intentionally
-  shared (icons, damage types, shared sub-templates) and a generic
-  cascade would over-clone them.
+- **No cascade cloning of named DataTemplate references.** Cloning a
+  template whose referenced sub-templates should also be cloned is
+  authored explicitly: one `clone` directive per template that needs an
+  independent identity. The owned-reference deep-copy above is structural
+  (it triggers on the polymorphic-abstract non-DataTemplate shape, not on
+  every reference) so cross-template references — icons, damage types,
+  shared sub-templates, registry-identified DataTemplates — keep their
+  intentional sharing. Genuine cascade cloning of DataTemplate refs is
+  modder-driven, one directive per identity.
 
 ## Jiangyu Implementation
 
@@ -232,3 +282,6 @@ Jiangyu diverges by:
   `src/Jiangyu.Loader/Templates/TemplateRuntimeAccess.cs:TryGetTemplateById`.
 - Apply ordering: clones run before patches in
   `src/Jiangyu.Loader/Runtime/ReplacementCoordinator.cs`.
+- Owned-reference deep-copy:
+  `src/Jiangyu.Loader/Templates/TemplateCloneApplier.cs:DeepCopyOwnedReferences`
+  and `IsOwnedElementType`.

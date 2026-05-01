@@ -77,6 +77,16 @@ public sealed class KdlEditorDirective
     [JsonPropertyName("value")]
     public KdlEditorValue? Value { get; set; }
 
+    /// <summary>
+    /// Concrete subtype names for polymorphic-abstract descent points along
+    /// <see cref="FieldPath"/>. Mirrors
+    /// <see cref="Jiangyu.Shared.Templates.CompiledTemplateSetOperation.SubtypeHints"/>.
+    /// The serialiser groups same-prefix descent ops back into a single
+    /// <c>set "Field" index=N type="X" { ... }</c> block on emit.
+    /// </summary>
+    [JsonPropertyName("subtypeHints")]
+    public Dictionary<int, string>? SubtypeHints { get; set; }
+
     /// <summary>1-based source line of the directive. Set by the parser for diagnostic output.</summary>
     [JsonPropertyName("line")]
     public int? Line { get; set; }
@@ -93,6 +103,18 @@ public enum KdlEditorValueKind
     Enum,
     TemplateReference,
     Composite,
+
+    /// <summary>
+    /// ScriptableObject construction for a polymorphic-reference array
+    /// element (e.g. EventHandlers). Mirrors
+    /// <see cref="Jiangyu.Shared.Templates.CompiledTemplateValueKind.HandlerConstruction"/>;
+    /// the field-bag shape on
+    /// <see cref="KdlEditorValue.CompositeFields"/> /
+    /// <see cref="KdlEditorValue.CompositeType"/> is reused. The serialiser
+    /// emits <c>handler="X" { ... }</c> instead of <c>composite="X" { ... }</c>
+    /// when this kind is present.
+    /// </summary>
+    HandlerConstruction,
 }
 
 public sealed class KdlEditorValue

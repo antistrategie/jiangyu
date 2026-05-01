@@ -202,6 +202,9 @@ public static class TemplatePatchEmitter
             Op = op.Op,
             FieldPath = effectivePath,
             Index = op.Index,
+            SubtypeHints = op.SubtypeHints != null
+                ? new Dictionary<int, string>(op.SubtypeHints)
+                : null,
             Value = op.Value,
         };
         return true;

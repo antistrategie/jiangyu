@@ -364,6 +364,558 @@ public class KdlTemplateParserTests
         Assert.Equal("ProjectileData.TimeScale", result.Patches[0].Set[0].FieldPath);
     }
 
+    // --- Descent block (child-block) grammar ---
+
+    [Fact]
+    public void DescentBlock_FlattensInnerSetIntoIndexedPath()
+    {
+        var dir = SetupKdl("desc.kdl", """
+            patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
+                set "EventHandlers" index=0 type="AddSkill" {
+                    set "ShowHUDText" #true
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        Assert.Single(result.Patches);
+        var ops = result.Patches[0].Set;
+        Assert.Single(ops);
+
+        var op = ops[0];
+        Assert.Equal(CompiledTemplateOp.Set, op.Op);
+        Assert.Equal("EventHandlers[0].ShowHUDText", op.FieldPath);
+        Assert.Equal(CompiledTemplateValueKind.Boolean, op.Value!.Kind);
+        Assert.True(op.Value.Boolean);
+        Assert.NotNull(op.SubtypeHints);
+        Assert.Equal("AddSkill", op.SubtypeHints[0]);
+        Assert.Single(op.SubtypeHints);
+    }
+
+    [Fact]
+    public void DescentBlock_MultipleInnerSetsAllShareDescentPrefix()
+    {
+        var dir = SetupKdl("desc.kdl", """
+            patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
+                set "EventHandlers" index=0 type="AddSkill" {
+                    set "ShowHUDText" #true
+                    set "OnlyApplyOnHit" #true
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var ops = result.Patches[0].Set;
+        Assert.Equal(2, ops.Count);
+        Assert.Equal("EventHandlers[0].ShowHUDText", ops[0].FieldPath);
+        Assert.Equal("EventHandlers[0].OnlyApplyOnHit", ops[1].FieldPath);
+        Assert.Equal("AddSkill", ops[0].SubtypeHints![0]);
+        Assert.Equal("AddSkill", ops[1].SubtypeHints![0]);
+    }
+
+    [Fact]
+    public void DescentBlock_NestedDescent_ShiftsInnerHintWhenOuterUnhinted()
+    {
+        // Outer descent without type=, inner descent with type=. The inner
+        // hint must shift from segment 0 to segment 1 in the flattened path
+        // because the outer descent occupies segment 0.
+        var dir = SetupKdl("desc.kdl", """
+            patch "PerkTemplate" "perk.x" {
+                set "Outer" index=0 {
+                    set "Inner" index=2 type="Y" {
+                        set "Leaf" 5
+                    }
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var op = result.Patches[0].Set[0];
+        Assert.Equal("Outer[0].Inner[2].Leaf", op.FieldPath);
+        Assert.NotNull(op.SubtypeHints);
+        Assert.False(op.SubtypeHints!.ContainsKey(0));
+        Assert.Equal("Y", op.SubtypeHints[1]);
+        Assert.Single(op.SubtypeHints);
+    }
+
+    [Fact]
+    public void DescentBlock_SiblingDescentsWithSamePrefix_StayDistinct()
+    {
+        // Two consecutive descents into the same parent index should be
+        // independent ops in the flattened model — the serialiser later
+        // collapses them into one outer block at emit time, but the parser
+        // shouldn't merge them at parse time. Each inner directive ends up
+        // as its own op with the same prefix.
+        var dir = SetupKdl("desc.kdl", """
+            patch "PerkTemplate" "perk.x" {
+                set "EventHandlers" index=0 type="AddSkill" {
+                    set "ShowHUDText" #true
+                }
+                set "EventHandlers" index=0 type="AddSkill" {
+                    set "OnlyApplyOnHit" #true
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var ops = result.Patches[0].Set;
+        Assert.Equal(2, ops.Count);
+        Assert.Equal("EventHandlers[0].ShowHUDText", ops[0].FieldPath);
+        Assert.Equal("EventHandlers[0].OnlyApplyOnHit", ops[1].FieldPath);
+    }
+
+    [Fact]
+    public void DescentBlock_NestedDescentShiftsInnerHints()
+    {
+        var dir = SetupKdl("desc.kdl", """
+            patch "PerkTemplate" "perk.x" {
+                set "Outer" index=0 type="X" {
+                    set "Inner" index=2 type="Y" {
+                        set "Leaf" 5
+                    }
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var ops = result.Patches[0].Set;
+        Assert.Single(ops);
+        Assert.Equal("Outer[0].Inner[2].Leaf", ops[0].FieldPath);
+        Assert.NotNull(ops[0].SubtypeHints);
+        Assert.Equal("X", ops[0].SubtypeHints![0]);
+        Assert.Equal("Y", ops[0].SubtypeHints![1]);
+        Assert.Equal(2, ops[0].SubtypeHints!.Count);
+    }
+
+    [Fact]
+    public void DescentBlock_TerminalElementWriteInsidePreservesIndex()
+    {
+        // Inner set has its own index= for a NamedArray-style element write;
+        // outer descent prefixes the path but the inner Index field is
+        // preserved.
+        var dir = SetupKdl("desc.kdl", """
+            patch "PerkTemplate" "perk.x" {
+                set "EventHandlers" index=0 type="AddSkill" {
+                    set "TargetRequiresOneOfTheseTags" index=2 ref="TagTemplate" "infantry"
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var op = result.Patches[0].Set[0];
+        Assert.Equal("EventHandlers[0].TargetRequiresOneOfTheseTags", op.FieldPath);
+        Assert.Equal(2, op.Index);
+        Assert.Equal(CompiledTemplateValueKind.TemplateReference, op.Value!.Kind);
+    }
+
+    [Fact]
+    public void DescentBlock_TypeHintOptional_WhenElementTypeUnambiguous()
+    {
+        // Validator decides whether type= is required; the parser accepts
+        // descent without type= and produces no SubtypeHints entry.
+        var dir = SetupKdl("desc.kdl", """
+            patch "EntityTemplate" "player_squad.darby" {
+                set "Properties" index=0 {
+                    set "Accuracy" 80.0
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var op = result.Patches[0].Set[0];
+        Assert.Equal("Properties[0].Accuracy", op.FieldPath);
+        Assert.Null(op.SubtypeHints);
+    }
+
+    [Fact]
+    public void HardCut_BracketIndexerInFieldPath_IsRejected()
+    {
+        var dir = SetupKdl("bad.kdl", """
+            patch "PerkTemplate" "perk.x" {
+                set "EventHandlers[0].ShowHUDText" #true
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Empty(result.Patches);
+        Assert.Contains(_log.Errors, e => e.Contains("bracket indexer", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(_log.Errors, e => e.Contains("child block", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void HardCut_BracketInNonSetOp_IsRejected()
+    {
+        var dir = SetupKdl("bad.kdl", """
+            patch "PerkTemplate" "perk.x" {
+                append "EventHandlers[0].Tags" ref="TagTemplate" "infantry"
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("bracket indexer", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void DescentBlock_RequiresIndexProperty()
+    {
+        var dir = SetupKdl("bad.kdl", """
+            patch "PerkTemplate" "perk.x" {
+                set "EventHandlers" type="AddSkill" {
+                    set "ShowHUDText" #true
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("index=", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void DescentBlock_RejectsValueOnOuterSet()
+    {
+        var dir = SetupKdl("bad.kdl", """
+            patch "PerkTemplate" "perk.x" {
+                set "EventHandlers" index=0 type="AddSkill" 5 {
+                    set "ShowHUDText" #true
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("must not carry a value", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void DescentBlock_RejectsEmptyChildBlock()
+    {
+        // KDL's HasChildren returns false for `{ }` so the empty-block case
+        // currently falls through to the value-required branch. Either
+        // error is correct (modder wrote something malformed); we just
+        // assert the parse fails. If the parser ever distinguishes empty
+        // child blocks at the lexer level, tighten the message check.
+        var dir = SetupKdl("bad.kdl", """
+            patch "PerkTemplate" "perk.x" {
+                set "EventHandlers" index=0 type="AddSkill" {
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Empty(result.Patches);
+    }
+
+    [Fact]
+    public void DescentBlock_RejectsNonSetInnerOps()
+    {
+        var dir = SetupKdl("bad.kdl", """
+            patch "PerkTemplate" "perk.x" {
+                set "EventHandlers" index=0 type="AddSkill" {
+                    append "TargetTags" ref="TagTemplate" "infantry"
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("only 'set'", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void TypeHint_WithoutChildBlock_IsRejected()
+    {
+        var dir = SetupKdl("bad.kdl", """
+            patch "PerkTemplate" "perk.x" {
+                set "Field" index=0 type="X" 5
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("type=", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void TypeHint_OnAppend_IsRejected()
+    {
+        var dir = SetupKdl("bad.kdl", """
+            patch "PerkTemplate" "perk.x" {
+                append "Items" type="X" ref="ItemTemplate" "foo"
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("type=", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void DescentBlock_RejectsRefOrEnumOnOuterSet()
+    {
+        // ref= with a value argument trips the no-value check before the
+        // no-ref check; either error is correct — both flag the same modder
+        // mistake. We keep this test loose because the precise order of
+        // failure within the descent block validation is not load-bearing.
+        var dir = SetupKdl("bad.kdl", """
+            patch "PerkTemplate" "perk.x" {
+                set "EventHandlers" index=0 type="AddSkill" ref="X" "y" {
+                    set "ShowHUDText" #true
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Empty(result.Patches);
+    }
+
+    [Fact]
+    public void DescentBlock_RejectsCompositeOnOuterSet()
+    {
+        // composite= takes the value-construction path, so type= ends up
+        // ignored — but we reject type= outside descent to keep modder
+        // intent unambiguous. The error tells them to drop one or the other.
+        var dir = SetupKdl("bad.kdl", """
+            patch "PerkTemplate" "perk.x" {
+                set "EventHandlers" index=0 type="AddSkill" composite="X" {
+                    set "ShowHUDText" #true
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("type=", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // --- Handler construction (slice 4b) ---
+
+    [Fact]
+    public void HandlerConstruction_AppendCarriesSubtypeAndFields()
+    {
+        var dir = SetupKdl("h.kdl", """
+            patch "SkillTemplate" "active.foo" {
+                append "EventHandlers" handler="AddSkill" {
+                    set "Event" enum="AddEvent" "OnHit"
+                    set "OnlyApplyOnHit" #true
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var op = result.Patches[0].Set[0];
+        Assert.Equal(CompiledTemplateOp.Append, op.Op);
+        Assert.Equal("EventHandlers", op.FieldPath);
+        Assert.Equal(CompiledTemplateValueKind.HandlerConstruction, op.Value!.Kind);
+        Assert.Equal("AddSkill", op.Value.HandlerConstruction!.TypeName);
+        Assert.Equal(2, op.Value.HandlerConstruction.Fields.Count);
+        Assert.Equal(CompiledTemplateValueKind.Enum, op.Value.HandlerConstruction.Fields["Event"].Kind);
+        Assert.Equal(CompiledTemplateValueKind.Boolean, op.Value.HandlerConstruction.Fields["OnlyApplyOnHit"].Kind);
+    }
+
+    [Fact]
+    public void HandlerConstruction_InsertCarriesIndex()
+    {
+        var dir = SetupKdl("h.kdl", """
+            patch "SkillTemplate" "active.foo" {
+                insert "EventHandlers" index=2 handler="ChangeProperty" {
+                    set "Amount" 5
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var op = result.Patches[0].Set[0];
+        Assert.Equal(CompiledTemplateOp.InsertAt, op.Op);
+        Assert.Equal(2, op.Index);
+        Assert.Equal("ChangeProperty", op.Value!.HandlerConstruction!.TypeName);
+    }
+
+    [Fact]
+    public void HandlerConstruction_SetWithIndexReplacesElement()
+    {
+        // set with index= and handler= means "replace element N with a fresh
+        // construction" — different from descent (which edits in place).
+        var dir = SetupKdl("h.kdl", """
+            patch "SkillTemplate" "active.foo" {
+                set "EventHandlers" index=1 handler="Cooldown" {
+                    set "RoundsToCoolDown" 3
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var op = result.Patches[0].Set[0];
+        Assert.Equal(CompiledTemplateOp.Set, op.Op);
+        Assert.Equal(1, op.Index);
+        Assert.Equal("Cooldown", op.Value!.HandlerConstruction!.TypeName);
+    }
+
+    [Fact]
+    public void HandlerConstruction_RejectsRefAndCompositeMixing()
+    {
+        var dir = SetupKdl("h.kdl", """
+            patch "SkillTemplate" "active.foo" {
+                append "EventHandlers" handler="AddSkill" composite="X" {
+                    set "Event" enum="AddEvent" "OnHit"
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("exclusive", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void HandlerConstruction_RejectsTypeMixing()
+    {
+        // type= is for descent into existing elements; mixing with handler=
+        // (which constructs new) is contradictory — surface as a typo.
+        var dir = SetupKdl("h.kdl", """
+            patch "SkillTemplate" "active.foo" {
+                append "EventHandlers" handler="AddSkill" type="X" {
+                    set "Event" enum="AddEvent" "OnHit"
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+    }
+
+    [Fact]
+    public void HandlerConstruction_RejectsEmptyChildBlock()
+    {
+        var dir = SetupKdl("h.kdl", """
+            patch "SkillTemplate" "active.foo" {
+                append "EventHandlers" handler="AddSkill" {
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+    }
+
+    [Fact]
+    public void HandlerConstruction_RejectsNonSetInnerOps()
+    {
+        var dir = SetupKdl("h.kdl", """
+            patch "SkillTemplate" "active.foo" {
+                append "EventHandlers" handler="AddSkill" {
+                    append "TargetTags" ref="TagTemplate" "infantry"
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("only 'set'", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void HandlerConstruction_RejectsBracketIndexerInInnerFieldName()
+    {
+        var dir = SetupKdl("h.kdl", """
+            patch "SkillTemplate" "active.foo" {
+                append "EventHandlers" handler="AddSkill" {
+                    set "TargetTags[0]" ref="TagTemplate" "infantry"
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+    }
+
+    [Fact]
+    public void HandlerConstruction_RejectsIndexOnInnerSet()
+    {
+        var dir = SetupKdl("h.kdl", """
+            patch "SkillTemplate" "active.foo" {
+                append "EventHandlers" handler="AddSkill" {
+                    set "TargetTags" index=0 ref="TagTemplate" "infantry"
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+    }
+
+    [Fact]
+    public void HandlerConstruction_RejectsValueOnOuterSet()
+    {
+        var dir = SetupKdl("h.kdl", """
+            patch "SkillTemplate" "active.foo" {
+                append "EventHandlers" handler="AddSkill" 5 {
+                    set "Event" enum="AddEvent" "OnHit"
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+    }
+
+    [Fact]
+    public void HandlerConstruction_AppendStillRequiresChildBlock()
+    {
+        // Without children, the construction would be all-defaults, which is
+        // almost never what the modder meant. Surface it loudly.
+        var dir = SetupKdl("h.kdl", """
+            patch "SkillTemplate" "active.foo" {
+                append "EventHandlers" handler="AddSkill"
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+    }
+
     // --- Helpers ---
 
     private static string SetupKdl(string fileName, string content)

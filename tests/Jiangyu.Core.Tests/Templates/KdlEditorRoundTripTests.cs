@@ -620,4 +620,279 @@ public class KdlEditorRoundTripTests
         var text = KdlTemplateSerialiser.Serialise(doc);
         Assert.Contains("composite=\"Perk\"", text);
     }
+
+    // --- Descent block (child-block) round-trips ---
+
+    [Fact]
+    public void DescentBlock_RoundTrips_AsChildBlock()
+    {
+        // Authored as child block, parsed into flat directive(s) with hint,
+        // serialised back to child block. Two-stage equivalence: text →
+        // editor doc → text reproduces the descent shape.
+        const string kdl = """
+            patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
+                set "EventHandlers" index=0 type="AddSkill" {
+                    set "ShowHUDText" #true
+                }
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+        Assert.Single(doc.Nodes);
+        Assert.Single(doc.Nodes[0].Directives);
+
+        var d = doc.Nodes[0].Directives[0];
+        Assert.Equal("EventHandlers[0].ShowHUDText", d.FieldPath);
+        Assert.Equal("AddSkill", d.SubtypeHints?[0]);
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        Assert.Contains("set \"EventHandlers\" index=0 type=\"AddSkill\"", text);
+        Assert.Contains("set \"ShowHUDText\" #true", text);
+        Assert.DoesNotContain("[0]", text);
+
+        var doc2 = KdlTemplateParser.ParseText(text);
+        Assert.Empty(doc2.Errors);
+        Assert.Single(doc2.Nodes[0].Directives);
+        Assert.Equal(d.FieldPath, doc2.Nodes[0].Directives[0].FieldPath);
+        Assert.Equal("AddSkill", doc2.Nodes[0].Directives[0].SubtypeHints?[0]);
+    }
+
+    [Fact]
+    public void DescentBlock_MultipleSiblingsGroupUnderOneOuter()
+    {
+        const string kdl = """
+            patch "PerkTemplate" "perk.x" {
+                set "EventHandlers" index=0 type="AddSkill" {
+                    set "ShowHUDText" #true
+                    set "OnlyApplyOnHit" #true
+                }
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Equal(2, doc.Nodes[0].Directives.Count);
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+
+        // Single outer wrapper, two inner sets.
+        var outerCount = System.Text.RegularExpressions.Regex.Matches(
+            text, @"set ""EventHandlers"" index=0").Count;
+        Assert.Equal(1, outerCount);
+        Assert.Contains("set \"ShowHUDText\" #true", text);
+        Assert.Contains("set \"OnlyApplyOnHit\" #true", text);
+    }
+
+    [Fact]
+    public void DescentBlock_DifferentHints_EmitSeparateOuterBlocks()
+    {
+        // Two consecutive descent ops with the SAME outer (Field, index) but
+        // DIFFERENT type= hints must not be folded together — that would
+        // change the validated subtype for some inner ops. Each gets its
+        // own outer wrapper.
+        var doc = new KdlEditorDocument();
+        doc.Nodes.Add(new KdlEditorNode
+        {
+            Kind = KdlEditorNodeKind.Patch,
+            TemplateType = "PerkTemplate",
+            TemplateId = "perk.x",
+            Directives =
+            [
+                new KdlEditorDirective
+                {
+                    Op = KdlEditorOp.Set,
+                    FieldPath = "EventHandlers[0].FieldA",
+                    SubtypeHints = new Dictionary<int, string> { [0] = "TypeA" },
+                    Value = new KdlEditorValue { Kind = KdlEditorValueKind.Boolean, Boolean = true },
+                },
+                new KdlEditorDirective
+                {
+                    Op = KdlEditorOp.Set,
+                    FieldPath = "EventHandlers[0].FieldB",
+                    SubtypeHints = new Dictionary<int, string> { [0] = "TypeB" },
+                    Value = new KdlEditorValue { Kind = KdlEditorValueKind.Boolean, Boolean = false },
+                },
+            ],
+        });
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+
+        var outerCount = System.Text.RegularExpressions.Regex.Matches(
+            text, @"set ""EventHandlers"" index=0").Count;
+        Assert.Equal(2, outerCount);
+        Assert.Contains("type=\"TypeA\"", text);
+        Assert.Contains("type=\"TypeB\"", text);
+    }
+
+    [Fact]
+    public void DescentBlock_NestedDescent_RoundTrips()
+    {
+        const string kdl = """
+            patch "PerkTemplate" "perk.x" {
+                set "Outer" index=0 type="X" {
+                    set "Inner" index=2 type="Y" {
+                        set "Leaf" 5
+                    }
+                }
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+        Assert.Single(doc.Nodes[0].Directives);
+
+        var d = doc.Nodes[0].Directives[0];
+        Assert.Equal("Outer[0].Inner[2].Leaf", d.FieldPath);
+        Assert.Equal("X", d.SubtypeHints?[0]);
+        Assert.Equal("Y", d.SubtypeHints?[1]);
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        Assert.Contains("set \"Outer\" index=0 type=\"X\"", text);
+        Assert.Contains("set \"Inner\" index=2 type=\"Y\"", text);
+        Assert.Contains("set \"Leaf\" 5", text);
+        Assert.DoesNotContain("[", text.Replace("Outer[", "").Replace("Inner[", ""));
+
+        var doc2 = KdlTemplateParser.ParseText(text);
+        Assert.Empty(doc2.Errors);
+        Assert.Equal(d.FieldPath, doc2.Nodes[0].Directives[0].FieldPath);
+        Assert.Equal(2, doc2.Nodes[0].Directives[0].SubtypeHints?.Count);
+    }
+
+    [Fact]
+    public void DescentBlock_TerminalIndexer_EmitsAsIndexProperty()
+    {
+        // A directive whose path ends in [N] (no descent) must serialise as
+        // set "Field" index=N value, the canonical terminal-element form.
+        // The runtime applier accepts both shapes; the serialiser canonises.
+        var doc = new KdlEditorDocument();
+        doc.Nodes.Add(new KdlEditorNode
+        {
+            Kind = KdlEditorNodeKind.Patch,
+            TemplateType = "EntityTemplate",
+            TemplateId = "player.x",
+            Directives =
+            [
+                new KdlEditorDirective
+                {
+                    Op = KdlEditorOp.Set,
+                    FieldPath = "InitialAttributes[3]",
+                    Value = new KdlEditorValue { Kind = KdlEditorValueKind.Int32, Int32 = 7 },
+                },
+            ],
+        });
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        Assert.Contains("set \"InitialAttributes\" index=3 7", text);
+        Assert.DoesNotContain("[3]", text);
+
+        var doc2 = KdlTemplateParser.ParseText(text);
+        Assert.Empty(doc2.Errors);
+        var d = doc2.Nodes[0].Directives[0];
+        Assert.Equal("InitialAttributes", d.FieldPath);
+        Assert.Equal(3, d.Index);
+    }
+
+    [Fact]
+    public void DescentBlock_MixesWithFlatOps_PreservesOrder()
+    {
+        const string kdl = """
+            patch "PerkTemplate" "perk.x" {
+                set "Foo" 1
+                set "EventHandlers" index=0 type="AddSkill" {
+                    set "ShowHUDText" #true
+                }
+                set "Bar" 2
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+        Assert.Equal(3, doc.Nodes[0].Directives.Count);
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        var lines = text.Split('\n');
+        var fooLine = Array.FindIndex(lines, l => l.Contains("\"Foo\""));
+        var ehLine = Array.FindIndex(lines, l => l.Contains("\"EventHandlers\""));
+        var barLine = Array.FindIndex(lines, l => l.Contains("\"Bar\""));
+        Assert.True(fooLine >= 0 && ehLine > fooLine && barLine > ehLine,
+            $"order broken: foo={fooLine} eh={ehLine} bar={barLine}\n---\n{text}");
+    }
+
+    [Fact]
+    public void HandlerConstruction_AppendRoundTrips()
+    {
+        const string kdl = """
+            patch "SkillTemplate" "active.foo" {
+                append "EventHandlers" handler="AddSkill" {
+                    set "Event" enum="AddEvent" "OnHit"
+                    set "OnlyApplyOnHit" #true
+                }
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+        Assert.Single(doc.Nodes[0].Directives);
+
+        var d = doc.Nodes[0].Directives[0];
+        Assert.Equal(KdlEditorOp.Append, d.Op);
+        Assert.Equal(KdlEditorValueKind.HandlerConstruction, d.Value!.Kind);
+        Assert.Equal("AddSkill", d.Value.CompositeType);
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        Assert.Contains("append \"EventHandlers\" handler=\"AddSkill\"", text);
+        Assert.Contains("set \"Event\" enum=\"AddEvent\" \"OnHit\"", text);
+        Assert.Contains("set \"OnlyApplyOnHit\" #true", text);
+        Assert.DoesNotContain("composite=", text);
+
+        var doc2 = KdlTemplateParser.ParseText(text);
+        Assert.Empty(doc2.Errors);
+        Assert.Equal(KdlEditorValueKind.HandlerConstruction, doc2.Nodes[0].Directives[0].Value!.Kind);
+    }
+
+    [Fact]
+    public void HandlerConstruction_InsertCarriesIndexThroughRoundTrip()
+    {
+        const string kdl = """
+            patch "SkillTemplate" "active.foo" {
+                insert "EventHandlers" index=2 handler="ChangeProperty" {
+                    set "Amount" 5
+                }
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+        var d = doc.Nodes[0].Directives[0];
+        Assert.Equal(KdlEditorOp.Insert, d.Op);
+        Assert.Equal(2, d.Index);
+        Assert.Equal("ChangeProperty", d.Value!.CompositeType);
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        Assert.Contains("insert \"EventHandlers\" index=2 handler=\"ChangeProperty\"", text);
+
+        var doc2 = KdlTemplateParser.ParseText(text);
+        Assert.Empty(doc2.Errors);
+        Assert.Equal(2, doc2.Nodes[0].Directives[0].Index);
+    }
+
+    [Fact]
+    public void DescentBlock_TypeHintOptional_EmitsWithoutType()
+    {
+        const string kdl = """
+            patch "EntityTemplate" "player.x" {
+                set "Properties" index=0 {
+                    set "Accuracy" 80.0
+                }
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+        Assert.Null(doc.Nodes[0].Directives[0].SubtypeHints);
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        Assert.Contains("set \"Properties\" index=0 {", text);
+        Assert.DoesNotContain("type=", text);
+    }
 }

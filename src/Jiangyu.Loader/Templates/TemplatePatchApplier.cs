@@ -203,6 +203,25 @@ internal sealed class TemplatePatchApplier
                     return ApplyOutcome.MemberMissing;
                 }
 
+                // Polymorphic descent: when the modder declared the concrete
+                // subtype via type="X" on the descent block, the parser
+                // recorded the hint at this segment index. The Il2CppInterop
+                // wrapper for a List<AbstractBase> element returns the
+                // base-type wrapper, so reflection on it sees only the
+                // base's own members (typically zero). Cast to the concrete
+                // wrapper before continuing so subclass fields are visible.
+                if (op.SubtypeHints != null && op.SubtypeHints.TryGetValue(i, out var subtypeHint))
+                {
+                    if (!TryCastToSubtype(element, subtypeHint, out var castElement, out var castError))
+                    {
+                        log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                            + $"cannot cast '{segment.Name}[{segment.Index.Value}]' to subtype "
+                            + $"'{subtypeHint}': {castError}");
+                        return ApplyOutcome.MemberMissing;
+                    }
+                    element = castElement;
+                }
+
                 // Indexed elements can't be written back into the collection on
                 // this slice, but mutations on a reference-type element
                 // propagate naturally, so we continue without a chain entry.
@@ -588,11 +607,117 @@ internal sealed class TemplatePatchApplier
         return false;
     }
 
+    /// <summary>
+    /// Cast an Il2CppInterop wrapper to a concrete subtype named by the
+    /// modder via <c>type="<i>X</i>"</c> on a descent block. The wrapper
+    /// returned by indexing a <c>List&lt;AbstractBase&gt;</c> reports the
+    /// base type and exposes only the base's own members, so reflection
+    /// can't see subclass fields like <c>AddSkill.ShowHUDText</c>. The cast
+    /// goes through <see cref="Il2CppObjectBase.Cast{T}"/> reflectively
+    /// because <c>T</c> is only known at runtime.
+    /// </summary>
+    private static bool TryCastToSubtype(object element, string subtypeShortName, out object cast, out string error)
+    {
+        cast = null!;
+        error = null!;
+
+        if (element is not Il2CppObjectBase il2cpp)
+        {
+            error = $"element type {element.GetType().FullName} is not an Il2CppObjectBase.";
+            return false;
+        }
+
+        var concreteType = ResolveIl2CppSubtype(element.GetType(), subtypeShortName);
+        if (concreteType == null)
+        {
+            error = $"no Il2Cpp wrapper type named '{subtypeShortName}' in the wrapper assembly.";
+            return false;
+        }
+
+        if (!element.GetType().IsAssignableFrom(concreteType))
+        {
+            error = $"'{subtypeShortName}' (full name '{concreteType.FullName}') "
+                + $"does not derive from '{element.GetType().FullName}'.";
+            return false;
+        }
+
+        try
+        {
+            var castMethod = typeof(Il2CppObjectBase).GetMethod(nameof(Il2CppObjectBase.Cast))!
+                .MakeGenericMethod(concreteType);
+            cast = castMethod.Invoke(il2cpp, null)!;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"Cast<{concreteType.FullName}> threw: {(ex.InnerException ?? ex).Message}";
+            return false;
+        }
+    }
+
+    private static readonly Dictionary<string, Type> SubtypeResolutionCache = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Find the Il2CppInterop wrapper type for <paramref name="shortName"/>,
+    /// preferring the same namespace as <paramref name="elementType"/>. The
+    /// wrapper assembly is what the path-walked element already lives in,
+    /// so almost every game subtype is in the same namespace as its base.
+    /// Falls back to a global short-name search if the same-namespace lookup
+    /// finds nothing — covers cross-namespace subclassing cases. Returns
+    /// null when no candidate matches.
+    /// </summary>
+    private static Type ResolveIl2CppSubtype(Type elementType, string shortName)
+    {
+        var ns = elementType.Namespace ?? string.Empty;
+        var cacheKey = ns + "::" + shortName;
+        if (SubtypeResolutionCache.TryGetValue(cacheKey, out var cached))
+            return cached;
+
+        // Same-namespace lookup first. Wrap in try/catch so a partial-load
+        // assembly doesn't bypass the global fallback.
+        Type same = null;
+        try
+        {
+            same = elementType.Assembly
+                .GetTypes()
+                .FirstOrDefault(t => t.Name == shortName && t.Namespace == ns);
+        }
+        catch { /* fall through */ }
+
+        if (same != null)
+        {
+            SubtypeResolutionCache[cacheKey] = same;
+            return same;
+        }
+
+        // Fall back to all loaded assemblies — match short name + assignable
+        // to the element type. Slower but covers types declared elsewhere.
+        Type anywhere = null;
+        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            Type[] types;
+            try { types = asm.GetTypes(); }
+            catch { continue; }
+
+            foreach (var candidate in types)
+            {
+                if (candidate.Name != shortName) continue;
+                if (!elementType.IsAssignableFrom(candidate)) continue;
+                anywhere = candidate;
+                break;
+            }
+            if (anywhere != null) break;
+        }
+
+        SubtypeResolutionCache[cacheKey] = anywhere;
+        return anywhere;
+    }
+
     // Read-only element access against Il2Cpp-side collections. Supports the
     // main collection shapes generated by Il2CppInterop: ReferenceArray<T>,
-    // StructArray, Il2CppSystem.Collections.Generic.List<T>, and anything that
-    // exposes a single-parameter Item indexer by reflection. Bounds are
-    // enforced via the collection's Length/Count before indexing.
+    // StructArray, Il2CppSystem.Collections.Generic.List<T>, and anything
+    // that exposes a single-parameter Item indexer by reflection. Bounds
+    // are enforced via the collection's Length/Count before indexing.
     private static bool TryIndexInto(object collection, int index, out object element, out Type elementType, out string error)
     {
         element = null;
@@ -1356,10 +1481,67 @@ internal sealed class TemplatePatchApplier
             case CompiledTemplateValueKind.Composite:
                 return TryConstructComposite(value.Composite, targetType, out converted, out error);
 
+            case CompiledTemplateValueKind.HandlerConstruction:
+                return TryConstructHandler(value.HandlerConstruction, targetType, out converted, out error);
+
             default:
                 error = $"unknown value kind {value.Kind}.";
                 return false;
         }
+    }
+
+    /// <summary>
+    /// Constructs a fresh ScriptableObject of the named subtype (for the
+    /// modder's <c>handler="X"</c> authoring shape on append/insert/set
+    /// against a polymorphic-reference array). Routes through the existing
+    /// composite construction path then sets
+    /// <c>HideFlags.DontUnloadUnusedAsset</c> so scene-change GC doesn't
+    /// sweep the freshly-allocated handler. When the payload's type name is
+    /// empty, the array's element type is used (monomorphic case).
+    /// </summary>
+    private static bool TryConstructHandler(
+        CompiledTemplateComposite handler, Type targetType, out object converted, out string error)
+    {
+        converted = null;
+
+        if (handler == null)
+        {
+            error = "value kind HandlerConstruction but payload is null.";
+            return false;
+        }
+
+        // If the modder omitted handler="X" because the destination is
+        // monomorphic (validator already confirmed), the empty TypeName
+        // resolves to the array's element type. Synthesise the payload so
+        // TryConstructComposite has something to look up.
+        var effectivePayload = handler;
+        if (string.IsNullOrWhiteSpace(handler.TypeName))
+        {
+            effectivePayload = new CompiledTemplateComposite
+            {
+                TypeName = targetType.Name,
+                Fields = handler.Fields ?? new Dictionary<string, CompiledTemplateValue>(),
+            };
+        }
+
+        if (!TryConstructComposite(effectivePayload, targetType, out converted, out error))
+            return false;
+
+        if (converted is UnityEngine.Object asUnity)
+        {
+            // hideFlags keeps scene-change GC from sweeping the freshly-
+            // allocated handler. name matches the vanilla convention (each
+            // game-shipped handler is named after its concrete subtype:
+            // "AddSkill", "ChangeProperty", etc.) so inspector dumps show
+            // "SkillEventHandlerTemplate:AddSkill" instead of an unnamed
+            // entry. ScriptableObject.CreateInstance leaves name empty
+            // by default.
+            try { asUnity.hideFlags = UnityEngine.HideFlags.DontUnloadUnusedAsset; }
+            catch { }
+            try { asUnity.name = effectivePayload.TypeName; }
+            catch { }
+        }
+        return true;
     }
 
     // Constructs a fresh instance of the composite's typeName and recursively
@@ -1420,6 +1602,31 @@ internal sealed class TemplatePatchApplier
         {
             error = $"Composite: construction of {resolvedType.FullName} threw: {ex.Message}";
             return false;
+        }
+
+        // Il2CppInterop polymorphic factories (e.g. ScriptableObject.CreateInstance(Il2CppType))
+        // return a base-typed wrapper. Reflection on that wrapper sees only
+        // base-class members, so subtype fields like AddSkill.Event would
+        // be missed. Cast the wrapper to resolvedType so GetType() reports
+        // the concrete type and TryGetWritableMember can find subclass
+        // fields. Same Cast<T>-via-MakeGenericMethod pattern used by the
+        // path-walk applier and the clone deep-copy.
+        if (instance is Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase il2cppInstance
+            && instance.GetType() != resolvedType)
+        {
+            try
+            {
+                var castMethod = typeof(Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase)
+                    .GetMethod(nameof(Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase.Cast))!
+                    .MakeGenericMethod(resolvedType);
+                var cast = castMethod.Invoke(il2cppInstance, null);
+                if (cast != null) instance = cast;
+            }
+            catch (Exception ex)
+            {
+                error = $"Composite: Cast<{resolvedType.FullName}> after construction threw: {(ex.InnerException ?? ex).Message}";
+                return false;
+            }
         }
 
         if (composite.Fields != null)

@@ -13,7 +13,10 @@ namespace Jiangyu.Core.Templates;
 /// </summary>
 public static class TemplateMemberQuery
 {
-    public static QueryResult Run(TemplateTypeCatalog catalog, string query)
+    public static QueryResult Run(
+        TemplateTypeCatalog catalog,
+        string query,
+        IReadOnlyDictionary<int, string>? subtypeHints = null)
     {
         if (string.IsNullOrWhiteSpace(query))
             return QueryResult.FromError("query is empty.");
@@ -43,7 +46,7 @@ public static class TemplateMemberQuery
         if (!TemplatePatchPathValidator.IsSupportedFieldPath(fieldPath))
             return QueryResult.FromError($"field path '{fieldPath}' is not a supported patch path.");
 
-        return NavigateFieldPath(catalog, resolvedType, typeName, fieldSegments);
+        return NavigateFieldPath(catalog, resolvedType, typeName, fieldSegments, subtypeHints);
     }
 
     private static int FindBestTypePrefix(
@@ -104,7 +107,8 @@ public static class TemplateMemberQuery
         TemplateTypeCatalog catalog,
         Type rootType,
         string typeName,
-        string[] fieldSegments)
+        string[] fieldSegments,
+        IReadOnlyDictionary<int, string>? subtypeHints)
     {
         var resolvedPathParts = new List<string> { typeName };
         var currentType = rootType;
@@ -163,6 +167,51 @@ public static class TemplateMemberQuery
                 currentType = elementType;
                 lastMemberType = elementType;
                 unwrappedFrom = memberType;
+
+                // Polymorphic descent: when the unwrapped element type has
+                // strict reference subtypes (e.g. SkillEventHandlerTemplate
+                // → Attack/AddSkill/...), the catalogue can't see the inner
+                // members of the concrete instance from the abstract base
+                // alone. The modder declares the concrete subtype via
+                // type="X" on the descent block; the parser threads it
+                // through as SubtypeHints[i]. Switch the navigator to that
+                // type before continuing.
+                if (hasIndexer
+                    && i < fieldSegments.Length - 1
+                    && catalog.HasReferenceSubtype(elementType))
+                {
+                    var hint = subtypeHints != null && subtypeHints.TryGetValue(i, out var hinted) ? hinted : null;
+                    if (hint == null)
+                    {
+                        var attempted = string.Join('.', resolvedPathParts);
+                        return QueryResult.FromError(
+                            $"polymorphic descent through '{member.Name}[…]' "
+                            + $"(element type '{catalog.FriendlyName(elementType)}' has subclasses) "
+                            + "requires a type=\"<ConcreteType>\" hint on the descent block "
+                            + $"(at '{attempted}').");
+                    }
+
+                    var resolved = catalog.ResolveType(hint, out var ambiguous, out var hintError);
+                    if (resolved == null)
+                    {
+                        var ambiguityNote = ambiguous.Count > 0
+                            ? " candidates: " + string.Join(", ", ambiguous.Select(t => t.FullName))
+                            : string.Empty;
+                        return QueryResult.FromError(
+                            $"type=\"{hint}\" on descent into '{member.Name}[…]' did not resolve "
+                            + $"({hintError ?? "unknown error"}).{ambiguityNote}");
+                    }
+
+                    if (!elementType.IsAssignableFrom(resolved))
+                    {
+                        return QueryResult.FromError(
+                            $"type=\"{hint}\" is not a subtype of '{catalog.FriendlyName(elementType)}' "
+                            + $"required by '{member.Name}[…]'.");
+                    }
+
+                    currentType = resolved;
+                    lastMemberType = resolved;
+                }
             }
             else
             {

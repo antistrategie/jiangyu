@@ -155,10 +155,14 @@ public static class TemplateCatalogValidator
         if (string.IsNullOrWhiteSpace(op.FieldPath)) return 0;
 
         var queryPath = $"{templateType}.{op.FieldPath}";
-        var result = TemplateMemberQuery.Run(catalog, queryPath);
+        var result = TemplateMemberQuery.Run(catalog, queryPath, op.SubtypeHints);
         if (result.Kind == QueryResultKind.Error)
         {
-            reportError($"'{op.FieldPath}' is not a field of {templateType}.");
+            // Surface the navigator's specific message (polymorphism hint
+            // missing, subtype not assignable, indexer on a non-collection,
+            // etc.) so modders see what to fix. Falling back to the generic
+            // "not a field of X" eats useful context.
+            reportError(result.ErrorMessage ?? $"'{op.FieldPath}' is not a field of {templateType}.");
             return 1;
         }
 
@@ -302,6 +306,9 @@ public static class TemplateCatalogValidator
         if (op.Value?.Kind == CompiledTemplateValueKind.Composite && op.Value.Composite != null)
             return ValidateCompositeValue(op.Value.Composite, op.FieldPath, catalog, reportError);
 
+        if (op.Value?.Kind == CompiledTemplateValueKind.HandlerConstruction && op.Value.HandlerConstruction != null)
+            return ValidateHandlerConstruction(op.Value.HandlerConstruction, op, result, catalog, reportError);
+
         return 0;
     }
 
@@ -373,6 +380,122 @@ public static class TemplateCatalogValidator
             $"'{enumValue}' is not a defined member of enum '{declaredName}' "
             + $"(known members: {string.Join(", ", declaredMembers)}).");
         return true;
+    }
+
+    /// <summary>
+    /// Validate a HandlerConstruction value: the named subtype must exist,
+    /// must descend from the destination collection's element type, and
+    /// every inner field must resolve on the subtype with a compatible
+    /// scalar kind. Optional handler= for monomorphic destinations:
+    /// when the element type has no strict subtypes, an empty TypeName is
+    /// allowed and the catalogue uses the element type itself.
+    /// </summary>
+    private static int ValidateHandlerConstruction(
+        CompiledTemplateComposite construction,
+        CompiledTemplateSetOperation op,
+        QueryResult destination,
+        TemplateTypeCatalog catalog,
+        Action<string> reportError)
+    {
+        // Destination must be a collection element-type (auto-unwrapped from
+        // the array). UnwrappedFrom is non-null when the navigator stopped
+        // on a collection; CurrentType is the unwrapped element type.
+        if (destination.UnwrappedFrom is null)
+        {
+            reportError(
+                "handler= construction targets a collection element-type, "
+                + $"but field '{op.FieldPath}' is not a collection.");
+            return 1;
+        }
+
+        var elementType = destination.CurrentType;
+        if (elementType is null)
+        {
+            reportError($"handler= construction on '{op.FieldPath}': cannot resolve element type.");
+            return 1;
+        }
+
+        // Resolve the named subtype. Allow empty/null when the destination
+        // is monomorphic (element type has no strict subtypes), in which
+        // case we use the element type itself.
+        Type subtype;
+        var typeName = construction.TypeName;
+        if (string.IsNullOrWhiteSpace(typeName))
+        {
+            if (catalog.HasReferenceSubtype(elementType))
+            {
+                reportError(
+                    $"handler= on '{op.FieldPath}' must name a concrete subtype: "
+                    + $"element type {catalog.FriendlyName(elementType)} has subclasses.");
+                return 1;
+            }
+            subtype = elementType;
+        }
+        else
+        {
+            var resolved = catalog.ResolveType(typeName, out var ambiguous, out var typeError);
+            if (resolved is null)
+            {
+                var ambiguityNote = ambiguous.Count > 0
+                    ? " candidates: " + string.Join(", ", ambiguous.Select(t => t.FullName))
+                    : string.Empty;
+                reportError(
+                    $"handler=\"{typeName}\" did not resolve "
+                    + $"({typeError ?? "unknown error"}).{ambiguityNote}");
+                return 1;
+            }
+            if (!elementType.IsAssignableFrom(resolved))
+            {
+                reportError(
+                    $"handler=\"{typeName}\" (full name '{resolved.FullName}') is not a subtype of "
+                    + $"{catalog.FriendlyName(elementType)} required by '{op.FieldPath}'.");
+                return 1;
+            }
+            subtype = resolved;
+        }
+
+        // Validate each inner field exists on the subtype.
+        var errors = 0;
+        foreach (var (fieldName, value) in construction.Fields)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName)) continue;
+
+            var subtypePath = subtype.FullName ?? subtype.Name;
+            var fieldResult = TemplateMemberQuery.Run(catalog, $"{subtypePath}.{fieldName}");
+            if (fieldResult.Kind == QueryResultKind.Error)
+            {
+                reportError(
+                    $"handler= construction for '{op.FieldPath}': "
+                    + $"'{fieldName}' is not a field of {catalog.FriendlyName(subtype)}.");
+                errors++;
+                continue;
+            }
+
+            if (fieldResult.IsLikelyOdinOnly)
+            {
+                reportError(
+                    $"handler= construction for '{op.FieldPath}': "
+                    + $"'{fieldName}' on {catalog.FriendlyName(subtype)} is Odin-routed; "
+                    + "Odin-routed fields can't be set via the data-only patching path.");
+                errors++;
+                continue;
+            }
+
+            // Recurse for nested composites; nested handler constructions
+            // aren't supported in this slice (validator surfaces them).
+            if (value.Kind == CompiledTemplateValueKind.HandlerConstruction)
+            {
+                reportError(
+                    $"handler= construction for '{op.FieldPath}': "
+                    + $"nested handler= on field '{fieldName}' is not supported "
+                    + "(handlers don't normally hold other handlers as fields).");
+                errors++;
+                continue;
+            }
+            if (value.Kind == CompiledTemplateValueKind.Composite && value.Composite != null)
+                errors += ValidateCompositeValue(value.Composite, $"{op.FieldPath}.{fieldName}", catalog, reportError);
+        }
+        return errors;
     }
 
     private static int ValidateCompositeValue(

@@ -218,14 +218,19 @@ public static class TemplatePatchPathValidator
             CompiledTemplateValueKind.TemplateReference =>
                 value.Reference != null
                 && !string.IsNullOrWhiteSpace(value.Reference.TemplateId),
-            CompiledTemplateValueKind.Composite => IsSupportedComposite(value.Composite, depth),
+            CompiledTemplateValueKind.Composite => IsSupportedComposite(value.Composite, depth, requireTypeName: true),
+            // HandlerConstruction allows an empty TypeName (the runtime
+            // applier substitutes the array element type when the modder
+            // omitted handler="X" against a monomorphic destination).
+            CompiledTemplateValueKind.HandlerConstruction => IsSupportedComposite(value.HandlerConstruction, depth, requireTypeName: false),
             _ => false,
         };
     }
 
-    private static bool IsSupportedComposite(CompiledTemplateComposite? composite, int depth)
+    private static bool IsSupportedComposite(CompiledTemplateComposite? composite, int depth, bool requireTypeName)
     {
-        if (composite == null || string.IsNullOrWhiteSpace(composite.TypeName))
+        if (composite == null) return false;
+        if (requireTypeName && string.IsNullOrWhiteSpace(composite.TypeName))
             return false;
         if (composite.Fields == null || composite.Fields.Count == 0)
             return false;

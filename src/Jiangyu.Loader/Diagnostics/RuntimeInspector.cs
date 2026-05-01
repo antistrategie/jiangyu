@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Il2CppInterop.Runtime;
@@ -729,9 +730,22 @@ internal static class RuntimeInspector
         catch { return element.GetType().Name; }
     }
 
+    // Cache for IL2CPP class pointer → class name. Cheap to build (just one
+    // P/Invoke + Marshal.PtrToStringAnsi per unique class). Keeps the
+    // inspector's per-element cost at one dictionary lookup after the first
+    // sighting of any given concrete type.
+    private static readonly Dictionary<IntPtr, string> ConcreteClassNameCache = new();
+
     private static string BuildReferenceSummary(Il2CppObjectBase il2CppObject)
     {
-        var typeName = il2CppObject.GetType().Name;
+        // Resolve the *concrete* IL2CPP type name rather than the static
+        // wrapper type. Indexing a List<AbstractBase> returns a base-typed
+        // wrapper, so il2CppObject.GetType().Name reports the abstract base
+        // (e.g. "SkillEventHandlerTemplate") even when the underlying object
+        // is a concrete subclass like AddSkill. Asking IL2CPP directly via
+        // il2cpp_object_get_class + il2cpp_class_get_name returns the real
+        // runtime class name, which is what callers want from the dump.
+        var typeName = ResolveConcreteClassName(il2CppObject) ?? il2CppObject.GetType().Name;
 
         string identity = null;
         if (typeof(DataTemplate).IsAssignableFrom(il2CppObject.GetType()))
@@ -741,7 +755,58 @@ internal static class RuntimeInspector
             try { identity = unityObject.name; } catch { }
         }
 
-        return string.IsNullOrWhiteSpace(identity) ? typeName : $"{typeName}:{identity}";
+        // Append native pointer for non-DataTemplate elements so collection
+        // entries that share an underlying asset (e.g. PPtr-shared handler
+        // in a cloned parent) can be distinguished by identity even when
+        // their .name string collides. DataTemplates already carry a
+        // unique m_ID; Unity-Object name alone isn't enough for handlers
+        // because every Attack handler is named "Attack", every AddSkill
+        // is named "AddSkill", etc.
+        var nativeSuffix = string.Empty;
+        if (!typeof(DataTemplate).IsAssignableFrom(il2CppObject.GetType()))
+        {
+            try { nativeSuffix = $" @ 0x{il2CppObject.Pointer.ToInt64():X}"; }
+            catch { }
+        }
+
+        // Drop the redundant ":identity" segment when it just repeats the
+        // type name (the vanilla naming convention for SerializedScriptable
+        // handlers — every AddSkill instance is named "AddSkill"). Keep the
+        // segment when it adds information, e.g. a uniquely-named asset.
+        var head = string.IsNullOrWhiteSpace(identity) || string.Equals(identity, typeName, StringComparison.Ordinal)
+            ? typeName
+            : $"{typeName}:{identity}";
+        return head + nativeSuffix;
+    }
+
+    private static string ResolveConcreteClassName(Il2CppObjectBase il2CppObject)
+    {
+        IntPtr objectPointer;
+        try { objectPointer = il2CppObject.Pointer; }
+        catch { return null; }
+        if (objectPointer == IntPtr.Zero) return null;
+
+        IntPtr klass;
+        try { klass = IL2CPP.il2cpp_object_get_class(objectPointer); }
+        catch { return null; }
+        if (klass == IntPtr.Zero) return null;
+
+        if (ConcreteClassNameCache.TryGetValue(klass, out var cached))
+            return cached;
+
+        string name;
+        try
+        {
+            var namePtr = IL2CPP.il2cpp_class_get_name(klass);
+            name = namePtr == IntPtr.Zero ? null : Marshal.PtrToStringAnsi(namePtr);
+        }
+        catch
+        {
+            name = null;
+        }
+
+        ConcreteClassNameCache[klass] = name;
+        return name;
     }
 
     private static RuntimeDump BuildDump(string sceneName, int buildIndex)

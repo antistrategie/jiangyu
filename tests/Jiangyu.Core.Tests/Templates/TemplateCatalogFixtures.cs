@@ -124,12 +124,26 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
         public string? m_Name { get; set; }
     }
 
+    // Concrete subtype of FixtureBaseDataTemplate used by the polymorphic-
+    // descent validator tests. Carries a unique field so descent into the
+    // list element via type=hint can resolve it.
+    public class FixtureConcreteDerivedB : FixtureBaseDataTemplate
+    {
+        public string? DerivedFieldB { get; set; }
+    }
+
     public class FixtureEntity : FixtureBaseEntity
     {
         public FixtureProperties Properties { get; set; } = new();
         public List<FixtureSkillTemplate> Skills { get; set; } = new();
         public FixtureSkillTemplate InitialSkill { get; set; } = new();
         public int[] BoneIndices { get; set; } = [];
+
+        // Polymorphic reference array: declared element type is the abstract
+        // FixtureBaseDataTemplate, but live data holds concrete subtypes
+        // (FixtureConcreteDerived, FixtureConcreteDerivedB). Mirrors the
+        // shape of SkillTemplate.EventHandlers in production data.
+        public List<FixtureBaseDataTemplate> Handlers { get; set; } = new();
         public bool IsEnabled { get; set; }
         public float HudYOffsetScale { get; set; }
 

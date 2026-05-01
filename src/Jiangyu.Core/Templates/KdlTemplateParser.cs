@@ -348,6 +348,7 @@ public static class KdlTemplateParser
             },
             FieldPath = directive.FieldPath,
             Index = directive.Index,
+            SubtypeHints = directive.SubtypeHints != null ? new Dictionary<int, string>(directive.SubtypeHints) : null,
             Value = directive.Value != null ? EditorValueToCompiled(directive.Value) : null,
         };
     }
@@ -386,6 +387,7 @@ public static class KdlTemplateParser
             },
             FieldPath = op.FieldPath,
             Index = op.Index,
+            SubtypeHints = op.SubtypeHints != null ? new Dictionary<int, string>(op.SubtypeHints) : null,
             Value = op.Value != null ? CompiledValueToEditor(op.Value) : null,
         };
     }
@@ -447,6 +449,16 @@ public static class KdlTemplateParser
                         ?? [],
                 },
             },
+            KdlEditorValueKind.HandlerConstruction => new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.HandlerConstruction,
+                HandlerConstruction = new CompiledTemplateComposite
+                {
+                    TypeName = value.CompositeType ?? string.Empty,
+                    Fields = value.CompositeFields?.ToDictionary(kv => kv.Key, kv => EditorValueToCompiled(kv.Value))
+                        ?? [],
+                },
+            },
             _ => new CompiledTemplateValue
             {
                 Kind = CompiledTemplateValueKind.String,
@@ -501,6 +513,13 @@ public static class KdlTemplateParser
                 Kind = KdlEditorValueKind.Composite,
                 CompositeType = v.Composite?.TypeName,
                 CompositeFields = v.Composite?.Fields
+                    .ToDictionary(kv => kv.Key, kv => CompiledValueToEditor(kv.Value)),
+            },
+            CompiledTemplateValueKind.HandlerConstruction => new KdlEditorValue
+            {
+                Kind = KdlEditorValueKind.HandlerConstruction,
+                CompositeType = v.HandlerConstruction?.TypeName,
+                CompositeFields = v.HandlerConstruction?.Fields
                     .ToDictionary(kv => kv.Key, kv => CompiledValueToEditor(kv.Value)),
             },
             _ => new KdlEditorValue { Kind = KdlEditorValueKind.String, String = "" },
@@ -625,12 +644,10 @@ public static class KdlTemplateParser
         foreach (var child in node.Children)
         {
             var childPos = FormatPos(pos, child.SourcePosition);
-            if (!TryParseOperation(child, childPos, log, out var op))
+            if (!TryParseOperation(child, childPos, log, ops))
             {
                 hasError = true;
-                continue;
             }
-            ops.Add(op);
         }
 
         if (hasError)
@@ -696,12 +713,10 @@ public static class KdlTemplateParser
             foreach (var child in node.Children)
             {
                 var childPos = FormatPos(pos, child.SourcePosition);
-                if (!TryParseOperation(child, childPos, log, out var op))
+                if (!TryParseOperation(child, childPos, log, ops))
                 {
                     hasError = true;
-                    continue;
                 }
-                ops.Add(op);
             }
 
             if (hasError)
@@ -723,15 +738,21 @@ public static class KdlTemplateParser
 
     // set "fieldPath" <value>              — scalar or whole-member set
     // set "fieldPath" index=N <value>      — element set on a collection
+    // set "fieldPath" index=N type="X" {   — descend into element N (subtype X)
+    //     set "subField" <value>
+    //     ...
+    // }
     // append "fieldPath" <value>
     // insert "fieldPath" index=N <value>
     // remove "fieldPath" index=N
+    //
+    // Appends parsed ops to <paramref name="ops"/>. Returns false on error.
+    // A single source node usually produces one op; a descent block produces
+    // one flattened op per inner directive.
     private static bool TryParseOperation(
         KdlNode node, string pos, ILogSink log,
-        out CompiledTemplateSetOperation op)
+        List<CompiledTemplateSetOperation> ops)
     {
-        op = null!;
-
         var opName = node.Name;
         CompiledTemplateOp opKind;
         switch (opName)
@@ -759,6 +780,19 @@ public static class KdlTemplateParser
             return false;
         }
 
+        // Hard-cut: bracket indexers in modder-authored fieldPath strings are
+        // no longer accepted. Descent uses child blocks; element-set uses
+        // index= property. Internal flat-path representation still uses [N]
+        // (produced by the descent flattener below); modder input does not.
+        if (fieldPath.Contains('['))
+        {
+            log.Error(
+                $"{pos}: bracket indexer '[' in fieldPath '{fieldPath}' is no longer supported. "
+                + "Use child blocks for descent (set \"Field\" index=N { set \"SubField\" <value> }) "
+                + "or index= property for element writes (set \"Field\" index=N <value>).");
+            return false;
+        }
+
         // Clear takes neither index nor value — empties the whole collection.
         if (opKind == CompiledTemplateOp.Clear)
         {
@@ -772,12 +806,17 @@ public static class KdlTemplateParser
                 log.Error($"{pos}: 'clear' takes no value; only the fieldPath argument is allowed.");
                 return false;
             }
+            if (node.HasChildren)
+            {
+                log.Error($"{pos}: 'clear' does not take a child block.");
+                return false;
+            }
 
-            op = new CompiledTemplateSetOperation
+            ops.Add(new CompiledTemplateSetOperation
             {
                 Op = opKind,
                 FieldPath = fieldPath,
-            };
+            });
             return true;
         }
 
@@ -790,13 +829,18 @@ public static class KdlTemplateParser
                 log.Error($"{pos}: 'remove' requires an index=N property.");
                 return false;
             }
+            if (node.HasChildren)
+            {
+                log.Error($"{pos}: 'remove' does not take a child block.");
+                return false;
+            }
 
-            op = new CompiledTemplateSetOperation
+            ops.Add(new CompiledTemplateSetOperation
             {
                 Op = opKind,
                 FieldPath = fieldPath,
                 Index = removeIndexProp.AsInt32(),
-            };
+            });
             return true;
         }
 
@@ -809,6 +853,15 @@ public static class KdlTemplateParser
             if (indexProp == null || indexProp.AsInt32() == null)
             {
                 log.Error($"{pos}: 'insert' requires an index=N property.");
+                return false;
+            }
+            if (node.HasChildren
+                && GetProperty(node, "composite") == null
+                && GetProperty(node, "handler") == null)
+            {
+                log.Error(
+                    $"{pos}: 'insert' with a child block requires composite=\"TypeName\" (inline value) or "
+                    + "handler=\"SubtypeName\" (ScriptableObject construction) to declare the element type.");
                 return false;
             }
 
@@ -827,6 +880,24 @@ public static class KdlTemplateParser
                 }
                 parsedIndex = parsed;
             }
+
+            // Descent block: set "Field" index=N type="X" { set "Sub" ... }.
+            // The outer 'set' is purely a navigation marker — it carries no
+            // value and no scalar result. Each inner directive flattens into
+            // a separate compiled op whose fieldPath is prefixed with the
+            // outer "Field[N]." segment, plus a SubtypeHints entry at this
+            // segment when type= is specified.
+            //
+            // Composite construction (set "Field" composite="X" { ... }) and
+            // handler construction (set "Field" handler="X" { ... }) also use
+            // a child block but produce a value rather than navigate. Fall
+            // through to TryParseValue.
+            if (node.HasChildren
+                && GetProperty(node, "composite") == null
+                && GetProperty(node, "handler") == null)
+            {
+                return TryParseDescentBlock(node, pos, log, ops, fieldPath, parsedIndex);
+            }
         }
         else if (opKind == CompiledTemplateOp.Append)
         {
@@ -835,34 +906,174 @@ public static class KdlTemplateParser
                 log.Error($"{pos}: 'append' does not take an index= property; use 'insert' for positional writes.");
                 return false;
             }
+            if (node.HasChildren
+                && GetProperty(node, "composite") == null
+                && GetProperty(node, "handler") == null)
+            {
+                log.Error(
+                    $"{pos}: 'append' with a child block requires composite=\"TypeName\" (inline value) or "
+                    + "handler=\"SubtypeName\" (ScriptableObject construction) to declare the element type. "
+                    + "Plain descent blocks are 'set'-only.");
+                return false;
+            }
+        }
+
+        // type= is only meaningful on a descent block (set with index= and a
+        // child block, no composite=). On any other shape it's either a typo
+        // or a misunderstanding — surface it loudly rather than silently
+        // dropping the hint and letting the modder think they're getting
+        // polymorphism validation. The descent path consumes type= before
+        // reaching this check; getting here means it isn't descent.
+        if (GetProperty(node, "type") != null)
+        {
+            log.Error(
+                $"{pos}: 'type=' is only valid on 'set' with a descent child block "
+                + $"(set \"Field\" index=N type=\"X\" {{ ... }}); it has no meaning on '{opName}' "
+                + (GetProperty(node, "composite") != null
+                    ? "with composite= (which constructs a value), "
+                    : "without descent, ")
+                + "and is rejected to surface the typo.");
+            return false;
         }
 
         // Parse the value
         if (!TryParseValue(node, pos, log, out var value))
             return false;
 
-        op = new CompiledTemplateSetOperation
+        ops.Add(new CompiledTemplateSetOperation
         {
             Op = opKind,
             FieldPath = fieldPath,
             Index = parsedIndex,
             Value = value,
-        };
+        });
+        return true;
+    }
+
+    /// <summary>
+    /// Flatten a descent block (<c>set "Field" index=N type="X" { ... }</c>)
+    /// into one compiled op per inner directive. Each inner op's
+    /// <c>FieldPath</c> is prefixed with <c>Field[N].</c>; when
+    /// <c>type="X"</c> is present, a hint entry is recorded at the segment
+    /// where the descent crosses (segment index = number of dotted parts in
+    /// the prefix, zero-based).
+    /// </summary>
+    private static bool TryParseDescentBlock(
+        KdlNode node, string pos, ILogSink log,
+        List<CompiledTemplateSetOperation> ops,
+        string outerField, int? outerIndex)
+    {
+        if (outerIndex == null)
+        {
+            log.Error(
+                $"{pos}: 'set' with a child block requires an index= property. "
+                + "Descent blocks navigate into element N of the named collection.");
+            return false;
+        }
+
+        if (node.Arguments.Count > 1)
+        {
+            log.Error(
+                $"{pos}: 'set' with a child block must not carry a value. "
+                + "Move the value into one of the inner 'set' directives.");
+            return false;
+        }
+
+        if (GetProperty(node, "ref") != null
+            || GetProperty(node, "enum") != null
+            || GetProperty(node, "composite") != null)
+        {
+            log.Error(
+                $"{pos}: 'set' with a child block must not carry ref=, enum=, or composite= properties; "
+                + "those belong on the inner 'set' that produces the value.");
+            return false;
+        }
+
+        var subtypeHint = GetProperty(node, "type");
+        if (subtypeHint != null && string.IsNullOrWhiteSpace(subtypeHint))
+        {
+            log.Error($"{pos}: type= must be a non-empty string.");
+            return false;
+        }
+
+        var children = node.Children.ToList();
+        if (children.Count == 0)
+        {
+            log.Error($"{pos}: 'set' with a child block must contain at least one inner directive.");
+            return false;
+        }
+
+        var prefixSegment = $"{outerField}[{outerIndex.Value}]";
+
+        var hasError = false;
+        var staging = new List<CompiledTemplateSetOperation>();
+        foreach (var child in children)
+        {
+            var childPos = FormatPos(pos, child.SourcePosition);
+            if (child.Name != "set")
+            {
+                log.Error(
+                    $"{childPos}: only 'set' is allowed inside a descent block, not '{child.Name}'. "
+                    + "Append/insert/remove/clear stay at the top level.");
+                hasError = true;
+                continue;
+            }
+
+            if (!TryParseOperation(child, childPos, log, staging))
+            {
+                hasError = true;
+            }
+        }
+
+        if (hasError)
+            return false;
+
+        // Splice the prefix and hint into each inner op. The descent segment
+        // sits at index 0 of the inner op's flattened fieldPath, so any
+        // existing hints in the inner op shift by one when nested deeper.
+        foreach (var inner in staging)
+        {
+            inner.FieldPath = $"{prefixSegment}.{inner.FieldPath}";
+
+            if (subtypeHint != null || inner.SubtypeHints != null)
+            {
+                var merged = new Dictionary<int, string>();
+                if (subtypeHint != null)
+                    merged[0] = subtypeHint;
+                if (inner.SubtypeHints != null)
+                {
+                    foreach (var (k, v) in inner.SubtypeHints)
+                        merged[k + 1] = v;
+                }
+                inner.SubtypeHints = merged.Count > 0 ? merged : null;
+            }
+
+            ops.Add(inner);
+        }
+
         return true;
     }
 
     /// <summary>
     /// Parse the value from an operation node. The value can come from:
+    /// - <c>handler="Subtype"</c> with children (HandlerConstruction —
+    ///   ScriptableObject construction for a polymorphic-reference array)
+    /// - <c>composite="TypeName"</c> with children (Composite — inline value)
+    /// - <c>ref="TemplateType" "id"</c> (TemplateReference)
+    /// - <c>enum="EnumType" "value"</c> (Enum)
     /// - A second positional argument (scalar or string)
-    /// - ref="Type" "id" properties/args (TemplateReference)
-    /// - enum="EnumType" "value" properties/args (Enum)
-    /// - composite="TypeName" with children (Composite)
     /// </summary>
     private static bool TryParseValue(
         KdlNode node, string pos, ILogSink log,
         out CompiledTemplateValue value)
     {
         value = null!;
+
+        // Check for handler= (ScriptableObject construction for a
+        // polymorphic-reference array element, e.g. EventHandlers).
+        var handlerType = GetProperty(node, "handler");
+        if (handlerType != null)
+            return TryParseHandlerConstructionValue(node, handlerType, pos, log, out value);
 
         // Check for composite=
         var compositeType = GetProperty(node, "composite");
@@ -882,7 +1093,7 @@ public static class KdlTemplateParser
         // Must have a second argument with the literal value
         if (node.Arguments.Count < 2)
         {
-            log.Error($"{pos}: '{node.Name}' requires a value (second argument, ref=, enum=, or composite=).");
+            log.Error($"{pos}: '{node.Name}' requires a value (second argument, ref=, enum=, composite=, or handler=).");
             return false;
         }
 
@@ -1044,6 +1255,129 @@ public static class KdlTemplateParser
             Kind = CompiledTemplateValueKind.Enum,
             EnumType = enumType,
             EnumValue = enumValue,
+        };
+        return true;
+    }
+
+    // handler="SubtypeName" { set "field" <value> ... }
+    //
+    // Constructs a freshly-allocated ScriptableObject of the named subtype
+    // at apply time and pushes/inserts/replaces it in a polymorphic-
+    // reference array such as SkillTemplate.EventHandlers. Distinct from
+    // composite= which builds an inline value-typed struct. The inner
+    // directives must be flat 'set' ops naming top-level fields on the
+    // constructed type; descent and indexed writes inside the construction
+    // are not supported in this slice (use a separate descent patch on
+    // the resulting element after append/insert if you need them).
+    private static bool TryParseHandlerConstructionValue(
+        KdlNode node, string subtypeName, string pos, ILogSink log,
+        out CompiledTemplateValue value)
+    {
+        value = null!;
+
+        if (string.IsNullOrWhiteSpace(subtypeName))
+        {
+            log.Error($"{pos}: handler= must be a non-empty subtype name.");
+            return false;
+        }
+
+        if (GetProperty(node, "ref") != null
+            || GetProperty(node, "enum") != null
+            || GetProperty(node, "composite") != null
+            || GetProperty(node, "type") != null)
+        {
+            log.Error(
+                $"{pos}: 'handler=' is exclusive with ref=, enum=, composite=, and type=. "
+                + "It signals construction of a new ScriptableObject; the others are different value shapes.");
+            return false;
+        }
+
+        if (node.Arguments.Count > 1)
+        {
+            log.Error($"{pos}: 'handler=' construction must not carry a positional value; configure fields via inner 'set' directives only.");
+            return false;
+        }
+
+        if (!node.HasChildren)
+        {
+            log.Error(
+                $"{pos}: 'handler=\"{subtypeName}\"' requires a child block with at least one 'set' "
+                + "(otherwise the constructed handler would carry only its default field values, "
+                + "which is rarely intentional — use ref= or refer to an existing handler instead).");
+            return false;
+        }
+
+        var fields = new Dictionary<string, CompiledTemplateValue>(StringComparer.Ordinal);
+        foreach (var child in node.Children)
+        {
+            var childPos = FormatPos(pos, child.SourcePosition);
+
+            if (child.Name != "set")
+            {
+                log.Error(
+                    $"{childPos}: only 'set' is allowed inside a handler= construction block, not '{child.Name}'. "
+                    + "Construct the handler with its scalar/ref/enum fields, then use a separate patch for "
+                    + "list mutations on the resulting element if needed.");
+                return false;
+            }
+
+            if (child.Arguments.Count < 1)
+            {
+                log.Error($"{childPos}: 'set' inside a handler= block requires a field name argument.");
+                return false;
+            }
+
+            var fieldName = child.Arguments[0].AsString();
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                log.Error($"{childPos}: handler field name must be a non-empty string.");
+                return false;
+            }
+
+            if (fieldName.Contains('['))
+            {
+                log.Error(
+                    $"{childPos}: bracket indexer in handler field name '{fieldName}' is not supported. "
+                    + "Inner 'set' directives configure top-level fields of the constructed handler only.");
+                return false;
+            }
+
+            if (GetPropertyValue(child, "index") != null)
+            {
+                log.Error(
+                    $"{childPos}: 'index=' is not supported on inner 'set' inside a handler= block. "
+                    + "List mutations on the constructed handler's own fields are not part of this slice.");
+                return false;
+            }
+
+            if (child.HasChildren && GetProperty(child, "composite") == null && GetProperty(child, "handler") == null)
+            {
+                log.Error(
+                    $"{childPos}: descent blocks inside handler= construction are not supported. "
+                    + "Set scalar/ref/enum/composite fields only.");
+                return false;
+            }
+
+            if (!TryParseValue(child, childPos, log, out var fieldValue))
+                return false;
+
+            if (fields.ContainsKey(fieldName))
+            {
+                log.Error($"{childPos}: duplicate field '{fieldName}' in handler= construction.");
+                return false;
+            }
+
+            fields[fieldName] = fieldValue;
+        }
+
+        value = new CompiledTemplateValue
+        {
+            Kind = CompiledTemplateValueKind.HandlerConstruction,
+            HandlerConstruction = new CompiledTemplateComposite
+            {
+                TypeName = subtypeName,
+                Fields = fields,
+            },
         };
         return true;
     }

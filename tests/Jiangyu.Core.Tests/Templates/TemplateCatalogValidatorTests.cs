@@ -53,7 +53,12 @@ public class TemplateCatalogValidatorTests
         var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
 
         Assert.Equal(1, errors);
-        Assert.Contains("'Dawg' is not a field of FixtureEntity", log.Errors[0]);
+        // Validator surfaces the navigator's specific message: which member
+        // was missing on which type. The old generic "is not a field of X"
+        // message is gone — its single fallback line erased the structural
+        // detail callers actually need to fix the patch.
+        Assert.Contains("Dawg", log.Errors[0]);
+        Assert.Contains("FixtureEntity", log.Errors[0]);
     }
 
     [Fact]
@@ -685,5 +690,484 @@ public class TemplateCatalogValidatorTests
 
         Assert.Equal(1, errors);
         Assert.Contains("FixtureAttribute-indexed array", log.Errors[0]);
+    }
+
+    // --- Polymorphic descent (subtype-hint) validator dispatch ---
+
+    [Fact]
+    public void PolymorphicDescent_WithMatchingHint_Validates()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "Handlers[0].DerivedField",
+                        SubtypeHints = new Dictionary<int, string> { [0] = "FixtureConcreteDerived" },
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 7 },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+    }
+
+    [Fact]
+    public void PolymorphicDescent_MissingHint_Errors()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "Handlers[0].DerivedField",
+                        SubtypeHints = null,
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 7 },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains(log.Errors, e => e.Contains("polymorphic descent", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(log.Errors, e => e.Contains("type=", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PolymorphicDescent_HintNamesUnknownType_Errors()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "Handlers[0].DerivedField",
+                        SubtypeHints = new Dictionary<int, string> { [0] = "NoSuchType" },
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 7 },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains(log.Errors, e => e.Contains("NoSuchType", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PolymorphicDescent_HintNamesNonSubtype_Errors()
+    {
+        // FixtureRefHolder is unrelated to FixtureBaseDataTemplate;
+        // hint must be assignable to the array's element type. Use the FQN
+        // form because the test fixtures declare two FixtureSkillTemplate
+        // shorts and we want to avoid the ambiguity branch.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "Handlers[0].DerivedField",
+                        SubtypeHints = new Dictionary<int, string> { [0] = "FixtureRefHolder" },
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 1 },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains(log.Errors, e => e.Contains("not a subtype", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // --- Handler construction (slice 4b) ---
+
+    [Fact]
+    public void HandlerConstruction_AppendValidates()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Append,
+                        FieldPath = "Handlers",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.HandlerConstruction,
+                            HandlerConstruction = new CompiledTemplateComposite
+                            {
+                                TypeName = "FixtureConcreteDerived",
+                                Fields = new Dictionary<string, CompiledTemplateValue>
+                                {
+                                    ["DerivedField"] = new CompiledTemplateValue
+                                    {
+                                        Kind = CompiledTemplateValueKind.Int32,
+                                        Int32 = 42,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+    }
+
+    [Fact]
+    public void HandlerConstruction_RejectsNonSubtype()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Append,
+                        FieldPath = "Handlers",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.HandlerConstruction,
+                            HandlerConstruction = new CompiledTemplateComposite
+                            {
+                                TypeName = "FixtureRefHolder",
+                                Fields = new Dictionary<string, CompiledTemplateValue>(),
+                            },
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains(log.Errors, e => e.Contains("not a subtype", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void HandlerConstruction_RejectsUnknownSubtypeName()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Append,
+                        FieldPath = "Handlers",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.HandlerConstruction,
+                            HandlerConstruction = new CompiledTemplateComposite
+                            {
+                                TypeName = "NoSuchType",
+                                Fields = new Dictionary<string, CompiledTemplateValue>(),
+                            },
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains(log.Errors, e => e.Contains("NoSuchType", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void HandlerConstruction_RejectsUnknownInnerField()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Append,
+                        FieldPath = "Handlers",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.HandlerConstruction,
+                            HandlerConstruction = new CompiledTemplateComposite
+                            {
+                                TypeName = "FixtureConcreteDerived",
+                                Fields = new Dictionary<string, CompiledTemplateValue>
+                                {
+                                    ["NotARealField"] = new CompiledTemplateValue
+                                    {
+                                        Kind = CompiledTemplateValueKind.Int32,
+                                        Int32 = 1,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains(log.Errors, e => e.Contains("NotARealField", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void HandlerConstruction_RejectsOnNonCollectionField()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "InitialSkill",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.HandlerConstruction,
+                            HandlerConstruction = new CompiledTemplateComposite
+                            {
+                                TypeName = "FixtureSkillTemplate",
+                                Fields = new Dictionary<string, CompiledTemplateValue>(),
+                            },
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains(log.Errors, e => e.Contains("not a collection", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void SubtypeHint_OnNonPolymorphicCollection_IsTolerated()
+    {
+        // Skills is List<FixtureSkillTemplate> where FixtureSkillTemplate
+        // has no subclasses. A modder accidentally writing
+        // type="FixtureSkillTemplate" on the descent (redundant but not
+        // wrong) should validate cleanly: the navigator doesn't need the
+        // hint, but it isn't harmful either.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "Skills[0].Cooldown",
+                        SubtypeHints = new Dictionary<int, string> { [0] = "FixtureSkillTemplate" },
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Single, Single = 1.0f },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        // Hint is harmless for monomorphic destinations — navigator unwraps
+        // to FixtureSkillTemplate without needing the hint, then either
+        // ignores or applies it (validator shouldn't error on a hint that
+        // matches the array's existing element type).
+        Assert.Equal(0, errors);
+    }
+
+    [Fact]
+    public void SubtypeHint_AtNonExistentSegment_IsIgnored()
+    {
+        // A hint keyed at a segment that doesn't have an indexer is dead
+        // metadata. The navigator only consults hints at segments where
+        // it auto-unwraps a polymorphic abstract base, so a hint at
+        // segment 5 of a 2-segment path simply never gets read. No error.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "HudYOffsetScale",
+                        SubtypeHints = new Dictionary<int, string> { [5] = "BogusType" },
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Single, Single = 1.0f },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+    }
+
+    [Fact]
+    public void HandlerConstruction_OptionalSubtypeWhenMonomorphic()
+    {
+        // FixtureSkillTemplate has no subclasses in the fixture assembly, so
+        // append "Skills" handler="" {...} should resolve implicitly (we
+        // simulate by passing an empty subtype name).
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Append,
+                        FieldPath = "Skills",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.HandlerConstruction,
+                            HandlerConstruction = new CompiledTemplateComposite
+                            {
+                                TypeName = "",
+                                Fields = new Dictionary<string, CompiledTemplateValue>
+                                {
+                                    ["Uses"] = new CompiledTemplateValue
+                                    {
+                                        Kind = CompiledTemplateValueKind.Int32,
+                                        Int32 = 5,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+    }
+
+    [Fact]
+    public void PolymorphicDescent_FieldOnHintedTypeMustExist()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        // DerivedFieldB lives on FixtureConcreteDerivedB, not on
+                        // FixtureConcreteDerived — hinting the wrong subtype
+                        // surfaces the missing-member error after dispatch.
+                        FieldPath = "Handlers[0].DerivedFieldB",
+                        SubtypeHints = new Dictionary<int, string> { [0] = "FixtureConcreteDerived" },
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.String, String = "x" },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains(log.Errors, e => e.Contains("DerivedFieldB", StringComparison.Ordinal));
     }
 }
