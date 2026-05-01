@@ -297,7 +297,7 @@ public class StructuralBaselineServiceTests
             string hash = ComputeHash(Path.Combine(gameDir, "GameAssembly.so"));
             var manifest = new TemplateIndexManifest
             {
-                FormatVersion = 3,
+                FormatVersion = TemplateIndexService.CurrentFormatVersion,
                 GameAssemblyHash = hash,
                 IndexedAt = DateTimeOffset.UtcNow,
                 GameDataPath = dataDir,

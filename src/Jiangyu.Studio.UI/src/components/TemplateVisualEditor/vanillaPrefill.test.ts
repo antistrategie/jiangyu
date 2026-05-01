@@ -150,4 +150,36 @@ describe("inspectedFieldToEditorValue", () => {
       inspectedFieldToEditorValue(undefined, member({ patchScalarKind: "Int32" })),
     ).toBeUndefined();
   });
+
+  it("preserves enum sub-fields inside a composite when the inspected node carries fieldTypeName", () => {
+    const node: InspectedFieldNode = {
+      kind: "object",
+      fields: [
+        { name: "m_Slot", kind: "enum", value: "Heavy", fieldTypeName: "ItemSlot" },
+        { name: "m_Count", kind: "int", value: 3 },
+      ],
+    };
+    const m = member({ typeName: "Loadout" });
+    expect(inspectedFieldToEditorValue(node, m)).toEqual({
+      kind: "Composite",
+      compositeType: "Loadout",
+      compositeFields: {
+        m_Slot: { kind: "Enum", enumType: "ItemSlot", enumValue: "Heavy" },
+        m_Count: { kind: "Int32", int32: 3 },
+      },
+    });
+  });
+
+  it("drops enum sub-fields inside a composite when fieldTypeName is missing", () => {
+    const node: InspectedFieldNode = {
+      kind: "object",
+      fields: [{ name: "m_Slot", kind: "enum", value: "Heavy" }],
+    };
+    const m = member({ typeName: "Loadout" });
+    expect(inspectedFieldToEditorValue(node, m)).toEqual({
+      kind: "Composite",
+      compositeType: "Loadout",
+      compositeFields: {},
+    });
+  });
 });

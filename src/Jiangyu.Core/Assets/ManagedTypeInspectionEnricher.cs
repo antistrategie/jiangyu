@@ -1,5 +1,6 @@
 using AsmResolver.DotNet;
 using AsmResolver.DotNet.Signatures;
+using AsmResolver.PE.DotNet.Metadata.Tables;
 using AssetRipper.Import.Structure.Assembly;
 using AssetRipper.Import.Structure.Assembly.Managers;
 using AssetRipper.SourceGenerated.Classes.ClassID_114;
@@ -53,9 +54,9 @@ internal static class ManagedTypeInspectionEnricher
             }
 
             field.FieldTypeName = metadata.DisplayName;
-            if (metadata.IsEnum && string.Equals(field.Kind, "int", StringComparison.Ordinal))
+            if (metadata.IsEnum && metadata.ResolvedType is not null)
             {
-                field.Kind = "enum";
+                PromoteEnumScalar(field, metadata.ResolvedType);
             }
 
             if (field.Fields is { Count: > 0 } && metadata.ResolvedType is not null)
@@ -64,11 +65,85 @@ internal static class ManagedTypeInspectionEnricher
             }
             else if (field.Elements is { Count: > 0 } && metadata.ElementResolvedType is not null)
             {
-                foreach (InspectedFieldNode element in field.Elements.Where(e => e.Fields is { Count: > 0 }))
+                bool elementIsEnum = metadata.IsElementEnum;
+                foreach (InspectedFieldNode element in field.Elements)
                 {
-                    EnrichFields(element.Fields!, metadata.ElementResolvedType);
+                    if (elementIsEnum)
+                    {
+                        PromoteEnumScalar(element, metadata.ElementResolvedType);
+                    }
+                    if (element.Fields is { Count: > 0 })
+                    {
+                        EnrichFields(element.Fields, metadata.ElementResolvedType);
+                    }
                 }
             }
+        }
+    }
+
+    // Skips when the integer value doesn't map to a single enum member: Flags
+    // bitmasks combine multiple members, and unknown raw values can't be named
+    // safely. Leaving such nodes as ints lets the frontend fall back to a
+    // neutral default rather than emit a synthesised member name.
+    private static void PromoteEnumScalar(InspectedFieldNode node, TypeDefinition enumType)
+    {
+        if (!string.Equals(node.Kind, "int", StringComparison.Ordinal)) return;
+        if (node.Value is null) return;
+        if (!TryReadIntegerValue(node.Value, out long numericValue)) return;
+        if (!TryGetEnumMemberName(enumType, numericValue, out string? name)) return;
+        node.Kind = "enum";
+        node.Value = name;
+    }
+
+    private static bool TryReadIntegerValue(object boxed, out long value)
+    {
+        switch (boxed)
+        {
+            case long l: value = l; return true;
+            case int i: value = i; return true;
+            case short s: value = s; return true;
+            case sbyte sb: value = sb; return true;
+            case byte b: value = b; return true;
+            case ushort us: value = us; return true;
+            case uint ui: value = ui; return true;
+            case ulong ul: value = unchecked((long)ul); return true;
+            default: value = 0; return false;
+        }
+    }
+
+    private static bool TryGetEnumMemberName(TypeDefinition enumType, long value, out string? name)
+    {
+        name = null;
+        foreach (FieldDefinition field in enumType.Fields)
+        {
+            if (!field.IsStatic || field.Constant is null) continue;
+            if (!TryConvertConstantToLong(field.Constant, out long memberValue)) continue;
+            if (memberValue != value) continue;
+            string? candidate = field.Name?.ToString();
+            if (string.IsNullOrEmpty(candidate)) return false;
+            name = candidate;
+            return true;
+        }
+        return false;
+    }
+
+    private static bool TryConvertConstantToLong(Constant constant, out long value)
+    {
+        value = 0;
+        if (constant.Value is null) return false;
+        try
+        {
+            object? boxed = constant.Value.InterpretData(constant.Type);
+            if (boxed is null) return false;
+            value = constant.Type == ElementType.U8
+                ? unchecked((long)(ulong)boxed)
+                : Convert.ToInt64(boxed);
+            return true;
+        }
+        catch
+        {
+            value = 0;
+            return false;
         }
     }
 
@@ -114,18 +189,20 @@ internal static class ManagedTypeInspectionEnricher
     {
         return typeSignature switch
         {
-            null => new ManagedFieldMetadata("Unknown", false, null, null),
+            null => new ManagedFieldMetadata("Unknown", false, null, null, false),
             SzArrayTypeSignature arrayType => new ManagedFieldMetadata(
                 $"{GetDisplayName(arrayType.BaseType)}[]",
                 false,
                 null,
-                ResolveTypeDefinition(arrayType.BaseType)),
+                ResolveTypeDefinition(arrayType.BaseType),
+                IsEnumType(arrayType.BaseType)),
             GenericInstanceTypeSignature genericType => CreateGenericMetadata(genericType),
             _ => new ManagedFieldMetadata(
                 GetDisplayName(typeSignature),
                 IsEnumType(typeSignature),
                 ResolveTypeDefinition(typeSignature),
-                null),
+                null,
+                false),
         };
     }
 
@@ -134,12 +211,15 @@ internal static class ManagedTypeInspectionEnricher
         string displayName = GetDisplayName(genericType);
         TypeDefinition? resolvedType = ResolveTypeDefinition(genericType);
         TypeDefinition? elementType = null;
+        bool elementIsEnum = false;
         if (genericType.TypeArguments.Count == 1)
         {
-            elementType = ResolveTypeDefinition(genericType.TypeArguments[0]);
+            TypeSignature elementSignature = genericType.TypeArguments[0];
+            elementType = ResolveTypeDefinition(elementSignature);
+            elementIsEnum = IsEnumType(elementSignature);
         }
 
-        return new ManagedFieldMetadata(displayName, false, resolvedType, elementType);
+        return new ManagedFieldMetadata(displayName, false, resolvedType, elementType, elementIsEnum);
     }
 
     private static string GetDisplayName(TypeSignature typeSignature)
@@ -234,5 +314,6 @@ internal static class ManagedTypeInspectionEnricher
         string DisplayName,
         bool IsEnum,
         TypeDefinition? ResolvedType,
-        TypeDefinition? ElementResolvedType);
+        TypeDefinition? ElementResolvedType,
+        bool IsElementEnum);
 }

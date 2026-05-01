@@ -27,7 +27,7 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
     private const string IndexFileName = "template-index.json";
     private const string ManifestFileName = "template-index-manifest.json";
     private const string ValuesFileName = "template-values.json";
-    internal const int CurrentFormatVersion = 3;
+    internal const int CurrentFormatVersion = 4;
     private const int ValuesInspectDepth = 6;
 
     private static readonly JsonSerializerOptions JsonOptions = new()

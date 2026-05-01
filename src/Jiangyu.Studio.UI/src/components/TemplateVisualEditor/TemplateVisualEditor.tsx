@@ -235,9 +235,14 @@ function inspectedFieldToEditorValueByKind(node: InspectedFieldNode): EditorValu
       return typeof node.value === "number" ? { kind: "Single", single: node.value } : undefined;
     case "string":
       return typeof node.value === "string" ? { kind: "String", string: node.value } : undefined;
-    case "enum":
-      // We don't know the enum type without member shape; skip.
-      return undefined;
+    case "enum": {
+      // Inspected sub-fields carry their enum type via fieldTypeName (the
+      // backend enricher tags it). Without that we have no enumType to emit.
+      if (typeof node.value !== "string" || node.value === "") return undefined;
+      const enumType = node.fieldTypeName;
+      if (!enumType) return undefined;
+      return { kind: "Enum", enumType, enumValue: node.value };
+    }
     case "reference": {
       const refName = node.reference?.name;
       return refName ? { kind: "TemplateReference", referenceId: refName } : undefined;
@@ -2160,7 +2165,7 @@ function makeDefaultDirective(
   // `set "Field" index=N <value>`, so default to Set-at-0 and let the picker
   // drive the ordinal. Plain collections default to Append; scalars to Set.
   if (member.namedArrayEnumTypeName) {
-    let value = makeScalarDefault(member.patchScalarKind ?? undefined);
+    let value = makeDefaultValue(member);
     if (vanillaNode?.kind === "array" && vanillaNode.elements && vanillaNode.elements.length > 0) {
       const vanillaFirst = inspectedFieldToEditorValue(vanillaNode.elements[0], member);
       if (vanillaFirst) value = vanillaFirst;
@@ -2205,21 +2210,4 @@ function synthMemberFromPayload(payload: CrossMemberPayload): TemplateMember {
       ? { namedArrayEnumTypeName: payload.namedArrayEnumTypeName }
       : {}),
   };
-}
-
-function makeScalarDefault(scalarKind?: string): EditorValue {
-  switch (scalarKind) {
-    case "Boolean":
-      return { kind: "Boolean", boolean: false };
-    case "Byte":
-      return { kind: "Byte", int32: 0 };
-    case "Int32":
-      return { kind: "Int32", int32: 0 };
-    case "Single":
-      return { kind: "Single", single: 0.0 };
-    case "String":
-      return { kind: "String", string: "" };
-    default:
-      return { kind: "String", string: "" };
-  }
 }
