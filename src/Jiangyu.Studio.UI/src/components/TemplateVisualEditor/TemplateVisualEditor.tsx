@@ -850,7 +850,10 @@ function NodeCard({
         });
         return;
       }
-      if (node.directives.some((d) => d.fieldPath === member.fieldPath)) {
+      if (
+        !allowsMultipleDirectives(member) &&
+        node.directives.some((d) => d.fieldPath === member.fieldPath)
+      ) {
         toast({
           variant: "info",
           message: `"${member.fieldPath}" is already on this node`,
@@ -1751,7 +1754,10 @@ function CompositeEditor({ value, onChange, vanillaNode }: CompositeEditorProps)
       });
       return;
     }
-    if (Object.prototype.hasOwnProperty.call(fields, member.fieldPath)) {
+    if (
+      !allowsMultipleDirectives(member) &&
+      Object.prototype.hasOwnProperty.call(fields, member.fieldPath)
+    ) {
       toast({
         variant: "info",
         message: `"${member.fieldPath}" is already in this composite`,
@@ -2008,8 +2014,13 @@ function FieldAdder({
       !m.isHiddenInInspector &&
       m.name.toLowerCase().includes(lowerQuery),
   );
-  const available = filtered.filter((m) => !existingSet.has(m.name));
-  const alreadyAdded = filtered.filter((m) => existingSet.has(m.name));
+  // Multi-directive fields (collections, named arrays) stay in `available`
+  // even when an entry already exists, because adding another directive is
+  // the normal flow rather than a duplicate.
+  const available = filtered.filter((m) => !existingSet.has(m.name) || allowsMultipleDirectives(m));
+  const alreadyAdded = filtered.filter(
+    (m) => existingSet.has(m.name) && !allowsMultipleDirectives(m),
+  );
 
   const handleSelect = (member: TemplateMember) => {
     const vanilla = vanillaFields?.get(member.name);
@@ -2043,7 +2054,17 @@ function FieldAdder({
             active?.kind === "member" &&
             targetTemplateType !== "" &&
             active.templateType !== targetTemplateType;
-          const duplicate = active?.kind === "member" && existingFields.includes(active.fieldPath);
+          // Look up the member in the local catalog so multi-directive fields
+          // (collections, named arrays) don't visually reject a re-drop.
+          // Unknown fieldPaths (nested drags whose member isn't in this
+          // adder's flat list) keep the conservative "duplicate = reject"
+          // behaviour; the drop handler always re-validates.
+          const activeMember =
+            active?.kind === "member" ? members.find((m) => m.name === active.fieldPath) : null;
+          const duplicate =
+            active?.kind === "member" &&
+            existingFields.includes(active.fieldPath) &&
+            !(activeMember && allowsMultipleDirectives(activeMember));
           if (mismatch || duplicate) {
             setFieldDragOver("reject");
           } else {
@@ -2155,6 +2176,14 @@ function makeDefaultValue(member: TemplateMember): EditorValue {
       }
       return { kind: "String", string: "" };
   }
+}
+
+// Collections accept multiple directives on the same fieldPath: Append/
+// Insert/Remove for plain collections, Set at distinct enum indices for
+// named arrays. Scalars, references, and plain composites map 1:1 to a
+// single Set, so duplicates would clobber each other.
+export function allowsMultipleDirectives(member: { isCollection?: boolean | null }): boolean {
+  return member.isCollection === true;
 }
 
 function makeDefaultDirective(
