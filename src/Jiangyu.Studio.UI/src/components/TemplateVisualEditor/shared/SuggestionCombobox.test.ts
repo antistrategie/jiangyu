@@ -65,7 +65,7 @@ describe("SuggestionCombobox", () => {
         fetchSuggestions,
       }),
     );
-    const input = screen.getByPlaceholderText("Pick one") as HTMLInputElement;
+    const input = screen.getByPlaceholderText("Pick one");
     expect(input.value).toBe("");
   });
 
@@ -78,7 +78,7 @@ describe("SuggestionCombobox", () => {
       }),
     );
     const input = screen.getByPlaceholderText("Pick one");
-    await act(async () => {
+    act(() => {
       fireEvent.focus(input);
     });
     await waitFor(() => expect(fetchSuggestions).toHaveBeenCalledTimes(1));
@@ -95,12 +95,12 @@ describe("SuggestionCombobox", () => {
       }),
     );
     const input = screen.getByPlaceholderText("Pick one");
-    await act(async () => {
+    act(() => {
       fireEvent.focus(input);
     });
     await waitFor(() => expect(screen.getByText("Alpha")).toBeDefined());
 
-    await act(async () => {
+    act(() => {
       fireEvent.change(input, { target: { value: "bet" } });
     });
     expect(screen.getByText("Beta")).toBeDefined();
@@ -119,11 +119,11 @@ describe("SuggestionCombobox", () => {
       }),
     );
     const input = screen.getByPlaceholderText("Pick one");
-    await act(async () => {
+    act(() => {
       fireEvent.focus(input);
     });
     await waitFor(() => expect(screen.getByText("Beta")).toBeDefined());
-    await act(async () => {
+    act(() => {
       fireEvent.click(screen.getByText("Beta"));
     });
     expect(onChange).toHaveBeenCalledWith("Beta");
@@ -138,11 +138,11 @@ describe("SuggestionCombobox", () => {
       }),
     );
     const input = screen.getByPlaceholderText("Pick one");
-    await act(async () => {
+    act(() => {
       fireEvent.focus(input);
     });
     await waitFor(() => expect(screen.getByText("Alpha")).toBeDefined());
-    await act(async () => {
+    act(() => {
       fireEvent.keyDown(input, { key: "Escape" });
     });
     expect(screen.queryByText("Alpha")).toBeNull();
@@ -159,11 +159,11 @@ describe("SuggestionCombobox", () => {
       }),
     );
     const input = screen.getByPlaceholderText("Pick one");
-    await act(async () => {
+    act(() => {
       fireEvent.focus(input);
     });
     await waitFor(() => expect(screen.getByText("Alpha")).toBeDefined());
-    await act(async () => {
+    act(() => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
     expect(onChange).toHaveBeenCalledWith("Alpha");

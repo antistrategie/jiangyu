@@ -14,7 +14,7 @@ import { CommitInput } from "./CommitInput";
 describe("CommitInput", () => {
   it("renders with the given value as defaultValue", () => {
     render(createElement(CommitInput, { value: "hello", onCommit: vi.fn(), "aria-label": "test" }));
-    const input = screen.getByRole("textbox", { name: "test" }) as HTMLInputElement;
+    const input = screen.getByRole("textbox", { name: "test" });
     expect(input.value).toBe("hello");
   });
 
@@ -38,7 +38,7 @@ describe("CommitInput", () => {
   it("calls onCommit on Enter via blur", () => {
     const onCommit = vi.fn();
     render(createElement(CommitInput, { value: "old", onCommit, "aria-label": "test" }));
-    const input = screen.getByRole("textbox", { name: "test" }) as HTMLInputElement;
+    const input = screen.getByRole("textbox", { name: "test" });
     // Focus first so blur() actually fires a blur event in jsdom.
     input.focus();
     fireEvent.change(input, { target: { value: "updated" } });
@@ -52,11 +52,11 @@ describe("CommitInput", () => {
     const { rerender } = render(
       createElement(CommitInput, { value: "v1", onCommit, "aria-label": "test" }),
     );
-    const input1 = screen.getByRole("textbox", { name: "test" }) as HTMLInputElement;
+    const input1 = screen.getByRole("textbox", { name: "test" });
     expect(input1.value).toBe("v1");
 
     rerender(createElement(CommitInput, { value: "v2", onCommit, "aria-label": "test" }));
-    const input2 = screen.getByRole("textbox", { name: "test" }) as HTMLInputElement;
+    const input2 = screen.getByRole("textbox", { name: "test" });
     expect(input2.value).toBe("v2");
   });
 });
