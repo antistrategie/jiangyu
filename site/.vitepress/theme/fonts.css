@@ -1,0 +1,38 @@
+/* =========================================================================
+   JIANGYU DOCS — Font Loading
+   Self-hosted via @fontsource, matching Studio UI weights.
+
+   CJK fonts (Noto Serif SC, Noto Sans SC) carry the full Unicode CJK range
+   and are large. The docs site only uses CJK for the 绛雨 display glyph;
+   all body text is Latin. We load only the weights actually needed and rely
+   on @fontsource's unicode-range subsetting so browsers fetch only the
+   required glyph subsets.
+   ========================================================================= */
+
+/* Barlow Condensed — tracked labels, eyebrows, ghost buttons */
+@import "@fontsource/barlow-condensed/300.css";
+@import "@fontsource/barlow-condensed/400.css";
+@import "@fontsource/barlow-condensed/500.css";
+@import "@fontsource/barlow-condensed/600.css";
+
+/* JetBrains Mono — code, paths, CLI output */
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+
+/* Cormorant Garamond — editorial serif passages */
+@import "@fontsource/cormorant-garamond/400.css";
+@import "@fontsource/cormorant-garamond/400-italic.css";
+@import "@fontsource/cormorant-garamond/500.css";
+
+/* Cormorant SC — display headings, primary buttons */
+@import "@fontsource/cormorant-sc/500.css";
+@import "@fontsource/cormorant-sc/600.css";
+@import "@fontsource/cormorant-sc/700.css";
+
+/* Noto Serif SC — CJK display glyph (绛雨 in hero and nav only) */
+@import "@fontsource/noto-serif-sc/700.css";
+@import "@fontsource/noto-serif-sc/900.css";
+
+/* Noto Sans SC — CJK-capable body sans (fallback for any CJK in content) */
+@import "@fontsource/noto-sans-sc/400.css";
+@import "@fontsource/noto-sans-sc/500.css";

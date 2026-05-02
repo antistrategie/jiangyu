@@ -8,6 +8,12 @@
     "docs:preview": "vitepress preview"
   },
   "devDependencies": {
+    "@fontsource/barlow-condensed": "^5.2.8",
+    "@fontsource/cormorant-garamond": "^5.2.11",
+    "@fontsource/cormorant-sc": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/noto-sans-sc": "^5.2.9",
+    "@fontsource/noto-serif-sc": "^5.2.9",
     "vitepress": "^1.6.4"
   }
 }

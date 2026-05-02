@@ -2,15 +2,17 @@ import { defineConfig } from "vitepress";
 import kdlGrammar from "./grammars/kdl.tmLanguage.json" with { type: "json" };
 
 export default defineConfig({
-  title: "Jiangyu",
+  title: "绛雨 Jiangyu",
   description: "Modkit for MENACE",
   lang: "en-GB",
   base: "/jiangyu/",
   cleanUrls: true,
   lastUpdated: true,
+  appearance: false,
 
   markdown: {
     languages: [kdlGrammar as never],
+    theme: "github-dark",
   },
 
   head: [
@@ -35,6 +37,13 @@ export default defineConfig({
   ],
 
   themeConfig: {
+    notFound: {
+      code: "404",
+      title: "PAGE NOT FOUND",
+      quote: "迷途知返。",
+      linkText: "Return to base",
+    },
+
     nav: [
       { text: "Get started", link: "/getting-started" },
       { text: "Reference", link: "/reference/studio" },

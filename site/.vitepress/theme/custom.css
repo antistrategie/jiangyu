@@ -1,0 +1,658 @@
+/* =========================================================================
+   JIANGYU DOCS — Design System Overrides
+   ========================================================================= */
+
+@import "./fonts.css";
+
+/* === Palette === */
+
+:root {
+  /* Ink */
+  --jy-ink-0: #1a1713;
+  --jy-ink-1: #2a2620;
+  --jy-ink-2: #4a433a;
+  --jy-ink-3: #6e655a;
+  --jy-ink-4: #9a9082;
+
+  /* Paper */
+  --jy-paper-0: #f4efe6;
+  --jy-paper-1: #ebe4d6;
+  --jy-paper-2: #ddd3c0;
+  --jy-paper-3: #c5b99f;
+
+  /* Cinnabar */
+  --jy-cinnabar-0: #7a1a15;
+  --jy-cinnabar-1: #a52a1f;
+  --jy-cinnabar-2: #c23b29;
+
+  /* Gold */
+  --jy-gold-0: #8a6d2a;
+  --jy-gold-1: #b89248;
+  --jy-gold-2: #d4b26a;
+
+  /* Jade */
+  --jy-jade-0: #2d4a44;
+  --jy-jade-1: #4a6e64;
+  --jy-jade-2: #6e9185;
+
+  /* Status */
+  --jy-success: #5a7a3a;
+}
+
+/* === VitePress variable overrides === */
+
+:root {
+  /* Brand → cinnabar */
+  --vp-c-brand-1: var(--jy-cinnabar-1);
+  --vp-c-brand-2: var(--jy-cinnabar-2);
+  --vp-c-brand-3: var(--jy-cinnabar-0);
+  --vp-c-brand-soft: rgba(165, 42, 31, 0.12);
+
+  /* Backgrounds → paper */
+  --vp-c-bg: var(--jy-paper-1);
+  --vp-c-bg-alt: var(--jy-paper-2);
+  --vp-c-bg-elv: var(--jy-paper-0);
+  --vp-c-bg-soft: var(--jy-paper-2);
+
+  /* Text → ink */
+  --vp-c-text-1: var(--jy-ink-1);
+  --vp-c-text-2: var(--jy-ink-3);
+  --vp-c-text-3: var(--jy-ink-4);
+
+  /* Borders and dividers → rule */
+  --vp-c-border: var(--jy-ink-3);
+  --vp-c-divider: rgba(26, 23, 19, 0.15);
+  --vp-c-gutter: var(--jy-paper-2);
+
+  /* Neutral */
+  --vp-c-neutral: var(--jy-ink-0);
+  --vp-c-neutral-inverse: var(--jy-paper-0);
+
+  /* Grey family → ink tones */
+  --vp-c-gray-1: var(--jy-ink-2);
+  --vp-c-gray-2: var(--jy-ink-3);
+  --vp-c-gray-3: var(--jy-ink-4);
+  --vp-c-gray-soft: rgba(26, 23, 19, 0.08);
+
+  /* Semantic colour families */
+  --vp-c-green-1: var(--jy-jade-0);
+  --vp-c-green-2: var(--jy-jade-1);
+  --vp-c-green-3: var(--jy-jade-2);
+  --vp-c-green-soft: rgba(74, 110, 100, 0.12);
+
+  --vp-c-yellow-1: var(--jy-gold-0);
+  --vp-c-yellow-2: var(--jy-gold-1);
+  --vp-c-yellow-3: var(--jy-gold-2);
+  --vp-c-yellow-soft: rgba(184, 146, 72, 0.12);
+
+  --vp-c-red-1: var(--jy-cinnabar-0);
+  --vp-c-red-2: var(--jy-cinnabar-1);
+  --vp-c-red-3: var(--jy-cinnabar-2);
+  --vp-c-red-soft: rgba(165, 42, 31, 0.12);
+
+  /* Tip/warning/danger/info containers */
+  --vp-c-tip-1: var(--jy-jade-0);
+  --vp-c-tip-2: var(--jy-jade-1);
+  --vp-c-tip-3: var(--jy-jade-2);
+  --vp-c-tip-soft: rgba(74, 110, 100, 0.08);
+
+  --vp-c-warning-1: var(--jy-gold-0);
+  --vp-c-warning-2: var(--jy-gold-1);
+  --vp-c-warning-3: var(--jy-gold-2);
+  --vp-c-warning-soft: rgba(184, 146, 72, 0.08);
+
+  --vp-c-danger-1: var(--jy-cinnabar-0);
+  --vp-c-danger-2: var(--jy-cinnabar-1);
+  --vp-c-danger-3: var(--jy-cinnabar-2);
+  --vp-c-danger-soft: rgba(165, 42, 31, 0.08);
+
+  --vp-c-note-1: var(--jy-ink-2);
+  --vp-c-note-2: var(--jy-ink-3);
+  --vp-c-note-3: var(--jy-ink-4);
+  --vp-c-note-soft: rgba(26, 23, 19, 0.06);
+
+  /* Shadows → remove */
+  --vp-shadow-1: none;
+  --vp-shadow-2: none;
+  --vp-shadow-3: none;
+  --vp-shadow-4: none;
+  --vp-shadow-5: none;
+
+  /* Button variables — override VP defaults that resolve to unreadable ink-on-ink */
+  --vp-button-brand-border: var(--jy-cinnabar-1);
+  --vp-button-brand-text: var(--jy-paper-0);
+  --vp-button-brand-bg: var(--jy-cinnabar-1);
+  --vp-button-brand-hover-border: var(--jy-cinnabar-2);
+  --vp-button-brand-hover-text: var(--jy-paper-0);
+  --vp-button-brand-hover-bg: var(--jy-cinnabar-2);
+  --vp-button-brand-active-border: var(--jy-cinnabar-0);
+  --vp-button-brand-active-text: var(--jy-paper-0);
+  --vp-button-brand-active-bg: var(--jy-cinnabar-0);
+
+  --vp-button-alt-border: rgba(26, 23, 19, 0.15);
+  --vp-button-alt-text: var(--jy-ink-2);
+  --vp-button-alt-bg: transparent;
+  --vp-button-alt-hover-border: var(--jy-ink-3);
+  --vp-button-alt-hover-text: var(--jy-ink-0);
+  --vp-button-alt-hover-bg: var(--jy-paper-2);
+  --vp-button-alt-active-border: var(--jy-ink-2);
+  --vp-button-alt-active-text: var(--jy-ink-0);
+  --vp-button-alt-active-bg: var(--jy-paper-2);
+}
+
+/* === Typography === */
+
+:root {
+  --vp-font-family-base: "Noto Sans SC", "Source Han Sans SC", "PingFang SC",
+    "Helvetica Neue", system-ui, sans-serif;
+  --vp-font-family-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --jy-font-display: "Cormorant SC", "Cormorant Garamond", "Trajan Pro",
+    Georgia, serif;
+  --jy-font-display-cjk: "Noto Serif SC", "Source Han Serif SC", "Songti SC",
+    serif;
+  --jy-font-label: "Barlow Condensed", "Oswald", "Bebas Neue", sans-serif;
+  --jy-font-editorial: "Cormorant Garamond", "EB Garamond", Georgia, serif;
+}
+
+/* Headings: display serif (Garamond, not SC — SC small-caps look odd on
+   mixed-case doc headings where the first letter appears oversized) */
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3 {
+  font-family: var(--jy-font-editorial);
+  letter-spacing: 0.02em;
+}
+
+.vp-doc h1 {
+  font-weight: 600;
+}
+
+.vp-doc h2 {
+  font-weight: 600;
+  padding-bottom: 8px;
+  border-top: none;
+  border-bottom: 1px solid rgba(26, 23, 19, 0.15);
+}
+
+.vp-doc h3 {
+  font-weight: 500;
+}
+
+/* === Surfaces and geometry === */
+
+/* Hard edges everywhere */
+.VPButton,
+.VPFeature,
+.VPNavBar .content,
+.vp-doc .custom-block,
+.vp-doc div[class*="language-"],
+.vp-doc code,
+.vp-doc table,
+.vp-doc img,
+.VPLocalSearchBox .shell,
+.VPLocalSearchBox .search-input,
+.VPLocalSearchBox .result,
+.VPBadge {
+  border-radius: 0 !important;
+}
+
+/* Remove the hero gradient glow */
+.VPHero .image-bg {
+  display: none;
+}
+
+/* === Buttons === */
+
+/* Brand (primary): cinnabar + display serif */
+.VPButton.brand {
+  font-family: var(--jy-font-display);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background-color: var(--jy-cinnabar-1);
+  border-color: var(--jy-cinnabar-1);
+  color: var(--jy-paper-0) !important;
+  transition: filter 80ms ease;
+}
+
+.VPButton.brand:hover {
+  background-color: var(--jy-cinnabar-1);
+  border-color: var(--jy-cinnabar-1);
+  color: var(--jy-paper-0) !important;
+  filter: brightness(1.1);
+}
+
+.VPButton.brand:active {
+  filter: brightness(0.95);
+}
+
+/* Alt (ghost): label font + hairline */
+.VPButton.alt {
+  font-family: var(--jy-font-label);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background-color: transparent;
+  border: 1px solid rgba(26, 23, 19, 0.15);
+  color: var(--jy-ink-3) !important;
+  transition: color 80ms ease, border-color 80ms ease;
+}
+
+.VPButton.alt:hover {
+  background-color: transparent;
+  border-color: var(--jy-ink-2);
+  color: var(--jy-ink-0) !important;
+}
+
+.VPButton.alt:active {
+  background-color: var(--jy-paper-2);
+}
+
+/* === Navigation === */
+
+.VPNavBar {
+  border-bottom: 1px solid rgba(26, 23, 19, 0.15) !important;
+}
+
+.VPNavBar .content-body {
+  border-bottom: 1px solid rgba(26, 23, 19, 0.15);
+}
+
+/* Remove the default divider line; we use border-bottom instead */
+.VPNavBar .divider-line {
+  display: none;
+}
+
+/* Nav title in display serif */
+.VPNavBarTitle .title {
+  font-family: var(--jy-font-display-cjk);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-size: 18px;
+  color: var(--jy-ink-0);
+  border-bottom: none;
+}
+
+/* Nav links: label font */
+.VPNavBarMenu .VPNavBarMenuLink {
+  font-family: var(--jy-font-label);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 13px;
+}
+
+/* Active nav link */
+.VPNavBarMenu .VPNavBarMenuLink.active {
+  color: var(--jy-cinnabar-1);
+}
+
+/* === Sidebar === */
+
+.VPSidebar {
+  border-right: 1px solid rgba(26, 23, 19, 0.15) !important;
+}
+
+/* Sidebar group headings: label font, tracked */
+.VPSidebarItem.level-0 > .item > .text {
+  font-family: var(--jy-font-label);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 12px;
+  color: var(--jy-ink-3);
+}
+
+/* Sidebar links */
+.VPSidebarItem.level-1 > .item > .link > .text {
+  font-size: 14px;
+}
+
+/* Active sidebar link: cinnabar indicator */
+.VPSidebarItem.is-active > .item > .link > .text {
+  color: var(--jy-cinnabar-1);
+  font-weight: 600;
+}
+
+.VPSidebarItem.is-active > .item > .indicator {
+  background-color: var(--jy-cinnabar-1);
+}
+
+/* === Code blocks === */
+
+:root {
+  --vp-code-bg: var(--jy-paper-2);
+  --vp-code-color: var(--jy-ink-1);
+
+  --vp-code-block-bg: var(--jy-ink-0);
+  --vp-code-block-color: var(--jy-paper-1);
+  --vp-code-block-divider-color: var(--jy-ink-2);
+
+  --vp-code-line-highlight-color: rgba(184, 146, 72, 0.1);
+  --vp-code-line-number-color: var(--jy-ink-3);
+
+  --vp-code-copy-code-bg: rgba(255, 255, 255, 0.05);
+  --vp-code-copy-code-hover-bg: rgba(255, 255, 255, 0.1);
+  --vp-code-copy-code-border-color: var(--jy-ink-2);
+  --vp-code-copy-code-hover-border-color: var(--jy-ink-3);
+
+  --vp-code-tab-bg: var(--jy-ink-1);
+  --vp-code-tab-text-color: var(--jy-ink-4);
+  --vp-code-tab-hover-text-color: var(--jy-paper-1);
+  --vp-code-tab-active-text-color: var(--jy-paper-0);
+  --vp-code-tab-active-bar-color: var(--jy-gold-1);
+  --vp-code-tab-divider: var(--jy-ink-2);
+
+  --vp-code-lang-color: var(--jy-gold-1);
+}
+
+/* Inline code */
+.vp-doc :not(pre) > code {
+  background-color: var(--jy-paper-2);
+  color: var(--jy-ink-1);
+  border: 1px solid rgba(26, 23, 19, 0.1);
+  padding: 2px 6px;
+  font-size: 0.9em;
+}
+
+/* Code block language label: gold eyebrow */
+.vp-doc div[class*="language-"] > span.lang {
+  font-family: var(--jy-font-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: var(--jy-gold-1);
+}
+
+/* === Custom blocks (tip/warning/danger) === */
+
+.vp-doc .custom-block {
+  border: 1px solid rgba(26, 23, 19, 0.15);
+  border-left-width: 2px;
+}
+
+.vp-doc .custom-block.tip {
+  border-left-color: var(--jy-jade-1);
+  background-color: rgba(74, 110, 100, 0.06);
+}
+
+.vp-doc .custom-block.warning {
+  border-left-color: var(--jy-gold-1);
+  background-color: rgba(184, 146, 72, 0.06);
+}
+
+.vp-doc .custom-block.danger {
+  border-left-color: var(--jy-cinnabar-1);
+  background-color: rgba(165, 42, 31, 0.06);
+}
+
+.vp-doc .custom-block.info {
+  border-left-color: var(--jy-ink-3);
+  background-color: rgba(26, 23, 19, 0.04);
+}
+
+.vp-doc .custom-block .custom-block-title {
+  font-family: var(--jy-font-label);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+/* === Home page hero === */
+
+.VPHero .name {
+  font-family: var(--jy-font-display);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+
+  /* Override the gradient clip to solid cinnabar */
+  --vp-home-hero-name-color: var(--jy-ink-0);
+  background: none !important;
+  -webkit-background-clip: unset !important;
+  background-clip: unset !important;
+  -webkit-text-fill-color: var(--jy-ink-0) !important;
+}
+
+.VPHero .text {
+  font-family: var(--jy-font-display);
+  font-weight: 500;
+  color: var(--jy-ink-2);
+}
+
+.VPHero .tagline {
+  font-family: var(--vp-font-family-base);
+  color: var(--jy-ink-3);
+}
+
+/* CJK hero glyph; injected via home-hero-info-before slot or ::before */
+.VPHero .VPImage.image-src {
+  border: 1px solid rgba(26, 23, 19, 0.15);
+}
+
+/* Hero container */
+.VPHero {
+  padding-bottom: 48px !important;
+  border-bottom: none;
+}
+
+/* === Feature cards === */
+
+.VPFeature {
+  background-color: var(--jy-paper-0) !important;
+  border: 1px solid rgba(26, 23, 19, 0.15) !important;
+  transition: border-color 80ms ease;
+}
+
+.VPFeature:hover {
+  border-color: var(--jy-ink-3) !important;
+}
+
+.VPFeature .title {
+  font-family: var(--jy-font-display);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  font-size: 18px;
+  color: var(--jy-ink-0);
+}
+
+.VPFeature .details {
+  color: var(--jy-ink-3);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* === Tables === */
+
+.vp-doc table {
+  border: 1px solid rgba(26, 23, 19, 0.15);
+  border-collapse: collapse;
+  width: 100%;
+  display: table !important;
+}
+
+.vp-doc table th {
+  font-family: var(--jy-font-label);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 12px;
+  background-color: var(--jy-paper-2);
+  border: 1px solid rgba(26, 23, 19, 0.15);
+}
+
+.vp-doc table td {
+  border: 1px solid rgba(26, 23, 19, 0.1);
+}
+
+.vp-doc table tr:nth-child(even) {
+  background-color: rgba(26, 23, 19, 0.02);
+}
+
+/* === Links === */
+
+.vp-doc a {
+  color: var(--jy-cinnabar-1);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 80ms ease;
+}
+
+.vp-doc a:hover {
+  border-bottom-color: var(--jy-cinnabar-2);
+}
+
+/* === Blockquotes === */
+
+.vp-doc blockquote {
+  border-left: 2px solid var(--jy-ink-3);
+  background-color: var(--jy-paper-2);
+  color: var(--jy-ink-2);
+}
+
+/* === Search dialog === */
+
+/* Widen the nav search trigger */
+#local-search {
+  min-width: 240px;
+}
+
+#local-search button {
+  width: 100% !important;
+  justify-content: space-between;
+}
+
+:root {
+  --vp-local-search-bg: var(--jy-paper-0);
+  --vp-local-search-result-bg: var(--jy-paper-1);
+  --vp-local-search-result-border: rgba(26, 23, 19, 0.1);
+  --vp-local-search-result-selected-bg: var(--jy-paper-2);
+  --vp-local-search-result-selected-border: var(--jy-cinnabar-1);
+  --vp-local-search-highlight-bg: rgba(165, 42, 31, 0.15);
+  --vp-local-search-highlight-text: var(--jy-cinnabar-0);
+}
+
+/* === Scrollbar === */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--jy-ink-4);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--jy-ink-3);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--jy-ink-4) transparent;
+}
+
+/* === Text selection === */
+
+::selection {
+  background: var(--jy-cinnabar-2);
+  color: var(--jy-paper-0);
+}
+
+/* === Font smoothing === */
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* === Outline heading anchor === */
+
+.vp-doc .header-anchor {
+  color: var(--jy-cinnabar-1);
+}
+
+/* === Footer / edit link === */
+
+.VPDocFooter .edit-link-button {
+  font-family: var(--jy-font-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 12px;
+  color: var(--jy-ink-3);
+}
+
+.VPDocFooter .edit-link-button:hover {
+  color: var(--jy-cinnabar-1);
+}
+
+/* === Badge === */
+
+.VPBadge {
+  font-family: var(--jy-font-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+/* === Outline (right sidebar on-this-page) === */
+
+.VPDocAsideOutline .outline-link {
+  font-size: 13px;
+}
+
+.VPDocAsideOutline .outline-link.active {
+  color: var(--jy-cinnabar-1);
+  font-weight: 600;
+}
+
+/* === Content container width === */
+
+.VPDoc .container {
+  max-width: 100%;
+}
+
+/* === Last updated text === */
+
+.VPLastUpdated .text {
+  font-family: var(--jy-font-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 12px;
+  color: var(--jy-ink-4);
+}
+
+/* === 404 page === */
+
+.NotFound .code {
+  font-family: var(--jy-font-display-cjk);
+  color: var(--jy-ink-3);
+}
+
+.NotFound .title {
+  font-family: var(--jy-font-label);
+  letter-spacing: 0.18em;
+  color: var(--jy-ink-2);
+}
+
+.NotFound .quote {
+  font-family: var(--jy-font-editorial);
+  font-style: italic;
+  color: var(--jy-ink-3);
+  border-left: none;
+  background: none;
+  padding: 0;
+}
+
+.NotFound .link {
+  font-family: var(--jy-font-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 12px;
+  border-radius: 0 !important;
+}
