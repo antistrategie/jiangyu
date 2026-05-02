@@ -15,7 +15,7 @@ The toolkit has three pieces:
 ### Workflow
 
 - **Mods are folders of files.** Replacements are declared by location: drop a file at the path Studio shows you and the filename does the matching. Your project is a directory you can put under git.
-- **Templates patched in KDL.** Patches live in `templates/*.kdl` with operations like `patch`, `clone`, `set`, `append`, `insert`, `remove`. You can edit visually or write KDL by hand and switch between them at any time.
+- **Templates patched in KDL.** Patches live in `templates/*.kdl` with operations and typed values the compiler validates at build time. Operations compose when stacked, following the pattern modern modding ecosystems have settled on (RimWorld's `PatchOperation` XML, Skyrim's distributor plugins). Edit visually or write KDL by hand and switch at any time.
 - **IDE-style Studio.** A grid of splittable, drag-and-drop panes with a command palette (`Ctrl+Shift+P`) and Monaco editors with vim mode.
 - **Live previews and drag-to-author.** Textures, sprites, audio, and 3D models preview inline. Drag a template id or field from the browser into the editor to start a patch with the field path filled in.
 

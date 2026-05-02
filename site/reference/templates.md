@@ -53,7 +53,7 @@ Clones run before patches at load time, so the clone's id is targetable by `ref=
 
 ## Operations
 
-Inside a `patch` or `clone` block, operations modify fields on the targeted template.
+Inside a `patch` or `clone` block, operations modify fields on the targeted template. A patch is a list of operations rather than a desired final state: `set "Damage" 50` only changes `Damage`; `append "Perks" ref="..."` only adds an entry. This keeps each modder's intent intact when patches from different mods stack (see [Composition](#composition-across-installed-mods)).
 
 | Operation                                            | Purpose                                              |
 | ---------------------------------------------------- | ---------------------------------------------------- |
@@ -69,6 +69,17 @@ Inside a `patch` or `clone` block, operations modify fields on the targeted temp
 | `clear "<field>"`                                    | Empty a collection field. Composes with `append` for "replace the whole list". |
 
 Indexes are zero-based. `append` doesn't take an `index=` property; use `insert` for positional writes. `clear` takes neither index nor value.
+
+## Composition across installed mods
+
+The loader merges patches from all installed mods before applying. Mods load in lexical folder-name order.
+
+- **`set` dedups by field path.** Two installed mods setting the same field on the same template: later-loaded mod wins, earlier is dropped, and the loader logs an `Override template patch ...` warning naming both mods.
+- **`append`, `insert`, `remove`, `clear` accumulate.** No deduplication; all ops apply in load order. Three mods each appending a perk to the same tree leave three perks added.
+
+Collection-style edits compose without per-mod compatibility patches. Genuine scalar conflicts become explicit warnings rather than silent overrides.
+
+Within a single project, `(templateType, templateId)` collisions remain a hard error at compile time (see [File layout](#file-layout)).
 
 ## Field paths
 
