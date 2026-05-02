@@ -50,7 +50,7 @@ describe("ValueEditor", () => {
   it("Boolean renders checkbox, toggles on click", () => {
     const onChange = vi.fn();
     render(createElement(Controlled, { initial: { kind: "Boolean", boolean: false }, onChange }));
-    const checkbox = screen.getByRole("checkbox");
+    const checkbox = screen.getByRole("checkbox") as HTMLInputElement;
     expect(checkbox.checked).toBe(false);
     fireEvent.click(checkbox);
     expect(onChange).toHaveBeenCalledWith({ kind: "Boolean", boolean: true });
@@ -59,7 +59,7 @@ describe("ValueEditor", () => {
   it("Int32 renders number input, commits on blur", () => {
     const onChange = vi.fn();
     render(createElement(Controlled, { initial: { kind: "Int32", int32: 42 }, onChange }));
-    const input = screen.getByRole("spinbutton");
+    const input = screen.getByRole("spinbutton") as HTMLInputElement;
     expect(input.value).toBe("42");
     fireEvent.change(input, { target: { value: "99" } });
     fireEvent.blur(input);
@@ -69,7 +69,7 @@ describe("ValueEditor", () => {
   it("String renders text input", () => {
     const onChange = vi.fn();
     render(createElement(Controlled, { initial: { kind: "String", string: "hello" }, onChange }));
-    const input = screen.getByRole("textbox");
+    const input = screen.getByRole("textbox") as HTMLInputElement;
     expect(input.value).toBe("hello");
   });
 
@@ -88,7 +88,7 @@ describe("ValueEditor", () => {
       }),
     );
     // The enum value editor renders a text input for the combobox.
-    const input = screen.getByPlaceholderText("ItemSlot value");
+    const input = screen.getByPlaceholderText("ItemSlot value") as HTMLInputElement;
     expect(input.value).toBe("Sword");
   });
 
@@ -107,7 +107,7 @@ describe("ValueEditor", () => {
       }),
     );
     // The ref value editor renders a combobox with the id placeholder.
-    const input = screen.getByPlaceholderText("UnitTemplate id");
+    const input = screen.getByPlaceholderText("UnitTemplate id") as HTMLInputElement;
     expect(input.value).toBe("archer_01");
   });
 });

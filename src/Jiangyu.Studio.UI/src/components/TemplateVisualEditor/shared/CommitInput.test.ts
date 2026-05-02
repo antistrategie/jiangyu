@@ -14,7 +14,7 @@ import { CommitInput } from "./CommitInput";
 describe("CommitInput", () => {
   it("renders with the given value as defaultValue", () => {
     render(createElement(CommitInput, { value: "hello", onCommit: vi.fn(), "aria-label": "test" }));
-    const input = screen.getByRole("textbox", { name: "test" });
+    const input = screen.getByRole("textbox", { name: "test" }) as HTMLInputElement;
     expect(input.value).toBe("hello");
   });
 
@@ -52,11 +52,11 @@ describe("CommitInput", () => {
     const { rerender } = render(
       createElement(CommitInput, { value: "v1", onCommit, "aria-label": "test" }),
     );
-    const input1 = screen.getByRole("textbox", { name: "test" });
+    const input1 = screen.getByRole("textbox", { name: "test" }) as HTMLInputElement;
     expect(input1.value).toBe("v1");
 
     rerender(createElement(CommitInput, { value: "v2", onCommit, "aria-label": "test" }));
-    const input2 = screen.getByRole("textbox", { name: "test" });
+    const input2 = screen.getByRole("textbox", { name: "test" }) as HTMLInputElement;
     expect(input2.value).toBe("v2");
   });
 });
