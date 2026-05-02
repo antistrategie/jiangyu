@@ -16,8 +16,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="InfiniLore.InfiniFrame" Version="0.10.0" />
-    <PackageReference Include="InfiniLore.InfiniFrame.WebServer" Version="0.10.0" />
+    <PackageReference Include="InfiniLore.InfiniFrame" Version="0.11.0" />
+    <PackageReference Include="InfiniLore.InfiniFrame.WebServer" Version="0.11.0" />
   </ItemGroup>
 
   <ItemGroup>
