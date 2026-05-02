@@ -328,20 +328,19 @@ public static class KdlTemplateSerialiser
     {
         sb.Append($"{keyword}=\"{Esc(v.CompositeType ?? "")}\"");
 
-        if (v.CompositeFields == null || v.CompositeFields.Count == 0)
+        if (v.CompositeDirectives == null || v.CompositeDirectives.Count == 0)
         {
             sb.Append(" {}");
             return;
         }
 
-        sb.Append(" {");
-        foreach (var (fieldName, fieldValue) in v.CompositeFields)
-        {
-            sb.AppendLine();
-            sb.Append($"        set \"{Esc(fieldName)}\" ");
-            WriteValue(sb, fieldValue);
-        }
-        sb.AppendLine();
+        sb.AppendLine(" {");
+        // Reuse the outer directive emission so inner ops render the same
+        // way as their top-level counterparts. Indent two levels deeper
+        // than the surrounding directive's indent — the parent directive
+        // already sits at indent 1 (inside a patch/clone), and its child
+        // block opens at indent 2.
+        WriteDirectiveBlock(sb, v.CompositeDirectives, indent: 2);
         sb.Append("    }");
     }
 

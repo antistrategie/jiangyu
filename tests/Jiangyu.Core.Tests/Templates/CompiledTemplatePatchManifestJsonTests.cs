@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Jiangyu.Shared.Templates;
+using static Jiangyu.Core.Tests.Templates.CompiledTemplateTestHelpers;
 
 namespace Jiangyu.Core.Tests.Templates;
 
@@ -118,20 +119,18 @@ public class CompiledTemplatePatchManifestJsonTests
                 HandlerConstruction = new CompiledTemplateComposite
                 {
                     TypeName = "AddSkill",
-                    Fields = new Dictionary<string, CompiledTemplateValue>
-                    {
-                        ["Event"] = new CompiledTemplateValue
+                    Operations = SetOps(
+                        ("Event", new CompiledTemplateValue
                         {
                             Kind = CompiledTemplateValueKind.Enum,
                             EnumType = "AddEvent",
                             EnumValue = "OnAttack",
-                        },
-                        ["ShowHUDText"] = new CompiledTemplateValue
+                        }),
+                        ("ShowHUDText", new CompiledTemplateValue
                         {
                             Kind = CompiledTemplateValueKind.Boolean,
                             Boolean = true,
-                        },
-                    },
+                        })),
                 },
             },
         };
@@ -147,9 +146,9 @@ public class CompiledTemplatePatchManifestJsonTests
         Assert.Equal(CompiledTemplateValueKind.HandlerConstruction, roundTripped!.Value!.Kind);
         Assert.NotNull(roundTripped.Value.HandlerConstruction);
         Assert.Equal("AddSkill", roundTripped.Value.HandlerConstruction!.TypeName);
-        Assert.Equal(2, roundTripped.Value.HandlerConstruction.Fields.Count);
-        Assert.Equal("OnAttack", roundTripped.Value.HandlerConstruction.Fields["Event"].EnumValue);
-        Assert.True(roundTripped.Value.HandlerConstruction.Fields["ShowHUDText"].Boolean);
+        Assert.Equal(2, roundTripped.Value.HandlerConstruction.Operations.Count);
+        Assert.Equal("OnAttack", roundTripped.Value.HandlerConstruction.ValueAt("Event").EnumValue);
+        Assert.True(roundTripped.Value.HandlerConstruction.ValueAt("ShowHUDText").Boolean);
     }
 
     [Fact]
@@ -171,10 +170,8 @@ public class CompiledTemplatePatchManifestJsonTests
                 HandlerConstruction = new CompiledTemplateComposite
                 {
                     TypeName = "ChangeProperty",
-                    Fields = new Dictionary<string, CompiledTemplateValue>
-                    {
-                        ["Amount"] = new() { Kind = CompiledTemplateValueKind.Int32, Int32 = 5 },
-                    },
+                    Operations = SetOps(
+                        ("Amount", new() { Kind = CompiledTemplateValueKind.Int32, Int32 = 5 })),
                 },
             },
         };
@@ -203,7 +200,7 @@ public class CompiledTemplatePatchManifestJsonTests
             Value = new CompiledTemplateValue
             {
                 Kind = CompiledTemplateValueKind.Composite,
-                Composite = new CompiledTemplateComposite { TypeName = "Perk", Fields = new() { ["Tier"] = new() { Kind = CompiledTemplateValueKind.Int32, Int32 = 1 } } },
+                Composite = new CompiledTemplateComposite { TypeName = "Perk", Operations = SetOps(("Tier", new() { Kind = CompiledTemplateValueKind.Int32, Int32 = 1 })) },
             },
         };
         var handlerOp = new CompiledTemplateSetOperation
@@ -213,7 +210,7 @@ public class CompiledTemplatePatchManifestJsonTests
             Value = new CompiledTemplateValue
             {
                 Kind = CompiledTemplateValueKind.HandlerConstruction,
-                HandlerConstruction = new CompiledTemplateComposite { TypeName = "AddSkill", Fields = new() { ["ShowHUDText"] = new() { Kind = CompiledTemplateValueKind.Boolean, Boolean = true } } },
+                HandlerConstruction = new CompiledTemplateComposite { TypeName = "AddSkill", Operations = SetOps(("ShowHUDText", new() { Kind = CompiledTemplateValueKind.Boolean, Boolean = true })) },
             },
         };
 

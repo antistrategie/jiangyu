@@ -232,14 +232,17 @@ public static class TemplatePatchPathValidator
         if (composite == null) return false;
         if (requireTypeName && string.IsNullOrWhiteSpace(composite.TypeName))
             return false;
-        if (composite.Fields == null || composite.Fields.Count == 0)
+        if (composite.Operations == null || composite.Operations.Count == 0)
             return false;
 
-        foreach (var (fieldName, fieldValue) in composite.Fields)
+        foreach (var op in composite.Operations)
         {
-            if (string.IsNullOrWhiteSpace(fieldName))
+            if (string.IsNullOrWhiteSpace(op.FieldPath))
                 return false;
-            if (!IsSupportedValue(fieldValue, depth + 1))
+            // Remove and Clear ops carry no value; everything else must.
+            if (op.Op == CompiledTemplateOp.Remove || op.Op == CompiledTemplateOp.Clear)
+                continue;
+            if (op.Value is null || !IsSupportedValue(op.Value, depth + 1))
                 return false;
         }
 

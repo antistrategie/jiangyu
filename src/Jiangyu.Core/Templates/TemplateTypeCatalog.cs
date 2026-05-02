@@ -286,6 +286,57 @@ public sealed class TemplateTypeCatalog : IDisposable
         return false;
     }
 
+    /// <summary>
+    /// True when the type descends from <c>Menace.Tools.DataTemplate</c>.
+    /// Distinguishes ref-style polymorphism (the modder picks an existing
+    /// DataTemplateLoader-registered instance, e.g. <c>BaseItemTemplate</c>)
+    /// from construction-style polymorphism (the modder constructs a fresh
+    /// owned ScriptableObject, e.g. <c>BaseEventHandlerTemplate</c>).
+    /// </summary>
+    public static bool IsDataTemplateType(Type type)
+    {
+        for (var current = type; current != null; current = current.BaseType)
+        {
+            if (string.Equals(current.FullName, "Menace.Tools.DataTemplate", StringComparison.Ordinal)
+                || string.Equals(current.Name, "DataTemplate", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Concrete strict descendants of <paramref name="baseType"/> the modder
+    /// can pick when constructing a polymorphic-list element. "Concrete" here
+    /// means leaf in the loaded type graph (no further descendants in the
+    /// assembly). IL2CPP wrappers strip <see cref="Type.IsAbstract"/>, so the
+    /// structural leaf test is the only reliable filter — an intermediate
+    /// abstract base would itself have descendants and gets pruned.
+    /// </summary>
+    public IReadOnlyList<Type> EnumerateConcreteSubtypes(Type baseType)
+    {
+        var subtypes = new List<Type>();
+        foreach (var candidate in _allTypes)
+        {
+            if (candidate == baseType) continue;
+            if (!baseType.IsAssignableFrom(candidate)) continue;
+            if (HasStrictDescendant(candidate)) continue;
+            subtypes.Add(candidate);
+        }
+        return subtypes;
+    }
+
+    private bool HasStrictDescendant(Type type)
+    {
+        foreach (var candidate in _allTypes)
+        {
+            if (candidate == type) continue;
+            if (type.IsAssignableFrom(candidate)) return true;
+        }
+        return false;
+    }
+
     public static IReadOnlyList<string> GetEnumMemberNames(Type type)
     {
         if (!type.IsEnum)
@@ -455,7 +506,63 @@ public sealed class TemplateTypeCatalog : IDisposable
             _ => null,
         };
 
-        return memberType != null && IsNotUnitySerialisable(memberType);
+        if (memberType is null) return false;
+        if (IsNotUnitySerialisable(memberType)) return true;
+
+        // Backstop for cases the structural checks miss: Il2CppInterop wraps
+        // native IL2CPP interfaces in ways that don't always set IsInterface
+        // / IsAbstract on the CIL side, so a type-shaped check (zero writable
+        // own members + isn't a scalar / Unity-object / collection) catches
+        // ITacticalCondition / IValueProvider / similar shells. False
+        // positives on genuinely empty composites are rare in MENACE; the
+        // worst case is a real composite incorrectly flagged, which only
+        // hides it from the FieldAdder dropdown — modder can still hand-edit.
+        if (LooksLikeUnfillableShell(memberType)) return true;
+
+        return false;
+    }
+
+    private static bool LooksLikeUnfillableShell(Type type)
+    {
+        if (IsScalar(type)) return false;
+        if (DescendsFromUnityObject(type)) return false;
+        if (GetElementType(type) is not null) return false;
+        if (HasAnyWritableMembers(type)) return false;
+        return true;
+    }
+
+    private static bool HasAnyWritableMembers(Type type)
+    {
+        const BindingFlags flags = BindingFlags.Instance
+            | BindingFlags.Public
+            | BindingFlags.NonPublic
+            | BindingFlags.DeclaredOnly;
+
+        try
+        {
+            for (var current = type; current != null && !IsStopBase(current); current = current.BaseType)
+            {
+                foreach (var p in current.GetProperties(flags))
+                {
+                    if (p.GetIndexParameters().Length == 0 && p.CanWrite) return true;
+                }
+                foreach (var f in current.GetFields(flags))
+                {
+                    if (!f.IsInitOnly && !f.IsLiteral) return true;
+                }
+            }
+        }
+        catch
+        {
+            // Reflection can throw on partially-loaded IL2CPP types; treat
+            // as "we don't know", which lands on false (no members) below
+            // and routes through the unfillable-shell path. That's the same
+            // outcome the catalog wants — if we can't read the type, the
+            // modder can't fill it via reflection-based patching either.
+            return false;
+        }
+
+        return false;
     }
 
     private static bool HasOdinSerializeAttribute(MemberInfo member)

@@ -409,6 +409,18 @@ public static class TemplateInspectionPreviewApplier
             throw new InvalidOperationException("Template preview composite value is missing.");
         }
 
+        // Preview only renders simple Set ops (one value per top-level field
+        // of the constructed instance). Append/Insert/Remove/Clear ops on the
+        // constructed instance's collection members can't be approximated
+        // without a real list to mutate; the preview shows nothing for those
+        // and the runtime applier handles them faithfully.
+        var setOps = composite.Operations
+            .Where(op => op.Op == CompiledTemplateOp.Set
+                && op.Value is not null
+                && !string.IsNullOrEmpty(op.FieldPath)
+                && !op.FieldPath.Contains('[')
+                && !op.FieldPath.Contains('.'));
+
         return new InspectedFieldNode
         {
             Name = name,
@@ -416,7 +428,7 @@ public static class TemplateInspectionPreviewApplier
             FieldTypeName = fieldTypeName ?? composite.TypeName,
             Fields =
             [
-                .. composite.Fields.Select(entry => BuildNode(entry.Key, null, null, entry.Value, resolveReference)),
+                .. setOps.Select(op => BuildNode(op.FieldPath, null, null, op.Value!, resolveReference)),
             ],
         };
     }

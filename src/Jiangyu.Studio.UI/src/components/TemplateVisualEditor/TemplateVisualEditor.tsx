@@ -31,6 +31,15 @@ import { useToastStore } from "@lib/toast";
 import { rpcCall } from "@lib/rpc";
 import { onKeyActivate } from "@lib/ui/a11y";
 import styles from "./TemplateVisualEditor.module.css";
+import {
+  allowsMultipleDirectives,
+  inspectedFieldToEditorValue,
+  isFieldBagValue,
+  makeDefaultValue,
+  resolveEnumCommitType,
+  resolveRefTypeDisplay,
+  shouldShowRefTypeSelector,
+} from "./helpers";
 
 // --- Stable UI IDs ---
 // Assigned on parse, stripped before serialise. Used for React keys,
@@ -48,12 +57,43 @@ type StampedNode = Omit<EditorNode, "_uiId" | "directives"> & {
   directives: StampedDirective[];
 };
 
+function stampDirective(d: EditorDirective): StampedDirective {
+  const stamped: StampedDirective = { ...d, _uiId: d._uiId ?? uiId() };
+  if (d.value && (d.value.kind === "Composite" || d.value.kind === "HandlerConstruction")) {
+    const inner = d.value.compositeDirectives;
+    if (inner) {
+      stamped.value = {
+        ...d.value,
+        compositeDirectives: inner.map(stampDirective),
+      };
+    }
+  }
+  return stamped;
+}
+
 function stampNodes(nodes: EditorNode[]): StampedNode[] {
   return nodes.map((n) => ({
     ...n,
     _uiId: n._uiId ?? uiId(),
-    directives: n.directives.map((d) => ({ ...d, _uiId: d._uiId ?? uiId() })),
+    directives: n.directives.map(stampDirective),
   }));
+}
+
+function stripDirectiveUiIds(d: EditorDirective): EditorDirective {
+  const { _uiId: _id, ...rest } = d;
+  if (
+    rest.value &&
+    (rest.value.kind === "Composite" || rest.value.kind === "HandlerConstruction")
+  ) {
+    const inner = rest.value.compositeDirectives;
+    if (inner) {
+      return {
+        ...rest,
+        value: { ...rest.value, compositeDirectives: inner.map(stripDirectiveUiIds) },
+      };
+    }
+  }
+  return rest;
 }
 
 function stripUiIds(doc: EditorDocument): EditorDocument {
@@ -63,10 +103,7 @@ function stripUiIds(doc: EditorDocument): EditorDocument {
       const { _uiId: _nId, ...rest } = n;
       return {
         ...rest,
-        directives: n.directives.map((d) => {
-          const { _uiId: _dId, ...dr } = d;
-          return dr;
-        }),
+        directives: n.directives.map(stripDirectiveUiIds),
       };
     }),
   };
@@ -146,123 +183,10 @@ function templatesValue(typeName: string, id: string): Promise<TemplateValueResu
   return cached;
 }
 
-// Converts a vanilla InspectedFieldNode into the editor's EditorValue shape.
-// `member` carries the declared kind so we honour `Byte` vs `Int32` and emit
-// the correct enum/reference shape; the inspected node alone wouldn't be
-// enough (its scalar `kind` is just `int`/`string`/etc).
-//
-// Returns undefined for shapes that don't map to a single EditorValue
-// (collections appended one element at a time, null/missing values), so the
-// caller falls back to the existing neutral default.
-export function inspectedFieldToEditorValue(
-  node: InspectedFieldNode | undefined,
-  member: TemplateMember,
-): EditorValue | undefined {
-  if (!node || node.null === true) return undefined;
-
-  const scalarKind = member.patchScalarKind;
-  switch (scalarKind) {
-    case "Boolean":
-      return typeof node.value === "boolean" ? { kind: "Boolean", boolean: node.value } : undefined;
-    case "Byte":
-      return typeof node.value === "number"
-        ? { kind: "Byte", int32: Math.trunc(node.value) }
-        : undefined;
-    case "Int32":
-      return typeof node.value === "number"
-        ? { kind: "Int32", int32: Math.trunc(node.value) }
-        : undefined;
-    case "Single":
-      return typeof node.value === "number" ? { kind: "Single", single: node.value } : undefined;
-    case "String":
-      return typeof node.value === "string" ? { kind: "String", string: node.value } : undefined;
-    case "Enum": {
-      if (typeof node.value !== "string" || node.value === "") return undefined;
-      const enumType = member.elementTypeName ?? member.typeName;
-      return { kind: "Enum", enumType, enumValue: node.value };
-    }
-    case "TemplateReference": {
-      const refName = node.reference?.name;
-      if (!refName) return undefined;
-      const value: EditorValue = { kind: "TemplateReference", referenceId: refName };
-      // Only attach referenceType for polymorphic destinations; otherwise the
-      // catalog/loader resolves the field's declared element type and the
-      // explicit setter would be redundant noise.
-      if (member.isReferenceTypePolymorphic === true && node.reference?.className) {
-        value.referenceType = node.reference.className;
-      }
-      return value;
-    }
-    case null:
-    case undefined: {
-      // Member is non-scalar non-ref, so the inspected node should be a
-      // composite. Recurse into sub-fields with low-fidelity mapping;
-      // sub-field member shapes aren't loaded here, so the byKind helper
-      // emits scalars/refs without their declared types.
-      if (node.kind !== "object" || !node.fields) return undefined;
-      const compositeType = member.elementTypeName ?? member.typeName;
-      if (!compositeType) return undefined;
-      const compositeFields: Record<string, EditorValue> = {};
-      for (const sub of node.fields) {
-        if (!sub.name) continue;
-        const subValue = inspectedFieldToEditorValueByKind(sub);
-        if (subValue) compositeFields[sub.name] = subValue;
-      }
-      return { kind: "Composite", compositeType, compositeFields };
-    }
-    default:
-      // Unknown patchScalarKind (host added a kind the frontend hasn't
-      // caught up to): bail to neutral default rather than guessing.
-      return undefined;
-  }
-}
-
-// Lower-fidelity converter used inside composite recursion where the parent
-// hasn't loaded sub-field member shapes yet. Maps the inspected node's
-// raw kind to the closest EditorValue kind. Numeric ints default to Int32
-// (Byte distinction is lost without a member shape; the visual editor will
-// still serialise correctly via the parent composite's catalog validation).
-function inspectedFieldToEditorValueByKind(node: InspectedFieldNode): EditorValue | undefined {
-  if (node.null === true) return undefined;
-  switch (node.kind) {
-    case "bool":
-      return typeof node.value === "boolean" ? { kind: "Boolean", boolean: node.value } : undefined;
-    case "int":
-      return typeof node.value === "number"
-        ? { kind: "Int32", int32: Math.trunc(node.value) }
-        : undefined;
-    case "float":
-      return typeof node.value === "number" ? { kind: "Single", single: node.value } : undefined;
-    case "string":
-      return typeof node.value === "string" ? { kind: "String", string: node.value } : undefined;
-    case "enum": {
-      // Inspected sub-fields carry their enum type via fieldTypeName (the
-      // backend enricher tags it). Without that we have no enumType to emit.
-      if (typeof node.value !== "string" || node.value === "") return undefined;
-      const enumType = node.fieldTypeName;
-      if (!enumType) return undefined;
-      return { kind: "Enum", enumType, enumValue: node.value };
-    }
-    case "reference": {
-      const refName = node.reference?.name;
-      return refName ? { kind: "TemplateReference", referenceId: refName } : undefined;
-    }
-    case "object": {
-      // Use fieldTypeName as the composite type label when present.
-      const compositeType = node.fieldTypeName ?? "";
-      if (!compositeType || !node.fields) return undefined;
-      const compositeFields: Record<string, EditorValue> = {};
-      for (const sub of node.fields) {
-        if (!sub.name) continue;
-        const subValue = inspectedFieldToEditorValueByKind(sub);
-        if (subValue) compositeFields[sub.name] = subValue;
-      }
-      return { kind: "Composite", compositeType, compositeFields };
-    }
-    default:
-      return undefined;
-  }
-}
+// Pure helpers (vanilla pre-fill, kind predicates, default-value factories,
+// etc.) live in `helpers.ts` so this JSX module only exports React
+// components — keeps Vite fast-refresh happy and gives the unit tests a
+// stable, side-effect-free import surface.
 
 // Empty lookup returned when no target is selected or the RPC hasn't
 // resolved yet. Module-level constant so consumers' useMemo dependency
@@ -1093,6 +1017,7 @@ const VALUE_KIND_LABELS: Record<EditorValueKind, string> = {
   Enum: "Enum",
   TemplateReference: "Ref",
   Composite: "Composite",
+  HandlerConstruction: "Handler",
 };
 
 function SetRow({
@@ -1124,11 +1049,12 @@ function SetRow({
   const ops = namedArrayEnum ? NAMED_ARRAY_OPS : isCollection ? COLLECTION_OPS : SCALAR_OPS;
   const isRemove = directive.op === "Remove";
   const isClear = directive.op === "Clear";
-  const isComposite = directive.value?.kind === "Composite";
+  const isFieldBag = isFieldBagValue(directive.value);
 
-  // Kind label: hide for remove/clear (no value), hide for composite (shown inline)
+  // Kind label: hide for remove/clear (no value), hide for field-bag values
+  // (Composite / HandlerConstruction render their kind inline in the body).
   const kindLabel =
-    isRemove || isClear || isComposite
+    isRemove || isClear || isFieldBag
       ? null
       : directive.value
         ? VALUE_KIND_LABELS[directive.value.kind]
@@ -1136,7 +1062,7 @@ function SetRow({
 
   return (
     <div
-      className={`${isComposite ? styles.setRowComposite : styles.setRow} ${isDragging ? styles.rowDragging : ""}`}
+      className={`${isFieldBag ? styles.setRowComposite : styles.setRow} ${isDragging ? styles.rowDragging : ""}`}
       onDragOver={onDragOverRow}
       onDrop={(e) => {
         e.preventDefault();
@@ -1287,7 +1213,7 @@ function SetRow({
                       onCommit={(v) => onChange({ ...directive, index: Number(v) })}
                     />
                   )}
-                  {directive.value && !isComposite ? (
+                  {directive.value && !isFieldBag ? (
                     <ValueEditor
                       value={directive.value}
                       onChange={(v) => onChange({ ...directive, value: v })}
@@ -1297,7 +1223,7 @@ function SetRow({
                 </div>
               ) : (
                 <>
-                  {directive.value && !isComposite ? (
+                  {directive.value && !isFieldBag ? (
                     <ValueEditor
                       value={directive.value}
                       onChange={(v) => onChange({ ...directive, value: v })}
@@ -1319,11 +1245,12 @@ function SetRow({
           <X size={12} />
         </button>
       </div>
-      {isComposite && directive.value && (
+      {isFieldBag && directive.value && (
         <CompositeEditor
           value={directive.value}
           onChange={(v) => onChange({ ...directive, value: v })}
           vanillaNode={vanillaNode}
+          elementSubtypes={member?.elementSubtypes ?? null}
         />
       )}
     </div>
@@ -1514,27 +1441,13 @@ function ValueEditor({ value, onChange, member }: ValueEditorProps) {
       return <RefValueEditor value={value} onChange={onChange} member={member} />;
 
     case "Composite":
-      // Rendered by CompositeEditor at SetRow level, not inline
+    case "HandlerConstruction":
+      // Field-bag values are rendered by CompositeEditor at SetRow level.
       return null;
 
     default:
       return <span className={styles.setKind}>?</span>;
   }
-}
-
-// C# enums are sealed by language: every enum field has exactly one valid
-// enum type, taken from the catalog. There's no polymorphic case (unlike
-// template references). On commit, we realign the serialised enumType to
-// the declared type so saved KDL is canonical (enum="ItemSlot" "..."). When
-// the catalog can't supply a type (rare; would mean the field's enum type
-// isn't loadable), fall back to whatever the value already carried so we
-// don't drop information.
-export function resolveEnumCommitType(
-  declaredEnumType: string | undefined,
-  fallback: string | undefined,
-): string | undefined {
-  if (declaredEnumType !== undefined && declaredEnumType !== "") return declaredEnumType;
-  return fallback;
 }
 
 function EnumValueEditor({ value, onChange, member }: ValueEditorProps) {
@@ -1571,49 +1484,6 @@ function EnumValueEditor({ value, onChange, member }: ValueEditorProps) {
       />
     </div>
   );
-}
-
-// Decides whether the ref-type combobox should be shown. Hidden for
-// monomorphic destinations (catalog supplies a concrete type and modder
-// can't pick anything else); visible when:
-//  - the catalog couldn't supply a declared type (rare; fallback authoring)
-//  - the declared type is an abstract base with multiple concrete subtypes
-//    (e.g. RewardTableTemplate.Items → BaseItemTemplate, where the modder
-//    must pick ModularVehicleWeaponTemplate / ArmorTemplate / …)
-//  - the value carries an explicit ref type that doesn't match the declared
-//    type (data inconsistency the modder needs to see and fix)
-export function shouldShowRefTypeSelector(
-  declaredRefType: string,
-  isPolymorphic: boolean,
-  explicitRefType: string,
-): boolean {
-  if (declaredRefType === "") return true;
-  if (isPolymorphic) return true;
-  // Monomorphic destination with a redundant explicit type (e.g. KDL written
-  // as `ref="SkillTemplate"` for a field already declared as
-  // ReferenceArray<SkillTemplate>) hides the selector: the modder has no
-  // meaningful alternative to pick. A mismatched explicit type still shows
-  // so the inconsistency is visible.
-  return explicitRefType !== "" && explicitRefType !== declaredRefType;
-}
-
-// What text the ref-type combobox should display.
-//
-// Monomorphic case: fall back to the declared concrete type. The selector is
-// usually hidden anyway; if shown (because the value already carried an
-// explicit type) the declared type is the right idle value.
-//
-// Polymorphic case: track ONLY the explicit type. Falling back to the
-// declared (abstract) type re-fills the combobox after the modder clears it,
-// looking like the delete didn't take. The modder must pick a concrete type;
-// the abstract base is never a valid display value here.
-export function resolveRefTypeDisplay(
-  declaredRefType: string,
-  isPolymorphic: boolean,
-  explicitRefType: string,
-): string {
-  if (isPolymorphic) return explicitRefType;
-  return explicitRefType !== "" ? explicitRefType : declaredRefType;
 }
 
 function RefValueEditor({ value, onChange, member }: ValueEditorProps) {
@@ -1689,11 +1559,27 @@ interface CompositeEditorProps {
    *  unbounded and the high-fidelity converter wants member shapes we don't
    *  have at that depth). */
   vanillaNode?: InspectedFieldNode | undefined;
+  /** For HandlerConstruction values targeting a polymorphic owned-element
+   *  collection: the concrete subtypes the modder can pick. Drives the
+   *  subtype combobox shown in place of the body until a type is chosen. */
+  elementSubtypes?: readonly string[] | null;
 }
 
-function CompositeEditor({ value, onChange, vanillaNode }: CompositeEditorProps) {
-  const fields = value.compositeFields ?? {};
-  const entries = Object.entries(fields);
+function CompositeEditor({ value, onChange, vanillaNode, elementSubtypes }: CompositeEditorProps) {
+  // Directives flow in from two places: parse (stampNodes recurses through
+  // composites and assigns _uiId per directive) and FieldAdder (always builds
+  // StampedDirective via uiId()). So everything we render here already has
+  // _uiId — the TS surface just doesn't model that. Cast at the boundary.
+  // Memoised so the `?? []` fallback doesn't allocate a fresh array each
+  // render and ripple into downstream useMemo dependency arrays.
+  const directives = useMemo(
+    () => (value.compositeDirectives ?? []) as StampedDirective[],
+    [value.compositeDirectives],
+  );
+  // Local drag state for row reorder inside this composite. Mirrors the
+  // outer NodeCard's pattern; row reorder doesn't cross composite boundaries.
+  const [dragRowId, setDragRowId] = useState<string | null>(null);
+  const [dragRowSlot, setDragRowSlot] = useState<number | null>(null);
   const [members, setMembers] = useState<readonly TemplateMember[]>([]);
   const [membersLoaded, setMembersLoaded] = useState(false);
 
@@ -1707,23 +1593,28 @@ function CompositeEditor({ value, onChange, vanillaNode }: CompositeEditorProps)
       .catch(() => setMembersLoaded(true));
   }, [membersLoaded, value.compositeType]);
 
-  const handleFieldChange = (fieldName: string, fieldValue: EditorValue) => {
-    onChange({ ...value, compositeFields: { ...fields, [fieldName]: fieldValue } });
+  const handleDirectiveChange = (index: number, updated: StampedDirective) => {
+    const next = directives.map((d, i) => (i === index ? updated : d));
+    onChange({ ...value, compositeDirectives: next });
   };
 
-  const handleFieldRemove = (fieldName: string) => {
-    const { [fieldName]: _removed, ...next } = fields;
-    onChange({ ...value, compositeFields: next });
+  const handleDirectiveDelete = (index: number) => {
+    onChange({ ...value, compositeDirectives: directives.filter((_, i) => i !== index) });
   };
 
-  const handleAddField = (directive: StampedDirective) => {
-    // For composite sub-fields, we only use the fieldPath and value
-    if (directive.value) {
-      onChange({
-        ...value,
-        compositeFields: { ...fields, [directive.fieldPath]: directive.value },
-      });
-    }
+  const handleAddDirective = (directive: StampedDirective) => {
+    onChange({ ...value, compositeDirectives: [...directives, directive] });
+  };
+
+  const handleRowReorder = (fromId: string, toSlot: number) => {
+    const fromIdx = directives.findIndex((d) => d._uiId === fromId);
+    if (fromIdx === -1) return;
+    const next = [...directives];
+    const moved = next.splice(fromIdx, 1)[0];
+    if (moved === undefined) return;
+    const insertAt = toSlot > fromIdx ? toSlot - 1 : toSlot;
+    next.splice(insertAt, 0, moved);
+    onChange({ ...value, compositeDirectives: next });
   };
 
   // Vanilla sub-field lookup (composite's vanillaNode.fields → name→node).
@@ -1740,6 +1631,17 @@ function CompositeEditor({ value, onChange, vanillaNode }: CompositeEditorProps)
   }, [vanillaNode]);
 
   const compositeType = value.compositeType ?? "";
+  // Track which top-level fields of the composite already have a
+  // single-Set directive so the FieldAdder can dim "scalar already set"
+  // entries the same way the outer NodeCard does.
+  const existingFieldNames = useMemo(
+    () =>
+      directives
+        .filter((d) => d.op === "Set" && !d.fieldPath.includes(".") && !d.fieldPath.includes("["))
+        .map((d) => d.fieldPath),
+    [directives],
+  );
+
   const handleFieldDrop = (e: React.DragEvent) => {
     const raw = e.dataTransfer.getData("text/plain");
     const member = parseCrossMemberPayload(raw);
@@ -1754,58 +1656,114 @@ function CompositeEditor({ value, onChange, vanillaNode }: CompositeEditorProps)
       });
       return;
     }
-    if (
-      !allowsMultipleDirectives(member) &&
-      Object.prototype.hasOwnProperty.call(fields, member.fieldPath)
-    ) {
+    const synthMember = synthMemberFromPayload(member);
+    if (!allowsMultipleDirectives(synthMember) && existingFieldNames.includes(member.fieldPath)) {
       toast({
         variant: "info",
         message: `"${member.fieldPath}" is already in this composite`,
       });
       return;
     }
-    // Build through the kind-aware helper so the dropped composite sub-field
-    // gets the right value shape (ref/enum/etc), and pre-fill from the parent
-    // template's vanilla composite when possible.
-    const synthMember = synthMemberFromPayload(member);
     const vanilla = vanillaSubFields.get(member.fieldPath);
-    handleAddField(makeDefaultDirective(synthMember, vanilla));
+    handleAddDirective(makeDefaultDirective(synthMember, vanilla));
   };
 
   const memberMap = new Map(members.map((m) => [m.name, m]));
 
+  const isHandler = value.kind === "HandlerConstruction";
+  const subtypeChoices = elementSubtypes ?? null;
+  const needsSubtypePick =
+    isHandler && subtypeChoices !== null && subtypeChoices.length > 0 && !value.compositeType;
+
+  if (needsSubtypePick) {
+    return (
+      <div className={styles.compositeBody}>
+        <div className={styles.compositeHeader}>
+          <span className={styles.compositeType}>handler</span>
+          <SuggestionCombobox
+            value=""
+            placeholder="Pick handler type…"
+            fetchSuggestions={() => Promise.resolve(subtypeChoices)}
+            onChange={(picked) => {
+              if (picked === "") return;
+              onChange({ ...value, compositeType: picked, compositeDirectives: [] });
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const handleClearSubtype = () => {
+    onChange({ ...value, compositeType: "", compositeDirectives: [] });
+  };
+
+  const canClearSubtype =
+    isHandler && subtypeChoices !== null && subtypeChoices.length > 0 && !!value.compositeType;
+
   return (
     <div className={styles.compositeBody}>
       <div className={styles.compositeHeader}>
-        <span className={styles.compositeType}>{value.compositeType ?? "composite"}</span>
-      </div>
-      {entries.map(([name, fieldValue]) => (
-        <div key={name} className={styles.compositeRow}>
-          <span className={styles.compositeFieldName}>{name}</span>
-          <div className={styles.compositeFieldValue}>
-            <ValueEditor
-              value={fieldValue}
-              onChange={(v) => handleFieldChange(name, v)}
-              member={memberMap.get(name)}
-            />
-          </div>
-          <span className={styles.setKind}>{VALUE_KIND_LABELS[fieldValue.kind]}</span>
+        <span className={styles.compositeType}>
+          {isHandler ? "handler · " : ""}
+          {value.compositeType ?? (isHandler ? "handler" : "composite")}
+        </span>
+        {canClearSubtype && (
           <button
             type="button"
-            className={styles.compositeFieldDelete}
-            onClick={() => handleFieldRemove(name)}
-            title="Remove field"
+            className={styles.compositeClearType}
+            onClick={handleClearSubtype}
+            title="Clear handler type (resets fields)"
           >
-            <X size={10} />
+            <X size={12} />
           </button>
-        </div>
-      ))}
+        )}
+      </div>
+      {directives.map((d, di) => {
+        const baseName = d.fieldPath.replace(/\[.*\]$/, "");
+        return (
+          <React.Fragment key={d._uiId}>
+            {dragRowSlot === di && dragRowId !== d._uiId && (
+              <div className={styles.dropIndicator} />
+            )}
+            <SetRow
+              directive={d}
+              member={memberMap.get(baseName)}
+              vanillaNode={vanillaSubFields.get(baseName)}
+              onChange={(updated) => handleDirectiveChange(di, updated)}
+              onDelete={() => handleDirectiveDelete(di)}
+              isDragging={dragRowId === d._uiId}
+              onDragStart={() => setDragRowId(d._uiId)}
+              onDragEnd={() => {
+                setDragRowId(null);
+                setDragRowSlot(null);
+              }}
+              onDragOverRow={(e) => {
+                if (!dragRowId || dragRowId === d._uiId) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                const rect = e.currentTarget.getBoundingClientRect();
+                const y = e.clientY - rect.top;
+                setDragRowSlot(y < rect.height / 2 ? di : di + 1);
+              }}
+              onDropRow={() => {
+                if (dragRowId && dragRowSlot !== null) {
+                  handleRowReorder(dragRowId, dragRowSlot);
+                }
+                setDragRowId(null);
+                setDragRowSlot(null);
+              }}
+            />
+          </React.Fragment>
+        );
+      })}
+      {dragRowSlot === directives.length && <div className={styles.dropIndicator} />}
       <FieldAdder
         members={members}
         membersLoaded={membersLoaded}
-        existingFields={Object.keys(fields)}
+        existingFields={existingFieldNames}
         targetTemplateType={compositeType}
-        onAdd={handleAddField}
+        onAdd={handleAddDirective}
         onDrop={handleFieldDrop}
         vanillaFields={vanillaSubFields}
       />
@@ -2012,6 +1970,12 @@ function FieldAdder({
     (m) =>
       (m.isWritable || m.isCollection) &&
       !m.isHiddenInInspector &&
+      // Odin-routed members (interface-typed fields, abstract non-Unity types,
+      // anything Unity's native serialiser can't handle) live in the Odin
+      // serializationData blob. The data-only patching path can't write into
+      // that blob, so picking one would just produce an empty composite the
+      // modder can't fill — hide them rather than offer a dead end.
+      !m.isLikelyOdinOnly &&
       m.name.toLowerCase().includes(lowerQuery),
   );
   // Multi-directive fields (collections, named arrays) stay in `available`
@@ -2143,48 +2107,8 @@ function FieldAdder({
 }
 
 // --- Helpers ---
-
-function makeDefaultValue(member: TemplateMember): EditorValue {
-  const kind = member.patchScalarKind;
-  const elementType = member.elementTypeName;
-
-  switch (kind) {
-    case "Boolean":
-      return { kind: "Boolean", boolean: false };
-    case "Byte":
-      return { kind: "Byte", int32: 0 };
-    case "Int32":
-      return { kind: "Int32", int32: 0 };
-    case "Single":
-      return { kind: "Single", single: 0.0 };
-    case "String":
-      return { kind: "String", string: "" };
-    case "Enum":
-      return { kind: "Enum", enumType: elementType ?? member.typeName, enumValue: "" };
-    case "TemplateReference":
-      // Leave referenceType undefined — the lookup type is implicit and the
-      // catalog/loader derive it from the declared field. The modder only
-      // sets it explicitly for polymorphic destinations.
-      return { kind: "TemplateReference", referenceId: "" };
-    default:
-      // Non-scalar, non-ref → composite
-      if (elementType) {
-        return { kind: "Composite", compositeType: elementType, compositeFields: {} };
-      }
-      if (!member.isScalar && !member.isTemplateReference && member.typeName) {
-        return { kind: "Composite", compositeType: member.typeName, compositeFields: {} };
-      }
-      return { kind: "String", string: "" };
-  }
-}
-
-// Collections accept multiple directives on the same fieldPath: Append/
-// Insert/Remove for plain collections, Set at distinct enum indices for
-// named arrays. Scalars, references, and plain composites map 1:1 to a
-// single Set, so duplicates would clobber each other.
-export function allowsMultipleDirectives(member: { isCollection?: boolean | null }): boolean {
-  return member.isCollection === true;
-}
+// Pure helpers (makeDefaultValue, allowsMultipleDirectives, etc.) live in
+// `./helpers` so this JSX module only exports React components.
 
 function makeDefaultDirective(
   member: TemplateMember,

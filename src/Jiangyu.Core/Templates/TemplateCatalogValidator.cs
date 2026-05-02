@@ -454,48 +454,17 @@ public static class TemplateCatalogValidator
             subtype = resolved;
         }
 
-        // Validate each inner field exists on the subtype.
-        var errors = 0;
-        foreach (var (fieldName, value) in construction.Fields)
-        {
-            if (string.IsNullOrWhiteSpace(fieldName)) continue;
-
-            var subtypePath = subtype.FullName ?? subtype.Name;
-            var fieldResult = TemplateMemberQuery.Run(catalog, $"{subtypePath}.{fieldName}");
-            if (fieldResult.Kind == QueryResultKind.Error)
-            {
-                reportError(
-                    $"handler= construction for '{op.FieldPath}': "
-                    + $"'{fieldName}' is not a field of {catalog.FriendlyName(subtype)}.");
-                errors++;
-                continue;
-            }
-
-            if (fieldResult.IsLikelyOdinOnly)
-            {
-                reportError(
-                    $"handler= construction for '{op.FieldPath}': "
-                    + $"'{fieldName}' on {catalog.FriendlyName(subtype)} is Odin-routed; "
-                    + "Odin-routed fields can't be set via the data-only patching path.");
-                errors++;
-                continue;
-            }
-
-            // Recurse for nested composites; nested handler constructions
-            // aren't supported in this slice (validator surfaces them).
-            if (value.Kind == CompiledTemplateValueKind.HandlerConstruction)
-            {
-                reportError(
-                    $"handler= construction for '{op.FieldPath}': "
-                    + $"nested handler= on field '{fieldName}' is not supported "
-                    + "(handlers don't normally hold other handlers as fields).");
-                errors++;
-                continue;
-            }
-            if (value.Kind == CompiledTemplateValueKind.Composite && value.Composite != null)
-                errors += ValidateCompositeValue(value.Composite, $"{op.FieldPath}.{fieldName}", catalog, reportError);
-        }
-        return errors;
+        // Inner directives validate against the resolved subtype using the
+        // same op semantics as the outer level. Use FullName so ambiguous
+        // short names (test fixtures with two FixtureSkillTemplate classes
+        // in different namespaces, etc.) still resolve uniquely; the user-
+        // facing context label keeps the friendly short name.
+        return ValidateInnerOperations(
+            construction.Operations,
+            subtype.FullName ?? subtype.Name,
+            $"handler= construction for '{op.FieldPath}'",
+            catalog,
+            reportError);
     }
 
     private static int ValidateCompositeValue(
@@ -513,21 +482,26 @@ public static class TemplateCatalogValidator
             return 1;
         }
 
+        return ValidateInnerOperations(
+            composite.Operations,
+            type.FullName ?? composite.TypeName,
+            $"composite '{contextPath}'",
+            catalog,
+            reportError);
+    }
+
+    private static int ValidateInnerOperations(
+        List<CompiledTemplateSetOperation> operations,
+        string typeName,
+        string contextLabel,
+        TemplateTypeCatalog catalog,
+        Action<string> reportError)
+    {
         var errors = 0;
-        foreach (var (fieldName, value) in composite.Fields)
+        foreach (var inner in operations)
         {
-            if (string.IsNullOrWhiteSpace(fieldName)) continue;
-
-            var result = TemplateMemberQuery.Run(catalog, $"{composite.TypeName}.{fieldName}");
-            if (result.Kind == QueryResultKind.Error)
-            {
-                reportError($"'{fieldName}' is not a field of {composite.TypeName}.");
-                errors++;
-                continue;
-            }
-
-            if (value.Kind == CompiledTemplateValueKind.Composite && value.Composite != null)
-                errors += ValidateCompositeValue(value.Composite, $"{contextPath}.{fieldName}", catalog, reportError);
+            void InnerReport(string message) => reportError($"{contextLabel}: {message}");
+            errors += ValidateOperation(inner, typeName, catalog, InnerReport);
         }
         return errors;
     }

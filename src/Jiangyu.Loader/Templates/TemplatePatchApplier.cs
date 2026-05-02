@@ -364,7 +364,7 @@ internal sealed class TemplatePatchApplier
         string templateTypeName, string templateId, LoadedPatchOperation op, Type memberType,
         Action<object> setter, Func<object> getter, MelonLogger.Instance log)
     {
-        if (!TryConvertScalar(op.Value, memberType, out var converted, out var conversionError))
+        if (!TryConvertScalar(op.Value, memberType, log, out var converted, out var conversionError))
         {
             log.Warning(FormatPrefix(templateTypeName, templateId, op) + conversionError);
             return ApplyOutcome.ConversionFailed;
@@ -1358,7 +1358,8 @@ internal sealed class TemplatePatchApplier
     }
 
     private static bool TryConvertScalar(
-        CompiledTemplateValue value, Type targetType, out object converted, out string error)
+        CompiledTemplateValue value, Type targetType, MelonLogger.Instance log,
+        out object converted, out string error)
     {
         if (value == null)
         {
@@ -1485,10 +1486,10 @@ internal sealed class TemplatePatchApplier
                 return TryResolveTemplateReference(value.Reference, targetType, out converted, out error);
 
             case CompiledTemplateValueKind.Composite:
-                return TryConstructComposite(value.Composite, targetType, out converted, out error);
+                return TryConstructComposite(value.Composite, targetType, log, out converted, out error);
 
             case CompiledTemplateValueKind.HandlerConstruction:
-                return TryConstructHandler(value.HandlerConstruction, targetType, out converted, out error);
+                return TryConstructHandler(value.HandlerConstruction, targetType, log, out converted, out error);
 
             default:
                 error = $"unknown value kind {value.Kind}.";
@@ -1506,7 +1507,8 @@ internal sealed class TemplatePatchApplier
     /// empty, the array's element type is used (monomorphic case).
     /// </summary>
     private static bool TryConstructHandler(
-        CompiledTemplateComposite handler, Type targetType, out object converted, out string error)
+        CompiledTemplateComposite handler, Type targetType, MelonLogger.Instance log,
+        out object converted, out string error)
     {
         converted = null;
 
@@ -1526,11 +1528,11 @@ internal sealed class TemplatePatchApplier
             effectivePayload = new CompiledTemplateComposite
             {
                 TypeName = targetType.Name,
-                Fields = handler.Fields ?? new Dictionary<string, CompiledTemplateValue>(),
+                Operations = handler.Operations ?? new List<CompiledTemplateSetOperation>(),
             };
         }
 
-        if (!TryConstructComposite(effectivePayload, targetType, out converted, out error))
+        if (!TryConstructComposite(effectivePayload, targetType, log, out converted, out error))
             return false;
 
         if (converted is UnityEngine.Object asUnity)
@@ -1561,7 +1563,8 @@ internal sealed class TemplatePatchApplier
     //    any IL2CPP-side ctor — fields are written individually below.
     //  - Pure managed types: Activator.CreateInstance (parameterless ctor).
     private static bool TryConstructComposite(
-        CompiledTemplateComposite composite, Type targetType, out object converted, out string error)
+        CompiledTemplateComposite composite, Type targetType, MelonLogger.Instance log,
+        out object converted, out string error)
     {
         converted = null;
 
@@ -1635,29 +1638,34 @@ internal sealed class TemplatePatchApplier
             }
         }
 
-        if (composite.Fields != null)
+        // Apply each authored operation against the freshly-constructed
+        // instance using the same path-walk-and-apply machinery the outer
+        // applier uses on live templates. Set ops on top-level fields are
+        // the common case; collection ops (Append/Insert/Remove/Clear) on
+        // the constructed instance's collection members work too — e.g.
+        // appending a fresh PropertyChange to a ChangeProperty handler's
+        // Properties list during construction.
+        if (composite.Operations != null)
         {
-            foreach (var (fieldName, fieldValue) in composite.Fields)
+            foreach (var innerOp in composite.Operations)
             {
-                if (!TryGetWritableMember(instance, fieldName, out var memberType, out var setter, out _))
-                {
-                    error = $"Composite {resolvedType.Name}: no writable member '{fieldName}'.";
-                    return false;
-                }
+                var loadedOp = new LoadedPatchOperation(
+                    innerOp.Op,
+                    innerOp.FieldPath,
+                    innerOp.Index,
+                    innerOp.SubtypeHints ?? new Dictionary<int, string>(),
+                    innerOp.Value,
+                    $"composite:{composite.TypeName}");
 
-                if (!TryConvertScalar(fieldValue, memberType, out var fieldConverted, out var fieldError))
+                var outcome = TryApplyOperation(
+                    instance,
+                    composite.TypeName,
+                    "<construction>",
+                    loadedOp,
+                    log);
+                if (outcome != ApplyOutcome.Applied)
                 {
-                    error = $"Composite {resolvedType.Name}.{fieldName}: {fieldError}";
-                    return false;
-                }
-
-                try
-                {
-                    setter(fieldConverted);
-                }
-                catch (Exception ex)
-                {
-                    error = $"Composite {resolvedType.Name}.{fieldName} setter threw: {ex.Message}";
+                    error = $"Composite {resolvedType.Name}: inner op {innerOp.Op} '{innerOp.FieldPath}' failed (outcome={outcome}).";
                     return false;
                 }
             }

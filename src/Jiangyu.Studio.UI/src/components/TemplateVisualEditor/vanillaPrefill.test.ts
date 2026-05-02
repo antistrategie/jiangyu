@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { InspectedFieldNode, TemplateMember } from "@lib/rpc";
-import { inspectedFieldToEditorValue } from "./TemplateVisualEditor";
+import { inspectedFieldToEditorValue } from "./helpers";
 
 function member(overrides: Partial<TemplateMember> = {}): TemplateMember {
   return {
@@ -133,10 +133,18 @@ describe("inspectedFieldToEditorValue", () => {
     expect(inspectedFieldToEditorValue(node, m)).toEqual({
       kind: "Composite",
       compositeType: "LocalizedLine",
-      compositeFields: {
-        m_DefaultTranslation: { kind: "String", string: "Long Range Missile" },
-        m_DontReuseTranslation: { kind: "Boolean", boolean: false },
-      },
+      compositeDirectives: [
+        {
+          op: "Set",
+          fieldPath: "m_DefaultTranslation",
+          value: { kind: "String", string: "Long Range Missile" },
+        },
+        {
+          op: "Set",
+          fieldPath: "m_DontReuseTranslation",
+          value: { kind: "Boolean", boolean: false },
+        },
+      ],
     });
   });
 
@@ -163,10 +171,18 @@ describe("inspectedFieldToEditorValue", () => {
     expect(inspectedFieldToEditorValue(node, m)).toEqual({
       kind: "Composite",
       compositeType: "Loadout",
-      compositeFields: {
-        m_Slot: { kind: "Enum", enumType: "ItemSlot", enumValue: "Heavy" },
-        m_Count: { kind: "Int32", int32: 3 },
-      },
+      compositeDirectives: [
+        {
+          op: "Set",
+          fieldPath: "m_Slot",
+          value: { kind: "Enum", enumType: "ItemSlot", enumValue: "Heavy" },
+        },
+        {
+          op: "Set",
+          fieldPath: "m_Count",
+          value: { kind: "Int32", int32: 3 },
+        },
+      ],
     });
   });
 
@@ -179,7 +195,7 @@ describe("inspectedFieldToEditorValue", () => {
     expect(inspectedFieldToEditorValue(node, m)).toEqual({
       kind: "Composite",
       compositeType: "Loadout",
-      compositeFields: {},
+      compositeDirectives: [],
     });
   });
 });

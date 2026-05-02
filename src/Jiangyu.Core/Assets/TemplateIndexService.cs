@@ -27,13 +27,29 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
     private const string IndexFileName = "template-index.json";
     private const string ManifestFileName = "template-index-manifest.json";
     private const string ValuesFileName = "template-values.json";
-    internal const int CurrentFormatVersion = 4;
+    internal const int CurrentFormatVersion = 5;
     private const int ValuesInspectDepth = 6;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        // Some game assets carry Infinity/NaN floats (default-zeroed cooldown
+        // dividers, etc.) which would otherwise crash the serialiser. Named
+        // float literals encode them as "Infinity"/"-Infinity"/"NaN" strings,
+        // round-trippable on read.
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
+    };
+
+    // Compact (no indenting) variant for the values cache. Pretty-printing is
+    // useful when humans read template-index.json (sometimes used to debug
+    // classification), but the values file is tens-of-MB of nested fields
+    // that nobody reads by hand — indenting just inflates the file and slows
+    // both the write and the next load.
+    private static readonly JsonSerializerOptions CompactJsonOptions = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
     };
 
     public string GameDataPath { get; } = gameDataPath;
@@ -108,10 +124,14 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
         var adapter = new AssetRipperProgressAdapter(_progress);
         Logger.Add(adapter);
 
+        var swTotal = System.Diagnostics.Stopwatch.StartNew();
+        long elapsedLoad = 0, elapsedProcess = 0, elapsedIndex = 0, elapsedValues = 0;
+
         TemplateIndex index;
         Dictionary<string, List<InspectedFieldNode>> values = [];
         try
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             _progress.SetPhase("Loading assets");
             var gameStructure = GameStructure.Load([GameDataPath], LocalFileSystem.Instance, settings);
             var gameData = GameData.FromGameStructure(gameStructure);
@@ -122,18 +142,25 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
             }
 
             _progress.Finish();
+            elapsedLoad = sw.ElapsedMilliseconds;
 
+            sw.Restart();
             _progress.SetPhase("Processing");
             RunProcessors(gameData);
             _progress.Finish();
+            elapsedProcess = sw.ElapsedMilliseconds;
 
+            sw.Restart();
             _progress.SetPhase("Building template index");
             index = BuildTemplateIndex(gameData.GameBundle.FetchAssetCollections(), gameData.AssemblyManager);
             _progress.Finish();
+            elapsedIndex = sw.ElapsedMilliseconds;
 
+            sw.Restart();
             _progress.SetPhase("Extracting template values");
             values = ExtractTemplateValues(index, gameData);
             _progress.Finish();
+            elapsedValues = sw.ElapsedMilliseconds;
         }
         finally
         {
@@ -141,13 +168,19 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
         }
 
         Directory.CreateDirectory(CachePath);
+        var swWrite = System.Diagnostics.Stopwatch.StartNew();
         File.WriteAllText(
             Path.Combine(CachePath, IndexFileName),
             JsonSerializer.Serialize(index, JsonOptions));
 
-        File.WriteAllText(
-            Path.Combine(CachePath, ValuesFileName),
-            JsonSerializer.Serialize(values, JsonOptions));
+        // Stream the values cache through a FileStream rather than allocating
+        // one giant string in memory first. Compact JSON keeps pretty-print
+        // bloat off the disk; reads parse identically.
+        using (var valuesStream = File.Create(Path.Combine(CachePath, ValuesFileName)))
+        {
+            JsonSerializer.Serialize(valuesStream, values, CompactJsonOptions);
+        }
+        var elapsedWrite = swWrite.ElapsedMilliseconds;
 
         TemplateClassificationMetadata classification = TemplateClassifier.GetMetadata();
         var manifest = new TemplateIndexManifest
@@ -166,7 +199,11 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
             Path.Combine(CachePath, ManifestFileName),
             JsonSerializer.Serialize(manifest, JsonOptions));
 
+        swTotal.Stop();
         _log.Info($"Indexed {index.Instances.Count} template instances across {index.TemplateTypes.Count} template types to: {CachePath}");
+        _log.Info(
+            $"Timing: load={elapsedLoad}ms process={elapsedProcess}ms index={elapsedIndex}ms "
+            + $"values={elapsedValues}ms write={elapsedWrite}ms total={swTotal.ElapsedMilliseconds}ms");
     }
 
     public TemplateIndex? LoadIndex()
@@ -464,18 +501,27 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
     private static Dictionary<string, List<InspectedFieldNode>> ExtractTemplateValues(
         TemplateIndex index, GameData gameData)
     {
-        var values = new Dictionary<string, List<InspectedFieldNode>>();
-        foreach (var instance in index.Instances)
+        // Build a single (collection, pathId) → asset lookup so each instance
+        // doesn't re-scan every collection to find its own asset. Trades
+        // ~7508 nested loops for one O(total-assets) preflight scan.
+        var assetLookup = new Dictionary<(string Collection, long PathId), IUnityObjectBase>();
+        foreach (var collection in gameData.GameBundle.FetchAssetCollections())
         {
-            var key = TemplateIndex.IdentityKey(instance.Identity);
-            IUnityObjectBase? asset = null;
-            foreach (var collection in gameData.GameBundle.FetchAssetCollections())
+            foreach (var asset in collection)
             {
-                if (string.Equals(collection.Name, instance.Identity.Collection, StringComparison.OrdinalIgnoreCase)
-                    && collection.TryGetAsset(instance.Identity.PathId, out asset))
-                    break;
+                assetLookup[(collection.Name, asset.PathID)] = asset;
             }
-            if (asset is null) continue;
+        }
+
+        // Extraction is per-asset CPU work and AssetRipper's read paths are
+        // safe across threads as long as each thread's walker is isolated
+        // (which it is — RawTreeWalker is stateful per-Inspect call). Parallel
+        // here halves the values phase on most machines.
+        var values = new System.Collections.Concurrent.ConcurrentDictionary<string, List<InspectedFieldNode>>();
+        Parallel.ForEach(index.Instances, instance =>
+        {
+            if (!assetLookup.TryGetValue((instance.Identity.Collection, instance.Identity.PathId), out var asset))
+                return;
 
             var inspection = ObjectFieldInspector.Inspect(asset, ValuesInspectDepth, 0);
             if (asset is IMonoBehaviour mono)
@@ -486,8 +532,9 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
             // Extract m_Structure fields as the template payload.
             var structure = inspection.Fields.FirstOrDefault(f =>
                 string.Equals(f.Name, "m_Structure", StringComparison.Ordinal));
+            var key = TemplateIndex.IdentityKey(instance.Identity);
             values[key] = structure?.Fields ?? inspection.Fields;
-        }
-        return values;
+        });
+        return new Dictionary<string, List<InspectedFieldNode>>(values);
     }
 }

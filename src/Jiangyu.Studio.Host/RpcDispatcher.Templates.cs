@@ -335,8 +335,17 @@ public static partial class RpcDispatcher
         if (TemplateTypeCatalog.IsScalar(leafType))
             return TemplateMemberQuery.MapScalarKind(leafType)?.ToString();
 
-        if (TemplateTypeCatalog.IsTemplateReferenceTarget(leafType))
+        // ScriptableObject leaves split two ways: DataTemplate descendants are
+        // patched via a TemplateReference (loader looks them up by name in
+        // m_TemplateMaps); non-DataTemplate ScriptableObjects (e.g. owned
+        // EventHandler list elements) are constructed inline as
+        // HandlerConstruction. Returning null for the latter routes the visual
+        // editor to the composite/handler default-value path instead.
+        if (TemplateTypeCatalog.IsTemplateReferenceTarget(leafType)
+            && TemplateTypeCatalog.IsDataTemplateType(leafType))
+        {
             return "TemplateReference";
+        }
 
         return null;
     }
@@ -360,7 +369,11 @@ public static partial class RpcDispatcher
         var memberType = m.MemberType;
         var elementType = TemplateTypeCatalog.GetElementType(memberType);
         var leafType = elementType ?? memberType;
+        // Mirror ComputeMemberPatchScalarKind: ReferenceTypeName drives the
+        // ref-combobox UX, which only makes sense for DataTemplate-backed
+        // refs. Owned ScriptableObjects use ElementSubtypes instead.
         return TemplateTypeCatalog.IsTemplateReferenceTarget(leafType)
+            && TemplateTypeCatalog.IsDataTemplateType(leafType)
             ? catalog.FriendlyName(leafType) : null;
     }
 
@@ -384,6 +397,12 @@ public static partial class RpcDispatcher
         var leafType = elementType ?? memberType;
         if (!TemplateTypeCatalog.IsTemplateReferenceTarget(leafType))
             return null;
+        // Construction-style polymorphism (owned ScriptableObject lists like
+        // EventHandlers) is reported via ElementSubtypes; the ref-polymorphism
+        // flag is reserved for DataTemplate-backed lookups so the visual
+        // editor's two pickers don't both fire on the same member.
+        if (!TemplateTypeCatalog.IsDataTemplateType(leafType))
+            return null;
         if (!catalog.HasReferenceSubtype(leafType))
             return null;
         // Refine: structural subtype existence alone over-flags concrete
@@ -397,6 +416,31 @@ public static partial class RpcDispatcher
         if (instantiatedClassNames.Contains(leafFriendlyName))
             return null;
         return true;
+    }
+
+    /// <summary>
+    /// Concrete subtypes the modder can pick when appending to a polymorphic
+    /// owned-element collection (e.g. EventHandlers). Populated only for
+    /// collections whose element type is a non-DataTemplate ScriptableObject
+    /// base with strict descendants — this is the construction-style
+    /// polymorphism (the modder builds a fresh subordinate object), distinct
+    /// from ref-style polymorphism where the modder picks an existing
+    /// DataTemplateLoader instance. Null otherwise so the visual editor falls
+    /// through to the standard composite/ref flow.
+    /// </summary>
+    private static List<string>? ComputeElementSubtypes(TemplateTypeCatalog catalog, MemberShape m)
+    {
+        var elementType = TemplateTypeCatalog.GetElementType(m.MemberType);
+        if (elementType is null) return null;
+        if (!TemplateTypeCatalog.IsTemplateReferenceTarget(elementType)) return null;
+        if (TemplateTypeCatalog.IsDataTemplateType(elementType)) return null;
+        if (!catalog.HasReferenceSubtype(elementType)) return null;
+
+        var subtypes = catalog.EnumerateConcreteSubtypes(elementType);
+        if (subtypes.Count == 0) return null;
+        return [.. subtypes
+            .Select(catalog.FriendlyName)
+            .OrderBy(n => n, StringComparer.Ordinal)];
     }
 
     private static TemplateQueryResult MapQueryResult(
@@ -431,6 +475,7 @@ public static partial class RpcDispatcher
                 EnumTypeName = ComputeEnumTypeName(catalog, m),
                 ReferenceTypeName = ComputeReferenceTypeName(catalog, m),
                 IsReferenceTypePolymorphic = ComputeReferenceTypeIsPolymorphic(catalog, m, instantiatedClassNames),
+                ElementSubtypes = ComputeElementSubtypes(catalog, m),
                 NamedArrayEnumTypeName = m.NamedArrayEnumTypeName,
                 NumericMin = m.NumericMin,
                 NumericMax = m.NumericMax,
@@ -558,6 +603,14 @@ public static partial class RpcDispatcher
         [JsonPropertyName("isReferenceTypePolymorphic")]
         public bool? IsReferenceTypePolymorphic { get; set; }
 
+        /// <summary>Concrete subtype short-names the modder can pick when
+        /// appending to an owned polymorphic-element collection. Populated for
+        /// construction-style polymorphic collections only (e.g. EventHandlers
+        /// → BaseEventHandlerTemplate); null otherwise so the visual editor
+        /// keeps the standard composite/ref flow.</summary>
+        [JsonPropertyName("elementSubtypes")]
+        public List<string>? ElementSubtypes { get; set; }
+
         /// <summary>Short name of the enum paired with a
         /// <c>[NamedArray(typeof(T))]</c> array member; null otherwise.</summary>
         [JsonPropertyName("namedArrayEnumTypeName")]
@@ -619,6 +672,10 @@ public static partial class RpcDispatcher
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        // Match TemplateIndexService.JsonOptions: cached values can carry
+        // Infinity/NaN floats (game defaults), so the wire format has to
+        // accept them too or templatesValue / templatesInspect crash on send.
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
     };
 
     /// <summary>

@@ -108,8 +108,8 @@ public enum KdlEditorValueKind
     /// ScriptableObject construction for a polymorphic-reference array
     /// element (e.g. EventHandlers). Mirrors
     /// <see cref="Jiangyu.Shared.Templates.CompiledTemplateValueKind.HandlerConstruction"/>;
-    /// the field-bag shape on
-    /// <see cref="KdlEditorValue.CompositeFields"/> /
+    /// the directive-list shape on
+    /// <see cref="KdlEditorValue.CompositeDirectives"/> /
     /// <see cref="KdlEditorValue.CompositeType"/> is reused. The serialiser
     /// emits <c>handler="X" { ... }</c> instead of <c>composite="X" { ... }</c>
     /// when this kind is present.
@@ -149,8 +149,16 @@ public sealed class KdlEditorValue
     [JsonPropertyName("compositeType")]
     public string? CompositeType { get; set; }
 
-    [JsonPropertyName("compositeFields")]
-    public Dictionary<string, KdlEditorValue>? CompositeFields { get; set; }
+    /// <summary>
+    /// Patch operations applied to the constructed composite/handler instance.
+    /// Same shape as <see cref="KdlEditorNode.Directives"/> at the outer
+    /// level — every op (Set/Append/Insert/Remove/Clear) is allowed inside.
+    /// A scalar-field write ends up as one Set directive on a primitive
+    /// fieldPath; appending to a collection sub-field ends up as an Append
+    /// directive with a composite/handler value of its own.
+    /// </summary>
+    [JsonPropertyName("compositeDirectives")]
+    public List<KdlEditorDirective>? CompositeDirectives { get; set; }
 }
 
 public sealed class KdlEditorError

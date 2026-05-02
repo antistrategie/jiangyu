@@ -141,17 +141,19 @@ public class KdlEditorRoundTripTests
         Assert.Equal(KdlEditorOp.Append, d.Op);
         Assert.Equal(KdlEditorValueKind.Composite, d.Value!.Kind);
         Assert.Equal("Perk", d.Value.CompositeType);
-        Assert.NotNull(d.Value.CompositeFields);
-        Assert.Equal(2, d.Value.CompositeFields.Count);
-        Assert.Equal(KdlEditorValueKind.TemplateReference, d.Value.CompositeFields["Skill"].Kind);
-        Assert.Equal(KdlEditorValueKind.Int32, d.Value.CompositeFields["Tier"].Kind);
-        Assert.Equal(3, d.Value.CompositeFields["Tier"].Int32);
+        Assert.NotNull(d.Value.CompositeDirectives);
+        Assert.Equal(2, d.Value.CompositeDirectives.Count);
+        var skillDir = d.Value.CompositeDirectives.First(o => o.FieldPath == "Skill");
+        var tierDir = d.Value.CompositeDirectives.First(o => o.FieldPath == "Tier");
+        Assert.Equal(KdlEditorValueKind.TemplateReference, skillDir.Value!.Kind);
+        Assert.Equal(KdlEditorValueKind.Int32, tierDir.Value!.Kind);
+        Assert.Equal(3, tierDir.Value.Int32);
 
         var text = KdlTemplateSerialiser.Serialise(doc);
         Assert.Contains("composite=\"Perk\"", text);
         var doc2 = KdlTemplateParser.ParseText(text);
         Assert.Equal("Perk", doc2.Nodes[0].Directives[0].Value!.CompositeType);
-        Assert.Equal(2, doc2.Nodes[0].Directives[0].Value!.CompositeFields!.Count);
+        Assert.Equal(2, doc2.Nodes[0].Directives[0].Value!.CompositeDirectives!.Count);
     }
 
     [Fact]
@@ -614,9 +616,9 @@ public class KdlEditorRoundTripTests
         var doc = KdlTemplateParser.ParseText(kdl);
         Assert.Empty(doc.Errors);
 
-        // Strip the composite's fields and re-serialise — the serialiser should
-        // still emit a valid empty composite block.
-        doc.Nodes[0].Directives[0].Value!.CompositeFields = null;
+        // Strip the composite's directives and re-serialise — the serialiser
+        // should still emit a valid empty composite block.
+        doc.Nodes[0].Directives[0].Value!.CompositeDirectives = null;
         var text = KdlTemplateSerialiser.Serialise(doc);
         Assert.Contains("composite=\"Perk\"", text);
     }

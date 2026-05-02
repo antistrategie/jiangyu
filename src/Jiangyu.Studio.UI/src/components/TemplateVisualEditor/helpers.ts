@@ -1,0 +1,260 @@
+// Pure helpers extracted from TemplateVisualEditor.tsx so the JSX module
+// only exports React components — keeps Vite fast-refresh working and
+// gives the unit tests a stable, side-effect-free import surface.
+
+import type { InspectedFieldNode, TemplateMember } from "@lib/rpc";
+import type { EditorDirective, EditorValue } from "./types";
+
+/**
+ * Converts a vanilla InspectedFieldNode into the editor's EditorValue shape.
+ * The `member` carries the declared kind so we honour `Byte` vs `Int32` and
+ * emit the correct enum/reference shape; the inspected node alone wouldn't
+ * be enough (its scalar `kind` is just `int`/`string`/etc).
+ *
+ * Returns undefined for shapes that don't map to a single EditorValue
+ * (collections appended one element at a time, null/missing values), so the
+ * caller falls back to the existing neutral default.
+ */
+export function inspectedFieldToEditorValue(
+  node: InspectedFieldNode | undefined,
+  member: TemplateMember,
+): EditorValue | undefined {
+  if (!node || node.null === true) return undefined;
+
+  const scalarKind = member.patchScalarKind;
+  switch (scalarKind) {
+    case "Boolean":
+      return typeof node.value === "boolean" ? { kind: "Boolean", boolean: node.value } : undefined;
+    case "Byte":
+      return typeof node.value === "number"
+        ? { kind: "Byte", int32: Math.trunc(node.value) }
+        : undefined;
+    case "Int32":
+      return typeof node.value === "number"
+        ? { kind: "Int32", int32: Math.trunc(node.value) }
+        : undefined;
+    case "Single":
+      return typeof node.value === "number" ? { kind: "Single", single: node.value } : undefined;
+    case "String":
+      return typeof node.value === "string" ? { kind: "String", string: node.value } : undefined;
+    case "Enum": {
+      if (typeof node.value !== "string" || node.value === "") return undefined;
+      const enumType = member.elementTypeName ?? member.typeName;
+      return { kind: "Enum", enumType, enumValue: node.value };
+    }
+    case "TemplateReference": {
+      const refName = node.reference?.name;
+      if (!refName) return undefined;
+      const value: EditorValue = { kind: "TemplateReference", referenceId: refName };
+      // Only attach referenceType for polymorphic destinations; otherwise the
+      // catalog/loader resolves the field's declared element type and the
+      // explicit setter would be redundant noise.
+      if (member.isReferenceTypePolymorphic === true && node.reference?.className) {
+        value.referenceType = node.reference.className;
+      }
+      return value;
+    }
+    case null:
+    case undefined: {
+      // Member is non-scalar non-ref, so the inspected node should be a
+      // composite. Recurse into sub-fields with low-fidelity mapping;
+      // sub-field member shapes aren't loaded here, so the byKind helper
+      // emits scalars/refs without their declared types.
+      if (node.kind !== "object" || !node.fields) return undefined;
+      const compositeType = member.elementTypeName ?? member.typeName;
+      if (!compositeType) return undefined;
+      const compositeDirectives: EditorDirective[] = [];
+      for (const sub of node.fields) {
+        if (!sub.name) continue;
+        const subValue = inspectedFieldToEditorValueByKind(sub);
+        if (subValue) compositeDirectives.push({ op: "Set", fieldPath: sub.name, value: subValue });
+      }
+      return { kind: "Composite", compositeType, compositeDirectives };
+    }
+    default:
+      // Unknown patchScalarKind (host added a kind the frontend hasn't
+      // caught up to): bail to neutral default rather than guessing.
+      return undefined;
+  }
+}
+
+// Lower-fidelity converter used inside composite recursion where the parent
+// hasn't loaded sub-field member shapes yet. Maps the inspected node's
+// raw kind to the closest EditorValue kind. Numeric ints default to Int32
+// (Byte distinction is lost without a member shape; the visual editor will
+// still serialise correctly via the parent composite's catalog validation).
+function inspectedFieldToEditorValueByKind(node: InspectedFieldNode): EditorValue | undefined {
+  if (node.null === true) return undefined;
+  switch (node.kind) {
+    case "bool":
+      return typeof node.value === "boolean" ? { kind: "Boolean", boolean: node.value } : undefined;
+    case "int":
+      return typeof node.value === "number"
+        ? { kind: "Int32", int32: Math.trunc(node.value) }
+        : undefined;
+    case "float":
+      return typeof node.value === "number" ? { kind: "Single", single: node.value } : undefined;
+    case "string":
+      return typeof node.value === "string" ? { kind: "String", string: node.value } : undefined;
+    case "enum": {
+      // Inspected sub-fields carry their enum type via fieldTypeName (the
+      // backend enricher tags it). Without that we have no enumType to emit.
+      if (typeof node.value !== "string" || node.value === "") return undefined;
+      const enumType = node.fieldTypeName;
+      if (!enumType) return undefined;
+      return { kind: "Enum", enumType, enumValue: node.value };
+    }
+    case "reference": {
+      const refName = node.reference?.name;
+      return refName ? { kind: "TemplateReference", referenceId: refName } : undefined;
+    }
+    case "object": {
+      const compositeType = node.fieldTypeName ?? "";
+      if (!compositeType || !node.fields) return undefined;
+      const compositeDirectives: EditorDirective[] = [];
+      for (const sub of node.fields) {
+        if (!sub.name) continue;
+        const subValue = inspectedFieldToEditorValueByKind(sub);
+        if (subValue) compositeDirectives.push({ op: "Set", fieldPath: sub.name, value: subValue });
+      }
+      return { kind: "Composite", compositeType, compositeDirectives };
+    }
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Composite and HandlerConstruction share the same field-bag shape and render
+ * through the same CompositeEditor; this predicate centralises the call sites
+ * so a future kind with a third distinct shape doesn't accidentally inherit
+ * the field-bag rendering path.
+ */
+export function isFieldBagValue(value: EditorValue | undefined): boolean {
+  return value?.kind === "Composite" || value?.kind === "HandlerConstruction";
+}
+
+/**
+ * C# enums are sealed by language: every enum field has exactly one valid
+ * enum type, taken from the catalog. There's no polymorphic case (unlike
+ * template references). On commit, we realign the serialised enumType to
+ * the declared type so saved KDL is canonical (enum="ItemSlot" "..."). When
+ * the catalog can't supply a type (rare; would mean the field's enum type
+ * isn't loadable), fall back to whatever the value already carried so we
+ * don't drop information.
+ */
+export function resolveEnumCommitType(
+  declaredEnumType: string | undefined,
+  fallback: string | undefined,
+): string | undefined {
+  if (declaredEnumType !== undefined && declaredEnumType !== "") return declaredEnumType;
+  return fallback;
+}
+
+/**
+ * Decides whether the ref-type combobox should be shown. Hidden for
+ * monomorphic destinations (catalog supplies a concrete type and modder
+ * can't pick anything else); visible when:
+ *  - the catalog couldn't supply a declared type (rare; fallback authoring)
+ *  - the declared type is an abstract base with multiple concrete subtypes
+ *    (e.g. RewardTableTemplate.Items → BaseItemTemplate, where the modder
+ *    must pick ModularVehicleWeaponTemplate / ArmorTemplate / …)
+ *  - the value carries an explicit ref type that doesn't match the declared
+ *    type (data inconsistency the modder needs to see and fix)
+ */
+export function shouldShowRefTypeSelector(
+  declaredRefType: string,
+  isPolymorphic: boolean,
+  explicitRefType: string,
+): boolean {
+  if (declaredRefType === "") return true;
+  if (isPolymorphic) return true;
+  // Monomorphic destination with a redundant explicit type (e.g. KDL written
+  // as `ref="SkillTemplate"` for a field already declared as
+  // ReferenceArray<SkillTemplate>) hides the selector: the modder has no
+  // meaningful alternative to pick. A mismatched explicit type still shows
+  // so the inconsistency is visible.
+  return explicitRefType !== "" && explicitRefType !== declaredRefType;
+}
+
+/**
+ * What text the ref-type combobox should display.
+ *
+ * Monomorphic case: fall back to the declared concrete type. The selector is
+ * usually hidden anyway; if shown (because the value already carried an
+ * explicit type) the declared type is the right idle value.
+ *
+ * Polymorphic case: track ONLY the explicit type. Falling back to the
+ * declared (abstract) type re-fills the combobox after the modder clears it,
+ * looking like the delete didn't take. The modder must pick a concrete type;
+ * the abstract base is never a valid display value here.
+ */
+export function resolveRefTypeDisplay(
+  declaredRefType: string,
+  isPolymorphic: boolean,
+  explicitRefType: string,
+): string {
+  if (isPolymorphic) return explicitRefType;
+  return explicitRefType !== "" ? explicitRefType : declaredRefType;
+}
+
+/**
+ * Collections accept multiple directives on the same fieldPath: Append/
+ * Insert/Remove for plain collections, Set at distinct enum indices for
+ * named arrays. Scalars, references, and plain composites map 1:1 to a
+ * single Set, so duplicates would clobber each other.
+ */
+export function allowsMultipleDirectives(member: { isCollection?: boolean | null }): boolean {
+  return member.isCollection === true;
+}
+
+/**
+ * Neutral default value for a freshly-added directive on `member`. Drives
+ * the FieldAdder's "click to add" path and any drag-drop fallback. Falls
+ * through tiers: declared scalar → ref/enum → polymorphic owned-element
+ * collection (HandlerConstruction with picker) → plain composite → string.
+ */
+export function makeDefaultValue(member: TemplateMember): EditorValue {
+  const kind = member.patchScalarKind;
+  const elementType = member.elementTypeName;
+  const subtypes = member.elementSubtypes;
+
+  switch (kind) {
+    case "Boolean":
+      return { kind: "Boolean", boolean: false };
+    case "Byte":
+      return { kind: "Byte", int32: 0 };
+    case "Int32":
+      return { kind: "Int32", int32: 0 };
+    case "Single":
+      return { kind: "Single", single: 0.0 };
+    case "String":
+      return { kind: "String", string: "" };
+    case "Enum":
+      return { kind: "Enum", enumType: elementType ?? member.typeName, enumValue: "" };
+    case "TemplateReference":
+      // Leave referenceType undefined — the lookup type is implicit and the
+      // catalog/loader derive it from the declared field. The modder only
+      // sets it explicitly for polymorphic destinations.
+      return { kind: "TemplateReference", referenceId: "" };
+    default:
+      // Polymorphic owned-element collection (e.g. EventHandlers): the
+      // element is a freshly-constructed ScriptableObject subordinate to the
+      // parent template, so emit HandlerConstruction. compositeType stays
+      // empty until the modder picks a concrete subtype; CompositeEditor
+      // renders the picker against `elementSubtypes`. When exactly one
+      // subtype is available there's no real choice — pre-fill it.
+      if (subtypes && subtypes.length > 0) {
+        const first = subtypes[0];
+        const compositeType = subtypes.length === 1 && first ? first : "";
+        return { kind: "HandlerConstruction", compositeType, compositeDirectives: [] };
+      }
+      if (elementType) {
+        return { kind: "Composite", compositeType: elementType, compositeDirectives: [] };
+      }
+      if (!member.isScalar && !member.isTemplateReference && member.typeName) {
+        return { kind: "Composite", compositeType: member.typeName, compositeDirectives: [] };
+      }
+      return { kind: "String", string: "" };
+  }
+}

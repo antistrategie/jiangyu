@@ -445,8 +445,8 @@ public static class KdlTemplateParser
                 Composite = new CompiledTemplateComposite
                 {
                     TypeName = value.CompositeType ?? string.Empty,
-                    Fields = value.CompositeFields?.ToDictionary(kv => kv.Key, kv => EditorValueToCompiled(kv.Value))
-                        ?? [],
+                    Operations = value.CompositeDirectives?
+                        .Select(EditorDirectiveToCompiled).ToList() ?? [],
                 },
             },
             KdlEditorValueKind.HandlerConstruction => new CompiledTemplateValue
@@ -455,8 +455,8 @@ public static class KdlTemplateParser
                 HandlerConstruction = new CompiledTemplateComposite
                 {
                     TypeName = value.CompositeType ?? string.Empty,
-                    Fields = value.CompositeFields?.ToDictionary(kv => kv.Key, kv => EditorValueToCompiled(kv.Value))
-                        ?? [],
+                    Operations = value.CompositeDirectives?
+                        .Select(EditorDirectiveToCompiled).ToList() ?? [],
                 },
             },
             _ => new CompiledTemplateValue
@@ -512,15 +512,15 @@ public static class KdlTemplateParser
             {
                 Kind = KdlEditorValueKind.Composite,
                 CompositeType = v.Composite?.TypeName,
-                CompositeFields = v.Composite?.Fields
-                    .ToDictionary(kv => kv.Key, kv => CompiledValueToEditor(kv.Value)),
+                CompositeDirectives = v.Composite?.Operations
+                    .Select(CompiledOpToEditor).ToList(),
             },
             CompiledTemplateValueKind.HandlerConstruction => new KdlEditorValue
             {
                 Kind = KdlEditorValueKind.HandlerConstruction,
                 CompositeType = v.HandlerConstruction?.TypeName,
-                CompositeFields = v.HandlerConstruction?.Fields
-                    .ToDictionary(kv => kv.Key, kv => CompiledValueToEditor(kv.Value)),
+                CompositeDirectives = v.HandlerConstruction?.Operations
+                    .Select(CompiledOpToEditor).ToList(),
             },
             _ => new KdlEditorValue { Kind = KdlEditorValueKind.String, String = "" },
         };
@@ -1294,81 +1294,21 @@ public static class KdlTemplateParser
 
         if (node.Arguments.Count > 1)
         {
-            log.Error($"{pos}: 'handler=' construction must not carry a positional value; configure fields via inner 'set' directives only.");
+            log.Error($"{pos}: 'handler=' construction must not carry a positional value; configure fields via inner directives only.");
             return false;
         }
 
         if (!node.HasChildren)
         {
             log.Error(
-                $"{pos}: 'handler=\"{subtypeName}\"' requires a child block with at least one 'set' "
+                $"{pos}: 'handler=\"{subtypeName}\"' requires a child block with at least one directive "
                 + "(otherwise the constructed handler would carry only its default field values, "
                 + "which is rarely intentional — use ref= or refer to an existing handler instead).");
             return false;
         }
 
-        var fields = new Dictionary<string, CompiledTemplateValue>(StringComparer.Ordinal);
-        foreach (var child in node.Children)
-        {
-            var childPos = FormatPos(pos, child.SourcePosition);
-
-            if (child.Name != "set")
-            {
-                log.Error(
-                    $"{childPos}: only 'set' is allowed inside a handler= construction block, not '{child.Name}'. "
-                    + "Construct the handler with its scalar/ref/enum fields, then use a separate patch for "
-                    + "list mutations on the resulting element if needed.");
-                return false;
-            }
-
-            if (child.Arguments.Count < 1)
-            {
-                log.Error($"{childPos}: 'set' inside a handler= block requires a field name argument.");
-                return false;
-            }
-
-            var fieldName = child.Arguments[0].AsString();
-            if (string.IsNullOrWhiteSpace(fieldName))
-            {
-                log.Error($"{childPos}: handler field name must be a non-empty string.");
-                return false;
-            }
-
-            if (fieldName.Contains('['))
-            {
-                log.Error(
-                    $"{childPos}: bracket indexer in handler field name '{fieldName}' is not supported. "
-                    + "Inner 'set' directives configure top-level fields of the constructed handler only.");
-                return false;
-            }
-
-            if (GetPropertyValue(child, "index") != null)
-            {
-                log.Error(
-                    $"{childPos}: 'index=' is not supported on inner 'set' inside a handler= block. "
-                    + "List mutations on the constructed handler's own fields are not part of this slice.");
-                return false;
-            }
-
-            if (child.HasChildren && GetProperty(child, "composite") == null && GetProperty(child, "handler") == null)
-            {
-                log.Error(
-                    $"{childPos}: descent blocks inside handler= construction are not supported. "
-                    + "Set scalar/ref/enum/composite fields only.");
-                return false;
-            }
-
-            if (!TryParseValue(child, childPos, log, out var fieldValue))
-                return false;
-
-            if (fields.ContainsKey(fieldName))
-            {
-                log.Error($"{childPos}: duplicate field '{fieldName}' in handler= construction.");
-                return false;
-            }
-
-            fields[fieldName] = fieldValue;
-        }
+        if (!TryParseInnerOperations(node, pos, log, out var ops))
+            return false;
 
         value = new CompiledTemplateValue
         {
@@ -1376,54 +1316,26 @@ public static class KdlTemplateParser
             HandlerConstruction = new CompiledTemplateComposite
             {
                 TypeName = subtypeName,
-                Fields = fields,
+                Operations = ops,
             },
         };
         return true;
     }
 
-    // composite="TypeName" { set "field" <value> ... }
+    // composite="TypeName" { <directives> }. Same set of operations as the
+    // outer patch block — set/append/insert/remove/clear — applied to the
+    // freshly-constructed instance. Allowing all five ops is what lets
+    // modders author "append a PropertyChange to the constructed handler's
+    // Properties list" inline rather than splitting into a separate descent
+    // patch on the resulting list element.
     private static bool TryParseCompositeValue(
         KdlNode node, string typeName, string pos, ILogSink log,
         out CompiledTemplateValue value)
     {
         value = null!;
 
-        var fields = new Dictionary<string, CompiledTemplateValue>(StringComparer.Ordinal);
-        foreach (var child in node.Children)
-        {
-            var childPos = FormatPos(pos, child.SourcePosition);
-
-            if (child.Name != "set")
-            {
-                log.Error($"{childPos}: only 'set' is valid inside a composite block.");
-                return false;
-            }
-
-            if (child.Arguments.Count < 1)
-            {
-                log.Error($"{childPos}: 'set' inside composite requires a field name argument.");
-                return false;
-            }
-
-            var fieldName = child.Arguments[0].AsString();
-            if (string.IsNullOrWhiteSpace(fieldName))
-            {
-                log.Error($"{childPos}: composite field name must be a non-empty string.");
-                return false;
-            }
-
-            if (!TryParseValue(child, childPos, log, out var fieldValue))
-                return false;
-
-            if (fields.ContainsKey(fieldName))
-            {
-                log.Error($"{childPos}: duplicate field '{fieldName}' in composite.");
-                return false;
-            }
-
-            fields[fieldName] = fieldValue;
-        }
+        if (!TryParseInnerOperations(node, pos, log, out var ops))
+            return false;
 
         value = new CompiledTemplateValue
         {
@@ -1431,10 +1343,30 @@ public static class KdlTemplateParser
             Composite = new CompiledTemplateComposite
             {
                 TypeName = typeName,
-                Fields = fields,
+                Operations = ops,
             },
         };
         return true;
+    }
+
+    /// <summary>
+    /// Parse the directive list inside a composite/handler construction block.
+    /// Reuses <see cref="TryParseOperation"/> so the inner grammar exactly
+    /// mirrors the outer patch block: set/append/insert/remove/clear with
+    /// optional descent and inline composite/handler nesting.
+    /// </summary>
+    private static bool TryParseInnerOperations(
+        KdlNode node, string pos, ILogSink log, out List<CompiledTemplateSetOperation> ops)
+    {
+        ops = [];
+        var ok = true;
+        foreach (var child in node.Children)
+        {
+            var childPos = FormatPos(pos, child.SourcePosition);
+            if (!TryParseOperation(child, childPos, log, ops))
+                ok = false;
+        }
+        return ok;
     }
 
     private static string? GetProperty(KdlNode node, string key)

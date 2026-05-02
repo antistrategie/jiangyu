@@ -1,6 +1,7 @@
 using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Compile;
 using Jiangyu.Shared.Templates;
+using static Jiangyu.Core.Tests.Templates.CompiledTemplateTestHelpers;
 
 namespace Jiangyu.Core.Tests.Compile;
 
@@ -515,10 +516,9 @@ public class TemplatePatchEmitterTests
                     Composite = new CompiledTemplateComposite
                     {
                         TypeName = "Perk",
-                        Fields = new Dictionary<string, CompiledTemplateValue>
-                        {
-                            ["Tier"] = Int32(3),
-                            ["Skill"] = new CompiledTemplateValue
+                        Operations = SetOps(
+                            ("Tier", Int32(3)),
+                            ("Skill", new CompiledTemplateValue
                             {
                                 Kind = CompiledTemplateValueKind.TemplateReference,
                                 Reference = new CompiledTemplateReference
@@ -526,8 +526,7 @@ public class TemplatePatchEmitterTests
                                     TemplateType = "PerkTemplate",
                                     TemplateId = "perk.athletic",
                                 },
-                            },
-                        },
+                            })),
                     },
                 },
             });
@@ -553,7 +552,7 @@ public class TemplatePatchEmitterTests
                     Composite = new CompiledTemplateComposite
                     {
                         TypeName = "",
-                        Fields = new Dictionary<string, CompiledTemplateValue> { ["Tier"] = Int32(3) },
+                        Operations = SetOps(("Tier", Int32(3))),
                     },
                 },
             });
@@ -576,7 +575,7 @@ public class TemplatePatchEmitterTests
                 Value = new CompiledTemplateValue
                 {
                     Kind = CompiledTemplateValueKind.Composite,
-                    Composite = new CompiledTemplateComposite { TypeName = "Perk", Fields = new() },
+                    Composite = new CompiledTemplateComposite { TypeName = "Perk", Operations = [] },
                 },
             });
 
@@ -595,7 +594,7 @@ public class TemplatePatchEmitterTests
             Composite = new CompiledTemplateComposite
             {
                 TypeName = "InnerType",
-                Fields = new() { ["Leaf"] = Int32(1) },
+                Operations = SetOps(("Leaf", Int32(1))),
             },
         };
         var patches = SinglePatch("EntityTemplate", "unit.marine",
@@ -609,7 +608,7 @@ public class TemplatePatchEmitterTests
                     Composite = new CompiledTemplateComposite
                     {
                         TypeName = "OuterType",
-                        Fields = new() { ["Child"] = inner },
+                        Operations = SetOps(("Child", inner)),
                     },
                 },
             });

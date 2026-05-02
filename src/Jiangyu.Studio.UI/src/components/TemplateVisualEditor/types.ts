@@ -9,7 +9,12 @@ export type EditorValueKind =
   | "String"
   | "Enum"
   | "TemplateReference"
-  | "Composite";
+  | "Composite"
+  // ScriptableObject construction for a polymorphic-reference array element
+  // (e.g. EventHandlers). Same shape as Composite — compositeType names the
+  // concrete subtype, compositeDirectives hold the patch operations applied
+  // to the freshly-constructed instance.
+  | "HandlerConstruction";
 
 export interface EditorValue {
   kind: EditorValueKind;
@@ -22,7 +27,11 @@ export interface EditorValue {
   referenceType?: string;
   referenceId?: string;
   compositeType?: string;
-  compositeFields?: Record<string, EditorValue>;
+  /** Patch operations applied to the constructed composite/handler instance.
+   *  Mirrors the outer EditorDirective shape — every op (Set/Append/Insert/
+   *  Remove/Clear) is allowed inside, with nested composite/handler values
+   *  authored the same way as outer directives. */
+  compositeDirectives?: EditorDirective[];
 }
 
 export type DirectiveOp = "Set" | "Append" | "Insert" | "Remove" | "Clear";
@@ -32,6 +41,10 @@ export interface EditorDirective {
   fieldPath: string;
   index?: number;
   value?: EditorValue;
+  /** Concrete subtype names for polymorphic-abstract descent points along
+   *  fieldPath. Mirrors KdlEditorDirective.SubtypeHints on the host: keys
+   *  are 0-based segment indices, values are concrete subtype short names. */
+  subtypeHints?: Record<number, string>;
   /** UI-only stable identity for drag/reorder. Not serialised. */
   _uiId?: string;
 }

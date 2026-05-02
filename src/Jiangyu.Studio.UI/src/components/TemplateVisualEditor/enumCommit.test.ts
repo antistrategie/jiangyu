@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveEnumCommitType } from "./TemplateVisualEditor";
+import { resolveEnumCommitType } from "./helpers";
 
 describe("resolveEnumCommitType", () => {
   // Headline case: catalog declared 'ItemSlot' for the destination field.

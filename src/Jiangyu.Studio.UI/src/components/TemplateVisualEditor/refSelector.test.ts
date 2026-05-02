@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveRefTypeDisplay, shouldShowRefTypeSelector } from "./TemplateVisualEditor";
+import { resolveRefTypeDisplay, shouldShowRefTypeSelector } from "./helpers";
 
 describe("shouldShowRefTypeSelector", () => {
   // Monomorphic concrete destination (e.g. PerkTemplate field): catalog

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { allowsMultipleDirectives } from "./TemplateVisualEditor";
+import { allowsMultipleDirectives } from "./helpers";
 
 describe("allowsMultipleDirectives", () => {
   it("is true for collections", () => {

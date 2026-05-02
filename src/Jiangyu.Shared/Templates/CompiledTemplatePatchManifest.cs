@@ -163,19 +163,28 @@ public sealed class CompiledTemplateValue
 /// Payload for a <see cref="CompiledTemplateValueKind.Composite"/> value —
 /// constructs a new instance of <see cref="TypeName"/> (resolved via the same
 /// dispatch as <see cref="CompiledTemplateReference"/>: DataTemplate subtype
-/// or ScriptableObject subtype or plain support type) and recursively writes
-/// each entry in <see cref="Fields"/> to the named member of the new instance.
-/// Used to append/insert a freshly-constructed support-type element (e.g. a
-/// new <c>Perk</c>) into a collection rather than referencing an existing
-/// one via <see cref="CompiledTemplateReference"/>.
+/// or ScriptableObject subtype or plain support type) and applies each entry
+/// in <see cref="Operations"/> to the named member of the new instance using
+/// the same op semantics as outer-level patch directives. This means
+/// constructing a fresh handler can include not just scalar field assignments
+/// but also <c>append</c>/<c>insert</c>/<c>remove</c>/<c>clear</c> ops on the
+/// new instance's collection members.
 /// </summary>
 public sealed class CompiledTemplateComposite
 {
     [JsonPropertyName("typeName")]
     public string TypeName { get; set; } = string.Empty;
 
-    [JsonPropertyName("fields")]
-    public Dictionary<string, CompiledTemplateValue> Fields { get; set; } = [];
+    /// <summary>
+    /// Patch operations applied to the freshly-constructed instance, in
+    /// declaration order. Same shape as <see cref="CompiledTemplatePatch.Set"/>
+    /// at the outer level — every op (Set, Append, InsertAt, Remove, Clear) is
+    /// supported. Modders writing
+    /// <c>composite="X" { append "Items" composite="Y" { ... } }</c> get this
+    /// list directly; older syntax <c>set "F" v</c> appears as a single Set op.
+    /// </summary>
+    [JsonPropertyName("operations")]
+    public List<CompiledTemplateSetOperation> Operations { get; set; } = [];
 }
 
 /// <summary>

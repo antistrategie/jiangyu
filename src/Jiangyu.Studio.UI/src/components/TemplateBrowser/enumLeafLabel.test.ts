@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveEnumLeafLabel } from "./TemplateBrowser";
+import { resolveEnumLeafLabel } from "./helpers";
 
 describe("resolveEnumLeafLabel", () => {
   // Headline case: ItemSlot field surfaces as numeric index 9; the browser

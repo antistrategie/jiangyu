@@ -1,5 +1,6 @@
 using Jiangyu.Core.Templates;
 using Jiangyu.Shared.Templates;
+using static Jiangyu.Core.Tests.Templates.CompiledTemplateTestHelpers;
 
 namespace Jiangyu.Core.Tests.Templates;
 
@@ -223,10 +224,10 @@ public class KdlTemplateParserTests
 
         var composite = op.Value.Composite!;
         Assert.Equal("Perk", composite.TypeName);
-        Assert.Equal(2, composite.Fields.Count);
-        Assert.Equal(CompiledTemplateValueKind.TemplateReference, composite.Fields["Skill"].Kind);
-        Assert.Equal(CompiledTemplateValueKind.Int32, composite.Fields["Tier"].Kind);
-        Assert.Equal(3, composite.Fields["Tier"].Int32);
+        Assert.Equal(2, composite.Operations.Count);
+        Assert.Equal(CompiledTemplateValueKind.TemplateReference, composite.ValueAt("Skill").Kind);
+        Assert.Equal(CompiledTemplateValueKind.Int32, composite.ValueAt("Tier").Kind);
+        Assert.Equal(3, composite.ValueAt("Tier").Int32);
     }
 
     [Fact]
@@ -738,9 +739,9 @@ public class KdlTemplateParserTests
         Assert.Equal("EventHandlers", op.FieldPath);
         Assert.Equal(CompiledTemplateValueKind.HandlerConstruction, op.Value!.Kind);
         Assert.Equal("AddSkill", op.Value.HandlerConstruction!.TypeName);
-        Assert.Equal(2, op.Value.HandlerConstruction.Fields.Count);
-        Assert.Equal(CompiledTemplateValueKind.Enum, op.Value.HandlerConstruction.Fields["Event"].Kind);
-        Assert.Equal(CompiledTemplateValueKind.Boolean, op.Value.HandlerConstruction.Fields["OnlyApplyOnHit"].Kind);
+        Assert.Equal(2, op.Value.HandlerConstruction.Operations.Count);
+        Assert.Equal(CompiledTemplateValueKind.Enum, op.Value.HandlerConstruction.ValueAt("Event").Kind);
+        Assert.Equal(CompiledTemplateValueKind.Boolean, op.Value.HandlerConstruction.ValueAt("OnlyApplyOnHit").Kind);
     }
 
     [Fact]
@@ -836,8 +837,13 @@ public class KdlTemplateParserTests
     }
 
     [Fact]
-    public void HandlerConstruction_RejectsNonSetInnerOps()
+    public void HandlerConstruction_AllowsAllInnerOps()
     {
+        // Inner directives mirror outer directive semantics — set / append /
+        // insert / remove / clear are all valid against the constructed
+        // instance's fields. Modders can author "construct a handler with
+        // these initial Properties" inline rather than splitting into a
+        // separate descent patch on the resulting list element.
         var dir = SetupKdl("h.kdl", """
             patch "SkillTemplate" "active.foo" {
                 append "EventHandlers" handler="AddSkill" {
@@ -848,8 +854,7 @@ public class KdlTemplateParserTests
 
         var result = KdlTemplateParser.ParseAll(dir, _log);
 
-        Assert.Equal(1, result.ErrorCount);
-        Assert.Contains(_log.Errors, e => e.Contains("only 'set'", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(0, result.ErrorCount);
     }
 
     [Fact]
@@ -869,8 +874,12 @@ public class KdlTemplateParserTests
     }
 
     [Fact]
-    public void HandlerConstruction_RejectsIndexOnInnerSet()
+    public void HandlerConstruction_AllowsIndexOnInnerSet()
     {
+        // Element-set on a collection sub-field of the constructed instance
+        // (`set "TargetTags" index=0 ...`) is the same shape as outer-level
+        // element-set; the inner parser delegates to TryParseOperation and
+        // accepts it like any other authored op.
         var dir = SetupKdl("h.kdl", """
             patch "SkillTemplate" "active.foo" {
                 append "EventHandlers" handler="AddSkill" {
@@ -881,7 +890,7 @@ public class KdlTemplateParserTests
 
         var result = KdlTemplateParser.ParseAll(dir, _log);
 
-        Assert.Equal(1, result.ErrorCount);
+        Assert.Equal(0, result.ErrorCount);
     }
 
     [Fact]

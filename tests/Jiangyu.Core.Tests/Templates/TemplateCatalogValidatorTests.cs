@@ -2,6 +2,7 @@ using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Templates;
 using Jiangyu.Core.Tests.Templates.Fixtures.Gameplay;
 using Jiangyu.Shared.Templates;
+using static Jiangyu.Core.Tests.Templates.CompiledTemplateTestHelpers;
 
 namespace Jiangyu.Core.Tests.Templates;
 
@@ -103,10 +104,8 @@ public class TemplateCatalogValidatorTests
                         Composite = new CompiledTemplateComposite
                         {
                             TypeName = "FixtureProperties",
-                            Fields = new Dictionary<string, CompiledTemplateValue>
-                            {
-                                ["Unknown"] = new() { Kind = CompiledTemplateValueKind.Int32, Int32 = 1 },
-                            },
+                            Operations = SetOps(
+                                ("Unknown", new() { Kind = CompiledTemplateValueKind.Int32, Int32 = 1 })),
                         },
                     },
                 }],
@@ -116,7 +115,12 @@ public class TemplateCatalogValidatorTests
         var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
 
         Assert.Equal(1, errors);
-        Assert.Contains("'Unknown' is not a field of FixtureProperties", log.Errors[0]);
+        // Inner-op validator wraps the per-op message with a context prefix
+        // ("composite 'Properties': ..."). The unknown-field detail is still
+        // the navigator's "is not a field of FixtureProperties" output.
+        Assert.Contains("composite 'Properties'", log.Errors[0]);
+        Assert.Contains("Unknown", log.Errors[0]);
+        Assert.Contains("FixtureProperties", log.Errors[0]);
     }
 
     [Fact]
@@ -844,14 +848,12 @@ public class TemplateCatalogValidatorTests
                             HandlerConstruction = new CompiledTemplateComposite
                             {
                                 TypeName = "FixtureConcreteDerived",
-                                Fields = new Dictionary<string, CompiledTemplateValue>
-                                {
-                                    ["DerivedField"] = new CompiledTemplateValue
+                                Operations = SetOps(
+                                    ("DerivedField", new CompiledTemplateValue
                                     {
                                         Kind = CompiledTemplateValueKind.Int32,
                                         Int32 = 42,
-                                    },
-                                },
+                                    })),
                             },
                         },
                     },
@@ -888,7 +890,7 @@ public class TemplateCatalogValidatorTests
                             HandlerConstruction = new CompiledTemplateComposite
                             {
                                 TypeName = "FixtureRefHolder",
-                                Fields = new Dictionary<string, CompiledTemplateValue>(),
+                                Operations = [],
                             },
                         },
                     },
@@ -925,7 +927,7 @@ public class TemplateCatalogValidatorTests
                             HandlerConstruction = new CompiledTemplateComposite
                             {
                                 TypeName = "NoSuchType",
-                                Fields = new Dictionary<string, CompiledTemplateValue>(),
+                                Operations = [],
                             },
                         },
                     },
@@ -962,14 +964,12 @@ public class TemplateCatalogValidatorTests
                             HandlerConstruction = new CompiledTemplateComposite
                             {
                                 TypeName = "FixtureConcreteDerived",
-                                Fields = new Dictionary<string, CompiledTemplateValue>
-                                {
-                                    ["NotARealField"] = new CompiledTemplateValue
+                                Operations = SetOps(
+                                    ("NotARealField", new CompiledTemplateValue
                                     {
                                         Kind = CompiledTemplateValueKind.Int32,
                                         Int32 = 1,
-                                    },
-                                },
+                                    })),
                             },
                         },
                     },
@@ -1006,7 +1006,7 @@ public class TemplateCatalogValidatorTests
                             HandlerConstruction = new CompiledTemplateComposite
                             {
                                 TypeName = "FixtureSkillTemplate",
-                                Fields = new Dictionary<string, CompiledTemplateValue>(),
+                                Operations = [],
                             },
                         },
                     },
@@ -1117,14 +1117,12 @@ public class TemplateCatalogValidatorTests
                             HandlerConstruction = new CompiledTemplateComposite
                             {
                                 TypeName = "",
-                                Fields = new Dictionary<string, CompiledTemplateValue>
-                                {
-                                    ["Uses"] = new CompiledTemplateValue
+                                Operations = SetOps(
+                                    ("Uses", new CompiledTemplateValue
                                     {
                                         Kind = CompiledTemplateValueKind.Int32,
                                         Int32 = 5,
-                                    },
-                                },
+                                    })),
                             },
                         },
                     },

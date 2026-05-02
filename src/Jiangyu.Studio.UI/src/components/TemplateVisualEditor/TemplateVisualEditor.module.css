@@ -949,6 +949,24 @@
   color: var(--cinnabar-1);
 }
 
+/* Clear-handler-type button in the composite header. Unlike per-field
+   delete (which is row-hover gated to keep the row visually clean),
+   clearing the handler type is a deliberate top-level affordance — needs
+   to be discoverable without hovering, so it's always visible. */
+.compositeClearType {
+  background: none;
+  border: none;
+  padding: 2px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.compositeClearType:hover {
+  color: var(--cinnabar-1);
+}
+
 .compositeEmpty {
   font-family: var(--font-label);
   font-size: var(--fs-xs);
