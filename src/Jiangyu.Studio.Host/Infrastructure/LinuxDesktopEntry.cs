@@ -1,4 +1,4 @@
-namespace Jiangyu.Studio.Host;
+namespace Jiangyu.Studio.Host.Infrastructure;
 
 /// <summary>
 /// Installs a user-level <c>.desktop</c> entry and icon on first launch so

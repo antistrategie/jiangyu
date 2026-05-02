@@ -2,7 +2,7 @@ using System.Text.Json;
 using InfiniFrame;
 using Jiangyu.Core.Config;
 
-namespace Jiangyu.Studio.Host;
+namespace Jiangyu.Studio.Host.Rpc;
 
 public static partial class RpcDispatcher
 {

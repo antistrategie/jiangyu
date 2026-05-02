@@ -67,6 +67,7 @@ export interface FileEntry {
   path: string;
   isDirectory: boolean;
   isIgnored: boolean;
+  size: number;
 }
 
 export interface ConfigStatus {

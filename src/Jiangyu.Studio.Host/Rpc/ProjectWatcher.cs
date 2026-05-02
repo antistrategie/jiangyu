@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
 using InfiniFrame;
 
-namespace Jiangyu.Studio.Host;
+namespace Jiangyu.Studio.Host.Rpc;
 
 /// <summary>
 /// Watches the currently open project root and pushes debounced
@@ -30,7 +30,7 @@ internal static class ProjectWatcher
     /// Used by the RPC dispatcher to enforce that filesystem operations stay within
     /// the project sandbox.
     /// </summary>
-    public static string? ProjectRoot { get; private set; }
+    public static string? ProjectRoot { get; internal set; }
 
     private static readonly Dictionary<(string Path, Guid WindowId), long> SuppressUntil = [];
     private static readonly Dictionary<string, Timer> Pending = new(StringComparer.Ordinal);

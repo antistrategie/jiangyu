@@ -1,11 +1,14 @@
 using System.Text.Json;
 using InfiniFrame;
 using Jiangyu.Core.Config;
+using Jiangyu.Shared;
 
-namespace Jiangyu.Studio.Host;
+namespace Jiangyu.Studio.Host.Rpc;
 
 public static partial class RpcDispatcher
 {
+    [McpTool("jiangyu_read_manifest",
+        "Read the project configuration (jiangyu.json manifest). Params: {\"projectPath\": \"/absolute/project/root\"} (required). Returns the parsed ProjectConfig object with mod name, version, author, dependencies, etc.")]
     private static JsonElement HandleGetProjectConfig(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var projectPath = RequireString(parameters, "projectPath");

@@ -8,7 +8,7 @@ using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
 using Jiangyu.Shared;
 
-namespace Jiangyu.Studio.Host;
+namespace Jiangyu.Studio.Host.Rpc;
 
 public static partial class RpcDispatcher
 {
@@ -50,6 +50,8 @@ public static partial class RpcDispatcher
         }
     }
 
+    [McpTool("jiangyu_assets_index_status",
+        "Check whether the MENACE asset index exists and is current. Returns {state, reason?, assetCount?, indexedAt?}. No parameters.")]
     private static JsonElement HandleAssetsIndexStatus(IInfiniFrameWindow _, JsonElement? __)
     {
         var resolution = EnvironmentContext.ResolveFromGlobalConfig();
@@ -81,6 +83,8 @@ public static partial class RpcDispatcher
         });
     }
 
+    [McpTool("jiangyu_assets_index",
+        "Build or rebuild the MENACE asset index. Required before asset search/preview/export work. Long-running; waits until complete. No parameters.")]
     private static JsonElement HandleAssetsIndex(IInfiniFrameWindow _, JsonElement? __)
     {
         var resolution = EnvironmentContext.ResolveFromGlobalConfig();
@@ -105,6 +109,8 @@ public static partial class RpcDispatcher
         });
     }
 
+    [McpTool("jiangyu_assets_search",
+        "Search the MENACE asset index by name, kind, or collection. Params: {\"query\": \"archer\"} (optional substring match), {\"kind\": \"Texture2D\"} (optional), {\"collection\": \"resources.assets\"} (optional), {\"limit\": 50} (optional, default 500). Returns array of {name, kind, collection, pathId} results.")]
     private static JsonElement HandleAssetsSearch(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var query = TryGetString(parameters, "query");
@@ -127,6 +133,8 @@ public static partial class RpcDispatcher
         return JsonSerializer.SerializeToElement(results);
     }
 
+    [McpTool("jiangyu_assets_export",
+        "Export a MENACE game asset to a directory. Params: {\"assetName\": \"archer\"} (required), {\"collection\": \"resources.assets\"} (required), {\"pathId\": 12345} (required, Int64), {\"kind\": \"Texture2D\"} (required), {\"baseDir\": \"/path/to/output\"} (required). Returns {\"outputPath\": \"...\"}. Use values from jiangyu_assets_search results.")]
     private static JsonElement HandleAssetsExport(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var assetName = RequireString(parameters, "assetName");
@@ -189,6 +197,8 @@ public static partial class RpcDispatcher
         return JsonSerializer.SerializeToElement(new AssetExportResult { OutputPath = outputPath });
     }
 
+    [McpTool("jiangyu_assets_preview",
+        "Get a preview thumbnail for a MENACE game asset. Params: {\"collection\": \"resources.assets\"} (required), {\"pathId\": 12345} (required, Int64), {\"className\": \"Texture2D\"} (required). Returns {\"data\": \"<base64>\", \"mimeType\": \"image/png\"} or null on failure.")]
     private static JsonElement HandleAssetsPreview(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var collection = RequireString(parameters, "collection");

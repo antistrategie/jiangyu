@@ -27,9 +27,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Jiangyu.Core\Jiangyu.Core.csproj" />
-    <ProjectReference Include="..\Jiangyu.Rpc.Generators\Jiangyu.Rpc.Generators.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\Jiangyu.Rpc.Generators\Jiangyu.Rpc.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -46,6 +44,9 @@
     <Content Include="..\Jiangyu.Studio.UI\public\icon.png" Link="icon.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- KDL template syntax docs embedded so the MCP server can serve them as a
+         resource to agents. Single source of truth lives in site/. -->
+    <EmbeddedResource Include="..\..\site\**\*.md" Exclude="..\..\site\node_modules\**;..\..\site\.vitepress\**" LinkBase="docs" />
   </ItemGroup>
 
   <!--
@@ -58,14 +59,10 @@
     after Vite writes fresh hashed filenames; otherwise the SDK's evaluation-
     time snapshot would reference files that no longer exist.
   -->
-  <Target Name="BuildStudioFrontend"
-          BeforeTargets="ResolveProjectStaticWebAssets"
-          Condition="'$(Configuration)' == 'Release' And '$(SkipStudioFrontend)' != 'true'">
+  <Target Name="BuildStudioFrontend" BeforeTargets="ResolveProjectStaticWebAssets" Condition="'$(Configuration)' == 'Release' And '$(SkipStudioFrontend)' != 'true'">
     <Message Importance="high" Text="Building Studio frontend bundle…" />
-    <Exec Command="bun install --frozen-lockfile"
-          WorkingDirectory="$(MSBuildThisFileDirectory)..\Jiangyu.Studio.UI" />
-    <Exec Command="bun run build"
-          WorkingDirectory="$(MSBuildThisFileDirectory)..\Jiangyu.Studio.UI" />
+    <Exec Command="bun install --frozen-lockfile" WorkingDirectory="$(MSBuildThisFileDirectory)..\Jiangyu.Studio.UI" />
+    <Exec Command="bun run build" WorkingDirectory="$(MSBuildThisFileDirectory)..\Jiangyu.Studio.UI" />
     <ItemGroup>
       <Content Remove="wwwroot\**" />
       <Content Include="wwwroot\**">

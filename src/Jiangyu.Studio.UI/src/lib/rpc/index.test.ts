@@ -1,28 +1,27 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-interface Host {
-  postMessage: (msg: string) => void;
-  receiveMessage: (cb: (msg: string) => void) => void;
-}
-
 interface HostHandle {
+  /** Raw data strings extracted from posted envelopes. */
   posted: string[];
+  /** Simulate a message arriving from the native bridge. */
   emit: (msg: string) => void;
 }
 
 function setupHost(): HostHandle {
   const posted: string[] = [];
   let listener: ((msg: string) => void) | null = null;
-  const host: Host = {
-    postMessage: (m) => {
-      posted.push(m);
+
+  // InfiniFrame 0.11.0 bridge shape: window.__infiniframe.host
+  const bridge = {
+    postData: (envelope: { data?: string }) => {
+      if (envelope.data != null) posted.push(envelope.data);
     },
-    receiveMessage: (cb) => {
+    receiveCallback: (cb: (msg: string) => void) => {
       listener = cb;
     },
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).window = { infiniframe: { host } };
+  (globalThis as any).window = { __infiniframe: { host: bridge } };
   return {
     posted,
     emit: (m) => {

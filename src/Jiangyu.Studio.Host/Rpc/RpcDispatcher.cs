@@ -7,7 +7,7 @@ using Jiangyu.Core.Models;
 using Jiangyu.Core.Unity;
 using Jiangyu.Shared;
 
-namespace Jiangyu.Studio.Host;
+namespace Jiangyu.Studio.Host.Rpc;
 
 /// <summary>
 /// Minimal JSON-RPC dispatcher. Receives messages from the frontend,
@@ -33,7 +33,9 @@ public static partial class RpcDispatcher
         Register("copyPath", HandleCopyPath);
         Register("deletePath", HandleDeletePath);
         Register("createFile", HandleCreateFile);
+        Register("editFile", HandleEditFile);
         Register("createDirectory", HandleCreateDirectory);
+        Register("grepFiles", HandleGrepFiles);
         Register("revealInExplorer", HandleRevealInExplorer);
         Register("openExternal", HandleOpenExternal);
         Register("getConfigStatus", HandleGetConfigStatus);
@@ -121,11 +123,11 @@ public static partial class RpcDispatcher
     // project. Today the frontend is trusted and would never send paths outside,
     // but a malicious mod rendering into a shared surface or a bug in the editor
     // could. Silent safety-net — we don't trust the client's sandboxing.
-    private static void EnsurePathInsideProject(string path)
+    internal static void EnsurePathInsideProject(string path)
     {
         var root = ProjectWatcher.ProjectRoot;
         if (root is null)
-            return; // No project open; RPC handlers will fail naturally.
+            throw new InvalidOperationException("No project open");
 
         var cmp = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
             ? StringComparison.OrdinalIgnoreCase
@@ -336,6 +338,8 @@ public static partial class RpcDispatcher
         }
     }
 
+    [McpTool("jiangyu_list_directory",
+        "List files and subdirectories in a project directory. Params: {\"path\": \"/absolute/path\"} (required). Returns array of {name, path, isDirectory, isIgnored, size} entries. size is in bytes (files only). Path must be inside the open project.")]
     private static JsonElement HandleListDirectory(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
@@ -356,7 +360,14 @@ public static partial class RpcDispatcher
 
         foreach (var file in Directory.GetFiles(path).Order())
         {
-            entries.Add(new FileEntry { Name = Path.GetFileName(file), Path = NormaliseSeparators(file), IsDirectory = false });
+            var info = new FileInfo(file);
+            entries.Add(new FileEntry
+            {
+                Name = Path.GetFileName(file),
+                Path = NormaliseSeparators(file),
+                IsDirectory = false,
+                Size = info.Length,
+            });
         }
 
         var ignored = GetIgnoredSet(path, entries);
@@ -369,6 +380,8 @@ public static partial class RpcDispatcher
         return JsonSerializer.SerializeToElement(entries);
     }
 
+    [McpTool("jiangyu_read_file",
+        "Read the text content of a file in the current project. Params: {\"path\": \"/absolute/path\"} (required), {\"startLine\": 1} (optional, 1-based), {\"endLine\": 50} (optional, inclusive). When line range is given, returns only those lines. Path must be inside the open project.")]
     private static JsonElement HandleReadFile(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
@@ -376,6 +389,22 @@ public static partial class RpcDispatcher
 
         if (!File.Exists(path))
             throw new ArgumentException($"File not found: {path}");
+
+        var startLine = TryGetInt(parameters, "startLine");
+        var endLine = TryGetInt(parameters, "endLine");
+
+        if (startLine.HasValue || endLine.HasValue)
+        {
+            var start = startLine ?? 1;
+            var end = endLine ?? int.MaxValue;
+            if (start < 1) start = 1;
+            if (end < start) throw new ArgumentException("endLine must be >= startLine");
+
+            var lines = File.ReadLines(path)
+                .Skip(start - 1)
+                .Take(end - start + 1);
+            return JsonSerializer.SerializeToElement(string.Join('\n', lines));
+        }
 
         var content = File.ReadAllText(path);
         return JsonSerializer.SerializeToElement(content);
@@ -392,6 +421,8 @@ public static partial class RpcDispatcher
 
     private const int FileSearchMaxResults = 10_000;
 
+    [McpTool("jiangyu_list_all_files",
+        "List all files in the project tree (gitignore-aware). Params: {\"path\": \"/absolute/project/root\"} (required). Returns array of relative file paths. Max 10,000 results. Path must be inside the open project.")]
     private static JsonElement HandleListAllFiles(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var root = RequireString(parameters, "path");
@@ -478,6 +509,8 @@ public static partial class RpcDispatcher
     // a pathological paste-into-Monaco-and-save doesn't OOM the host.
     private const int MaxWriteFileBytes = 64 * 1024 * 1024;
 
+    [McpTool("jiangyu_write_file",
+        "Create or overwrite a file in the current project. Params: {\"path\": \"/absolute/path\"} (required), {\"content\": \"file contents\"} (required). Atomic write (tmp + rename). Path must be inside the open project.")]
     private static JsonElement HandleWriteFile(IInfiniFrameWindow window, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
@@ -495,9 +528,14 @@ public static partial class RpcDispatcher
         // Suppression is scoped to this window's id: other open windows still
         // receive the fileChanged notification and surface the conflict banner,
         // mirroring how an external editor overwriting a file looks to them.
+        // When called via MCP (window is null) suppression is skipped; all
+        // windows see the change notification.
         var tmp = path + ".jiangyu.tmp";
-        ProjectWatcher.SuppressFor(path, window.Id);
-        ProjectWatcher.SuppressFor(tmp, window.Id);
+        if (window is not null)
+        {
+            ProjectWatcher.SuppressFor(path, window.Id);
+            ProjectWatcher.SuppressFor(tmp, window.Id);
+        }
         try
         {
             File.WriteAllText(tmp, content);
@@ -511,6 +549,8 @@ public static partial class RpcDispatcher
         return NullElement;
     }
 
+    [McpTool("jiangyu_move_path",
+        "Rename or move a file or directory within the project. Params: {\"srcPath\": \"/abs/old\"} (required), {\"destPath\": \"/abs/new\"} (required). Both paths must be inside the open project.")]
     private static JsonElement HandleMovePath(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var src = RequireString(parameters, "srcPath");
@@ -579,6 +619,8 @@ public static partial class RpcDispatcher
             CopyDirectoryRecursive(dir, Path.Combine(dest, Path.GetFileName(dir)));
     }
 
+    [McpTool("jiangyu_delete_path",
+        "Delete a file or directory (recursive) in the project. Params: {\"path\": \"/absolute/path\"} (required). Path must be inside the open project.")]
     private static JsonElement HandleDeletePath(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
@@ -594,6 +636,8 @@ public static partial class RpcDispatcher
         return NullElement;
     }
 
+    [McpTool("jiangyu_create_file",
+        "Create an empty file in the project. Params: {\"path\": \"/absolute/path\"} (required). Fails if the path already exists. Path must be inside the open project.")]
     private static JsonElement HandleCreateFile(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
@@ -607,6 +651,50 @@ public static partial class RpcDispatcher
         return NullElement;
     }
 
+    [McpTool("jiangyu_edit_file",
+        "Replace exactly one occurrence of oldText with newText in a file. Params: {\"path\": \"/absolute/path\"} (required), {\"oldText\": \"...\"} (required), {\"newText\": \"...\"} (required). Fails if oldText is not found or appears more than once. Path must be inside the open project.")]
+    private static JsonElement HandleEditFile(IInfiniFrameWindow window, JsonElement? parameters)
+    {
+        var path = RequireString(parameters, "path");
+        var oldText = RequireString(parameters, "oldText");
+        var newText = RequireString(parameters, "newText");
+        EnsurePathInsideProject(path);
+
+        if (!File.Exists(path))
+            throw new ArgumentException($"File not found: {path}");
+
+        var content = File.ReadAllText(path);
+        var firstIdx = content.IndexOf(oldText, StringComparison.Ordinal);
+        if (firstIdx < 0)
+            throw new ArgumentException("oldText not found in file");
+
+        var secondIdx = content.IndexOf(oldText, firstIdx + oldText.Length, StringComparison.Ordinal);
+        if (secondIdx >= 0)
+            throw new ArgumentException("oldText appears more than once; include more context to make it unique");
+
+        var updated = string.Concat(content.AsSpan(0, firstIdx), newText, content.AsSpan(firstIdx + oldText.Length));
+
+        // Atomic write via sibling tmp file.
+        var tmpPath = path + ".jiangyu.tmp";
+        try
+        {
+            File.WriteAllText(tmpPath, updated);
+            File.Move(tmpPath, path, overwrite: true);
+        }
+        catch
+        {
+            try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { }
+            throw;
+        }
+
+        if (window is not null)
+            ProjectWatcher.SuppressFor(path, window.Id);
+
+        return NullElement;
+    }
+
+    [McpTool("jiangyu_create_directory",
+        "Create a directory in the project. Params: {\"path\": \"/absolute/path\"} (required). Fails if the path already exists. Path must be inside the open project.")]
     private static JsonElement HandleCreateDirectory(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
@@ -618,6 +706,107 @@ public static partial class RpcDispatcher
 
         Directory.CreateDirectory(path);
         return NullElement;
+    }
+
+    private const int GrepMaxResults = 200;
+    private const int GrepMaxLineLength = 500;
+
+    [McpTool("jiangyu_grep",
+        "Search file contents in the project for a substring. Params: {\"pattern\": \"searchText\"} (required), {\"path\": \"/absolute/dir\"} (optional, defaults to project root), {\"glob\": \"*.kdl\"} (optional filename filter), {\"limit\": 50} (optional, default 200). Returns array of {file, line, text} matches. Case-sensitive.")]
+    private static JsonElement HandleGrepFiles(IInfiniFrameWindow _, JsonElement? parameters)
+    {
+        var pattern = RequireString(parameters, "pattern");
+        var root = TryGetString(parameters, "path") ?? ProjectWatcher.ProjectRoot
+            ?? throw new InvalidOperationException("No project open");
+        var globFilter = TryGetString(parameters, "glob");
+        var limit = TryGetInt(parameters, "limit") ?? GrepMaxResults;
+
+        EnsurePathInsideProject(root);
+
+        if (!Directory.Exists(root))
+            throw new ArgumentException($"Directory not found: {root}");
+
+        var results = new List<object>();
+        SearchDirectory(root, pattern, globFilter, limit, results);
+        return JsonSerializer.SerializeToElement(results);
+    }
+
+    private static void SearchDirectory(string dir, string pattern, string? globFilter, int limit, List<object> results)
+    {
+        if (results.Count >= limit) return;
+
+        var dirName = Path.GetFileName(dir);
+        if (FileSearchSkipDirs.Contains(dirName)) return;
+
+        try
+        {
+            foreach (var file in Directory.GetFiles(dir).Order())
+            {
+                if (results.Count >= limit) return;
+
+                if (globFilter is not null && !FileMatchesGlob(Path.GetFileName(file), globFilter))
+                    continue;
+
+                SearchFile(file, pattern, limit, results);
+            }
+
+            foreach (var subDir in Directory.GetDirectories(dir).Order())
+            {
+                if (results.Count >= limit) return;
+                SearchDirectory(subDir, pattern, globFilter, limit, results);
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Skip directories we can't read.
+        }
+    }
+
+    private static void SearchFile(string file, string pattern, int limit, List<object> results)
+    {
+        try
+        {
+            var lineNum = 0;
+            foreach (var line in File.ReadLines(file))
+            {
+                lineNum++;
+                if (results.Count >= limit) return;
+
+                if (line.Contains(pattern, StringComparison.Ordinal))
+                {
+                    var text = line.Length > GrepMaxLineLength
+                        ? line[..GrepMaxLineLength] + "…"
+                        : line;
+                    results.Add(new
+                    {
+                        file = NormaliseSeparators(file),
+                        line = lineNum,
+                        text = text.TrimStart(),
+                    });
+                }
+            }
+        }
+        catch (IOException)
+        {
+            // Skip files we can't read (binary, locked, etc.).
+        }
+    }
+
+    private static bool FileMatchesGlob(string fileName, string glob)
+    {
+        // Simple glob: *.ext or *pattern* — covers the common cases.
+        if (glob.StartsWith('*') && glob.LastIndexOf('*') == 0)
+        {
+            // *.kdl — suffix match
+            return fileName.EndsWith(glob[1..], StringComparison.OrdinalIgnoreCase);
+        }
+        if (glob.StartsWith('*') && glob.EndsWith('*'))
+        {
+            // *pattern* — contains match
+            return fileName.Contains(glob[1..^1], StringComparison.OrdinalIgnoreCase);
+        }
+
+        return fileName.Equals(glob, StringComparison.OrdinalIgnoreCase);
     }
 
     private static JsonElement HandleOpenExternal(IInfiniFrameWindow _, JsonElement? parameters)
@@ -750,6 +939,10 @@ public static partial class RpcDispatcher
         [JsonPropertyName("isIgnored")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public bool IsIgnored { get; set; }
+
+        [JsonPropertyName("size")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public long Size { get; set; }
     }
 
     // Cache the game Unity version per resolved game-data path. DetectGameVersion
@@ -776,6 +969,8 @@ public static partial class RpcDispatcher
         }
     }
 
+    [McpTool("jiangyu_config_status",
+        "Get Studio configuration status: game path, game Unity version, Unity editor path, MelonLoader health. No parameters. Returns {gamePath?, gameError?, gameUnityVersion?, unityEditorPath?, unityEditorError?, unityEditorVersion?, melonLoaderError?}.")]
     private static JsonElement HandleGetConfigStatus(IInfiniFrameWindow _, JsonElement? __)
     {
         var config = GlobalConfig.Load();

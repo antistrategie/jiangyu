@@ -7,7 +7,7 @@ using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
 using Jiangyu.Shared;
 
-namespace Jiangyu.Studio.Host;
+namespace Jiangyu.Studio.Host.Rpc;
 
 public static partial class RpcDispatcher
 {
@@ -18,6 +18,8 @@ public static partial class RpcDispatcher
     // open project so the compile modal can show a pre-compile dossier without
     // running the pipeline. Scans directly — cheaper than spinning up the full
     // CompilationService just to count files.
+    [McpTool("jiangyu_compile_summary",
+        "Get a pre-compile dossier for the current project: mod name, version, author, and counts of model/texture/sprite/audio replacements, addition files, template files, template patches, and template clones. No parameters. Requires an open project.")]
     private static JsonElement HandleGetCompileSummary(IInfiniFrameWindow _, JsonElement? __)
     {
         var projectRoot = ProjectWatcher.ProjectRoot

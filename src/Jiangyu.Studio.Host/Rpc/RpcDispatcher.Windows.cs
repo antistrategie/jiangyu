@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 using InfiniFrame;
 using Jiangyu.Shared;
 
-namespace Jiangyu.Studio.Host;
+namespace Jiangyu.Studio.Host.Rpc;
 
 public static partial class RpcDispatcher
 {

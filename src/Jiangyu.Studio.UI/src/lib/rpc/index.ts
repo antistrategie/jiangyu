@@ -53,37 +53,36 @@ let nextId = 1;
 const pending = new Map<number, PendingRequest>();
 const subscribers = new Map<string, Set<NotificationCallback>>();
 
-// The host injects one of two bridge shapes onto the window. Declared narrowly
-// here so getHost() can read them without an `any` cast.
-interface WebView2Bridge {
-  postMessage: (msg: string) => void;
-  addEventListener: (event: "message", cb: (e: MessageEvent<string>) => void) => void;
+// InfiniFrame 0.11.0 envelope bridge. The native layer injects
+// window.__infiniframe with postData/receiveCallback; messages are
+// wrapped in {id, command, data, version: 2} envelopes.
+interface InfiniFrameBridge {
+  postData: (envelope: unknown) => void;
+  receiveCallback: (cb: (raw: string) => void) => void;
 }
 
 interface BridgedWindow {
-  infiniframe?: { host?: InfiniFrameHost };
-  chrome?: { webview?: WebView2Bridge };
+  __infiniframe?: { host?: InfiniFrameBridge };
 }
 
 function getHost(): InfiniFrameHost | undefined {
   const win = window as Window & BridgedWindow;
-  // WebKitGTK (Linux/macOS)
-  if (win.infiniframe?.host) return win.infiniframe.host;
-  // WebView2 (Windows)
-  if (win.chrome?.webview) {
-    const wv = win.chrome.webview;
-    return {
-      postMessage: (msg: string) => {
-        wv.postMessage(msg);
-      },
-      receiveMessage: (cb: (msg: string) => void) => {
-        wv.addEventListener("message", (e: MessageEvent<string>) => {
-          cb(e.data);
-        });
-      },
-    };
-  }
-  return undefined;
+  const bridge = win.__infiniframe?.host;
+  if (!bridge) return undefined;
+
+  return {
+    postMessage: (msg: string) => {
+      bridge.postData({
+        id: "rpc",
+        command: "Post",
+        data: msg,
+        version: 2,
+      });
+    },
+    receiveMessage: (cb: (msg: string) => void) => {
+      bridge.receiveCallback(cb);
+    },
+  };
 }
 
 /**

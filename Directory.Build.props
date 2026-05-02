@@ -15,7 +15,12 @@
   <PropertyGroup>
     <MelonLoaderDir Condition="'$(MelonLoaderDir)' == ''">$(GameDir)/MelonLoader/net6</MelonLoaderDir>
     <GameAssembliesDir Condition="'$(GameAssembliesDir)' == ''">$(GameDir)/MelonLoader/Il2CppAssemblies</GameAssembliesDir>
+    <MinVerTagPrefix>v</MinVerTagPrefix>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MinVer" Version="7.0.0" PrivateAssets="all" />
+  </ItemGroup>
 
   <Import Project="local.props" Condition="Exists('local.props')" />
 
