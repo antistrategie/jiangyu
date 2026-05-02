@@ -4,7 +4,6 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { CrossMemberPayload } from "@lib/drag/crossMember";
 import type {
   EditorNode,
-  EditorDirective,
   DirectiveOp,
   EditorValue,
   EditorValueKind,
@@ -33,81 +32,35 @@ import { onKeyActivate } from "@lib/ui/a11y";
 import styles from "./TemplateVisualEditor.module.css";
 import {
   allowsMultipleDirectives,
+  buildDescentMemberDirective,
+  groupDirectives,
+  insertAtPendingAnchor,
   inspectedFieldToEditorValue,
   isFieldBagValue,
   makeDefaultValue,
+  reorderDirectives,
   resolveEnumCommitType,
   resolveRefTypeDisplay,
+  rewriteDescentSlotIndex,
   shouldShowRefTypeSelector,
+  stampNodes as stampNodesHelper,
+  stripUiIds,
+  type PendingAnchor,
+  type StampedDirective,
+  type StampedNode,
 } from "./helpers";
 
 // --- Stable UI IDs ---
-// Assigned on parse, stripped before serialise. Used for React keys,
-// collapse state, and drag payloads. Stamped variants narrow `_uiId` to
-// required so the editor body doesn't have to assert non-null at every use.
+// Module-state counter for the editor's stamping helpers. Tests don't go
+// through this; they pass their own deterministic generator into
+// stampDirective / stampNodes from helpers.
 
 let _nextId = 0;
 function uiId(): string {
   return `_ui_${++_nextId}`;
 }
 
-type StampedDirective = Omit<EditorDirective, "_uiId"> & { _uiId: string };
-type StampedNode = Omit<EditorNode, "_uiId" | "directives"> & {
-  _uiId: string;
-  directives: StampedDirective[];
-};
-
-function stampDirective(d: EditorDirective): StampedDirective {
-  const stamped: StampedDirective = { ...d, _uiId: d._uiId ?? uiId() };
-  if (d.value && (d.value.kind === "Composite" || d.value.kind === "HandlerConstruction")) {
-    const inner = d.value.compositeDirectives;
-    if (inner) {
-      stamped.value = {
-        ...d.value,
-        compositeDirectives: inner.map(stampDirective),
-      };
-    }
-  }
-  return stamped;
-}
-
-function stampNodes(nodes: EditorNode[]): StampedNode[] {
-  return nodes.map((n) => ({
-    ...n,
-    _uiId: n._uiId ?? uiId(),
-    directives: n.directives.map(stampDirective),
-  }));
-}
-
-function stripDirectiveUiIds(d: EditorDirective): EditorDirective {
-  const { _uiId: _id, ...rest } = d;
-  if (
-    rest.value &&
-    (rest.value.kind === "Composite" || rest.value.kind === "HandlerConstruction")
-  ) {
-    const inner = rest.value.compositeDirectives;
-    if (inner) {
-      return {
-        ...rest,
-        value: { ...rest.value, compositeDirectives: inner.map(stripDirectiveUiIds) },
-      };
-    }
-  }
-  return rest;
-}
-
-function stripUiIds(doc: EditorDocument): EditorDocument {
-  return {
-    ...doc,
-    nodes: doc.nodes.map((n) => {
-      const { _uiId: _nId, ...rest } = n;
-      return {
-        ...rest,
-        directives: n.directives.map(stripDirectiveUiIds),
-      };
-    }),
-  };
-}
+const stampNodes = (nodes: EditorNode[]): StampedNode[] => stampNodesHelper(nodes, uiId);
 
 // --- CommitInput ---
 // Uncontrolled input that preserves native browser undo. Commits value to
@@ -466,6 +419,22 @@ export function TemplateVisualEditor({
     [nodes, serialiseAndEmit],
   );
 
+  // Whole-list replacement for callers that need to insert at a specific
+  // position, delete multiple entries at once, or rewrite a contiguous run
+  // of directives (descent groups bulk-update their member subtype hint
+  // through this path so the operation lands atomically). Plain
+  // add / update / delete go through the narrower callbacks above.
+  const handleSetDirectives = useCallback(
+    (nodeIndex: number, directives: StampedDirective[]) => {
+      const updated = nodes.map((node, ni) => {
+        if (ni !== nodeIndex) return node;
+        return { ...node, directives };
+      });
+      serialiseAndEmit(updated);
+    },
+    [nodes, serialiseAndEmit],
+  );
+
   const handleToggleCollapse = useCallback(
     (nodeUiId: string) => {
       setCollapsed((prev) => {
@@ -516,14 +485,7 @@ export function TemplateVisualEditor({
     (nodeIndex: number, fromId: string, toSlot: number) => {
       const updated = nodes.map((node, ni) => {
         if (ni !== nodeIndex) return node;
-        const dirs = [...node.directives];
-        const fromIdx = dirs.findIndex((d) => d._uiId === fromId);
-        if (fromIdx === -1) return node;
-        const moved = dirs.splice(fromIdx, 1)[0];
-        if (moved === undefined) return node;
-        const insertAt = toSlot > fromIdx ? toSlot - 1 : toSlot;
-        dirs.splice(insertAt, 0, moved);
-        return { ...node, directives: dirs };
+        return { ...node, directives: reorderDirectives(node.directives, fromId, toSlot) };
       });
       serialiseAndEmit(updated);
     },
@@ -626,6 +588,7 @@ export function TemplateVisualEditor({
             onUpdateDirective={(di, d) => handleUpdateDirective(ni, di, d)}
             onDeleteDirective={(di) => handleDeleteDirective(ni, di)}
             onAddDirective={(d) => handleAddDirective(ni, d)}
+            onSetDirectives={(ds) => handleSetDirectives(ni, ds)}
             isDragging={dragCardId === node._uiId}
             onDragStart={() => setDragCardId(node._uiId)}
             onDragEnd={() => {
@@ -707,6 +670,10 @@ interface NodeCardProps {
   onUpdateDirective: (dirIndex: number, directive: StampedDirective) => void;
   onDeleteDirective: (dirIndex: number) => void;
   onAddDirective: (directive: StampedDirective) => void;
+  /** Replace the entire directive list. Used by descent group operations
+   *  that need to insert at a specific position, delete multiple members,
+   *  or rewrite member subtype hints atomically. */
+  onSetDirectives: (directives: StampedDirective[]) => void;
   isDragging: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
@@ -724,6 +691,7 @@ function NodeCard({
   onUpdateDirective,
   onDeleteDirective,
   onAddDirective,
+  onSetDirectives,
   isDragging,
   onDragStart,
   onDragEnd,
@@ -917,56 +885,672 @@ function NodeCard({
 
       {!collapsed && (
         <div className={styles.cardBody}>
-          {node.directives.map((d, di) => {
-            const baseName = d.fieldPath.replace(/\[.*\]$/, "");
-            return (
-              <React.Fragment key={d._uiId}>
-                {dragRowSlot === di && dragRowId !== d._uiId && (
-                  <div className={styles.dropIndicator} />
-                )}
-                <SetRow
-                  directive={d}
-                  member={memberMap.get(baseName)}
-                  vanillaNode={vanillaFields.get(baseName)}
-                  onChange={(updated) => onUpdateDirective(di, updated)}
-                  onDelete={() => onDeleteDirective(di)}
-                  isDragging={dragRowId === d._uiId}
-                  onDragStart={() => setDragRowId(d._uiId)}
-                  onDragEnd={() => {
-                    setDragRowId(null);
-                    setDragRowSlot(null);
-                  }}
-                  onDragOverRow={(e) => {
-                    if (!dragRowId || dragRowId === d._uiId) return;
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = "move";
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const y = e.clientY - rect.top;
-                    setDragRowSlot(y < rect.height / 2 ? di : di + 1);
-                  }}
-                  onDropRow={() => {
-                    if (dragRowId && dragRowSlot !== null) {
-                      onRowReorder(dragRowId, dragRowSlot);
-                    }
-                    setDragRowId(null);
-                    setDragRowSlot(null);
-                  }}
-                />
-              </React.Fragment>
-            );
-          })}
-          {dragRowSlot === node.directives.length && <div className={styles.dropIndicator} />}
-          <FieldAdder
+          <DirectiveBody
+            node={node}
             members={members}
             membersLoaded={membersLoaded}
-            existingFields={node.directives.map((d) => d.fieldPath)}
-            targetTemplateType={node.templateType}
-            onAdd={onAddDirective}
-            onDrop={handleNodeDrop}
+            memberMap={memberMap}
             vanillaFields={vanillaFields}
+            dragRowId={dragRowId}
+            dragRowSlot={dragRowSlot}
+            setDragRowId={setDragRowId}
+            setDragRowSlot={setDragRowSlot}
+            onRowReorder={onRowReorder}
+            onUpdateDirective={onUpdateDirective}
+            onDeleteDirective={onDeleteDirective}
+            onAddDirective={onAddDirective}
+            onSetDirectives={onSetDirectives}
+            handleNodeDrop={handleNodeDrop}
           />
         </div>
       )}
+    </div>
+  );
+}
+
+// --- DirectiveBody ---
+//
+// Renders a node's directive list with descent grouping. Walks
+// `groupDirectives(node.directives)` and emits a SetRow per loose entry or
+// a DescentGroup per consecutive descent run. The group component owns the
+// inner FieldAdder and member-edit operations; member directives still live
+// in the flat node.directives list, so reorder, parse / serialise round-
+// trip, and validation see them exactly as before.
+
+interface DirectiveBodyProps {
+  node: StampedNode;
+  members: readonly TemplateMember[];
+  membersLoaded: boolean;
+  memberMap: Map<string, TemplateMember>;
+  vanillaFields: ReadonlyMap<string, InspectedFieldNode>;
+  dragRowId: string | null;
+  dragRowSlot: number | null;
+  setDragRowId: (id: string | null) => void;
+  setDragRowSlot: (slot: number | null) => void;
+  onRowReorder: (fromId: string, toSlot: number) => void;
+  onUpdateDirective: (dirIndex: number, directive: StampedDirective) => void;
+  onDeleteDirective: (dirIndex: number) => void;
+  onAddDirective: (directive: StampedDirective) => void;
+  onSetDirectives: (directives: StampedDirective[]) => void;
+  handleNodeDrop: (e: React.DragEvent) => void;
+}
+
+function DirectiveBody({
+  node,
+  members,
+  membersLoaded,
+  memberMap,
+  vanillaFields,
+  dragRowId,
+  dragRowSlot,
+  setDragRowId,
+  setDragRowSlot,
+  onRowReorder,
+  onUpdateDirective,
+  onDeleteDirective,
+  onAddDirective,
+  onSetDirectives,
+  handleNodeDrop,
+}: DirectiveBodyProps) {
+  const groups = useMemo(() => groupDirectives(node.directives), [node.directives]);
+  // Pre-compute each rendered item's flat-index range so reorder and
+  // group operations can splice the right slice of node.directives. Done
+  // up-front rather than via a let counter inside .map() so the render
+  // stays a pure function.
+  const groupStartIndices = useMemo(() => {
+    const starts: number[] = [];
+    let cursor = 0;
+    for (const g of groups) {
+      starts.push(cursor);
+      cursor += g.kind === "loose" ? 1 : g.members.length;
+    }
+    return starts;
+  }, [groups]);
+
+  // Pending descent group: UI-only state for a group whose subtype +
+  // first member directive aren't yet committed. Two paths reach here:
+  //  1. "Edit slot…" picked from the top-level FieldAdder — pending
+  //     renders at the end of the list (anchor = "end").
+  //  2. Subtype chip cleared on an existing group — that group's
+  //     member directives get deleted and pending takes over its visual
+  //     position (anchor = "after-flat-index" of whatever was directly
+  //     above the cleared group, or "start" if the group was first).
+  // Empty groups can't exist in the data model, so this UI state holds
+  // field+index+subtype until the first member is picked, then we
+  // materialise the directive and dismiss pending.
+  const [pending, setPending] = useState<{
+    field: string;
+    index: number;
+    subtype: string | null;
+    anchor: PendingAnchor;
+  } | null>(null);
+
+  const handleStartPending = (
+    field: string,
+    _elementType: string,
+    elementSubtypes: readonly string[] | null,
+  ) => {
+    // Pre-pick subtype only when there's exactly one concrete choice —
+    // saves a click on monomorphic-via-single-impl collections. Multiple
+    // subtypes or no subtypes (monomorphic via element type) both leave
+    // the field null; the picker shown in the pending header lets the
+    // modder fill it in or accept the implicit element type.
+    const presetSubtype = elementSubtypes?.length === 1 ? (elementSubtypes[0] ?? null) : null;
+    setPending({ field, index: 0, subtype: presetSubtype, anchor: { kind: "end" } });
+  };
+
+  const handleConvertGroupToPending = (
+    field: string,
+    index: number,
+    startFlatIndex: number,
+    endFlatIndex: number,
+  ) => {
+    // Clearing the subtype drops every member directive — they're bound
+    // to subtype-specific fields that won't survive a type change. The
+    // group's structural position is preserved by anchoring pending to
+    // whatever directive sat immediately above (or "start" if it was
+    // the first thing in the node).
+    const anchor: PendingAnchor =
+      startFlatIndex === 0
+        ? { kind: "start" }
+        : { kind: "afterIndex", flatIndex: startFlatIndex - 1 };
+    onSetDirectives([
+      ...node.directives.slice(0, startFlatIndex),
+      ...node.directives.slice(endFlatIndex),
+    ]);
+    setPending({ field, index, subtype: null, anchor });
+  };
+
+  const handleMaterialisePending = (newDirective: StampedDirective) => {
+    if (!pending) return;
+    const prefixed = buildDescentMemberDirective(
+      pending.field,
+      pending.index,
+      pending.subtype,
+      newDirective,
+    );
+    onSetDirectives(insertAtPendingAnchor(node.directives, prefixed, pending.anchor));
+    setPending(null);
+  };
+
+  const looseRow = (
+    d: StampedDirective,
+    flatIndex: number,
+    displayFieldPath?: string,
+  ): React.ReactNode => {
+    const baseName = (displayFieldPath ?? d.fieldPath).replace(/\[.*\]$/, "").split(".")[0] ?? "";
+    return (
+      <React.Fragment key={d._uiId}>
+        {dragRowSlot === flatIndex && dragRowId !== d._uiId && (
+          <div className={styles.dropIndicator} />
+        )}
+        <SetRow
+          directive={d}
+          member={memberMap.get(baseName)}
+          vanillaNode={vanillaFields.get(baseName)}
+          displayFieldPath={displayFieldPath}
+          onChange={(updated) => onUpdateDirective(flatIndex, updated)}
+          onDelete={() => onDeleteDirective(flatIndex)}
+          isDragging={dragRowId === d._uiId}
+          onDragStart={() => setDragRowId(d._uiId)}
+          onDragEnd={() => {
+            setDragRowId(null);
+            setDragRowSlot(null);
+          }}
+          onDragOverRow={(e) => {
+            if (!dragRowId || dragRowId === d._uiId) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            const rect = e.currentTarget.getBoundingClientRect();
+            const y = e.clientY - rect.top;
+            setDragRowSlot(y < rect.height / 2 ? flatIndex : flatIndex + 1);
+          }}
+          onDropRow={() => {
+            if (dragRowId && dragRowSlot !== null) {
+              onRowReorder(dragRowId, dragRowSlot);
+            }
+            setDragRowId(null);
+            setDragRowSlot(null);
+          }}
+        />
+      </React.Fragment>
+    );
+  };
+
+  const renderPending = () =>
+    pending && (
+      <PendingDescentGroup
+        field={pending.field}
+        slotIndex={pending.index}
+        subtype={pending.subtype}
+        outerMember={memberMap.get(pending.field)}
+        onChangeIndex={(index) => setPending({ ...pending, index })}
+        onChangeSubtype={(subtype) => setPending({ ...pending, subtype })}
+        onCancel={() => setPending(null)}
+        onAddFirstMember={handleMaterialisePending}
+      />
+    );
+
+  // Pending placement: render at the position dictated by its anchor.
+  // "start" → before any group; "afterIndex N" → after the item whose
+  // last flat index equals N; "end" → after every group. Each item only
+  // checks one of these, so the pending group is rendered exactly once.
+  const pendingAtStart = pending?.anchor.kind === "start";
+  const pendingAtEnd = pending?.anchor.kind === "end";
+  const pendingAfterFlatIndex =
+    pending?.anchor.kind === "afterIndex" ? pending.anchor.flatIndex : null;
+
+  return (
+    <>
+      {pendingAtStart && renderPending()}
+      {groups.map((g, gi) => {
+        const startIndex = groupStartIndices[gi] ?? 0;
+        const endIndex = startIndex + (g.kind === "loose" ? 1 : g.members.length);
+        const renderPendingAfter = pendingAfterFlatIndex === endIndex - 1;
+        if (g.kind === "loose") {
+          return (
+            <React.Fragment key={g.directive._uiId}>
+              {looseRow(g.directive, startIndex)}
+              {renderPendingAfter && renderPending()}
+            </React.Fragment>
+          );
+        }
+        const memberRows = g.members.map((m, mi) =>
+          looseRow(m.directive, startIndex + mi, m.suffix),
+        );
+        const firstMemberId = g.members[0]?.directive._uiId ?? "";
+        const groupKey = firstMemberId || `group-${g.field}-${g.index}`;
+        const showIndicatorAbove = dragRowSlot === startIndex && dragRowId !== firstMemberId;
+        return (
+          <React.Fragment key={groupKey}>
+            {showIndicatorAbove && <div className={styles.dropIndicator} />}
+            <DescentGroup
+              field={g.field}
+              slotIndex={g.index}
+              subtype={g.subtype}
+              startIndex={startIndex}
+              endIndex={endIndex}
+              outerMember={memberMap.get(g.field)}
+              directives={node.directives}
+              onSetDirectives={onSetDirectives}
+              onConvertToPending={handleConvertGroupToPending}
+              members={g.members}
+              memberRows={memberRows}
+              isDragging={dragRowId === firstMemberId}
+              onDragStart={() => setDragRowId(firstMemberId)}
+              onDragEnd={() => {
+                setDragRowId(null);
+                setDragRowSlot(null);
+              }}
+              onDragOverRow={(e) => {
+                if (!dragRowId || dragRowId === firstMemberId) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                const rect = e.currentTarget.getBoundingClientRect();
+                const y = e.clientY - rect.top;
+                setDragRowSlot(y < rect.height / 2 ? startIndex : endIndex);
+              }}
+              onDropRow={() => {
+                if (dragRowId && dragRowSlot !== null) {
+                  onRowReorder(dragRowId, dragRowSlot);
+                }
+                setDragRowId(null);
+                setDragRowSlot(null);
+              }}
+            />
+            {renderPendingAfter && renderPending()}
+          </React.Fragment>
+        );
+      })}
+      {dragRowSlot === node.directives.length && <div className={styles.dropIndicator} />}
+      {pendingAtEnd && renderPending()}
+      <FieldAdder
+        members={members}
+        membersLoaded={membersLoaded}
+        existingFields={node.directives.map((d) => d.fieldPath)}
+        targetTemplateType={node.templateType}
+        onAdd={onAddDirective}
+        onDrop={handleNodeDrop}
+        vanillaFields={vanillaFields}
+        onStartDescent={handleStartPending}
+      />
+    </>
+  );
+}
+
+// --- DescentGroup ---
+//
+// Visual wrapper for a contiguous run of descent directives sharing the
+// same outer (field, index, subtype) prefix. Renders a header with the
+// outer field/slot/subtype, the member SetRows the parent built (so they
+// keep their flat-index identity for reorder), an inner FieldAdder that
+// queries the subtype's members and inserts new directives at the group's
+// boundary, and a delete-group button that strips the whole run from the
+// flat directive list.
+
+interface DescentGroupProps {
+  field: string;
+  slotIndex: number;
+  subtype: string | null;
+  /** Inclusive flat index of this group's first member directive. */
+  startIndex: number;
+  /** Exclusive flat index of the end of this group. New members get
+   *  inserted at this position so they stay contiguous with the group. */
+  endIndex: number;
+  /** Outer collection member (for tooltips / element-type discovery). */
+  outerMember: TemplateMember | undefined;
+  /** Flat directive list owned by the parent node. Used to splice in/out
+   *  of the group; the new list is then handed to onSetDirectives. */
+  directives: StampedDirective[];
+  onSetDirectives: (directives: StampedDirective[]) => void;
+  /** Drop the group's member directives and convert to a pending state
+   *  with the same outer field+index, ready for a fresh subtype pick.
+   *  Mirrors the HandlerConstruction clear-handler-type flow — the
+   *  visual structure stays in place, just the inner fields are wiped. */
+  onConvertToPending?:
+    | ((field: string, index: number, startFlatIndex: number, endFlatIndex: number) => void)
+    | undefined;
+  /** Members of the group as (directive, suffix) pairs. Used for the
+   *  group-level drag handle (grabs the first member's _uiId so the
+   *  parent's reorder helper can move all K members together via the
+   *  dragRowGroupLength signal). Member rows themselves are pre-
+   *  rendered by the parent and passed via `memberRows`. */
+  members: { directive: StampedDirective; suffix: string }[];
+  /** Pre-rendered member SetRows from the parent. Owned by the parent so
+   *  they share its drag state and onUpdateDirective callbacks. */
+  memberRows: React.ReactNode[];
+  /** Drag-reorder state, mirrors SetRow's. Group is dragged as a unit:
+   *  drag-start grabs all K members, drag-over targets the slot above /
+   *  below the group's first row, drop fires the parent's reorder
+   *  helper which slides the whole range to the new position. */
+  isDragging: boolean;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onDragOverRow: (e: React.DragEvent) => void;
+  onDropRow: () => void;
+}
+
+function DescentGroup({
+  field,
+  slotIndex,
+  subtype,
+  startIndex,
+  endIndex,
+  outerMember,
+  directives,
+  onSetDirectives,
+  onConvertToPending,
+  members,
+  memberRows,
+  isDragging,
+  onDragStart,
+  onDragEnd,
+  onDragOverRow,
+  onDropRow,
+}: DescentGroupProps) {
+  const subtypeChoices = outerMember?.elementSubtypes ?? null;
+  // Inner-type members for the FieldAdder. Resolved from the subtype hint
+  // when the group has one (polymorphic collection); otherwise fall back
+  // to the outer member's element type (monomorphic owned-element list,
+  // e.g. List<PropertyChange>). Empty until the RPC resolves.
+  const innerType = subtype ?? outerMember?.elementTypeName ?? "";
+  // Track members for whichever inner type we last fetched. The async
+  // load is keyed on innerType so a stale query for a previous subtype
+  // can't commit its result over the current one. The empty-type case
+  // doesn't need to fetch — derived state below treats `loaded=true`
+  // when innerType is "" so the FieldAdder shows its empty state.
+  const [innerCache, setInnerCache] = useState<{
+    type: string;
+    members: readonly TemplateMember[];
+  }>({ type: "", members: [] });
+  useEffect(() => {
+    if (!innerType) return;
+    let cancelled = false;
+    void templatesQuery(innerType)
+      .then((result) => {
+        if (cancelled) return;
+        setInnerCache({ type: innerType, members: result.members ?? [] });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setInnerCache({ type: innerType, members: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [innerType]);
+  const innerMembers = innerCache.type === innerType ? innerCache.members : [];
+  const innerMembersLoaded = !innerType || innerCache.type === innerType;
+
+  const prefix = `${field}[${slotIndex}].`;
+  // Members that already have a directive in the group — used to dim the
+  // FieldAdder's "scalar already set" entries the same way the outer
+  // NodeCard does. Strip the group prefix so the comparison is against
+  // the inner member name.
+  const existingMemberNames = useMemo(() => {
+    const names: string[] = [];
+    for (let i = startIndex; i < endIndex; i++) {
+      const d = directives[i];
+      if (!d) continue;
+      const suffix = d.fieldPath.startsWith(prefix)
+        ? d.fieldPath.slice(prefix.length)
+        : d.fieldPath;
+      // Only top-level inner names — deeper-suffix members live in nested
+      // descent and don't compete for dropdown slots at this level.
+      if (!suffix.includes(".") && !suffix.includes("[")) {
+        names.push(suffix);
+      }
+    }
+    return names;
+  }, [directives, startIndex, endIndex, prefix]);
+
+  const handleAddMember = (newDirective: StampedDirective) => {
+    // The FieldAdder built the directive with fieldPath = inner member
+    // name. Prefix it with the group's outer prefix and stamp the
+    // subtype hint at segment 0 if the group has one.
+    const prefixed: StampedDirective = {
+      ...newDirective,
+      fieldPath: `${prefix}${newDirective.fieldPath}`,
+      ...(subtype !== null
+        ? { subtypeHints: { ...(newDirective.subtypeHints ?? {}), 0: subtype } }
+        : {}),
+    };
+    const next = [...directives.slice(0, endIndex), prefixed, ...directives.slice(endIndex)];
+    onSetDirectives(next);
+  };
+
+  const handleDeleteGroup = () => {
+    onSetDirectives([...directives.slice(0, startIndex), ...directives.slice(endIndex)]);
+  };
+
+  const handleChangeSlotIndex = (next: number) => {
+    onSetDirectives(
+      rewriteDescentSlotIndex(directives, startIndex, endIndex, field, slotIndex, next),
+    );
+  };
+
+  // Clearing the subtype on a polymorphic group keeps the group's
+  // outer (field, index) in place but drops every member directive
+  // (each is bound to a subtype-specific field that won't survive a
+  // type change) and re-shows the subtype picker. Same shape as
+  // HandlerConstruction's clear-handler-type flow.
+  const handleClearSubtype = () => {
+    if (onConvertToPending) onConvertToPending(field, slotIndex, startIndex, endIndex);
+  };
+
+  return (
+    <div
+      className={`${styles.setRowComposite} ${isDragging ? styles.rowDragging : ""}`}
+      onDragOver={onDragOverRow}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDropRow();
+      }}
+    >
+      <div className={styles.setRowHeader}>
+        <span
+          className={styles.rowDragGrip}
+          draggable
+          onDragStart={(e) => {
+            e.stopPropagation();
+            e.dataTransfer.effectAllowed = "move";
+            // Same key the per-row grip uses; the parent's drop handler
+            // recognises group-id drags via the dragRowGroupLength state
+            // it set on drag-start, so the K members move together.
+            const firstId = members[0]?.directive._uiId ?? "";
+            e.dataTransfer.setData("application/x-jiangyu-row-reorder", firstId);
+            onDragStart();
+          }}
+          onDragEnd={onDragEnd}
+          title="Drag to reorder group"
+        >
+          <GripVertical size={10} />
+        </span>
+        <span className={styles.setOpLabel}>set</span>
+        <span className={styles.setField} title={field}>
+          {field}
+        </span>
+        <span className={styles.setInsertAt}>at</span>
+        <CommitInput
+          type="number"
+          className={styles.setIndexInput}
+          value={slotIndex}
+          min={0}
+          step={1}
+          onCommit={(v) => handleChangeSlotIndex(Number(v))}
+        />
+        {subtype !== null &&
+          (subtypeChoices !== null && subtypeChoices.length > 1 ? (
+            // Polymorphic collection: clicking the chip drops the whole
+            // group (subtype-specific member fields wouldn't survive a
+            // type change). Modder restarts via "Edit slot…" with a
+            // fresh subtype.
+            <button
+              type="button"
+              className={styles.compositeTypeClickable}
+              onClick={handleClearSubtype}
+              title="Clear subtype (deletes the group; restart via Edit slot)"
+            >
+              {subtype}
+            </button>
+          ) : (
+            <span className={styles.compositeType}>{subtype}</span>
+          ))}
+        <span className={styles.descentGroupSpacer} />
+        <button
+          type="button"
+          className={styles.setDelete}
+          onClick={handleDeleteGroup}
+          title="Remove descent group (deletes all member directives)"
+        >
+          <X size={10} />
+        </button>
+      </div>
+      <div className={styles.compositeBody}>
+        {memberRows}
+        <FieldAdder
+          members={innerMembers}
+          membersLoaded={innerMembersLoaded}
+          existingFields={existingMemberNames}
+          targetTemplateType={innerType}
+          onAdd={handleAddMember}
+        />
+      </div>
+    </div>
+  );
+}
+
+// --- PendingDescentGroup ---
+//
+// Skeleton for a descent group the modder has started but not yet
+// committed to a real directive. Renders the same shell as a real
+// DescentGroup but with editable slot/subtype controls in the header
+// and an inner FieldAdder whose first add materialises the group's
+// first directive (and dismisses the pending state). Empty groups
+// can't exist in the data model; this is the holding cell while the
+// modder fills out the inputs.
+
+interface PendingDescentGroupProps {
+  field: string;
+  slotIndex: number;
+  subtype: string | null;
+  outerMember: TemplateMember | undefined;
+  onChangeIndex: (index: number) => void;
+  onChangeSubtype: (subtype: string | null) => void;
+  onCancel: () => void;
+  onAddFirstMember: (directive: StampedDirective) => void;
+}
+
+function PendingDescentGroup({
+  field,
+  slotIndex,
+  subtype,
+  outerMember,
+  onChangeIndex,
+  onChangeSubtype,
+  onCancel,
+  onAddFirstMember,
+}: PendingDescentGroupProps) {
+  // Inner type resolution mirrors DescentGroup's: subtype hint when set
+  // (polymorphic collection), else fall back to the outer's element type.
+  // The FieldAdder is gated until innerType resolves so the modder can't
+  // add a member without first picking the subtype on a polymorphic list.
+  const subtypeChoices = outerMember?.elementSubtypes ?? null;
+  const isPolymorphic = subtypeChoices !== null && subtypeChoices.length > 0;
+  const innerType = subtype ?? outerMember?.elementTypeName ?? "";
+
+  const [innerCache, setInnerCache] = useState<{
+    type: string;
+    members: readonly TemplateMember[];
+  }>({ type: "", members: [] });
+  useEffect(() => {
+    if (!innerType) return;
+    let cancelled = false;
+    void templatesQuery(innerType)
+      .then((result) => {
+        if (cancelled) return;
+        setInnerCache({ type: innerType, members: result.members ?? [] });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setInnerCache({ type: innerType, members: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [innerType]);
+  const innerMembers = innerCache.type === innerType ? innerCache.members : [];
+  const innerMembersLoaded = !innerType || innerCache.type === innerType;
+
+  const fetchSubtypeChoices = useCallback(
+    () => Promise.resolve(subtypeChoices ?? []),
+    [subtypeChoices],
+  );
+
+  return (
+    <div className={styles.setRowComposite}>
+      <div className={styles.setRowHeader}>
+        <span className={styles.rowDragGrip} aria-hidden>
+          <GripVertical size={10} />
+        </span>
+        <span className={styles.setOpLabel}>set</span>
+        <span className={styles.setField} title={field}>
+          {field}
+        </span>
+        <span className={styles.setInsertAt}>at</span>
+        <CommitInput
+          type="number"
+          className={styles.setIndexInput}
+          value={slotIndex}
+          min={0}
+          step={1}
+          onCommit={(v) => onChangeIndex(Number(v))}
+        />
+        {isPolymorphic &&
+          (subtype === null ? (
+            <SuggestionCombobox
+              value=""
+              placeholder="Pick subtype…"
+              fetchSuggestions={fetchSubtypeChoices}
+              onChange={(v) => onChangeSubtype(v === "" ? null : v)}
+            />
+          ) : (
+            // Once subtype is committed, swap to the chip (matches a
+            // real DescentGroup's header). Click clears it back to null
+            // so the combobox returns. No data deletion involved here —
+            // pending state owns the subtype, so toggling is cheap.
+            <button
+              type="button"
+              className={styles.compositeTypeClickable}
+              onClick={() => onChangeSubtype(null)}
+              title="Clear subtype"
+            >
+              {subtype}
+            </button>
+          ))}
+        <span className={styles.descentGroupSpacer} />
+        <button
+          type="button"
+          className={styles.setDelete}
+          onClick={onCancel}
+          title="Cancel — descent group not yet committed"
+        >
+          <X size={10} />
+        </button>
+      </div>
+      <div className={styles.compositeBody}>
+        {isPolymorphic && subtype === null ? (
+          <div className={styles.descentGroupHint}>Pick a subtype above before adding fields.</div>
+        ) : (
+          <FieldAdder
+            members={innerMembers}
+            membersLoaded={innerMembersLoaded}
+            existingFields={[]}
+            targetTemplateType={innerType}
+            onAdd={onAddFirstMember}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -980,6 +1564,11 @@ interface SetRowProps {
    *  available. Threaded into nested CompositeEditors so their inner
    *  FieldAdder can pre-fill sub-fields with the same vanilla data. */
   vanillaNode?: InspectedFieldNode | undefined;
+  /** Override for the field-name label shown in the row. Used by descent
+   *  groups to display the suffix (e.g. "ShowHUDText") instead of the
+   *  underlying flat fieldPath ("EventHandlers[0].ShowHUDText"). The wire-
+   *  format directive is unchanged; this only affects the row's title text. */
+  displayFieldPath?: string | undefined;
   onChange: (directive: StampedDirective) => void;
   onDelete: () => void;
   isDragging: boolean;
@@ -1024,6 +1613,7 @@ function SetRow({
   directive,
   member,
   vanillaNode,
+  displayFieldPath,
   onChange,
   onDelete,
   isDragging,
@@ -1032,6 +1622,7 @@ function SetRow({
   onDragOverRow,
   onDropRow,
 }: SetRowProps) {
+  const labelText = displayFieldPath ?? directive.fieldPath;
   const isCollection = member?.isCollection ?? false;
   const [opOpen, setOpOpen] = useState(false);
   const opRef = useRef<HTMLDivElement>(null);
@@ -1151,11 +1742,9 @@ function SetRow({
           <>
             <span
               className={styles.setField}
-              title={
-                member?.tooltip ? `${directive.fieldPath} — ${member.tooltip}` : directive.fieldPath
-              }
+              title={member?.tooltip ? `${labelText} — ${member.tooltip}` : labelText}
             >
-              {directive.fieldPath}
+              {labelText}
               {member?.isSoundIdField && <span className={styles.fieldBadge}>sound</span>}
             </span>
             <div className={styles.setValue}>
@@ -1175,22 +1764,18 @@ function SetRow({
         ) : isClear ? (
           <span
             className={styles.setField}
-            title={
-              member?.tooltip ? `${directive.fieldPath} — ${member.tooltip}` : directive.fieldPath
-            }
+            title={member?.tooltip ? `${labelText} — ${member.tooltip}` : labelText}
           >
-            {directive.fieldPath}
+            {labelText}
             {member?.isSoundIdField && <span className={styles.fieldBadge}>sound</span>}
           </span>
         ) : (
           <>
             <span
               className={styles.setField}
-              title={
-                member?.tooltip ? `${directive.fieldPath} — ${member.tooltip}` : directive.fieldPath
-              }
+              title={member?.tooltip ? `${labelText} — ${member.tooltip}` : labelText}
             >
-              {directive.fieldPath}
+              {labelText}
               {member?.isSoundIdField && <span className={styles.fieldBadge}>sound</span>}
             </span>
             <div className={styles.setValue}>
@@ -1679,7 +2264,7 @@ function CompositeEditor({ value, onChange, vanillaNode, elementSubtypes }: Comp
     return (
       <div className={styles.compositeBody}>
         <div className={styles.compositeHeader}>
-          <span className={styles.compositeType}>handler</span>
+          <span className={styles.compositeKind}>handler</span>
           <SuggestionCombobox
             value=""
             placeholder="Pick handler type…"
@@ -1704,19 +2289,24 @@ function CompositeEditor({ value, onChange, vanillaNode, elementSubtypes }: Comp
   return (
     <div className={styles.compositeBody}>
       <div className={styles.compositeHeader}>
-        <span className={styles.compositeType}>
-          {isHandler ? "handler · " : ""}
-          {value.compositeType ?? (isHandler ? "handler" : "composite")}
-        </span>
-        {canClearSubtype && (
+        <span className={styles.compositeKind}>{isHandler ? "handler" : "composite"}</span>
+        {canClearSubtype ? (
+          // Clickable subtype chip — clicking clears compositeType + fields
+          // and re-shows the picker. Hover restyles to telegraph the action;
+          // a separate X button next to it tested poorly (small target, easy
+          // to miss; modders kept clearing the input by accident instead).
           <button
             type="button"
-            className={styles.compositeClearType}
+            className={styles.compositeTypeClickable}
             onClick={handleClearSubtype}
             title="Clear handler type (resets fields)"
           >
-            <X size={12} />
+            {value.compositeType}
           </button>
+        ) : (
+          <span className={styles.compositeType}>
+            {value.compositeType ?? (isHandler ? "handler" : "composite")}
+          </span>
         )}
       </div>
       {directives.map((d, di) => {
@@ -1938,6 +2528,15 @@ interface FieldAdderProps {
    *  serialised value from the target template instead of the type's neutral
    *  default. Empty / missing entries fall back to the neutral default. */
   vanillaFields?: ReadonlyMap<string, InspectedFieldNode>;
+  /** Optional callback for starting a descent group on a collection field.
+   *  Provided by the top-level NodeCard; absent inside CompositeEditor and
+   *  DescentGroup (descent groups don't nest from this UI yet — modders
+   *  who need that author the inner descent in source mode). */
+  onStartDescent?: (
+    field: string,
+    elementType: string,
+    elementSubtypes: readonly string[] | null,
+  ) => void;
 }
 
 function FieldAdder({
@@ -1948,6 +2547,7 @@ function FieldAdder({
   onAdd,
   onDrop,
   vanillaFields,
+  onStartDescent,
 }: FieldAdderProps) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -2074,16 +2674,31 @@ function FieldAdder({
             <div className={styles.fieldAdderHint}>No fields available</div>
           )}
           {available.map((m) => (
-            <button
-              key={m.name}
-              type="button"
-              className={styles.fieldAdderItem}
-              onClick={() => handleSelect(m)}
-            >
-              <span className={styles.fieldAdderItemName}>{m.name}</span>
-              <span className={styles.fieldAdderItemType}>{m.typeName}</span>
-              {m.isCollection && <span className={styles.fieldAdderItemBadge}>collection</span>}
-            </button>
+            <React.Fragment key={m.name}>
+              <button
+                type="button"
+                className={styles.fieldAdderItem}
+                onClick={() => handleSelect(m)}
+              >
+                <span className={styles.fieldAdderItemName}>{m.name}</span>
+                <span className={styles.fieldAdderItemType}>{m.typeName}</span>
+                {m.isCollection && <span className={styles.fieldAdderItemBadge}>collection</span>}
+              </button>
+              {onStartDescent && m.isCollection === true && (
+                <button
+                  type="button"
+                  className={`${styles.fieldAdderItem} ${styles.fieldAdderItemDescent}`}
+                  onClick={() => {
+                    onStartDescent(m.name, m.elementTypeName ?? "", m.elementSubtypes ?? null);
+                    setQuery("");
+                    setOpen(false);
+                  }}
+                  title="Edit fields of an existing element instead of appending a new one"
+                >
+                  <span className={styles.fieldAdderItemName}>↳ Edit slot of {m.name}…</span>
+                </button>
+              )}
+            </React.Fragment>
           ))}
           {alreadyAdded.length > 0 && available.length > 0 && (
             <div className={styles.fieldAdderSep}>Already added</div>

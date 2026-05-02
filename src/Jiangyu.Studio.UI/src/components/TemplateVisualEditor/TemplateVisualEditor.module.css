@@ -905,6 +905,37 @@
   padding: 1px var(--space-1);
 }
 
+/* Subtype chip variant for clearable handler types. Same shape as
+   .compositeType but click-to-clear, with a destructive hover state so
+   the affordance is obvious without needing a separate X button. */
+.compositeTypeClickable {
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-strong);
+  background: none;
+  border: 1px solid var(--rule);
+  padding: 1px var(--space-1);
+  cursor: pointer;
+}
+
+.compositeTypeClickable:hover {
+  color: var(--cinnabar-1);
+  border-color: var(--cinnabar-1);
+}
+
+/* Plain "handler" / "composite" prefix label — non-interactive, sits to
+   the left of the type chip. Visually identical to .compositeType minus
+   the border, so both labels still read as part of one header strip. */
+.compositeKind {
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
 .compositeRow {
   display: flex;
   align-items: center;
@@ -949,22 +980,35 @@
   color: var(--cinnabar-1);
 }
 
-/* Clear-handler-type button in the composite header. Unlike per-field
-   delete (which is row-hover gated to keep the row visually clean),
-   clearing the handler type is a deliberate top-level affordance — needs
-   to be discoverable without hovering, so it's always visible. */
-.compositeClearType {
-  background: none;
-  border: none;
-  padding: 2px;
-  color: var(--fg-muted);
-  cursor: pointer;
-  flex-shrink: 0;
-  line-height: 1;
+/* --- Descent group --- */
+/* Descent groups visually reuse `.setRowComposite` (same border / drag
+   grip / op label / field / index / value-or-body-area as a regular
+   composite-shaped row). The only descent-specific bits are this
+   trailing spacer in the header and the pending-state hint below. */
+
+.descentGroupSpacer {
+  flex: 1;
 }
 
-.compositeClearType:hover {
-  color: var(--cinnabar-1);
+/* Pending state — modder clicked "Edit slot…" but hasn't authored a
+   first inner directive yet. Visually the same as a real descent
+   group; the body shows a hint or the inner FieldAdder. */
+
+.descentGroupHint {
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  padding: var(--space-1) var(--space-2);
+}
+
+/* The "Edit slot of <field>…" entry under a collection in the
+   FieldAdder. Subtler than the regular field row; hangs off the
+   collection above visually. */
+.fieldAdderItemDescent {
+  padding-left: var(--space-4);
+  color: var(--fg-muted);
 }
 
 .compositeEmpty {

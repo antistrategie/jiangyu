@@ -52,7 +52,13 @@ import {
   SectionHeader,
 } from "@components/DetailPanel/DetailPanel";
 import styles from "./TemplateBrowser.module.css";
-import { resolveEnumLeafLabel } from "./helpers";
+import {
+  instanceKey,
+  navStepBack,
+  navStepForward,
+  pushNavEntry,
+  resolveEnumLeafLabel,
+} from "./helpers";
 
 function templatesIndexStatus(): Promise<TemplateIndexStatus> {
   return rpcCall<TemplateIndexStatus>("templatesIndexStatus");
@@ -84,12 +90,11 @@ function templatesEnumMembers(typeName: string): Promise<EnumMembersResult> {
 }
 
 // --- Helpers ---
+// Pure helpers (instanceKey, nav history, enum leaf resolution) live in
+// `./helpers` so this JSX module only exports React components.
 
 const uf = new uFuzzy({});
 const ROW_HEIGHT = 28;
-
-const instanceKey = (inst: TemplateInstanceEntry): string =>
-  `${inst.identity.collection}:${inst.identity.pathId}`;
 
 // --- Component ---
 
@@ -150,29 +155,26 @@ export function TemplateBrowser({
 
   const pushNav = useCallback(
     (key: string) => {
-      setNavHistory((prev) => [...prev.slice(0, navIndex + 1), key]);
-      setNavIndex((prev) => prev + 1);
+      const next = pushNavEntry(navHistory, navIndex, key);
+      setNavHistory(next.history);
+      setNavIndex(next.index);
     },
-    [navIndex],
+    [navHistory, navIndex],
   );
 
   const goBack = useCallback(() => {
-    if (!canGoBack) return;
-    const newIdx = navIndex - 1;
-    const target = navHistory[newIdx];
-    if (target === undefined) return;
-    setNavIndex(newIdx);
-    setFocusedKey(target);
-  }, [canGoBack, navIndex, navHistory]);
+    const step = navStepBack(navHistory, navIndex);
+    if (!step) return;
+    setNavIndex(step.index);
+    setFocusedKey(step.key);
+  }, [navHistory, navIndex]);
 
   const goForward = useCallback(() => {
-    if (!canGoForward) return;
-    const newIdx = navIndex + 1;
-    const target = navHistory[newIdx];
-    if (target === undefined) return;
-    setNavIndex(newIdx);
-    setFocusedKey(target);
-  }, [canGoForward, navIndex, navHistory]);
+    const step = navStepForward(navHistory, navIndex);
+    if (!step) return;
+    setNavIndex(step.index);
+    setFocusedKey(step.key);
+  }, [navHistory, navIndex]);
 
   const [memberData, setMemberData] = useState<TemplateQueryResult | null>(null);
   const [membersLoading, setMembersLoading] = useState(false);

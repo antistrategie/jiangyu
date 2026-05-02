@@ -3,7 +3,16 @@
 // gives the unit tests a stable, side-effect-free import surface.
 
 import type { InspectedFieldNode, TemplateMember } from "@lib/rpc";
-import type { EditorDirective, EditorValue } from "./types";
+import type { EditorDirective, EditorDocument, EditorNode, EditorValue } from "./types";
+
+/** A directive with its UI identity stamped — narrows `_uiId` from optional
+ *  to required. Stamping happens on parse / on add; stripping happens on
+ *  serialise. Tests construct these directly via the helpers below. */
+export type StampedDirective = Omit<EditorDirective, "_uiId"> & { _uiId: string };
+export type StampedNode = Omit<EditorNode, "_uiId" | "directives"> & {
+  _uiId: string;
+  directives: StampedDirective[];
+};
 
 /**
  * Converts a vanilla InspectedFieldNode into the editor's EditorValue shape.
@@ -206,6 +215,306 @@ export function resolveRefTypeDisplay(
  */
 export function allowsMultipleDirectives(member: { isCollection?: boolean | null }): boolean {
   return member.isCollection === true;
+}
+
+/**
+ * Stamp a directive with a stable UI identifier, recursing into composite /
+ * handler-construction values so their inner directives also get keys.
+ * Identity already on `_uiId` is preserved (re-stamping a stamped doc is a
+ * no-op); only freshly-parsed directives without `_uiId` allocate new ones.
+ *
+ * The ID generator is injected so callers (the editor + tests) can pick
+ * either a process-wide monotonically-increasing counter or a deterministic
+ * per-test sequence. The default in TVE.tsx is the module-state counter.
+ */
+export function stampDirective(d: EditorDirective, newId: () => string): StampedDirective {
+  const stamped: StampedDirective = { ...d, _uiId: d._uiId ?? newId() };
+  if (d.value && (d.value.kind === "Composite" || d.value.kind === "HandlerConstruction")) {
+    const inner = d.value.compositeDirectives;
+    if (inner) {
+      stamped.value = {
+        ...d.value,
+        compositeDirectives: inner.map((nested) => stampDirective(nested, newId)),
+      };
+    }
+  }
+  return stamped;
+}
+
+export function stampNodes(nodes: EditorNode[], newId: () => string): StampedNode[] {
+  return nodes.map((n) => ({
+    ...n,
+    _uiId: n._uiId ?? newId(),
+    directives: n.directives.map((d) => stampDirective(d, newId)),
+  }));
+}
+
+/**
+ * Strip UI identifiers from a directive (and its nested composite /
+ * handler-construction values), so the doc can be handed to the host RPC
+ * without UI-only state leaking into the wire format.
+ */
+export function stripDirectiveUiIds(d: EditorDirective): EditorDirective {
+  const { _uiId: _id, ...rest } = d;
+  if (
+    rest.value &&
+    (rest.value.kind === "Composite" || rest.value.kind === "HandlerConstruction")
+  ) {
+    const inner = rest.value.compositeDirectives;
+    if (inner) {
+      return {
+        ...rest,
+        value: { ...rest.value, compositeDirectives: inner.map(stripDirectiveUiIds) },
+      };
+    }
+  }
+  return rest;
+}
+
+export function stripUiIds(doc: EditorDocument): EditorDocument {
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) => {
+      const { _uiId: _nId, ...rest } = n;
+      return {
+        ...rest,
+        directives: n.directives.map(stripDirectiveUiIds),
+      };
+    }),
+  };
+}
+
+/**
+ * A descent directive is a flat directive whose fieldPath has been produced
+ * by the parser flattening a `set "Field" index=N type="X" { ... }` block.
+ * The fieldPath looks like `<Field>[<N>].<rest>` with a non-empty `rest`,
+ * and the modder is logically editing one field of slot N. Used by the
+ * visual editor to group consecutive descent directives under a shared
+ * outer header.
+ */
+export interface DescentPath {
+  /** Outer collection field, e.g. "EventHandlers". */
+  field: string;
+  /** Element index inside that collection, e.g. 0. */
+  index: number;
+  /** Path inside the element relative to its top, e.g. "ShowHUDText" or
+   *  "Properties[0].Amount" for a deeper inner descent. */
+  suffix: string;
+}
+
+/**
+ * Pulls apart a descent fieldPath into its outer (field, index) prefix and
+ * the inner suffix. Returns null for paths that aren't descent shape — a
+ * bare scalar field, a non-indexed dotted path, an element-set on a
+ * collection without any inner navigation. Strict parse: the outer name
+ * must be a plain identifier, the index must be a non-negative integer,
+ * and there must be at least one suffix segment after the bracket.
+ */
+export function parseDescentPath(fieldPath: string): DescentPath | null {
+  // ^(name)[<digits>].<rest>$ — the trailing `.rest` is required so a bare
+  // element set like "Field[0]" (which the modder can't author today
+  // anyway, but keep us honest) doesn't get rendered as a descent group.
+  const match = /^([A-Za-z_][A-Za-z0-9_]*)\[(\d+)\]\.(.+)$/.exec(fieldPath);
+  if (!match) return null;
+  const [, field, indexStr, suffix] = match;
+  if (field === undefined || indexStr === undefined || suffix === undefined) return null;
+  return {
+    field,
+    index: Number.parseInt(indexStr, 10),
+    suffix,
+  };
+}
+
+/**
+ * Item in the directive-list render plan. NodeCard / CompositeEditor walk
+ * the produced array and render each entry with the appropriate component.
+ * Groups own a contiguous run of directives that share the same outer
+ * (field, index, subtype-hint-at-segment-0). A loose entry is anything
+ * else — a top-level scalar set, an append, a non-descent set with index,
+ * etc.
+ *
+ * Subtype hints inside a group can refer to deeper segments (the modder
+ * authored a polymorphic descent inside a polymorphic collection), but the
+ * grouping key only checks segment 0; member directives carry the rest of
+ * the hint map intact.
+ */
+export type DirectiveGroup<T> =
+  | { kind: "loose"; directive: T }
+  | {
+      kind: "group";
+      field: string;
+      index: number;
+      subtype: string | null;
+      members: { directive: T; suffix: string }[];
+    };
+
+/**
+ * Walk the directive list once and partition it into groups + loose
+ * entries, preserving order. Two consecutive descent directives merge into
+ * the same group only when they share the outer (field, index) prefix AND
+ * the same `subtypeHints[0]` value — distinct subtype hints can't be
+ * folded together because they re-bind the validated subtype for member
+ * directives, and the serialiser deliberately emits them as separate
+ * outer blocks.
+ */
+export function groupDirectives<
+  T extends {
+    fieldPath: string;
+    subtypeHints?: Record<number, string> | null;
+  },
+>(directives: readonly T[]): DirectiveGroup<T>[] {
+  const result: DirectiveGroup<T>[] = [];
+  let active: Extract<DirectiveGroup<T>, { kind: "group" }> | null = null;
+
+  for (const d of directives) {
+    const desc = parseDescentPath(d.fieldPath);
+    if (!desc) {
+      active = null;
+      result.push({ kind: "loose", directive: d });
+      continue;
+    }
+    const subtype = d.subtypeHints?.[0] ?? null;
+    if (
+      active !== null &&
+      active.field === desc.field &&
+      active.index === desc.index &&
+      active.subtype === subtype
+    ) {
+      active.members.push({ directive: d, suffix: desc.suffix });
+      continue;
+    }
+    const group: Extract<DirectiveGroup<T>, { kind: "group" }> = {
+      kind: "group",
+      field: desc.field,
+      index: desc.index,
+      subtype,
+      members: [{ directive: d, suffix: desc.suffix }],
+    };
+    result.push(group);
+    active = group;
+  }
+
+  return result;
+}
+
+/**
+ * Reorder a flat directive list, with awareness of descent-group spans.
+ * If the source id heads a descent group, all K consecutive members of
+ * that group move together; standalone rows behave as a length-1 move.
+ *
+ * `toSlot` is the target insertion index in the pre-move list (0..len).
+ * Returns the new list; callers hand it back to the parent node via the
+ * setDirectives callback. Pure — no DOM, no React state.
+ */
+export function reorderDirectives<T extends StampedDirective>(
+  directives: T[],
+  fromId: string,
+  toSlot: number,
+): T[] {
+  const fromIdx = directives.findIndex((d) => d._uiId === fromId);
+  if (fromIdx === -1) return directives;
+  // Descent groups drag as a unit: walk the group plan and find the
+  // contiguous run that starts at fromIdx and is headed by fromId. If
+  // it's a loose row, span = 1 and the move is identical to a single-
+  // directive splice.
+  const groups = groupDirectives(directives);
+  let span = 1;
+  let cursor = 0;
+  for (const g of groups) {
+    if (g.kind === "loose") {
+      if (cursor === fromIdx) {
+        span = 1;
+        break;
+      }
+      cursor += 1;
+    } else {
+      if (cursor === fromIdx && g.members[0]?.directive._uiId === fromId) {
+        span = g.members.length;
+        break;
+      }
+      cursor += g.members.length;
+    }
+  }
+  const next = [...directives];
+  const moved = next.splice(fromIdx, span);
+  const insertAt = toSlot > fromIdx ? toSlot - span : toSlot;
+  next.splice(insertAt, 0, ...moved);
+  return next;
+}
+
+/**
+ * Insert a directive into a list at a position derived from a pending
+ * descent group's anchor. Keeps the materialised directive at the visual
+ * location the pending skeleton was rendered.
+ *
+ * Anchor semantics:
+ * - `{kind: "end"}` → push to the end of the list.
+ * - `{kind: "start"}` → unshift to the beginning.
+ * - `{kind: "afterIndex", flatIndex: N}` → insert at position N+1, i.e.
+ *   directly after the directive currently at index N.
+ */
+export type PendingAnchor =
+  | { kind: "end" }
+  | { kind: "start" }
+  | { kind: "afterIndex"; flatIndex: number };
+
+export function insertAtPendingAnchor<T>(
+  directives: T[],
+  newDirective: T,
+  anchor: PendingAnchor,
+): T[] {
+  let insertAt: number;
+  if (anchor.kind === "end") insertAt = directives.length;
+  else if (anchor.kind === "start") insertAt = 0;
+  else insertAt = anchor.flatIndex + 1;
+  return [...directives.slice(0, insertAt), newDirective, ...directives.slice(insertAt)];
+}
+
+/**
+ * Build the prefixed flat directive that materialises a pending descent
+ * group's first member. Mirrors what the parser would produce for an
+ * authored `set "<field>" index=<N> type="<subtype>" { set "<inner>" v }`
+ * block: outer (field, index) become a bracket-prefix on the inner
+ * directive's fieldPath, and the subtype hint lands at segment 0.
+ */
+export function buildDescentMemberDirective<T extends EditorDirective>(
+  field: string,
+  slotIndex: number,
+  subtype: string | null,
+  innerDirective: T,
+): T {
+  const prefixed: T = {
+    ...innerDirective,
+    fieldPath: `${field}[${slotIndex}].${innerDirective.fieldPath}`,
+  };
+  if (subtype !== null) {
+    prefixed.subtypeHints = { ...(innerDirective.subtypeHints ?? {}), 0: subtype };
+  }
+  return prefixed;
+}
+
+/**
+ * Rewrite the slot index on every member directive of a descent group.
+ * Handles only the [startIndex, endIndex) slice so adjacent groups /
+ * loose rows stay untouched. The match is on the prefix `<field>[<old>].`
+ * — directives outside that shape (defensive) pass through unchanged.
+ */
+export function rewriteDescentSlotIndex<T extends EditorDirective>(
+  directives: T[],
+  startIndex: number,
+  endIndex: number,
+  field: string,
+  oldSlot: number,
+  newSlot: number,
+): T[] {
+  if (newSlot === oldSlot || newSlot < 0) return directives;
+  const oldPrefix = `${field}[${oldSlot}].`;
+  const newPrefix = `${field}[${newSlot}].`;
+  return directives.map((d, i) => {
+    if (i < startIndex || i >= endIndex) return d;
+    if (!d.fieldPath.startsWith(oldPrefix)) return d;
+    return { ...d, fieldPath: `${newPrefix}${d.fieldPath.slice(oldPrefix.length)}` };
+  });
 }
 
 /**

@@ -124,12 +124,31 @@ patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
 }
 ```
 
-Differences vs. descent:
+### `type=` vs `handler=`: edit-in-place vs construct-and-replace
 
-- **`type=` on `set` with index** descends into an *existing* element to edit its fields in place. The element keeps its identity.
-- **`handler=` on `append`, `insert`, or `set` with index** constructs a *new* element. On `set` with `index=`, the old element at N is replaced; on `append` and `insert`, no existing element is disturbed.
+Authored side-by-side they look almost identical, but they're different operations:
 
-Inner `set` directives inside a `handler=` block configure top-level fields of the constructed element — scalars, refs, enums, composites. Indexed writes (`set "TargetTags" index=0 ...`) and further descent are not supported inside the construction block; use a follow-up patch with descent against the now-existing element if you need to populate a list-typed field on it.
+```kdl
+// Edit one field of slot 0; every other field on the existing handler is preserved.
+set "EventHandlers" index=0 type="AddSkill" {
+    set "ShowHUDText" #true
+}
+
+// Replace slot 0 with a freshly-constructed AddSkill; every other field on the new
+// handler is its type's default (zero, null, empty list, …).
+set "EventHandlers" index=0 handler="AddSkill" {
+    set "ShowHUDText" #true
+}
+```
+
+If the vanilla slot 0 already had `Cooldown=2.5` and three `TagsCanPreventSkillUse` entries:
+
+- `type=` leaves you with `ShowHUDText=true`, `Cooldown=2.5`, `TagsCanPreventSkillUse=[…vanilla…]` — preserved.
+- `handler=` leaves you with `ShowHUDText=true`, `Cooldown=0`, `TagsCanPreventSkillUse=[]` — destroyed.
+
+Pick `type=` to flip a field on a vanilla-shipped element. Pick `handler=` only when you want to recreate the slot from scratch and you've configured every field you care about in the inner block.
+
+Inner directives inside a `handler=` block accept the full `set` / `append` / `insert` / `remove` / `clear` vocabulary and apply against the freshly-constructed instance — so you can author "construct an `AddSkill` and append two `PropertyChange` entries to its `Properties` list" inline rather than splitting into separate patches.
 
 The `handler=` subtype name is required when the array's element type is abstract polymorphic (the common case for event handlers). It can be omitted when the element type is monomorphic (the array's declared element type is the only construction option). The compiler errors when the subtype is missing for a polymorphic destination, when the named subtype isn't a subclass of the destination's element type, or when an inner field doesn't exist on the constructed type.
 
