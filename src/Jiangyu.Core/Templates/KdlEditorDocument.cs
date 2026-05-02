@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Jiangyu.Shared.Templates;
 
 namespace Jiangyu.Core.Templates;
 
@@ -66,6 +67,12 @@ public sealed class KdlEditorDirective
     [JsonPropertyName("op")]
     public KdlEditorOp Op { get; set; }
 
+    /// <summary>
+    /// Inner-relative member path. Mirrors
+    /// <see cref="CompiledTemplateSetOperation.FieldPath"/>: the path on the
+    /// destination instance reached after walking <see cref="Descent"/>, or
+    /// the top-level template when descent is empty.
+    /// </summary>
     [JsonPropertyName("fieldPath")]
     public string FieldPath { get; set; } = string.Empty;
 
@@ -78,14 +85,13 @@ public sealed class KdlEditorDirective
     public KdlEditorValue? Value { get; set; }
 
     /// <summary>
-    /// Concrete subtype names for polymorphic-abstract descent points along
-    /// <see cref="FieldPath"/>. Mirrors
-    /// <see cref="Jiangyu.Shared.Templates.CompiledTemplateSetOperation.SubtypeHints"/>.
-    /// The serialiser groups same-prefix descent ops back into a single
-    /// <c>set "Field" index=N type="X" { ... }</c> block on emit.
+    /// Outer descent prefix as a structural step list, mirroring
+    /// <see cref="CompiledTemplateSetOperation.Descent"/>. The serialiser
+    /// groups consecutive directives sharing the same descent prefix back
+    /// into a single <c>set "Field" index=N type="X" { ... }</c> block.
     /// </summary>
-    [JsonPropertyName("subtypeHints")]
-    public Dictionary<int, string>? SubtypeHints { get; set; }
+    [JsonPropertyName("descent")]
+    public List<TemplateDescentStep>? Descent { get; set; }
 
     /// <summary>1-based source line of the directive. Set by the parser for diagnostic output.</summary>
     [JsonPropertyName("line")]

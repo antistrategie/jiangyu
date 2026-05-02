@@ -142,20 +142,97 @@ internal sealed class TemplatePatchApplier
     private static ApplyOutcome TryApplyOperation(
         object template, string templateTypeName, string templateId, LoadedPatchOperation op, MelonLogger.Instance log)
     {
-        if (!TryParsePath(op.FieldPath, out var segments, out var parseError))
+        if (!TryParseInnerSegments(op.FieldPath, out var innerSegments, out var parseError))
         {
             log.Warning(FormatPrefix(templateTypeName, templateId, op) + parseError);
             return ApplyOutcome.MemberMissing;
         }
 
-        var chain = new List<ChainEntry>(segments.Length);
+        var descentCount = op.Descent?.Count ?? 0;
+        var chain = new List<ChainEntry>(descentCount + innerSegments.Length);
         object current = template;
 
-        // Walk intermediate segments, tracking each step so we can write
-        // value-types back after the terminal set.
-        for (var i = 0; i < segments.Length - 1; i++)
+        // Walk descent steps first: each navigates into element [Index] of
+        // collection [Field], optionally casting to the [Subtype] wrapper.
+        if (op.Descent != null)
         {
-            var segment = segments[i];
+            for (var i = 0; i < op.Descent.Count; i++)
+            {
+                var step = op.Descent[i];
+                if (!TryReadMember(current, step.Field, out var value, out var memberType, out var readError))
+                {
+                    log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                        + $"cannot navigate descent step '{step.Field}': {readError}");
+                    return ApplyOutcome.MemberMissing;
+                }
+
+                if (value == null)
+                {
+                    log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                        + $"descent step '{step.Field}' ({memberType.FullName}) is null on this template.");
+                    return ApplyOutcome.MemberMissing;
+                }
+
+                var entry = new ChainEntry
+                {
+                    Parent = current,
+                    Name = step.Field,
+                    ValueIsStruct = memberType.IsValueType,
+                };
+
+                if (!TryIndexInto(value, step.Index, out var element, out var elementType, out var indexError))
+                {
+                    log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                        + $"cannot index descent step '{step.Field}' index={step.Index}: {indexError}");
+                    return ApplyOutcome.MemberMissing;
+                }
+
+                if (element == null)
+                {
+                    log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                        + $"element {step.Index} of '{step.Field}' is null.");
+                    return ApplyOutcome.MemberMissing;
+                }
+
+                // We don't support writing mutated struct-elements back into
+                // collections on this slice. Reject early so modders know.
+                if (elementType.IsValueType)
+                {
+                    log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                        + $"element {step.Index} of '{step.Field}' is a value-type "
+                        + $"({elementType.FullName}); in-collection struct mutation is not supported on this slice.");
+                    return ApplyOutcome.MemberMissing;
+                }
+
+                // Polymorphic descent: the Il2CppInterop wrapper for a
+                // List<AbstractBase> element returns the base-type wrapper,
+                // so reflection on it sees only the base's own members
+                // (typically zero). Cast to the concrete subtype wrapper
+                // when the modder declared one via type="X" on the descent
+                // block so subclass fields are visible.
+                if (!string.IsNullOrEmpty(step.Subtype))
+                {
+                    if (!TryCastToSubtype(element, step.Subtype, out var castElement, out var castError))
+                    {
+                        log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                            + $"cannot cast '{step.Field}[{step.Index}]' to subtype "
+                            + $"'{step.Subtype}': {castError}");
+                        return ApplyOutcome.MemberMissing;
+                    }
+                    element = castElement;
+                }
+
+                current = element;
+                chain.Add(entry);
+            }
+        }
+
+        // Walk inner path segments (dotted name only, no brackets).
+        // Each non-terminal segment is a plain member read; the terminal
+        // segment carries the actual write below.
+        for (var i = 0; i < innerSegments.Length - 1; i++)
+        {
+            var segment = innerSegments[i];
             if (!TryReadMember(current, segment.Name, out var value, out var memberType, out var readError))
             {
                 log.Warning(FormatPrefix(templateTypeName, templateId, op)
@@ -170,71 +247,16 @@ internal sealed class TemplatePatchApplier
                 return ApplyOutcome.MemberMissing;
             }
 
-            var entry = new ChainEntry
+            chain.Add(new ChainEntry
             {
                 Parent = current,
                 Name = segment.Name,
                 ValueIsStruct = memberType.IsValueType,
-            };
-
-            if (segment.Index.HasValue)
-            {
-                if (!TryIndexInto(value, segment.Index.Value, out var element, out var elementType, out var indexError))
-                {
-                    log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                        + $"cannot index segment '{segment.Name}[{segment.Index.Value}]': {indexError}");
-                    return ApplyOutcome.MemberMissing;
-                }
-
-                if (element == null)
-                {
-                    log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                        + $"element {segment.Index.Value} of '{segment.Name}' is null.");
-                    return ApplyOutcome.MemberMissing;
-                }
-
-                // We don't support writing mutated struct-elements back into
-                // collections on this slice. Reject early so modders know.
-                if (elementType.IsValueType)
-                {
-                    log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                        + $"element {segment.Index.Value} of '{segment.Name}' is a value-type "
-                        + $"({elementType.FullName}); in-collection struct mutation is not supported on this slice.");
-                    return ApplyOutcome.MemberMissing;
-                }
-
-                // Polymorphic descent: when the modder declared the concrete
-                // subtype via type="X" on the descent block, the parser
-                // recorded the hint at this segment index. The Il2CppInterop
-                // wrapper for a List<AbstractBase> element returns the
-                // base-type wrapper, so reflection on it sees only the
-                // base's own members (typically zero). Cast to the concrete
-                // wrapper before continuing so subclass fields are visible.
-                if (op.SubtypeHints != null && op.SubtypeHints.TryGetValue(i, out var subtypeHint))
-                {
-                    if (!TryCastToSubtype(element, subtypeHint, out var castElement, out var castError))
-                    {
-                        log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                            + $"cannot cast '{segment.Name}[{segment.Index.Value}]' to subtype "
-                            + $"'{subtypeHint}': {castError}");
-                        return ApplyOutcome.MemberMissing;
-                    }
-                    element = castElement;
-                }
-
-                // Indexed elements can't be written back into the collection on
-                // this slice, but mutations on a reference-type element
-                // propagate naturally, so we continue without a chain entry.
-                current = element;
-                chain.Add(entry);
-                continue;
-            }
-
+            });
             current = value;
-            chain.Add(entry);
         }
 
-        var terminal = segments[^1];
+        var terminal = innerSegments[^1];
         Action<object> setter;
         Func<object> getter;
         Type terminalType;
@@ -473,11 +495,11 @@ internal sealed class TemplatePatchApplier
         public bool ValueIsStruct { get; set; }
     }
 
-    // The validator at load time rejects non-digit indexers and Int32
-    // overflows, so in practice we never reach a failing TryParse here. The
-    // defensive branch is kept so a bypassed validation path fails loudly
-    // rather than crashing the entire apply cycle.
-    private static bool TryParsePath(string fieldPath, out PathSegment[] segments, out string error)
+    // The inner FieldPath is a dotted member path with no bracket indexers
+    // (descent and per-op element index live on Descent / Index fields, not
+    // in the path string). Empty segments would mean the path was malformed
+    // by something upstream; surface as an error rather than a silent skip.
+    private static bool TryParseInnerSegments(string fieldPath, out PathSegment[] segments, out string error)
     {
         var raw = fieldPath.Split('.');
         segments = new PathSegment[raw.Length];
@@ -486,23 +508,19 @@ internal sealed class TemplatePatchApplier
         for (var i = 0; i < raw.Length; i++)
         {
             var segment = raw[i];
-            var bracket = segment.IndexOf('[');
-            if (bracket < 0)
-            {
-                segments[i] = new PathSegment(segment, null);
-                continue;
-            }
-
-            var name = segment[..bracket];
-            var indexText = segment.Substring(bracket + 1, segment.Length - bracket - 2);
-            if (!int.TryParse(indexText, out var index))
+            if (string.IsNullOrEmpty(segment))
             {
                 segments = null;
-                error = $"unparseable indexer '[{indexText}]' in segment '{segment}'.";
+                error = $"empty segment in fieldPath '{fieldPath}'.";
                 return false;
             }
-
-            segments[i] = new PathSegment(name, index);
+            if (segment.Contains('['))
+            {
+                segments = null;
+                error = $"unexpected bracket indexer in inner fieldPath '{segment}'; descent uses Descent steps, element index uses op.Index.";
+                return false;
+            }
+            segments[i] = new PathSegment(segment, null);
         }
 
         return true;
@@ -1653,7 +1671,7 @@ internal sealed class TemplatePatchApplier
                     innerOp.Op,
                     innerOp.FieldPath,
                     innerOp.Index,
-                    innerOp.SubtypeHints ?? new Dictionary<int, string>(),
+                    (IReadOnlyList<TemplateDescentStep>?)innerOp.Descent ?? Array.Empty<TemplateDescentStep>(),
                     innerOp.Value,
                     $"composite:{composite.TypeName}");
 

@@ -126,7 +126,7 @@ public static class TemplateCatalogValidator
                 op,
                 templateType,
                 catalog,
-                message => log.Error($"Template patch '{label}.{op.FieldPath}' — {message}"));
+                message => log.Error($"Template patch '{label}.{FormatFullPath(op)}' — {message}"));
         }
         return errors;
     }
@@ -154,15 +154,18 @@ public static class TemplateCatalogValidator
     {
         if (string.IsNullOrWhiteSpace(op.FieldPath)) return 0;
 
-        var queryPath = $"{templateType}.{op.FieldPath}";
-        var result = TemplateMemberQuery.Run(catalog, queryPath, op.SubtypeHints);
+        // TemplateMemberQuery still walks a flat dotted-with-bracket path,
+        // so build one from the structural descent at the boundary. The
+        // segment-keyed hints map mirrors the descent step subtypes.
+        var (queryPath, hints) = BuildLegacyQueryPath(templateType, op);
+        var result = TemplateMemberQuery.Run(catalog, queryPath, hints);
         if (result.Kind == QueryResultKind.Error)
         {
             // Surface the navigator's specific message (polymorphism hint
             // missing, subtype not assignable, indexer on a non-collection,
             // etc.) so modders see what to fix. Falling back to the generic
             // "not a field of X" eats useful context.
-            reportError(result.ErrorMessage ?? $"'{op.FieldPath}' is not a field of {templateType}.");
+            reportError(result.ErrorMessage ?? $"'{FormatFullPath(op)}' is not a field of {templateType}.");
             return 1;
         }
 
@@ -191,7 +194,7 @@ public static class TemplateCatalogValidator
         {
             reportError(
                 $"op={op.Op} is not supported on the "
-                + $"fixed-size {result.NamedArrayEnumTypeName}-indexed array '{op.FieldPath}'; "
+                + $"fixed-size {result.NamedArrayEnumTypeName}-indexed array '{FormatFullPath(op)}'; "
                 + "use 'set' with index= to change one slot.");
             return 1;
         }
@@ -304,7 +307,7 @@ public static class TemplateCatalogValidator
         }
 
         if (op.Value?.Kind == CompiledTemplateValueKind.Composite && op.Value.Composite != null)
-            return ValidateCompositeValue(op.Value.Composite, op.FieldPath, catalog, reportError);
+            return ValidateCompositeValue(op.Value.Composite, FormatFullPath(op), catalog, reportError);
 
         if (op.Value?.Kind == CompiledTemplateValueKind.HandlerConstruction && op.Value.HandlerConstruction != null)
             return ValidateHandlerConstruction(op.Value.HandlerConstruction, op, result, catalog, reportError);
@@ -404,14 +407,14 @@ public static class TemplateCatalogValidator
         {
             reportError(
                 "handler= construction targets a collection element-type, "
-                + $"but field '{op.FieldPath}' is not a collection.");
+                + $"but field '{FormatFullPath(op)}' is not a collection.");
             return 1;
         }
 
         var elementType = destination.CurrentType;
         if (elementType is null)
         {
-            reportError($"handler= construction on '{op.FieldPath}': cannot resolve element type.");
+            reportError($"handler= construction on '{FormatFullPath(op)}': cannot resolve element type.");
             return 1;
         }
 
@@ -425,7 +428,7 @@ public static class TemplateCatalogValidator
             if (catalog.HasReferenceSubtype(elementType))
             {
                 reportError(
-                    $"handler= on '{op.FieldPath}' must name a concrete subtype: "
+                    $"handler= on '{FormatFullPath(op)}' must name a concrete subtype: "
                     + $"element type {catalog.FriendlyName(elementType)} has subclasses.");
                 return 1;
             }
@@ -448,7 +451,7 @@ public static class TemplateCatalogValidator
             {
                 reportError(
                     $"handler=\"{typeName}\" (full name '{resolved.FullName}') is not a subtype of "
-                    + $"{catalog.FriendlyName(elementType)} required by '{op.FieldPath}'.");
+                    + $"{catalog.FriendlyName(elementType)} required by '{FormatFullPath(op)}'.");
                 return 1;
             }
             subtype = resolved;
@@ -462,7 +465,7 @@ public static class TemplateCatalogValidator
         return ValidateInnerOperations(
             construction.Operations,
             subtype.FullName ?? subtype.Name,
-            $"handler= construction for '{op.FieldPath}'",
+            $"handler= construction for '{FormatFullPath(op)}'",
             catalog,
             reportError);
     }
@@ -504,5 +507,48 @@ public static class TemplateCatalogValidator
             errors += ValidateOperation(inner, typeName, catalog, InnerReport);
         }
         return errors;
+    }
+
+    /// <summary>
+    /// Build the legacy bracketed dotted path that <see cref="TemplateMemberQuery"/>
+    /// expects, plus a segment-keyed subtype-hints map, from the structural
+    /// descent on <paramref name="op"/>. The hints map keys descent-step
+    /// indexes (zero-based) where the step carries a non-empty subtype.
+    /// </summary>
+    private static (string queryPath, Dictionary<int, string>? hints) BuildLegacyQueryPath(
+        string templateType,
+        CompiledTemplateSetOperation op)
+    {
+        if (op.Descent is not { Count: > 0 } descent)
+            return ($"{templateType}.{op.FieldPath}", null);
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append(templateType);
+        Dictionary<int, string>? hints = null;
+        for (var i = 0; i < descent.Count; i++)
+        {
+            var step = descent[i];
+            sb.Append('.').Append(step.Field).Append('[').Append(step.Index).Append(']');
+            if (!string.IsNullOrEmpty(step.Subtype))
+                (hints ??= [])[i] = step.Subtype;
+        }
+        sb.Append('.').Append(op.FieldPath);
+        return (sb.ToString(), hints);
+    }
+
+    /// <summary>
+    /// Format the modder-facing full path for an op's destination, including
+    /// any descent prefix in canonical bracketed form. Used in error messages
+    /// so the modder sees where the failing write lives.
+    /// </summary>
+    private static string FormatFullPath(CompiledTemplateSetOperation op)
+    {
+        if (op.Descent is not { Count: > 0 } descent)
+            return op.FieldPath;
+        var sb = new System.Text.StringBuilder();
+        foreach (var step in descent)
+            sb.Append(step.Field).Append('[').Append(step.Index).Append(']').Append('.');
+        sb.Append(op.FieldPath);
+        return sb.ToString();
     }
 }

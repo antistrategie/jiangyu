@@ -36,17 +36,18 @@ describe("editor-doc round-trip", () => {
             // Descent: edit-in-place on slot 0 of EventHandlers.
             {
               op: "Set",
-              fieldPath: "EventHandlers[0].ShowHUDText",
-              subtypeHints: { 0: "AddSkill" },
+              fieldPath: "ShowHUDText",
+              descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
               value: { kind: "Boolean", boolean: true },
             },
             {
               op: "Set",
-              fieldPath: "EventHandlers[0].OnlyApplyOnHit",
-              subtypeHints: { 0: "AddSkill" },
+              fieldPath: "OnlyApplyOnHit",
+              descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
               value: { kind: "Boolean", boolean: true },
             },
-            // Construct-and-replace a different slot.
+            // Construct-and-replace a different slot. Composite/handler
+            // bodies are inner directives without descent prefix.
             {
               op: "Append",
               fieldPath: "EventHandlers",
@@ -98,8 +99,10 @@ describe("descent group lifecycle", () => {
     directives = insertAtPendingAnchor(directives, firstPrefixed, { kind: "end" });
 
     expect(directives).toHaveLength(1);
-    expect(directives[0]?.fieldPath).toBe("EventHandlers[0].ShowHUDText");
-    expect(directives[0]?.subtypeHints).toEqual({ 0: "AddSkill" });
+    expect(directives[0]?.fieldPath).toBe("ShowHUDText");
+    expect(directives[0]?.descent).toEqual([
+      { field: "EventHandlers", index: 0, subtype: "AddSkill" },
+    ]);
 
     // Now grouping should put it in a one-member descent group.
     const groups = groupDirectives(directives);
@@ -140,8 +143,8 @@ describe("descent group lifecycle", () => {
       stampDirective(
         {
           op: "Set",
-          fieldPath: "EventHandlers[0].ShowHUDText",
-          subtypeHints: { 0: "AddSkill" },
+          fieldPath: "ShowHUDText",
+          descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
           value: { kind: "Boolean", boolean: true },
         },
         counter(),
@@ -149,8 +152,8 @@ describe("descent group lifecycle", () => {
       stampDirective(
         {
           op: "Set",
-          fieldPath: "EventHandlers[0].OnlyApplyOnHit",
-          subtypeHints: { 0: "AddSkill" },
+          fieldPath: "OnlyApplyOnHit",
+          descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
           value: { kind: "Boolean", boolean: true },
         },
         counter(),
@@ -187,8 +190,10 @@ describe("descent group lifecycle", () => {
 
     // New group lands between Cooldown and Tier — same visual position
     // as the original group. Subtype is the new one.
-    expect(final.map((d) => d.fieldPath)).toEqual(["Cooldown", "EventHandlers[0].Event", "Tier"]);
-    expect(final[1]?.subtypeHints).toEqual({ 0: "ChangeProperty" });
+    expect(final.map((d) => d.fieldPath)).toEqual(["Cooldown", "Event", "Tier"]);
+    expect(final[1]?.descent).toEqual([
+      { field: "EventHandlers", index: 0, subtype: "ChangeProperty" },
+    ]);
   });
 });
 
@@ -200,15 +205,15 @@ describe("descent group + reorder interaction", () => {
       { op: "Set", fieldPath: "A", value: { kind: "Int32", int32: 1 }, _uiId: "a" },
       {
         op: "Set",
-        fieldPath: "EventHandlers[0].X",
-        subtypeHints: { 0: "AddSkill" },
+        fieldPath: "X",
+        descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
         value: { kind: "Boolean", boolean: true },
         _uiId: "g0",
       },
       {
         op: "Set",
-        fieldPath: "EventHandlers[0].Y",
-        subtypeHints: { 0: "AddSkill" },
+        fieldPath: "Y",
+        descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
         value: { kind: "Boolean", boolean: false },
         _uiId: "g1",
       },
@@ -229,15 +234,15 @@ describe("rewriteDescentSlotIndex composes with grouping", () => {
     const list: StampedDirective[] = [
       {
         op: "Set",
-        fieldPath: "EventHandlers[0].A",
-        subtypeHints: { 0: "X" },
+        fieldPath: "A",
+        descent: [{ field: "EventHandlers", index: 0, subtype: "X" }],
         value: { kind: "Int32", int32: 1 },
         _uiId: "g0",
       },
       {
         op: "Set",
-        fieldPath: "EventHandlers[0].B",
-        subtypeHints: { 0: "X" },
+        fieldPath: "B",
+        descent: [{ field: "EventHandlers", index: 0, subtype: "X" }],
         value: { kind: "Int32", int32: 2 },
         _uiId: "g1",
       },

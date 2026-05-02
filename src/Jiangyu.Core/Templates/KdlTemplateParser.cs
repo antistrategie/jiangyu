@@ -348,9 +348,17 @@ public static class KdlTemplateParser
             },
             FieldPath = directive.FieldPath,
             Index = directive.Index,
-            SubtypeHints = directive.SubtypeHints != null ? new Dictionary<int, string>(directive.SubtypeHints) : null,
+            Descent = directive.Descent != null ? CloneDescent(directive.Descent) : null,
             Value = directive.Value != null ? EditorValueToCompiled(directive.Value) : null,
         };
+    }
+
+    private static List<TemplateDescentStep> CloneDescent(List<TemplateDescentStep> source)
+    {
+        var copy = new List<TemplateDescentStep>(source.Count);
+        foreach (var step in source)
+            copy.Add(new TemplateDescentStep { Field = step.Field, Index = step.Index, Subtype = step.Subtype });
+        return copy;
     }
 
     /// <summary>
@@ -387,7 +395,7 @@ public static class KdlTemplateParser
             },
             FieldPath = op.FieldPath,
             Index = op.Index,
-            SubtypeHints = op.SubtypeHints != null ? new Dictionary<int, string>(op.SubtypeHints) : null,
+            Descent = op.Descent != null ? CloneDescent(op.Descent) : null,
             Value = op.Value != null ? CompiledValueToEditor(op.Value) : null,
         };
     }
@@ -780,10 +788,8 @@ public static class KdlTemplateParser
             return false;
         }
 
-        // Hard-cut: bracket indexers in modder-authored fieldPath strings are
-        // no longer accepted. Descent uses child blocks; element-set uses
-        // index= property. Internal flat-path representation still uses [N]
-        // (produced by the descent flattener below); modder input does not.
+        // Bracket indexers in modder-authored fieldPath strings are not
+        // accepted. Descent uses child blocks; element-set uses index= property.
         if (fieldPath.Contains('['))
         {
             log.Error(
@@ -883,10 +889,9 @@ public static class KdlTemplateParser
 
             // Descent block: set "Field" index=N type="X" { set "Sub" ... }.
             // The outer 'set' is purely a navigation marker — it carries no
-            // value and no scalar result. Each inner directive flattens into
-            // a separate compiled op whose fieldPath is prefixed with the
-            // outer "Field[N]." segment, plus a SubtypeHints entry at this
-            // segment when type= is specified.
+            // value and no scalar result. Each inner directive becomes its
+            // own compiled op with a TemplateDescentStep prepended onto its
+            // Descent list, recording the outer (Field, index, type) navigation.
             //
             // Composite construction (set "Field" composite="X" { ... }) and
             // handler construction (set "Field" handler="X" { ... }) also use
@@ -951,12 +956,12 @@ public static class KdlTemplateParser
     }
 
     /// <summary>
-    /// Flatten a descent block (<c>set "Field" index=N type="X" { ... }</c>)
-    /// into one compiled op per inner directive. Each inner op's
-    /// <c>FieldPath</c> is prefixed with <c>Field[N].</c>; when
-    /// <c>type="X"</c> is present, a hint entry is recorded at the segment
-    /// where the descent crosses (segment index = number of dotted parts in
-    /// the prefix, zero-based).
+    /// Walk a descent block (<c>set "Field" index=N type="X" { ... }</c>) and
+    /// produce one compiled op per inner directive. Each inner op gets a
+    /// <see cref="TemplateDescentStep"/> prepended onto its
+    /// <see cref="CompiledTemplateSetOperation.Descent"/> list, recording the
+    /// (field, index, subtype) navigation introduced at this level. Nested
+    /// descent ends up with multiple steps in outer-to-inner order.
     /// </summary>
     private static bool TryParseDescentBlock(
         KdlNode node, string pos, ILogSink log,
@@ -1003,8 +1008,6 @@ public static class KdlTemplateParser
             return false;
         }
 
-        var prefixSegment = $"{outerField}[{outerIndex.Value}]";
-
         var hasError = false;
         var staging = new List<CompiledTemplateSetOperation>();
         foreach (var child in children)
@@ -1028,26 +1031,22 @@ public static class KdlTemplateParser
         if (hasError)
             return false;
 
-        // Splice the prefix and hint into each inner op. The descent segment
-        // sits at index 0 of the inner op's flattened fieldPath, so any
-        // existing hints in the inner op shift by one when nested deeper.
+        var newStep = new TemplateDescentStep
+        {
+            Field = outerField,
+            Index = outerIndex.Value,
+            Subtype = subtypeHint,
+        };
+
+        // Prepend the new step onto each inner op's descent list. Nested
+        // descent ops already carry their own inner steps; the outer step
+        // lands at position 0 so the final list reads outer-to-inner.
         foreach (var inner in staging)
         {
-            inner.FieldPath = $"{prefixSegment}.{inner.FieldPath}";
-
-            if (subtypeHint != null || inner.SubtypeHints != null)
-            {
-                var merged = new Dictionary<int, string>();
-                if (subtypeHint != null)
-                    merged[0] = subtypeHint;
-                if (inner.SubtypeHints != null)
-                {
-                    foreach (var (k, v) in inner.SubtypeHints)
-                        merged[k + 1] = v;
-                }
-                inner.SubtypeHints = merged.Count > 0 ? merged : null;
-            }
-
+            var combined = new List<TemplateDescentStep> { newStep };
+            if (inner.Descent != null)
+                combined.AddRange(inner.Descent);
+            inner.Descent = combined;
             ops.Add(inner);
         }
 

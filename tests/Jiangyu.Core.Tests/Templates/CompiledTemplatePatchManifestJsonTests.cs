@@ -20,16 +20,16 @@ public class CompiledTemplatePatchManifestJsonTests
     };
 
     [Fact]
-    public void SubtypeHints_RoundTrip()
+    public void Descent_RoundTrip()
     {
         var op = new CompiledTemplateSetOperation
         {
             Op = CompiledTemplateOp.Set,
-            FieldPath = "EventHandlers[0].ShowHUDText",
-            SubtypeHints = new Dictionary<int, string>
-            {
-                [0] = "AddSkill",
-            },
+            FieldPath = "ShowHUDText",
+            Descent =
+            [
+                new TemplateDescentStep { Field = "EventHandlers", Index = 0, Subtype = "AddSkill" },
+            ],
             Value = new CompiledTemplateValue
             {
                 Kind = CompiledTemplateValueKind.Boolean,
@@ -38,30 +38,36 @@ public class CompiledTemplatePatchManifestJsonTests
         };
 
         var json = JsonSerializer.Serialize(op, Options);
-        Assert.Contains("\"subtypeHints\"", json);
+        Assert.Contains("\"descent\"", json);
+        Assert.Contains("\"field\":\"EventHandlers\"", json);
+        Assert.Contains("\"index\":0", json);
+        Assert.Contains("\"subtype\":\"AddSkill\"", json);
         Assert.Contains("\"AddSkill\"", json);
 
         var roundTripped = JsonSerializer.Deserialize<CompiledTemplateSetOperation>(json, Options);
         Assert.NotNull(roundTripped);
-        Assert.Equal("EventHandlers[0].ShowHUDText", roundTripped!.FieldPath);
-        Assert.NotNull(roundTripped.SubtypeHints);
-        Assert.Equal("AddSkill", roundTripped.SubtypeHints![0]);
+        Assert.Equal("ShowHUDText", roundTripped!.FieldPath);
+        Assert.NotNull(roundTripped.Descent);
+        Assert.Single(roundTripped.Descent);
+        Assert.Equal("EventHandlers", roundTripped.Descent[0].Field);
+        Assert.Equal(0, roundTripped.Descent[0].Index);
+        Assert.Equal("AddSkill", roundTripped.Descent[0].Subtype);
     }
 
     [Fact]
-    public void SubtypeHints_MultipleSegments_RoundTrip()
+    public void Descent_MultipleSteps_RoundTrip()
     {
-        // Multi-level descent: hints at distinct segment indices need to
-        // survive the JSON round-trip with both keys intact.
+        // Multi-level descent: descent steps at distinct positions need to
+        // survive the JSON round-trip with both entries intact.
         var op = new CompiledTemplateSetOperation
         {
             Op = CompiledTemplateOp.Set,
-            FieldPath = "Outer[0].Inner[2].Leaf",
-            SubtypeHints = new Dictionary<int, string>
-            {
-                [0] = "TypeX",
-                [1] = "TypeY",
-            },
+            FieldPath = "Leaf",
+            Descent =
+            [
+                new TemplateDescentStep { Field = "Outer", Index = 0, Subtype = "TypeX" },
+                new TemplateDescentStep { Field = "Inner", Index = 2, Subtype = "TypeY" },
+            ],
             Value = new CompiledTemplateValue
             {
                 Kind = CompiledTemplateValueKind.Int32,
@@ -73,17 +79,21 @@ public class CompiledTemplatePatchManifestJsonTests
         var roundTripped = JsonSerializer.Deserialize<CompiledTemplateSetOperation>(json, Options);
 
         Assert.NotNull(roundTripped);
-        Assert.Equal(2, roundTripped!.SubtypeHints!.Count);
-        Assert.Equal("TypeX", roundTripped.SubtypeHints[0]);
-        Assert.Equal("TypeY", roundTripped.SubtypeHints[1]);
+        Assert.Equal(2, roundTripped!.Descent!.Count);
+        Assert.Equal("Outer", roundTripped.Descent[0].Field);
+        Assert.Equal(0, roundTripped.Descent[0].Index);
+        Assert.Equal("TypeX", roundTripped.Descent[0].Subtype);
+        Assert.Equal("Inner", roundTripped.Descent[1].Field);
+        Assert.Equal(2, roundTripped.Descent[1].Index);
+        Assert.Equal("TypeY", roundTripped.Descent[1].Subtype);
     }
 
     [Fact]
-    public void NullSubtypeHints_OmittedFromJson()
+    public void NullDescent_OmittedFromJson()
     {
         // The wire format optimises for the common case (no descent through
-        // a polymorphic boundary) by omitting null SubtypeHints entirely
-        // from the serialised output. Keeps compiled bundles small.
+        // a polymorphic boundary) by omitting null Descent entirely from the
+        // serialised output. Keeps compiled bundles small.
         var op = new CompiledTemplateSetOperation
         {
             Op = CompiledTemplateOp.Set,
@@ -100,10 +110,10 @@ public class CompiledTemplatePatchManifestJsonTests
             DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
         });
 
-        Assert.DoesNotContain("subtypeHints", json);
+        Assert.DoesNotContain("descent", json);
 
         var roundTripped = JsonSerializer.Deserialize<CompiledTemplateSetOperation>(json, Options);
-        Assert.Null(roundTripped!.SubtypeHints);
+        Assert.Null(roundTripped!.Descent);
     }
 
     [Fact]
@@ -152,10 +162,10 @@ public class CompiledTemplatePatchManifestJsonTests
     }
 
     [Fact]
-    public void HandlerConstruction_AndSubtypeHints_CoexistInOneOp()
+    public void HandlerConstruction_AndDescent_CoexistInOneOp()
     {
         // A "replace element N with new construction" op can carry both
-        // SubtypeHints (in case the path descends through a polymorphic
+        // Descent (in case the path descends through a polymorphic
         // intermediate; rare) and a HandlerConstruction value at the
         // terminal. Both must round-trip together.
         var op = new CompiledTemplateSetOperation
@@ -163,7 +173,10 @@ public class CompiledTemplatePatchManifestJsonTests
             Op = CompiledTemplateOp.Set,
             FieldPath = "EventHandlers",
             Index = 1,
-            SubtypeHints = new Dictionary<int, string> { [0] = "AddSkill" },
+            Descent =
+            [
+                new TemplateDescentStep { Field = "Outer", Index = 0, Subtype = "AddSkill" },
+            ],
             Value = new CompiledTemplateValue
             {
                 Kind = CompiledTemplateValueKind.HandlerConstruction,
@@ -181,7 +194,11 @@ public class CompiledTemplatePatchManifestJsonTests
 
         Assert.NotNull(roundTripped);
         Assert.Equal(1, roundTripped!.Index);
-        Assert.Equal("AddSkill", roundTripped.SubtypeHints![0]);
+        Assert.NotNull(roundTripped.Descent);
+        Assert.Single(roundTripped.Descent);
+        Assert.Equal("Outer", roundTripped.Descent[0].Field);
+        Assert.Equal(0, roundTripped.Descent[0].Index);
+        Assert.Equal("AddSkill", roundTripped.Descent[0].Subtype);
         Assert.Equal("ChangeProperty", roundTripped.Value!.HandlerConstruction!.TypeName);
     }
 

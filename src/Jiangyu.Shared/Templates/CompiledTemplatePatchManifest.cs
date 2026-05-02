@@ -53,6 +53,13 @@ public sealed class CompiledTemplateSetOperation
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public CompiledTemplateOp Op { get; set; } = CompiledTemplateOp.Set;
 
+    /// <summary>
+    /// Inner-relative member path on the destination instance (the instance
+    /// reached after walking <see cref="Descent"/>, or the top-level template
+    /// when <see cref="Descent"/> is null/empty). A bare member name in the
+    /// common case; never carries bracket notation, dotted segments only
+    /// where the modder authored a deeper composite-member write.
+    /// </summary>
     [JsonPropertyName("fieldPath")]
     public string FieldPath { get; set; } = string.Empty;
 
@@ -65,16 +72,15 @@ public sealed class CompiledTemplateSetOperation
     public int? Index { get; set; }
 
     /// <summary>
-    /// Concrete subtype names for polymorphic-abstract descent points along
-    /// <see cref="FieldPath"/>. Keyed by zero-based segment index of the
-    /// fieldPath: when navigating segment <c>k</c> auto-unwraps to an
-    /// abstract polymorphic base (e.g. <c>SkillEventHandlerTemplate</c>),
-    /// the validator switches to the type named in <c>SubtypeHints[k]</c>.
-    /// Produced by the KDL parser when modders write
-    /// <c>set "Field" index=N type="X" { ... }</c> child blocks.
+    /// Outer descent prefix as a structural step list. Each step navigates
+    /// into one polymorphic / collection-element slot before the inner
+    /// <see cref="FieldPath"/> write applies. Produced by the KDL parser
+    /// when modders write <c>set "Field" index=N type="X" { ... }</c> child
+    /// blocks; nested descent appends further steps in outer-to-inner order.
+    /// Null/empty when the directive writes a top-level member directly.
     /// </summary>
-    [JsonPropertyName("subtypeHints")]
-    public Dictionary<int, string>? SubtypeHints { get; set; }
+    [JsonPropertyName("descent")]
+    public List<TemplateDescentStep>? Descent { get; set; }
 
     [JsonPropertyName("value")]
     public CompiledTemplateValue? Value { get; set; }

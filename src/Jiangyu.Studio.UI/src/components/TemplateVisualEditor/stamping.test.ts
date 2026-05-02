@@ -176,8 +176,8 @@ describe("strip*UiIds", () => {
   it("round-trips: stamp → strip is identity on the wire shape", () => {
     const original: EditorDirective = {
       op: "Set",
-      fieldPath: "EventHandlers[0].ShowHUDText",
-      subtypeHints: { 0: "AddSkill" },
+      fieldPath: "ShowHUDText",
+      descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
       value: { kind: "Boolean", boolean: true },
     };
     const stamped = stampDirective(original, counter());

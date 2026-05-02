@@ -387,12 +387,14 @@ public class KdlTemplateParserTests
 
         var op = ops[0];
         Assert.Equal(CompiledTemplateOp.Set, op.Op);
-        Assert.Equal("EventHandlers[0].ShowHUDText", op.FieldPath);
+        Assert.Equal("ShowHUDText", op.FieldPath);
         Assert.Equal(CompiledTemplateValueKind.Boolean, op.Value!.Kind);
         Assert.True(op.Value.Boolean);
-        Assert.NotNull(op.SubtypeHints);
-        Assert.Equal("AddSkill", op.SubtypeHints[0]);
-        Assert.Single(op.SubtypeHints);
+        Assert.NotNull(op.Descent);
+        Assert.Single(op.Descent);
+        Assert.Equal("EventHandlers", op.Descent[0].Field);
+        Assert.Equal(0, op.Descent[0].Index);
+        Assert.Equal("AddSkill", op.Descent[0].Subtype);
     }
 
     [Fact]
@@ -412,18 +414,25 @@ public class KdlTemplateParserTests
         Assert.Equal(0, result.ErrorCount);
         var ops = result.Patches[0].Set;
         Assert.Equal(2, ops.Count);
-        Assert.Equal("EventHandlers[0].ShowHUDText", ops[0].FieldPath);
-        Assert.Equal("EventHandlers[0].OnlyApplyOnHit", ops[1].FieldPath);
-        Assert.Equal("AddSkill", ops[0].SubtypeHints![0]);
-        Assert.Equal("AddSkill", ops[1].SubtypeHints![0]);
+        Assert.Equal("ShowHUDText", ops[0].FieldPath);
+        Assert.Equal("OnlyApplyOnHit", ops[1].FieldPath);
+        Assert.NotNull(ops[0].Descent);
+        Assert.Single(ops[0].Descent!);
+        Assert.Equal("EventHandlers", ops[0].Descent![0].Field);
+        Assert.Equal(0, ops[0].Descent![0].Index);
+        Assert.Equal("AddSkill", ops[0].Descent![0].Subtype);
+        Assert.NotNull(ops[1].Descent);
+        Assert.Single(ops[1].Descent!);
+        Assert.Equal("EventHandlers", ops[1].Descent![0].Field);
+        Assert.Equal(0, ops[1].Descent![0].Index);
+        Assert.Equal("AddSkill", ops[1].Descent![0].Subtype);
     }
 
     [Fact]
     public void DescentBlock_NestedDescent_ShiftsInnerHintWhenOuterUnhinted()
     {
         // Outer descent without type=, inner descent with type=. The inner
-        // hint must shift from segment 0 to segment 1 in the flattened path
-        // because the outer descent occupies segment 0.
+        // hint stays on the inner step; the outer step has a null Subtype.
         var dir = SetupKdl("desc.kdl", """
             patch "PerkTemplate" "perk.x" {
                 set "Outer" index=0 {
@@ -438,11 +447,15 @@ public class KdlTemplateParserTests
 
         Assert.Equal(0, result.ErrorCount);
         var op = result.Patches[0].Set[0];
-        Assert.Equal("Outer[0].Inner[2].Leaf", op.FieldPath);
-        Assert.NotNull(op.SubtypeHints);
-        Assert.False(op.SubtypeHints!.ContainsKey(0));
-        Assert.Equal("Y", op.SubtypeHints[1]);
-        Assert.Single(op.SubtypeHints);
+        Assert.Equal("Leaf", op.FieldPath);
+        Assert.NotNull(op.Descent);
+        Assert.Equal(2, op.Descent.Count);
+        Assert.Equal("Outer", op.Descent[0].Field);
+        Assert.Equal(0, op.Descent[0].Index);
+        Assert.Null(op.Descent[0].Subtype);
+        Assert.Equal("Inner", op.Descent[1].Field);
+        Assert.Equal(2, op.Descent[1].Index);
+        Assert.Equal("Y", op.Descent[1].Subtype);
     }
 
     [Fact]
@@ -469,8 +482,18 @@ public class KdlTemplateParserTests
         Assert.Equal(0, result.ErrorCount);
         var ops = result.Patches[0].Set;
         Assert.Equal(2, ops.Count);
-        Assert.Equal("EventHandlers[0].ShowHUDText", ops[0].FieldPath);
-        Assert.Equal("EventHandlers[0].OnlyApplyOnHit", ops[1].FieldPath);
+        Assert.Equal("ShowHUDText", ops[0].FieldPath);
+        Assert.Equal("OnlyApplyOnHit", ops[1].FieldPath);
+        Assert.NotNull(ops[0].Descent);
+        Assert.Single(ops[0].Descent!);
+        Assert.Equal("EventHandlers", ops[0].Descent![0].Field);
+        Assert.Equal(0, ops[0].Descent![0].Index);
+        Assert.Equal("AddSkill", ops[0].Descent![0].Subtype);
+        Assert.NotNull(ops[1].Descent);
+        Assert.Single(ops[1].Descent!);
+        Assert.Equal("EventHandlers", ops[1].Descent![0].Field);
+        Assert.Equal(0, ops[1].Descent![0].Index);
+        Assert.Equal("AddSkill", ops[1].Descent![0].Subtype);
     }
 
     [Fact]
@@ -491,11 +514,15 @@ public class KdlTemplateParserTests
         Assert.Equal(0, result.ErrorCount);
         var ops = result.Patches[0].Set;
         Assert.Single(ops);
-        Assert.Equal("Outer[0].Inner[2].Leaf", ops[0].FieldPath);
-        Assert.NotNull(ops[0].SubtypeHints);
-        Assert.Equal("X", ops[0].SubtypeHints![0]);
-        Assert.Equal("Y", ops[0].SubtypeHints![1]);
-        Assert.Equal(2, ops[0].SubtypeHints!.Count);
+        Assert.Equal("Leaf", ops[0].FieldPath);
+        Assert.NotNull(ops[0].Descent);
+        Assert.Equal(2, ops[0].Descent!.Count);
+        Assert.Equal("Outer", ops[0].Descent![0].Field);
+        Assert.Equal(0, ops[0].Descent![0].Index);
+        Assert.Equal("X", ops[0].Descent![0].Subtype);
+        Assert.Equal("Inner", ops[0].Descent![1].Field);
+        Assert.Equal(2, ops[0].Descent![1].Index);
+        Assert.Equal("Y", ops[0].Descent![1].Subtype);
     }
 
     [Fact]
@@ -516,8 +543,13 @@ public class KdlTemplateParserTests
 
         Assert.Equal(0, result.ErrorCount);
         var op = result.Patches[0].Set[0];
-        Assert.Equal("EventHandlers[0].TargetRequiresOneOfTheseTags", op.FieldPath);
+        Assert.Equal("TargetRequiresOneOfTheseTags", op.FieldPath);
         Assert.Equal(2, op.Index);
+        Assert.NotNull(op.Descent);
+        Assert.Single(op.Descent!);
+        Assert.Equal("EventHandlers", op.Descent![0].Field);
+        Assert.Equal(0, op.Descent![0].Index);
+        Assert.Equal("AddSkill", op.Descent![0].Subtype);
         Assert.Equal(CompiledTemplateValueKind.TemplateReference, op.Value!.Kind);
     }
 
@@ -525,7 +557,7 @@ public class KdlTemplateParserTests
     public void DescentBlock_TypeHintOptional_WhenElementTypeUnambiguous()
     {
         // Validator decides whether type= is required; the parser accepts
-        // descent without type= and produces no SubtypeHints entry.
+        // descent without type= and produces a step whose Subtype is null.
         var dir = SetupKdl("desc.kdl", """
             patch "EntityTemplate" "player_squad.darby" {
                 set "Properties" index=0 {
@@ -538,8 +570,12 @@ public class KdlTemplateParserTests
 
         Assert.Equal(0, result.ErrorCount);
         var op = result.Patches[0].Set[0];
-        Assert.Equal("Properties[0].Accuracy", op.FieldPath);
-        Assert.Null(op.SubtypeHints);
+        Assert.Equal("Accuracy", op.FieldPath);
+        Assert.NotNull(op.Descent);
+        Assert.Single(op.Descent);
+        Assert.Equal("Properties", op.Descent[0].Field);
+        Assert.Equal(0, op.Descent[0].Index);
+        Assert.Null(op.Descent[0].Subtype);
     }
 
     [Fact]

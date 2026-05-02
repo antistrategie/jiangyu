@@ -1,55 +1,25 @@
 import { describe, it, expect } from "vitest";
-import { groupDirectives, parseDescentPath } from "./helpers";
-
-describe("parseDescentPath", () => {
-  it("parses a simple descent path", () => {
-    expect(parseDescentPath("EventHandlers[0].ShowHUDText")).toEqual({
-      field: "EventHandlers",
-      index: 0,
-      suffix: "ShowHUDText",
-    });
-  });
-
-  it("preserves a deeper inner suffix", () => {
-    expect(parseDescentPath("EventHandlers[2].Properties[0].Amount")).toEqual({
-      field: "EventHandlers",
-      index: 2,
-      suffix: "Properties[0].Amount",
-    });
-  });
-
-  it("returns null for a non-descent fieldPath", () => {
-    expect(parseDescentPath("EventHandlers")).toBeNull();
-    expect(parseDescentPath("EventHandlers[0]")).toBeNull();
-    expect(parseDescentPath("Cooldown")).toBeNull();
-    expect(parseDescentPath("a.b")).toBeNull();
-  });
-
-  it("returns null for malformed bracket expressions", () => {
-    expect(parseDescentPath("Field[abc].x")).toBeNull();
-    expect(parseDescentPath("Field[].x")).toBeNull();
-    expect(parseDescentPath("[0].x")).toBeNull();
-  });
-});
+import { groupDirectives } from "./helpers";
+import type { DescentStep } from "./types";
 
 describe("groupDirectives", () => {
   interface D {
     op: string;
     fieldPath: string;
-    subtypeHints?: Record<number, string> | null;
+    descent?: DescentStep[];
   }
 
   it("groups consecutive descent directives sharing field+index+subtype", () => {
     const directives: D[] = [
       {
         op: "Set",
-        fieldPath: "EventHandlers[0].ShowHUDText",
-        subtypeHints: { 0: "AddSkill" },
+        fieldPath: "ShowHUDText",
+        descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
       },
       {
         op: "Set",
-        fieldPath: "EventHandlers[0].OnlyApplyOnHit",
-        subtypeHints: { 0: "AddSkill" },
+        fieldPath: "OnlyApplyOnHit",
+        descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
       },
     ];
     const groups = groupDirectives(directives);
@@ -70,13 +40,13 @@ describe("groupDirectives", () => {
     const directives: D[] = [
       {
         op: "Set",
-        fieldPath: "EventHandlers[0].A",
-        subtypeHints: { 0: "AddSkill" },
+        fieldPath: "A",
+        descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
       },
       {
         op: "Set",
-        fieldPath: "EventHandlers[0].B",
-        subtypeHints: { 0: "ChangePropertyConditional" },
+        fieldPath: "B",
+        descent: [{ field: "EventHandlers", index: 0, subtype: "ChangePropertyConditional" }],
       },
     ];
     const groups = groupDirectives(directives);
@@ -88,8 +58,8 @@ describe("groupDirectives", () => {
       { op: "Set", fieldPath: "Cooldown" },
       {
         op: "Set",
-        fieldPath: "EventHandlers[0].ShowHUDText",
-        subtypeHints: { 0: "AddSkill" },
+        fieldPath: "ShowHUDText",
+        descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
       },
       { op: "Append", fieldPath: "Tags" },
     ];
@@ -106,14 +76,14 @@ describe("groupDirectives", () => {
     const directives: D[] = [
       {
         op: "Set",
-        fieldPath: "EventHandlers[0].A",
-        subtypeHints: { 0: "X" },
+        fieldPath: "A",
+        descent: [{ field: "EventHandlers", index: 0, subtype: "X" }],
       },
       { op: "Set", fieldPath: "Cooldown" },
       {
         op: "Set",
-        fieldPath: "EventHandlers[0].B",
-        subtypeHints: { 0: "X" },
+        fieldPath: "B",
+        descent: [{ field: "EventHandlers", index: 0, subtype: "X" }],
       },
     ];
     const groups = groupDirectives(directives);
@@ -124,8 +94,16 @@ describe("groupDirectives", () => {
 
   it("treats missing subtype hint as null and groups by null subtype", () => {
     const directives: D[] = [
-      { op: "Set", fieldPath: "Items[0].Name" },
-      { op: "Set", fieldPath: "Items[0].Cost" },
+      {
+        op: "Set",
+        fieldPath: "Name",
+        descent: [{ field: "Items", index: 0 }],
+      },
+      {
+        op: "Set",
+        fieldPath: "Cost",
+        descent: [{ field: "Items", index: 0 }],
+      },
     ];
     const groups = groupDirectives(directives);
     expect(groups).toHaveLength(1);

@@ -714,8 +714,11 @@ public class TemplateCatalogValidatorTests
                     new CompiledTemplateSetOperation
                     {
                         Op = CompiledTemplateOp.Set,
-                        FieldPath = "Handlers[0].DerivedField",
-                        SubtypeHints = new Dictionary<int, string> { [0] = "FixtureConcreteDerived" },
+                        FieldPath = "DerivedField",
+                        Descent =
+                        [
+                            new TemplateDescentStep { Field = "Handlers", Index = 0, Subtype = "FixtureConcreteDerived" },
+                        ],
                         Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 7 },
                     },
                 ],
@@ -744,8 +747,11 @@ public class TemplateCatalogValidatorTests
                     new CompiledTemplateSetOperation
                     {
                         Op = CompiledTemplateOp.Set,
-                        FieldPath = "Handlers[0].DerivedField",
-                        SubtypeHints = null,
+                        FieldPath = "DerivedField",
+                        Descent =
+                        [
+                            new TemplateDescentStep { Field = "Handlers", Index = 0, Subtype = null },
+                        ],
                         Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 7 },
                     },
                 ],
@@ -775,8 +781,11 @@ public class TemplateCatalogValidatorTests
                     new CompiledTemplateSetOperation
                     {
                         Op = CompiledTemplateOp.Set,
-                        FieldPath = "Handlers[0].DerivedField",
-                        SubtypeHints = new Dictionary<int, string> { [0] = "NoSuchType" },
+                        FieldPath = "DerivedField",
+                        Descent =
+                        [
+                            new TemplateDescentStep { Field = "Handlers", Index = 0, Subtype = "NoSuchType" },
+                        ],
                         Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 7 },
                     },
                 ],
@@ -809,8 +818,11 @@ public class TemplateCatalogValidatorTests
                     new CompiledTemplateSetOperation
                     {
                         Op = CompiledTemplateOp.Set,
-                        FieldPath = "Handlers[0].DerivedField",
-                        SubtypeHints = new Dictionary<int, string> { [0] = "FixtureRefHolder" },
+                        FieldPath = "DerivedField",
+                        Descent =
+                        [
+                            new TemplateDescentStep { Field = "Handlers", Index = 0, Subtype = "FixtureRefHolder" },
+                        ],
                         Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 1 },
                     },
                 ],
@@ -1041,8 +1053,11 @@ public class TemplateCatalogValidatorTests
                     new CompiledTemplateSetOperation
                     {
                         Op = CompiledTemplateOp.Set,
-                        FieldPath = "Skills[0].Cooldown",
-                        SubtypeHints = new Dictionary<int, string> { [0] = "FixtureSkillTemplate" },
+                        FieldPath = "Cooldown",
+                        Descent =
+                        [
+                            new TemplateDescentStep { Field = "Skills", Index = 0, Subtype = "FixtureSkillTemplate" },
+                        ],
                         Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Single, Single = 1.0f },
                     },
                 ],
@@ -1059,12 +1074,10 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
-    public void SubtypeHint_AtNonExistentSegment_IsIgnored()
+    public void EmptyDescent_OnScalarWrite_IsIgnored()
     {
-        // A hint keyed at a segment that doesn't have an indexer is dead
-        // metadata. The navigator only consults hints at segments where
-        // it auto-unwraps a polymorphic abstract base, so a hint at
-        // segment 5 of a 2-segment path simply never gets read. No error.
+        // An explicitly empty (non-null) Descent on a scalar write is treated
+        // the same as no descent — the validator must not trip over it.
         using var catalog = Load();
         var log = new RecordingLog();
         var patches = new[]
@@ -1079,7 +1092,7 @@ public class TemplateCatalogValidatorTests
                     {
                         Op = CompiledTemplateOp.Set,
                         FieldPath = "HudYOffsetScale",
-                        SubtypeHints = new Dictionary<int, string> { [5] = "BogusType" },
+                        Descent = [],
                         Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Single, Single = 1.0f },
                     },
                 ],
@@ -1155,8 +1168,11 @@ public class TemplateCatalogValidatorTests
                         // DerivedFieldB lives on FixtureConcreteDerivedB, not on
                         // FixtureConcreteDerived — hinting the wrong subtype
                         // surfaces the missing-member error after dispatch.
-                        FieldPath = "Handlers[0].DerivedFieldB",
-                        SubtypeHints = new Dictionary<int, string> { [0] = "FixtureConcreteDerived" },
+                        FieldPath = "DerivedFieldB",
+                        Descent =
+                        [
+                            new TemplateDescentStep { Field = "Handlers", Index = 0, Subtype = "FixtureConcreteDerived" },
+                        ],
                         Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.String, String = "x" },
                     },
                 ],

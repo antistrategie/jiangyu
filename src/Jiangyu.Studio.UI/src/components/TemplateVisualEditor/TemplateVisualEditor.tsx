@@ -15,7 +15,6 @@ import type {
   EnumMembersResult,
   InspectedFieldNode,
   TemplateMember,
-  TemplateQueryResult,
   TemplateSearchResult,
   TemplateValueResult,
 } from "@lib/rpc";
@@ -38,7 +37,6 @@ import {
   inspectedFieldToEditorValue,
   isFieldBagValue,
   makeDefaultValue,
-  reorderDirectives,
   resolveEnumCommitType,
   resolveRefTypeDisplay,
   rewriteDescentSlotIndex,
@@ -49,6 +47,15 @@ import {
   type StampedDirective,
   type StampedNode,
 } from "./helpers";
+import { useDragReorder, useTemplateMembers } from "./hooks";
+import {
+  EditorDispatchContext,
+  NodeIndexContext,
+  editorReducer,
+  useEditorDispatch,
+  useNodeIndex,
+  type EditorAction,
+} from "./store";
 
 // --- Stable UI IDs ---
 // Module-state counter for the editor's stamping helpers. Tests don't go
@@ -97,10 +104,6 @@ function CommitInput({ value, onCommit, onKeyDown, ...rest }: CommitInputProps) 
 }
 
 // --- RPC helpers ---
-
-function templatesQuery(typeName: string): Promise<TemplateQueryResult> {
-  return rpcCall<TemplateQueryResult>("templatesQuery", { typeName });
-}
 
 function templatesSearch(className?: string): Promise<TemplateSearchResult> {
   return rpcCall<TemplateSearchResult>("templatesSearch", className ? { className } : undefined);
@@ -277,32 +280,14 @@ export function TemplateVisualEditor({
     nodesRef.current = nodes;
   });
 
-  // Parse via RPC when content changes externally
-  useEffect(() => {
-    if (content === lastSerialisedRef.current) return;
-
-    void templatesParse(content)
-      .then((doc) => {
-        setNodes(stampNodes(doc.nodes));
-        setParseErrors(doc.errors);
-        setRpcError(null);
-        // External change resets undo history
-        undoStackRef.current = [];
-        redoStackRef.current = [];
-      })
-      .catch((err: unknown) => {
-        setRpcError(err instanceof Error ? err.message : "Parse RPC failed");
-      });
-  }, [content]);
-
-  // Debounced serialise via RPC after local edits
+  // Debounced serialise of `updated` back to KDL text. Side-effect-only;
+  // run after each mutation to push the new content out via onChange and
+  // refresh parse-error diagnostics.
   const serialiseTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const serialiseNodes = useCallback(
+  const scheduleSerialise = useCallback(
     (updated: StampedNode[]) => {
-      setNodes(updated);
       const version = ++serialiseVersionRef.current;
-
       clearTimeout(serialiseTimerRef.current);
       serialiseTimerRef.current = setTimeout(() => {
         const doc: EditorDocument = { nodes: updated, errors: [] };
@@ -326,17 +311,48 @@ export function TemplateVisualEditor({
     [onChange],
   );
 
-  const serialiseAndEmit = useCallback(
-    (updated: StampedNode[]) => {
-      undoStackRef.current = [...undoStackRef.current, nodesRef.current];
-      redoStackRef.current = [];
-      invalidateProjectClonesCache();
-      serialiseNodes(updated);
+  // The dispatch handle exposed via context. Wraps the pure reducer with
+  // undo-stack bookkeeping and the serialise side effect: every mutation
+  // pushes a snapshot onto the undo stack, clears redo, invalidates the
+  // project-clones cache, and schedules a debounced text emit. Bypasses
+  // all of that for `load` actions (parse / undo / redo paths handle
+  // their own history management).
+  const dispatch = useCallback<React.Dispatch<EditorAction>>(
+    (action) => {
+      const next = editorReducer(nodesRef.current, action);
+      if (action.type !== "load") {
+        undoStackRef.current = [...undoStackRef.current, nodesRef.current];
+        redoStackRef.current = [];
+        invalidateProjectClonesCache();
+        scheduleSerialise(next);
+      }
+      setNodes(next);
     },
-    [serialiseNodes],
+    [scheduleSerialise],
   );
 
-  // Undo/redo keyboard handler
+  // Parse via RPC when content changes externally
+  useEffect(() => {
+    if (content === lastSerialisedRef.current) return;
+
+    void templatesParse(content)
+      .then((doc) => {
+        dispatch({ type: "load", nodes: stampNodes(doc.nodes) });
+        setParseErrors(doc.errors);
+        setRpcError(null);
+        // External change resets undo history.
+        undoStackRef.current = [];
+        redoStackRef.current = [];
+      })
+      .catch((err: unknown) => {
+        setRpcError(err instanceof Error ? err.message : "Parse RPC failed");
+      });
+  }, [content, dispatch]);
+
+  // Undo/redo keyboard handler. Pulls a snapshot from the appropriate
+  // stack and dispatches a `load` action; pushes the current state onto
+  // the inverse stack so the action is reversible. Schedules its own
+  // serialise since the dispatch wrapper skips serialise on `load`.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey;
@@ -357,83 +373,19 @@ export function TemplateVisualEditor({
         const next = redoStackRef.current.pop();
         if (next === undefined) return;
         undoStackRef.current = [...undoStackRef.current, nodesRef.current];
-        serialiseNodes(next);
+        dispatch({ type: "load", nodes: next });
+        scheduleSerialise(next);
       } else {
         const prev = undoStackRef.current.pop();
         if (prev === undefined) return;
         redoStackRef.current = [...redoStackRef.current, nodesRef.current];
-        serialiseNodes(prev);
+        dispatch({ type: "load", nodes: prev });
+        scheduleSerialise(prev);
       }
     };
     document.addEventListener("keydown", handler, true);
     return () => document.removeEventListener("keydown", handler, true);
-  }, [serialiseNodes]);
-
-  const handleDeleteNode = useCallback(
-    (index: number) => {
-      serialiseAndEmit(nodes.filter((_, i) => i !== index));
-    },
-    [nodes, serialiseAndEmit],
-  );
-
-  const handleUpdateNode = useCallback(
-    (index: number, updated: StampedNode) => {
-      serialiseAndEmit(nodes.map((node, i) => (i === index ? updated : node)));
-    },
-    [nodes, serialiseAndEmit],
-  );
-
-  const handleUpdateDirective = useCallback(
-    (nodeIndex: number, dirIndex: number, directive: StampedDirective) => {
-      const updated = nodes.map((node, ni) => {
-        if (ni !== nodeIndex) return node;
-        return {
-          ...node,
-          directives: node.directives.map((d, di) => (di === dirIndex ? directive : d)),
-        };
-      });
-      serialiseAndEmit(updated);
-    },
-    [nodes, serialiseAndEmit],
-  );
-
-  const handleDeleteDirective = useCallback(
-    (nodeIndex: number, dirIndex: number) => {
-      const updated = nodes.map((node, ni) => {
-        if (ni !== nodeIndex) return node;
-        return { ...node, directives: node.directives.filter((_, di) => di !== dirIndex) };
-      });
-      serialiseAndEmit(updated);
-    },
-    [nodes, serialiseAndEmit],
-  );
-
-  const handleAddDirective = useCallback(
-    (nodeIndex: number, directive: StampedDirective) => {
-      const updated = nodes.map((node, ni) => {
-        if (ni !== nodeIndex) return node;
-        return { ...node, directives: [...node.directives, directive] };
-      });
-      serialiseAndEmit(updated);
-    },
-    [nodes, serialiseAndEmit],
-  );
-
-  // Whole-list replacement for callers that need to insert at a specific
-  // position, delete multiple entries at once, or rewrite a contiguous run
-  // of directives (descent groups bulk-update their member subtype hint
-  // through this path so the operation lands atomically). Plain
-  // add / update / delete go through the narrower callbacks above.
-  const handleSetDirectives = useCallback(
-    (nodeIndex: number, directives: StampedDirective[]) => {
-      const updated = nodes.map((node, ni) => {
-        if (ni !== nodeIndex) return node;
-        return { ...node, directives };
-      });
-      serialiseAndEmit(updated);
-    },
-    [nodes, serialiseAndEmit],
-  );
+  }, [dispatch, scheduleSerialise]);
 
   const handleToggleCollapse = useCallback(
     (nodeUiId: string) => {
@@ -448,48 +400,18 @@ export function TemplateVisualEditor({
     [cacheKey],
   );
 
-  // Add empty node
   const handleAddNode = useCallback(
     (kind: "Patch" | "Clone") => {
-      const newNode: StampedNode = {
-        kind,
-        templateType: "",
-        directives: [],
-        _uiId: uiId(),
-      };
-      serialiseAndEmit([...nodes, newNode]);
-    },
-    [nodes, serialiseAndEmit],
-  );
-
-  // Card reorder state
-  const [dragCardId, setDragCardId] = useState<string | null>(null);
-  const [dragCardSlot, setDragCardSlot] = useState<number | null>(null);
-
-  const handleCardReorder = useCallback(
-    (fromId: string, toSlot: number) => {
-      const fromIndex = nodes.findIndex((n) => n._uiId === fromId);
-      if (fromIndex === -1) return;
-      const updated = [...nodes];
-      const moved = updated.splice(fromIndex, 1)[0];
-      if (moved === undefined) return;
-      const insertAt = toSlot > fromIndex ? toSlot - 1 : toSlot;
-      updated.splice(insertAt, 0, moved);
-      serialiseAndEmit(updated);
-    },
-    [nodes, serialiseAndEmit],
-  );
-
-  // Row reorder within a card
-  const handleRowReorder = useCallback(
-    (nodeIndex: number, fromId: string, toSlot: number) => {
-      const updated = nodes.map((node, ni) => {
-        if (ni !== nodeIndex) return node;
-        return { ...node, directives: reorderDirectives(node.directives, fromId, toSlot) };
+      dispatch({
+        type: "addNode",
+        node: { kind, templateType: "", directives: [], _uiId: uiId() },
       });
-      serialiseAndEmit(updated);
     },
-    [nodes, serialiseAndEmit],
+    [dispatch],
+  );
+
+  const cardReorder = useDragReorder((fromId, toSlot) =>
+    dispatch({ type: "reorderCards", fromId, toSlot }),
   );
 
   // Bottom instance drop (on the add-node area). "accept" = instance drag,
@@ -533,129 +455,117 @@ export function TemplateVisualEditor({
               directives: [],
               _uiId: uiId(),
             };
-      serialiseAndEmit([...nodes, newNode]);
+      dispatch({ type: "addNode", node: newNode });
     },
-    [nodes, serialiseAndEmit],
+    [dispatch],
   );
 
   return (
-    <div className={styles.root}>
-      {rpcError && (
-        <div className={styles.parseError}>
-          <span className={styles.errorSummary}>RPC error: {rpcError}</span>
-          {onRequestSourceMode && (
-            <button type="button" className={styles.fallbackBtn} onClick={onRequestSourceMode}>
-              Switch to Source
-            </button>
-          )}
-        </div>
-      )}
-
-      {parseErrors.length > 0 && (
-        <div className={styles.errorPanel}>
+    <EditorDispatchContext value={dispatch}>
+      <div className={styles.root}>
+        {rpcError && (
           <div className={styles.parseError}>
-            <span className={styles.errorSummary}>
-              {parseErrors.length} parse error{parseErrors.length > 1 ? "s" : ""}
-            </span>
+            <span className={styles.errorSummary}>RPC error: {rpcError}</span>
             {onRequestSourceMode && (
               <button type="button" className={styles.fallbackBtn} onClick={onRequestSourceMode}>
                 Switch to Source
               </button>
             )}
           </div>
-          <div className={styles.errorList}>
-            {parseErrors.map((err) => (
-              <div key={`${err.line ?? "?"}:${err.message}`} className={styles.errorItem}>
-                {err.line != null && <span className={styles.errorLine}>line {err.line}</span>}
-                <span className={styles.errorMessage}>{err.message}</span>
-              </div>
-            ))}
+        )}
+
+        {parseErrors.length > 0 && (
+          <div className={styles.errorPanel}>
+            <div className={styles.parseError}>
+              <span className={styles.errorSummary}>
+                {parseErrors.length} parse error{parseErrors.length > 1 ? "s" : ""}
+              </span>
+              {onRequestSourceMode && (
+                <button type="button" className={styles.fallbackBtn} onClick={onRequestSourceMode}>
+                  Switch to Source
+                </button>
+              )}
+            </div>
+            <div className={styles.errorList}>
+              {parseErrors.map((err) => (
+                <div key={`${err.line ?? "?"}:${err.message}`} className={styles.errorItem}>
+                  {err.line != null && <span className={styles.errorLine}>line {err.line}</span>}
+                  <span className={styles.errorMessage}>{err.message}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {nodes.map((node, ni) => (
-        <React.Fragment key={node._uiId}>
-          {dragCardSlot === ni && dragCardId !== node._uiId && (
-            <div className={styles.dropIndicator} />
-          )}
-          <NodeCard
-            node={node}
-            collapsed={collapsed.has(node._uiId)}
-            onToggleCollapse={() => handleToggleCollapse(node._uiId)}
-            onDelete={() => handleDeleteNode(ni)}
-            onUpdateNode={(updated) => handleUpdateNode(ni, updated)}
-            onUpdateDirective={(di, d) => handleUpdateDirective(ni, di, d)}
-            onDeleteDirective={(di) => handleDeleteDirective(ni, di)}
-            onAddDirective={(d) => handleAddDirective(ni, d)}
-            onSetDirectives={(ds) => handleSetDirectives(ni, ds)}
-            isDragging={dragCardId === node._uiId}
-            onDragStart={() => setDragCardId(node._uiId)}
-            onDragEnd={() => {
-              setDragCardId(null);
-              setDragCardSlot(null);
-            }}
-            onDragOverCard={(e) => {
-              if (!dragCardId || dragCardId === node._uiId) return;
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
-              const rect = e.currentTarget.getBoundingClientRect();
-              const y = e.clientY - rect.top;
-              setDragCardSlot(y < rect.height / 2 ? ni : ni + 1);
-            }}
-            onDropCard={() => {
-              if (dragCardId && dragCardSlot !== null) {
-                handleCardReorder(dragCardId, dragCardSlot);
-              }
-              setDragCardId(null);
-              setDragCardSlot(null);
-            }}
-            onRowReorder={(fromId, toSlot) => handleRowReorder(ni, fromId, toSlot)}
-          />
-        </React.Fragment>
-      ))}
-      {dragCardSlot === nodes.length && <div className={styles.dropIndicator} />}
+        {nodes.map((node, ni) => {
+          const handlers = cardReorder.buildHandlers(node._uiId, ni, ni + 1);
+          return (
+            <NodeIndexContext key={node._uiId} value={ni}>
+              {cardReorder.showIndicatorAt(ni, node._uiId) && (
+                <div className={styles.dropIndicator} />
+              )}
+              <NodeCard
+                node={node}
+                collapsed={collapsed.has(node._uiId)}
+                onToggleCollapse={() => handleToggleCollapse(node._uiId)}
+                isDragging={handlers.isDragging}
+                onDragStart={handlers.onDragStart}
+                onDragEnd={handlers.onDragEnd}
+                onDragOverCard={handlers.onDragOver}
+                onDropCard={handlers.onDrop}
+              />
+            </NodeIndexContext>
+          );
+        })}
+        {cardReorder.showIndicatorAt(nodes.length, null) && (
+          <div className={styles.dropIndicator} />
+        )}
 
-      {nodes.length === 0 && parseErrors.length === 0 && (
-        <div className={styles.empty}>
-          <span>No template nodes</span>
-          <span>Use the buttons below or drag a template from the browser</span>
-        </div>
-      )}
-
-      <div className={styles.addNodeArea}>
-        {(["Patch", "Clone"] as const).map((kind) => (
-          <div
-            key={kind}
-            className={`${styles.addNodeZone} ${bottomDragOver === kind ? styles.addNodeZoneDragOver : ""} ${bottomDragOver === "reject" ? styles.addNodeZoneDragReject : ""}`}
-            onDragOver={(e) => {
-              const types = e.dataTransfer.types;
-              if (types.includes(INSTANCE_DRAG_TAG)) {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "copy";
-                setBottomDragOver(kind);
-              } else if (types.includes(MEMBER_DRAG_TAG)) {
-                // Member drags don't make sense as new nodes — show reject
-                // styling and don't preventDefault so onDrop never fires.
-                setBottomDragOver("reject");
-              } else if (types.includes("text/plain")) {
-                // Cross-window fallback — kind tag doesn't cross WebKitGTK.
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "copy";
-                setBottomDragOver(kind);
-              }
-            }}
-            onDragLeave={() => setBottomDragOver(false)}
-            onDrop={(e) => handleBottomDrop(kind, e)}
-          >
-            <button type="button" className={styles.addNodeBtn} onClick={() => handleAddNode(kind)}>
-              <Plus size={12} />
-              Add {kind}
-            </button>
+        {nodes.length === 0 && parseErrors.length === 0 && (
+          <div className={styles.empty}>
+            <span>No template nodes</span>
+            <span>Use the buttons below or drag a template from the browser</span>
           </div>
-        ))}
+        )}
+
+        <div className={styles.addNodeArea}>
+          {(["Patch", "Clone"] as const).map((kind) => (
+            <div
+              key={kind}
+              className={`${styles.addNodeZone} ${bottomDragOver === kind ? styles.addNodeZoneDragOver : ""} ${bottomDragOver === "reject" ? styles.addNodeZoneDragReject : ""}`}
+              onDragOver={(e) => {
+                const types = e.dataTransfer.types;
+                if (types.includes(INSTANCE_DRAG_TAG)) {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "copy";
+                  setBottomDragOver(kind);
+                } else if (types.includes(MEMBER_DRAG_TAG)) {
+                  // Member drags don't make sense as new nodes — show reject
+                  // styling and don't preventDefault so onDrop never fires.
+                  setBottomDragOver("reject");
+                } else if (types.includes("text/plain")) {
+                  // Cross-window fallback — kind tag doesn't cross WebKitGTK.
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "copy";
+                  setBottomDragOver(kind);
+                }
+              }}
+              onDragLeave={() => setBottomDragOver(false)}
+              onDrop={(e) => handleBottomDrop(kind, e)}
+            >
+              <button
+                type="button"
+                className={styles.addNodeBtn}
+                onClick={() => handleAddNode(kind)}
+              >
+                <Plus size={12} />
+                Add {kind}
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
+    </EditorDispatchContext>
   );
 }
 
@@ -665,54 +575,28 @@ interface NodeCardProps {
   node: StampedNode;
   collapsed: boolean;
   onToggleCollapse: () => void;
-  onDelete: () => void;
-  onUpdateNode: (updated: StampedNode) => void;
-  onUpdateDirective: (dirIndex: number, directive: StampedDirective) => void;
-  onDeleteDirective: (dirIndex: number) => void;
-  onAddDirective: (directive: StampedDirective) => void;
-  /** Replace the entire directive list. Used by descent group operations
-   *  that need to insert at a specific position, delete multiple members,
-   *  or rewrite member subtype hints atomically. */
-  onSetDirectives: (directives: StampedDirective[]) => void;
   isDragging: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
   onDragOverCard: (e: React.DragEvent) => void;
   onDropCard: () => void;
-  onRowReorder: (fromId: string, toSlot: number) => void;
 }
 
 function NodeCard({
   node,
   collapsed,
   onToggleCollapse,
-  onDelete,
-  onUpdateNode,
-  onUpdateDirective,
-  onDeleteDirective,
-  onAddDirective,
-  onSetDirectives,
   isDragging,
   onDragStart,
   onDragEnd,
   onDragOverCard,
   onDropCard,
-  onRowReorder,
 }: NodeCardProps) {
+  const dispatch = useEditorDispatch();
+  const nodeIndex = useNodeIndex();
   const isPatch = node.kind === "Patch";
-  const [members, setMembers] = useState<readonly TemplateMember[]>([]);
-  const [membersLoaded, setMembersLoaded] = useState(false);
   const justDraggedRef = useRef(false);
-
-  useEffect(() => {
-    if (collapsed || membersLoaded) return;
-    void templatesQuery(node.templateType)
-      .then((result) => {
-        setMembers(result.members ?? []);
-        setMembersLoaded(true);
-      })
-      .catch(() => setMembersLoaded(true));
-  }, [collapsed, membersLoaded, node.templateType]);
+  const { members, loaded: membersLoaded } = useTemplateMembers(node.templateType, !collapsed);
 
   // Vanilla values for pre-filling newly-added directives. Patch targets the
   // node's templateId; Clone targets the source the new clone copies from.
@@ -754,9 +638,13 @@ function NodeCard({
       }
       const synthMember = synthMemberFromPayload(member);
       const vanilla = vanillaFields.get(member.fieldPath);
-      onAddDirective(makeDefaultDirective(synthMember, vanilla));
+      dispatch({
+        type: "addDirective",
+        nodeIndex,
+        directive: makeDefaultDirective(synthMember, vanilla),
+      });
     },
-    [node, vanillaFields, onAddDirective],
+    [node, vanillaFields, dispatch, nodeIndex],
   );
 
   const fetchInstances = useCallback(async (): Promise<readonly SuggestionItem[]> => {
@@ -772,10 +660,6 @@ function NodeCard({
       .map((c) => ({ label: c.id, tag: "clone" }));
     return [...cloneItems, ...gameItems];
   }, [node.templateType]);
-
-  // Row reorder state
-  const [dragRowId, setDragRowId] = useState<string | null>(null);
-  const [dragRowSlot, setDragRowSlot] = useState<number | null>(null);
 
   return (
     <div
@@ -827,7 +711,9 @@ function NodeCard({
           value={node.templateType}
           placeholder="Type"
           fetchSuggestions={getCachedTemplateTypes}
-          onChange={(t) => onUpdateNode({ ...node, templateType: t })}
+          onChange={(t) =>
+            dispatch({ type: "updateNode", nodeIndex, node: { ...node, templateType: t } })
+          }
           className={styles.cardTypeInput}
         />
         {isPatch ? (
@@ -835,7 +721,9 @@ function NodeCard({
             value={node.templateId ?? ""}
             placeholder="ID"
             fetchSuggestions={fetchInstances}
-            onChange={(v) => onUpdateNode({ ...node, templateId: v })}
+            onChange={(v) =>
+              dispatch({ type: "updateNode", nodeIndex, node: { ...node, templateId: v } })
+            }
             className={styles.cardIdInput}
           />
         ) : (
@@ -845,7 +733,9 @@ function NodeCard({
               value={node.sourceId ?? ""}
               placeholder="Source ID"
               fetchSuggestions={fetchInstances}
-              onChange={(v) => onUpdateNode({ ...node, sourceId: v })}
+              onChange={(v) =>
+                dispatch({ type: "updateNode", nodeIndex, node: { ...node, sourceId: v } })
+              }
               className={styles.cardIdInput}
             />
             <span className={styles.cardProp}>id</span>
@@ -859,7 +749,9 @@ function NodeCard({
                 className={styles.setValueInput}
                 value={node.cloneId ?? ""}
                 placeholder="Clone ID"
-                onCommit={(v) => onUpdateNode({ ...node, cloneId: v })}
+                onCommit={(v) =>
+                  dispatch({ type: "updateNode", nodeIndex, node: { ...node, cloneId: v } })
+                }
               />
             </div>
           </>
@@ -875,7 +767,7 @@ function NodeCard({
           className={styles.cardDelete}
           onClick={(e) => {
             e.stopPropagation();
-            onDelete();
+            dispatch({ type: "deleteNode", nodeIndex });
           }}
           title="Remove node"
         >
@@ -891,20 +783,73 @@ function NodeCard({
             membersLoaded={membersLoaded}
             memberMap={memberMap}
             vanillaFields={vanillaFields}
-            dragRowId={dragRowId}
-            dragRowSlot={dragRowSlot}
-            setDragRowId={setDragRowId}
-            setDragRowSlot={setDragRowSlot}
-            onRowReorder={onRowReorder}
-            onUpdateDirective={onUpdateDirective}
-            onDeleteDirective={onDeleteDirective}
-            onAddDirective={onAddDirective}
-            onSetDirectives={onSetDirectives}
             handleNodeDrop={handleNodeDrop}
           />
         </div>
       )}
     </div>
+  );
+}
+
+// --- DirectiveRow ---
+//
+// Renders one stamped directive as a SetRow with its drag indicator and
+// reorder handlers wired through `reorder`. Used by DirectiveBody (loose
+// rows + group members), CompositeEditor (composite body rows), and any
+// future directive-list site so the rendering and drag wiring stays in
+// one place. Caller threads onChange/onDelete in by flatIndex so the
+// owning list can splice in / out at the right slot.
+
+interface DirectiveRowProps {
+  readonly directive: StampedDirective;
+  readonly flatIndex: number;
+  /** Display-only override for the field-name label; lets descent groups
+   *  show the inner suffix (e.g. "ShowHUDText") instead of the underlying
+   *  flat fieldPath ("EventHandlers[0].ShowHUDText"). The wire format is
+   *  unchanged. */
+  readonly displayFieldPath?: string | undefined;
+  readonly memberMap: Map<string, TemplateMember>;
+  readonly vanillaFields: ReadonlyMap<string, InspectedFieldNode>;
+  readonly reorder: ReturnType<typeof useDragReorder>;
+  readonly onChange: (flatIndex: number, directive: StampedDirective) => void;
+  readonly onDelete: (flatIndex: number) => void;
+}
+
+function DirectiveRow({
+  directive,
+  flatIndex,
+  displayFieldPath,
+  memberMap,
+  vanillaFields,
+  reorder,
+  onChange,
+  onDelete,
+}: DirectiveRowProps) {
+  // The directive's fieldPath is the inner-relative member name (descent
+  // context lives on directive.descent, not in the path). Take the first
+  // dotted segment so deeper composite-member writes like "Sub.Field" still
+  // resolve their top-level member from the parent's catalog.
+  const baseName = (displayFieldPath ?? directive.fieldPath).split(".")[0] ?? "";
+  const handlers = reorder.buildHandlers(directive._uiId, flatIndex, flatIndex + 1);
+  return (
+    <>
+      {reorder.showIndicatorAt(flatIndex, directive._uiId) && (
+        <div className={styles.dropIndicator} />
+      )}
+      <SetRow
+        directive={directive}
+        member={memberMap.get(baseName)}
+        vanillaNode={vanillaFields.get(baseName)}
+        displayFieldPath={displayFieldPath}
+        onChange={(updated) => onChange(flatIndex, updated)}
+        onDelete={() => onDelete(flatIndex)}
+        isDragging={handlers.isDragging}
+        onDragStart={handlers.onDragStart}
+        onDragEnd={handlers.onDragEnd}
+        onDragOverRow={handlers.onDragOver}
+        onDropRow={handlers.onDrop}
+      />
+    </>
   );
 }
 
@@ -923,15 +868,6 @@ interface DirectiveBodyProps {
   membersLoaded: boolean;
   memberMap: Map<string, TemplateMember>;
   vanillaFields: ReadonlyMap<string, InspectedFieldNode>;
-  dragRowId: string | null;
-  dragRowSlot: number | null;
-  setDragRowId: (id: string | null) => void;
-  setDragRowSlot: (slot: number | null) => void;
-  onRowReorder: (fromId: string, toSlot: number) => void;
-  onUpdateDirective: (dirIndex: number, directive: StampedDirective) => void;
-  onDeleteDirective: (dirIndex: number) => void;
-  onAddDirective: (directive: StampedDirective) => void;
-  onSetDirectives: (directives: StampedDirective[]) => void;
   handleNodeDrop: (e: React.DragEvent) => void;
 }
 
@@ -941,17 +877,30 @@ function DirectiveBody({
   membersLoaded,
   memberMap,
   vanillaFields,
-  dragRowId,
-  dragRowSlot,
-  setDragRowId,
-  setDragRowSlot,
-  onRowReorder,
-  onUpdateDirective,
-  onDeleteDirective,
-  onAddDirective,
-  onSetDirectives,
   handleNodeDrop,
 }: DirectiveBodyProps) {
+  const dispatch = useEditorDispatch();
+  const nodeIndex = useNodeIndex();
+  const reorder = useDragReorder((fromId, toSlot) =>
+    dispatch({ type: "reorderRows", nodeIndex, fromId, toSlot }),
+  );
+  const onSetDirectives = useCallback(
+    (directives: StampedDirective[]) => dispatch({ type: "setDirectives", nodeIndex, directives }),
+    [dispatch, nodeIndex],
+  );
+  const onUpdateDirective = useCallback(
+    (dirIndex: number, directive: StampedDirective) =>
+      dispatch({ type: "updateDirective", nodeIndex, dirIndex, directive }),
+    [dispatch, nodeIndex],
+  );
+  const onDeleteDirective = useCallback(
+    (dirIndex: number) => dispatch({ type: "deleteDirective", nodeIndex, dirIndex }),
+    [dispatch, nodeIndex],
+  );
+  const onAddDirective = useCallback(
+    (directive: StampedDirective) => dispatch({ type: "addDirective", nodeIndex, directive }),
+    [dispatch, nodeIndex],
+  );
   const groups = useMemo(() => groupDirectives(node.directives), [node.directives]);
   // Pre-compute each rendered item's flat-index range so reorder and
   // group operations can splice the right slice of node.directives. Done
@@ -1037,45 +986,19 @@ function DirectiveBody({
     d: StampedDirective,
     flatIndex: number,
     displayFieldPath?: string,
-  ): React.ReactNode => {
-    const baseName = (displayFieldPath ?? d.fieldPath).replace(/\[.*\]$/, "").split(".")[0] ?? "";
-    return (
-      <React.Fragment key={d._uiId}>
-        {dragRowSlot === flatIndex && dragRowId !== d._uiId && (
-          <div className={styles.dropIndicator} />
-        )}
-        <SetRow
-          directive={d}
-          member={memberMap.get(baseName)}
-          vanillaNode={vanillaFields.get(baseName)}
-          displayFieldPath={displayFieldPath}
-          onChange={(updated) => onUpdateDirective(flatIndex, updated)}
-          onDelete={() => onDeleteDirective(flatIndex)}
-          isDragging={dragRowId === d._uiId}
-          onDragStart={() => setDragRowId(d._uiId)}
-          onDragEnd={() => {
-            setDragRowId(null);
-            setDragRowSlot(null);
-          }}
-          onDragOverRow={(e) => {
-            if (!dragRowId || dragRowId === d._uiId) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "move";
-            const rect = e.currentTarget.getBoundingClientRect();
-            const y = e.clientY - rect.top;
-            setDragRowSlot(y < rect.height / 2 ? flatIndex : flatIndex + 1);
-          }}
-          onDropRow={() => {
-            if (dragRowId && dragRowSlot !== null) {
-              onRowReorder(dragRowId, dragRowSlot);
-            }
-            setDragRowId(null);
-            setDragRowSlot(null);
-          }}
-        />
-      </React.Fragment>
-    );
-  };
+  ): React.ReactNode => (
+    <DirectiveRow
+      key={d._uiId}
+      directive={d}
+      flatIndex={flatIndex}
+      displayFieldPath={displayFieldPath}
+      memberMap={memberMap}
+      vanillaFields={vanillaFields}
+      reorder={reorder}
+      onChange={onUpdateDirective}
+      onDelete={onDeleteDirective}
+    />
+  );
 
   const renderPending = () =>
     pending && (
@@ -1120,10 +1043,12 @@ function DirectiveBody({
         );
         const firstMemberId = g.members[0]?.directive._uiId ?? "";
         const groupKey = firstMemberId || `group-${g.field}-${g.index}`;
-        const showIndicatorAbove = dragRowSlot === startIndex && dragRowId !== firstMemberId;
+        const groupHandlers = reorder.buildHandlers(firstMemberId, startIndex, endIndex);
         return (
           <React.Fragment key={groupKey}>
-            {showIndicatorAbove && <div className={styles.dropIndicator} />}
+            {reorder.showIndicatorAt(startIndex, firstMemberId) && (
+              <div className={styles.dropIndicator} />
+            )}
             <DescentGroup
               field={g.field}
               slotIndex={g.index}
@@ -1136,33 +1061,19 @@ function DirectiveBody({
               onConvertToPending={handleConvertGroupToPending}
               members={g.members}
               memberRows={memberRows}
-              isDragging={dragRowId === firstMemberId}
-              onDragStart={() => setDragRowId(firstMemberId)}
-              onDragEnd={() => {
-                setDragRowId(null);
-                setDragRowSlot(null);
-              }}
-              onDragOverRow={(e) => {
-                if (!dragRowId || dragRowId === firstMemberId) return;
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
-                const rect = e.currentTarget.getBoundingClientRect();
-                const y = e.clientY - rect.top;
-                setDragRowSlot(y < rect.height / 2 ? startIndex : endIndex);
-              }}
-              onDropRow={() => {
-                if (dragRowId && dragRowSlot !== null) {
-                  onRowReorder(dragRowId, dragRowSlot);
-                }
-                setDragRowId(null);
-                setDragRowSlot(null);
-              }}
+              isDragging={groupHandlers.isDragging}
+              onDragStart={groupHandlers.onDragStart}
+              onDragEnd={groupHandlers.onDragEnd}
+              onDragOverRow={groupHandlers.onDragOver}
+              onDropRow={groupHandlers.onDrop}
             />
             {renderPendingAfter && renderPending()}
           </React.Fragment>
         );
       })}
-      {dragRowSlot === node.directives.length && <div className={styles.dropIndicator} />}
+      {reorder.showIndicatorAt(node.directives.length, null) && (
+        <div className={styles.dropIndicator} />
+      )}
       {pendingAtEnd && renderPending()}
       <FieldAdder
         members={members}
@@ -1175,6 +1086,116 @@ function DirectiveBody({
         onStartDescent={handleStartPending}
       />
     </>
+  );
+}
+
+// --- DescentHeader ---
+//
+// Shared header chrome for descent group cards (both live and pending).
+// Lays out the row: drag grip, "set" badge, field name, "at" + index
+// input, subtype affordance (combobox / clickable chip / read-only span),
+// spacer, X close button. The subtype affordance switches on mode:
+//   - "fixed":     subtype shown read-only (not editable here; usually
+//                  monomorphic with a single forced subtype, or no subtype)
+//   - "clearable": chip clickable; click fires onChangeSubtype(null) and
+//                  the parent decides whether to drop bound state
+//   - "picker":    combobox when subtype is null, clearable chip when set
+//
+// `dragBinding` controls the grip: when provided the grip is draggable
+// (live group case); when null the grip is rendered static (pending group
+// can't be reordered until materialised).
+
+interface DescentHeaderProps {
+  readonly field: string;
+  readonly slotIndex: number;
+  readonly subtype: string | null;
+  readonly subtypeChoices: readonly string[] | null;
+  readonly subtypeMode: "fixed" | "clearable" | "picker";
+  readonly onChangeIndex: (next: number) => void;
+  readonly onChangeSubtype: (subtype: string | null) => void;
+  readonly dragBinding: {
+    readonly onDragStart: (e: React.DragEvent) => void;
+    readonly onDragEnd: () => void;
+    readonly payloadId: string;
+    readonly title: string;
+  } | null;
+  readonly onClose: () => void;
+  readonly closeTitle: string;
+  readonly subtypeChipTitle?: string;
+}
+
+function DescentHeader({
+  field,
+  slotIndex,
+  subtype,
+  subtypeChoices,
+  subtypeMode,
+  onChangeIndex,
+  onChangeSubtype,
+  dragBinding,
+  onClose,
+  closeTitle,
+  subtypeChipTitle,
+}: DescentHeaderProps) {
+  const fetchSubtypeChoices = useCallback(
+    () => Promise.resolve(subtypeChoices ?? []),
+    [subtypeChoices],
+  );
+
+  return (
+    <div className={styles.setRowHeader}>
+      {dragBinding !== null ? (
+        <span
+          className={styles.rowDragGrip}
+          draggable
+          onDragStart={dragBinding.onDragStart}
+          onDragEnd={dragBinding.onDragEnd}
+          title={dragBinding.title}
+        >
+          <GripVertical size={10} />
+        </span>
+      ) : (
+        <span className={styles.rowDragGrip} aria-hidden>
+          <GripVertical size={10} />
+        </span>
+      )}
+      <span className={styles.setOpLabel}>set</span>
+      <span className={styles.setField} title={field}>
+        {field}
+      </span>
+      <span className={styles.setInsertAt}>at</span>
+      <CommitInput
+        type="number"
+        className={styles.setIndexInput}
+        value={slotIndex}
+        min={0}
+        step={1}
+        onCommit={(v) => onChangeIndex(Number(v))}
+      />
+      {subtypeMode === "picker" && subtype === null ? (
+        <SuggestionCombobox
+          value=""
+          placeholder="Pick subtype…"
+          fetchSuggestions={fetchSubtypeChoices}
+          onChange={(v) => onChangeSubtype(v === "" ? null : v)}
+        />
+      ) : subtype !== null && (subtypeMode === "clearable" || subtypeMode === "picker") ? (
+        <button
+          type="button"
+          className={styles.compositeTypeClickable}
+          onClick={() => onChangeSubtype(null)}
+          title={subtypeChipTitle ?? "Clear subtype"}
+        >
+          {subtype}
+        </button>
+      ) : subtype !== null ? (
+        <span className={styles.compositeType}>{subtype}</span>
+      ) : null}
+      <span className={styles.descentGroupSpacer} />
+      <button type="button" className={styles.setDelete} onClick={onClose} title={closeTitle}>
+        <X size={10} />
+      </button>
+    </div>
   );
 }
 
@@ -1252,69 +1273,36 @@ function DescentGroup({
   // Inner-type members for the FieldAdder. Resolved from the subtype hint
   // when the group has one (polymorphic collection); otherwise fall back
   // to the outer member's element type (monomorphic owned-element list,
-  // e.g. List<PropertyChange>). Empty until the RPC resolves.
+  // e.g. List<PropertyChange>).
   const innerType = subtype ?? outerMember?.elementTypeName ?? "";
-  // Track members for whichever inner type we last fetched. The async
-  // load is keyed on innerType so a stale query for a previous subtype
-  // can't commit its result over the current one. The empty-type case
-  // doesn't need to fetch — derived state below treats `loaded=true`
-  // when innerType is "" so the FieldAdder shows its empty state.
-  const [innerCache, setInnerCache] = useState<{
-    type: string;
-    members: readonly TemplateMember[];
-  }>({ type: "", members: [] });
-  useEffect(() => {
-    if (!innerType) return;
-    let cancelled = false;
-    void templatesQuery(innerType)
-      .then((result) => {
-        if (cancelled) return;
-        setInnerCache({ type: innerType, members: result.members ?? [] });
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setInnerCache({ type: innerType, members: [] });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [innerType]);
-  const innerMembers = innerCache.type === innerType ? innerCache.members : [];
-  const innerMembersLoaded = !innerType || innerCache.type === innerType;
+  const { members: innerMembers, loaded: innerMembersLoaded } = useTemplateMembers(
+    innerType || undefined,
+  );
 
-  const prefix = `${field}[${slotIndex}].`;
   // Members that already have a directive in the group — used to dim the
   // FieldAdder's "scalar already set" entries the same way the outer
-  // NodeCard does. Strip the group prefix so the comparison is against
-  // the inner member name.
+  // NodeCard does. The directive's fieldPath is the inner-relative name
+  // (descent context lives on directive.descent), so a single-segment
+  // path with no further descent is a top-level inner member.
   const existingMemberNames = useMemo(() => {
     const names: string[] = [];
     for (let i = startIndex; i < endIndex; i++) {
       const d = directives[i];
       if (!d) continue;
-      const suffix = d.fieldPath.startsWith(prefix)
-        ? d.fieldPath.slice(prefix.length)
-        : d.fieldPath;
-      // Only top-level inner names — deeper-suffix members live in nested
-      // descent and don't compete for dropdown slots at this level.
-      if (!suffix.includes(".") && !suffix.includes("[")) {
-        names.push(suffix);
+      // Only top-level inner names — deeper composite paths and nested
+      // descent live below this level and don't compete for dropdown slots.
+      if (!d.fieldPath.includes(".") && (d.descent?.length ?? 0) <= 1) {
+        names.push(d.fieldPath);
       }
     }
     return names;
-  }, [directives, startIndex, endIndex, prefix]);
+  }, [directives, startIndex, endIndex]);
 
   const handleAddMember = (newDirective: StampedDirective) => {
     // The FieldAdder built the directive with fieldPath = inner member
-    // name. Prefix it with the group's outer prefix and stamp the
-    // subtype hint at segment 0 if the group has one.
-    const prefixed: StampedDirective = {
-      ...newDirective,
-      fieldPath: `${prefix}${newDirective.fieldPath}`,
-      ...(subtype !== null
-        ? { subtypeHints: { ...(newDirective.subtypeHints ?? {}), 0: subtype } }
-        : {}),
-    };
+    // name and no descent. Prepend this group's outer step so it joins
+    // the run.
+    const prefixed = buildDescentMemberDirective(field, slotIndex, subtype, newDirective);
     const next = [...directives.slice(0, endIndex), prefixed, ...directives.slice(endIndex)];
     onSetDirectives(next);
   };
@@ -1338,6 +1326,14 @@ function DescentGroup({
     if (onConvertToPending) onConvertToPending(field, slotIndex, startIndex, endIndex);
   };
 
+  // Polymorphic collection with multi-choice: clearing the chip drops the
+  // whole group (subtype-specific member fields wouldn't survive a type
+  // change). Single-choice / non-polymorphic: chip is read-only.
+  const subtypeMode: "fixed" | "clearable" =
+    subtypeChoices !== null && subtypeChoices.length > 1 ? "clearable" : "fixed";
+
+  const firstMemberId = members[0]?.directive._uiId ?? "";
+
   return (
     <div
       className={`${styles.setRowComposite} ${isDragging ? styles.rowDragging : ""}`}
@@ -1347,65 +1343,31 @@ function DescentGroup({
         onDropRow();
       }}
     >
-      <div className={styles.setRowHeader}>
-        <span
-          className={styles.rowDragGrip}
-          draggable
-          onDragStart={(e) => {
+      <DescentHeader
+        field={field}
+        slotIndex={slotIndex}
+        subtype={subtype}
+        subtypeChoices={subtypeChoices}
+        subtypeMode={subtypeMode}
+        onChangeIndex={handleChangeSlotIndex}
+        onChangeSubtype={handleClearSubtype}
+        dragBinding={{
+          onDragStart: (e) => {
             e.stopPropagation();
             e.dataTransfer.effectAllowed = "move";
-            // Same key the per-row grip uses; the parent's drop handler
-            // recognises group-id drags via the dragRowGroupLength state
-            // it set on drag-start, so the K members move together.
-            const firstId = members[0]?.directive._uiId ?? "";
-            e.dataTransfer.setData("application/x-jiangyu-row-reorder", firstId);
+            // Same payload key per-row grips use; the parent's reorder
+            // helper recognises group-head ids and moves all K members.
+            e.dataTransfer.setData("application/x-jiangyu-row-reorder", firstMemberId);
             onDragStart();
-          }}
-          onDragEnd={onDragEnd}
-          title="Drag to reorder group"
-        >
-          <GripVertical size={10} />
-        </span>
-        <span className={styles.setOpLabel}>set</span>
-        <span className={styles.setField} title={field}>
-          {field}
-        </span>
-        <span className={styles.setInsertAt}>at</span>
-        <CommitInput
-          type="number"
-          className={styles.setIndexInput}
-          value={slotIndex}
-          min={0}
-          step={1}
-          onCommit={(v) => handleChangeSlotIndex(Number(v))}
-        />
-        {subtype !== null &&
-          (subtypeChoices !== null && subtypeChoices.length > 1 ? (
-            // Polymorphic collection: clicking the chip drops the whole
-            // group (subtype-specific member fields wouldn't survive a
-            // type change). Modder restarts via "Edit slot…" with a
-            // fresh subtype.
-            <button
-              type="button"
-              className={styles.compositeTypeClickable}
-              onClick={handleClearSubtype}
-              title="Clear subtype (deletes the group; restart via Edit slot)"
-            >
-              {subtype}
-            </button>
-          ) : (
-            <span className={styles.compositeType}>{subtype}</span>
-          ))}
-        <span className={styles.descentGroupSpacer} />
-        <button
-          type="button"
-          className={styles.setDelete}
-          onClick={handleDeleteGroup}
-          title="Remove descent group (deletes all member directives)"
-        >
-          <X size={10} />
-        </button>
-      </div>
+          },
+          onDragEnd,
+          payloadId: firstMemberId,
+          title: "Drag to reorder group",
+        }}
+        onClose={handleDeleteGroup}
+        closeTitle="Remove descent group (deletes all member directives)"
+        subtypeChipTitle="Clear subtype (deletes the group; restart via Edit slot)"
+      />
       <div className={styles.compositeBody}>
         {memberRows}
         <FieldAdder
@@ -1459,85 +1421,25 @@ function PendingDescentGroup({
   const isPolymorphic = subtypeChoices !== null && subtypeChoices.length > 0;
   const innerType = subtype ?? outerMember?.elementTypeName ?? "";
 
-  const [innerCache, setInnerCache] = useState<{
-    type: string;
-    members: readonly TemplateMember[];
-  }>({ type: "", members: [] });
-  useEffect(() => {
-    if (!innerType) return;
-    let cancelled = false;
-    void templatesQuery(innerType)
-      .then((result) => {
-        if (cancelled) return;
-        setInnerCache({ type: innerType, members: result.members ?? [] });
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setInnerCache({ type: innerType, members: [] });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [innerType]);
-  const innerMembers = innerCache.type === innerType ? innerCache.members : [];
-  const innerMembersLoaded = !innerType || innerCache.type === innerType;
-
-  const fetchSubtypeChoices = useCallback(
-    () => Promise.resolve(subtypeChoices ?? []),
-    [subtypeChoices],
+  const { members: innerMembers, loaded: innerMembersLoaded } = useTemplateMembers(
+    innerType || undefined,
   );
 
   return (
     <div className={styles.setRowComposite}>
-      <div className={styles.setRowHeader}>
-        <span className={styles.rowDragGrip} aria-hidden>
-          <GripVertical size={10} />
-        </span>
-        <span className={styles.setOpLabel}>set</span>
-        <span className={styles.setField} title={field}>
-          {field}
-        </span>
-        <span className={styles.setInsertAt}>at</span>
-        <CommitInput
-          type="number"
-          className={styles.setIndexInput}
-          value={slotIndex}
-          min={0}
-          step={1}
-          onCommit={(v) => onChangeIndex(Number(v))}
-        />
-        {isPolymorphic &&
-          (subtype === null ? (
-            <SuggestionCombobox
-              value=""
-              placeholder="Pick subtype…"
-              fetchSuggestions={fetchSubtypeChoices}
-              onChange={(v) => onChangeSubtype(v === "" ? null : v)}
-            />
-          ) : (
-            // Once subtype is committed, swap to the chip (matches a
-            // real DescentGroup's header). Click clears it back to null
-            // so the combobox returns. No data deletion involved here —
-            // pending state owns the subtype, so toggling is cheap.
-            <button
-              type="button"
-              className={styles.compositeTypeClickable}
-              onClick={() => onChangeSubtype(null)}
-              title="Clear subtype"
-            >
-              {subtype}
-            </button>
-          ))}
-        <span className={styles.descentGroupSpacer} />
-        <button
-          type="button"
-          className={styles.setDelete}
-          onClick={onCancel}
-          title="Cancel — descent group not yet committed"
-        >
-          <X size={10} />
-        </button>
-      </div>
+      <DescentHeader
+        field={field}
+        slotIndex={slotIndex}
+        subtype={subtype}
+        subtypeChoices={subtypeChoices}
+        subtypeMode={isPolymorphic ? "picker" : "fixed"}
+        onChangeIndex={onChangeIndex}
+        onChangeSubtype={onChangeSubtype}
+        dragBinding={null}
+        onClose={onCancel}
+        closeTitle="Cancel — descent group not yet committed"
+        subtypeChipTitle="Clear subtype"
+      />
       <div className={styles.compositeBody}>
         {isPolymorphic && subtype === null ? (
           <div className={styles.descentGroupHint}>Pick a subtype above before adding fields.</div>
@@ -2161,22 +2063,7 @@ function CompositeEditor({ value, onChange, vanillaNode, elementSubtypes }: Comp
     () => (value.compositeDirectives ?? []) as StampedDirective[],
     [value.compositeDirectives],
   );
-  // Local drag state for row reorder inside this composite. Mirrors the
-  // outer NodeCard's pattern; row reorder doesn't cross composite boundaries.
-  const [dragRowId, setDragRowId] = useState<string | null>(null);
-  const [dragRowSlot, setDragRowSlot] = useState<number | null>(null);
-  const [members, setMembers] = useState<readonly TemplateMember[]>([]);
-  const [membersLoaded, setMembersLoaded] = useState(false);
-
-  useEffect(() => {
-    if (membersLoaded || !value.compositeType) return;
-    void templatesQuery(value.compositeType)
-      .then((result) => {
-        setMembers(result.members ?? []);
-        setMembersLoaded(true);
-      })
-      .catch(() => setMembersLoaded(true));
-  }, [membersLoaded, value.compositeType]);
+  const { members, loaded: membersLoaded } = useTemplateMembers(value.compositeType);
 
   const handleDirectiveChange = (index: number, updated: StampedDirective) => {
     const next = directives.map((d, i) => (i === index ? updated : d));
@@ -2201,6 +2088,8 @@ function CompositeEditor({ value, onChange, vanillaNode, elementSubtypes }: Comp
     next.splice(insertAt, 0, moved);
     onChange({ ...value, compositeDirectives: next });
   };
+
+  const reorder = useDragReorder(handleRowReorder);
 
   // Vanilla sub-field lookup (composite's vanillaNode.fields → name→node).
   // Stays empty when vanillaNode is missing or doesn't expose object fields,
@@ -2309,45 +2198,19 @@ function CompositeEditor({ value, onChange, vanillaNode, elementSubtypes }: Comp
           </span>
         )}
       </div>
-      {directives.map((d, di) => {
-        const baseName = d.fieldPath.replace(/\[.*\]$/, "");
-        return (
-          <React.Fragment key={d._uiId}>
-            {dragRowSlot === di && dragRowId !== d._uiId && (
-              <div className={styles.dropIndicator} />
-            )}
-            <SetRow
-              directive={d}
-              member={memberMap.get(baseName)}
-              vanillaNode={vanillaSubFields.get(baseName)}
-              onChange={(updated) => handleDirectiveChange(di, updated)}
-              onDelete={() => handleDirectiveDelete(di)}
-              isDragging={dragRowId === d._uiId}
-              onDragStart={() => setDragRowId(d._uiId)}
-              onDragEnd={() => {
-                setDragRowId(null);
-                setDragRowSlot(null);
-              }}
-              onDragOverRow={(e) => {
-                if (!dragRowId || dragRowId === d._uiId) return;
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
-                const rect = e.currentTarget.getBoundingClientRect();
-                const y = e.clientY - rect.top;
-                setDragRowSlot(y < rect.height / 2 ? di : di + 1);
-              }}
-              onDropRow={() => {
-                if (dragRowId && dragRowSlot !== null) {
-                  handleRowReorder(dragRowId, dragRowSlot);
-                }
-                setDragRowId(null);
-                setDragRowSlot(null);
-              }}
-            />
-          </React.Fragment>
-        );
-      })}
-      {dragRowSlot === directives.length && <div className={styles.dropIndicator} />}
+      {directives.map((d, di) => (
+        <DirectiveRow
+          key={d._uiId}
+          directive={d}
+          flatIndex={di}
+          memberMap={memberMap}
+          vanillaFields={vanillaSubFields}
+          reorder={reorder}
+          onChange={handleDirectiveChange}
+          onDelete={handleDirectiveDelete}
+        />
+      ))}
+      {reorder.showIndicatorAt(directives.length, null) && <div className={styles.dropIndicator} />}
       <FieldAdder
         members={members}
         membersLoaded={membersLoaded}
@@ -2722,8 +2585,6 @@ function FieldAdder({
 }
 
 // --- Helpers ---
-// Pure helpers (makeDefaultValue, allowsMultipleDirectives, etc.) live in
-// `./helpers` so this JSX module only exports React components.
 
 function makeDefaultDirective(
   member: TemplateMember,

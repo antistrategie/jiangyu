@@ -6,6 +6,7 @@ import {
   rewriteDescentSlotIndex,
   type StampedDirective,
 } from "./helpers";
+import type { DescentStep } from "./types";
 
 function dir(
   uiId: string,
@@ -44,10 +45,13 @@ describe("reorderDirectives", () => {
     // Three-member descent group at indices [0, 1, 2], one loose row at 3.
     // Dragging the group's first member to slot 4 (after the loose row)
     // should move all three members together.
+    const eventHandlerStep: DescentStep[] = [
+      { field: "EventHandlers", index: 0, subtype: "AddSkill" },
+    ];
     const list = [
-      dir("g0", "EventHandlers[0].A", { subtypeHints: { 0: "AddSkill" } }),
-      dir("g1", "EventHandlers[0].B", { subtypeHints: { 0: "AddSkill" } }),
-      dir("g2", "EventHandlers[0].C", { subtypeHints: { 0: "AddSkill" } }),
+      dir("g0", "A", { descent: eventHandlerStep }),
+      dir("g1", "B", { descent: eventHandlerStep }),
+      dir("g2", "C", { descent: eventHandlerStep }),
       dir("loose", "Cooldown"),
     ];
     const next = reorderDirectives(list, "g0", 4);
@@ -58,10 +62,13 @@ describe("reorderDirectives", () => {
     // Dragging g1 (the middle of the group) by its individual row grip
     // should move just g1, splitting the group as a side-effect (re-
     // grouping at render time absorbs the leftovers cleanly).
+    const eventHandlerStep: DescentStep[] = [
+      { field: "EventHandlers", index: 0, subtype: "AddSkill" },
+    ];
     const list = [
-      dir("g0", "EventHandlers[0].A", { subtypeHints: { 0: "AddSkill" } }),
-      dir("g1", "EventHandlers[0].B", { subtypeHints: { 0: "AddSkill" } }),
-      dir("g2", "EventHandlers[0].C", { subtypeHints: { 0: "AddSkill" } }),
+      dir("g0", "A", { descent: eventHandlerStep }),
+      dir("g1", "B", { descent: eventHandlerStep }),
+      dir("g2", "C", { descent: eventHandlerStep }),
     ];
     const next = reorderDirectives(list, "g1", 0);
     expect(next.map((d) => d._uiId)).toEqual(["g1", "g0", "g2"]);
@@ -97,60 +104,77 @@ describe("insertAtPendingAnchor", () => {
 });
 
 describe("buildDescentMemberDirective", () => {
-  it("prefixes the inner fieldPath with the outer field+index", () => {
+  it("prepends an outer descent step to the inner directive", () => {
     const out = buildDescentMemberDirective(
       "EventHandlers",
       0,
       "AddSkill",
       dir("id", "ShowHUDText"),
     );
-    expect(out.fieldPath).toBe("EventHandlers[0].ShowHUDText");
-    expect(out.subtypeHints).toEqual({ 0: "AddSkill" });
+    expect(out.fieldPath).toBe("ShowHUDText");
+    expect(out.descent).toEqual([{ field: "EventHandlers", index: 0, subtype: "AddSkill" }]);
   });
 
-  it("omits subtypeHints when subtype is null", () => {
+  it("omits subtype on the outer step when subtype is null", () => {
     const out = buildDescentMemberDirective("Properties", 2, null, dir("id", "Amount"));
-    expect(out.fieldPath).toBe("Properties[2].Amount");
-    expect(out.subtypeHints).toBeUndefined();
+    expect(out.fieldPath).toBe("Amount");
+    expect(out.descent).toEqual([{ field: "Properties", index: 2 }]);
+    expect(out.descent?.[0]?.subtype).toBeUndefined();
   });
 
-  it("preserves additional subtypeHints on the inner directive", () => {
-    // Inner directive itself has a hint at segment 1 (descent into a
+  it("preserves the inner directive's existing descent steps", () => {
+    // Inner directive itself has a descent step (descent into a
     // polymorphic field of the constructed instance). Materialising
-    // should keep that hint while adding the outer's at segment 0.
-    const inner = dir("id", "Properties[0].Amount", {
-      subtypeHints: { 1: "PropertyChange" },
+    // should keep that step while prepending the outer at segment 0.
+    const inner = dir("id", "Amount", {
+      descent: [{ field: "Properties", index: 0, subtype: "PropertyChange" }],
     });
     const out = buildDescentMemberDirective("EventHandlers", 0, "AddSkill", inner);
-    expect(out.subtypeHints).toEqual({ 0: "AddSkill", 1: "PropertyChange" });
+    expect(out.descent).toEqual([
+      { field: "EventHandlers", index: 0, subtype: "AddSkill" },
+      { field: "Properties", index: 0, subtype: "PropertyChange" },
+    ]);
   });
 });
 
 describe("rewriteDescentSlotIndex", () => {
-  it("rewrites every member fieldPath in the [start, end) slice", () => {
+  it("rewrites the outer descent step's index in the [start, end) slice", () => {
+    const handlerSlot0: DescentStep[] = [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }];
+    const handlerSlot1: DescentStep[] = [{ field: "EventHandlers", index: 1, subtype: "AddSkill" }];
     const list = [
-      dir("a", "EventHandlers[0].A"),
-      dir("b", "EventHandlers[0].B"),
+      dir("a", "A", { descent: handlerSlot0 }),
+      dir("b", "B", { descent: handlerSlot0 }),
       dir("c", "Cooldown"),
-      dir("d", "EventHandlers[1].X"),
+      dir("d", "X", { descent: handlerSlot1 }),
     ];
     const next = rewriteDescentSlotIndex(list, 0, 2, "EventHandlers", 0, 5);
-    expect(next.map((d) => d.fieldPath)).toEqual([
-      "EventHandlers[5].A",
-      "EventHandlers[5].B",
-      "Cooldown",
-      "EventHandlers[1].X",
-    ]);
+    expect(next.map((d) => d.descent?.[0]?.index ?? null)).toEqual([5, 5, null, 1]);
+    // Other step properties (field, subtype) survive intact.
+    expect(next[0]?.descent?.[0]).toEqual({
+      field: "EventHandlers",
+      index: 5,
+      subtype: "AddSkill",
+    });
+    // The fieldPath is unchanged (it's now inner-relative).
+    expect(next.map((d) => d.fieldPath)).toEqual(["A", "B", "Cooldown", "X"]);
   });
 
   it("no-ops when newSlot equals oldSlot", () => {
-    const list = [dir("a", "EventHandlers[0].A")];
+    const list = [
+      dir("a", "A", {
+        descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
+      }),
+    ];
     const next = rewriteDescentSlotIndex(list, 0, 1, "EventHandlers", 0, 0);
     expect(next).toBe(list);
   });
 
   it("no-ops on negative new slot (defensive against bad number-input)", () => {
-    const list = [dir("a", "EventHandlers[0].A")];
+    const list = [
+      dir("a", "A", {
+        descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
+      }),
+    ];
     const next = rewriteDescentSlotIndex(list, 0, 1, "EventHandlers", 0, -1);
     expect(next).toBe(list);
   });

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Jiangyu.Shared.Templates;
 
 namespace Jiangyu.Core.Templates;
 
@@ -68,10 +69,12 @@ public static class KdlTemplateSerialiser
     }
 
     /// <summary>
-    /// Emit a list of directives, grouping consecutive same-prefix descent
-    /// ops under a single outer <c>set "Field" index=N type="X" { ... }</c>
-    /// block. Order is preserved — non-descent and differently-prefixed
-    /// descent directives interleave at the original positions.
+    /// Emit a list of directives, grouping consecutive directives whose
+    /// outermost <see cref="TemplateDescentStep"/> matches under a single
+    /// <c>set "Field" index=N type="X" { ... }</c> block. Order is preserved —
+    /// non-descent directives and breaks in the descent run interleave at
+    /// their original positions; later runs sharing the same outer step still
+    /// emit as separate blocks because reordering would change modder intent.
     /// </summary>
     private static void WriteDirectiveBlock(StringBuilder sb, IList<KdlEditorDirective> directives, int indent)
     {
@@ -79,46 +82,28 @@ public static class KdlTemplateSerialiser
         while (i < directives.Count)
         {
             var d = directives[i];
-            if (TryPeelDescentSegment(d, out var prefix, out var index, out var hint, out var residual))
+            var outerStep = d.Descent is { Count: > 0 } steps ? steps[0] : null;
+
+            if (outerStep != null)
             {
-                // Gather a run of consecutive directives that share the same
-                // outer (prefix, index, hint) so they all fold into one block.
-                // A break in the run flushes the current group; later runs
-                // with the same outer key still emit as separate blocks (we
-                // never reorder — modder ordering is intentional).
-                var group = new List<KdlEditorDirective> { residual };
+                // Gather a contiguous run that shares the same outer step.
+                var group = new List<KdlEditorDirective> { PeelOuterStep(d) };
                 while (i + 1 < directives.Count
-                       && TryPeelDescentSegment(directives[i + 1], out var p2, out var i2, out var h2, out var r2)
-                       && p2 == prefix
-                       && i2 == index
-                       && h2 == hint)
+                       && directives[i + 1].Descent is { Count: > 0 } nextSteps
+                       && DescentStepsEqual(nextSteps[0], outerStep))
                 {
                     i++;
-                    group.Add(r2);
+                    group.Add(PeelOuterStep(directives[i]));
                 }
 
                 WriteIndent(sb, indent);
-                sb.Append($"set \"{Esc(prefix)}\" index={index!.Value.ToString(CultureInfo.InvariantCulture)}");
-                if (!string.IsNullOrEmpty(hint))
-                    sb.Append($" type=\"{Esc(hint)}\"");
+                sb.Append($"set \"{Esc(outerStep.Field)}\" index={outerStep.Index.ToString(CultureInfo.InvariantCulture)}");
+                if (!string.IsNullOrEmpty(outerStep.Subtype))
+                    sb.Append($" type=\"{Esc(outerStep.Subtype)}\"");
                 sb.AppendLine(" {");
                 WriteDirectiveBlock(sb, group, indent + 1);
                 WriteIndent(sb, indent);
                 sb.AppendLine("}");
-            }
-            else if (TryPeelTerminalIndexer(d, out var terminalField, out var terminalIndex))
-            {
-                // Path ends in [N] with nothing after — equivalent to a
-                // top-level set with index= property. Rewrite to the
-                // canonical KDL form so emission and parser stay in lockstep.
-                WriteIndent(sb, indent);
-                sb.Append($"set \"{Esc(terminalField)}\" index={terminalIndex.ToString(CultureInfo.InvariantCulture)}");
-                if (d.Value != null)
-                {
-                    sb.Append(' ');
-                    WriteValue(sb, d.Value);
-                }
-                sb.AppendLine();
             }
             else
             {
@@ -132,106 +117,39 @@ public static class KdlTemplateSerialiser
     }
 
     /// <summary>
-    /// True when the directive's path begins with <c>Field[N].rest</c> — i.e.
-    /// has a leading indexer with at least one further segment. Returns the
-    /// peeled <paramref name="prefix"/> and <paramref name="index"/>, the
-    /// outer <paramref name="hint"/> from <c>SubtypeHints[0]</c> if any, and
-    /// a <paramref name="residual"/> directive whose <c>FieldPath</c> is the
-    /// remainder, with <c>SubtypeHints</c> shifted down by one segment.
+    /// Return a clone of <paramref name="d"/> with the first
+    /// <see cref="TemplateDescentStep"/> removed from its
+    /// <see cref="KdlEditorDirective.Descent"/> list. Used while the
+    /// serialiser walks an outer block and hands the inner residual back
+    /// to the recursive emitter.
     /// </summary>
-    private static bool TryPeelDescentSegment(
-        KdlEditorDirective d,
-        out string prefix,
-        out int? index,
-        out string? hint,
-        out KdlEditorDirective residual)
+    private static KdlEditorDirective PeelOuterStep(KdlEditorDirective d)
     {
-        prefix = string.Empty;
-        index = null;
-        hint = null;
-        residual = null!;
-
-        var path = d.FieldPath;
-        var bracketOpen = path.IndexOf('[');
-        if (bracketOpen <= 0) return false;
-        var bracketClose = path.IndexOf(']', bracketOpen + 1);
-        if (bracketClose <= bracketOpen) return false;
-
-        // Need a continuation segment after the indexer; bare Field[N] is the
-        // terminal-indexer case and is handled separately so we can rewrite
-        // it as the canonical index= property form.
-        if (bracketClose == path.Length - 1) return false;
-        if (path[bracketClose + 1] != '.') return false;
-
-        var indexText = path[(bracketOpen + 1)..bracketClose];
-        if (!int.TryParse(indexText, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedIndex))
-            return false;
-
-        prefix = path[..bracketOpen];
-        index = parsedIndex;
-
-        if (d.SubtypeHints != null && d.SubtypeHints.TryGetValue(0, out var outerHint))
-            hint = outerHint;
-
-        var residualPath = path[(bracketClose + 2)..];
-        Dictionary<int, string>? residualHints = null;
-        if (d.SubtypeHints != null)
+        List<TemplateDescentStep>? remaining = null;
+        if (d.Descent is { Count: > 1 } steps)
         {
-            residualHints = new Dictionary<int, string>();
-            foreach (var (k, v) in d.SubtypeHints)
-            {
-                if (k > 0) residualHints[k - 1] = v;
-            }
-            if (residualHints.Count == 0) residualHints = null;
+            remaining = new List<TemplateDescentStep>(steps.Count - 1);
+            for (var i = 1; i < steps.Count; i++)
+                remaining.Add(steps[i]);
         }
-
-        residual = new KdlEditorDirective
+        return new KdlEditorDirective
         {
             Op = d.Op,
-            FieldPath = residualPath,
+            FieldPath = d.FieldPath,
             Index = d.Index,
-            SubtypeHints = residualHints,
+            Descent = remaining,
             Value = d.Value,
             Line = d.Line,
         };
-        return true;
     }
 
-    /// <summary>
-    /// True when the directive's path is a bare <c>Field[N]</c> with no
-    /// descent — needs to be rewritten as <c>set "Field" index=N value</c>.
-    /// </summary>
-    private static bool TryPeelTerminalIndexer(
-        KdlEditorDirective d,
-        out string field,
-        out int index)
-    {
-        field = string.Empty;
-        index = 0;
-
-        // Only Set ops can carry a terminal-indexer rewrite — append/insert/
-        // remove/clear all use the index= property at parse time and never
-        // produce paths with [N] at the end.
-        if (d.Op != KdlEditorOp.Set) return false;
-
-        var path = d.FieldPath;
-        var bracketOpen = path.IndexOf('[');
-        if (bracketOpen <= 0) return false;
-        var bracketClose = path.IndexOf(']', bracketOpen + 1);
-        if (bracketClose != path.Length - 1) return false;
-
-        var indexText = path[(bracketOpen + 1)..bracketClose];
-        if (!int.TryParse(indexText, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedIndex))
-            return false;
-
-        field = path[..bracketOpen];
-        index = parsedIndex;
-        return true;
-    }
+    private static bool DescentStepsEqual(TemplateDescentStep a, TemplateDescentStep b)
+        => a.Field == b.Field && a.Index == b.Index && a.Subtype == b.Subtype;
 
     /// <summary>
-    /// Emit a directive whose <c>FieldPath</c> contains no bracket indexers.
-    /// This is the simple case: scalar set, append, insert, remove, clear.
+    /// Emit a non-descent directive (Descent null/empty). Covers scalar set,
+    /// append, insert, remove, clear, and the indexed-set form for collection
+    /// elements (the index lives on <see cref="KdlEditorDirective.Index"/>).
     /// </summary>
     private static void WriteFlatDirective(StringBuilder sb, KdlEditorDirective d)
     {

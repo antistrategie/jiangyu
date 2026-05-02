@@ -202,12 +202,17 @@ public static class TemplatePatchEmitter
             Op = op.Op,
             FieldPath = effectivePath,
             Index = op.Index,
-            SubtypeHints = op.SubtypeHints != null
-                ? new Dictionary<int, string>(op.SubtypeHints)
-                : null,
+            Descent = op.Descent != null ? CloneDescent(op.Descent) : null,
             Value = op.Value,
         };
         return true;
     }
 
+    private static List<TemplateDescentStep> CloneDescent(List<TemplateDescentStep> source)
+    {
+        var copy = new List<TemplateDescentStep>(source.Count);
+        foreach (var step in source)
+            copy.Add(new TemplateDescentStep { Field = step.Field, Index = step.Index, Subtype = step.Subtype });
+        return copy;
+    }
 }

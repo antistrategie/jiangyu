@@ -36,15 +36,29 @@ export interface EditorValue {
 
 export type DirectiveOp = "Set" | "Append" | "Insert" | "Remove" | "Clear";
 
+/** One descent step along a template patch path. Mirrors the KDL syntax
+ *  `set "Field" index=N type="Subtype" { ... }`: navigate into element
+ *  `index` of collection `field`, switching the validated type to `subtype`
+ *  when the destination is polymorphic. Mirrors the host
+ *  `Jiangyu.Shared.Templates.TemplateDescentStep`. */
+export interface DescentStep {
+  field: string;
+  index: number;
+  subtype?: string;
+}
+
 export interface EditorDirective {
   op: DirectiveOp;
+  /** Inner-relative member path: a bare member name in the common case.
+   *  Descent context (if any) lives in `descent`, never in this string. */
   fieldPath: string;
   index?: number;
   value?: EditorValue;
-  /** Concrete subtype names for polymorphic-abstract descent points along
-   *  fieldPath. Mirrors KdlEditorDirective.SubtypeHints on the host: keys
-   *  are 0-based segment indices, values are concrete subtype short names. */
-  subtypeHints?: Record<number, string>;
+  /** Outer descent prefix as a structural step list. Mirrors
+   *  KdlEditorDirective.Descent on the host. The serialiser groups
+   *  consecutive directives sharing the same descent prefix back into one
+   *  outer `set "Field" index=N type="X" { ... }` block. */
+  descent?: DescentStep[];
   /** UI-only stable identity for drag/reorder. Not serialised. */
   _uiId?: string;
 }

@@ -172,35 +172,36 @@ internal sealed class TemplatePatchCatalog
             }
         }
 
-        operationsForTemplate.Add(new LoadedPatchOperation(op.Op, effectivePath, op.Index, op.SubtypeHints, op.Value, mod.Name));
+        operationsForTemplate.Add(new LoadedPatchOperation(op.Op, effectivePath, op.Index, op.Descent, op.Value, mod.Name));
         PatchCount++;
     }
 }
 
 internal sealed class LoadedPatchOperation
 {
-    public LoadedPatchOperation(CompiledTemplateOp op, string fieldPath, int? index, IReadOnlyDictionary<int, string> subtypeHints, CompiledTemplateValue value, string ownerLabel)
+    public LoadedPatchOperation(CompiledTemplateOp op, string fieldPath, int? index, IReadOnlyList<TemplateDescentStep> descent, CompiledTemplateValue value, string ownerLabel)
     {
         Op = op;
         FieldPath = fieldPath;
         Index = index;
-        SubtypeHints = subtypeHints;
+        Descent = descent;
         Value = value;
         OwnerLabel = ownerLabel;
     }
 
     public CompiledTemplateOp Op { get; }
+    /// <summary>Inner-relative member path on the destination instance.</summary>
     public string FieldPath { get; }
     public int? Index { get; }
     /// <summary>
-    /// Concrete subtype hints for polymorphic-abstract descent points along
-    /// <see cref="FieldPath"/>. Keyed by zero-based segment index. Used by
-    /// the applier to <c>.Cast&lt;T&gt;()</c> the wrapper after indexing
-    /// into a polymorphic-reference array, so reflection can see the
-    /// subclass's own writable fields. Null when the patch carries no
-    /// descent through a polymorphic boundary.
+    /// Outer descent prefix as a structural step list. The applier walks
+    /// each step in order — descending into element <c>Index</c> of
+    /// <c>Field</c>, switching the wrapper's runtime type to <c>Subtype</c>
+    /// when the destination is polymorphic — before applying the inner
+    /// <see cref="FieldPath"/> write. Null/empty when the patch writes a
+    /// top-level member directly.
     /// </summary>
-    public IReadOnlyDictionary<int, string> SubtypeHints { get; }
+    public IReadOnlyList<TemplateDescentStep> Descent { get; }
     public CompiledTemplateValue Value { get; }
     public string OwnerLabel { get; }
 }

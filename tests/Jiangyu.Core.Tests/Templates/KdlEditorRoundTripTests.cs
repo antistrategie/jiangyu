@@ -1,5 +1,6 @@
 using System.Globalization;
 using Jiangyu.Core.Templates;
+using Jiangyu.Shared.Templates;
 
 namespace Jiangyu.Core.Tests.Templates;
 
@@ -645,8 +646,12 @@ public class KdlEditorRoundTripTests
         Assert.Single(doc.Nodes[0].Directives);
 
         var d = doc.Nodes[0].Directives[0];
-        Assert.Equal("EventHandlers[0].ShowHUDText", d.FieldPath);
-        Assert.Equal("AddSkill", d.SubtypeHints?[0]);
+        Assert.Equal("ShowHUDText", d.FieldPath);
+        Assert.NotNull(d.Descent);
+        Assert.Single(d.Descent);
+        Assert.Equal("EventHandlers", d.Descent[0].Field);
+        Assert.Equal(0, d.Descent[0].Index);
+        Assert.Equal("AddSkill", d.Descent[0].Subtype);
 
         var text = KdlTemplateSerialiser.Serialise(doc);
         Assert.Contains("set \"EventHandlers\" index=0 type=\"AddSkill\"", text);
@@ -657,7 +662,11 @@ public class KdlEditorRoundTripTests
         Assert.Empty(doc2.Errors);
         Assert.Single(doc2.Nodes[0].Directives);
         Assert.Equal(d.FieldPath, doc2.Nodes[0].Directives[0].FieldPath);
-        Assert.Equal("AddSkill", doc2.Nodes[0].Directives[0].SubtypeHints?[0]);
+        Assert.NotNull(doc2.Nodes[0].Directives[0].Descent);
+        Assert.Single(doc2.Nodes[0].Directives[0].Descent!);
+        Assert.Equal("EventHandlers", doc2.Nodes[0].Directives[0].Descent![0].Field);
+        Assert.Equal(0, doc2.Nodes[0].Directives[0].Descent![0].Index);
+        Assert.Equal("AddSkill", doc2.Nodes[0].Directives[0].Descent![0].Subtype);
     }
 
     [Fact]
@@ -703,15 +712,21 @@ public class KdlEditorRoundTripTests
                 new KdlEditorDirective
                 {
                     Op = KdlEditorOp.Set,
-                    FieldPath = "EventHandlers[0].FieldA",
-                    SubtypeHints = new Dictionary<int, string> { [0] = "TypeA" },
+                    FieldPath = "FieldA",
+                    Descent =
+                    [
+                        new TemplateDescentStep { Field = "EventHandlers", Index = 0, Subtype = "TypeA" },
+                    ],
                     Value = new KdlEditorValue { Kind = KdlEditorValueKind.Boolean, Boolean = true },
                 },
                 new KdlEditorDirective
                 {
                     Op = KdlEditorOp.Set,
-                    FieldPath = "EventHandlers[0].FieldB",
-                    SubtypeHints = new Dictionary<int, string> { [0] = "TypeB" },
+                    FieldPath = "FieldB",
+                    Descent =
+                    [
+                        new TemplateDescentStep { Field = "EventHandlers", Index = 0, Subtype = "TypeB" },
+                    ],
                     Value = new KdlEditorValue { Kind = KdlEditorValueKind.Boolean, Boolean = false },
                 },
             ],
@@ -744,28 +759,35 @@ public class KdlEditorRoundTripTests
         Assert.Single(doc.Nodes[0].Directives);
 
         var d = doc.Nodes[0].Directives[0];
-        Assert.Equal("Outer[0].Inner[2].Leaf", d.FieldPath);
-        Assert.Equal("X", d.SubtypeHints?[0]);
-        Assert.Equal("Y", d.SubtypeHints?[1]);
+        Assert.Equal("Leaf", d.FieldPath);
+        Assert.NotNull(d.Descent);
+        Assert.Equal(2, d.Descent.Count);
+        Assert.Equal("Outer", d.Descent[0].Field);
+        Assert.Equal(0, d.Descent[0].Index);
+        Assert.Equal("X", d.Descent[0].Subtype);
+        Assert.Equal("Inner", d.Descent[1].Field);
+        Assert.Equal(2, d.Descent[1].Index);
+        Assert.Equal("Y", d.Descent[1].Subtype);
 
         var text = KdlTemplateSerialiser.Serialise(doc);
         Assert.Contains("set \"Outer\" index=0 type=\"X\"", text);
         Assert.Contains("set \"Inner\" index=2 type=\"Y\"", text);
         Assert.Contains("set \"Leaf\" 5", text);
-        Assert.DoesNotContain("[", text.Replace("Outer[", "").Replace("Inner[", ""));
+        Assert.DoesNotContain("[", text);
 
         var doc2 = KdlTemplateParser.ParseText(text);
         Assert.Empty(doc2.Errors);
         Assert.Equal(d.FieldPath, doc2.Nodes[0].Directives[0].FieldPath);
-        Assert.Equal(2, doc2.Nodes[0].Directives[0].SubtypeHints?.Count);
+        Assert.NotNull(doc2.Nodes[0].Directives[0].Descent);
+        Assert.Equal(2, doc2.Nodes[0].Directives[0].Descent!.Count);
     }
 
     [Fact]
     public void DescentBlock_TerminalIndexer_EmitsAsIndexProperty()
     {
-        // A directive whose path ends in [N] (no descent) must serialise as
-        // set "Field" index=N value, the canonical terminal-element form.
-        // The runtime applier accepts both shapes; the serialiser canonises.
+        // A directive that targets element N of a collection at the terminal
+        // (no descent) is encoded as FieldPath="Field" + Index=N and must
+        // serialise as set "Field" index=N value.
         var doc = new KdlEditorDocument();
         doc.Nodes.Add(new KdlEditorNode
         {
@@ -777,7 +799,8 @@ public class KdlEditorRoundTripTests
                 new KdlEditorDirective
                 {
                     Op = KdlEditorOp.Set,
-                    FieldPath = "InitialAttributes[3]",
+                    FieldPath = "InitialAttributes",
+                    Index = 3,
                     Value = new KdlEditorValue { Kind = KdlEditorValueKind.Int32, Int32 = 7 },
                 },
             ],
@@ -891,7 +914,12 @@ public class KdlEditorRoundTripTests
 
         var doc = KdlTemplateParser.ParseText(kdl);
         Assert.Empty(doc.Errors);
-        Assert.Null(doc.Nodes[0].Directives[0].SubtypeHints);
+        var d = doc.Nodes[0].Directives[0];
+        Assert.NotNull(d.Descent);
+        Assert.Single(d.Descent);
+        Assert.Equal("Properties", d.Descent[0].Field);
+        Assert.Equal(0, d.Descent[0].Index);
+        Assert.Null(d.Descent[0].Subtype);
 
         var text = KdlTemplateSerialiser.Serialise(doc);
         Assert.Contains("set \"Properties\" index=0 {", text);
