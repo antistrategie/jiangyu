@@ -7,6 +7,11 @@
     <AssemblyName>jiangyu-studio</AssemblyName>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <DebugType>embedded</DebugType>
     <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
     <RpcTypesOutputPath>$(MSBuildThisFileDirectory)..\Jiangyu.Studio.UI\src\lib\rpc\types.ts</RpcTypesOutputPath>
   </PropertyGroup>

@@ -65,7 +65,7 @@ describe("SuggestionCombobox", () => {
         fetchSuggestions,
       }),
     );
-    const input = screen.getByPlaceholderText("Pick one") as HTMLInputElement;
+    const input = screen.getByPlaceholderText<HTMLInputElement>("Pick one");
     expect(input.value).toBe("");
   });
 

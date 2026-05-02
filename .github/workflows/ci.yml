@@ -206,10 +206,10 @@ jobs:
       - name: Package release artefacts
         run: |
           for dir in jiangyu-cli-*; do
-            (cd "$dir" && zip -r "../${dir}.zip" .)
+            (cd "$dir" && zip -r "../${dir}.zip" . -x '*.pdb')
           done
           for dir in jiangyu-studio-*; do
-            (cd "$dir" && zip -r "../${dir}.zip" .)
+            (cd "$dir" && zip -r "../${dir}.zip" . -x '*.pdb')
           done
 
       - name: Create GitHub Release
