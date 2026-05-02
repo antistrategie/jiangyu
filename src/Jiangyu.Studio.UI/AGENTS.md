@@ -1,6 +1,6 @@
 # Studio UI
 
-React + TypeScript + Vite frontend for Jiangyu Studio. Component-per-folder under `src/components/`. CSS Modules for scoped styles, with generated `.d.ts` via `@css-modules-kit/codegen` (output in `generated/`).
+React + TypeScript + Vite frontend for Jiangyu Studio. Component-per-folder under `src/components/`. Large components may use subdirectories within their folder (e.g. `TemplateVisualEditor/shared/`, `rows/`, `cards/`). CSS Modules for scoped styles, with generated `.d.ts` via `@css-modules-kit/codegen` (output in `generated/`).
 
 Use **bun**, not npm (`bun install`, `bun run lint`, `bun run test`). Type-check with `bunx tsc --noEmit`. Regenerate CSS module types with `bunx @css-modules-kit/codegen`.
 
@@ -33,11 +33,10 @@ Notable local choices:
 - `lib/project/` — current project + recent-projects list + lifecycle, plus the RPC wrappers and palette-command factories.
 - `lib/palette/` — global action-registry store and per-group action builders (`useRegisterActions` / `useRegisteredActions`).
 - `lib/rpc/` — generated RPC types (`types.ts`, generator-owned) and the `rpcCall` runtime. Import everything via `@lib/rpc`.
-- `lib/templateVisual/` — typed editor model for the KDL visual editor; mirrors the `KdlEditorDocument` RPC shape so parse/serialise stay server-side.
 - `lib/toast/` — toast-queue store and mood→sticker mapping.
 - `lib/compile/` — compile hook + state, and the config-gate RPC fetch.
 - `lib/ui/` — generic UI utilities (shortcuts, zoom math, debounced scroll, time formatting).
-- Root files are the truly cross-cutting primitives: `layout.ts` (pure topology math), `path.ts`, `assets.ts`, `kdlSnippets.ts`, `settings.ts`.
+- Root files are the truly cross-cutting primitives: `layout.ts` (pure topology math), `path.ts`, `assets.ts`, `settings.ts`.
 
 ## State management
 
@@ -52,6 +51,6 @@ Stores live in `lib/**/store.ts` and `lib/**/{name}Store.ts` — read each file 
 
 ## Tests
 
-vitest, Node environment. Run `bun run test` from this directory. Covers layout topology, path utilities, palette filtering, keyboard-shortcut matching, drop-zone geometry, zoom math, recent-projects storage, asset-kind guards. No browser or host needed — the few places that touch `localStorage` stub it via `vi.stubGlobal`.
+vitest, default Node environment. Run `bun run test` from this directory. Component tests that need a DOM opt in with `// @vitest-environment jsdom` at the top of the file; uses `@testing-library/react` for rendering. Pure-logic tests (layout topology, path utilities, palette filtering, keyboard-shortcut matching, drop-zone geometry, zoom math, recent-projects storage, asset-kind guards, template-editor helpers) stay in the default Node environment for speed. No browser or host needed; the few places that touch `localStorage` stub it via `vi.stubGlobal`.
 
 Plain `bun test` runs Bun's native test runner against vitest specs and produces false failures. Always use `bun run test`.
