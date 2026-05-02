@@ -332,26 +332,24 @@ interface TreeNodeProps {
 
 function TreeNode({ path, depth, expandRequest }: TreeNodeProps) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
-  const [loaded, setLoaded] = useState(false);
   const { registerRefresh, pendingNew } = useSidebar();
 
-  useEffect(() => {
-    if (!loaded) {
-      void (async () => {
-        try {
-          const result = await rpcCall<FileEntry[]>("listDirectory", { path });
-          setEntries(result);
-          setLoaded(true);
-        } catch (err) {
-          console.error("[FileTree] Failed to list:", path, err);
-        }
-      })();
-    }
-  }, [path, loaded]);
+  const fetchEntries = useCallback(() => {
+    void (async () => {
+      try {
+        const result = await rpcCall<FileEntry[]>("listDirectory", { path });
+        setEntries(result);
+      } catch (err) {
+        console.error("[FileTree] Failed to list:", path, err);
+      }
+    })();
+  }, [path]);
+
+  useEffect(() => fetchEntries(), [fetchEntries]);
 
   useEffect(() => {
-    return registerRefresh(path, () => setLoaded(false));
-  }, [path, registerRefresh]);
+    return registerRefresh(path, fetchEntries);
+  }, [path, registerRefresh, fetchEntries]);
 
   const showPendingHere = pendingNew !== null && pendingNew.parentPath === path;
 
