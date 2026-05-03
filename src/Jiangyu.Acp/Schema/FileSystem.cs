@@ -4,34 +4,34 @@ namespace Jiangyu.Acp.Schema;
 
 public sealed class ReadTextFileRequest
 {
+    [JsonPropertyName("sessionId")]
+    public required string SessionId { get; set; }
+
     [JsonPropertyName("path")]
     public required string Path { get; set; }
 
-    [JsonPropertyName("startLine")]
+    /// <summary>1-based start line. Read from this line onward.</summary>
+    [JsonPropertyName("line")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public int? StartLine { get; set; }
+    public int? Line { get; set; }
 
-    [JsonPropertyName("endLine")]
+    /// <summary>Maximum number of lines to read from <see cref="Line"/>.</summary>
+    [JsonPropertyName("limit")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public int? EndLine { get; set; }
-
-    [JsonPropertyName("maxCharacters")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public int? MaxCharacters { get; set; }
+    public int? Limit { get; set; }
 }
 
 public sealed class ReadTextFileResponse
 {
-    [JsonPropertyName("text")]
-    public required string Text { get; set; }
-
-    [JsonPropertyName("mimeType")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? MimeType { get; set; }
+    [JsonPropertyName("content")]
+    public required string Content { get; set; }
 }
 
 public sealed class WriteTextFileRequest
 {
+    [JsonPropertyName("sessionId")]
+    public required string SessionId { get; set; }
+
     [JsonPropertyName("path")]
     public required string Path { get; set; }
 
@@ -39,8 +39,10 @@ public sealed class WriteTextFileRequest
     public required string Content { get; set; }
 }
 
+/// <summary>
+/// Empty-shape response for fs/write_text_file. The spec returns null;
+/// modelled here as an empty object so the client deserialises uniformly.
+/// </summary>
 public sealed class WriteTextFileResponse
 {
-    [JsonPropertyName("success")]
-    public bool Success { get; set; }
 }

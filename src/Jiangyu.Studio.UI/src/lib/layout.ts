@@ -6,7 +6,7 @@ export interface Tab {
   readonly name: string;
 }
 
-export type PaneKind = "code" | "assetBrowser" | "templateBrowser";
+export type PaneKind = "code" | "assetBrowser" | "templateBrowser" | "agent";
 
 export interface CodePane {
   readonly id: string;
@@ -19,7 +19,7 @@ export interface CodePane {
 
 export interface BrowserPane {
   readonly id: string;
-  readonly kind: "assetBrowser" | "templateBrowser";
+  readonly kind: "assetBrowser" | "templateBrowser" | "agent";
   /** Flex weight relative to siblings in the same column. Treated as 1 when absent. */
   readonly weight?: number | undefined;
   /**
@@ -55,6 +55,7 @@ export const EMPTY_LAYOUT: Layout = { columns: [], activePaneId: null };
 export const BROWSER_KIND_META: Record<BrowserPane["kind"], { label: string }> = {
   assetBrowser: { label: "Asset Browser" },
   templateBrowser: { label: "Template Browser" },
+  agent: { label: "Agent" },
 };
 
 let idCounter = 0;
@@ -779,7 +780,7 @@ function isValidPane(p: unknown): p is Pane {
         typeof (t as Tab).name === "string",
     );
   }
-  return obj.kind === "assetBrowser" || obj.kind === "templateBrowser";
+  return obj.kind === "assetBrowser" || obj.kind === "templateBrowser" || obj.kind === "agent";
 }
 
 function isValidLayout(value: unknown): value is Layout {

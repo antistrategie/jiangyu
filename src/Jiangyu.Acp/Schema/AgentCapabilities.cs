@@ -54,11 +54,19 @@ public sealed class McpCapabilities
 
 public sealed class SessionCapabilities
 {
+    /// <summary>
+    /// ACP session capabilities may be <c>null</c> or an object with options.
+    /// Use <see cref="JsonElement"/> to accept either form.
+    /// </summary>
+    [JsonPropertyName("list")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? List { get; set; }
+
     [JsonPropertyName("resume")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public bool Resume { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Resume { get; set; }
 
     [JsonPropertyName("close")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public bool Close { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Close { get; set; }
 }

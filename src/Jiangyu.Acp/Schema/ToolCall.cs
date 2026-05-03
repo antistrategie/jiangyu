@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Jiangyu.Acp.Schema;
 
-/// <summary>Content within a tool call update.</summary>
+/// <summary>Content within a tool call or tool call update.</summary>
 [JsonConverter(typeof(ToolCallContentConverter))]
 public abstract class ToolCallContent
 {
@@ -11,12 +11,20 @@ public abstract class ToolCallContent
     public abstract string Type { get; }
 }
 
-public sealed class TextToolCallContent : ToolCallContent
+/// <summary>
+/// Standard content block wrapper. The <c>type</c> discriminator is
+/// <c>"content"</c> and the payload is a <see cref="ContentBlock"/>.
+/// </summary>
+public sealed class ContentToolCallContent : ToolCallContent
 {
-    public override string Type => "text";
+    public override string Type => "content";
 
-    [JsonPropertyName("text")]
-    public required string Text { get; set; }
+    [JsonPropertyName("content")]
+    public required ContentBlock Content { get; set; }
+
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
 public sealed class DiffToolCallContent : ToolCallContent
@@ -26,8 +34,16 @@ public sealed class DiffToolCallContent : ToolCallContent
     [JsonPropertyName("path")]
     public required string Path { get; set; }
 
-    [JsonPropertyName("diff")]
-    public required string Diff { get; set; }
+    [JsonPropertyName("newText")]
+    public required string NewText { get; set; }
+
+    [JsonPropertyName("oldText")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? OldText { get; set; }
+
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
 public sealed class TerminalToolCallContent : ToolCallContent
@@ -36,6 +52,10 @@ public sealed class TerminalToolCallContent : ToolCallContent
 
     [JsonPropertyName("terminalId")]
     public required string TerminalId { get; set; }
+
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
 public sealed class ToolCallLocation
@@ -43,33 +63,29 @@ public sealed class ToolCallLocation
     [JsonPropertyName("path")]
     public required string Path { get; set; }
 
-    [JsonPropertyName("range")]
+    [JsonPropertyName("line")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public ToolCallRange? Range { get; set; }
-}
+    public uint? Line { get; set; }
 
-public sealed class ToolCallRange
-{
-    [JsonPropertyName("startLine")]
-    public int StartLine { get; set; }
-
-    [JsonPropertyName("endLine")]
-    public int EndLine { get; set; }
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
 public sealed class PlanEntry
 {
-    [JsonPropertyName("id")]
-    public required string Id { get; set; }
-
-    [JsonPropertyName("title")]
-    public required string Title { get; set; }
+    [JsonPropertyName("content")]
+    public required string Content { get; set; }
 
     [JsonPropertyName("status")]
-    public string? Status { get; set; }
+    public required string Status { get; set; }
 
     [JsonPropertyName("priority")]
-    public int? Priority { get; set; }
+    public required string Priority { get; set; }
+
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
 public sealed class AvailableCommand
@@ -78,19 +94,15 @@ public sealed class AvailableCommand
     public required string Name { get; set; }
 
     [JsonPropertyName("description")]
-    public string? Description { get; set; }
+    public required string Description { get; set; }
 
-    [JsonPropertyName("inputs")]
-    public AvailableCommandInput[]? Inputs { get; set; }
-}
+    [JsonPropertyName("input")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Input { get; set; }
 
-public sealed class AvailableCommandInput
-{
-    [JsonPropertyName("name")]
-    public required string Name { get; set; }
-
-    [JsonPropertyName("type")]
-    public string? Type { get; set; }
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
 internal sealed class ToolCallContentConverter : JsonConverter<ToolCallContent>
@@ -103,7 +115,7 @@ internal sealed class ToolCallContentConverter : JsonConverter<ToolCallContent>
         var type = root.GetProperty("type").GetString();
         return type switch
         {
-            "text" => root.Deserialize<TextToolCallContent>(options),
+            "content" => root.Deserialize<ContentToolCallContent>(options),
             "diff" => root.Deserialize<DiffToolCallContent>(options),
             "terminal" => root.Deserialize<TerminalToolCallContent>(options),
             _ => throw new JsonException($"Unknown ToolCallContent type: {type}"),

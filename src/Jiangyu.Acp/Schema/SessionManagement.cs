@@ -8,6 +8,12 @@ public sealed class LoadSessionRequest
     [JsonPropertyName("sessionId")]
     public required string SessionId { get; set; }
 
+    [JsonPropertyName("cwd")]
+    public required string Cwd { get; set; }
+
+    [JsonPropertyName("mcpServers")]
+    public required McpServerConfig[] McpServers { get; set; }
+
     [JsonPropertyName("_meta")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public JsonElement? Meta { get; set; }
@@ -15,14 +21,17 @@ public sealed class LoadSessionRequest
 
 public sealed class LoadSessionResponse
 {
-    [JsonPropertyName("sessionId")]
-    public required string SessionId { get; set; }
-
     [JsonPropertyName("modes")]
-    public SessionModeState[]? Modes { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Modes { get; set; }
 
-    [JsonPropertyName("models")]
-    public SessionModelState[]? Models { get; set; }
+    [JsonPropertyName("configOptions")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? ConfigOptions { get; set; }
+
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
 public sealed class CloseSessionRequest
@@ -33,8 +42,9 @@ public sealed class CloseSessionRequest
 
 public sealed class CloseSessionResponse
 {
-    [JsonPropertyName("success")]
-    public bool Success { get; set; }
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
 public sealed class ListSessionsRequest
@@ -42,6 +52,14 @@ public sealed class ListSessionsRequest
     [JsonPropertyName("cursor")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Cursor { get; set; }
+
+    [JsonPropertyName("cwd")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Cwd { get; set; }
+
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
 public sealed class ListSessionsResponse

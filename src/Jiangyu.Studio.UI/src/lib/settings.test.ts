@@ -8,6 +8,7 @@ import {
   SESSION_RESTORE_PROJECT_DEFAULT,
   SESSION_RESTORE_TABS_DEFAULT,
   SIDEBAR_HIDDEN_DEFAULT,
+  AI_ENABLED_DEFAULT,
   UI_FONT_SCALE_DEFAULT,
   UI_FONT_SCALE_MAX,
   UI_FONT_SCALE_MIN,
@@ -18,6 +19,7 @@ import {
   loadSessionRestoreTabs,
   loadSidebarHidden,
   loadUiFontScale,
+  loadAiEnabled,
   saveEditorFontSize,
   saveEditorKeybindMode,
   saveEditorWordWrap,
@@ -25,6 +27,7 @@ import {
   saveSessionRestoreTabs,
   saveSidebarHidden,
   saveUiFontScale,
+  saveAiEnabled,
 } from "./settings";
 
 beforeEach(() => {
@@ -186,5 +189,35 @@ describe("session restore tabs", () => {
   it("falls back to default for non-boolean values", () => {
     localStorage.setItem("jiangyu:setting:sessionRestoreTabs", JSON.stringify(1));
     expect(loadSessionRestoreTabs()).toBe(SESSION_RESTORE_TABS_DEFAULT);
+  });
+});
+
+describe("AI enabled", () => {
+  it("returns the default when nothing is stored", () => {
+    expect(loadAiEnabled()).toBe(AI_ENABLED_DEFAULT);
+  });
+
+  it("defaults to false", () => {
+    expect(AI_ENABLED_DEFAULT).toBe(false);
+  });
+
+  it("round-trips true", () => {
+    saveAiEnabled(true);
+    expect(loadAiEnabled()).toBe(true);
+  });
+
+  it("round-trips false", () => {
+    saveAiEnabled(false);
+    expect(loadAiEnabled()).toBe(false);
+  });
+
+  it("falls back to default for non-boolean values", () => {
+    localStorage.setItem("jiangyu:setting:aiEnabled", JSON.stringify("yes"));
+    expect(loadAiEnabled()).toBe(AI_ENABLED_DEFAULT);
+  });
+
+  it("falls back to default for malformed JSON", () => {
+    localStorage.setItem("jiangyu:setting:aiEnabled", "{bad");
+    expect(loadAiEnabled()).toBe(AI_ENABLED_DEFAULT);
   });
 });

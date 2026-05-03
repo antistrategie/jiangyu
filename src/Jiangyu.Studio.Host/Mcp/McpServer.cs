@@ -184,42 +184,74 @@ public sealed class McpServer
             // from a WebView, so we pass null for the window parameter. Handlers
             // that genuinely need a window (dialog-based RPCs) are never exposed
             // as MCP tools.
-            var result = (JsonElement)tool.Method.Invoke(null, [null!, arguments])!;
+            //
+            // Take the dispatch lock so MCP can't race with WebView-originated
+            // RPCs that share the same static state (project root, indexes,
+            // agent manager, etc.). The WebView path is already single-threaded
+            // by InfiniFrame; this extends that ordering to MCP callers.
+            JsonElement result;
+            lock (RpcDispatcher.DispatchLock)
+                result = (JsonElement)tool.Method.Invoke(null, [null!, arguments])!;
 
-            var content = new[]
-            {
-                new
-                {
-                    type = "text",
-                    text = result.ValueKind == JsonValueKind.Undefined || result.ValueKind == JsonValueKind.Null
-                        ? "{}"
-                        : result.GetRawText(),
-                },
-            };
-
-            var toolResult = new { content, isError = false };
-            return JsonRpcResult(id, JsonSerializer.SerializeToElement(toolResult));
+            return BuildSuccessResponse(id, result);
         }
         catch (TargetInvocationException ex) when (ex.InnerException is not null)
         {
-            var content = new[]
-            {
-                new { type = "text", text = ex.InnerException.Message },
-            };
-
-            var toolResult = new { content, isError = true };
-            return JsonRpcResult(id, JsonSerializer.SerializeToElement(toolResult));
+            return ToolErrorResponse(id, toolName, ex.InnerException);
         }
         catch (Exception ex)
         {
-            var content = new[]
-            {
-                new { type = "text", text = ex.Message },
-            };
-
-            var toolResult = new { content, isError = true };
-            return JsonRpcResult(id, JsonSerializer.SerializeToElement(toolResult));
+            return ToolErrorResponse(id, toolName, ex);
         }
+    }
+
+    /// <summary>
+    /// Tool-call exceptions are returned as MCP tool errors (so the agent can
+    /// see them in-band) and also logged to the host's stderr so a developer
+    /// can find the stack. Without the log, NREs and other host-side bugs
+    /// silently become "tool error" text the LLM retries forever.
+    /// </summary>
+    private static string ToolErrorResponse(JsonElement? id, string toolName, Exception ex)
+    {
+        Console.Error.WriteLine($"[Mcp] tool '{toolName}' failed: {ex}");
+        var content = new[]
+        {
+            new { type = "text", text = ex.Message },
+        };
+        var toolResult = new { content, isError = true };
+        return JsonRpcResult(id, JsonSerializer.SerializeToElement(toolResult));
+    }
+
+    /// <summary>
+    /// Builds the success-case tool response. Per the MCP spec, structured
+    /// data goes in <c>structuredContent</c>; <c>content</c> still carries a
+    /// human/agent-readable text rendering for clients that don't read
+    /// structured output. Null / empty results return an empty content list
+    /// rather than the literal string "{}", which conflates "no data" with
+    /// "empty object".
+    /// </summary>
+    private static string BuildSuccessResponse(JsonElement? id, JsonElement result)
+    {
+        var isEmpty = result.ValueKind == JsonValueKind.Undefined ||
+                      result.ValueKind == JsonValueKind.Null;
+
+        if (isEmpty)
+        {
+            var emptyResult = new { content = Array.Empty<object>(), isError = false };
+            return JsonRpcResult(id, JsonSerializer.SerializeToElement(emptyResult));
+        }
+
+        var content = new[]
+        {
+            new { type = "text", text = result.GetRawText() },
+        };
+        var withStructured = new
+        {
+            content,
+            structuredContent = result,
+            isError = false,
+        };
+        return JsonRpcResult(id, JsonSerializer.SerializeToElement(withStructured));
     }
 
     private const string EmbeddedDocsPrefix = "Jiangyu.Studio.Host.docs.";

@@ -165,6 +165,7 @@ export interface StudioSettings {
   sessionRestoreTabs: boolean;
   editorKeybindMode?: string;
   templateEditorMode?: string;
+  aiEnabled: boolean;
 }
 
 export interface ObjectInspectionResult {

@@ -12,6 +12,7 @@ import {
   EDITOR_WORD_WRAP_DEFAULT,
   SESSION_RESTORE_PROJECT_DEFAULT,
   SESSION_RESTORE_TABS_DEFAULT,
+  AI_ENABLED_DEFAULT,
   UI_FONT_SCALE_DEFAULT,
   UI_FONT_SCALE_MAX,
   UI_FONT_SCALE_MIN,
@@ -20,6 +21,7 @@ import {
   useEditorWordWrap,
   useSessionRestoreProject,
   useSessionRestoreTabs,
+  useAiEnabled,
   useTemplateEditorMode,
   useUiFontScale,
   TEMPLATE_EDITOR_MODE_DEFAULT,
@@ -29,7 +31,7 @@ import {
 } from "@lib/settings";
 import styles from "./SettingsModal.module.css";
 
-type SectionId = "appearance" | "session" | "editor" | "paths" | "about";
+type SectionId = "appearance" | "session" | "editor" | "ai" | "paths" | "about";
 
 interface SettingsModalProps {
   readonly onClose: () => void;
@@ -39,6 +41,7 @@ const NAV_SECTIONS: readonly { readonly id: SectionId; readonly label: string }[
   { id: "appearance", label: "Appearance · 外观" },
   { id: "session", label: "Session · 会话" },
   { id: "editor", label: "Editor · 编辑器" },
+  { id: "ai", label: "AI · 人工智能" },
   { id: "paths", label: "Paths · 路径" },
   { id: "about", label: "About · 关于" },
 ];
@@ -110,6 +113,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             </div>
             <div id="setting-editor">
               <EditorSection />
+            </div>
+            <div id="setting-ai">
+              <AiSection />
             </div>
             <div id="setting-paths">
               <PathsSection />
@@ -309,6 +315,34 @@ function SessionSection() {
         <SegmentedControl<"on" | "off">
           value={restoreTabs ? "on" : "off"}
           onChange={(v) => setRestoreTabs(v === "on")}
+          options={[
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
+          ]}
+        />
+      </Field>
+    </>
+  );
+}
+
+// --- AI section --------------------------------------------------------------
+
+function AiSection() {
+  const [aiEnabled, setAiEnabled] = useAiEnabled();
+
+  return (
+    <>
+      <SectionHeader title="AI · 人工智能" />
+      <Field
+        label="Enable AI features"
+        hint="Opt-in to AI-powered features such as the Agent panel."
+        onReset={
+          aiEnabled !== AI_ENABLED_DEFAULT ? () => setAiEnabled(AI_ENABLED_DEFAULT) : undefined
+        }
+      >
+        <SegmentedControl<"on" | "off">
+          value={aiEnabled ? "on" : "off"}
+          onChange={(v) => setAiEnabled(v === "on")}
           options={[
             { value: "on", label: "On" },
             { value: "off", label: "Off" },

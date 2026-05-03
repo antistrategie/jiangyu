@@ -93,7 +93,7 @@ public class AcpIntegrationTests
                 Fs = new FileSystemCapability { ReadTextFile = true, WriteTextFile = true },
                 Terminal = true,
             },
-            ClientInfo = new Implementation { Name = "test-client" },
+            ClientInfo = new Implementation { Name = "test-client", Version = "0.0.0" },
         }, cts.Token);
 
         Assert.Equal(1, initResponse.ProtocolVersion);
@@ -105,7 +105,7 @@ public class AcpIntegrationTests
             Cwd = "/tmp/test-project",
             McpServers =
             [
-                new McpServerConfig { Name = "jiangyu", Uri = "http://127.0.0.1:41697/mcp" },
+                new McpServerConfig { Name = "jiangyu", Type = "http", Url = "http://127.0.0.1:41697/mcp", Headers = [] },
             ],
         }, cts.Token);
 
@@ -115,7 +115,7 @@ public class AcpIntegrationTests
         var promptResponse = await client.PromptAsync(new PromptRequest
         {
             SessionId = "sess-001",
-            Content = [new TextContentBlock { Text = "Help me create a mod" }],
+            Prompt = [new TextContentBlock { Text = "Help me create a mod" }],
         }, cts.Token);
 
         Assert.Equal("end_turn", promptResponse.StopReason);
@@ -142,7 +142,7 @@ public class AcpIntegrationTests
 
         var handler = new StubClientHandler
         {
-            ReadTextFileResult = new ReadTextFileResponse { Text = "fn main() {}" },
+            ReadTextFileResult = new ReadTextFileResponse { Content = "fn main() {}" },
         };
 
         using var client = new AcpClient(handler, agentToClient, clientToAgent);
@@ -158,7 +158,7 @@ public class AcpIntegrationTests
                 jsonrpc = "2.0",
                 id = 42,
                 method = "fs/read_text_file",
-                @params = new { path = "/src/main.rs" },
+                @params = new { sessionId = "s-1", path = "/src/main.rs" },
             });
             await WriteFramedAsync(agentToClient, requestJson);
 
@@ -166,8 +166,8 @@ public class AcpIntegrationTests
             var responseJson = await ReadFramedAsync(clientToAgent);
             var doc = JsonDocument.Parse(responseJson);
             Assert.Equal(42, doc.RootElement.GetProperty("id").GetInt32());
-            var text = doc.RootElement.GetProperty("result").GetProperty("text").GetString();
-            Assert.Equal("fn main() {}", text);
+            var content = doc.RootElement.GetProperty("result").GetProperty("content").GetString();
+            Assert.Equal("fn main() {}", content);
         }, cts.Token);
 
         await agentTask;
@@ -183,7 +183,7 @@ public class AcpIntegrationTests
         {
             PermissionResult = new RequestPermissionResponse
             {
-                Outcome = new AllowedPermissionOutcome { OptionLabel = "Always" },
+                Outcome = new SelectedPermissionOutcome { OptionId = "allow_once" },
             },
         };
 
@@ -202,11 +202,11 @@ public class AcpIntegrationTests
                 @params = new
                 {
                     sessionId = "s-1",
-                    description = "Write to /src/file.cs",
+                    toolCall = new { toolCallId = "tc-1", title = "Write to /src/file.cs" },
                     options = new object[]
                     {
-                        new { label = "Allow", kind = "allow", isDefault = true },
-                        new { label = "Deny", kind = "deny", isDefault = false },
+                        new { optionId = "allow_once", name = "Allow", kind = "allow_once" },
+                        new { optionId = "reject_once", name = "Deny", kind = "reject_once" },
                     },
                 },
             });
@@ -216,8 +216,8 @@ public class AcpIntegrationTests
             var doc = JsonDocument.Parse(responseJson);
             Assert.Equal(7, doc.RootElement.GetProperty("id").GetInt32());
             var outcome = doc.RootElement.GetProperty("result").GetProperty("outcome");
-            Assert.Equal("allowed", outcome.GetProperty("type").GetString());
-            Assert.Equal("Always", outcome.GetProperty("optionLabel").GetString());
+            Assert.Equal("selected", outcome.GetProperty("outcome").GetString());
+            Assert.Equal("allow_once", outcome.GetProperty("optionId").GetString());
         }, cts.Token);
 
         await agentTask;

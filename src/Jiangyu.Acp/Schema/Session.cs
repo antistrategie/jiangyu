@@ -9,7 +9,7 @@ public sealed class NewSessionRequest
     public required string Cwd { get; set; }
 
     [JsonPropertyName("mcpServers")]
-    public McpServerConfig[]? McpServers { get; set; }
+    public required McpServerConfig[] McpServers { get; set; }
 
     [JsonPropertyName("_meta")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -22,51 +22,76 @@ public sealed class NewSessionResponse
     public required string SessionId { get; set; }
 
     [JsonPropertyName("modes")]
-    public SessionModeState[]? Modes { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Modes { get; set; }
 
-    [JsonPropertyName("models")]
-    public SessionModelState[]? Models { get; set; }
+    [JsonPropertyName("configOptions")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? ConfigOptions { get; set; }
+
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
-public sealed class SessionModeState
-{
-    [JsonPropertyName("id")]
-    public required string Id { get; set; }
-
-    [JsonPropertyName("title")]
-    public string? Title { get; set; }
-
-    [JsonPropertyName("isCurrent")]
-    public bool IsCurrent { get; set; }
-}
-
-public sealed class SessionModelState
-{
-    [JsonPropertyName("id")]
-    public required string Id { get; set; }
-
-    [JsonPropertyName("title")]
-    public string? Title { get; set; }
-
-    [JsonPropertyName("isCurrent")]
-    public bool IsCurrent { get; set; }
-}
-
+/// <summary>
+/// MCP server descriptor passed to the agent in <c>session/new</c>. The wire
+/// shape varies by transport: stdio servers carry <see cref="Command"/> and
+/// <see cref="Args"/>; HTTP/SSE servers carry <see cref="Url"/> and
+/// <see cref="Headers"/>. Per the spec, HTTP and SSE require the agent to
+/// advertise <c>agentCapabilities.mcpCapabilities.http</c> /
+/// <c>.sse</c>; stdio is always supported.
+/// </summary>
 public sealed class McpServerConfig
 {
     [JsonPropertyName("name")]
     public required string Name { get; set; }
 
-    [JsonPropertyName("uri")]
-    public string? Uri { get; set; }
+    // --- Discriminator for HTTP/SSE transports (stdio has no type field) ---
+
+    [JsonPropertyName("type")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Type { get; set; }
+
+    // --- HTTP / SSE transports ---
+
+    [JsonPropertyName("url")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Url { get; set; }
+
+    [JsonPropertyName("headers")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public HttpHeader[]? Headers { get; set; }
+
+    // --- stdio transport ---
 
     [JsonPropertyName("command")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Command { get; set; }
 
     [JsonPropertyName("args")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string[]? Args { get; set; }
 
     [JsonPropertyName("env")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public Dictionary<string, string>? Env { get; set; }
+    public EnvVariable[]? Env { get; set; }
+}
+
+public sealed class HttpHeader
+{
+    [JsonPropertyName("name")]
+    public required string Name { get; set; }
+
+    [JsonPropertyName("value")]
+    public required string Value { get; set; }
+}
+
+public sealed class EnvVariable
+{
+    [JsonPropertyName("name")]
+    public required string Name { get; set; }
+
+    [JsonPropertyName("value")]
+    public required string Value { get; set; }
 }

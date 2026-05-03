@@ -565,7 +565,7 @@
   margin: var(--space-1) var(--space-3);
   color: var(--ink-4);
   font-family: var(--font-label);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   letter-spacing: var(--tracking-wider);
   text-transform: uppercase;
   white-space: nowrap;

@@ -211,6 +211,90 @@ public class JsonRpcEndpointTests
     }
 
     [Fact]
+    public async Task ListenAsync_RejectsMalformedContentLength()
+    {
+        // A non-numeric Content-Length header should make ReadMessageAsync
+        // throw, surfacing as the listen loop ending. Pending requests
+        // observe the connection-closed failure (FailAllPending in the
+        // finally block).
+        var bytes = Encoding.ASCII.GetBytes("Content-Length: abc\r\n\r\n{}");
+        var input = new MemoryStream(bytes);
+        var output = new MemoryStream();
+        using var endpoint = new JsonRpcEndpoint(input, output);
+
+        await Assert.ThrowsAnyAsync<Exception>(() => endpoint.ListenAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ListenAsync_RejectsOversizedContentLength()
+    {
+        // Hard 16 MiB ceiling. A peer claiming Content-Length: 999999999 must
+        // be rejected before we attempt to allocate the buffer, otherwise a
+        // hostile or buggy agent could OOM the host.
+        var bytes = Encoding.ASCII.GetBytes("Content-Length: 999999999\r\n\r\n");
+        var input = new MemoryStream(bytes);
+        var output = new MemoryStream();
+        using var endpoint = new JsonRpcEndpoint(input, output);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => endpoint.ListenAsync(CancellationToken.None));
+        Assert.Contains("exceeds", ex.Message);
+    }
+
+    [Fact]
+    public async Task ListenAsync_DispatchesRequestsConcurrently()
+    {
+        // After the listen-loop refactor, a slow request handler must not
+        // block the listen loop from accepting subsequent requests. We send
+        // two requests; the first handler waits for the second to be seen
+        // before completing. If dispatch were sequential this would deadlock.
+        using var agentToClient = new BlockingStream();
+        using var clientToAgent = new BlockingStream();
+        using var endpoint = new JsonRpcEndpoint(agentToClient, clientToAgent);
+
+        var firstSeen = new TaskCompletionSource();
+        var secondSeen = new TaskCompletionSource();
+        endpoint.OnRequest(async (method, @params, ct) =>
+        {
+            if (method == "first")
+            {
+                firstSeen.SetResult();
+                await secondSeen.Task; // wait for the second request to arrive
+                return JsonSerializer.SerializeToElement("first-done");
+            }
+            secondSeen.SetResult();
+            return JsonSerializer.SerializeToElement("second-done");
+        });
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var listenTask = Task.Run(() => endpoint.ListenAsync(cts.Token));
+
+        await WriteFramedAsync(agentToClient,
+            """{"jsonrpc":"2.0","id":1,"method":"first"}""");
+        await firstSeen.Task; // first handler is parked
+
+        await WriteFramedAsync(agentToClient,
+            """{"jsonrpc":"2.0","id":2,"method":"second"}""");
+        await secondSeen.Task; // proves the loop kept reading
+
+        // Both responses should land. Order on the wire isn't guaranteed
+        // since the second handler completes first; just confirm we see two.
+        var r1 = await ReadFramedAsync(clientToAgent);
+        var r2 = await ReadFramedAsync(clientToAgent);
+        Assert.Contains("done", r1);
+        Assert.Contains("done", r2);
+
+        agentToClient.Close();
+        await listenTask;
+    }
+
+    private static Task WriteFramedAsync(Stream s, string json)
+        => AcpClientTests.WriteFramedAsync(s, json);
+
+    private static Task<string> ReadFramedAsync(Stream s)
+        => AcpClientTests.ReadFramedAsync(s);
+
+    [Fact]
     public async Task ListenAsync_EofFailsPendingRequests()
     {
         // When the remote side disconnects, in-flight requests must fail

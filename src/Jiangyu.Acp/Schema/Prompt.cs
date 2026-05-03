@@ -8,8 +8,8 @@ public sealed class PromptRequest
     [JsonPropertyName("sessionId")]
     public required string SessionId { get; set; }
 
-    [JsonPropertyName("content")]
-    public required ContentBlock[] Content { get; set; }
+    [JsonPropertyName("prompt")]
+    public required ContentBlock[] Prompt { get; set; }
 
     [JsonPropertyName("_meta")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -20,6 +20,10 @@ public sealed class PromptResponse
 {
     [JsonPropertyName("stopReason")]
     public required string StopReason { get; set; }
+
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
 /// <summary>
@@ -40,6 +44,10 @@ public sealed class TextContentBlock : ContentBlock
 
     [JsonPropertyName("text")]
     public required string Text { get; set; }
+
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
 public sealed class ImageContentBlock : ContentBlock
@@ -52,30 +60,62 @@ public sealed class ImageContentBlock : ContentBlock
 
     [JsonPropertyName("mimeType")]
     public required string MimeType { get; set; }
+
+    [JsonPropertyName("uri")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Uri { get; set; }
+
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
-public sealed class ResourceContentBlock : ContentBlock
+public sealed class AudioContentBlock : ContentBlock
 {
     [JsonPropertyName("type")]
-    public override string Type => "resource";
+    public override string Type => "audio";
 
-    [JsonPropertyName("resource")]
-    public required EmbeddedResource Resource { get; set; }
+    [JsonPropertyName("data")]
+    public required string Data { get; set; }
+
+    [JsonPropertyName("mimeType")]
+    public required string MimeType { get; set; }
+
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
-public sealed class EmbeddedResource
+public sealed class ResourceLinkContentBlock : ContentBlock
 {
+    [JsonPropertyName("type")]
+    public override string Type => "resource_link";
+
+    [JsonPropertyName("name")]
+    public required string Name { get; set; }
+
     [JsonPropertyName("uri")]
     public required string Uri { get; set; }
 
+    [JsonPropertyName("title")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Title { get; set; }
+
+    [JsonPropertyName("description")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Description { get; set; }
+
     [JsonPropertyName("mimeType")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? MimeType { get; set; }
 
-    [JsonPropertyName("text")]
-    public string? Text { get; set; }
+    [JsonPropertyName("size")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? Size { get; set; }
 
-    [JsonPropertyName("blob")]
-    public string? Blob { get; set; }
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
 internal sealed class ContentBlockConverter : JsonConverter<ContentBlock>
@@ -90,7 +130,8 @@ internal sealed class ContentBlockConverter : JsonConverter<ContentBlock>
         {
             "text" => root.Deserialize<TextContentBlock>(options),
             "image" => root.Deserialize<ImageContentBlock>(options),
-            "resource" => root.Deserialize<ResourceContentBlock>(options),
+            "audio" => root.Deserialize<AudioContentBlock>(options),
+            "resource_link" => root.Deserialize<ResourceLinkContentBlock>(options),
             _ => throw new JsonException($"Unknown ContentBlock type: {type}"),
         };
     }

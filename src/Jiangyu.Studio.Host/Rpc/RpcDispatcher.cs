@@ -128,6 +128,12 @@ public static partial class RpcDispatcher
     // project. Today the frontend is trusted and would never send paths outside,
     // but a malicious mod rendering into a shared surface or a bug in the editor
     // could. Silent safety-net — we don't trust the client's sandboxing.
+    //
+    // Symlinks are resolved before the prefix check so a link inside the project
+    // pointing outside it (e.g. `Mods/external -> /etc`) doesn't escape. Path
+    // components above the project root (`..`) are normalised by GetFullPath.
+    // For paths that don't exist yet (a write target), we walk up the chain
+    // until we find an existing parent and resolve from there.
     internal static void EnsurePathInsideProject(string path)
     {
         var root = ProjectWatcher.ProjectRoot;
@@ -138,11 +144,52 @@ public static partial class RpcDispatcher
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
 
-        var full = Path.GetFullPath(path);
-        if (full.Equals(root, cmp)) return;
-        if (full.StartsWith(root + Path.DirectorySeparatorChar, cmp)) return;
+        var resolvedRoot = ResolveRealPath(root) ?? Path.GetFullPath(root);
+        var resolved = ResolveRealPath(path) ?? Path.GetFullPath(path);
+
+        if (resolved.Equals(resolvedRoot, cmp)) return;
+        if (resolved.StartsWith(resolvedRoot + Path.DirectorySeparatorChar, cmp)) return;
 
         throw new UnauthorizedAccessException($"Path is outside the open project: {path}");
+    }
+
+    /// <summary>
+    /// Best-effort canonical-path resolution: follows symlinks for the deepest
+    /// existing component, then re-attaches the trailing path segments.
+    /// Returns null if <paramref name="path"/> can't be normalised at all.
+    /// </summary>
+    private static string? ResolveRealPath(string path)
+    {
+        try
+        {
+            var full = Path.GetFullPath(path);
+            // Walk up to find an existing component, since ResolveLinkTarget
+            // returns null for non-existent paths.
+            var existing = full;
+            var trailing = "";
+            while (!File.Exists(existing) && !Directory.Exists(existing))
+            {
+                var parent = Path.GetDirectoryName(existing);
+                if (string.IsNullOrEmpty(parent) || parent == existing) return full;
+                trailing = Path.Combine(Path.GetFileName(existing), trailing);
+                existing = parent;
+            }
+
+            // ResolveLinkTarget returns null when the path is not a link;
+            // in that case the path is already canonical at this level.
+            FileSystemInfo info = Directory.Exists(existing)
+                ? new DirectoryInfo(existing)
+                : new FileInfo(existing);
+            var target = info.ResolveLinkTarget(returnFinalTarget: true);
+            var resolvedExisting = target?.FullName ?? existing;
+            return string.IsNullOrEmpty(trailing)
+                ? resolvedExisting
+                : Path.Combine(resolvedExisting, trailing);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -158,6 +205,15 @@ public static partial class RpcDispatcher
         };
         window.SendWebMessage(JsonSerializer.Serialize(notification, RpcJsonContext.Default.RpcNotification));
     }
+
+    /// <summary>
+    /// Single-handler-at-a-time gate. The WebView dispatch is implicitly
+    /// single-threaded by InfiniFrame, but MCP runs on the ASP.NET thread
+    /// pool — without serialisation, MCP and WebView would race on the
+    /// shared statics (project root, asset/template indexes, agent manager).
+    /// All RPC handler invocations from either path must acquire this lock.
+    /// </summary>
+    internal static readonly Lock DispatchLock = new();
 
     public static void HandleMessage(IInfiniFrameWindow window, string message, Action<string> sendResponse)
     {
@@ -190,7 +246,7 @@ public static partial class RpcDispatcher
         {
             try
             {
-                result = handler(window, request.Params);
+                lock (DispatchLock) result = handler(window, request.Params);
             }
             catch (Exception ex)
             {
@@ -386,11 +442,10 @@ public static partial class RpcDispatcher
         return JsonSerializer.SerializeToElement(entries);
     }
 
-    [McpTool("jiangyu_read_file",
-        "Read the text content of a file in the current project. When line range is given, returns only those lines. Path must be inside the open project.")]
-    [McpParam("path", "string", "Absolute path to the file to read.", Required = true)]
-    [McpParam("startLine", "integer", "First line to return (1-based, inclusive). Optional.")]
-    [McpParam("endLine", "integer", "Last line to return (1-based, inclusive). Optional.")]
+    // Not exposed via MCP: ACP agents use the standard `fs/read_text_file`
+    // method instead, which routes through AcpClientHandler.ReadTextFileAsync.
+    // Keeping a duplicate MCP tool would let the model pick inconsistently
+    // between the two paths.
     private static JsonElement HandleReadFile(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
@@ -519,10 +574,8 @@ public static partial class RpcDispatcher
     // a pathological paste-into-Monaco-and-save doesn't OOM the host.
     private const int MaxWriteFileBytes = 64 * 1024 * 1024;
 
-    [McpTool("jiangyu_write_file",
-        "Create or overwrite a file in the current project. Atomic write (tmp + rename). Path must be inside the open project.")]
-    [McpParam("path", "string", "Absolute path to the file to write.", Required = true)]
-    [McpParam("content", "string", "Full file content to write.", Required = true)]
+    // Not exposed via MCP: ACP agents use the standard `fs/write_text_file`
+    // method instead. See HandleReadFile above for the rationale.
     private static JsonElement HandleWriteFile(IInfiniFrameWindow window, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");

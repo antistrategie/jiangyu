@@ -14,7 +14,7 @@ export interface WindowParams {
 
 // Recognised values for the `kind` URL param. Anything else is ignored so a
 // stale/hand-crafted link can't make the secondary render the wrong shell.
-const PANE_KINDS: readonly PaneKind[] = ["code", "assetBrowser", "templateBrowser"];
+const PANE_KINDS: readonly PaneKind[] = ["code", "assetBrowser", "templateBrowser", "agent"];
 
 export function getWindowParams(): WindowParams {
   const params = new URLSearchParams(window.location.search);

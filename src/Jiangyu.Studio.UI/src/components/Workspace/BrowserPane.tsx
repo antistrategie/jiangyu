@@ -5,6 +5,7 @@ import type { AssetBrowserState, TemplateBrowserState } from "@lib/panes/browser
 import { useLayoutStore } from "@lib/panes/layoutStore";
 import { AssetBrowser } from "@components/AssetBrowser/AssetBrowser";
 import { TemplateBrowser } from "@components/TemplateBrowser/TemplateBrowser";
+import { AgentPanel } from "@components/AgentPanel/AgentPanel";
 import { ContextMenu } from "@components/ContextMenu/ContextMenu";
 import { DropOverlay } from "./DropOverlay";
 import type { DropZone } from "./dropZone";
@@ -132,6 +133,8 @@ export function BrowserPane({
             initialState={pane.state as AssetBrowserState | undefined}
             onStateChange={(state) => useLayoutStore.getState().setBrowserPaneState(pane.id, state)}
           />
+        ) : pane.kind === "agent" ? (
+          <AgentPanel />
         ) : (
           <TemplateBrowser
             projectPath={projectPath}

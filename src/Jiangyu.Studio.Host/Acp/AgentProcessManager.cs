@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Jiangyu.Acp;
+using Jiangyu.Acp.JsonRpc;
 using Jiangyu.Acp.Schema;
 
 namespace Jiangyu.Studio.Host.Acp;
@@ -13,10 +14,17 @@ internal sealed class AgentProcessManager : IDisposable
     private Process? _process;
     private AcpClient? _client;
     private string? _sessionId;
+    private InitializeResponse? _initializeResponse;
     private readonly Lock _lock = new();
 
     /// <summary>The MCP server port so we can tell the agent where to connect.</summary>
     public int McpPort { get; set; }
+
+    /// <summary>
+    /// Invoked when the agent process exits unexpectedly. Called on a
+    /// background thread; the handler should be safe to call from any context.
+    /// </summary>
+    public Action? OnProcessExited { get; set; }
 
     public bool IsRunning
     {
@@ -67,15 +75,14 @@ internal sealed class AgentProcessManager : IDisposable
         var process = Process.Start(psi)
             ?? throw new InvalidOperationException($"Failed to start agent: {command}");
 
-        // Drain stderr continuously. The pipe buffer is a few KB; if no one
-        // reads, the agent blocks on its first error log and the whole ACP
-        // session deadlocks.
+        // Drain stderr continuously and log it.
         _ = Task.Run(async () =>
         {
             try
             {
-                var buf = new char[4096];
-                while (await process.StandardError.ReadAsync(buf).ConfigureAwait(false) > 0) { }
+                string? line;
+                while ((line = await process.StandardError.ReadLineAsync().ConfigureAwait(false)) is not null)
+                    Console.Error.WriteLine($"[Agent stderr] {line}");
             }
             catch { /* process exited */ }
         });
@@ -83,8 +90,11 @@ internal sealed class AgentProcessManager : IDisposable
         var client = new AcpClient(
             handler,
             process.StandardOutput.BaseStream,
-            process.StandardInput.BaseStream);
+            process.StandardInput.BaseStream,
+            FramingMode.NdJson);
         client.Start();
+
+        Console.Error.WriteLine("[Agent] Listen loop started, sending initialize…");
 
         lock (_lock)
         {
@@ -92,27 +102,58 @@ internal sealed class AgentProcessManager : IDisposable
             _client = client;
         }
 
-        // Initialise the ACP connection.
-        var response = await client.InitializeAsync(new InitializeRequest
+        // Monitor for unexpected process exit.
+        process.EnableRaisingEvents = true;
+        process.Exited += (_, _) =>
         {
-            ProtocolVersion = 1,
-            ClientCapabilities = new ClientCapabilities
-            {
-                Fs = new FileSystemCapability
-                {
-                    ReadTextFile = true,
-                    WriteTextFile = true,
-                },
-                Terminal = true,
-            },
-            ClientInfo = new Implementation
-            {
-                Name = "jiangyu-studio",
-                Title = "Jiangyu Studio",
-                Version = typeof(AgentProcessManager).Assembly.GetName().Version?.ToString() ?? "0.0.0",
-            },
-        }, ct);
+            Console.Error.WriteLine($"[Agent] Process exited (code {(process.HasExited ? process.ExitCode : -1)})");
+            OnProcessExited?.Invoke();
+        };
 
+        // Initialise the ACP connection. Wrap so an init failure tears down
+        // the process; otherwise the caller would see the exception but
+        // _process and _client would still be holding the orphan.
+        InitializeResponse response;
+        try
+        {
+            Console.Error.WriteLine("[Agent] Sending initialize request…");
+            response = await client.InitializeAsync(new InitializeRequest
+            {
+                ProtocolVersion = 1,
+                ClientCapabilities = new ClientCapabilities
+                {
+                    Fs = new FileSystemCapability
+                    {
+                        ReadTextFile = true,
+                        WriteTextFile = true,
+                    },
+                    Terminal = true,
+                },
+                ClientInfo = new Implementation
+                {
+                    Name = "jiangyu-studio",
+                    Title = "Jiangyu Studio",
+                    Version = typeof(AgentProcessManager).Assembly.GetName().Version?.ToString() ?? "0.0.0",
+                },
+            }, ct);
+            Console.Error.WriteLine($"[Agent] Initialize response received: {response.AgentInfo?.Name}");
+        }
+        catch
+        {
+            Stop();
+            throw;
+        }
+
+        // Spec: agent MUST echo the requested version if supported, otherwise
+        // respond with the latest it supports. Treat any mismatch as fatal.
+        if (response.ProtocolVersion != 1)
+        {
+            Stop();
+            throw new InvalidOperationException(
+                $"Agent reported unsupported ACP protocol version {response.ProtocolVersion}; expected 1.");
+        }
+
+        lock (_lock) _initializeResponse = response;
         return response;
     }
 
@@ -123,18 +164,31 @@ internal sealed class AgentProcessManager : IDisposable
     public async Task<NewSessionResponse> NewSessionAsync(string projectRoot, CancellationToken ct = default)
     {
         var client = Client ?? throw new InvalidOperationException("Agent not running.");
+        InitializeResponse? init;
+        lock (_lock) init = _initializeResponse;
+
+        // Per spec, HTTP MCP is only legal when the agent advertises
+        // mcpCapabilities.http; otherwise we omit the MCP server entirely.
+        // Future: spawn a stdio MCP adapter for agents that don't support
+        // HTTP, so the Jiangyu tool surface is reachable from any agent.
+        var supportsHttpMcp = init?.AgentCapabilities?.McpCapabilities?.Http == true;
+        var mcpServers = supportsHttpMcp
+            ? new[]
+            {
+                new McpServerConfig
+                {
+                    Name = "jiangyu",
+                    Type = "http",
+                    Url = $"http://127.0.0.1:{McpPort}/mcp",
+                    Headers = [],
+                },
+            }
+            : Array.Empty<McpServerConfig>();
 
         var response = await client.NewSessionAsync(new NewSessionRequest
         {
             Cwd = projectRoot,
-            McpServers =
-            [
-                new McpServerConfig
-                {
-                    Name = "jiangyu",
-                    Uri = $"http://127.0.0.1:{McpPort}/mcp",
-                },
-            ],
+            McpServers = mcpServers,
         }, ct);
 
         lock (_lock) _sessionId = response.SessionId;
@@ -152,7 +206,7 @@ internal sealed class AgentProcessManager : IDisposable
         return await client.PromptAsync(new PromptRequest
         {
             SessionId = sessionId,
-            Content = [new TextContentBlock { Text = text }],
+            Prompt = [new TextContentBlock { Text = text }],
         }, ct);
     }
 

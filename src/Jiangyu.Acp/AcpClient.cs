@@ -15,10 +15,10 @@ public sealed class AcpClient : IDisposable
     private readonly IAcpClientHandler _handler;
     private readonly CancellationTokenSource _cts = new();
 
-    public AcpClient(IAcpClientHandler handler, Stream input, Stream output)
+    public AcpClient(IAcpClientHandler handler, Stream input, Stream output, FramingMode framing = FramingMode.ContentLength)
     {
         _handler = handler;
-        _endpoint = new JsonRpcEndpoint(input, output);
+        _endpoint = new JsonRpcEndpoint(input, output, framing);
 
         _endpoint.OnRequest(HandleAgentRequestAsync);
         _endpoint.OnNotification(HandleAgentNotificationAsync);
@@ -130,8 +130,15 @@ public sealed class AcpClient : IDisposable
     {
         if (method == "session/update" && @params is not null)
         {
-            var notification = JsonSerializer.Deserialize<SessionNotification>(@params.Value)!;
-            await _handler.OnSessionUpdateAsync(notification, ct).ConfigureAwait(false);
+            try
+            {
+                var notification = JsonSerializer.Deserialize<SessionNotification>(@params.Value)!;
+                await _handler.OnSessionUpdateAsync(notification, ct).ConfigureAwait(false);
+            }
+            catch (JsonException ex)
+            {
+                Console.Error.WriteLine($"[Acp] Failed to deserialise session/update: {ex.Message}");
+            }
         }
     }
 

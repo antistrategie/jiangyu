@@ -6,6 +6,7 @@ import {
   type BrowserPane,
   type Layout,
 } from "@lib/layout";
+import { useAiEnabled } from "@lib/settings";
 import { useLayoutStore } from "@lib/panes/layoutStore";
 import { PALETTE_SCOPE, type PaletteAction } from "./actions";
 
@@ -35,6 +36,7 @@ export function usePaneActions({
     [layout],
   );
   const activePaneId = layout.activePaneId;
+  const [aiEnabled] = useAiEnabled();
 
   return useMemo<PaletteAction[]>(() => {
     if (projectPath === null) return [];
@@ -43,6 +45,7 @@ export function usePaneActions({
     const actions: PaletteAction[] = [];
 
     for (const kind of Object.keys(BROWSER_KIND_META) as BrowserPane["kind"][]) {
+      if (kind === "agent" && !aiEnabled) continue;
       const meta = BROWSER_KIND_META[kind];
       actions.push({
         id: `view.openBrowser:${kind}`,
@@ -119,5 +122,5 @@ export function usePaneActions({
     }
 
     return actions;
-  }, [projectPath, paneIdSignature, activePaneId, onTearOutPane]);
+  }, [projectPath, paneIdSignature, activePaneId, onTearOutPane, aiEnabled]);
 }

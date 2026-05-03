@@ -57,7 +57,7 @@
 }
 
 .groupLabel {
-  padding: 10px 18px 4px;
+  padding: 10px 18px var(--space-1);
   font-family: var(--font-label);
   font-size: var(--fs-xs);
   letter-spacing: 0.28em;

@@ -75,8 +75,23 @@ public static class Program
 
         app.UseAutoServerClose();
 
+        // Same-origin gate. Browser tabs can issue cross-origin POSTs without
+        // a preflight (Content-Type: text/plain qualifies as "simple" CORS),
+        // so they could trigger arbitrary tool calls if /mcp were unguarded.
+        // Reject any cross-origin request; agents launched as stdio
+        // subprocesses fetch via this URL and don't send Origin/Referer at
+        // all, so a missing header is allowed. Browser-issued same-origin
+        // requests from the WebView itself carry our own origin.
         app.WebApp.MapPost("/mcp", async context =>
         {
+            var origin = context.Request.Headers.Origin.ToString();
+            var referer = context.Request.Headers.Referer.ToString();
+            if (!IsAcceptableOrigin(origin, devUrl) || !IsAcceptableReferer(referer, devUrl))
+            {
+                context.Response.StatusCode = 403;
+                return;
+            }
+
             using var reader = new StreamReader(context.Request.Body);
             var body = await reader.ReadToEndAsync();
 
@@ -136,6 +151,31 @@ public static class Program
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// True when the request's Origin header is absent (typical of stdio
+    /// subprocess agents using HttpClient) or matches the host's own origin.
+    /// </summary>
+    private static bool IsAcceptableOrigin(string origin, string ourOrigin)
+    {
+        if (string.IsNullOrEmpty(origin)) return true;
+        return string.Equals(origin, ourOrigin, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// True when the request's Referer is absent or shares scheme+host+port
+    /// with our origin. We compare authorities rather than literal strings so
+    /// a Referer of "<c>http://127.0.0.1:PORT/some/path</c>" still passes.
+    /// </summary>
+    private static bool IsAcceptableReferer(string referer, string ourOrigin)
+    {
+        if (string.IsNullOrEmpty(referer)) return true;
+        if (!Uri.TryCreate(referer, UriKind.Absolute, out var refererUri)) return false;
+        if (!Uri.TryCreate(ourOrigin, UriKind.Absolute, out var ourUri)) return false;
+        return refererUri.Scheme == ourUri.Scheme &&
+               refererUri.Host == ourUri.Host &&
+               refererUri.Port == ourUri.Port;
     }
 
     /// <summary>

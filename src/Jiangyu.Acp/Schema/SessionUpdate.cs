@@ -133,11 +133,8 @@ public sealed class ConfigOptionUpdate : SessionUpdate
 {
     public override string UpdateType => "config_option_update";
 
-    [JsonPropertyName("key")]
-    public required string Key { get; set; }
-
-    [JsonPropertyName("value")]
-    public JsonElement? Value { get; set; }
+    [JsonPropertyName("configOptions")]
+    public required JsonElement[] ConfigOptions { get; set; }
 }
 
 public sealed class SessionInfoUpdate : SessionUpdate
@@ -146,6 +143,10 @@ public sealed class SessionInfoUpdate : SessionUpdate
 
     [JsonPropertyName("title")]
     public string? Title { get; set; }
+
+    [JsonPropertyName("updatedAt")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? UpdatedAt { get; set; }
 }
 
 internal sealed class SessionUpdateConverter : JsonConverter<SessionUpdate>

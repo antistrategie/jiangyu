@@ -36,7 +36,7 @@ public class AcpClientTests
         {
             ProtocolVersion = 1,
             ClientCapabilities = new ClientCapabilities(),
-            ClientInfo = new Implementation { Name = "test" },
+            ClientInfo = new Implementation { Name = "test", Version = "0.0.0" },
         });
 
         Assert.Equal(1, response.ProtocolVersion);
@@ -90,7 +90,7 @@ public class AcpClientTests
 
         var handler = new StubClientHandler
         {
-            ReadTextFileResult = new ReadTextFileResponse { Text = "file content" },
+            ReadTextFileResult = new ReadTextFileResponse { Content = "file content" },
         };
 
         using var client = new AcpClient(handler, agentToClient, clientToAgent);
@@ -102,7 +102,7 @@ public class AcpClientTests
             jsonrpc = "2.0",
             id = 99,
             method = "fs/read_text_file",
-            @params = new { path = "/src/test.cs" },
+            @params = new { sessionId = "s-1", path = "/src/test.cs" },
         });
         await WriteFramedAsync(agentToClient, requestJson);
 
@@ -193,9 +193,9 @@ internal sealed class StubClientHandler : IAcpClientHandler
 {
     public List<SessionNotification> ReceivedUpdates { get; } = [];
 
-    public ReadTextFileResponse ReadTextFileResult { get; set; } = new() { Text = "" };
-    public WriteTextFileResponse WriteTextFileResult { get; set; } = new() { Success = true };
-    public RequestPermissionResponse PermissionResult { get; set; } = new() { Outcome = new AllowedPermissionOutcome() };
+    public ReadTextFileResponse ReadTextFileResult { get; set; } = new() { Content = "" };
+    public WriteTextFileResponse WriteTextFileResult { get; set; } = new();
+    public RequestPermissionResponse PermissionResult { get; set; } = new() { Outcome = new SelectedPermissionOutcome { OptionId = "allow_once" } };
 
     public ValueTask<ReadTextFileResponse> ReadTextFileAsync(ReadTextFileRequest request, CancellationToken ct)
         => ValueTask.FromResult(ReadTextFileResult);
@@ -213,13 +213,13 @@ internal sealed class StubClientHandler : IAcpClientHandler
         => ValueTask.FromResult(new TerminalOutputResponse { Output = "" });
 
     public ValueTask<WaitForTerminalExitResponse> WaitForTerminalExitAsync(WaitForTerminalExitRequest request, CancellationToken ct)
-        => ValueTask.FromResult(new WaitForTerminalExitResponse { ExitStatus = new TerminalExitStatus { ExitCode = 0 } });
+        => ValueTask.FromResult(new WaitForTerminalExitResponse { ExitCode = 0 });
 
     public ValueTask<KillTerminalResponse> KillTerminalAsync(KillTerminalRequest request, CancellationToken ct)
-        => ValueTask.FromResult(new KillTerminalResponse { Success = true });
+        => ValueTask.FromResult(new KillTerminalResponse());
 
     public ValueTask<ReleaseTerminalResponse> ReleaseTerminalAsync(ReleaseTerminalRequest request, CancellationToken ct)
-        => ValueTask.FromResult(new ReleaseTerminalResponse { Success = true });
+        => ValueTask.FromResult(new ReleaseTerminalResponse());
 
     public ValueTask OnSessionUpdateAsync(SessionNotification notification, CancellationToken ct)
     {

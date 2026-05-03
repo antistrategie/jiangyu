@@ -68,6 +68,9 @@ public static partial class RpcDispatcher
                 var tm = valueElement.GetString() ?? "visual";
                 settings.TemplateEditorMode = tm is "source" ? "source" : "visual";
                 break;
+            case "aiEnabled":
+                settings.AiEnabled = valueElement.ValueKind == JsonValueKind.True;
+                break;
             default:
                 throw new ArgumentException($"Unknown Studio setting key: {key}");
         }

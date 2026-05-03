@@ -2,8 +2,23 @@ import { create } from "zustand";
 import { rpcCall } from "@lib/rpc";
 import { useLayoutStore } from "@lib/panes/layoutStore";
 import { usePaneWindowStore } from "@lib/panes/paneWindowStore";
+import { agentStop } from "@lib/agent/rpc";
+import { useAgentStore } from "@lib/agent/store";
 import { pickProjectFolder } from "./commands";
 import { loadRecentProjects, recordRecentProject } from "./recent";
+
+/// Tear down any active agent session before swapping projects. The agent
+/// session is bound to its starting cwd via session/new, but our filesystem
+/// callbacks read the live ProjectWatcher.ProjectRoot, so leaving an old
+/// session attached makes its tool calls run in a hybrid sandbox.
+function teardownAgentSession(): void {
+  if (useAgentStore.getState().connected) {
+    void agentStop().catch(() => {
+      // Best-effort; the host will eventually drop the manager anyway.
+    });
+    useAgentStore.getState().setDisconnected();
+  }
+}
 
 interface ProjectStore {
   /** Absolute path to the open project root, or null when none is open. */
@@ -34,12 +49,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   switchProject: (path) => {
+    teardownAgentSession();
     usePaneWindowStore.getState().closeAllPaneWindows();
     useLayoutStore.getState().setProject(path);
     set({ projectPath: path, recentProjects: recordRecentProject(path) });
   },
 
   closeProject: () => {
+    teardownAgentSession();
     usePaneWindowStore.getState().closeAllPaneWindows();
     useLayoutStore.getState().setProject(null);
     set({ projectPath: null });

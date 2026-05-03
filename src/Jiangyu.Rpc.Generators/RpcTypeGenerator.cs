@@ -239,6 +239,13 @@ public sealed class RpcTypeGenerator : IIncrementalGenerator
         if (type.SpecialType == SpecialType.System_Object)
             return "unknown";
 
+        // Arrays (T[]).
+        if (type is IArrayTypeSymbol arrayType)
+        {
+            var elem = MapType(arrayType.ElementType);
+            return $"{elem}[]";
+        }
+
         // Generics.
         if (type is INamedTypeSymbol named && named.IsGenericType)
         {

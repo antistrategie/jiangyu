@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Jiangyu.Acp.Schema;
@@ -11,7 +12,12 @@ public sealed class InitializeRequest
     public required ClientCapabilities ClientCapabilities { get; set; }
 
     [JsonPropertyName("clientInfo")]
-    public required Implementation ClientInfo { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Implementation? ClientInfo { get; set; }
+
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
 public sealed class InitializeResponse
@@ -27,6 +33,10 @@ public sealed class InitializeResponse
 
     [JsonPropertyName("authMethods")]
     public AuthMethod[]? AuthMethods { get; set; }
+
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
 public sealed class Implementation
@@ -34,9 +44,13 @@ public sealed class Implementation
     [JsonPropertyName("name")]
     public required string Name { get; set; }
 
+    [JsonPropertyName("version")]
+    public required string Version { get; set; }
+
     [JsonPropertyName("title")]
     public string? Title { get; set; }
 
-    [JsonPropertyName("version")]
-    public string? Version { get; set; }
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }

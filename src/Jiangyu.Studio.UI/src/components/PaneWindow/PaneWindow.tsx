@@ -90,6 +90,7 @@ export function PaneWindow({
 function titleFor(kind: PaneKind | null, activeFilePath: string | null): string {
   if (kind === "assetBrowser") return "Jiangyu Studio — Asset Browser";
   if (kind === "templateBrowser") return "Jiangyu Studio — Template Browser";
+  if (kind === "agent") return "Jiangyu Studio — Agent";
   if (kind === "code" && activeFilePath !== null) {
     return `Jiangyu Studio — ${basename(activeFilePath)}`;
   }

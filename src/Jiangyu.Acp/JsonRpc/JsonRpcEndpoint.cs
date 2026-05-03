@@ -7,10 +7,8 @@ using System.Text.Json;
 namespace Jiangyu.Acp.JsonRpc;
 
 /// <summary>
-/// JSON-RPC 2.0 endpoint using Content-Length framed messages over byte
-/// streams (stdio convention). Bodies are read as raw UTF-8 bytes so that
-/// the wire-level byte count matches the framing header regardless of the
-/// JSON content (in particular, surrogate-pair codepoints).
+/// JSON-RPC 2.0 endpoint supporting Content-Length framing (LSP convention)
+/// or newline-delimited JSON (ACP JS SDK convention) over byte streams.
 /// </summary>
 internal sealed class JsonRpcEndpoint : IDisposable
 {
@@ -18,15 +16,17 @@ internal sealed class JsonRpcEndpoint : IDisposable
     private readonly Stream _output;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly ConcurrentDictionary<int, TaskCompletionSource<JsonRpcResponse>> _pending = new();
+    private readonly FramingMode _framing;
     private int _nextId;
 
     private Func<string, JsonElement?, CancellationToken, ValueTask<JsonElement?>>? _requestHandler;
     private Func<string, JsonElement?, CancellationToken, ValueTask>? _notificationHandler;
 
-    public JsonRpcEndpoint(Stream input, Stream output)
+    public JsonRpcEndpoint(Stream input, Stream output, FramingMode framing = FramingMode.ContentLength)
     {
         _input = input;
         _output = output;
+        _framing = framing;
     }
 
     /// <summary>
@@ -82,7 +82,11 @@ internal sealed class JsonRpcEndpoint : IDisposable
 
     /// <summary>
     /// Reads messages from the transport until the reader is exhausted or
-    /// cancellation is requested. Dispatches to the appropriate handler.
+    /// cancellation is requested. Notifications are forwarded synchronously
+    /// (they're cheap; ordering matters for streamed updates). Incoming
+    /// requests are dispatched on the thread pool so a slow handler — e.g.
+    /// a permission modal waiting on user input — doesn't pause the listen
+    /// loop and starve the OS pipe of further agent traffic.
     /// </summary>
     public async Task ListenAsync(CancellationToken ct)
     {
@@ -91,7 +95,9 @@ internal sealed class JsonRpcEndpoint : IDisposable
         {
             while (!ct.IsCancellationRequested)
             {
-                var messageBytes = await ReadMessageAsync(reader, ct).ConfigureAwait(false);
+                var messageBytes = _framing == FramingMode.NdJson
+                    ? await ReadNdJsonMessageAsync(reader, ct).ConfigureAwait(false)
+                    : await ReadContentLengthMessageAsync(reader, ct).ConfigureAwait(false);
                 if (messageBytes is null) break;
 
                 using var doc = JsonDocument.Parse(messageBytes);
@@ -103,8 +109,12 @@ internal sealed class JsonRpcEndpoint : IDisposable
 
                     if (root.TryGetProperty("method", out _))
                     {
-                        // Incoming request from the remote side.
-                        await HandleIncomingRequestAsync(root, id, ct).ConfigureAwait(false);
+                        // Incoming request. Extract method/params now (the
+                        // JsonDocument is disposed at the loop iteration's
+                        // end), then fire-and-forget the async handler.
+                        var method = root.GetProperty("method").GetString()!;
+                        var paramsCopy = ClonePropertyOrNull(root, "params");
+                        _ = DispatchIncomingRequestAsync(method, paramsCopy, id, ct);
                     }
                     else
                     {
@@ -116,15 +126,24 @@ internal sealed class JsonRpcEndpoint : IDisposable
                 }
                 else if (root.TryGetProperty("method", out _))
                 {
-                    // Notification (no id).
+                    // Notification (no id). Stay on the listen thread so
+                    // ordered streams (agent_message_chunk, …) arrive in
+                    // wire order at the handler.
                     var method = root.GetProperty("method").GetString()!;
-                    root.TryGetProperty("params", out var @params);
-                    var paramsCopy = @params.ValueKind != JsonValueKind.Undefined
-                        ? JsonSerializer.SerializeToElement(@params)
-                        : (JsonElement?)null;
+                    var paramsCopy = ClonePropertyOrNull(root, "params");
 
                     if (_notificationHandler is not null)
-                        await _notificationHandler(method, paramsCopy, ct).ConfigureAwait(false);
+                    {
+                        try
+                        {
+                            await _notificationHandler(method, paramsCopy, ct).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            // Don't let a single bad notification kill the listen loop.
+                            Console.Error.WriteLine($"[JsonRpc] Notification handler error ({method}): {ex.Message}");
+                        }
+                    }
                 }
             }
         }
@@ -136,20 +155,21 @@ internal sealed class JsonRpcEndpoint : IDisposable
         }
     }
 
-    private async Task HandleIncomingRequestAsync(JsonElement root, int id, CancellationToken ct)
+    private static JsonElement? ClonePropertyOrNull(JsonElement parent, string name)
     {
-        var method = root.GetProperty("method").GetString()!;
-        root.TryGetProperty("params", out var @params);
-        var paramsCopy = @params.ValueKind != JsonValueKind.Undefined
-            ? JsonSerializer.SerializeToElement(@params)
-            : (JsonElement?)null;
+        return parent.TryGetProperty(name, out var prop) && prop.ValueKind != JsonValueKind.Undefined
+            ? prop.Clone()
+            : null;
+    }
 
+    private async Task DispatchIncomingRequestAsync(string method, JsonElement? @params, int id, CancellationToken ct)
+    {
         JsonRpcResponse response;
         if (_requestHandler is not null)
         {
             try
             {
-                var result = await _requestHandler(method, paramsCopy, ct).ConfigureAwait(false);
+                var result = await _requestHandler(method, @params, ct).ConfigureAwait(false);
                 response = new JsonRpcResponse { Id = id, Result = result };
             }
             catch (Exception ex)
@@ -178,13 +198,27 @@ internal sealed class JsonRpcEndpoint : IDisposable
             };
         }
 
-        await WriteMessageAsync(JsonSerializer.SerializeToUtf8Bytes(response), ct).ConfigureAwait(false);
+        try
+        {
+            await WriteMessageAsync(JsonSerializer.SerializeToUtf8Bytes(response), ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Listen loop torn down; nothing to do.
+        }
     }
+
+    /// <summary>
+    /// Hard ceiling on Content-Length so a malformed or hostile peer can't
+    /// make us allocate gigabytes. 16 MiB is generous for ACP — typical
+    /// messages are under 100 KiB, large diffs maybe 1 MiB.
+    /// </summary>
+    private const int MaxMessageBytes = 16 * 1024 * 1024;
 
     /// <summary>
     /// Reads a Content-Length framed message. Returns null at end-of-stream.
     /// </summary>
-    private static async Task<byte[]?> ReadMessageAsync(PipeReader reader, CancellationToken ct)
+    private static async Task<byte[]?> ReadContentLengthMessageAsync(PipeReader reader, CancellationToken ct)
     {
         int? contentLength = null;
         while (true)
@@ -203,7 +237,16 @@ internal sealed class JsonRpcEndpoint : IDisposable
                 }
 
                 if (headerLine.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
-                    contentLength = int.Parse(headerLine.AsSpan()["Content-Length:".Length..].Trim());
+                {
+                    var raw = headerLine.AsSpan()["Content-Length:".Length..].Trim();
+                    if (!int.TryParse(raw, out var parsed) || parsed < 0)
+                        throw new InvalidOperationException(
+                            $"Malformed Content-Length header: '{headerLine}'");
+                    if (parsed > MaxMessageBytes)
+                        throw new InvalidOperationException(
+                            $"JSON-RPC message size {parsed} exceeds {MaxMessageBytes}-byte limit.");
+                    contentLength = parsed;
+                }
 
                 reader.AdvanceTo(buffer.Start);
                 continue;
@@ -251,21 +294,65 @@ internal sealed class JsonRpcEndpoint : IDisposable
     }
 
     /// <summary>
-    /// Writes a Content-Length framed message.
+    /// Writes a Content-Length framed or newline-delimited JSON message.
     /// </summary>
     private async Task WriteMessageAsync(byte[] body, CancellationToken ct)
     {
-        var header = Encoding.ASCII.GetBytes($"Content-Length: {body.Length}\r\n\r\n");
         await _writeLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await _output.WriteAsync(header, ct).ConfigureAwait(false);
+            if (_framing == FramingMode.ContentLength)
+            {
+                var header = Encoding.ASCII.GetBytes($"Content-Length: {body.Length}\r\n\r\n");
+                await _output.WriteAsync(header, ct).ConfigureAwait(false);
+            }
             await _output.WriteAsync(body, ct).ConfigureAwait(false);
+            if (_framing == FramingMode.NdJson)
+            {
+                await _output.WriteAsync("\n"u8.ToArray(), ct).ConfigureAwait(false);
+            }
             await _output.FlushAsync(ct).ConfigureAwait(false);
         }
         finally
         {
             _writeLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Reads a newline-delimited JSON message. Blank lines are skipped.
+    /// Returns null at end-of-stream.
+    /// </summary>
+    private static async Task<byte[]?> ReadNdJsonMessageAsync(PipeReader reader, CancellationToken ct)
+    {
+        while (true)
+        {
+            var result = await reader.ReadAsync(ct).ConfigureAwait(false);
+            var buffer = result.Buffer;
+
+            // Scan for a newline delimiter.
+            var position = buffer.PositionOf((byte)'\n');
+            if (position is not null)
+            {
+                // Everything before the newline is one message.
+                var lineSeq = buffer.Slice(0, position.Value);
+                var line = lineSeq.ToArray();
+
+                // Advance past the newline.
+                reader.AdvanceTo(buffer.GetPosition(1, position.Value));
+
+                // Skip blank lines.
+                if (line.Length == 0 || line.All(b => b is (byte)'\r' or (byte)' ' or (byte)'\t'))
+                    continue;
+
+                // Trim trailing \r if present.
+                if (line.Length > 0 && line[^1] == (byte)'\r')
+                    return line.AsSpan(0, line.Length - 1).ToArray();
+                return line;
+            }
+
+            if (result.IsCompleted) return null;
+            reader.AdvanceTo(buffer.Start, buffer.End);
         }
     }
 

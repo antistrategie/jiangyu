@@ -24,7 +24,7 @@ public class SchemaTests
             "sessionUpdate": "tool_call",
             "toolCallId": "tc-1",
             "title": "Read file",
-            "content": [{"type":"text","text":"reading..."}],
+            "content": [{"type":"content","content":{"type":"text","text":"reading..."}}],
             "kind": "read",
             "status": "running"
         }
@@ -46,8 +46,8 @@ public class SchemaTests
         {
             "sessionUpdate": "plan",
             "entries": [
-                {"id":"e1","title":"Step 1","status":"completed","priority":1},
-                {"id":"e2","title":"Step 2","status":"in_progress"}
+                {"content":"Step 1","status":"completed","priority":"high"},
+                {"content":"Step 2","status":"in_progress","priority":"medium"}
             ]
         }
         """;
@@ -55,8 +55,8 @@ public class SchemaTests
 
         var plan = Assert.IsType<PlanUpdate>(update);
         Assert.Equal(2, plan.Entries.Length);
-        Assert.Equal("Step 1", plan.Entries[0].Title);
-        Assert.Equal(1, plan.Entries[0].Priority);
+        Assert.Equal("Step 1", plan.Entries[0].Content);
+        Assert.Equal("high", plan.Entries[0].Priority);
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public class SchemaTests
         {
             "sessionUpdate": "tool_call_update",
             "toolCallId": "tc-1",
-            "content": [{"type":"diff","path":"/src/main.cs","diff":"@@ -1 +1 @@\n-old\n+new"}],
+            "content": [{"type":"diff","path":"/src/main.cs","newText":"new content","oldText":"old content"}],
             "status": "completed"
         }
         """;
@@ -92,12 +92,12 @@ public class SchemaTests
     [Fact]
     public void SessionUpdate_Deserialises_ConfigOptionUpdate()
     {
-        var json = """{"sessionUpdate":"config_option_update","key":"model","value":"claude-4"}""";
+        var json = """{"sessionUpdate":"config_option_update","configOptions":[{"type":"select","currentValue":"claude-4"}]}""";
         var update = JsonSerializer.Deserialize<SessionUpdate>(json);
 
         var cfg = Assert.IsType<ConfigOptionUpdate>(update);
-        Assert.Equal("model", cfg.Key);
-        Assert.Equal("claude-4", cfg.Value!.Value.GetString());
+        Assert.Single(cfg.ConfigOptions);
+        Assert.Equal("select", cfg.ConfigOptions[0].GetProperty("type").GetString());
     }
 
     [Fact]
@@ -139,11 +139,11 @@ public class SchemaTests
     [Fact]
     public void PermissionOutcome_RoundTrips()
     {
-        var allowed = new AllowedPermissionOutcome { OptionLabel = "Always allow" };
-        var json = JsonSerializer.Serialize<PermissionOutcome>(allowed);
+        var selected = new SelectedPermissionOutcome { OptionId = "allow_once" };
+        var json = JsonSerializer.Serialize<PermissionOutcome>(selected);
         var rt = JsonSerializer.Deserialize<PermissionOutcome>(json);
-        var result = Assert.IsType<AllowedPermissionOutcome>(rt);
-        Assert.Equal("Always allow", result.OptionLabel);
+        var result = Assert.IsType<SelectedPermissionOutcome>(rt);
+        Assert.Equal("allow_once", result.OptionId);
     }
 
     [Fact]
@@ -195,7 +195,9 @@ public class SchemaTests
                 new McpServerConfig
                 {
                     Name = "jiangyu",
-                    Uri = "http://127.0.0.1:41697/mcp",
+                    Type = "http",
+                    Url = "http://127.0.0.1:41697/mcp",
+                    Headers = [],
                 },
             ],
         };

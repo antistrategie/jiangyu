@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Jiangyu.Acp.Schema;
@@ -13,12 +14,17 @@ public sealed class AuthMethod
 
 public sealed class AuthenticateRequest
 {
-    [JsonPropertyName("authMethod")]
-    public required AuthMethod AuthMethod { get; set; }
+    [JsonPropertyName("methodId")]
+    public required string MethodId { get; set; }
+
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }
 
 public sealed class AuthenticateResponse
 {
-    [JsonPropertyName("success")]
-    public bool Success { get; set; }
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
 }

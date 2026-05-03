@@ -30,18 +30,17 @@ internal sealed class AcpClientHandler : IAcpClientHandler
 
         var text = File.ReadAllText(request.Path);
 
-        if (request.StartLine.HasValue || request.EndLine.HasValue)
+        // ACP spec: line is 1-based start, limit is max line count.
+        if (request.Line.HasValue || request.Limit.HasValue)
         {
             var lines = text.Split('\n');
-            var start = Math.Max(0, (request.StartLine ?? 1) - 1);
-            var end = Math.Min(lines.Length, request.EndLine ?? lines.Length);
+            var start = Math.Max(0, (request.Line ?? 1) - 1);
+            var count = request.Limit ?? (lines.Length - start);
+            var end = Math.Min(lines.Length, start + Math.Max(0, count));
             text = string.Join('\n', lines[start..end]);
         }
 
-        if (request.MaxCharacters.HasValue && text.Length > request.MaxCharacters.Value)
-            text = text[..request.MaxCharacters.Value];
-
-        return ValueTask.FromResult(new ReadTextFileResponse { Text = text });
+        return ValueTask.FromResult(new ReadTextFileResponse { Content = text });
     }
 
     public ValueTask<WriteTextFileResponse> WriteTextFileAsync(WriteTextFileRequest request, CancellationToken ct)
@@ -64,13 +63,14 @@ internal sealed class AcpClientHandler : IAcpClientHandler
             try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
             throw;
         }
-        return ValueTask.FromResult(new WriteTextFileResponse { Success = true });
+        return ValueTask.FromResult(new WriteTextFileResponse());
     }
 
     public ValueTask<RequestPermissionResponse> RequestPermissionAsync(RequestPermissionRequest request, CancellationToken ct)
     {
-        // Push to frontend, wait for response.
-        var id = request.ToolCallId ?? Guid.NewGuid().ToString("N");
+        // Push to frontend, wait for response. The agent's ToolCallId is the
+        // natural correlation key; we store the pending TCS under it.
+        var id = request.ToolCall.ToolCallId;
         var tcs = new TaskCompletionSource<RequestPermissionResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pendingPermissions[id] = tcs;
 
@@ -84,7 +84,7 @@ internal sealed class AcpClientHandler : IAcpClientHandler
         {
             permissionId = id,
             sessionId = request.SessionId,
-            description = request.Description,
+            toolCall = request.ToolCall,
             options = request.Options,
         });
 
@@ -102,8 +102,20 @@ internal sealed class AcpClientHandler : IAcpClientHandler
 
     // --- Terminal bridge ---
 
+    /// <summary>
+    /// Cap on terminals one agent session can have alive at once. Each
+    /// terminal holds a process handle plus a 1 MiB output buffer; a
+    /// run-away agent could otherwise pile up arbitrary OS resources.
+    /// Releases happen via <c>terminal/release</c>.
+    /// </summary>
+    private const int MaxLiveTerminals = 32;
+
     public ValueTask<CreateTerminalResponse> CreateTerminalAsync(CreateTerminalRequest request, CancellationToken ct)
     {
+        if (_terminals.Count >= MaxLiveTerminals)
+            throw new InvalidOperationException(
+                $"Too many live terminals ({_terminals.Count}); release some via terminal/release first.");
+
         var terminalId = Guid.NewGuid().ToString("N");
 
         var psi = new ProcessStartInfo
@@ -123,17 +135,28 @@ internal sealed class AcpClientHandler : IAcpClientHandler
             psi.WorkingDirectory = request.Cwd;
 
         if (request.Env is not null)
-            foreach (var (key, value) in request.Env)
-                psi.Environment[key] = value;
+            foreach (var env in request.Env)
+                psi.Environment[env.Name] = env.Value;
 
         var process = Process.Start(psi)
             ?? throw new InvalidOperationException($"Failed to start terminal command: {request.Command}");
 
-        var state = new TerminalState(process, request.MaxOutputBytes ?? 1_000_000);
+        var state = new TerminalState(process, request.OutputByteLimit ?? 1_000_000);
         _terminals[terminalId] = state;
 
-        // Capture output asynchronously.
-        _ = Task.Run(() => state.CaptureOutputAsync(), ct);
+        // Capture output asynchronously. Wrap with a logger so a stream
+        // exception (process killed mid-read, etc.) doesn't vanish into a
+        // fire-and-forget Task — the buffer is marked truncated so callers
+        // can tell the capture stopped early.
+        _ = Task.Run(async () =>
+        {
+            try { await state.CaptureOutputAsync(); }
+            catch (Exception ex)
+            {
+                state.MarkCaptureFailed();
+                Console.Error.WriteLine($"[Acp] terminal {terminalId} capture failed: {ex.Message}");
+            }
+        }, ct);
 
         return ValueTask.FromResult(new CreateTerminalResponse { TerminalId = terminalId });
     }
@@ -144,7 +167,7 @@ internal sealed class AcpClientHandler : IAcpClientHandler
         return ValueTask.FromResult(new TerminalOutputResponse
         {
             Output = state.GetOutput(),
-            IsTruncated = state.IsTruncated,
+            Truncated = state.IsTruncated,
             ExitStatus = state.Process.HasExited
                 ? new TerminalExitStatus { ExitCode = state.Process.ExitCode }
                 : null,
@@ -157,7 +180,7 @@ internal sealed class AcpClientHandler : IAcpClientHandler
         await state.Process.WaitForExitAsync(ct);
         return new WaitForTerminalExitResponse
         {
-            ExitStatus = new TerminalExitStatus { ExitCode = state.Process.ExitCode },
+            ExitCode = state.Process.ExitCode,
         };
     }
 
@@ -168,7 +191,7 @@ internal sealed class AcpClientHandler : IAcpClientHandler
         {
             try { state.Process.Kill(entireProcessTree: true); } catch { }
         }
-        return ValueTask.FromResult(new KillTerminalResponse { Success = true });
+        return ValueTask.FromResult(new KillTerminalResponse());
     }
 
     public ValueTask<ReleaseTerminalResponse> ReleaseTerminalAsync(ReleaseTerminalRequest request, CancellationToken ct)
@@ -181,7 +204,7 @@ internal sealed class AcpClientHandler : IAcpClientHandler
             }
             state.Process.Dispose();
         }
-        return ValueTask.FromResult(new ReleaseTerminalResponse { Success = true });
+        return ValueTask.FromResult(new ReleaseTerminalResponse());
     }
 
     // --- Session updates ---
@@ -260,6 +283,12 @@ internal sealed class AcpClientHandler : IAcpClientHandler
         public string GetOutput()
         {
             lock (_output) return _output.ToString();
+        }
+
+        /// <summary>Mark output as truncated when capture aborts unexpectedly.</summary>
+        public void MarkCaptureFailed()
+        {
+            lock (_output) IsTruncated = true;
         }
     }
 }

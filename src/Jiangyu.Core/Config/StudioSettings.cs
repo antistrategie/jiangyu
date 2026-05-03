@@ -53,6 +53,9 @@ public sealed class StudioSettings
     [JsonPropertyName("templateEditorMode")]
     public string TemplateEditorMode { get; set; } = "visual";
 
+    [JsonPropertyName("aiEnabled")]
+    public bool AiEnabled { get; set; } = false;
+
     public static string Path => System.IO.Path.Combine(GlobalConfig.ConfigDir, "studio.json");
 
     public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);

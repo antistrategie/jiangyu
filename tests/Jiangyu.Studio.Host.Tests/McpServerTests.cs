@@ -1,4 +1,7 @@
+using System.Reflection;
 using System.Text.Json;
+using InfiniFrame;
+using Jiangyu.Shared;
 
 namespace Jiangyu.Studio.Host.Tests;
 
@@ -72,35 +75,34 @@ public class McpServerTests
         var doc = JsonDocument.Parse(response);
         var tools = doc.RootElement.GetProperty("result").GetProperty("tools");
 
-        // Find jiangyu_read_file and verify its schema has path (required),
-        // startLine and endLine (optional).
-        JsonElement? readFileTool = null;
+        // Find jiangyu_edit_file and verify its schema has path/oldText/newText
+        // all required.
+        JsonElement? editTool = null;
         foreach (var tool in tools.EnumerateArray())
         {
-            if (tool.GetProperty("name").GetString() == "jiangyu_read_file")
+            if (tool.GetProperty("name").GetString() == "jiangyu_edit_file")
             {
-                readFileTool = tool;
+                editTool = tool;
                 break;
             }
         }
 
-        Assert.True(readFileTool.HasValue, "jiangyu_read_file tool not found");
+        Assert.True(editTool.HasValue, "jiangyu_edit_file tool not found");
 
-        var schema = readFileTool.Value.GetProperty("inputSchema");
+        var schema = editTool.Value.GetProperty("inputSchema");
         var props = schema.GetProperty("properties");
         Assert.True(props.TryGetProperty("path", out var pathProp));
         Assert.Equal("string", pathProp.GetProperty("type").GetString());
-        Assert.True(props.TryGetProperty("startLine", out var startProp));
-        Assert.Equal("integer", startProp.GetProperty("type").GetString());
-        Assert.True(props.TryGetProperty("endLine", out _));
+        Assert.True(props.TryGetProperty("oldText", out _));
+        Assert.True(props.TryGetProperty("newText", out _));
 
         var required = schema.GetProperty("required");
         var requiredNames = new List<string>();
         foreach (var r in required.EnumerateArray())
             requiredNames.Add(r.GetString()!);
         Assert.Contains("path", requiredNames);
-        Assert.DoesNotContain("startLine", requiredNames);
-        Assert.DoesNotContain("endLine", requiredNames);
+        Assert.Contains("oldText", requiredNames);
+        Assert.Contains("newText", requiredNames);
     }
 
     [Fact]
@@ -127,6 +129,135 @@ public class McpServerTests
         var props = schema.GetProperty("properties");
         Assert.Equal(0, props.EnumerateObject().Count());
         Assert.False(schema.TryGetProperty("required", out _));
+    }
+
+    /// <summary>
+    /// Regression: <c>jiangyu_edit_file</c> reaches
+    /// <c>ProjectWatcher.SuppressFor(path, window.Id)</c>; under MCP the
+    /// invocation passes a null window. The handler must guard the deref so
+    /// the call doesn't NRE the agent's tool-call response.
+    /// </summary>
+    [Fact]
+    public void ToolsCall_EditFile_DoesNotNullDerefWindow()
+    {
+        var server = CreateServer();
+        var dir = Path.Combine(Path.GetTempPath(), "jiangyu-mcp-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "scratch.txt");
+        File.WriteAllText(path, "before middle after");
+        try
+        {
+            ProjectWatcher.ProjectRoot = dir;
+
+            var args = JsonSerializer.Serialize(new { name = "jiangyu_edit_file", arguments = new { path, oldText = "middle", newText = "centre" } });
+            var response = server.HandleRequest($$"""{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{args}}}""");
+
+            var doc = JsonDocument.Parse(response);
+            var result = doc.RootElement.GetProperty("result");
+            Assert.False(result.GetProperty("isError").GetBoolean(),
+                $"jiangyu_edit_file failed under MCP: {response}");
+            Assert.Equal("before centre after", File.ReadAllText(path));
+        }
+        finally
+        {
+            ProjectWatcher.ProjectRoot = null;
+            try { Directory.Delete(dir, recursive: true); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// jiangyu_read_file and jiangyu_write_file are intentionally NOT exposed
+    /// via MCP — ACP agents use fs/read_text_file and fs/write_text_file.
+    /// Locks the convention in: if someone re-adds the [McpTool] annotation,
+    /// this test catches it.
+    /// </summary>
+    /// <summary>
+    /// Compile-time-ish check: every method tagged <c>[McpTool]</c> must match
+    /// the dispatcher signature <c>static JsonElement (IInfiniFrameWindow?,
+    /// JsonElement?)</c>. McpServer reflects over RpcDispatcher and invokes by
+    /// signature; a mismatched method would crash at first call rather than
+    /// at startup. Equivalent to a Roslyn analyser at the test layer.
+    /// </summary>
+    [Fact]
+    public void McpToolMethods_MatchExpectedSignature()
+    {
+        var methods = typeof(RpcDispatcher).GetMethods(
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+
+        var problems = new List<string>();
+        foreach (var method in methods)
+        {
+            var attr = method.GetCustomAttribute<McpToolAttribute>();
+            if (attr is null) continue;
+
+            if (!method.IsStatic)
+                problems.Add($"{attr.Name}: must be static");
+
+            if (method.ReturnType != typeof(JsonElement))
+                problems.Add($"{attr.Name}: return type must be JsonElement, got {method.ReturnType.Name}");
+
+            var ps = method.GetParameters();
+            if (ps.Length != 2)
+            {
+                problems.Add($"{attr.Name}: must take 2 parameters, got {ps.Length}");
+                continue;
+            }
+
+            if (ps[0].ParameterType != typeof(IInfiniFrameWindow))
+                problems.Add($"{attr.Name}: first parameter must be IInfiniFrameWindow, got {ps[0].ParameterType.Name}");
+
+            if (ps[1].ParameterType != typeof(JsonElement?))
+                problems.Add($"{attr.Name}: second parameter must be JsonElement?, got {ps[1].ParameterType.Name}");
+        }
+
+        Assert.True(problems.Count == 0,
+            "MCP tool signature problems:\n" + string.Join("\n", problems));
+    }
+
+    /// <summary>
+    /// Every tool registered with the server must have at least an empty
+    /// inputSchema with type=object. Catches an [McpTool] without [McpParam]
+    /// that the server might still register but emit broken JSON Schema.
+    /// </summary>
+    [Fact]
+    public void McpToolDefinitions_AllProduceValidInputSchema()
+    {
+        var server = CreateServer();
+        var response = server.HandleRequest(MakeRequest("tools/list"));
+        var doc = JsonDocument.Parse(response);
+        var tools = doc.RootElement.GetProperty("result").GetProperty("tools");
+
+        var problems = new List<string>();
+        foreach (var tool in tools.EnumerateArray())
+        {
+            var name = tool.GetProperty("name").GetString();
+            if (!tool.TryGetProperty("inputSchema", out var schema))
+            {
+                problems.Add($"{name}: missing inputSchema");
+                continue;
+            }
+            if (schema.GetProperty("type").GetString() != "object")
+                problems.Add($"{name}: inputSchema.type != 'object'");
+            if (!schema.TryGetProperty("properties", out _))
+                problems.Add($"{name}: inputSchema missing 'properties'");
+        }
+
+        Assert.True(problems.Count == 0,
+            "MCP tool schema problems:\n" + string.Join("\n", problems));
+    }
+
+    [Fact]
+    public void ToolsList_DoesNotExposeFsTools()
+    {
+        var server = CreateServer();
+        var response = server.HandleRequest(MakeRequest("tools/list"));
+        var doc = JsonDocument.Parse(response);
+        var tools = doc.RootElement.GetProperty("result").GetProperty("tools");
+        var names = tools.EnumerateArray()
+            .Select(t => t.GetProperty("name").GetString())
+            .ToHashSet();
+        Assert.DoesNotContain("jiangyu_read_file", names);
+        Assert.DoesNotContain("jiangyu_write_file", names);
     }
 
     [Fact]

@@ -231,6 +231,27 @@ export function saveTemplateEditorMode(value: TemplateEditorMode): void {
   notify();
 }
 
+// --- AI enabled ------------------------------------------------------------
+
+export const AI_ENABLED_DEFAULT = false;
+const AI_ENABLED_KEY = `${STORAGE_PREFIX}aiEnabled`;
+
+export function loadAiEnabled(): boolean {
+  try {
+    const raw = localStorage.getItem(AI_ENABLED_KEY);
+    if (raw === null) return AI_ENABLED_DEFAULT;
+    return parseBool(JSON.parse(raw), AI_ENABLED_DEFAULT);
+  } catch {
+    return AI_ENABLED_DEFAULT;
+  }
+}
+
+export function saveAiEnabled(value: boolean): void {
+  localStorage.setItem(AI_ENABLED_KEY, JSON.stringify(value));
+  void persistSetting("aiEnabled", value);
+  notify();
+}
+
 // --- RPC persistence -------------------------------------------------------
 
 /**
@@ -261,6 +282,7 @@ function syncToLocalStorage(settings: StudioSettings): void {
   localStorage.setItem(SESSION_RESTORE_TABS_KEY, JSON.stringify(settings.sessionRestoreTabs));
   localStorage.setItem(EDITOR_KEYBIND_MODE_KEY, JSON.stringify(settings.editorKeybindMode));
   localStorage.setItem(TEMPLATE_EDITOR_MODE_KEY, JSON.stringify(settings.templateEditorMode));
+  localStorage.setItem(AI_ENABLED_KEY, JSON.stringify(settings.aiEnabled));
 }
 
 /**
@@ -359,5 +381,11 @@ export function useTemplateEditorMode(): [TemplateEditorMode, (value: TemplateEd
     () => TEMPLATE_EDITOR_MODE_DEFAULT,
   );
   const set = useCallback((next: TemplateEditorMode) => saveTemplateEditorMode(next), []);
+  return [value, set];
+}
+
+export function useAiEnabled(): [boolean, (value: boolean) => void] {
+  const value = useSyncExternalStore(subscribe, loadAiEnabled, () => AI_ENABLED_DEFAULT);
+  const set = useCallback((next: boolean) => saveAiEnabled(next), []);
   return [value, set];
 }
