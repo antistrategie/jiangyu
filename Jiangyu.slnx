@@ -1,10 +1,14 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Jiangyu.Acp/Jiangyu.Acp.csproj" />
     <Project Path="src/Jiangyu.Core/Jiangyu.Core.csproj" />
     <Project Path="src/Jiangyu.Cli/Jiangyu.Cli.csproj" />
     <Project Path="src/Jiangyu.Loader/Jiangyu.Loader.csproj" />
     <Project Path="src/Jiangyu.Rpc.Generators/Jiangyu.Rpc.Generators.csproj" />
     <Project Path="src/Jiangyu.Shared/Jiangyu.Shared.csproj" />
     <Project Path="src/Jiangyu.Studio.Host/Jiangyu.Studio.Host.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Jiangyu.Acp.Tests/Jiangyu.Acp.Tests.csproj" />
   </Folder>
 </Solution>

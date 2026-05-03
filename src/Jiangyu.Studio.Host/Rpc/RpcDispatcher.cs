@@ -74,7 +74,11 @@ public static partial class RpcDispatcher
         Register("completePaneMove", HandleCompletePaneMove);
         Register("getStudioSettings", HandleGetStudioSettings);
         Register("setStudioSetting", HandleSetStudioSetting);
+
+        RegisterAgentHandlers();
     }
+
+    static partial void RegisterAgentHandlers();
 
     private static void Register(string method, Func<IInfiniFrameWindow, JsonElement?, JsonElement> handler)
     {

@@ -26,6 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Jiangyu.Acp\Jiangyu.Acp.csproj" />
     <ProjectReference Include="..\Jiangyu.Core\Jiangyu.Core.csproj" />
     <ProjectReference Include="..\Jiangyu.Rpc.Generators\Jiangyu.Rpc.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>

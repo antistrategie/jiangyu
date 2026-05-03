@@ -64,6 +64,11 @@ public static class Program
         var mcpServer = new McpServer();
         mcpServer.DiscoverTools();
 
+        // Tell the agent dispatcher which port the MCP endpoint is on,
+        // so it can pass the URL when creating ACP sessions.
+        if (Uri.TryCreate(devUrl, UriKind.Absolute, out var devUri))
+            RpcDispatcher.McpPort = devUri.Port;
+
         // Preload template caches on a background thread so the template browser
         // doesn't freeze the app when it first mounts.
         _ = Task.Run(RpcDispatcher.PreloadTemplateCaches);
