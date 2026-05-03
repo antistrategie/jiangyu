@@ -50,6 +50,7 @@ public static partial class RpcDispatcher
         Register("getProjectConfig", HandleGetProjectConfig);
         Register("setProjectAssetExportPath", HandleSetProjectAssetExportPath);
         Register("compile", HandleCompile);
+        Register("compileBlocking", HandleCompileBlocking);
         Register("getCompileSummary", HandleGetCompileSummary);
         Register("templatesIndexStatus", HandleTemplatesIndexStatus);
         Register("templatesIndex", HandleTemplatesIndex);
@@ -339,7 +340,8 @@ public static partial class RpcDispatcher
     }
 
     [McpTool("jiangyu_list_directory",
-        "List files and subdirectories in a project directory. Params: {\"path\": \"/absolute/path\"} (required). Returns array of {name, path, isDirectory, isIgnored, size} entries. size is in bytes (files only). Path must be inside the open project.")]
+        "List files and subdirectories in a project directory. Returns array of {name, path, isDirectory, isIgnored, size} entries. size is in bytes (files only). Path must be inside the open project.")]
+    [McpParam("path", "string", "Absolute path to the directory to list.", Required = true)]
     private static JsonElement HandleListDirectory(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
@@ -381,7 +383,10 @@ public static partial class RpcDispatcher
     }
 
     [McpTool("jiangyu_read_file",
-        "Read the text content of a file in the current project. Params: {\"path\": \"/absolute/path\"} (required), {\"startLine\": 1} (optional, 1-based), {\"endLine\": 50} (optional, inclusive). When line range is given, returns only those lines. Path must be inside the open project.")]
+        "Read the text content of a file in the current project. When line range is given, returns only those lines. Path must be inside the open project.")]
+    [McpParam("path", "string", "Absolute path to the file to read.", Required = true)]
+    [McpParam("startLine", "integer", "First line to return (1-based, inclusive). Optional.")]
+    [McpParam("endLine", "integer", "Last line to return (1-based, inclusive). Optional.")]
     private static JsonElement HandleReadFile(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
@@ -422,7 +427,8 @@ public static partial class RpcDispatcher
     private const int FileSearchMaxResults = 10_000;
 
     [McpTool("jiangyu_list_all_files",
-        "List all files in the project tree (gitignore-aware). Params: {\"path\": \"/absolute/project/root\"} (required). Returns array of relative file paths. Max 10,000 results. Path must be inside the open project.")]
+        "List all files in the project tree (gitignore-aware). Returns array of relative file paths. Max 10,000 results. Path must be inside the open project.")]
+    [McpParam("path", "string", "Absolute path to the project root directory.", Required = true)]
     private static JsonElement HandleListAllFiles(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var root = RequireString(parameters, "path");
@@ -510,7 +516,9 @@ public static partial class RpcDispatcher
     private const int MaxWriteFileBytes = 64 * 1024 * 1024;
 
     [McpTool("jiangyu_write_file",
-        "Create or overwrite a file in the current project. Params: {\"path\": \"/absolute/path\"} (required), {\"content\": \"file contents\"} (required). Atomic write (tmp + rename). Path must be inside the open project.")]
+        "Create or overwrite a file in the current project. Atomic write (tmp + rename). Path must be inside the open project.")]
+    [McpParam("path", "string", "Absolute path to the file to write.", Required = true)]
+    [McpParam("content", "string", "Full file content to write.", Required = true)]
     private static JsonElement HandleWriteFile(IInfiniFrameWindow window, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
@@ -550,7 +558,9 @@ public static partial class RpcDispatcher
     }
 
     [McpTool("jiangyu_move_path",
-        "Rename or move a file or directory within the project. Params: {\"srcPath\": \"/abs/old\"} (required), {\"destPath\": \"/abs/new\"} (required). Both paths must be inside the open project.")]
+        "Rename or move a file or directory within the project. Both paths must be inside the open project.")]
+    [McpParam("srcPath", "string", "Absolute path of the source file or directory.", Required = true)]
+    [McpParam("destPath", "string", "Absolute path of the destination.", Required = true)]
     private static JsonElement HandleMovePath(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var src = RequireString(parameters, "srcPath");
@@ -576,6 +586,10 @@ public static partial class RpcDispatcher
         return NullElement;
     }
 
+    [McpTool("jiangyu_copy_path",
+        "Copy a file or directory within the project. Fails if destination already exists. Both paths must be inside the open project.")]
+    [McpParam("srcPath", "string", "Absolute path of the source file or directory.", Required = true)]
+    [McpParam("destPath", "string", "Absolute path of the destination.", Required = true)]
     private static JsonElement HandleCopyPath(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var src = RequireString(parameters, "srcPath");
@@ -620,7 +634,8 @@ public static partial class RpcDispatcher
     }
 
     [McpTool("jiangyu_delete_path",
-        "Delete a file or directory (recursive) in the project. Params: {\"path\": \"/absolute/path\"} (required). Path must be inside the open project.")]
+        "Delete a file or directory (recursive) in the project. Path must be inside the open project.")]
+    [McpParam("path", "string", "Absolute path to the file or directory to delete.", Required = true)]
     private static JsonElement HandleDeletePath(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
@@ -637,7 +652,8 @@ public static partial class RpcDispatcher
     }
 
     [McpTool("jiangyu_create_file",
-        "Create an empty file in the project. Params: {\"path\": \"/absolute/path\"} (required). Fails if the path already exists. Path must be inside the open project.")]
+        "Create an empty file in the project. Fails if the path already exists. Path must be inside the open project.")]
+    [McpParam("path", "string", "Absolute path for the new file.", Required = true)]
     private static JsonElement HandleCreateFile(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
@@ -652,7 +668,10 @@ public static partial class RpcDispatcher
     }
 
     [McpTool("jiangyu_edit_file",
-        "Replace exactly one occurrence of oldText with newText in a file. Params: {\"path\": \"/absolute/path\"} (required), {\"oldText\": \"...\"} (required), {\"newText\": \"...\"} (required). Fails if oldText is not found or appears more than once. Path must be inside the open project.")]
+        "Replace exactly one occurrence of oldText with newText in a file. Fails if oldText is not found or appears more than once. Path must be inside the open project.")]
+    [McpParam("path", "string", "Absolute path to the file to edit.", Required = true)]
+    [McpParam("oldText", "string", "Exact text to find (must appear exactly once).", Required = true)]
+    [McpParam("newText", "string", "Replacement text.", Required = true)]
     private static JsonElement HandleEditFile(IInfiniFrameWindow window, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
@@ -694,7 +713,8 @@ public static partial class RpcDispatcher
     }
 
     [McpTool("jiangyu_create_directory",
-        "Create a directory in the project. Params: {\"path\": \"/absolute/path\"} (required). Fails if the path already exists. Path must be inside the open project.")]
+        "Create a directory in the project. Fails if the path already exists. Path must be inside the open project.")]
+    [McpParam("path", "string", "Absolute path for the new directory.", Required = true)]
     private static JsonElement HandleCreateDirectory(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var path = RequireString(parameters, "path");
@@ -712,7 +732,11 @@ public static partial class RpcDispatcher
     private const int GrepMaxLineLength = 500;
 
     [McpTool("jiangyu_grep",
-        "Search file contents in the project for a substring. Params: {\"pattern\": \"searchText\"} (required), {\"path\": \"/absolute/dir\"} (optional, defaults to project root), {\"glob\": \"*.kdl\"} (optional filename filter), {\"limit\": 50} (optional, default 200). Returns array of {file, line, text} matches. Case-sensitive.")]
+        "Search file contents in the project for a substring. Returns array of {file, line, text} matches. Case-sensitive.")]
+    [McpParam("pattern", "string", "Substring to search for in file contents.", Required = true)]
+    [McpParam("path", "string", "Absolute path to directory to search. Defaults to project root.")]
+    [McpParam("glob", "string", "Filename filter glob pattern (e.g. \"*.kdl\").")]
+    [McpParam("limit", "integer", "Maximum number of results to return. Default 200.")]
     private static JsonElement HandleGrepFiles(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var pattern = RequireString(parameters, "pattern");
@@ -970,7 +994,7 @@ public static partial class RpcDispatcher
     }
 
     [McpTool("jiangyu_config_status",
-        "Get Studio configuration status: game path, game Unity version, Unity editor path, MelonLoader health. No parameters. Returns {gamePath?, gameError?, gameUnityVersion?, unityEditorPath?, unityEditorError?, unityEditorVersion?, melonLoaderError?}.")]
+        "Get Studio configuration status: game path, game Unity version, Unity editor path, MelonLoader health. Returns {gamePath?, gameError?, gameUnityVersion?, unityEditorPath?, unityEditorError?, unityEditorVersion?, melonLoaderError?}.")]
     private static JsonElement HandleGetConfigStatus(IInfiniFrameWindow _, JsonElement? __)
     {
         var config = GlobalConfig.Load();

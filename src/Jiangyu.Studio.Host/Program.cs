@@ -36,12 +36,6 @@ public static class Program
 
         var builder = InfiniFrameWebApplication.CreateBuilder(args);
 
-        // TODO: remove when InfiniFrame drops the Blazor IJSRuntime dependency
-        // for non-Blazor hosts. InfiniFrame 0.11.0's AddInfiniFrameJs registers
-        // InfiniFrameJs which depends on IJSRuntime; we don't use Blazor, so
-        // register a no-op implementation to satisfy the DI container.
-        builder.Services.AddScoped<Microsoft.JSInterop.IJSRuntime, NullJSRuntime>();
-
         // Pin working directory to the app directory so standalone runs
         // (e.g. from ~/Downloads) resolve wwwroot/ relative to the binary.
         Directory.SetCurrentDirectory(AppContext.BaseDirectory);

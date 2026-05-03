@@ -17,7 +17,7 @@ public static partial class RpcDispatcher
     private const string MelonLoaderNet6RelativePath = "MelonLoader/net6";
 
     [McpTool("jiangyu_templates_index_status",
-        "Check whether the MENACE template index exists and is current. Returns state (\"current\", \"noGame\", \"stale\", etc.), instance/type counts, and indexed-at timestamp. No parameters.")]
+        "Check whether the MENACE template index exists and is current. Returns state (\"current\", \"noGame\", \"stale\", etc.), instance/type counts, and indexed-at timestamp.")]
     private static JsonElement HandleTemplatesIndexStatus(IInfiniFrameWindow _, JsonElement? __)
     {
         var resolution = EnvironmentContext.ResolveFromGlobalConfig();
@@ -51,7 +51,7 @@ public static partial class RpcDispatcher
     }
 
     [McpTool("jiangyu_templates_index",
-        "Rebuild the MENACE template index. Required before template search/query/inspect work. Long-running; waits until complete. No parameters.")]
+        "Rebuild the MENACE template index. Required before template search/query/inspect work. Long-running; waits until complete.")]
     private static JsonElement HandleTemplatesIndex(IInfiniFrameWindow _, JsonElement? __)
     {
         var resolution = EnvironmentContext.ResolveFromGlobalConfig();
@@ -79,7 +79,9 @@ public static partial class RpcDispatcher
     }
 
     [McpTool("jiangyu_templates_search",
-        "Search MENACE game templates by name or type substring. Params: {\"query\": \"darby\"} (optional, empty returns full index), {\"className\": \"EntityTemplate\"} (optional, filter by type). Returns {types, instances, referencedBy}.")]
+        "Search MENACE game templates by name or type substring. Returns {types, instances, referencedBy}.")]
+    [McpParam("query", "string", "Search substring to match against template names. Empty returns the full index.")]
+    [McpParam("className", "string", "Filter results to a specific template type (e.g. \"EntityTemplate\").")]
     private static JsonElement HandleTemplatesSearch(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var query = TryGetString(parameters, "query");
@@ -123,7 +125,9 @@ public static partial class RpcDispatcher
     }
 
     [McpTool("jiangyu_templates_query",
-        "Get the full field schema for a template type, or drill into a specific field path. Params: {\"typeName\": \"EntityTemplate\"} (required), {\"fieldPath\": \"Properties.Accuracy\"} (optional). Returns field names, types, whether they're collections, enum types, polymorphic base classes, writable status, and member lists.")]
+        "Get the full field schema for a template type, or drill into a specific field path. Returns field names, types, whether they're collections, enum types, polymorphic base classes, writable status, and member lists.")]
+    [McpParam("typeName", "string", "Template type name (e.g. \"EntityTemplate\").", Required = true)]
+    [McpParam("fieldPath", "string", "Dot-separated field path to drill into (e.g. \"Properties.Accuracy\").")]
     private static JsonElement HandleTemplatesQuery(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var typeName = RequireString(parameters, "typeName");
@@ -211,7 +215,8 @@ public static partial class RpcDispatcher
     }
 
     [McpTool("jiangyu_templates_parse",
-        "Parse a KDL template patch string and return the structured document or errors with line numbers. Use this to validate KDL you've written before saving to disk. Params: {\"text\": \"patch \\\"EntityTemplate\\\" ...\"} (required). Returns the parsed document or error diagnostics.")]
+        "Parse a KDL template patch string and return the structured document or errors with line numbers. Use this to validate KDL you've written before saving to disk.")]
+    [McpParam("text", "string", "KDL template patch source text to parse.", Required = true)]
     private static JsonElement HandleTemplatesParse(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var text = RequireString(parameters, "text");
@@ -228,7 +233,8 @@ public static partial class RpcDispatcher
     }
 
     [McpTool("jiangyu_templates_serialise",
-        "Serialise a parsed KDL template document back to KDL text. Params: {\"document\": <KdlEditorDocument>} (required, the document object from jiangyu_templates_parse). Returns {\"text\": \"...\"}. Useful for round-tripping after programmatic edits.")]
+        "Serialise a parsed KDL template document back to KDL text. Returns {\"text\": \"...\"}. Useful for round-tripping after programmatic edits.")]
+    [McpParam("document", "object", "The KdlEditorDocument object from jiangyu_templates_parse.", Required = true)]
     private static JsonElement HandleTemplatesSerialise(IInfiniFrameWindow _, JsonElement? parameters)
     {
         if (parameters is not { } p)
@@ -242,7 +248,7 @@ public static partial class RpcDispatcher
     }
 
     [McpTool("jiangyu_templates_project_clones",
-        "List template clones already defined in the current project's templates/*.kdl files. No parameters. Returns {\"clones\": [{\"templateType\", \"id\", \"file\"}, ...]}.")]
+        "List template clones already defined in the current project's templates/*.kdl files. Returns {\"clones\": [{\"templateType\", \"id\", \"file\"}, ...]}.")]
     private static JsonElement HandleTemplatesProjectClones(IInfiniFrameWindow _, JsonElement? __)
     {
         var root = ProjectWatcher.ProjectRoot;
@@ -284,7 +290,8 @@ public static partial class RpcDispatcher
     }
 
     [McpTool("jiangyu_templates_enum_members",
-        "List all members of a MENACE game enum type. Params: {\"typeName\": \"PerkTier\"} (required). Returns {\"members\": [{\"name\": \"Basic\", \"value\": 0}, ...]}. Use this to discover valid enum values for set operations with enum=\"...\".")]
+        "List all members of a MENACE game enum type. Returns {\"members\": [{\"name\": \"Basic\", \"value\": 0}, ...]}. Use this to discover valid enum values for set operations with enum=\"...\".")]
+    [McpParam("typeName", "string", "Fully qualified or short enum type name (e.g. \"PerkTier\").", Required = true)]
     private static JsonElement HandleTemplatesEnumMembers(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var typeName = RequireString(parameters, "typeName");
@@ -785,7 +792,9 @@ public static partial class RpcDispatcher
     }
 
     [McpTool("jiangyu_templates_inspect",
-        "Inspect a specific template instance's full structure and current vanilla values. Params: {\"collection\": \"resources.assets\"} (required), {\"pathId\": 12345} (required, Int64). Returns the object's fields, options, and nested values. Use the collection and pathId from jiangyu_templates_search results.")]
+        "Inspect a specific template instance's full structure and current vanilla values. Returns the object's fields, options, and nested values. Use the collection and pathId from jiangyu_templates_search results.")]
+    [McpParam("collection", "string", "Asset collection name (e.g. \"resources.assets\").", Required = true)]
+    [McpParam("pathId", "integer", "PathID of the template instance (Int64).", Required = true)]
     private static JsonElement HandleTemplatesInspect(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var collection = RequireString(parameters, "collection");
@@ -844,7 +853,9 @@ public static partial class RpcDispatcher
     }
 
     [McpTool("jiangyu_templates_value",
-        "Read a single field value from a specific template instance by type name and id. Params: {\"typeName\": \"EntityTemplate\"} (required), {\"id\": \"player_squad.darby\"} (required). Returns {\"found\": true, \"fields\": {...}} with the instance's field values.")]
+        "Read a single field value from a specific template instance by type name and id. Returns {\"found\": true, \"fields\": {...}} with the instance's field values.")]
+    [McpParam("typeName", "string", "Template type name (e.g. \"EntityTemplate\").", Required = true)]
+    [McpParam("id", "string", "Template instance ID (e.g. \"player_squad.darby\").", Required = true)]
     private static JsonElement HandleTemplatesValue(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var typeName = RequireString(parameters, "typeName");

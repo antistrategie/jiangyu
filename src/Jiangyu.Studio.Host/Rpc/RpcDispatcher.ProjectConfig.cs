@@ -8,7 +8,8 @@ namespace Jiangyu.Studio.Host.Rpc;
 public static partial class RpcDispatcher
 {
     [McpTool("jiangyu_read_manifest",
-        "Read the project configuration (jiangyu.json manifest). Params: {\"projectPath\": \"/absolute/project/root\"} (required). Returns the parsed ProjectConfig object with mod name, version, author, dependencies, etc.")]
+        "Read the project configuration (jiangyu.json manifest). Returns the parsed ProjectConfig object with mod name, version, author, dependencies, etc.")]
+    [McpParam("projectPath", "string", "Absolute path to the project root directory.", Required = true)]
     private static JsonElement HandleGetProjectConfig(IInfiniFrameWindow _, JsonElement? parameters)
     {
         var projectPath = RequireString(parameters, "projectPath");

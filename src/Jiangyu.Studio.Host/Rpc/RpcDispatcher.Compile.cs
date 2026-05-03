@@ -14,12 +14,73 @@ public static partial class RpcDispatcher
     private static readonly Lock CompileLock = new();
     private static bool _compileRunning;
 
+    [McpTool("jiangyu_compile",
+        "Compile the current project. Blocking; waits until the build finishes. Returns {success, bundlePath?, errorMessage?}. Rejects if a compile is already running. Requires an open project.")]
+    private static JsonElement HandleCompileBlocking(IInfiniFrameWindow _, JsonElement? __)
+    {
+        var projectRoot = ProjectWatcher.ProjectRoot
+            ?? throw new InvalidOperationException("No project open.");
+
+        lock (CompileLock)
+        {
+            if (_compileRunning)
+                throw new InvalidOperationException("Compile already in progress.");
+            _compileRunning = true;
+        }
+
+        try
+        {
+            var manifestPath = Path.Combine(projectRoot, ModManifest.FileName);
+            if (!File.Exists(manifestPath))
+            {
+                return JsonSerializer.SerializeToElement(new CompileFinishedEvent
+                {
+                    Success = false,
+                    ErrorMessage = $"{ModManifest.FileName} not found. Run 'jiangyu init' first.",
+                });
+            }
+
+            var manifest = ModManifest.FromJson(File.ReadAllText(manifestPath));
+            var config = GlobalConfig.Load();
+
+            var log = NullLogSink.Instance;
+            var progress = NullProgressSink.Instance;
+
+            var service = new CompilationService(log, progress);
+            var result = service.CompileAsync(new CompilationInput
+            {
+                Manifest = manifest,
+                Config = config,
+                ProjectDirectory = projectRoot,
+            }).GetAwaiter().GetResult();
+
+            return JsonSerializer.SerializeToElement(new CompileFinishedEvent
+            {
+                Success = result.Success,
+                BundlePath = result.BundlePath,
+                ErrorMessage = result.ErrorMessage,
+            });
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.SerializeToElement(new CompileFinishedEvent
+            {
+                Success = false,
+                ErrorMessage = $"{ex.GetType().Name}: {ex.Message}",
+            });
+        }
+        finally
+        {
+            lock (CompileLock) _compileRunning = false;
+        }
+    }
+
     // Counts asset replacements, additions, and template files for the currently
     // open project so the compile modal can show a pre-compile dossier without
     // running the pipeline. Scans directly — cheaper than spinning up the full
     // CompilationService just to count files.
     [McpTool("jiangyu_compile_summary",
-        "Get a pre-compile dossier for the current project: mod name, version, author, and counts of model/texture/sprite/audio replacements, addition files, template files, template patches, and template clones. No parameters. Requires an open project.")]
+        "Get a pre-compile dossier for the current project: mod name, version, author, and counts of model/texture/sprite/audio replacements, addition files, template files, template patches, and template clones. Requires an open project.")]
     private static JsonElement HandleGetCompileSummary(IInfiniFrameWindow _, JsonElement? __)
     {
         var projectRoot = ProjectWatcher.ProjectRoot

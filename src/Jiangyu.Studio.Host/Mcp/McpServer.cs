@@ -12,10 +12,17 @@ namespace Jiangyu.Studio.Host.Mcp;
 /// </summary>
 public sealed class McpServer
 {
+    private readonly record struct ParamEntry(
+        string Name,
+        string Type,
+        string Description,
+        bool Required);
+
     private readonly record struct ToolEntry(
         string Name,
         string Description,
-        MethodInfo Method);
+        MethodInfo Method,
+        IReadOnlyList<ParamEntry> Params);
 
     private readonly Dictionary<string, ToolEntry> _tools = new(StringComparer.Ordinal);
 
@@ -36,7 +43,11 @@ public sealed class McpServer
             var attr = method.GetCustomAttribute<McpToolAttribute>();
             if (attr is null) continue;
 
-            _tools[attr.Name] = new ToolEntry(attr.Name, attr.Description, method);
+            var paramAttrs = method.GetCustomAttributes<McpParamAttribute>()
+                .Select(p => new ParamEntry(p.Name, p.Type, p.Description, p.Required))
+                .ToList();
+
+            _tools[attr.Name] = new ToolEntry(attr.Name, attr.Description, method, paramAttrs);
         }
     }
 
@@ -110,16 +121,45 @@ public sealed class McpServer
             {
                 name = entry.Name,
                 description = entry.Description,
-                inputSchema = new
-                {
-                    type = "object",
-                    properties = new { },
-                },
+                inputSchema = BuildInputSchema(entry.Params),
             });
         }
 
         var result = new { tools };
         return JsonRpcResult(id, JsonSerializer.SerializeToElement(result));
+    }
+
+    private static object BuildInputSchema(IReadOnlyList<ParamEntry> parameters)
+    {
+        var properties = new Dictionary<string, object>();
+        var required = new List<string>();
+
+        foreach (var p in parameters)
+        {
+            properties[p.Name] = new Dictionary<string, string>
+            {
+                ["type"] = p.Type,
+                ["description"] = p.Description,
+            };
+            if (p.Required)
+                required.Add(p.Name);
+        }
+
+        if (required.Count > 0)
+        {
+            return new
+            {
+                type = "object",
+                properties,
+                required,
+            };
+        }
+
+        return new
+        {
+            type = "object",
+            properties,
+        };
     }
 
     private string HandleToolsCall(JsonElement? id, JsonElement request)

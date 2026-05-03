@@ -59,8 +59,74 @@ public class McpServerTests
             Assert.True(tool.TryGetProperty("name", out var name), "Tool missing 'name'");
             Assert.False(string.IsNullOrEmpty(name.GetString()));
             Assert.True(tool.TryGetProperty("description", out _), $"Tool '{name}' missing 'description'");
-            Assert.True(tool.TryGetProperty("inputSchema", out _), $"Tool '{name}' missing 'inputSchema'");
+            Assert.True(tool.TryGetProperty("inputSchema", out var schema), $"Tool '{name}' missing 'inputSchema'");
+            Assert.Equal("object", schema.GetProperty("type").GetString());
         }
+    }
+
+    [Fact]
+    public void ToolsList_IncludesInputSchemaWithProperties()
+    {
+        var server = CreateServer();
+        var response = server.HandleRequest(MakeRequest("tools/list"));
+        var doc = JsonDocument.Parse(response);
+        var tools = doc.RootElement.GetProperty("result").GetProperty("tools");
+
+        // Find jiangyu_read_file and verify its schema has path (required),
+        // startLine and endLine (optional).
+        JsonElement? readFileTool = null;
+        foreach (var tool in tools.EnumerateArray())
+        {
+            if (tool.GetProperty("name").GetString() == "jiangyu_read_file")
+            {
+                readFileTool = tool;
+                break;
+            }
+        }
+
+        Assert.True(readFileTool.HasValue, "jiangyu_read_file tool not found");
+
+        var schema = readFileTool.Value.GetProperty("inputSchema");
+        var props = schema.GetProperty("properties");
+        Assert.True(props.TryGetProperty("path", out var pathProp));
+        Assert.Equal("string", pathProp.GetProperty("type").GetString());
+        Assert.True(props.TryGetProperty("startLine", out var startProp));
+        Assert.Equal("integer", startProp.GetProperty("type").GetString());
+        Assert.True(props.TryGetProperty("endLine", out _));
+
+        var required = schema.GetProperty("required");
+        var requiredNames = new List<string>();
+        foreach (var r in required.EnumerateArray())
+            requiredNames.Add(r.GetString()!);
+        Assert.Contains("path", requiredNames);
+        Assert.DoesNotContain("startLine", requiredNames);
+        Assert.DoesNotContain("endLine", requiredNames);
+    }
+
+    [Fact]
+    public void ToolsList_NoParamsToolHasEmptyProperties()
+    {
+        var server = CreateServer();
+        var response = server.HandleRequest(MakeRequest("tools/list"));
+        var doc = JsonDocument.Parse(response);
+        var tools = doc.RootElement.GetProperty("result").GetProperty("tools");
+
+        // jiangyu_compile_summary has no parameters.
+        JsonElement? compileTool = null;
+        foreach (var tool in tools.EnumerateArray())
+        {
+            if (tool.GetProperty("name").GetString() == "jiangyu_compile_summary")
+            {
+                compileTool = tool;
+                break;
+            }
+        }
+
+        Assert.True(compileTool.HasValue, "jiangyu_compile_summary tool not found");
+        var schema = compileTool.Value.GetProperty("inputSchema");
+        var props = schema.GetProperty("properties");
+        Assert.Equal(0, props.EnumerateObject().Count());
+        Assert.False(schema.TryGetProperty("required", out _));
     }
 
     [Fact]
