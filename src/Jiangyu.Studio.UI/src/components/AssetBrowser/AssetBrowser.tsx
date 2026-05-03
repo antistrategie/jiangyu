@@ -37,6 +37,15 @@ import { ImageViewer } from "./ImageViewer";
 import { ModelViewer } from "./ModelViewer";
 import { Spinner } from "@components/Spinner/Spinner";
 import { DetailTitle, MetaBlock, MetaRow } from "@components/DetailPanel/DetailPanel";
+import {
+  MenuList,
+  MenuListBody,
+  MenuItem,
+  MenuItemContent,
+  MenuItemLabel,
+  MenuItemSubtext,
+  MenuFooter,
+} from "@components/MenuList/MenuList";
 import styles from "./AssetBrowser.module.css";
 
 interface AssetBrowserProps {
@@ -882,56 +891,49 @@ function AssetDetails({
               )}
             </button>
             {exportMenuOpen && (
-              <div className={styles.exportMenu}>
-                <button
-                  type="button"
-                  className={styles.exportMenuItem}
-                  onClick={() => {
-                    onCloseExportMenu();
-                    onExport("default");
-                  }}
-                >
-                  <span className={styles.exportMenuItemLabel}>Default</span>
-                  <span className={styles.exportMenuItemPath}>.jiangyu/exports</span>
-                </button>
-                <button
-                  type="button"
-                  className={styles.exportMenuItem}
-                  disabled={projectExportPath === null}
-                  onClick={() => {
-                    onCloseExportMenu();
-                    onExport("project");
-                  }}
-                >
-                  <span className={styles.exportMenuItemLabel}>Project</span>
-                  <span className={styles.exportMenuItemPath}>
-                    {projectExportPath ?? "not configured"}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className={styles.exportMenuItem}
-                  onClick={() => {
-                    onCloseExportMenu();
-                    onExport("custom");
-                  }}
-                >
-                  <span className={styles.exportMenuItemLabel}>Custom…</span>
-                </button>
-                <div className={styles.exportMenuSep} />
-                <button
-                  type="button"
-                  className={styles.exportMenuItem}
+              <MenuList className={styles.exportMenuPos}>
+                <MenuListBody>
+                  <MenuItem
+                    onClick={() => {
+                      onCloseExportMenu();
+                      onExport("default");
+                    }}
+                  >
+                    <MenuItemContent>
+                      <MenuItemLabel>Default</MenuItemLabel>
+                      <MenuItemSubtext>.jiangyu/exports</MenuItemSubtext>
+                    </MenuItemContent>
+                  </MenuItem>
+                  <MenuItem
+                    disabled={projectExportPath === null}
+                    onClick={() => {
+                      onCloseExportMenu();
+                      onExport("project");
+                    }}
+                  >
+                    <MenuItemContent>
+                      <MenuItemLabel>Project</MenuItemLabel>
+                      <MenuItemSubtext>{projectExportPath ?? "not configured"}</MenuItemSubtext>
+                    </MenuItemContent>
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      onCloseExportMenu();
+                      onExport("custom");
+                    }}
+                  >
+                    <MenuItemLabel>Custom…</MenuItemLabel>
+                  </MenuItem>
+                </MenuListBody>
+                <MenuFooter
                   onClick={() => {
                     onCloseExportMenu();
                     onConfigureProjectPath();
                   }}
                 >
-                  <span className={styles.exportMenuItemLabel}>
-                    {projectExportPath ? "Change project path…" : "Configure project path…"}
-                  </span>
-                </button>
-              </div>
+                  {projectExportPath ? "Change project path…" : "Configure project path…"}
+                </MenuFooter>
+              </MenuList>
             )}
           </div>
         </div>

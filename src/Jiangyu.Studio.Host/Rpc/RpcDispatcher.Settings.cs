@@ -71,6 +71,13 @@ public static partial class RpcDispatcher
             case "aiEnabled":
                 settings.AiEnabled = valueElement.ValueKind == JsonValueKind.True;
                 break;
+            case "installedAgents":
+                if (valueElement.ValueKind != JsonValueKind.Array)
+                    throw new ArgumentException("installedAgents must be an array");
+                settings.InstalledAgents =
+                    JsonSerializer.Deserialize<List<InstalledAgent>>(valueElement.GetRawText())
+                    ?? [];
+                break;
             default:
                 throw new ArgumentException($"Unknown Studio setting key: {key}");
         }

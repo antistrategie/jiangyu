@@ -41,7 +41,7 @@ const NAV_SECTIONS: readonly { readonly id: SectionId; readonly label: string }[
   { id: "appearance", label: "Appearance · 外观" },
   { id: "session", label: "Session · 会话" },
   { id: "editor", label: "Editor · 编辑器" },
-  { id: "ai", label: "AI · 人工智能" },
+  { id: "ai", label: "AI · 智能" },
   { id: "paths", label: "Paths · 路径" },
   { id: "about", label: "About · 关于" },
 ];
@@ -332,7 +332,7 @@ function AiSection() {
 
   return (
     <>
-      <SectionHeader title="AI · 人工智能" />
+      <SectionHeader title="AI · 智能" />
       <Field
         label="Enable AI features"
         hint="Opt-in to AI-powered features such as the Agent panel."

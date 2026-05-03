@@ -166,6 +166,18 @@ export interface StudioSettings {
   editorKeybindMode?: string;
   templateEditorMode?: string;
   aiEnabled: boolean;
+  installedAgents?: InstalledAgent[];
+}
+
+export interface InstalledAgent {
+  id: string;
+  name: string;
+  version?: string | null;
+  distribution: string;
+  command: string;
+  args?: string[];
+  packageName?: string | null;
+  iconUrl?: string | null;
 }
 
 export interface ObjectInspectionResult {

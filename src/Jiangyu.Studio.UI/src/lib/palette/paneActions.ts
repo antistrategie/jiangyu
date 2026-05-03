@@ -50,7 +50,8 @@ export function usePaneActions({
       actions.push({
         id: `view.openBrowser:${kind}`,
         label: `Open ${meta.label}`,
-        scope: PALETTE_SCOPE.View,
+        // Agent panel lives under AI alongside Browse Registry; the rest are View.
+        scope: kind === "agent" ? PALETTE_SCOPE.AI : PALETTE_SCOPE.View,
         run: () => useLayoutStore.getState().splitRight(kind),
       });
     }

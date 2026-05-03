@@ -51,6 +51,13 @@ import {
   MetaRow,
   SectionHeader,
 } from "@components/DetailPanel/DetailPanel";
+import {
+  MenuList,
+  MenuListBody,
+  MenuItem,
+  MenuItemLabel,
+  MenuSeparator,
+} from "@components/MenuList/MenuList";
 import styles from "./TemplateBrowser.module.css";
 import {
   instanceKey,
@@ -879,49 +886,43 @@ function TemplateDetail({
               </span>
             </button>
             {menuOpen && (
-              <div className={styles.scaffoldMenuDropdown}>
-                <button
-                  type="button"
-                  className={styles.scaffoldMenuItem}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onCreatePatch();
-                  }}
-                >
-                  Create Patch
-                </button>
-                <button
-                  type="button"
-                  className={styles.scaffoldMenuItem}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onCreateClone();
-                  }}
-                >
-                  Create Clone
-                </button>
-                <div className={styles.scaffoldMenuSep} />
-                <button
-                  type="button"
-                  className={styles.scaffoldMenuItem}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onPatchToFile();
-                  }}
-                >
-                  Add patch to file…
-                </button>
-                <button
-                  type="button"
-                  className={styles.scaffoldMenuItem}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onCloneToFile();
-                  }}
-                >
-                  Add clone to file…
-                </button>
-              </div>
+              <MenuList className={styles.scaffoldMenuPos}>
+                <MenuListBody>
+                  <MenuItem
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onCreatePatch();
+                    }}
+                  >
+                    <MenuItemLabel>Create Patch</MenuItemLabel>
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onCreateClone();
+                    }}
+                  >
+                    <MenuItemLabel>Create Clone</MenuItemLabel>
+                  </MenuItem>
+                  <MenuSeparator />
+                  <MenuItem
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onPatchToFile();
+                    }}
+                  >
+                    <MenuItemLabel>Add patch to file…</MenuItemLabel>
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onCloneToFile();
+                    }}
+                  >
+                    <MenuItemLabel>Add clone to file…</MenuItemLabel>
+                  </MenuItem>
+                </MenuListBody>
+              </MenuList>
             )}
           </div>
         </div>

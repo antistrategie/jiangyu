@@ -8,6 +8,7 @@ export const PALETTE_SCOPE = {
   View: "VIEW · 视图",
   File: "FILE · 文件",
   Editor: "EDITOR · 编辑",
+  AI: "AI · 智能",
   GoToFile: "GO TO FILE · 跳转",
 } as const;
 

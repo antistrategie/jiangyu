@@ -1,0 +1,126 @@
+.menu {
+  background: var(--bg-raised);
+  border: 1px solid var(--ink-0);
+  display: flex;
+  flex-direction: column;
+}
+
+.list {
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--rule-faint);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--ease-fast);
+}
+
+.item:last-of-type {
+  border-bottom: none;
+}
+
+/* Drop the item's own hairline when a MenuSeparator immediately follows —
+   otherwise the item border + the separator stack into a doubled line. */
+.item:has(+ .separator) {
+  border-bottom: none;
+}
+
+.item:hover:not(:disabled) {
+  background: var(--bg-sunken);
+}
+
+.item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.itemIcon,
+.itemIconPlaceholder {
+  width: 18px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.itemName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemMeta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.itemContent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.itemSubtext {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Distinct break between groups: ink-2 hairline (heavier than the faint
+   inter-item rules) with a sunken band so the two sides read as separate
+   columns of choices, not one continuous list. */
+.separator {
+  height: var(--space-2);
+  margin: 0;
+  background: var(--bg-sunken);
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+
+/* Accent footer for "add new" / "open registry" actions. Sunken bg + ink
+   border-top distinguishes it from the list, label-tracked uppercase
+   matches the design system's ghost-action voice. Hover swaps to cinnabar
+   so the modder can see this row is the gateway to a different surface. */
+.footer {
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-sunken);
+  border: none;
+  border-top: 1px solid var(--rule);
+  color: var(--fg-muted);
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--ease-fast),
+    color var(--ease-fast);
+}
+
+.footer:hover {
+  background: var(--paper-2);
+  color: var(--accent);
+}

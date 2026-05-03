@@ -105,6 +105,13 @@ interface AgentStore {
   readonly connectError: string | null;
   readonly agentName: string | null;
   readonly agentVersion: string | null;
+  /**
+   * The InstalledAgent.id we asked the host to start. Set optimistically
+   * when agentStart is called so the UI can detect "new session in the
+   * same agent" picks without restarting the process. Distinct from
+   * agentName which is the agent's self-reported initialize-handshake name.
+   */
+  readonly currentAgentId: string | null;
 
   // Session
   readonly sessionId: string | null;
@@ -122,7 +129,7 @@ interface AgentStore {
   readonly availableCommands: AvailableCommand[];
 
   // Actions
-  readonly setConnecting: () => void;
+  readonly setConnecting: (agentId: string) => void;
   readonly handleStartResult: (result: AgentStartResult) => void;
   readonly handleSessionCreated: (result: AgentSessionResult) => void;
   readonly setConnected: (info: AgentStartResult) => void;
@@ -144,6 +151,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
   connectError: null,
   agentName: null,
   agentVersion: null,
+  currentAgentId: null,
   sessionId: null,
   sessionTitle: null,
   currentModeId: null,
@@ -152,11 +160,34 @@ export const useAgentStore = create<AgentStore>((set) => ({
   messages: [],
   availableCommands: [],
 
-  setConnecting: () => set({ connecting: true, connectError: null }),
+  setConnecting: (agentId) =>
+    // Switching agents (or first-time connect) puts the panel into a clean
+    // "starting up" state. We MUST clear `connected`, `sessionId`, and the
+    // session-scoped chat state — otherwise, when the new agent's
+    // agentStartResult lands, the auto-create-session effect's deps
+    // ([connected, sessionId]) haven't actually changed (connected was
+    // already true from the previous agent, sessionId still points at the
+    // dead session) and never re-fires. Result: the panel sits on
+    // "Creating session…" forever, requiring a second click to reset it
+    // manually.
+    set({
+      connecting: true,
+      connected: false,
+      connectError: null,
+      currentAgentId: agentId,
+      agentName: null,
+      agentVersion: null,
+      sessionId: null,
+      sessionTitle: null,
+      currentModeId: null,
+      lastStopReason: null,
+      messages: [],
+      availableCommands: [],
+    }),
 
   handleStartResult: (result) => {
     if (result.error) {
-      set({ connecting: false, connectError: result.error });
+      set({ connecting: false, connectError: result.error, currentAgentId: null });
     } else {
       set({
         connecting: false,
@@ -199,6 +230,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
       connectError: null,
       agentName: null,
       agentVersion: null,
+      currentAgentId: null,
       sessionId: null,
       sessionTitle: null,
       currentModeId: null,

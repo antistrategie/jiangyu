@@ -13,8 +13,9 @@ export interface AgentStartResult {
 }
 
 export interface AuthMethod {
-  readonly type: string;
-  readonly url?: string | null;
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string | null;
 }
 
 /** Result of agentSessionCreate (now arrives as `agentSessionCreated` notification). */

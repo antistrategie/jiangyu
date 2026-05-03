@@ -6,10 +6,17 @@ import { WelcomeScreen } from "@components/WelcomeScreen/WelcomeScreen";
 import { Palette } from "@components/Palette/Palette";
 import { SettingsModal } from "@components/SettingsModal/SettingsModal";
 import { CompileModal } from "@components/CompileModal/CompileModal";
+import { AgentRegistryModal } from "@components/AgentRegistryModal/AgentRegistryModal";
 import { StatusBar } from "@components/StatusBar/StatusBar";
 import { useCompile } from "@lib/compile";
 import { rpcCall } from "@lib/rpc";
-import { loadSessionRestoreProject, useApplyUiFontScale, useSidebarHidden } from "@lib/settings";
+import {
+  loadSessionRestoreProject,
+  useAiEnabled,
+  useApplyUiFontScale,
+  useSidebarHidden,
+} from "@lib/settings";
+import { useRegistryModalStore } from "@lib/agent/registryModal";
 import { basename, join, remapPath } from "@lib/path";
 import {
   PALETTE_SCOPE,
@@ -86,6 +93,9 @@ export function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [compileOpen, setCompileOpen] = useState(false);
+  const registryOpen = useRegistryModalStore((s) => s.open);
+  const setRegistryOpen = useRegistryModalStore((s) => s.setOpen);
+  const [aiEnabled] = useAiEnabled();
   const { state: compileState, start: startCompile } = useCompile();
 
   // Latest-value refs for the shortcut binding + compile kick-off.
@@ -171,6 +181,16 @@ export function App() {
       },
       ...paneActions,
     ];
+    if (aiEnabled) {
+      result.push({
+        id: "ai.browseRegistry",
+        label: "Browse Agent Registry",
+        scope: PALETTE_SCOPE.AI,
+        cn: "代理库",
+        desc: "Install ACP agents from the public registry.",
+        run: () => setRegistryOpen(true),
+      });
+    }
     if (projectPath !== null) {
       // Palette's Compile entry just opens the dossier; the Run-Compile button
       // inside kicks off the pipeline. Surfacing state before acting lets the
@@ -195,7 +215,7 @@ export function App() {
       }
     }
     return result;
-  }, [projectPath, fileEntries, paneActions]);
+  }, [projectPath, fileEntries, paneActions, aiEnabled, setRegistryOpen]);
 
   useRegisterActions(actions);
 
@@ -268,6 +288,7 @@ export function App() {
           onStart={startCompile}
         />
       )}
+      {registryOpen && <AgentRegistryModal onClose={() => setRegistryOpen(false)} />}
     </div>
   );
 }

@@ -63,6 +63,9 @@
   gap: var(--space-3);
 }
 
+/* Cinnabar fill = primary committing action (matches Export buttons in
+   the asset/template browsers, and ConfirmDialog's primary button).
+   The serif font signals weight per the Jiangyu Design System. */
 .action {
   font-family: var(--font-display);
   font-size: var(--fs-base);
@@ -70,15 +73,15 @@
   letter-spacing: var(--tracking-wider);
   text-transform: uppercase;
   padding: var(--space-3) var(--space-5);
-  background: var(--bg-inverse);
-  color: var(--fg-on-inverse);
-  border: none;
+  background: var(--cinnabar-1);
+  color: var(--paper-0);
+  border: 1px solid var(--cinnabar-1);
   cursor: pointer;
-  transition: background var(--ease-normal);
+  transition: filter var(--ease-normal);
 }
 
 .action:hover {
-  background: var(--bg-inverse-2);
+  filter: brightness(1.1);
 }
 
 .actionGhost {

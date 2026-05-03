@@ -1,0 +1,31 @@
+.wrap {
+  position: relative;
+  display: inline-block;
+}
+
+/* Popover positioning. Visual chrome (border, item rows, footer) lives in
+   MenuList.module.css so other places using a list + add-row footer share
+   the same look. */
+.popover_left,
+.popover_right {
+  position: absolute;
+  top: calc(100% + 4px);
+  z-index: 30;
+  min-width: 220px;
+  max-width: 320px;
+}
+
+.popover_left {
+  left: 0;
+}
+
+.popover_right {
+  right: 0;
+}
+
+/* Inline (no-popover) variant — the menu IS the visible UI, not a hidden
+   dropdown. Used by the agent panel empty state. */
+.inline {
+  width: min(320px, 100%);
+  min-width: 220px;
+}

@@ -1,4 +1,8 @@
+/* Composer surface: same paper-1 tone as the user message bubble so
+   prompts visually inhabit the same surface as where they're typed. */
 .panel {
+  --composer-bg: var(--paper-1);
+
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -18,30 +22,6 @@
   padding: 6px 10px;
   border-bottom: 1px solid var(--rule);
   flex-shrink: 0;
-}
-
-.statusDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.statusDot_connected {
-  background: var(--jade-1);
-}
-
-.statusDot_disconnected {
-  background: var(--ink-4);
-}
-
-.agentLabel {
-  font-family: var(--font-label);
-  font-size: var(--fs-sm);
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wider);
-  color: var(--ink-3);
 }
 
 .sessionTitle {
@@ -66,22 +46,117 @@
   flex-shrink: 0;
 }
 
-.disconnectBtn {
-  font-family: var(--font-label);
-  font-size: var(--fs-xs);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-  padding: 2px 6px;
-  background: transparent;
-  border: 1px solid var(--rule);
-  color: var(--ink-3);
-  cursor: pointer;
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   flex-shrink: 0;
 }
 
-.disconnectBtn:hover {
+.headerBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  border: 1px solid var(--rule-faint);
+  color: var(--ink-3);
+  cursor: pointer;
+  transition:
+    background var(--ease-fast),
+    color var(--ease-fast),
+    border-color var(--ease-fast);
+}
+
+.headerBtn:hover {
+  background: var(--paper-1);
+  color: var(--ink-0);
+  border-color: var(--rule);
+}
+
+/* ---- Empty state ---- */
+
+.emptyStateWrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.connecting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--fg-muted);
+  font-style: italic;
+  font-size: var(--fs-sm);
+}
+
+/* First-run state when nothing is installed yet. The eyebrow + editorial
+   blurb teach the modder what this surface is before the action button. */
+.welcomeCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  max-width: 380px;
+  text-align: center;
+}
+
+/* Picker variant — agents already installed. Same vertical rhythm as
+   welcomeCard but tighter; no editorial blurb because the modder already
+   knows the surface. */
+.pickerCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  max-width: 380px;
+  text-align: center;
+}
+
+.welcomeEyebrow {
+  margin: 0;
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-section);
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.welcomeBlurb {
+  margin: 0;
+  font-family: var(--font-editorial);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+/* Quiet cinnabar text affordance, matching the empty-pane "OPEN ASSET
+   BROWSER" style. The eyebrow + blurb already do the framing work; a
+   primary-filled button on top would be one too many heavy elements. */
+.welcomeAction {
+  font-family: var(--font-label);
+  font-size: var(--fs-sm);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
   color: var(--cinnabar-1);
-  border-color: var(--cinnabar-1);
+  background: transparent;
+  border: none;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  transition: color var(--ease-fast);
+}
+
+.welcomeAction:hover {
+  color: var(--fg-strong);
 }
 
 /* ---- Slash command suggestions ---- */
@@ -129,16 +204,15 @@
 .messageList {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-2) 10px;
+  padding: var(--space-2) 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
-.emptyState {
+.emptyHint {
   flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   color: var(--ink-4);
@@ -147,15 +221,16 @@
 }
 
 .message {
-  padding: 6px var(--space-2);
+  padding: 6px 10px;
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
+/* User prompts use the composer surface so the user's voice visually flows
+   from the input box up into the conversation. Full-bleed, no border. */
 .message_user {
-  background: var(--paper-1);
-  border: 1px solid var(--rule);
+  background: var(--composer-bg);
   font-family: var(--font-ui);
 }
 
@@ -164,17 +239,19 @@
 }
 
 .message_thought {
+  margin: 0 10px;
+  padding: 0 var(--space-2);
   font-family: var(--font-ui);
   color: var(--ink-3);
   font-style: italic;
   font-size: var(--fs-sm);
   border-left: 2px solid var(--ink-4);
-  padding-left: var(--space-2);
 }
 
 /* ---- Tool calls ---- */
 
 .toolBlock {
+  margin: 0 10px;
   background: var(--bg-inverse, var(--ink-0));
   color: var(--paper-0);
   padding: 6px var(--space-2);
@@ -213,6 +290,7 @@
 /* ---- Plan ---- */
 
 .planBlock {
+  margin: 0 10px;
   padding: 6px var(--space-2);
   border: 1px solid var(--rule);
 }
@@ -246,6 +324,7 @@
 /* ---- Permission ---- */
 
 .permissionBlock {
+  margin: 0 10px;
   padding: var(--space-2);
   border: 1px solid var(--cinnabar-1);
   background: var(--paper-1);
@@ -292,38 +371,62 @@
   opacity: 0.5;
 }
 
-/* ---- Input ---- */
+/* ---- Composer ---- */
 
-.inputArea {
+/* Single dark surface that swallows the textarea and the action row. No
+   inner separator: the action row reads as floating only because nothing
+   visually breaks the surface, while the textarea's own bottom padding
+   keeps text from sliding under the buttons. */
+.composer {
   display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  padding: var(--space-2) 10px;
-  border-top: 1px solid var(--rule);
+  flex-direction: column;
+  background: var(--composer-bg);
   flex-shrink: 0;
 }
 
-.input {
-  flex: 1;
-  min-height: var(--space-6);
-  max-height: 120px;
-  padding: 6px var(--space-2);
-  border: 1px solid var(--rule);
-  background: var(--paper-0);
+.composerInput {
+  width: 100%;
+  min-height: 40px;
+  max-height: 240px;
+  padding: var(--space-2) 10px 0 10px;
+  background: transparent;
+  border: none;
   color: var(--ink-0);
   font-family: var(--font-ui);
   font-size: var(--fs-base);
   line-height: 1.4;
   resize: none;
   outline: none;
+  /* Grow with content (field-sizing is the modern way to auto-size a
+     textarea without JS measuring; max-height clamps the scroll). */
+  field-sizing: content;
 }
 
-.input:focus {
-  border-color: var(--ink-3);
-}
-
-.input::placeholder {
+.composerInput::placeholder {
   color: var(--ink-4);
+}
+
+.composerActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) 10px;
+}
+
+.composerActionsLeft {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.composerActionsRight {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .sendBtn {
@@ -332,12 +435,13 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: var(--tracking-wider);
-  padding: 6px 14px;
+  padding: 4px 12px;
   border: 1px solid var(--ink-0);
   background: var(--ink-0);
   color: var(--paper-0);
   cursor: pointer;
   white-space: nowrap;
+  transition: background var(--ease-fast);
 }
 
 .sendBtn:hover {
@@ -360,9 +464,12 @@
   background: var(--paper-1);
 }
 
+/* ---- Banners ---- */
+
 .connectError {
-  margin-top: 6px;
   color: var(--cinnabar-1);
+  font-size: var(--fs-sm);
+  text-align: center;
 }
 
 .inlineError {

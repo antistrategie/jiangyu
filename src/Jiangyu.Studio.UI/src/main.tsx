@@ -5,6 +5,7 @@ import { PaneWindow } from "@components/PaneWindow/PaneWindow";
 import { ToastContainer } from "@components/Toast/Toast";
 import { initRpc } from "@lib/rpc";
 import { initSettings } from "@lib/settings";
+import { initInstalledAgents } from "@lib/agent/installed";
 import { getWindowParams } from "@lib/panes/role";
 import "./styles/global.css";
 
@@ -27,6 +28,7 @@ self.MonacoEnvironment = {
 
 initRpc();
 initSettings();
+initInstalledAgents();
 
 // Prevent the browser from navigating to files dropped onto the window.
 // Internal drag handlers (tab dragging, template dragging, drop zones)

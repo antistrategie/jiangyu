@@ -8,7 +8,7 @@ Five families. Tokens in `src/Jiangyu.Studio.UI/src/styles/tokens.css`.
 
 - **Ink** — sumi neutrals
 - **Paper** — warm parchment, never pure white
-- **Cinnabar** — 朱 red, ≤10% of any surface
+- **Cinnabar** — 朱 red, ≤10% of any surface; carries primary committing actions and danger
 - **Gold** — decorative eyebrows on dark panels only
 - **Jade** — informational/verified states
 
@@ -37,6 +37,16 @@ Western labels are ALL CAPS with `--tracking-wider` / `--tracking-section`. Chin
 ## Voice
 
 Terse, disciplined, bilingual (Chinese leads, English supports). Dossier voice (declarative, clipped) is primary; character voice (first-person to 长官) is accent only.
+
+## Buttons
+
+Three weights, picked by what the button does, not by where it sits.
+
+- **Primary (filled cinnabar)** — committing action that produces or persists something: Open Project, New Project, Export, Compile, Install, ConfirmDialog primary, ConfirmDialog danger. Cinnabar fill, paper text, Cormorant SC serif (the serif signals weight, per the typography rules above). Hover applies `filter: brightness(1.1)`. Same treatment for confirm and danger; the verb on the button label distinguishes them.
+- **Ghost (hairline)** — secondary action, or the inverse state of a primary (e.g. Remove next to Install). Transparent fill, hairline border, Barlow Condensed tracked label or default ink text. Hover swaps to `--bg-sunken`. Use this when there are two actions in a row and the other one is the primary.
+- **Quiet (no border)** — tertiary or in-context action: link-style buttons in headers, sidebar entries, palette items. No border, label/UI font, ink-2 or muted text. Hover often only swaps colour.
+
+The cinnabar-fill rule is what keeps the page from drifting toward "everything looks the same" — primary actions are where the user makes the page change, and they're the only place red appears at any size. The ≤10%-of-any-surface limit on cinnabar still applies; if a panel ends up with more than one cinnabar-filled button visible at once, demote the secondary one to ghost.
 
 ## Form controls
 

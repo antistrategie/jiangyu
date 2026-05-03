@@ -469,63 +469,16 @@
   transform: translateY(-1px);
 }
 
-.exportMenu {
+/* Positioning wrapper applied to the shared MenuList chrome. The menu opens
+   upward (bottom: 100%) because the export button sits in the detail
+   header near the bottom of the pane. */
+.exportMenuPos {
   position: absolute;
   bottom: 100%;
   right: 0;
   z-index: 10;
   min-width: 260px;
   margin-bottom: 2px;
-  background: var(--bg-raised);
-  border: 1px solid var(--rule);
-  box-shadow: var(--shadow-lg);
-  display: flex;
-  flex-direction: column;
-}
-
-.exportMenuItem {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  column-gap: var(--space-3);
-  align-items: baseline;
-  width: 100%;
-  padding: var(--space-2) var(--space-3);
-  background: none;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-  color: var(--fg);
-}
-
-.exportMenuItem:not(:disabled):hover {
-  background: var(--bg-sunken);
-}
-
-.exportMenuItem:disabled {
-  color: var(--fg-muted);
-  cursor: not-allowed;
-}
-
-.exportMenuItemLabel {
-  font-family: var(--font-label);
-  font-size: var(--fs-sm);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-}
-
-.exportMenuItemPath {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--fg-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.exportMenuSep {
-  height: 1px;
-  background: var(--rule-faint);
-  margin: var(--space-1) 0;
 }
 
 .exportProgress {

@@ -223,4 +223,88 @@ public class SchemaTests
         Assert.Contains("\"sessionUpdate\":\"agent_message_chunk\"", json);
         Assert.Contains("\"text\":\"hello\"", json);
     }
+
+    /// <summary>
+    /// Regression: GitHub Copilot's ACP agent returns AuthMethod entries in
+    /// the spec-correct {id, name, description?} shape. An earlier version
+    /// of the schema required {type, url} instead, which threw at
+    /// initialize and killed the connection. Lock the spec shape so a
+    /// future refactor can't quietly reintroduce the wrong fields.
+    /// </summary>
+    [Fact]
+    public void InitializeResponse_Deserialises_CopilotShapedAuthMethods()
+    {
+        var json = """
+        {
+            "protocolVersion": 1,
+            "agentCapabilities": {
+                "loadSession": false,
+                "promptCapabilities": {}
+            },
+            "authMethods": [
+                {
+                    "id": "github-oauth",
+                    "name": "GitHub OAuth",
+                    "description": "Sign in with your GitHub account"
+                },
+                {
+                    "id": "personal-access-token",
+                    "name": "Personal Access Token"
+                }
+            ],
+            "agentInfo": {
+                "name": "github-copilot",
+                "version": "1.0.39"
+            }
+        }
+        """;
+
+        var response = JsonSerializer.Deserialize<InitializeResponse>(json);
+
+        Assert.NotNull(response);
+        Assert.Equal(1, response.ProtocolVersion);
+        Assert.NotNull(response.AuthMethods);
+        Assert.Equal(2, response.AuthMethods.Length);
+
+        var oauth = response.AuthMethods[0];
+        Assert.Equal("github-oauth", oauth.Id);
+        Assert.Equal("GitHub OAuth", oauth.Name);
+        Assert.Equal("Sign in with your GitHub account", oauth.Description);
+
+        var pat = response.AuthMethods[1];
+        Assert.Equal("personal-access-token", pat.Id);
+        Assert.Equal("Personal Access Token", pat.Name);
+        Assert.Null(pat.Description);
+    }
+
+    [Fact]
+    public void InitializeResponse_Deserialises_EmptyAuthMethods()
+    {
+        // Claude's ACP agent returns no auth methods. Make sure the empty
+        // case still works after the schema change.
+        var json = """
+        {
+            "protocolVersion": 1,
+            "agentCapabilities": { "loadSession": false, "promptCapabilities": {} },
+            "authMethods": []
+        }
+        """;
+
+        var response = JsonSerializer.Deserialize<InitializeResponse>(json);
+        Assert.NotNull(response);
+        Assert.NotNull(response.AuthMethods);
+        Assert.Empty(response.AuthMethods);
+    }
+
+    [Fact]
+    public void AuthMethod_Rejects_MissingRequiredFields()
+    {
+        // The earlier failure mode: a payload with no `id` should be a hard
+        // schema error, not silently ignored. Same for `name`.
+        var noId = """{"name":"GitHub OAuth"}""";
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AuthMethod>(noId));
+
+        var noName = """{"id":"github-oauth"}""";
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AuthMethod>(noName));
+    }
 }

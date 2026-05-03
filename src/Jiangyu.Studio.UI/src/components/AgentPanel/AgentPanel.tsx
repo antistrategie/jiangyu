@@ -8,13 +8,17 @@ import {
 } from "@lib/agent/store";
 import {
   agentStart,
-  agentStop,
   agentSessionCreate,
   agentSessionPrompt,
   agentSessionCancel,
   agentPermissionResponse,
 } from "@lib/agent/rpc";
+import { useInstalledAgents } from "@lib/agent/installed";
+import { useRegistryModalStore } from "@lib/agent/registryModal";
+import { AgentDropdown, AgentMenu } from "@components/AgentDropdown/AgentDropdown";
+import { Spinner } from "@components/Spinner/Spinner";
 import type { AgentStopReason } from "@lib/agent/types";
+import type { InstalledAgent } from "@lib/rpc";
 import styles from "./AgentPanel.module.css";
 
 const STOP_REASON_LABEL: Record<AgentStopReason | "error", string | null> = {
@@ -30,7 +34,7 @@ export function AgentPanel() {
   const connected = useAgentStore((s) => s.connected);
   const connecting = useAgentStore((s) => s.connecting);
   const connectError = useAgentStore((s) => s.connectError);
-  const agentName = useAgentStore((s) => s.agentName);
+  const currentAgentId = useAgentStore((s) => s.currentAgentId);
   const sessionId = useAgentStore((s) => s.sessionId);
   const sessionTitle = useAgentStore((s) => s.sessionTitle);
   const currentModeId = useAgentStore((s) => s.currentModeId);
@@ -38,6 +42,10 @@ export function AgentPanel() {
   const messages = useAgentStore((s) => s.messages);
   const availableCommands = useAgentStore((s) => s.availableCommands);
   const lastStopReason = useAgentStore((s) => s.lastStopReason);
+
+  const installedAgents = useInstalledAgents((s) => s.agents);
+  const currentAgent = installedAgents.find((a) => a.id === currentAgentId) ?? null;
+  const setRegistryOpen = useRegistryModalStore((s) => s.setOpen);
 
   const [input, setInput] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
@@ -72,14 +80,13 @@ export function AgentPanel() {
 
   // Focus input on mount and after prompting ends.
   useEffect(() => {
-    if (!prompting) inputRef.current?.focus();
-  }, [prompting]);
+    if (connected && !prompting) inputRef.current?.focus();
+  }, [connected, prompting]);
 
-  const handleConnect = useCallback(async () => {
-    useAgentStore.getState().setConnecting();
+  const startAgent = useCallback(async (agent: InstalledAgent) => {
+    useAgentStore.getState().setConnecting(agent.id);
     try {
-      // TODO: replace with the agent installation/registry once it lands.
-      await agentStart("bunx", ["@agentclientprotocol/claude-agent-acp"]);
+      await agentStart(agent.command, agent.args ?? []);
       // Result arrives asynchronously as agentStartResult notification.
       // The store's handleStartResult will set connected=true, then we
       // auto-create a session via the effect below.
@@ -101,6 +108,28 @@ export function AgentPanel() {
     }
   }, [connected, sessionId]);
 
+  const handleNewSession = useCallback(
+    (agent: InstalledAgent) => {
+      // Same agent: just open a fresh session in the running process. The
+      // connected/!sessionId effect above re-fires once we clear sessionId.
+      // Different agent: full restart (host's agentStart tears down the
+      // previous one before booting the new subprocess).
+      if (agent.id === currentAgentId && connected) {
+        useAgentStore.setState({
+          sessionId: null,
+          sessionTitle: null,
+          currentModeId: null,
+          lastStopReason: null,
+          messages: [],
+          availableCommands: [],
+        });
+      } else {
+        void startAgent(agent);
+      }
+    },
+    [currentAgentId, connected, startAgent],
+  );
+
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text || !sessionId || prompting) return;
@@ -121,17 +150,6 @@ export function AgentPanel() {
     void agentSessionCancel();
   }, []);
 
-  const handleDisconnect = useCallback(() => {
-    // Multiple AgentPanel instances can share one agent process per window, so
-    // we don't auto-teardown on unmount. The user explicitly disconnects
-    // when they're done; project switches handle teardown automatically (see
-    // lib/project/store.ts).
-    void agentStop().catch(() => {
-      /* host will surface the error via agentStatus */
-    });
-    useAgentStore.getState().setDisconnected();
-  }, []);
-
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter" && !e.shiftKey) {
@@ -142,47 +160,89 @@ export function AgentPanel() {
     [handleSend],
   );
 
+  // --- Empty state ---------------------------------------------------------
+  if (!connected) {
+    return (
+      <div className={styles.panel}>
+        <div className={styles.emptyStateWrap}>
+          {connecting ? (
+            <div className={styles.connecting}>
+              <Spinner size={16} />
+              <span>Connecting to {currentAgent?.name ?? "agent"}…</span>
+            </div>
+          ) : installedAgents.length === 0 ? (
+            <div className={styles.welcomeCard}>
+              <h3 className={styles.welcomeEyebrow}>No agents installed</h3>
+              <p className={styles.welcomeBlurb}>
+                An agent connects Studio to a coding LLM that knows your mod project.
+              </p>
+              <button
+                type="button"
+                className={styles.welcomeAction}
+                onClick={() => setRegistryOpen(true)}
+              >
+                Browse Registry
+              </button>
+            </div>
+          ) : (
+            <div className={styles.pickerCard}>
+              <h3 className={styles.welcomeEyebrow}>Start a session</h3>
+              <AgentMenu
+                agents={installedAgents}
+                onSelect={(a) => void startAgent(a)}
+                onOpenRegistry={() => setRegistryOpen(true)}
+                inline
+              />
+            </div>
+          )}
+          {connectError !== null && <div className={styles.connectError}>{connectError}</div>}
+        </div>
+      </div>
+    );
+  }
+
+  // --- Connected state -----------------------------------------------------
   return (
     <div className={styles.panel}>
       <div className={styles.header}>
-        <span
-          className={`${styles.statusDot} ${connected ? styles.statusDot_connected : styles.statusDot_disconnected}`}
-        />
-        <span className={styles.agentLabel}>{connected ? (agentName ?? "Agent") : "No agent"}</span>
-        {sessionTitle !== null && <span className={styles.sessionTitle}>{sessionTitle}</span>}
+        <span className={styles.sessionTitle}>{sessionTitle ?? "New session"}</span>
         {currentModeId !== null && <span className={styles.modeBadge}>{currentModeId}</span>}
-        {connected && (
+        <div className={styles.headerActions}>
           <button
             type="button"
-            className={styles.disconnectBtn}
-            onClick={handleDisconnect}
-            title="Disconnect agent"
+            className={styles.headerBtn}
+            title="Previous sessions"
+            aria-label="Previous sessions"
+            onClick={() => {
+              /* TODO: Phase 5i — list prior sessions */
+            }}
           >
-            Disconnect
+            <ClockIcon />
           </button>
-        )}
+          <AgentDropdown
+            agents={installedAgents}
+            onSelect={handleNewSession}
+            onOpenRegistry={() => setRegistryOpen(true)}
+            align="right"
+            triggerClassName={styles.headerBtn}
+            triggerAriaLabel="Start new session"
+            triggerContent={<PlusIcon />}
+          />
+        </div>
       </div>
 
-      {!connected ? (
-        <div className={styles.emptyState}>
-          <div style={{ textAlign: "center" }}>
-            {connecting ? (
-              <span>Connecting…</span>
-            ) : (
-              <button type="button" className={styles.sendBtn} onClick={() => void handleConnect()}>
-                Connect Agent
-              </button>
-            )}
-            {connectError !== null && <div className={styles.connectError}>{connectError}</div>}
+      {!sessionId ? (
+        <div className={styles.emptyStateWrap}>
+          <div className={styles.connecting}>
+            <Spinner size={16} />
+            <span>Creating session…</span>
           </div>
         </div>
-      ) : !sessionId ? (
-        <div className={styles.emptyState}>Creating session…</div>
       ) : (
         <>
           <div ref={listRef} className={styles.messageList}>
             {messages.length === 0 && (
-              <div className={styles.emptyState}>Send a message to begin.</div>
+              <div className={styles.emptyHint}>Send a message to begin.</div>
             )}
             {messages.map((msg) => (
               <MessageBubble key={msg.id} message={msg} />
@@ -199,18 +259,16 @@ export function AgentPanel() {
                   onClick={() => setInput(`/${cmd.name} `)}
                 >
                   <span className={styles.slashName}>/{cmd.name}</span>
-                  {cmd.description !== null && cmd.description !== undefined && (
-                    <span className={styles.slashDesc}>{cmd.description}</span>
-                  )}
+                  <span className={styles.slashDesc}>{cmd.description}</span>
                 </button>
               ))}
             </div>
           )}
 
-          <div className={styles.inputArea}>
+          <div className={styles.composer}>
             <textarea
               ref={inputRef}
-              className={styles.input}
+              className={styles.composerInput}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -218,32 +276,71 @@ export function AgentPanel() {
               disabled={prompting}
               rows={1}
             />
-            {prompting ? (
-              <button type="button" className={styles.cancelBtn} onClick={handleCancel}>
-                Cancel
-              </button>
-            ) : (
-              <button
-                type="button"
-                className={styles.sendBtn}
-                onClick={() => void handleSend()}
-                disabled={!input.trim()}
-              >
-                Send
-              </button>
-            )}
+            <div className={styles.composerActions}>
+              <div className={styles.composerActionsLeft}>
+                {/* Future home for model picker, plan/write toggle, context info. */}
+              </div>
+              <div className={styles.composerActionsRight}>
+                {prompting ? (
+                  <button type="button" className={styles.cancelBtn} onClick={handleCancel}>
+                    Cancel
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className={styles.sendBtn}
+                    onClick={() => void handleSend()}
+                    disabled={!input.trim()}
+                  >
+                    Send
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
-          {connectError !== null && <div className={styles.inlineError}>{connectError}</div>}
-          {connectError === null && promptError !== null && (
-            <div className={styles.inlineError}>{promptError}</div>
-          )}
-          {connectError === null && promptError === null && stopMessage !== null && (
+          {promptError !== null && <div className={styles.inlineError}>{promptError}</div>}
+          {promptError === null && stopMessage !== null && (
             <div className={styles.stopReason}>{stopMessage}</div>
           )}
         </>
       )}
     </div>
+  );
+}
+
+// --- Icons (hairline SVG, 24px grid, 1.25 stroke per design system) -------
+
+function ClockIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      aria-hidden="true"
+    >
+      <path d="M12 5v14M5 12h14" />
+    </svg>
   );
 }
 
@@ -306,6 +403,9 @@ function PlanBlock({ message }: { message: PlanMessage }) {
     <div className={styles.planBlock}>
       <div className={styles.planTitle}>Plan</div>
       {message.entries.map((entry, i) => (
+        // Plan entries are replaced wholesale on each plan update; index is stable
+        // within a single plan and React only re-keys when the plan itself changes.
+        // eslint-disable-next-line @eslint-react/no-array-index-key
         <div key={i} className={styles.planEntry}>
           <span className={styles.planStatus}>{statusIcon(entry.status)}</span>
           <span>{entry.content}</span>
@@ -316,7 +416,7 @@ function PlanBlock({ message }: { message: PlanMessage }) {
 }
 
 function PermissionBlock({ message }: { message: PermissionMessage }) {
-  const firstAllow = message.options?.find((o) => o.kind.startsWith("allow"));
+  const firstAllow = message.options.find((o) => o.kind.startsWith("allow"));
 
   const handleAllow = () => {
     void agentPermissionResponse(message.permissionId, "selected", firstAllow?.optionId);

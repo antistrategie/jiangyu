@@ -56,6 +56,9 @@ public sealed class StudioSettings
     [JsonPropertyName("aiEnabled")]
     public bool AiEnabled { get; set; } = false;
 
+    [JsonPropertyName("installedAgents")]
+    public List<InstalledAgent> InstalledAgents { get; set; } = [];
+
     public static string Path => System.IO.Path.Combine(GlobalConfig.ConfigDir, "studio.json");
 
     public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
@@ -78,4 +81,44 @@ public sealed class StudioSettings
         File.WriteAllText(tmp, ToJson());
         File.Move(tmp, Path, overwrite: true);
     }
+}
+
+/// <summary>
+/// An ACP agent the user has added to Studio. The list is the union of
+/// agents picked from the registry plus any future built-in. The first
+/// installed agent is the one that boots if the user doesn't pick;
+/// reorder by removing and reinstalling.
+/// </summary>
+[RpcType]
+public sealed class InstalledAgent
+{
+    /// <summary>Registry id (e.g. "claude-acp"), or a stable synthetic id.</summary>
+    [JsonPropertyName("id")]
+    public required string Id { get; set; }
+
+    [JsonPropertyName("name")]
+    public required string Name { get; set; }
+
+    /// <summary>Version string at install time. Informational only.</summary>
+    [JsonPropertyName("version")]
+    public string? Version { get; set; }
+
+    /// <summary>"npx", "uvx", or "binary".</summary>
+    [JsonPropertyName("distribution")]
+    public required string Distribution { get; set; }
+
+    /// <summary>Resolvable command (e.g. "bunx" or absolute binary path).</summary>
+    [JsonPropertyName("command")]
+    public required string Command { get; set; }
+
+    [JsonPropertyName("args")]
+    public List<string> Args { get; set; } = [];
+
+    /// <summary>Package name for npx/uvx, used to detect updates later.</summary>
+    [JsonPropertyName("packageName")]
+    public string? PackageName { get; set; }
+
+    /// <summary>Remote SVG URL from the registry. Optional.</summary>
+    [JsonPropertyName("iconUrl")]
+    public string? IconUrl { get; set; }
 }
