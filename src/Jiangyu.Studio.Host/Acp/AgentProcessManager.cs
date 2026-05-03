@@ -17,8 +17,13 @@ internal sealed class AgentProcessManager : IDisposable
     private InitializeResponse? _initializeResponse;
     private readonly Lock _lock = new();
 
-    /// <summary>The MCP server port so we can tell the agent where to connect.</summary>
-    public int McpPort { get; set; }
+    /// <summary>
+    /// Set by <c>Program.Main</c> at startup once the WebApp has bound. Both
+    /// fields are required for the HTTP entry in <see cref="BuildMcpServerConfig"/>;
+    /// when either is null we only send the stdio entry.
+    /// </summary>
+    public static string? HttpMcpUrl { get; set; }
+    public static string? HttpMcpToken { get; set; }
 
     /// <summary>
     /// Invoked when the agent process exits unexpectedly. Called on a
@@ -136,7 +141,13 @@ internal sealed class AgentProcessManager : IDisposable
                     Version = typeof(AgentProcessManager).Assembly.GetName().Version?.ToString() ?? "0.0.0",
                 },
             }, ct);
-            Console.Error.WriteLine($"[Agent] Initialize response received: {response.AgentInfo?.Name}");
+            var caps = response.AgentCapabilities;
+            var mcpCaps = caps?.McpCapabilities;
+            Console.Error.WriteLine(
+                $"[Agent] Initialised: {response.AgentInfo?.Name} v{response.AgentInfo?.Version} " +
+                $"protocol={response.ProtocolVersion} " +
+                $"loadSession={caps?.LoadSession ?? false} " +
+                $"mcp.http={mcpCaps?.Http ?? false} mcp.sse={mcpCaps?.Sse ?? false}");
         }
         catch
         {
@@ -164,35 +175,127 @@ internal sealed class AgentProcessManager : IDisposable
     public async Task<NewSessionResponse> NewSessionAsync(string projectRoot, CancellationToken ct = default)
     {
         var client = Client ?? throw new InvalidOperationException("Agent not running.");
-        InitializeResponse? init;
-        lock (_lock) init = _initializeResponse;
 
-        // Per spec, HTTP MCP is only legal when the agent advertises
-        // mcpCapabilities.http; otherwise we omit the MCP server entirely.
-        // Future: spawn a stdio MCP adapter for agents that don't support
-        // HTTP, so the Jiangyu tool surface is reachable from any agent.
-        var supportsHttpMcp = init?.AgentCapabilities?.McpCapabilities?.Http == true;
-        var mcpServers = supportsHttpMcp
-            ? new[]
-            {
-                new McpServerConfig
-                {
-                    Name = "jiangyu",
-                    Type = "http",
-                    Url = $"http://127.0.0.1:{McpPort}/mcp",
-                    Headers = [],
-                },
-            }
-            : Array.Empty<McpServerConfig>();
+        var mcp = BuildMcpServerConfig();
+        Console.Error.WriteLine($"[Agent] session/new cwd={projectRoot} mcpServers={DescribeMcpServers(mcp)}");
 
         var response = await client.NewSessionAsync(new NewSessionRequest
         {
             Cwd = projectRoot,
-            McpServers = mcpServers,
+            McpServers = mcp,
         }, ct);
 
         lock (_lock) _sessionId = response.SessionId;
         return response;
+    }
+
+    /// <summary>
+    /// Resumes an existing session by id. Per spec the agent streams
+    /// historical session updates before this awaitable resolves, so
+    /// callers can rely on "load complete" once it returns.
+    /// </summary>
+    public async Task<LoadSessionResponse> LoadSessionAsync(
+        string sessionId,
+        string projectRoot,
+        CancellationToken ct = default)
+    {
+        var client = Client ?? throw new InvalidOperationException("Agent not running.");
+
+        InitializeResponse? init;
+        lock (_lock) init = _initializeResponse;
+        if (init?.AgentCapabilities?.LoadSession != true)
+            throw new InvalidOperationException("This agent does not support resuming sessions.");
+
+        var response = await client.LoadSessionAsync(new LoadSessionRequest
+        {
+            SessionId = sessionId,
+            Cwd = projectRoot,
+            McpServers = BuildMcpServerConfig(),
+        }, ct);
+
+        lock (_lock) _sessionId = sessionId;
+        return response;
+    }
+
+    /// <summary>
+    /// Build the MCP server config we hand to the agent at session/new. We
+    /// send both transports because no agent supports both — each one picks
+    /// the entry it accepts and drops the other:
+    /// <list type="bullet">
+    ///   <item><description>stdio: <c>jiangyu-mcp</c> sibling exe.
+    ///     Anthropic's claude-agent-sdk silently DROPS HTTP MCP entries
+    ///     (despite advertising <c>mcpCapabilities.http=true</c>) and
+    ///     only honours stdio.</description></item>
+    ///   <item><description>http: the <c>/mcp</c> endpoint hosted by
+    ///     Studio.Host with bearer-token auth. GitHub Copilot's ACP
+    ///     integration silently REJECTS stdio entries
+    ///     (<c>Rejecting non-http/sse MCP server</c> in its logs) and
+    ///     only honours http/sse.</description></item>
+    /// </list>
+    /// Both share the name <c>jiangyu</c>; the agent only ends up with one
+    /// after dropping the unsupported one, so the model sees a single
+    /// unified server either way.
+    /// </summary>
+    internal static McpServerConfig[] BuildMcpServerConfig()
+    {
+        var configs = new List<McpServerConfig>();
+
+        var exeName = OperatingSystem.IsWindows() ? "jiangyu-mcp.exe" : "jiangyu-mcp";
+        var mcpPath = Path.Combine(AppContext.BaseDirectory, exeName);
+        if (File.Exists(mcpPath))
+        {
+            configs.Add(new McpServerConfig
+            {
+                Name = "jiangyu",
+                Command = mcpPath,
+                Args = [],
+                Env = [],
+            });
+        }
+        else
+        {
+            Console.Error.WriteLine($"[Agent] jiangyu-mcp binary not found at {mcpPath}; stdio MCP disabled.");
+        }
+
+        if (HttpMcpUrl is { } url && HttpMcpToken is { } token)
+        {
+            configs.Add(new McpServerConfig
+            {
+                Name = "jiangyu",
+                Type = "http",
+                Url = url,
+                Headers =
+                [
+                    new HttpHeader { Name = "Authorization", Value = $"Bearer {token}" },
+                ],
+            });
+        }
+        else
+        {
+            Console.Error.WriteLine("[Agent] HTTP MCP endpoint not bound; http MCP disabled.");
+        }
+
+        return [.. configs];
+    }
+
+    /// <summary>
+    /// Renders the MCP server array for stderr logging. Skips the bearer
+    /// token in HTTP headers — the value is a per-launch secret used to
+    /// gate <c>/mcp</c> against unrelated processes on the same loopback,
+    /// and dumping it to logs (which may be captured by the user's
+    /// terminal scrollback or CI artefacts) defeats that.
+    /// </summary>
+    internal static string DescribeMcpServers(McpServerConfig[] configs)
+    {
+        var parts = new List<string>(configs.Length);
+        foreach (var c in configs)
+        {
+            if (c.Type == "http" || c.Type == "sse")
+                parts.Add($"{{name={c.Name},type={c.Type},url={c.Url},headers={c.Headers?.Length ?? 0}}}");
+            else
+                parts.Add($"{{name={c.Name},command={c.Command},args=[{string.Join(',', c.Args ?? [])}]}}");
+        }
+        return "[" + string.Join(", ", parts) + "]";
     }
 
     /// <summary>

@@ -1,0 +1,100 @@
+.popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  min-width: 280px;
+  max-width: 360px;
+}
+
+/* Inline variant — flows in the surrounding card (empty state picker)
+   instead of floating. No positioning, just a sane width clamp. */
+.inline {
+  width: min(320px, 100%);
+  min-width: 220px;
+}
+
+/* Section eyebrow above the inline list — same Barlow Condensed treatment
+   as the picker card's "Start a session" heading so the two sections
+   read as siblings. */
+.inlineHeader {
+  margin: 0;
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-section);
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.placeholder,
+.errorState {
+  padding: var(--space-3) var(--space-3);
+  text-align: center;
+  color: var(--fg-muted);
+  font-style: italic;
+  font-size: var(--fs-sm);
+}
+
+.errorState {
+  color: var(--cinnabar-1);
+  font-style: normal;
+}
+
+/* Row wraps the resume MenuItem (full-width clickable surface) plus a
+   small delete affordance pinned to the right. The delete button sits
+   inside the same row container so its click is excluded from the resume
+   click via stopPropagation. */
+.row {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--rule-faint);
+}
+
+/* Same sizing as MenuItemIcon so a row with an icon aligns with one
+   without (placeholder reserves the same horizontal slot). */
+.rowIcon,
+.rowIconPlaceholder {
+  width: 12px;
+  flex-shrink: 0;
+  align-self: center;
+  object-fit: contain;
+}
+
+.rowIconPlaceholder {
+  background: transparent;
+}
+
+.rowItem {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+/* Inside .row, the MenuList's own border-bottom on items would double up
+   with .row's border-bottom. Suppress it on the inner item. */
+.row :global(button[role="menuitem"]) {
+  border-bottom: none;
+  flex: 1;
+  min-width: 0;
+}
+
+.deleteBtn {
+  flex-shrink: 0;
+  width: 28px;
+  background: transparent;
+  border: none;
+  color: var(--ink-4);
+  cursor: pointer;
+  font-size: var(--fs-md);
+  line-height: 1;
+  transition: color var(--ease-fast);
+}
+
+.deleteBtn:hover {
+  color: var(--cinnabar-1);
+}

@@ -59,6 +59,12 @@ jobs:
       - name: Test Jiangyu.Core.Tests
         run: dotnet test jiangyu/tests/Jiangyu.Core.Tests/Jiangyu.Core.Tests.csproj
 
+      - name: Test Jiangyu.Acp.Tests
+        run: dotnet test jiangyu/tests/Jiangyu.Acp.Tests/Jiangyu.Acp.Tests.csproj
+
+      - name: Test Jiangyu.Studio.Host.Tests
+        run: dotnet test jiangyu/tests/Jiangyu.Studio.Host.Tests/Jiangyu.Studio.Host.Tests.csproj
+
       - name: Test Jiangyu.Loader.Tests
         run: dotnet test jiangyu/tests/Jiangyu.Loader.Tests/Jiangyu.Loader.Tests.csproj -p:MelonLoaderDir=${{ github.workspace }}/jiangyu/.ci/melonloader -p:GameAssembliesDir=${{ github.workspace }}/menace-ci-dependencies
 
@@ -186,6 +192,14 @@ jobs:
 
       - name: Publish Studio Host
         run: dotnet publish src/Jiangyu.Studio.Host/Jiangyu.Studio.Host.csproj -c Release -r ${{ matrix.platform }} --self-contained -o publish/studio
+
+      # jiangyu-mcp must ship alongside jiangyu-studio: the standalone exe is
+      # what ACP agents (notably Claude, which silently drops HTTP MCP)
+      # spawn over stdio. AgentProcessManager resolves it via
+      # AppContext.BaseDirectory, so it has to land in the same publish
+      # directory as the studio binary.
+      - name: Publish Jiangyu.Mcp
+        run: dotnet publish src/Jiangyu.Mcp/Jiangyu.Mcp.csproj -c Release -r ${{ matrix.platform }} --self-contained -o publish/studio
 
       - name: Upload Studio artefact
         uses: actions/upload-artifact@v7

@@ -11,7 +11,7 @@ public class PathNormalisationTests
         // and Monaco model URIs see consistent paths.
         var native = Path.Combine("a", "b", "c.txt");
 
-        var normalised = RpcDispatcher.NormaliseSeparators(native);
+        var normalised = RpcHelpers.NormaliseSeparators(native);
 
         Assert.Equal("a/b/c.txt", normalised);
         Assert.DoesNotContain(Path.DirectorySeparatorChar, normalised.Where(c => c != '/'));
@@ -20,19 +20,19 @@ public class PathNormalisationTests
     [Fact]
     public void AlreadyForwardSlash_Idempotent()
     {
-        Assert.Equal("a/b/c", RpcDispatcher.NormaliseSeparators("a/b/c"));
+        Assert.Equal("a/b/c", RpcHelpers.NormaliseSeparators("a/b/c"));
     }
 
     [Fact]
     public void NoSeparator_Unchanged()
     {
-        Assert.Equal("file.txt", RpcDispatcher.NormaliseSeparators("file.txt"));
+        Assert.Equal("file.txt", RpcHelpers.NormaliseSeparators("file.txt"));
     }
 
     [Fact]
     public void Empty_Unchanged()
     {
-        Assert.Equal(string.Empty, RpcDispatcher.NormaliseSeparators(string.Empty));
+        Assert.Equal(string.Empty, RpcHelpers.NormaliseSeparators(string.Empty));
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public class PathNormalisationTests
         // the round-trip through the helper.
         var native = Path.Combine(Path.GetTempPath(), "jiangyu-test", "models", "soldier.glb");
 
-        var normalised = RpcDispatcher.NormaliseSeparators(native);
+        var normalised = RpcHelpers.NormaliseSeparators(native);
 
         Assert.EndsWith("/jiangyu-test/models/soldier.glb", normalised);
         Assert.DoesNotContain('\\', normalised);

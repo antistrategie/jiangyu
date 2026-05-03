@@ -149,6 +149,27 @@ public sealed class SessionInfoUpdate : SessionUpdate
     public string? UpdatedAt { get; set; }
 }
 
+/// <summary>
+/// Fallback for SessionUpdate types we don't have a typed wrapper for yet
+/// (e.g. <c>usage_update</c> sent by Claude with token counts). The
+/// converter routes unknown discriminator values here instead of throwing
+/// so the listen loop doesn't drop the rest of the session updates and
+/// we don't spam logs every turn.
+/// </summary>
+public sealed class UnknownSessionUpdate : SessionUpdate
+{
+    private readonly string _updateType;
+
+    public UnknownSessionUpdate() : this("unknown") { }
+
+    public UnknownSessionUpdate(string updateType)
+    {
+        _updateType = updateType;
+    }
+
+    public override string UpdateType => _updateType;
+}
+
 internal sealed class SessionUpdateConverter : JsonConverter<SessionUpdate>
 {
     public override SessionUpdate? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
@@ -172,7 +193,12 @@ internal sealed class SessionUpdateConverter : JsonConverter<SessionUpdate>
             "current_mode_update" => root.Deserialize<CurrentModeUpdate>(options),
             "config_option_update" => root.Deserialize<ConfigOptionUpdate>(options),
             "session_info_update" => root.Deserialize<SessionInfoUpdate>(options),
-            _ => throw new JsonException($"Unknown SessionUpdate type: {type}"),
+            // ACP keeps growing — agents have already started sending
+            // updates we don't have typed wrappers for (e.g. Claude's
+            // `usage_update`). Forward as a placeholder so the listen
+            // loop doesn't drop the surrounding notification chain.
+            null => throw new JsonException("'sessionUpdate' was null"),
+            _ => new UnknownSessionUpdate(type),
         };
     }
 

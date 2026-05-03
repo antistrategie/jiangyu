@@ -1,16 +1,16 @@
 using System.Text.Json;
-using InfiniFrame;
 using Jiangyu.Core.Config;
 using Jiangyu.Shared;
+using static Jiangyu.Studio.Rpc.RpcHelpers;
 
-namespace Jiangyu.Studio.Host.Rpc;
+namespace Jiangyu.Studio.Rpc;
 
-public static partial class RpcDispatcher
+public static partial class RpcHandlers
 {
     [McpTool("jiangyu_read_manifest",
         "Read the project configuration (jiangyu.json manifest). Returns the parsed ProjectConfig object with mod name, version, author, dependencies, etc.")]
     [McpParam("projectPath", "string", "Absolute path to the project root directory.", Required = true)]
-    private static JsonElement HandleGetProjectConfig(IInfiniFrameWindow _, JsonElement? parameters)
+    internal static JsonElement GetProjectConfig(JsonElement? parameters)
     {
         var projectPath = RequireString(parameters, "projectPath");
         if (!Directory.Exists(projectPath))
@@ -20,7 +20,13 @@ public static partial class RpcDispatcher
         return JsonSerializer.SerializeToElement(config);
     }
 
-    private static JsonElement HandleSetProjectAssetExportPath(IInfiniFrameWindow _, JsonElement? parameters)
+    /// <summary>
+    /// Sets / clears the per-project asset export path. Not exposed via MCP
+    /// — the asset browser UI is the only caller — but it lives here so the
+    /// MCP binary can still see the project-config write path if a future
+    /// tool needs it.
+    /// </summary>
+    public static JsonElement SetProjectAssetExportPath(JsonElement? parameters)
     {
         var projectPath = RequireString(parameters, "projectPath");
         var exportPath = TryGetString(parameters, "exportPath");

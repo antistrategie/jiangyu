@@ -111,9 +111,23 @@ public class SchemaTests
     }
 
     [Fact]
-    public void SessionUpdate_ThrowsOnUnknownType()
+    public void SessionUpdate_FallsBackOnUnknownType()
     {
-        var json = """{"sessionUpdate":"unknown_type"}""";
+        // ACP keeps growing — agents send updates we don't have typed
+        // wrappers for (Claude already sends `usage_update`). Unknown
+        // discriminators should produce an UnknownSessionUpdate stub
+        // instead of throwing, so the listen loop doesn't drop the rest
+        // of the notification chain.
+        var json = """{"sessionUpdate":"usage_update","tokens":42}""";
+        var update = JsonSerializer.Deserialize<SessionUpdate>(json);
+        var unknown = Assert.IsType<UnknownSessionUpdate>(update);
+        Assert.Equal("usage_update", unknown.UpdateType);
+    }
+
+    [Fact]
+    public void SessionUpdate_ThrowsOnMissingDiscriminator()
+    {
+        var json = """{"someOtherField":true}""";
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<SessionUpdate>(json));
     }
 

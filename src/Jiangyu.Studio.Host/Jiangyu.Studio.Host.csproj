@@ -28,7 +28,16 @@
   <ItemGroup>
     <ProjectReference Include="..\Jiangyu.Acp\Jiangyu.Acp.csproj" />
     <ProjectReference Include="..\Jiangyu.Core\Jiangyu.Core.csproj" />
-    <ProjectReference Include="..\Jiangyu.Rpc.Generators\Jiangyu.Rpc.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\Jiangyu.Studio.Rpc\Jiangyu.Studio.Rpc.csproj" />
+    <ProjectReference Include="..\Jiangyu.Studio.Rpc.Generators\Jiangyu.Studio.Rpc.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <!-- jiangyu-mcp ships as a sibling executable spawned by ACP agents over
+         stdio. ReferenceOutputAssembly=false keeps Mcp out of Host's
+         compile/link path; the Target below drops its build output into
+         Host's bin so AgentProcessManager.BuildMcpServerConfig can find it
+         via AppContext.BaseDirectory. Release publish should publish
+         Jiangyu.Mcp separately and ship the resulting binary alongside
+         jiangyu-studio. -->
+    <ProjectReference Include="..\Jiangyu.Mcp\Jiangyu.Mcp.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -45,9 +54,6 @@
     <Content Include="..\Jiangyu.Studio.UI\public\icon.png" Link="icon.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- KDL template syntax docs embedded so the MCP server can serve them as a
-         resource to agents. Single source of truth lives in site/. -->
-    <EmbeddedResource Include="..\..\site\**\*.md" Exclude="..\..\site\node_modules\**;..\..\site\.vitepress\**" LinkBase="docs" />
   </ItemGroup>
 
   <!--
@@ -60,6 +66,18 @@
     after Vite writes fresh hashed filenames; otherwise the SDK's evaluation-
     time snapshot would reference files that no longer exist.
   -->
+  <!-- Drop the Mcp build output into Host's bin so AgentProcessManager.
+       BuildMcpServerConfig (which resolves via AppContext.BaseDirectory)
+       finds jiangyu-mcp.dll next to jiangyu-studio.dll on dev runs.
+       Release publish builds the Mcp binary as a separate artefact and
+       deposits it next to jiangyu-studio in CI. -->
+  <Target Name="CopyMcpToOutput" AfterTargets="Build">
+    <ItemGroup>
+      <McpOutput Include="..\Jiangyu.Mcp\bin\$(Configuration)\$(TargetFramework)\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(McpOutput)" DestinationFolder="$(OutDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
   <Target Name="BuildStudioFrontend" BeforeTargets="ResolveProjectStaticWebAssets" Condition="'$(Configuration)' == 'Release' And '$(SkipStudioFrontend)' != 'true'">
     <Message Importance="high" Text="Building Studio frontend bundle…" />
     <Exec Command="bun install --frozen-lockfile" WorkingDirectory="$(MSBuildThisFileDirectory)..\Jiangyu.Studio.UI" />

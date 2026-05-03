@@ -11,11 +11,13 @@ import {
   agentSessionCreate,
   agentSessionPrompt,
   agentSessionCancel,
+  agentSessionResume,
   agentPermissionResponse,
 } from "@lib/agent/rpc";
 import { useInstalledAgents } from "@lib/agent/installed";
 import { useRegistryModalStore } from "@lib/agent/registryModal";
 import { AgentDropdown, AgentMenu } from "@components/AgentDropdown/AgentDropdown";
+import { AgentHistoryPopover } from "@components/AgentHistoryPopover/AgentHistoryPopover";
 import { Spinner } from "@components/Spinner/Spinner";
 import type { AgentStopReason } from "@lib/agent/types";
 import type { InstalledAgent } from "@lib/rpc";
@@ -46,10 +48,30 @@ export function AgentPanel() {
   const installedAgents = useInstalledAgents((s) => s.agents);
   const currentAgent = installedAgents.find((a) => a.id === currentAgentId) ?? null;
   const setRegistryOpen = useRegistryModalStore((s) => s.setOpen);
+  const replaying = useAgentStore((s) => s.replaying);
 
   const [input, setInput] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const historyWrapRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Outside-click + Escape to dismiss the history popover.
+  useEffect(() => {
+    if (!historyOpen) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (historyWrapRef.current?.contains(e.target as Node) !== true) setHistoryOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setHistoryOpen(false);
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [historyOpen]);
 
   // Translate the last stop reason to a user-facing string. "end_turn" and
   // host errors render via different surfaces (just clears banner / error
@@ -86,7 +108,7 @@ export function AgentPanel() {
   const startAgent = useCallback(async (agent: InstalledAgent) => {
     useAgentStore.getState().setConnecting(agent.id);
     try {
-      await agentStart(agent.command, agent.args ?? []);
+      await agentStart(agent.command, agent.args ?? [], agent.id);
       // Result arrives asynchronously as agentStartResult notification.
       // The store's handleStartResult will set connected=true, then we
       // auto-create a session via the effect below.
@@ -97,21 +119,38 @@ export function AgentPanel() {
     }
   }, []);
 
-  // When the agent connects (via notification), auto-create a session.
+  // Auto-create or auto-resume once the agent is connected, depending on
+  // what the user asked for. The pendingSession discriminator decouples
+  // intent ("I want a new session" vs "I want to resume X") from state,
+  // so a resume failure can't loop back into a silent new-session create.
+  const pendingSession = useAgentStore((s) => s.pendingSession);
   useEffect(() => {
-    if (connected && !sessionId) {
+    if (!connected || pendingSession === null) return;
+
+    if (pendingSession.kind === "create" && !sessionId) {
       void agentSessionCreate().catch((err: unknown) => {
         useAgentStore.getState().handleSessionCreated({
           error: err instanceof Error ? err.message : String(err),
         });
       });
+    } else if (pendingSession.kind === "resume") {
+      const targetSessionId = pendingSession.sessionId;
+      // beginReplay clears pendingSession itself, so the effect won't
+      // re-fire after this branch runs.
+      useAgentStore.getState().beginReplay(targetSessionId);
+      void agentSessionResume(targetSessionId).catch((err: unknown) => {
+        useAgentStore.getState().handleResumeResult({
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
     }
-  }, [connected, sessionId]);
+  }, [connected, sessionId, pendingSession]);
 
   const handleNewSession = useCallback(
     (agent: InstalledAgent) => {
       // Same agent: just open a fresh session in the running process. The
-      // connected/!sessionId effect above re-fires once we clear sessionId.
+      // pendingSession flag tells the auto-create effect that this
+      // sessionId-clear is an explicit user intent (vs a resume failure).
       // Different agent: full restart (host's agentStart tears down the
       // previous one before booting the new subprocess).
       if (agent.id === currentAgentId && connected) {
@@ -122,6 +161,7 @@ export function AgentPanel() {
           lastStopReason: null,
           messages: [],
           availableCommands: [],
+          pendingSession: { kind: "create" },
         });
       } else {
         void startAgent(agent);
@@ -132,7 +172,7 @@ export function AgentPanel() {
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    if (!text || !sessionId || prompting) return;
+    if (!text || !sessionId || prompting || replaying) return;
 
     setInput("");
     useAgentStore.getState().clearLastStopReason();
@@ -144,7 +184,7 @@ export function AgentPanel() {
     } catch {
       useAgentStore.getState().setPrompting(false);
     }
-  }, [input, sessionId, prompting]);
+  }, [input, sessionId, prompting, replaying]);
 
   const handleCancel = useCallback(() => {
     void agentSessionCancel();
@@ -193,6 +233,13 @@ export function AgentPanel() {
                 onOpenRegistry={() => setRegistryOpen(true)}
                 inline
               />
+              {/* Recent sessions inline — short list with a hard cap so the
+                  picker card stays compact. The full list is still
+                  reachable via the header history popover after connect.
+                  The component hides itself (and the header) when no
+                  sessions exist, so a fresh project shows just the
+                  agent menu. */}
+              <AgentHistoryPopover inline limit={5} inlineHeader="Or resume" />
             </div>
           )}
           {connectError !== null && <div className={styles.connectError}>{connectError}</div>}
@@ -205,20 +252,23 @@ export function AgentPanel() {
   return (
     <div className={styles.panel}>
       <div className={styles.header}>
-        <span className={styles.sessionTitle}>{sessionTitle ?? "New session"}</span>
+        <span className={styles.sessionTitle}>{deriveSessionLabel(sessionTitle, messages)}</span>
         {currentModeId !== null && <span className={styles.modeBadge}>{currentModeId}</span>}
         <div className={styles.headerActions}>
-          <button
-            type="button"
-            className={styles.headerBtn}
-            title="Previous sessions"
-            aria-label="Previous sessions"
-            onClick={() => {
-              /* TODO: Phase 5i — list prior sessions */
-            }}
-          >
-            <ClockIcon />
-          </button>
+          <div className={styles.historyWrap} ref={historyWrapRef}>
+            <button
+              type="button"
+              className={styles.headerBtn}
+              title="Previous sessions"
+              aria-label="Previous sessions"
+              aria-haspopup="menu"
+              aria-expanded={historyOpen}
+              onClick={() => setHistoryOpen((o) => !o)}
+            >
+              <ClockIcon />
+            </button>
+            {historyOpen && <AgentHistoryPopover onClose={() => setHistoryOpen(false)} />}
+          </div>
           <AgentDropdown
             agents={installedAgents}
             onSelect={handleNewSession}
@@ -233,10 +283,28 @@ export function AgentPanel() {
 
       {!sessionId ? (
         <div className={styles.emptyStateWrap}>
-          <div className={styles.connecting}>
-            <Spinner size={16} />
-            <span>Creating session…</span>
-          </div>
+          {connectError !== null ? (
+            <div className={styles.resumeErrorCard}>
+              <div className={styles.connectError}>{connectError}</div>
+              <button
+                type="button"
+                className={styles.welcomeAction}
+                onClick={() => {
+                  useAgentStore.setState({
+                    connectError: null,
+                    pendingSession: { kind: "create" },
+                  });
+                }}
+              >
+                Start new session
+              </button>
+            </div>
+          ) : (
+            <div className={styles.connecting}>
+              <Spinner size={16} />
+              <span>Creating session…</span>
+            </div>
+          )}
         </div>
       ) : (
         <>
@@ -272,8 +340,14 @@ export function AgentPanel() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={prompting ? "Agent is working…" : "Message the agent…"}
-              disabled={prompting}
+              placeholder={
+                replaying
+                  ? "Loading conversation history…"
+                  : prompting
+                    ? "Agent is working…"
+                    : "Message the agent…"
+              }
+              disabled={prompting || replaying}
               rows={1}
             />
             <div className={styles.composerActions}>
@@ -290,7 +364,7 @@ export function AgentPanel() {
                     type="button"
                     className={styles.sendBtn}
                     onClick={() => void handleSend()}
-                    disabled={!input.trim()}
+                    disabled={!input.trim() || replaying}
                   >
                     Send
                   </button>
@@ -307,6 +381,24 @@ export function AgentPanel() {
       )}
     </div>
   );
+}
+
+/**
+ * Choose what to display in the header. `session_info_update` is the
+ * agent's authoritative title once it has decided one (Claude Agent ACP
+ * generally emits it after a few turns; some agents never do). Until
+ * then, fall back to the first user message — same heuristic the history
+ * popover uses for `firstMessage`. "New session" is the empty-canvas
+ * fallback when nothing has been typed yet.
+ */
+function deriveSessionLabel(sessionTitle: string | null, messages: readonly ChatMessage[]): string {
+  if (sessionTitle !== null && sessionTitle.length > 0) return sessionTitle;
+  const firstUser = messages.find((m) => m.role === "user");
+  if (firstUser !== undefined) {
+    const trimmed = firstUser.text.trim();
+    return trimmed.length > 60 ? `${trimmed.slice(0, 60)}…` : trimmed;
+  }
+  return "New session";
 }
 
 // --- Icons (hairline SVG, 24px grid, 1.25 stroke per design system) -------

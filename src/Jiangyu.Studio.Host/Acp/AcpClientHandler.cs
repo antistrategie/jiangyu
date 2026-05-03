@@ -26,7 +26,7 @@ internal sealed class AcpClientHandler : IAcpClientHandler
 
     public ValueTask<ReadTextFileResponse> ReadTextFileAsync(ReadTextFileRequest request, CancellationToken ct)
     {
-        RpcDispatcher.EnsurePathInsideProject(request.Path);
+        EnsurePathInsideProject(request.Path);
 
         var text = File.ReadAllText(request.Path);
 
@@ -45,7 +45,7 @@ internal sealed class AcpClientHandler : IAcpClientHandler
 
     public ValueTask<WriteTextFileResponse> WriteTextFileAsync(WriteTextFileRequest request, CancellationToken ct)
     {
-        RpcDispatcher.EnsurePathInsideProject(request.Path);
+        EnsurePathInsideProject(request.Path);
 
         // Atomic write so a mid-write crash can't corrupt the user's file,
         // and suppress watcher events for this window so the editor doesn't
@@ -212,6 +212,33 @@ internal sealed class AcpClientHandler : IAcpClientHandler
     public ValueTask OnSessionUpdateAsync(SessionNotification notification, CancellationToken ct)
     {
         RpcDispatcher.SendNotification(_window, "agentUpdate", notification);
+
+        // Persist agent-set titles to the session metadata file so the
+        // history popover can render them without booting the agent. Only
+        // update titles for sessions already in the store — we don't
+        // create entries from a title-update alone, because empty
+        // never-prompted sessions shouldn't clutter the history.
+        if (notification.Update is SessionInfoUpdate info && info.Title is { Length: > 0 })
+        {
+            var projectRoot = ProjectWatcher.ProjectRoot;
+            if (projectRoot is not null)
+            {
+                try
+                {
+                    var existing = AgentSessionsStore.Load(projectRoot)
+                        .Sessions.FirstOrDefault(s => s.Id == notification.SessionId);
+                    if (existing is not null)
+                    {
+                        AgentSessionsStore.Upsert(projectRoot, notification.SessionId, title: info.Title);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[Sessions] Failed to persist title: {ex.Message}");
+                }
+            }
+        }
+
         return ValueTask.CompletedTask;
     }
 

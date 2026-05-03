@@ -12,6 +12,23 @@ public static partial class RpcDispatcher
     private static AcpClientHandler? _agentHandler;
 
     /// <summary>
+    /// The agent's self-reported identity from the last successful
+    /// initialize handshake. Used to record agent name on new sessions
+    /// and to gate resume on <c>agentCapabilities.loadSession</c>. Null
+    /// when no agent is running.
+    /// </summary>
+    private static InitializeResponse? _agentStartLastResponse;
+
+    /// <summary>
+    /// The Jiangyu InstalledAgent.id we asked the host to start (e.g.
+    /// "claude-acp"). Recorded in session metadata so the history popover
+    /// can route a resume click to the right agent — distinct from
+    /// <see cref="_agentStartLastResponse"/>.AgentInfo.Name, which is the
+    /// agent's self-reported initialize name (often a package id).
+    /// </summary>
+    private static string? _currentAgentId;
+
+    /// <summary>
     /// Bumped on every <see cref="HandleAgentStart"/>. The async start task
     /// captures its generation when it begins and only commits its handler
     /// and manager to the statics if the generation is still current. If
@@ -42,6 +59,9 @@ public static partial class RpcDispatcher
         Register("agentSessionClose", HandleAgentSessionClose);
         Register("agentPermissionResponse", HandleAgentPermissionResponse);
         Register("agentsRegistryFetch", HandleAgentsRegistryFetch);
+        Register("agentSessionsList", HandleAgentSessionsList);
+        Register("agentSessionDelete", HandleAgentSessionDelete);
+        Register("agentSessionResume", HandleAgentSessionResume);
     }
 
     /// <summary>
@@ -88,6 +108,7 @@ public static partial class RpcDispatcher
         var args = argsEl is { ValueKind: JsonValueKind.Array }
             ? argsEl.Value.EnumerateArray().Select(a => a.GetString()!).ToArray()
             : Array.Empty<string>();
+        var agentId = TryGetString(parameters, "agentId");
 
         // Tear down any existing agent. Capture the old refs and null the
         // statics first so a session_update racing through the listen loop
@@ -110,8 +131,7 @@ public static partial class RpcDispatcher
 
         var handler = new AcpClientHandler(window);
         var manager = new AgentProcessManager();
-        // McpPort is set during startup (see Program.cs).
-        manager.McpPort = McpPort;
+        // MCP runs over stdio now; no port to plumb.
         manager.OnProcessExited = () =>
         {
             // Only reflect the exit in UI state if THIS manager is still the
@@ -124,6 +144,8 @@ public static partial class RpcDispatcher
             {
                 _agentManager = null;
                 _agentHandler = null;
+                _agentStartLastResponse = null;
+                _currentAgentId = null;
                 SendNotification(window, "agentStatus", new { running = false });
             }
         };
@@ -152,6 +174,8 @@ public static partial class RpcDispatcher
 
                 _agentManager = manager;
                 _agentHandler = handler;
+                _agentStartLastResponse = initResponse;
+                _currentAgentId = agentId;
 
                 SendNotification(window, "agentStatus", new { running = true });
                 SendNotification(window, "agentStartResult", new
@@ -195,6 +219,8 @@ public static partial class RpcDispatcher
         var manager = _agentManager;
         _agentHandler = null;
         _agentManager = null;
+        _agentStartLastResponse = null;
+        _currentAgentId = null;
         handler?.ReleaseAllTerminals();
         manager?.Stop();
 
@@ -207,6 +233,11 @@ public static partial class RpcDispatcher
         var manager = _agentManager ?? throw new InvalidOperationException("Agent not running.");
         var projectRoot = ProjectWatcher.ProjectRoot
             ?? throw new InvalidOperationException("No project open.");
+
+        // The session metadata file is written lazily, on the first prompt
+        // (see HandleAgentSessionPrompt). An empty "I just clicked the
+        // agent panel and didn't say anything" session shouldn't clutter
+        // the history popover.
 
         _ = Task.Run(async () =>
         {
@@ -242,6 +273,41 @@ public static partial class RpcDispatcher
     {
         var text = RequireString(parameters, "text");
         var manager = _agentManager ?? throw new InvalidOperationException("Agent not running.");
+
+        // Persist on the first prompt of a session (creates the entry with
+        // agent identity + a preview of the first message); subsequent
+        // prompts just bump updatedAt. The "first prompt" detection is
+        // "session not yet in the store OR has no firstMessage" — this is
+        // the lazy create that keeps empty never-prompted sessions out of
+        // the history popover.
+        var sessionId = manager.SessionId;
+        var projectRoot = ProjectWatcher.ProjectRoot;
+        if (sessionId is not null && projectRoot is not null)
+        {
+            try
+            {
+                var existing = AgentSessionsStore.Load(projectRoot)
+                    .Sessions.FirstOrDefault(s => s.Id == sessionId);
+                if (existing is null || existing.FirstMessage is null)
+                {
+                    var preview = text.Length > 200 ? text[..200] : text;
+                    AgentSessionsStore.Upsert(
+                        projectRoot,
+                        sessionId,
+                        agentId: _currentAgentId,
+                        agentName: _agentStartLastResponse?.AgentInfo?.Name,
+                        firstMessage: preview);
+                }
+                else
+                {
+                    AgentSessionsStore.Upsert(projectRoot, sessionId);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Sessions] Failed to bump session: {ex.Message}");
+            }
+        }
 
         _ = Task.Run(async () =>
         {
@@ -301,9 +367,59 @@ public static partial class RpcDispatcher
         return NullElement;
     }
 
+    private static JsonElement HandleAgentSessionsList(IInfiniFrameWindow _, JsonElement? __)
+    {
+        var projectRoot = ProjectWatcher.ProjectRoot
+            ?? throw new InvalidOperationException("No project open.");
+        var file = AgentSessionsStore.Load(projectRoot);
+        return JsonSerializer.SerializeToElement(file);
+    }
+
+    private static JsonElement HandleAgentSessionDelete(IInfiniFrameWindow _, JsonElement? parameters)
+    {
+        var sessionId = RequireString(parameters, "sessionId");
+        var projectRoot = ProjectWatcher.ProjectRoot
+            ?? throw new InvalidOperationException("No project open.");
+        var file = AgentSessionsStore.Remove(projectRoot, sessionId);
+        return JsonSerializer.SerializeToElement(file);
+    }
+
     /// <summary>
-    /// The MCP server port, set from Program.cs so agent sessions can pass
-    /// it in their MCP server config.
+    /// Resumes a previously-stored session by id. Returns immediately with
+    /// an ack; success or failure arrives as <c>agentSessionResumed</c>
+    /// notification once the agent has finished streaming historical
+    /// session updates (which flow through the existing <c>agentUpdate</c>
+    /// path during the await).
     /// </summary>
-    internal static int McpPort { get; set; }
+    private static JsonElement HandleAgentSessionResume(IInfiniFrameWindow window, JsonElement? parameters)
+    {
+        var sessionId = RequireString(parameters, "sessionId");
+        var manager = _agentManager ?? throw new InvalidOperationException("Agent not running.");
+        var projectRoot = ProjectWatcher.ProjectRoot
+            ?? throw new InvalidOperationException("No project open.");
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await manager.LoadSessionAsync(sessionId, projectRoot).ConfigureAwait(false);
+                AgentSessionsStore.Upsert(projectRoot, sessionId);
+                SendNotification(window, "agentSessionResumed", new
+                {
+                    sessionId,
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Agent] Resume failed: {ex}");
+                SendNotification(window, "agentSessionResumed", new
+                {
+                    error = ex.Message,
+                });
+            }
+        });
+
+        return JsonSerializer.SerializeToElement(new { accepted = true });
+    }
+
 }

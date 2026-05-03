@@ -173,15 +173,15 @@ public class McpServerTests
     /// </summary>
     /// <summary>
     /// Compile-time-ish check: every method tagged <c>[McpTool]</c> must match
-    /// the dispatcher signature <c>static JsonElement (IInfiniFrameWindow?,
-    /// JsonElement?)</c>. McpServer reflects over RpcDispatcher and invokes by
+    /// the moved-handler signature <c>static JsonElement (JsonElement?)</c>.
+    /// McpServer reflects over <see cref="RpcHandlers"/> and invokes by
     /// signature; a mismatched method would crash at first call rather than
     /// at startup. Equivalent to a Roslyn analyser at the test layer.
     /// </summary>
     [Fact]
     public void McpToolMethods_MatchExpectedSignature()
     {
-        var methods = typeof(RpcDispatcher).GetMethods(
+        var methods = typeof(RpcHandlers).GetMethods(
             BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
 
         var problems = new List<string>();
@@ -197,17 +197,14 @@ public class McpServerTests
                 problems.Add($"{attr.Name}: return type must be JsonElement, got {method.ReturnType.Name}");
 
             var ps = method.GetParameters();
-            if (ps.Length != 2)
+            if (ps.Length != 1)
             {
-                problems.Add($"{attr.Name}: must take 2 parameters, got {ps.Length}");
+                problems.Add($"{attr.Name}: must take 1 parameter, got {ps.Length}");
                 continue;
             }
 
-            if (ps[0].ParameterType != typeof(IInfiniFrameWindow))
-                problems.Add($"{attr.Name}: first parameter must be IInfiniFrameWindow, got {ps[0].ParameterType.Name}");
-
-            if (ps[1].ParameterType != typeof(JsonElement?))
-                problems.Add($"{attr.Name}: second parameter must be JsonElement?, got {ps[1].ParameterType.Name}");
+            if (ps[0].ParameterType != typeof(JsonElement?))
+                problems.Add($"{attr.Name}: parameter must be JsonElement?, got {ps[0].ParameterType.Name}");
         }
 
         Assert.True(problems.Count == 0,

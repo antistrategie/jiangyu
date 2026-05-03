@@ -22,13 +22,13 @@ public class PathSecurityTests : IDisposable
     public void PathInsideProject_Accepted()
     {
         var inside = Path.Combine(_projectDir, "templates", "test.kdl");
-        RpcDispatcher.EnsurePathInsideProject(inside);
+        RpcHelpers.EnsurePathInsideProject(inside);
     }
 
     [Fact]
     public void ProjectRootItself_Accepted()
     {
-        RpcDispatcher.EnsurePathInsideProject(_projectDir);
+        RpcHelpers.EnsurePathInsideProject(_projectDir);
     }
 
     [Fact]
@@ -36,7 +36,7 @@ public class PathSecurityTests : IDisposable
     {
         var outside = Path.Combine(Path.GetTempPath(), "other-project", "evil.txt");
         Assert.Throws<UnauthorizedAccessException>(() =>
-            RpcDispatcher.EnsurePathInsideProject(outside));
+            RpcHelpers.EnsurePathInsideProject(outside));
     }
 
     [Fact]
@@ -44,7 +44,7 @@ public class PathSecurityTests : IDisposable
     {
         var traversal = Path.Combine(_projectDir, "..", "other", "evil.txt");
         Assert.Throws<UnauthorizedAccessException>(() =>
-            RpcDispatcher.EnsurePathInsideProject(traversal));
+            RpcHelpers.EnsurePathInsideProject(traversal));
     }
 
     [Fact]
@@ -52,6 +52,6 @@ public class PathSecurityTests : IDisposable
     {
         ProjectWatcher.ProjectRoot = null;
         Assert.Throws<InvalidOperationException>(() =>
-            RpcDispatcher.EnsurePathInsideProject("/any/path"));
+            RpcHelpers.EnsurePathInsideProject("/any/path"));
     }
 }

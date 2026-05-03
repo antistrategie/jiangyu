@@ -28,9 +28,14 @@ internal static class ProjectWatcher
     /// <summary>
     /// Absolute path of the currently open project root, or null if no project is open.
     /// Used by the RPC dispatcher to enforce that filesystem operations stay within
-    /// the project sandbox.
+    /// the project sandbox. Forwards to <see cref="Jiangyu.Studio.Rpc.RpcContext.ProjectRoot"/>
+    /// so handlers in the shared Studio.Rpc library see the same value.
     /// </summary>
-    public static string? ProjectRoot { get; internal set; }
+    public static string? ProjectRoot
+    {
+        get => Jiangyu.Studio.Rpc.RpcContext.ProjectRoot;
+        internal set => Jiangyu.Studio.Rpc.RpcContext.ProjectRoot = value;
+    }
 
     private static readonly Dictionary<(string Path, Guid WindowId), long> SuppressUntil = [];
     private static readonly Dictionary<string, Timer> Pending = new(StringComparer.Ordinal);
@@ -168,6 +173,31 @@ internal static class ProjectWatcher
             SuppressUntil.Remove(key);
             return false;
         }
+    }
+
+    /// <summary>
+    /// Test probe: returns true when an unexpired suppression for
+    /// <paramref name="path"/> and <paramref name="windowId"/> exists.
+    /// Mirrors <see cref="IsSuppressedFor"/> but doesn't evict expired
+    /// entries (so tests can assert without racing the GC sweep).
+    /// </summary>
+    internal static bool HasSuppressionForTesting(string path, Guid windowId)
+    {
+        lock (Lock)
+        {
+            if (!SuppressUntil.TryGetValue((path, windowId), out var expiry)) return false;
+            return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < expiry;
+        }
+    }
+
+    /// <summary>
+    /// Test probe: clears all suppression entries.  Tests that exercise the
+    /// editFile / writeFile wrappers should reset between runs so a leftover
+    /// entry from one case doesn't masquerade as a fresh one.
+    /// </summary>
+    internal static void ResetSuppressionForTesting()
+    {
+        lock (Lock) SuppressUntil.Clear();
     }
 
     private static void QueueEvent(string path)

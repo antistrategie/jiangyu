@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
-    <RootNamespace>Jiangyu.Rpc.Generators</RootNamespace>
+    <RootNamespace>Jiangyu.Studio.Rpc.Generators</RootNamespace>
     <IsRoslynComponent>true</IsRoslynComponent>
     <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
     <Nullable>enable</Nullable>

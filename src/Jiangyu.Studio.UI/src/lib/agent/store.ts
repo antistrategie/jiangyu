@@ -22,6 +22,23 @@ export interface AgentPromptResultEvent {
   readonly error: string | null;
 }
 
+/// Notification emitted by the host when an `agentSessionResume` RPC
+/// finishes. Per ACP spec, the agent has already streamed all historical
+/// session updates by the time this lands.
+export interface AgentResumeResult {
+  readonly sessionId?: string;
+  readonly error?: string;
+}
+
+/// Discriminated intent for what should happen automatically once the
+/// agent finishes connecting. "create" → call `session/new`. "resume" →
+/// call `agentSessionResume` with the captured session id. The auto-effect
+/// in `AgentPanel` consumes this and clears it, so a resume failure
+/// doesn't loop into a `create`.
+export type PendingSessionAction =
+  | { readonly kind: "create" }
+  | { readonly kind: "resume"; readonly sessionId: string };
+
 // --- Chat message model ---
 
 export type ChatRole = "user" | "agent" | "thought" | "tool" | "plan" | "permission";
@@ -118,6 +135,25 @@ interface AgentStore {
   readonly sessionTitle: string | null;
   readonly currentModeId: string | null;
   readonly prompting: boolean;
+  /**
+   * True between calling `agentSessionResume` and receiving the
+   * `agentSessionResumed` notification. While true, the live conversation
+   * is locked (no new prompts) and `user_message_chunk` updates are
+   * appended to `messages` instead of being treated as redundant echoes —
+   * resume is the only path where these blocks aren't already in the local
+   * state.
+   */
+  readonly replaying: boolean;
+  /**
+   * Intent flag for the auto-create / auto-resume effect that runs when
+   * the agent finishes connecting. Set by code paths that actually want
+   * a session change ("user clicked agent X", "user clicked session Y in
+   * the history list"); cleared on failure or after the corresponding
+   * RPC fires. The effect ONLY runs when this is non-null — otherwise
+   * nulling sessionId (e.g. on a resume failure) would silently spawn
+   * an unwanted new session and bury the resume error.
+   */
+  readonly pendingSession: PendingSessionAction | null;
 
   /** Last turn's stop reason, surfaced when not "end_turn". */
   readonly lastStopReason: AgentPromptResultEvent | null;
@@ -129,9 +165,11 @@ interface AgentStore {
   readonly availableCommands: AvailableCommand[];
 
   // Actions
-  readonly setConnecting: (agentId: string) => void;
+  readonly setConnecting: (agentId: string, pendingAction?: PendingSessionAction) => void;
   readonly handleStartResult: (result: AgentStartResult) => void;
   readonly handleSessionCreated: (result: AgentSessionResult) => void;
+  readonly beginReplay: (sessionId: string) => void;
+  readonly handleResumeResult: (result: AgentResumeResult) => void;
   readonly setConnected: (info: AgentStartResult) => void;
   readonly setDisconnected: () => void;
   readonly setSession: (sessionId: string) => void;
@@ -156,20 +194,22 @@ export const useAgentStore = create<AgentStore>((set) => ({
   sessionTitle: null,
   currentModeId: null,
   prompting: false,
+  replaying: false,
+  pendingSession: null,
   lastStopReason: null,
   messages: [],
   availableCommands: [],
 
-  setConnecting: (agentId) =>
+  setConnecting: (agentId, pendingAction = { kind: "create" }) =>
     // Switching agents (or first-time connect) puts the panel into a clean
     // "starting up" state. We MUST clear `connected`, `sessionId`, and the
     // session-scoped chat state — otherwise, when the new agent's
-    // agentStartResult lands, the auto-create-session effect's deps
-    // ([connected, sessionId]) haven't actually changed (connected was
-    // already true from the previous agent, sessionId still points at the
-    // dead session) and never re-fires. Result: the panel sits on
-    // "Creating session…" forever, requiring a second click to reset it
-    // manually.
+    // agentStartResult lands, the auto-effect's deps wouldn't actually
+    // change (connected was already true from the previous agent,
+    // sessionId still points at the dead session) and never re-fires.
+    // pendingAction defaults to "create" but can be {kind:"resume",
+    // sessionId} for resuming a stored thread that requires booting an
+    // agent first.
     set({
       connecting: true,
       connected: false,
@@ -180,6 +220,8 @@ export const useAgentStore = create<AgentStore>((set) => ({
       sessionId: null,
       sessionTitle: null,
       currentModeId: null,
+      replaying: false,
+      pendingSession: pendingAction,
       lastStopReason: null,
       messages: [],
       availableCommands: [],
@@ -187,7 +229,14 @@ export const useAgentStore = create<AgentStore>((set) => ({
 
   handleStartResult: (result) => {
     if (result.error) {
-      set({ connecting: false, connectError: result.error, currentAgentId: null });
+      set({
+        connecting: false,
+        connectError: result.error,
+        currentAgentId: null,
+        // The intent doesn't survive a failed connect — otherwise a
+        // queued resume would re-fire if a future agent connect happens.
+        pendingSession: null,
+      });
     } else {
       set({
         connecting: false,
@@ -201,7 +250,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
 
   handleSessionCreated: (result) => {
     if (result.error) {
-      set({ connectError: result.error });
+      set({ connectError: result.error, pendingSession: null });
     } else if (result.sessionId) {
       set({
         sessionId: result.sessionId,
@@ -210,6 +259,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
         lastStopReason: null,
         messages: [],
         availableCommands: [],
+        pendingSession: null,
       });
     }
   },
@@ -235,6 +285,8 @@ export const useAgentStore = create<AgentStore>((set) => ({
       sessionTitle: null,
       currentModeId: null,
       prompting: false,
+      replaying: false,
+      pendingSession: null,
       lastStopReason: null,
       availableCommands: [],
     }),
@@ -248,6 +300,46 @@ export const useAgentStore = create<AgentStore>((set) => ({
       messages: [],
       availableCommands: [],
     }),
+
+  beginReplay: (sessionId) =>
+    // Optimistically set sessionId so the auto-create-session effect
+    // doesn't fire while we're loading. Clear messages so the agent's
+    // historical updates land into a clean list. `replaying: true`
+    // unlocks the user_message_chunk path so the modder's prior prompts
+    // come back into the visible thread. `pendingSession: null` is the
+    // important guard — without it, a resume failure would null
+    // sessionId and the auto-create effect would silently spawn a fresh
+    // session, burying the resume error.
+    set({
+      sessionId,
+      sessionTitle: null,
+      currentModeId: null,
+      lastStopReason: null,
+      messages: [],
+      availableCommands: [],
+      replaying: true,
+      pendingSession: null,
+    }),
+
+  handleResumeResult: (result) => {
+    if (result.error !== undefined) {
+      // Resume failed (likely the agent doesn't support session/load,
+      // or the id is unknown). Null sessionId so the panel renders the
+      // "no session" empty state with the error visible — but DON'T set
+      // pendingSession, otherwise the auto-create effect would
+      // immediately mask the error by spawning a new session.
+      set({
+        replaying: false,
+        sessionId: null,
+        connectError: result.error,
+        pendingSession: null,
+      });
+    } else {
+      // Historical updates have all landed by the time this notification
+      // arrives, so we can flip back to live mode.
+      set({ replaying: false });
+    }
+  },
 
   addUserMessage: (text) =>
     set((s) => ({
@@ -290,10 +382,22 @@ export const useAgentStore = create<AgentStore>((set) => ({
           };
         }
 
-        case "user_message_chunk":
-          // Echo of the user's prompt; we already pushed a user message via
-          // addUserMessage when the user sent it.
-          return s;
+        case "user_message_chunk": {
+          // For live conversations this is just an echo of the prompt we
+          // already pushed via addUserMessage. During a resume replay
+          // there's no local addUserMessage call (the prompts predate this
+          // session), so we have to materialise them from the chunks.
+          if (!s.replaying) return s;
+          const text = contentBlockText(update.content);
+          const last = s.messages[s.messages.length - 1];
+          if (last?.role === "user") {
+            const updatedLast: UserMessage = { ...last, text: last.text + text };
+            return { messages: [...s.messages.slice(0, -1), updatedLast] };
+          }
+          return {
+            messages: [...s.messages, { id: nextMessageId(), role: "user", text }],
+          };
+        }
 
         case "tool_call":
           return {
@@ -426,4 +530,8 @@ subscribe("agentStartResult", (params) => {
 subscribe("agentSessionCreated", (params) => {
   const result = params as AgentSessionResult;
   useAgentStore.getState().handleSessionCreated(result);
+});
+
+subscribe("agentSessionResumed", (params) => {
+  useAgentStore.getState().handleResumeResult(params as AgentResumeResult);
 });

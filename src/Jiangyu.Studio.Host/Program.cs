@@ -1,12 +1,15 @@
 using System.Drawing;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text.Json;
 using InfiniFrame;
 using InfiniFrame.WebServer;
+using Jiangyu.Studio.Host.Acp;
 using Jiangyu.Studio.Host.Infrastructure;
 using Jiangyu.Studio.Host.Mcp;
 using Jiangyu.Studio.Host.Rpc;
+using Jiangyu.Studio.Rpc.Mcp;
 
 namespace Jiangyu.Studio.Host;
 
@@ -17,22 +20,22 @@ public static class Program
     {
         if (OperatingSystem.IsLinux()) LinuxDesktopEntry.Ensure();
 
-        // In dev mode, point the webview at the Vite dev server for HMR.
-        var devUrl = Environment.GetEnvironmentVariable("JIANGYU_DEV_URL");
+        // Always allocate the ASP.NET host's port up front, even in dev. The
+        // WebView origin can be the Vite dev server (JIANGYU_DEV_URL) for HMR,
+        // but everything we mount on the .NET host (the /mcp endpoint we hand
+        // to ACP agents) lives on hostUrl regardless. Conflating the two
+        // routed Copilot's HTTP MCP requests at Vite (5173), which doesn't
+        // proxy /mcp, and the connection silently failed.
+        const int preferredPort = 41697;
+        var hostPort = IsPortAvailable(preferredPort) ? preferredPort : FindFreePort();
+        Environment.SetEnvironmentVariable("ASPNETCORE_URLS", $"http://127.0.0.1:{hostPort}");
+        var hostUrl = $"http://127.0.0.1:{hostPort}";
 
-        // In production, prefer a stable loopback port so the WebView's origin
-        // (scheme + host + port) is the same across launches. localStorage is
-        // origin-scoped, so a random port would wipe recent projects, sidebar
-        // width, per-project layouts and pane windows on every relaunch. Falls
-        // back to a random port if the preferred one is taken (e.g. a second
-        // instance is already running).
-        if (string.IsNullOrEmpty(devUrl))
-        {
-            const int preferredPort = 41697;
-            var port = IsPortAvailable(preferredPort) ? preferredPort : FindFreePort();
-            Environment.SetEnvironmentVariable("ASPNETCORE_URLS", $"http://127.0.0.1:{port}");
-            devUrl = $"http://127.0.0.1:{port}";
-        }
+        // The WebView loads from Vite during dev (HMR + faster rebuilds);
+        // otherwise it loads from the .NET host's static files. Either way
+        // a stable origin keeps localStorage intact across launches.
+        var devUrl = Environment.GetEnvironmentVariable("JIANGYU_DEV_URL");
+        var startUrl = string.IsNullOrEmpty(devUrl) ? hostUrl : devUrl;
 
         var builder = InfiniFrameWebApplication.CreateBuilder(args);
 
@@ -45,7 +48,7 @@ public static class Program
             .SetSize(new Size(1680, 1050))
             .SetIconFile(Path.Combine(AppContext.BaseDirectory, "icon.png"))
             .Center()
-            .SetStartUrl(devUrl)
+            .SetStartUrl(startUrl)
             .RegisterWebMessageReceivedHandler(
                 (window, message) =>
                 {
@@ -59,52 +62,27 @@ public static class Program
 
         var app = builder.Build();
 
-        // MCP tool server: expose Jiangyu domain tools to ACP agents via HTTP.
-        // Same process, same handlers; the agent connects to this endpoint.
-        var mcpServer = new McpServer();
-        mcpServer.DiscoverTools();
-
-        // Tell the agent dispatcher which port the MCP endpoint is on,
-        // so it can pass the URL when creating ACP sessions.
-        if (Uri.TryCreate(devUrl, UriKind.Absolute, out var devUri))
-            RpcDispatcher.McpPort = devUri.Port;
-
         // Preload template caches on a background thread so the template browser
         // doesn't freeze the app when it first mounts.
         _ = Task.Run(RpcDispatcher.PreloadTemplateCaches);
 
         app.UseAutoServerClose();
 
-        // Same-origin gate. Browser tabs can issue cross-origin POSTs without
-        // a preflight (Content-Type: text/plain qualifies as "simple" CORS),
-        // so they could trigger arbitrary tool calls if /mcp were unguarded.
-        // Reject any cross-origin request; agents launched as stdio
-        // subprocesses fetch via this URL and don't send Origin/Referer at
-        // all, so a missing header is allowed. Browser-issued same-origin
-        // requests from the WebView itself carry our own origin.
-        app.WebApp.MapPost("/mcp", async context =>
-        {
-            var origin = context.Request.Headers.Origin.ToString();
-            var referer = context.Request.Headers.Referer.ToString();
-            if (!IsAcceptableOrigin(origin, devUrl) || !IsAcceptableReferer(referer, devUrl))
-            {
-                context.Response.StatusCode = 403;
-                return;
-            }
-
-            using var reader = new StreamReader(context.Request.Body);
-            var body = await reader.ReadToEndAsync();
-
-            var response = mcpServer.HandleRequest(body);
-            if (string.IsNullOrEmpty(response))
-            {
-                context.Response.StatusCode = 204;
-                return;
-            }
-
-            context.Response.ContentType = "application/json";
-            await context.Response.WriteAsync(response);
-        });
+        // MCP runs over both transports because no agent supports both:
+        // - Anthropic's claude-agent-sdk silently DROPS HTTP MCP configs
+        //   (despite advertising mcpCapabilities.http=true) and only honours
+        //   stdio. The sibling jiangyu-mcp exe handles that path.
+        // - GitHub Copilot's ACP integration silently REJECTS stdio MCP configs
+        //   ("Rejecting non-http/sse MCP server" in its logs) and only honours
+        //   http/sse. The /mcp endpoint below handles that path.
+        // We send both entries in session/new mcpServers; each agent picks the
+        // one it accepts and drops the other.
+        var mcpToken = GenerateMcpToken();
+        AgentProcessManager.HttpMcpUrl = $"{hostUrl}/mcp";
+        AgentProcessManager.HttpMcpToken = mcpToken;
+        var mcpServer = new McpServer();
+        mcpServer.DiscoverTools();
+        McpEndpoint.Map(app.WebApp, mcpServer, mcpToken);
 
         // The host pins itself to a stable loopback port (above) so the WebView
         // origin survives across launches and localStorage stays intact. The
@@ -129,6 +107,19 @@ public static class Program
         app.Run();
     }
 
+    /// <summary>
+    /// 256-bit random bearer token, base64url-encoded, regenerated each launch.
+    /// Used to gate the HTTP MCP endpoint we hand to ACP agents in
+    /// <c>session/new</c>. Token sees stdio between the host and the agent
+    /// only; nothing serialises it to disk.
+    /// </summary>
+    private static string GenerateMcpToken()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(32);
+        return Convert.ToBase64String(bytes)
+            .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+    }
+
     private static int FindFreePort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -151,31 +142,6 @@ public static class Program
         {
             return false;
         }
-    }
-
-    /// <summary>
-    /// True when the request's Origin header is absent (typical of stdio
-    /// subprocess agents using HttpClient) or matches the host's own origin.
-    /// </summary>
-    private static bool IsAcceptableOrigin(string origin, string ourOrigin)
-    {
-        if (string.IsNullOrEmpty(origin)) return true;
-        return string.Equals(origin, ourOrigin, StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// True when the request's Referer is absent or shares scheme+host+port
-    /// with our origin. We compare authorities rather than literal strings so
-    /// a Referer of "<c>http://127.0.0.1:PORT/some/path</c>" still passes.
-    /// </summary>
-    private static bool IsAcceptableReferer(string referer, string ourOrigin)
-    {
-        if (string.IsNullOrEmpty(referer)) return true;
-        if (!Uri.TryCreate(referer, UriKind.Absolute, out var refererUri)) return false;
-        if (!Uri.TryCreate(ourOrigin, UriKind.Absolute, out var ourUri)) return false;
-        return refererUri.Scheme == ourUri.Scheme &&
-               refererUri.Host == ourUri.Host &&
-               refererUri.Port == ourUri.Port;
     }
 
     /// <summary>

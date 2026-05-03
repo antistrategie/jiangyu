@@ -1,8 +1,15 @@
-import { rpcCall } from "@lib/rpc";
+import { rpcCall, type AgentSessionsFile } from "@lib/rpc";
 
-/** Fire-and-forget; result arrives as `agentStartResult` notification. */
-export function agentStart(command: string, args?: string[]): Promise<{ accepted: boolean }> {
-  return rpcCall<{ accepted: boolean }>("agentStart", { command, args });
+/** Fire-and-forget; result arrives as `agentStartResult` notification.
+ *  `agentId` is the InstalledAgent.id so the host can record which agent
+ *  the session belongs to, enabling the history popover to route resumes
+ *  to the right subprocess. */
+export function agentStart(
+  command: string,
+  args?: string[],
+  agentId?: string,
+): Promise<{ accepted: boolean }> {
+  return rpcCall<{ accepted: boolean }>("agentStart", { command, args, agentId });
 }
 
 export function agentStop(): Promise<unknown> {
@@ -38,4 +45,22 @@ export function agentPermissionResponse(
   optionId?: string,
 ): Promise<unknown> {
   return rpcCall("agentPermissionResponse", { permissionId, outcome, optionId });
+}
+
+/** Returns the project's session metadata index (history popover source). */
+export function agentSessionsList(): Promise<AgentSessionsFile> {
+  return rpcCall<AgentSessionsFile>("agentSessionsList");
+}
+
+/** Removes a session metadata entry. The agent's own session storage is
+ *  unaffected; only the local index forgets it. */
+export function agentSessionDelete(sessionId: string): Promise<AgentSessionsFile> {
+  return rpcCall<AgentSessionsFile>("agentSessionDelete", { sessionId });
+}
+
+/** Fire-and-forget; the resumed session id (or an error) arrives via the
+ *  `agentSessionResumed` notification once the agent has streamed all
+ *  historical updates. */
+export function agentSessionResume(sessionId: string): Promise<{ accepted: boolean }> {
+  return rpcCall<{ accepted: boolean }>("agentSessionResume", { sessionId });
 }

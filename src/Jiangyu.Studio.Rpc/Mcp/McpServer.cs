@@ -1,14 +1,16 @@
 using System.Reflection;
 using System.Text.Json;
 using Jiangyu.Shared;
-using Jiangyu.Studio.Host.Rpc;
 
-namespace Jiangyu.Studio.Host.Mcp;
+namespace Jiangyu.Studio.Rpc.Mcp;
 
 /// <summary>
-/// Minimal MCP (Model Context Protocol) server that exposes RPC handlers
-/// annotated with <see cref="McpToolAttribute"/> as MCP tools. Runs in the
-/// same process as the Studio host; an HTTP endpoint routes requests here.
+/// Minimal MCP (Model Context Protocol) server. Reflects over
+/// <see cref="RpcHandlers"/>, finds methods tagged with <see cref="McpToolAttribute"/>,
+/// and exposes them as MCP tools. Transport-agnostic: callers feed it
+/// JSON-RPC strings (one per request) via <see cref="HandleRequest"/> and
+/// pump responses back out themselves. Used by Studio.Host (legacy
+/// in-process route) and Jiangyu.Mcp (standalone stdio binary).
 /// </summary>
 public sealed class McpServer
 {
@@ -26,16 +28,13 @@ public sealed class McpServer
 
     private readonly Dictionary<string, ToolEntry> _tools = new(StringComparer.Ordinal);
 
-    /// <summary>Port the host's web server is listening on.</summary>
-    public int Port { get; set; }
-
     /// <summary>
-    /// Discovers all static methods on <see cref="RpcDispatcher"/> annotated
+    /// Discovers all static methods on <see cref="RpcHandlers"/> annotated
     /// with <see cref="McpToolAttribute"/> and registers them as MCP tools.
     /// </summary>
     public void DiscoverTools()
     {
-        var methods = typeof(RpcDispatcher).GetMethods(
+        var methods = typeof(RpcHandlers).GetMethods(
             BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
 
         foreach (var method in methods)
@@ -77,7 +76,7 @@ public sealed class McpServer
 
         return method switch
         {
-            "initialize" => HandleInitialize(id),
+            "initialize" => HandleInitialize(id, request),
             "notifications/initialized" => "", // client notification; no response
             "tools/list" => HandleToolsList(id),
             "tools/call" => HandleToolsCall(id, request),
@@ -93,11 +92,33 @@ public sealed class McpServer
             .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion ?? "0.0.0";
 
-    private static string HandleInitialize(JsonElement? id)
+    /// <summary>
+    /// Latest MCP protocol revision we know how to speak. The spec says the
+    /// server should respond with the client's requested version when it
+    /// can support it, otherwise fall back to a version it knows. The
+    /// previous hardcoded "2025-11-25" wasn't a real MCP revision and
+    /// likely caused Anthropic's claude-agent-sdk to silently reject our
+    /// initialize response.
+    /// </summary>
+    private const string LatestSupportedMcpVersion = "2025-06-18";
+
+    private static string HandleInitialize(JsonElement? id, JsonElement request)
     {
+        // Echo the client's requested version when present; the spec
+        // expects negotiation, and clients tend to drop connections that
+        // get back a version they don't recognise.
+        var requestedVersion = LatestSupportedMcpVersion;
+        if (request.TryGetProperty("params", out var p) &&
+            p.ValueKind == JsonValueKind.Object &&
+            p.TryGetProperty("protocolVersion", out var v) &&
+            v.ValueKind == JsonValueKind.String)
+        {
+            requestedVersion = v.GetString() ?? LatestSupportedMcpVersion;
+        }
+
         var result = new
         {
-            protocolVersion = "2025-11-25",
+            protocolVersion = requestedVersion,
             capabilities = new
             {
                 tools = new { },
@@ -180,18 +201,13 @@ public sealed class McpServer
 
         try
         {
-            // Invoke the underlying RPC handler. MCP tool calls don't originate
-            // from a WebView, so we pass null for the window parameter. Handlers
-            // that genuinely need a window (dialog-based RPCs) are never exposed
-            // as MCP tools.
-            //
             // Take the dispatch lock so MCP can't race with WebView-originated
             // RPCs that share the same static state (project root, indexes,
             // agent manager, etc.). The WebView path is already single-threaded
             // by InfiniFrame; this extends that ordering to MCP callers.
             JsonElement result;
-            lock (RpcDispatcher.DispatchLock)
-                result = (JsonElement)tool.Method.Invoke(null, [null!, arguments])!;
+            lock (RpcHandlers.DispatchLock)
+                result = (JsonElement)tool.Method.Invoke(null, [arguments])!;
 
             return BuildSuccessResponse(id, result);
         }
@@ -254,8 +270,11 @@ public sealed class McpServer
         return JsonRpcResult(id, JsonSerializer.SerializeToElement(withStructured));
     }
 
-    private const string EmbeddedDocsPrefix = "Jiangyu.Studio.Host.docs.";
-    private static readonly System.Reflection.Assembly HostAssembly = typeof(McpServer).Assembly;
+    // Embedded docs live in this same assembly (Jiangyu.Studio.Rpc). Single
+    // source of truth so both the WebView host and the standalone Mcp binary
+    // serve the same markdown.
+    private const string EmbeddedDocsPrefix = "Jiangyu.Studio.Rpc.docs.";
+    private static readonly Assembly LibraryAssembly = typeof(McpServer).Assembly;
 
     /// <summary>
     /// Discovered at startup by scanning the assembly manifest for embedded doc
@@ -268,7 +287,7 @@ public sealed class McpServer
     private static List<(string Key, string Name)> DiscoverEmbeddedDocs()
     {
         var result = new List<(string Key, string Name)>();
-        foreach (var name in HostAssembly.GetManifestResourceNames())
+        foreach (var name in LibraryAssembly.GetManifestResourceNames())
         {
             if (!name.StartsWith(EmbeddedDocsPrefix, StringComparison.Ordinal))
                 continue;
@@ -288,7 +307,7 @@ public sealed class McpServer
     {
         // Try to extract the first markdown heading from the resource.
         var resourceName = EmbeddedDocsPrefix + key;
-        using var stream = HostAssembly.GetManifestResourceStream(resourceName);
+        using var stream = LibraryAssembly.GetManifestResourceStream(resourceName);
         if (stream is not null)
         {
             using var reader = new StreamReader(stream);
@@ -310,7 +329,7 @@ public sealed class McpServer
     private static string? ReadEmbeddedDoc(string key)
     {
         var resourceName = EmbeddedDocsPrefix + key;
-        using var stream = HostAssembly.GetManifestResourceStream(resourceName);
+        using var stream = LibraryAssembly.GetManifestResourceStream(resourceName);
         if (stream is null) return null;
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
@@ -378,9 +397,9 @@ public sealed class McpServer
     {
         var context = new Dictionary<string, object?>();
 
-        var projectRoot = ProjectWatcher.ProjectRoot;
+        var projectRoot = RpcContext.ProjectRoot;
         context["projectRoot"] = projectRoot is not null
-            ? RpcDispatcher.NormaliseSeparators(projectRoot)
+            ? RpcHelpers.NormaliseSeparators(projectRoot)
             : null;
 
         if (projectRoot is not null)

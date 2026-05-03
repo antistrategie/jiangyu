@@ -20,6 +20,9 @@ function reset() {
     sessionTitle: null,
     currentModeId: null,
     prompting: false,
+    replaying: false,
+    pendingSession: null,
+    connectError: null,
     lastStopReason: null,
     messages: [],
     availableCommands: [],
@@ -299,5 +302,108 @@ describe("clearMessages", () => {
     useAgentStore.getState().addUserMessage("hello");
     useAgentStore.getState().clearMessages();
     expect(useAgentStore.getState().messages).toHaveLength(0);
+  });
+});
+
+describe("session resume", () => {
+  it("beginReplay resets the message list, sets sessionId, and flips replaying on", () => {
+    useAgentStore.getState().addUserMessage("stale");
+    useAgentStore.setState({ sessionId: "old", sessionTitle: "Old", replaying: false });
+
+    useAgentStore.getState().beginReplay("resume-target");
+
+    const s = useAgentStore.getState();
+    expect(s.sessionId).toBe("resume-target");
+    expect(s.sessionTitle).toBeNull();
+    expect(s.messages).toHaveLength(0);
+    expect(s.replaying).toBe(true);
+  });
+
+  it("user_message_chunk appends during replay (resume re-stream)", () => {
+    useAgentStore.getState().beginReplay("resumed");
+
+    useAgentStore.getState().handleUpdate({
+      sessionUpdate: "user_message_chunk",
+      content: { type: "text", text: "what does this template do?" },
+    });
+
+    const messages = useAgentStore.getState().messages;
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.role).toBe("user");
+    expect(messages[0]?.role === "user" && messages[0].text).toBe("what does this template do?");
+  });
+
+  it("user_message_chunk concatenates onto an in-progress user message during replay", () => {
+    useAgentStore.getState().beginReplay("resumed");
+
+    useAgentStore.getState().handleUpdate({
+      sessionUpdate: "user_message_chunk",
+      content: { type: "text", text: "make darby " },
+    });
+    useAgentStore.getState().handleUpdate({
+      sessionUpdate: "user_message_chunk",
+      content: { type: "text", text: "more accurate" },
+    });
+
+    const messages = useAgentStore.getState().messages;
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.role === "user" && messages[0].text).toBe("make darby more accurate");
+  });
+
+  it("user_message_chunk is ignored in live mode (already pushed via addUserMessage)", () => {
+    // replaying defaults to false in the reset() above.
+    useAgentStore.getState().handleUpdate({
+      sessionUpdate: "user_message_chunk",
+      content: { type: "text", text: "echo" },
+    });
+
+    expect(useAgentStore.getState().messages).toHaveLength(0);
+  });
+
+  it("handleResumeResult success flips replaying off", () => {
+    useAgentStore.getState().beginReplay("resumed");
+    useAgentStore.getState().handleResumeResult({ sessionId: "resumed" });
+
+    const s = useAgentStore.getState();
+    expect(s.replaying).toBe(false);
+    expect(s.sessionId).toBe("resumed");
+  });
+
+  it("handleResumeResult error rolls back optimistic sessionId without queuing a new session", () => {
+    useAgentStore.getState().beginReplay("resumed");
+    useAgentStore.getState().handleResumeResult({ error: "agent doesn't support session/load" });
+
+    const s = useAgentStore.getState();
+    expect(s.replaying).toBe(false);
+    expect(s.sessionId).toBeNull();
+    expect(s.connectError).toBe("agent doesn't support session/load");
+    // Critical: pendingSession stays null so the auto-create-session
+    // effect doesn't silently spawn a fresh session and bury the error.
+    expect(s.pendingSession).toBeNull();
+  });
+
+  it("beginReplay clears pendingSession so the resume isn't shadowed by an auto-create", () => {
+    useAgentStore.setState({ pendingSession: { kind: "create" } });
+    useAgentStore.getState().beginReplay("resumed");
+    expect(useAgentStore.getState().pendingSession).toBeNull();
+  });
+
+  it("setConnecting defaults pendingSession to create", () => {
+    useAgentStore.getState().setConnecting("claude-acp");
+    expect(useAgentStore.getState().pendingSession).toEqual({ kind: "create" });
+  });
+
+  it("setConnecting accepts a resume intent for start-then-resume flows", () => {
+    useAgentStore.getState().setConnecting("claude-acp", { kind: "resume", sessionId: "s-old" });
+    expect(useAgentStore.getState().pendingSession).toEqual({
+      kind: "resume",
+      sessionId: "s-old",
+    });
+  });
+
+  it("handleStartResult error clears pendingSession so a queued resume doesn't fire next connect", () => {
+    useAgentStore.getState().setConnecting("claude-acp", { kind: "resume", sessionId: "s-old" });
+    useAgentStore.getState().handleStartResult({ error: "bunx not found" });
+    expect(useAgentStore.getState().pendingSession).toBeNull();
   });
 });

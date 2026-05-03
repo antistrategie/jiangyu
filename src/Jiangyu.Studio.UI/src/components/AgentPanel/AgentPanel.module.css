@@ -53,6 +53,13 @@
   flex-shrink: 0;
 }
 
+/* Anchor box for the history popover so its absolute positioning is
+   relative to the clock button rather than the header / panel. */
+.historyWrap {
+  position: relative;
+  display: inline-block;
+}
+
 .headerBtn {
   display: inline-flex;
   align-items: center;
@@ -104,6 +111,18 @@
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-5);
+  max-width: 380px;
+  text-align: center;
+}
+
+/* Resume-failure recovery — error message + a single "Start new session"
+   action so the modder isn't stranded when the agent rejects session/load. */
+.resumeErrorCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
   max-width: 380px;
   text-align: center;
 }
@@ -257,7 +276,6 @@
   padding: 6px var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
-  overflow-x: auto;
 }
 
 .toolHeader {
