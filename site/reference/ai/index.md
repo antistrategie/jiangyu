@@ -45,13 +45,13 @@ Once an agent is installed and selected, type a message in the input at the bott
 
 Some examples:
 
-- "Make Darby's squad move 20% faster"
-- "What templates exist for archers?"
-- "Write a KDL patch that doubles all unit health"
+- "Buff the rocket launcher's damage by 25%"
+- "What templates exist for modular vehicle weapons?"
+- "Write a KDL patch that doubles the carbine's range"
 - "Compile my mod and explain any errors"
-- "What's the vanilla value of EntityTemplate Darby's MaxHealth?"
-- "Search for audio assets related to combat"
-- "Create a new template clone of Darby called SuperDarby with higher stats"
+- "What's the vanilla Vitality on squad_leader.darby?"
+- "Search for audio assets related to gunfire"
+- "Clone mod_weapon.medium.rocket_launcher into a heavy variant with double damage"
 
 The agent has access to all of Jiangyu's domain tools. It can search and inspect templates, read game values, write KDL files, trigger compiles, and explain results.
 
