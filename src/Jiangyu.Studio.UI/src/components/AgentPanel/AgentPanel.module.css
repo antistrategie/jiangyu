@@ -82,6 +82,20 @@
   border-color: var(--rule);
 }
 
+/* Auto-approve trust toggle. Inactive: muted shield outline. Active:
+   jade fill so the modder can see at a glance the prompt suppression is
+   on. */
+.trustBtn {
+  color: var(--ink-3);
+}
+
+.trustBtnActive,
+.trustBtnActive:hover {
+  color: var(--jade-0);
+  border-color: var(--jade-1);
+  background: color-mix(in oklab, var(--jade-1) 12%, var(--paper-0));
+}
+
 /* ---- Empty state ---- */
 
 .emptyStateWrap {
@@ -282,7 +296,32 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: var(--space-1);
+  width: 100%;
+  margin: 0 0 var(--space-1) 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.toolHeader:disabled {
+  cursor: default;
+}
+
+.toolHeader:hover:not(:disabled) .toolName {
+  color: var(--gold-2);
+}
+
+.toolChevron {
+  width: 10px;
+  flex: 0 0 auto;
+  color: color-mix(in oklab, var(--paper-0) 55%, transparent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1;
 }
 
 .toolName {
@@ -292,6 +331,44 @@
   text-transform: uppercase;
   letter-spacing: var(--tracking-wider);
   color: var(--gold-1);
+  /* Single-line, ellipsis if the agent supplies a very long title (e.g.
+     a tool name with a full absolute path). flex-shrink:1 lets it give
+     up space; the summary's higher shrink ratio (3 below) means the
+     summary truncates first when both have to make room. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolSummary {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: color-mix(in oklab, var(--paper-0) 55%, transparent);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  /* Fills the gap between name and stats; first to give up space when
+     the row is tight (flex-shrink: 3 vs name's 1). text-align right so
+     the path butts up against the stats badge instead of trailing
+     whitespace. */
+  flex: 1 3 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* Stats badge always pins to the far right of the header row. When the
+   summary is present, summary's `flex: 1 1 auto` already eats the gap so
+   margin-left: auto has no slack and the badge sits flush after the
+   summary. When the summary is absent, margin-left: auto pushes the
+   badge right. */
+.toolHeader > .diffStats {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .toolContent {
@@ -301,8 +378,86 @@
 }
 
 .diffPath {
-  color: var(--gold-2);
-  margin-bottom: 2px;
+  /* DiffView renders inside both ToolBlock (dark --bg-inverse surface) and
+     PermissionBlock (light --paper-1 surface). Inheriting the surrounding
+     foreground keeps the path readable in both — the gold the path used to
+     pin to was illegible against the permission block's light background. */
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: inherit;
+}
+
+/* DiffView renders a unified diff body. The header (path + stats) is hoisted
+   into the surrounding container — ToolBlock's collapsed summary on a dark
+   surface, PermissionBlock's heading row on a light surface — so the diff
+   itself is just the colour-tinted line list. */
+.diffBlock {
+  display: flex;
+  flex-direction: column;
+}
+
+.diffStats {
+  display: inline-flex;
+  gap: 6px;
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.diffStatAdded {
+  color: var(--jade-1, #6ed28a);
+}
+
+.diffStatRemoved {
+  color: var(--cinnabar-1, #e25c4f);
+}
+
+.diffBody {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+  border: 1px solid color-mix(in oklab, var(--paper-0) 14%, transparent);
+}
+
+.diffLineContext,
+.diffLineAdded,
+.diffLineRemoved {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  align-items: baseline;
+  padding: 0 6px;
+}
+
+.diffLineAdded {
+  background: color-mix(in oklab, var(--jade-1, #6ed28a) 18%, transparent);
+}
+
+.diffLineRemoved {
+  background: color-mix(in oklab, var(--cinnabar-1, #e25c4f) 18%, transparent);
+}
+
+.diffMarker {
+  color: color-mix(in oklab, var(--paper-0) 60%, transparent);
+  text-align: center;
+  user-select: none;
+}
+
+.diffText {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diffGap {
+  padding: 4px 6px;
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  color: color-mix(in oklab, var(--paper-0) 50%, transparent);
+  text-align: center;
+  border-block: 1px dashed color-mix(in oklab, var(--paper-0) 14%, transparent);
 }
 
 /* ---- Plan ---- */
@@ -349,13 +504,28 @@
 }
 
 .permissionDesc {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
   font-size: var(--fs-sm);
   margin-bottom: 6px;
+}
+
+.permissionDescText {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .permissionActions {
   display: flex;
   gap: 6px;
+  /* Breathing room between the diff (or other tool content) and the
+     allow/deny buttons; without this they butt directly against the
+     diff body's bottom border. */
+  margin-top: var(--space-2);
 }
 
 .permissionBtn {
@@ -383,6 +553,13 @@
 .permissionBtn_deny {
   border-color: var(--cinnabar-1);
   color: var(--cinnabar-0);
+}
+
+/* "_always" variants render the same colour family as the once-shot
+   sibling but with a less-saturated background hint, so the four-way
+   choice reads as two pairs. */
+.permissionBtn_always {
+  background: color-mix(in oklab, currentColor 8%, var(--paper-0));
 }
 
 .permissionResolved {

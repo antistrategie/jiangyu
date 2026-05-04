@@ -10,10 +10,13 @@ import type {
   AgentStatusEvent,
   AvailableCommand,
   ContentBlock,
+  PermissionOption,
   PlanEntry,
   ToolCallContent,
+  ToolKind,
   PermissionToolCall,
 } from "./types";
+import { agentPermissionResponse } from "./rpc";
 
 /// Notification emitted by the host when a prompt turn ends. Carries the
 /// spec stop reason or, for host-side failures, an opaque error string.
@@ -164,6 +167,17 @@ interface AgentStore {
   // Slash commands
   readonly availableCommands: AvailableCommand[];
 
+  // Auto-approve. ACP doesn't natively scope `_always` outcomes; clients
+  // remember and bypass future prompts. All three fields are session-
+  // scoped: they reset on connect, disconnect, and session change so a
+  // long-lived "trust all" can't leak across sessions.
+  /** Tool kinds the user has chosen `allow_always` for in this session. */
+  readonly autoApproveKinds: ReadonlySet<ToolKind>;
+  /** Tool kinds the user has chosen `reject_always` for in this session. */
+  readonly autoRejectKinds: ReadonlySet<ToolKind>;
+  /** Master switch: every permission request auto-approves until cleared. */
+  readonly trustAll: boolean;
+
   // Actions
   readonly setConnecting: (agentId: string, pendingAction?: PendingSessionAction) => void;
   readonly handleStartResult: (result: AgentStartResult) => void;
@@ -181,9 +195,12 @@ interface AgentStore {
   readonly handlePermissionRequest: (request: PermissionRequest) => void;
   readonly resolvePermission: (permissionId: string) => void;
   readonly clearMessages: () => void;
+  readonly setTrustAll: (value: boolean) => void;
+  readonly addAutoApproveKind: (kind: ToolKind) => void;
+  readonly addAutoRejectKind: (kind: ToolKind) => void;
 }
 
-export const useAgentStore = create<AgentStore>((set) => ({
+export const useAgentStore = create<AgentStore>((set, get) => ({
   connected: false,
   connecting: false,
   connectError: null,
@@ -199,6 +216,9 @@ export const useAgentStore = create<AgentStore>((set) => ({
   lastStopReason: null,
   messages: [],
   availableCommands: [],
+  autoApproveKinds: new Set<ToolKind>(),
+  autoRejectKinds: new Set<ToolKind>(),
+  trustAll: false,
 
   setConnecting: (agentId, pendingAction = { kind: "create" }) =>
     // Switching agents (or first-time connect) puts the panel into a clean
@@ -225,6 +245,9 @@ export const useAgentStore = create<AgentStore>((set) => ({
       lastStopReason: null,
       messages: [],
       availableCommands: [],
+      autoApproveKinds: new Set<ToolKind>(),
+      autoRejectKinds: new Set<ToolKind>(),
+      trustAll: false,
     }),
 
   handleStartResult: (result) => {
@@ -252,6 +275,8 @@ export const useAgentStore = create<AgentStore>((set) => ({
     if (result.error) {
       set({ connectError: result.error, pendingSession: null });
     } else if (result.sessionId) {
+      // New session id = new auto-approve scope. The user's "always allow"
+      // decisions for the previous session don't carry over.
       set({
         sessionId: result.sessionId,
         sessionTitle: null,
@@ -260,6 +285,9 @@ export const useAgentStore = create<AgentStore>((set) => ({
         messages: [],
         availableCommands: [],
         pendingSession: null,
+        autoApproveKinds: new Set<ToolKind>(),
+        autoRejectKinds: new Set<ToolKind>(),
+        trustAll: false,
       });
     }
   },
@@ -289,6 +317,9 @@ export const useAgentStore = create<AgentStore>((set) => ({
       pendingSession: null,
       lastStopReason: null,
       availableCommands: [],
+      autoApproveKinds: new Set<ToolKind>(),
+      autoRejectKinds: new Set<ToolKind>(),
+      trustAll: false,
     }),
 
   setSession: (sessionId) =>
@@ -472,10 +503,39 @@ export const useAgentStore = create<AgentStore>((set) => ({
       }
     }),
 
-  handlePermissionRequest: (request) =>
-    set((s) => ({
+  handlePermissionRequest: (request) => {
+    // Bypass policy. ACP doesn't natively scope `_always` outcomes; this is
+    // the client-side memory:
+    //
+    //   trustAll              → bypass-allow every request
+    //   autoApproveKinds[k]   → bypass-allow requests with kind k
+    //   autoRejectKinds[k]    → bypass-reject requests with kind k
+    //
+    // Reject takes precedence over allow when both are set for the same
+    // kind (defensive — the user's last decision wins, and clicking
+    // "reject_always" after "allow_always" should be the override).
+    // Falls through to the UI prompt when we can't determine the kind or
+    // the agent didn't offer the corresponding option.
+    const s = get();
+    const kind = request.toolCall.kind ?? null;
+    if (kind !== null && s.autoRejectKinds.has(kind)) {
+      const reject = pickRejectOption(request.options);
+      if (reject) {
+        sendPermissionResponse(request.permissionId, "selected", reject.optionId);
+        return;
+      }
+    }
+    const shouldAutoAllow = s.trustAll || (kind !== null && s.autoApproveKinds.has(kind));
+    if (shouldAutoAllow) {
+      const allow = pickAllowOption(request.options);
+      if (allow) {
+        sendPermissionResponse(request.permissionId, "selected", allow.optionId);
+        return;
+      }
+    }
+    set((prev) => ({
       messages: [
-        ...s.messages,
+        ...prev.messages,
         {
           id: nextMessageId(),
           role: "permission" as const,
@@ -485,7 +545,8 @@ export const useAgentStore = create<AgentStore>((set) => ({
           resolved: false,
         },
       ],
-    })),
+    }));
+  },
 
   resolvePermission: (permissionId) =>
     set((s) => ({
@@ -495,7 +556,76 @@ export const useAgentStore = create<AgentStore>((set) => ({
     })),
 
   clearMessages: () => set({ messages: [] }),
+
+  setTrustAll: (value) => set({ trustAll: value }),
+
+  addAutoApproveKind: (kind) =>
+    set((s) => {
+      // Set is treated as immutable from the consumer's perspective; replace
+      // wholesale so React/zustand's referential-equality checks notice.
+      // Adding to "approve" clears the same kind from "reject" — the most
+      // recent click wins.
+      const inApprove = s.autoApproveKinds.has(kind);
+      const inReject = s.autoRejectKinds.has(kind);
+      if (inApprove && !inReject) return s;
+      const nextApprove = inApprove ? s.autoApproveKinds : new Set(s.autoApproveKinds);
+      if (!inApprove) (nextApprove as Set<ToolKind>).add(kind);
+      const nextReject = inReject ? new Set(s.autoRejectKinds) : s.autoRejectKinds;
+      if (inReject) (nextReject as Set<ToolKind>).delete(kind);
+      return { autoApproveKinds: nextApprove, autoRejectKinds: nextReject };
+    }),
+
+  addAutoRejectKind: (kind) =>
+    set((s) => {
+      const inReject = s.autoRejectKinds.has(kind);
+      const inApprove = s.autoApproveKinds.has(kind);
+      if (inReject && !inApprove) return s;
+      const nextReject = inReject ? s.autoRejectKinds : new Set(s.autoRejectKinds);
+      if (!inReject) (nextReject as Set<ToolKind>).add(kind);
+      const nextApprove = inApprove ? new Set(s.autoApproveKinds) : s.autoApproveKinds;
+      if (inApprove) (nextApprove as Set<ToolKind>).delete(kind);
+      return { autoApproveKinds: nextApprove, autoRejectKinds: nextReject };
+    }),
 }));
+
+/**
+ * Fires `agentPermissionResponse` and silently swallows rejections so a
+ * disconnected host (test env, or a race against agentStop) doesn't
+ * surface as an unhandled promise rejection. Used only by the bypass
+ * paths in `handlePermissionRequest`; the user-facing button handler in
+ * `PermissionBlock` runs through `agentPermissionResponse` directly so
+ * that genuine RPC failures still bubble.
+ */
+function sendPermissionResponse(
+  permissionId: string,
+  outcome: "selected" | "cancelled",
+  optionId?: string,
+): void {
+  agentPermissionResponse(permissionId, outcome, optionId).catch(() => undefined);
+}
+
+/**
+ * Picks the option to send when bypassing a permission prompt. Prefers
+ * the `_once` variant (single-shot, the safest default for an automated
+ * answer) over `_always` (which would mean "remember this again",
+ * redundant when we're already remembering on our side). Returns null
+ * when the agent didn't offer either kind.
+ */
+function pickAllowOption(options: readonly PermissionOption[]): PermissionOption | null {
+  return (
+    options.find((o) => o.kind === "allow_once") ??
+    options.find((o) => o.kind === "allow_always") ??
+    null
+  );
+}
+
+function pickRejectOption(options: readonly PermissionOption[]): PermissionOption | null {
+  return (
+    options.find((o) => o.kind === "reject_once") ??
+    options.find((o) => o.kind === "reject_always") ??
+    null
+  );
+}
 
 // Wire up host notifications.
 //

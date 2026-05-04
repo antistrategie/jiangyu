@@ -19,8 +19,10 @@ import { useRegistryModalStore } from "@lib/agent/registryModal";
 import { AgentDropdown, AgentMenu } from "@components/AgentDropdown/AgentDropdown";
 import { AgentHistoryPopover } from "@components/AgentHistoryPopover/AgentHistoryPopover";
 import { Spinner } from "@components/Spinner/Spinner";
-import type { AgentStopReason } from "@lib/agent/types";
+import { Clock, Plus, Shield, ShieldCheck } from "lucide-react";
+import type { AgentStopReason, DiffContent, PermissionOption } from "@lib/agent/types";
 import type { InstalledAgent } from "@lib/rpc";
+import { DiffStatsForContent, DiffView } from "./DiffView";
 import styles from "./AgentPanel.module.css";
 
 const STOP_REASON_LABEL: Record<AgentStopReason | "error", string | null> = {
@@ -94,10 +96,25 @@ export function AgentPanel() {
     return availableCommands.filter((c) => c.name.toLowerCase().startsWith(prefix)).slice(0, 8);
   })();
 
-  // Auto-scroll to bottom on new messages.
+  // Stick to the bottom only when the user already is. Scrolling up to read
+  // history shouldn't yank the view back down on every streamed token; once
+  // they scroll back near the bottom we resume the follow.
+  const stickToBottomRef = useRef(true);
+  const handleListScroll = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    // 80 px tolerance covers the case where the last message is mid-render
+    // and the layout settles a frame after the scroll event.
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }, []);
+  // Reset to "stuck" on session switch so a freshly-loaded session opens at
+  // its most recent messages, regardless of where the previous session was.
+  useEffect(() => {
+    stickToBottomRef.current = true;
+  }, [sessionId]);
   useEffect(() => {
     const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && stickToBottomRef.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   // Focus input on mount and after prompting ends.
@@ -255,6 +272,7 @@ export function AgentPanel() {
         <span className={styles.sessionTitle}>{deriveSessionLabel(sessionTitle, messages)}</span>
         {currentModeId !== null && <span className={styles.modeBadge}>{currentModeId}</span>}
         <div className={styles.headerActions}>
+          <TrustToggle />
           <div className={styles.historyWrap} ref={historyWrapRef}>
             <button
               type="button"
@@ -265,7 +283,7 @@ export function AgentPanel() {
               aria-expanded={historyOpen}
               onClick={() => setHistoryOpen((o) => !o)}
             >
-              <ClockIcon />
+              <Clock size={16} aria-hidden="true" />
             </button>
             {historyOpen && <AgentHistoryPopover onClose={() => setHistoryOpen(false)} />}
           </div>
@@ -276,7 +294,7 @@ export function AgentPanel() {
             align="right"
             triggerClassName={styles.headerBtn}
             triggerAriaLabel="Start new session"
-            triggerContent={<PlusIcon />}
+            triggerContent={<Plus size={16} aria-hidden="true" />}
           />
         </div>
       </div>
@@ -308,7 +326,7 @@ export function AgentPanel() {
         </div>
       ) : (
         <>
-          <div ref={listRef} className={styles.messageList}>
+          <div ref={listRef} className={styles.messageList} onScroll={handleListScroll}>
             {messages.length === 0 && (
               <div className={styles.emptyHint}>Send a message to begin.</div>
             )}
@@ -401,41 +419,6 @@ function deriveSessionLabel(sessionTitle: string | null, messages: readonly Chat
   return "New session";
 }
 
-// --- Icons (hairline SVG, 24px grid, 1.25 stroke per design system) -------
-
-function ClockIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.25"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 2" />
-    </svg>
-  );
-}
-
-function PlusIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.25"
-      aria-hidden="true"
-    >
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
-
 // --- Message rendering ---
 
 function MessageBubble({ message }: { message: ChatMessage }) {
@@ -456,27 +439,108 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 }
 
 function ToolBlock({ message }: { message: ToolMessage }) {
+  // Default collapsed so a chat full of tool calls reads like a conversation,
+  // not a debugger trace. PermissionBlock (which gates writes) deliberately
+  // does NOT collapse — there the content IS what's being approved.
+  const [expanded, setExpanded] = useState(false);
+  const firstDiff = message.content.find((c) => c.type === "diff");
+  // Agent-supplied title usually already encodes what + where (e.g. "Edit
+  // templates/foo.kdl"), so only show our own path summary when it adds
+  // information the title doesn't.
+  const rawSummary = summariseToolContent(message.content);
+  const summary = rawSummary && !message.toolName.includes(rawSummary) ? rawSummary : null;
+  const hasContent = message.content.length > 0;
+
   return (
     <div className={styles.toolBlock}>
-      <div className={styles.toolHeader}>
+      <button
+        type="button"
+        className={styles.toolHeader}
+        onClick={() => setExpanded((v) => !v)}
+        disabled={!hasContent}
+        aria-expanded={expanded}
+      >
+        <span className={styles.toolChevron} aria-hidden="true">
+          {hasContent ? (expanded ? "▾" : "▸") : "·"}
+        </span>
         <span className={styles.toolName}>{message.toolName}</span>
-      </div>
-      {message.content.map((c, i) => (
-        // Tool content is append-only; index is stable for the lifetime of the call.
-        // eslint-disable-next-line @eslint-react/no-array-index-key
-        <div key={`${message.id}-${i}`} className={styles.toolContent}>
-          {c.type === "content" && c.content.type === "text" && c.content.text}
-          {c.type === "diff" && (
-            <>
-              <div className={styles.diffPath}>{c.path}</div>
-              {c.newText}
-            </>
-          )}
-          {c.type === "terminal" && <div className={styles.diffPath}>terminal {c.terminalId}</div>}
-        </div>
-      ))}
+        {summary && <span className={styles.toolSummary}>{summary}</span>}
+        {firstDiff && <DiffStatsForContent diff={firstDiff} />}
+      </button>
+      {expanded &&
+        message.content.map((c, i) => (
+          // Tool content is append-only; index is stable for the lifetime of the call.
+          // eslint-disable-next-line @eslint-react/no-array-index-key
+          <div key={`${message.id}-${i}`} className={styles.toolContent}>
+            {c.type === "content" && c.content.type === "text" && c.content.text}
+            {c.type === "diff" && <DiffView diff={c} />}
+            {c.type === "terminal" && (
+              <div className={styles.diffPath}>terminal {c.terminalId}</div>
+            )}
+          </div>
+        ))}
     </div>
   );
+}
+
+/**
+ * Session-wide trust toggle. When on, every incoming permission request
+ * is auto-approved with the agent's first allow_once option and the
+ * prompt UI is suppressed. Bounded to the current session — switching
+ * agents, creating a new session, or disconnecting clears it.
+ */
+export function TrustToggle() {
+  const trustAll = useAgentStore((s) => s.trustAll);
+  const autoApproveCount = useAgentStore((s) => s.autoApproveKinds.size);
+  const setTrustAll = useAgentStore((s) => s.setTrustAll);
+
+  const label = trustAll
+    ? "Auto-approve on (this session)"
+    : autoApproveCount > 0
+      ? `Auto-approve: ${autoApproveCount} kind${autoApproveCount === 1 ? "" : "s"}`
+      : "Auto-approve off";
+
+  return (
+    <button
+      type="button"
+      className={`${styles.headerBtn} ${styles.trustBtn} ${trustAll ? styles.trustBtnActive : ""}`}
+      onClick={() => setTrustAll(!trustAll)}
+      title={label}
+      aria-label={label}
+      aria-pressed={trustAll}
+    >
+      {trustAll ? (
+        <ShieldCheck size={14} aria-hidden="true" />
+      ) : (
+        <Shield size={14} aria-hidden="true" />
+      )}
+    </button>
+  );
+}
+
+/** Map an ACP permission-option kind to its button visual variant. */
+function permissionBtnClass(kind: PermissionOption["kind"]): string {
+  switch (kind) {
+    case "allow_once":
+      return styles.permissionBtn_allow;
+    case "allow_always":
+      // Lighter "allow" variant signals that this choice persists for the
+      // rest of the session (the UI doesn't ask again until reconnect).
+      return `${styles.permissionBtn_allow} ${styles.permissionBtn_always}`;
+    case "reject_once":
+      return styles.permissionBtn_deny;
+    case "reject_always":
+      return `${styles.permissionBtn_deny} ${styles.permissionBtn_always}`;
+  }
+}
+
+/** Pick a single concise blurb for a collapsed tool block's header. */
+function summariseToolContent(content: readonly ToolMessage["content"][number][]): string | null {
+  for (const c of content) {
+    if (c.type === "diff") return c.path;
+    if (c.type === "terminal") return `terminal ${c.terminalId}`;
+  }
+  return null;
 }
 
 function PlanBlock({ message }: { message: PlanMessage }) {
@@ -507,57 +571,61 @@ function PlanBlock({ message }: { message: PlanMessage }) {
   );
 }
 
-function PermissionBlock({ message }: { message: PermissionMessage }) {
-  const firstAllow = message.options.find((o) => o.kind.startsWith("allow"));
-
-  const handleAllow = () => {
-    void agentPermissionResponse(message.permissionId, "selected", firstAllow?.optionId);
-    useAgentStore.getState().resolvePermission(message.permissionId);
-  };
-
-  const handleDeny = () => {
-    void agentPermissionResponse(message.permissionId, "cancelled");
+export function PermissionBlock({ message }: { message: PermissionMessage }) {
+  // Each agent-supplied option gets its own button. ACP exposes a four-way
+  // choice (allow_once / allow_always / reject_once / reject_always); we
+  // don't collapse to "Allow / Deny" because the distinction between
+  // "_once" and "_always" is the user's lever for auto-approve. Picking
+  // allow_once silently for them throws that lever away.
+  const handleSelect = (option: PermissionOption) => {
+    // _always selections are remembered for the rest of the session so
+    // future requests of the same kind bypass the prompt. Bounded by
+    // setConnecting / handleSessionCreated / setDisconnected.
+    if (message.toolCall.kind) {
+      const store = useAgentStore.getState();
+      if (option.kind === "allow_always") store.addAutoApproveKind(message.toolCall.kind);
+      else if (option.kind === "reject_always") store.addAutoRejectKind(message.toolCall.kind);
+    }
+    void agentPermissionResponse(message.permissionId, "selected", option.optionId);
     useAgentStore.getState().resolvePermission(message.permissionId);
   };
 
   const tc = message.toolCall;
   const heading = tc.title ?? tc.kind ?? "Tool call";
+  // Surface the +N −N for the first diff content item inline with the
+  // heading; the diff body still renders below so the modder can review
+  // before approving.
+  const firstDiff = tc.content?.find((c) => c.type === "diff");
 
   return (
     <div
       className={`${styles.permissionBlock} ${message.resolved ? styles.permissionResolved : ""}`}
     >
-      <div className={styles.permissionDesc}>{heading}</div>
+      <div className={styles.permissionDesc}>
+        <span className={styles.permissionDescText}>{heading}</span>
+        {firstDiff && <DiffStatsForContent diff={firstDiff} />}
+      </div>
       {tc.content?.map((c, i) => (
         // Permission content is fixed at request time.
         // eslint-disable-next-line @eslint-react/no-array-index-key
         <div key={`${message.permissionId}-${i}`} className={styles.toolContent}>
           {c.type === "content" && c.content.type === "text" && c.content.text}
-          {c.type === "diff" && (
-            <>
-              <div className={styles.diffPath}>{c.path}</div>
-              {c.newText}
-            </>
-          )}
+          {c.type === "diff" && <DiffView diff={c} />}
           {c.type === "terminal" && <div className={styles.diffPath}>terminal {c.terminalId}</div>}
         </div>
       ))}
       {!message.resolved && (
         <div className={styles.permissionActions}>
-          <button
-            type="button"
-            className={`${styles.permissionBtn} ${styles.permissionBtn_allow}`}
-            onClick={handleAllow}
-          >
-            Allow
-          </button>
-          <button
-            type="button"
-            className={`${styles.permissionBtn} ${styles.permissionBtn_deny}`}
-            onClick={handleDeny}
-          >
-            Deny
-          </button>
+          {message.options.map((option) => (
+            <button
+              key={option.optionId}
+              type="button"
+              className={`${styles.permissionBtn} ${permissionBtnClass(option.kind)}`}
+              onClick={() => handleSelect(option)}
+            >
+              {option.name}
+            </button>
+          ))}
         </div>
       )}
     </div>

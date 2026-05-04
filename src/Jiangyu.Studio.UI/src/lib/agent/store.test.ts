@@ -1,4 +1,13 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Mock the permission-response RPC so the bypass path can fire without a
+// real host. Defined before the store import so the store's
+// `agentPermissionResponse` resolves to the mock.
+const permissionResponseMock = vi.fn(() => Promise.resolve());
+vi.mock("./rpc", () => ({
+  agentPermissionResponse: (...args: unknown[]) => permissionResponseMock(...args),
+}));
+
 import { useAgentStore, type ChatMessage } from "./store";
 import type {
   AgentMessageChunk,
@@ -26,6 +35,9 @@ function reset() {
     lastStopReason: null,
     messages: [],
     availableCommands: [],
+    autoApproveKinds: new Set(),
+    autoRejectKinds: new Set(),
+    trustAll: false,
   });
 }
 
@@ -247,6 +259,8 @@ describe("handleUpdate", () => {
 });
 
 describe("permissions", () => {
+  beforeEach(() => permissionResponseMock.mockClear());
+
   it("adds a permission message", () => {
     useAgentStore.getState().handlePermissionRequest({
       permissionId: "tc-1",
@@ -272,6 +286,181 @@ describe("permissions", () => {
     useAgentStore.getState().resolvePermission("tc-1");
     const perm = useAgentStore.getState().messages[0] as ChatMessage & { role: "permission" };
     expect(perm.resolved).toBe(true);
+  });
+});
+
+describe("auto-approve", () => {
+  beforeEach(() => permissionResponseMock.mockClear());
+
+  function fireRequest(toolCallId: string, kind?: "edit" | "execute") {
+    useAgentStore.getState().handlePermissionRequest({
+      permissionId: toolCallId,
+      sessionId: "s-1",
+      toolCall: kind ? { toolCallId, kind, title: "x" } : { toolCallId, title: "x" },
+      options: [
+        { optionId: "ao", name: "Allow once", kind: "allow_once" as const },
+        { optionId: "aa", name: "Always allow", kind: "allow_always" as const },
+        { optionId: "ro", name: "Reject", kind: "reject_once" as const },
+      ],
+    });
+  }
+
+  it("trustAll bypasses the prompt and fires the allow option", () => {
+    useAgentStore.getState().setTrustAll(true);
+    fireRequest("tc-1", "edit");
+    // No UI message added; RPC called with the agent's allow_once option.
+    expect(useAgentStore.getState().messages).toHaveLength(0);
+    expect(permissionResponseMock).toHaveBeenCalledWith("tc-1", "selected", "ao");
+  });
+
+  it("autoApproveKinds bypasses for the matching kind only", () => {
+    useAgentStore.getState().addAutoApproveKind("edit");
+    fireRequest("tc-edit", "edit");
+    fireRequest("tc-execute", "execute");
+    const msgs = useAgentStore.getState().messages;
+    // edit was bypassed; execute prompted.
+    expect(msgs).toHaveLength(1);
+    expect((msgs[0] as ChatMessage & { role: "permission" }).permissionId).toBe("tc-execute");
+    expect(permissionResponseMock).toHaveBeenCalledOnce();
+    expect(permissionResponseMock).toHaveBeenCalledWith("tc-edit", "selected", "ao");
+  });
+
+  it("does not bypass when neither flag is set", () => {
+    fireRequest("tc-1", "edit");
+    expect(useAgentStore.getState().messages).toHaveLength(1);
+    expect(permissionResponseMock).not.toHaveBeenCalled();
+  });
+
+  it("does not bypass when the tool call has no kind", () => {
+    useAgentStore.getState().addAutoApproveKind("edit");
+    fireRequest("tc-1"); // kind omitted
+    expect(useAgentStore.getState().messages).toHaveLength(1);
+    expect(permissionResponseMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the UI prompt when the agent offers no allow option", () => {
+    useAgentStore.getState().setTrustAll(true);
+    useAgentStore.getState().handlePermissionRequest({
+      permissionId: "tc-1",
+      sessionId: "s-1",
+      toolCall: { toolCallId: "tc-1", title: "x", kind: "edit" },
+      options: [{ optionId: "ro", name: "Reject", kind: "reject_once" as const }],
+    });
+    // Bypass tried but no allow option present, so the prompt still surfaces.
+    expect(useAgentStore.getState().messages).toHaveLength(1);
+    expect(permissionResponseMock).not.toHaveBeenCalled();
+  });
+
+  it("addAutoApproveKind is idempotent and produces a new Set reference", () => {
+    const before = useAgentStore.getState().autoApproveKinds;
+    useAgentStore.getState().addAutoApproveKind("edit");
+    const after1 = useAgentStore.getState().autoApproveKinds;
+    expect(after1).not.toBe(before);
+    expect(after1.has("edit")).toBe(true);
+
+    useAgentStore.getState().addAutoApproveKind("edit");
+    const after2 = useAgentStore.getState().autoApproveKinds;
+    // Idempotent: same kind a second time is a no-op so the reference is
+    // preserved (no spurious re-renders).
+    expect(after2).toBe(after1);
+  });
+
+  it("setConnecting clears both autoApproveKinds and trustAll", () => {
+    useAgentStore.getState().setTrustAll(true);
+    useAgentStore.getState().addAutoApproveKind("edit");
+    useAgentStore.getState().setConnecting("agent-1");
+    const s = useAgentStore.getState();
+    expect(s.trustAll).toBe(false);
+    expect(s.autoApproveKinds.size).toBe(0);
+  });
+
+  it("setDisconnected clears both autoApproveKinds and trustAll", () => {
+    useAgentStore.getState().setTrustAll(true);
+    useAgentStore.getState().addAutoApproveKind("edit");
+    useAgentStore.getState().setDisconnected();
+    const s = useAgentStore.getState();
+    expect(s.trustAll).toBe(false);
+    expect(s.autoApproveKinds.size).toBe(0);
+  });
+
+  it("handleSessionCreated clears both autoApproveKinds and trustAll", () => {
+    useAgentStore.getState().setTrustAll(true);
+    useAgentStore.getState().addAutoApproveKind("edit");
+    useAgentStore.getState().handleSessionCreated({ sessionId: "fresh" });
+    const s = useAgentStore.getState();
+    expect(s.trustAll).toBe(false);
+    expect(s.autoApproveKinds.size).toBe(0);
+  });
+
+  it("autoRejectKinds bypasses with the reject option", () => {
+    useAgentStore.getState().addAutoRejectKind("delete");
+    useAgentStore.getState().handlePermissionRequest({
+      permissionId: "tc-1",
+      sessionId: "s-1",
+      toolCall: { toolCallId: "tc-1", kind: "delete", title: "Delete file" },
+      options: [
+        { optionId: "ao", name: "Allow", kind: "allow_once" as const },
+        { optionId: "ro", name: "Reject", kind: "reject_once" as const },
+      ],
+    });
+    expect(useAgentStore.getState().messages).toHaveLength(0);
+    expect(permissionResponseMock).toHaveBeenCalledWith("tc-1", "selected", "ro");
+  });
+
+  it("auto-reject takes precedence over auto-allow when both are set", () => {
+    // Last-decision-wins is enforced by addAutoApproveKind / addAutoRejectKind
+    // toggling each other off, but the bypass logic also protects against
+    // a stale state where both happen to be set: reject wins.
+    useAgentStore.setState({
+      autoApproveKinds: new Set(["edit"]),
+      autoRejectKinds: new Set(["edit"]),
+    });
+    useAgentStore.getState().handlePermissionRequest({
+      permissionId: "tc-1",
+      sessionId: "s-1",
+      toolCall: { toolCallId: "tc-1", kind: "edit", title: "x" },
+      options: [
+        { optionId: "ao", name: "Allow", kind: "allow_once" as const },
+        { optionId: "ro", name: "Reject", kind: "reject_once" as const },
+      ],
+    });
+    expect(permissionResponseMock).toHaveBeenCalledWith("tc-1", "selected", "ro");
+  });
+
+  it("addAutoRejectKind clears the same kind from autoApproveKinds", () => {
+    useAgentStore.getState().addAutoApproveKind("edit");
+    expect(useAgentStore.getState().autoApproveKinds.has("edit")).toBe(true);
+    useAgentStore.getState().addAutoRejectKind("edit");
+    const s = useAgentStore.getState();
+    expect(s.autoApproveKinds.has("edit")).toBe(false);
+    expect(s.autoRejectKinds.has("edit")).toBe(true);
+  });
+
+  it("addAutoApproveKind clears the same kind from autoRejectKinds", () => {
+    useAgentStore.getState().addAutoRejectKind("edit");
+    expect(useAgentStore.getState().autoRejectKinds.has("edit")).toBe(true);
+    useAgentStore.getState().addAutoApproveKind("edit");
+    const s = useAgentStore.getState();
+    expect(s.autoRejectKinds.has("edit")).toBe(false);
+    expect(s.autoApproveKinds.has("edit")).toBe(true);
+  });
+
+  it("trustAll does not bypass-reject; per-kind reject still does", () => {
+    // trustAll is the "auto-allow everything" master switch; it shouldn't
+    // override a per-kind reject the user explicitly chose. Reject runs
+    // first in the bypass chain.
+    useAgentStore.getState().setTrustAll(true);
+    useAgentStore.getState().addAutoRejectKind("delete");
+    useAgentStore.getState().handlePermissionRequest({
+      permissionId: "tc-1",
+      sessionId: "s-1",
+      toolCall: { toolCallId: "tc-1", kind: "delete", title: "x" },
+      options: [
+        { optionId: "ao", name: "Allow", kind: "allow_once" as const },
+        { optionId: "ro", name: "Reject", kind: "reject_once" as const },
+      ],
+    });
+    expect(permissionResponseMock).toHaveBeenCalledWith("tc-1", "selected", "ro");
   });
 });
 
