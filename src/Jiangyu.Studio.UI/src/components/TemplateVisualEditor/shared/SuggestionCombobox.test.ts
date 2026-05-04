@@ -32,6 +32,7 @@ function Wrapper(props: {
   placeholder: string;
   fetchSuggestions: () => Promise<readonly string[]>;
   onChange?: (v: string) => void;
+  onCommit?: (v: string) => void;
 }) {
   const [value, setValue] = useState(props.initialValue);
   return createElement(SuggestionCombobox, {
@@ -42,6 +43,9 @@ function Wrapper(props: {
       setValue(v);
       props.onChange?.(v);
     },
+    // exactOptionalPropertyTypes: only set onCommit when explicitly passed,
+    // never assign `undefined` to a typed-as-optional callable prop.
+    ...(props.onCommit ? { onCommit: props.onCommit } : {}),
   });
 }
 
@@ -167,5 +171,78 @@ describe("SuggestionCombobox", () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
     expect(onChange).toHaveBeenCalledWith("Alpha");
+  });
+
+  // The onCommit callback distinguishes "user typed" from "user picked" so
+  // pick-from-list callers (e.g. HandlerSubtypePicker) can hold typed text
+  // as transient state and commit only on real selection. Without this
+  // distinction, typing the first letter of a handler subtype committed
+  // that letter as the chosen type.
+
+  it("does not call onCommit on every keystroke", async () => {
+    const onCommit = vi.fn();
+    render(
+      createElement(Wrapper, {
+        initialValue: "",
+        placeholder: "Pick one",
+        fetchSuggestions,
+        onCommit,
+      }),
+    );
+    const input = screen.getByPlaceholderText("Pick one");
+    act(() => {
+      fireEvent.focus(input);
+    });
+    await waitFor(() => expect(screen.getByText("Alpha")).toBeDefined());
+    act(() => {
+      fireEvent.change(input, { target: { value: "a" } });
+    });
+    act(() => {
+      fireEvent.change(input, { target: { value: "al" } });
+    });
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it("calls onCommit when item clicked", async () => {
+    const onCommit = vi.fn();
+    render(
+      createElement(Wrapper, {
+        initialValue: "",
+        placeholder: "Pick one",
+        fetchSuggestions,
+        onCommit,
+      }),
+    );
+    const input = screen.getByPlaceholderText("Pick one");
+    act(() => {
+      fireEvent.focus(input);
+    });
+    await waitFor(() => expect(screen.getByText("Beta")).toBeDefined());
+    act(() => {
+      fireEvent.click(screen.getByText("Beta"));
+    });
+    expect(onCommit).toHaveBeenCalledWith("Beta");
+    expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onCommit on Enter when filtered list is non-empty", async () => {
+    const onCommit = vi.fn();
+    render(
+      createElement(Wrapper, {
+        initialValue: "",
+        placeholder: "Pick one",
+        fetchSuggestions,
+        onCommit,
+      }),
+    );
+    const input = screen.getByPlaceholderText("Pick one");
+    act(() => {
+      fireEvent.focus(input);
+    });
+    await waitFor(() => expect(screen.getByText("Alpha")).toBeDefined());
+    act(() => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    expect(onCommit).toHaveBeenCalledWith("Alpha");
   });
 });

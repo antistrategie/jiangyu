@@ -74,6 +74,14 @@ export default defineConfig({
           },
           { text: "Templates (KDL)", link: "/reference/templates" },
           { text: "Manifest (jiangyu.json)", link: "/reference/manifest" },
+          {
+            text: "AI Agent",
+            collapsed: false,
+            items: [
+              { text: "Overview", link: "/reference/ai/" },
+              { text: "Available tools", link: "/reference/ai/tools" },
+            ],
+          },
           { text: "CLI", link: "/reference/cli" },
         ],
       },

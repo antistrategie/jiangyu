@@ -19,6 +19,14 @@ export interface SuggestionComboboxProps {
   placeholder: string;
   fetchSuggestions: () => Promise<readonly (string | SuggestionItem)[]>;
   onChange: (value: string) => void;
+  /**
+   * Fires only when the user explicitly picks a suggestion (click in the
+   * dropdown, or Enter while the filtered list is non-empty). Use this for
+   * "must pick from list" callers where typed text shouldn't commit until
+   * the user confirms a real entry. `onChange` still fires on every
+   * keystroke for the input-text mirror.
+   */
+  onCommit?: (value: string) => void;
   className?: string;
 }
 
@@ -27,6 +35,7 @@ export function SuggestionCombobox({
   placeholder,
   fetchSuggestions,
   onChange,
+  onCommit,
   className,
 }: SuggestionComboboxProps) {
   const [open, setOpen] = useState(false);
@@ -113,6 +122,7 @@ export function SuggestionCombobox({
             const first = filtered[0];
             if (first) {
               onChange(first.label);
+              onCommit?.(first.label);
               setOpen(false);
             }
           }
@@ -138,6 +148,7 @@ export function SuggestionCombobox({
                   style={{ transform: `translateY(${row.start}px)` }}
                   onClick={() => {
                     onChange(item.label);
+                    onCommit?.(item.label);
                     setOpen(false);
                   }}
                 >

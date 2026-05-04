@@ -81,20 +81,25 @@ Implemented in `src/Jiangyu.Loader/Templates/TemplateCloneApplier.cs`:
    on the result. Using the original's element class keeps the replacement
    byte-identical to what the dict slot expects.
 8. Walk `resolvedType.BaseType` upward while
-   `typeof(DataTemplate).IsAssignableFrom(current)`. For each ancestor whose
-   `Il2CppType` key already exists in `m_TemplateMaps`, insert the clone into
-   the ancestor's inner map and run the same length+1 array extension on the
-   corresponding `m_TemplateArrays` slot. This mirrors vanilla: a vanilla
-   `WeaponTemplate` instance lives at the same native pointer in both
-   `m_TemplateMaps[WeaponTemplate]` and `m_TemplateMaps[BaseItemTemplate]`,
-   so consumers calling `GetAll<BaseItemTemplate>()` (e.g. the BlackMarket
-   pool, filtered by `BlackMarketMaxQuantity > 0`) see clones the same way
-   they see vanilla. The walk only writes to slots the game has already
-   materialised; it never creates new ancestor-keyed slots, so its visible
-   destinations are bounded by what the game itself populates. The walk is
-   idempotent across re-registration ticks: an ancestor slot the game
-   materialises later than the first apply pass is filled in on a
-   subsequent tick.
+   `typeof(DataTemplate).IsAssignableFrom(current)`. For each ancestor,
+   force `m_TemplateMaps[Ancestor]` and `m_TemplateArrays[Ancestor]` into
+   existence by invoking `DataTemplateLoader.GetAll<Ancestor>()` (which
+   materialises both slots from the game's master list if absent), then
+   insert the clone into the ancestor's inner map and run the same length+1
+   array extension on the corresponding `m_TemplateArrays` slot. This
+   mirrors vanilla: a vanilla `WeaponTemplate` instance lives at the same
+   native pointer in both `m_TemplateMaps[WeaponTemplate]` and
+   `m_TemplateMaps[BaseItemTemplate]`, so consumers calling
+   `GetAll<BaseItemTemplate>()` (e.g. the BlackMarket pool, filtered by
+   `BlackMarketMaxQuantity > 0`) see clones the same way they see vanilla.
+   Forcing ancestor materialisation at clone-registration time is
+   load-bearing for any MENACE system that snapshots an ancestor-typed
+   `GetAll` into its own dictionary at init (canonical case:
+   `OwnedItems.m_ItemInstances` keyed by `BaseItemTemplate`, indexed
+   strictly during `OwnedItems.ProcessSaveState`); without forced
+   materialisation those snapshots cache a clone-free result before the
+   first re-registration tick can backfill, and the save deserialiser
+   throws `KeyNotFoundException` on the missing clone key.
 
 ## Session re-registration
 
@@ -181,6 +186,33 @@ Ancestor visibility was confirmed end-to-end against the live game,
    warnings. Idempotent re-registration ticks report
    `applied 0 clone registration(s)`, confirming the walk does not
    double-insert.
+
+`OwnedItems` save-reload was confirmed end-to-end against the live game,
+2026-05-04:
+
+1. WoMENACE clones four `ModularVehicleWeaponTemplate` variants (lrm5,
+   lrm10, lrm15, lrm20) from `mod_weapon.medium.rocket_launcher`. A campaign
+   acquired all three smaller variants and saved.
+2. Cold restart: the save loaded cleanly through `OwnedItems.ProcessSaveState`
+   without `KeyNotFoundException`. Ancestor force-materialisation (the
+   `EnsureDataTemplateSlotMaterialised` call in `MirrorCloneToAncestors`) is
+   load-bearing here: `OwnedItems.Init` snapshots
+   `GetAll<BaseItemTemplate>()` into `m_ItemInstances`, and clones must be
+   present in that snapshot before the strict-indexer access in
+   `ProcessSaveState`. Without forced materialisation the load throws
+   `KeyNotFoundException: 'mod_weapon.heavy.rocket_launcher_lrm15
+   (Menace.Strategy.ModularVehicleWeaponTemplate)' was not present in the
+   dictionary` from `OwnedItems.ProcessSaveState`.
+3. Dangling-reference behaviour was characterised in the same session by
+   deleting `lrm5` and renaming `lrm10` between save and reload. MENACE's
+   own resolver (`SaveState.ProcessDataTemplate<T>`) sets the ref to null
+   when `DataTemplateLoader.TryGet<T>` returns false; `OwnedItems` then
+   skips null-template entries silently, the in-memory inventory loads
+   without the dropped items, and the original save bytes remain
+   untouched. Restoring the clones and reloading the same save brought
+   the items back. Saving in the broken state, however, re-serialises
+   the in-memory state and the dropped m_IDs do not roundtrip; this is
+   acceptable behaviour and lives outside Jiangyu's responsibility.
 
 ## Reference cross-check
 

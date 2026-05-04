@@ -335,7 +335,7 @@ function AiSection() {
       <SectionHeader title="AI · 智能" />
       <Field
         label="Enable AI features"
-        hint="Opt-in to AI-powered features such as the Agent panel."
+        hint="Opt-in to AI-powered features such as the agent panel."
         onReset={
           aiEnabled !== AI_ENABLED_DEFAULT ? () => setAiEnabled(AI_ENABLED_DEFAULT) : undefined
         }

@@ -178,16 +178,16 @@ internal sealed class TemplateCloneApplier
 
     /// <summary>
     /// Mirrors <paramref name="clone"/> into every ancestor
-    /// <c>m_TemplateMaps</c>/<c>m_TemplateArrays</c> slot the game has already
-    /// materialised, walking <paramref name="resolvedType"/>.<c>BaseType</c>
-    /// upward to <c>DataTemplate</c>. Caller must have registered the clone
-    /// into the most-derived slot first; this method handles ancestors only.
-    /// Idempotent: each ancestor is independently gated on
-    /// <c>ContainsKey(cloneId)</c>, so re-registration ticks fill in slots
-    /// the game materialises later than the first apply pass. The walk only
-    /// writes to slots already in the outer dict; it never creates new
-    /// ancestor-keyed slots, so its visible destinations are bounded by what
-    /// the game itself populates.
+    /// <c>m_TemplateMaps</c>/<c>m_TemplateArrays</c> slot, walking
+    /// <paramref name="resolvedType"/>.<c>BaseType</c> upward to
+    /// <c>DataTemplate</c>. Caller must have registered the clone into the
+    /// most-derived slot first; this method handles ancestors only.
+    /// Force-materialises each ancestor slot before mirroring (via
+    /// <c>DataTemplateLoader.GetAll&lt;Ancestor&gt;()</c>) so MENACE's
+    /// lazy-snapshot consumers (e.g. <c>OwnedItems.Init</c>,
+    /// <c>BaseConversationManager</c>) see the clone in their first
+    /// enumeration of an ancestor type. Idempotent: each ancestor is
+    /// independently gated on <c>ContainsKey(cloneId)</c>.
     /// </summary>
     private static void MirrorCloneToAncestors(
         Type resolvedType, string cloneId, DataTemplate clone, MelonLogger.Instance log)
@@ -196,6 +196,15 @@ internal sealed class TemplateCloneApplier
         var current = resolvedType.BaseType;
         while (current != null && dataTemplateType.IsAssignableFrom(current))
         {
+            // Force the ancestor slot into existence before reading. Without
+            // this, a slot the game hasn't yet materialised gets skipped, and
+            // any consumer that later calls GetAll<Ancestor>() to snapshot
+            // its own dict (OwnedItems.m_ItemInstances keyed by
+            // BaseItemTemplate is the canonical case) caches a clone-free
+            // result and the save deserialiser throws KeyNotFoundException
+            // on the missing clone key.
+            TemplateRuntimeAccess.EnsureDataTemplateSlotMaterialised(current);
+
             if (TryGetTemplateMap(current, out var ancestorMap)
                 && !ancestorMap.ContainsKey(cloneId))
             {

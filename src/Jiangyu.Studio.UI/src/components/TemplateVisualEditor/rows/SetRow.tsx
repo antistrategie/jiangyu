@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, GripVertical, X } from "lucide-react";
 import { parseCrossMemberPayload } from "@lib/drag/crossMember";
 import { useToastStore } from "@lib/toast";
@@ -344,6 +344,44 @@ export function SetRow({
   );
 }
 
+// --- HandlerSubtypePicker ---
+//
+// Dedicated "must pick from list" combobox for the polymorphic handler
+// subtype. The shared SuggestionCombobox is a free-form-with-suggestions
+// input by default (every keystroke fires onChange) which is right for
+// callers binding to a real value field. Here typed text is transient and
+// only selecting a real subtype should commit, so we own the typed-text
+// state locally and pull commits via onCommit.
+
+export interface HandlerSubtypePickerProps {
+  readonly subtypeChoices: readonly string[];
+  readonly onPick: (picked: string) => void;
+}
+
+export function HandlerSubtypePicker({ subtypeChoices, onPick }: HandlerSubtypePickerProps) {
+  const [typed, setTyped] = useState("");
+  // Memoise the fetcher so SuggestionCombobox's "fetchSuggestions changed →
+  // drop cache and refetch" branch doesn't fire on every keystroke.
+  const fetchSuggestions = useCallback(() => Promise.resolve(subtypeChoices), [subtypeChoices]);
+  return (
+    <div className={styles.compositeBody}>
+      <div className={styles.compositeHeader}>
+        <span className={styles.compositeKind}>handler</span>
+        <SuggestionCombobox
+          value={typed}
+          placeholder="Pick handler type…"
+          fetchSuggestions={fetchSuggestions}
+          onChange={setTyped}
+          onCommit={(picked) => {
+            setTyped("");
+            onPick(picked);
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // --- CompositeEditor ---
 
 export interface CompositeEditorProps {
@@ -466,20 +504,10 @@ export function CompositeEditor({
 
   if (needsSubtypePick) {
     return (
-      <div className={styles.compositeBody}>
-        <div className={styles.compositeHeader}>
-          <span className={styles.compositeKind}>handler</span>
-          <SuggestionCombobox
-            value=""
-            placeholder="Pick handler type…"
-            fetchSuggestions={() => Promise.resolve(subtypeChoices)}
-            onChange={(picked) => {
-              if (picked === "") return;
-              onChange({ ...value, compositeType: picked, compositeDirectives: [] });
-            }}
-          />
-        </div>
-      </div>
+      <HandlerSubtypePicker
+        subtypeChoices={subtypeChoices}
+        onPick={(picked) => onChange({ ...value, compositeType: picked, compositeDirectives: [] })}
+      />
     );
   }
 

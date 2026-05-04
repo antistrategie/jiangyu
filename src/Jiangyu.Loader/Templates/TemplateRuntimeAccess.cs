@@ -201,6 +201,23 @@ internal static class TemplateRuntimeAccess
         return Array.Empty<Il2CppObjectBase>();
     }
 
+    /// <summary>
+    /// Forces <c>DataTemplateLoader</c> to materialise the per-type cache for
+    /// <paramref name="templateType"/> if it is a <c>DataTemplate</c> subtype,
+    /// by invoking <c>GetAll&lt;T&gt;()</c> reflectively and discarding the
+    /// result. Used by clone application to ensure ancestor
+    /// <c>m_TemplateMaps</c>/<c>m_TemplateArrays</c> slots exist before we
+    /// mirror clones into them, so MENACE's lazy-snapshot consumers (e.g.
+    /// <c>OwnedItems.Init</c>) see clones in their first enumeration.
+    /// No-op for non-<c>DataTemplate</c> types.
+    /// </summary>
+    public static void EnsureDataTemplateSlotMaterialised(Type templateType)
+    {
+        if (templateType == null) return;
+        if (!typeof(DataTemplate).IsAssignableFrom(templateType)) return;
+        TryInvokeGetAll(templateType);
+    }
+
     private static IReadOnlyList<Il2CppObjectBase> EnumerateScriptableObjects(Type resolvedType)
     {
         var il2CppType = Il2CppType.From(resolvedType);
