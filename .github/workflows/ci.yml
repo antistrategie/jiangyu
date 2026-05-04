@@ -239,6 +239,19 @@ jobs:
 
       - name: Package release artefacts
         run: |
+          # actions/upload-artifact + download-artifact strips POSIX exec
+          # bits on Linux binaries; restore them before re-zipping so the
+          # release artefact extracts with executable jiangyu-studio /
+          # jiangyu-mcp / bun.
+          for dir in jiangyu-cli-linux-*; do
+            [ -d "$dir" ] && chmod +x "$dir"/jiangyu 2>/dev/null || true
+          done
+          for dir in jiangyu-studio-linux-*; do
+            [ -d "$dir" ] || continue
+            chmod +x "$dir"/jiangyu-studio 2>/dev/null || true
+            chmod +x "$dir"/bin/jiangyu-mcp 2>/dev/null || true
+            chmod +x "$dir"/bin/bun 2>/dev/null || true
+          done
           for dir in jiangyu-cli-*; do
             (cd "$dir" && zip -r "../${dir}.zip" . -x '*.pdb')
           done
