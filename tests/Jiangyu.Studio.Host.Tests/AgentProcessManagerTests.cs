@@ -124,6 +124,34 @@ public class AgentProcessManagerTests : IDisposable
     }
 
     /// <summary>
+    /// Regression: production single-file publishes set
+    /// <c>AppContext.BaseDirectory</c> to a temp self-extract directory
+    /// (e.g. <c>~/.net/jiangyu-studio/&lt;hash&gt;/</c>), but CI bundles
+    /// support binaries (bun, jiangyu-mcp) as siblings of the host exe at
+    /// <c>&lt;install&gt;/bin/</c>. Resolution that only checks
+    /// <c>AppContext.BaseDirectory</c> mis-misses the real location and
+    /// the agent process fails to spawn with a "No such file or directory"
+    /// error on <c>bunx</c>. Both candidate directories must be queried.
+    /// </summary>
+    [Fact]
+    public void SiblingBinaryCandidates_ChecksProcessPathDirAndBaseDirectory()
+    {
+        var paths = AgentProcessManager.SiblingBinaryCandidates("bun").ToList();
+
+        // AppContext.BaseDirectory is always a candidate (covers dev/test).
+        Assert.Contains(Path.Combine(AppContext.BaseDirectory, "bin", "bun"), paths);
+
+        // ProcessPath's directory is a candidate when ProcessPath is set
+        // (always set in real runs; documented as nullable only by API
+        // shape). Production single-file publishes need this entry.
+        var processDir = Path.GetDirectoryName(Environment.ProcessPath);
+        if (processDir is not null)
+        {
+            Assert.Contains(Path.Combine(processDir, "bin", "bun"), paths);
+        }
+    }
+
+    /// <summary>
     /// Calling AuthenticateAsync against a manager that has never been
     /// started has to throw a clear, recoverable error rather than NRE
     /// inside the ACP client. The host's RPC dispatcher relies on this

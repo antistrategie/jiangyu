@@ -54,7 +54,44 @@ internal sealed class AgentProcessManager : IDisposable
     }
 
     /// <summary>
-    /// Resolves the bundled bun binary at <c>&lt;base&gt;/bin/bun</c>
+    /// Candidate absolute paths where a host-sibling binary
+    /// <paramref name="fileName"/> may live, in priority order:
+    /// <list type="number">
+    ///   <item><description><see cref="Environment.ProcessPath"/>'s
+    ///     directory: the host exe location for production single-file
+    ///     publishes, where CI lands <c>bin/bun</c> and
+    ///     <c>bin/jiangyu-mcp</c>. <see cref="AppContext.BaseDirectory"/>
+    ///     can't be used here because single-file extraction points it at
+    ///     a temp dir that doesn't carry the sibling
+    ///     binaries.</description></item>
+    ///   <item><description><see cref="AppContext.BaseDirectory"/>: dev,
+    ///     test, and framework-dependent runs, where
+    ///     <see cref="Environment.ProcessPath"/> is <c>dotnet</c>/testhost
+    ///     and the project's build targets drop sibling binaries next to
+    ///     the test/dev output assemblies.</description></item>
+    /// </list>
+    /// </summary>
+    internal static IEnumerable<string> SiblingBinaryCandidates(string fileName)
+    {
+        var processDir = Path.GetDirectoryName(Environment.ProcessPath);
+        if (processDir is not null) yield return Path.Combine(processDir, "bin", fileName);
+        yield return Path.Combine(AppContext.BaseDirectory, "bin", fileName);
+    }
+
+    /// <summary>
+    /// Returns the first existing path from <see cref="SiblingBinaryCandidates"/>,
+    /// or null when the binary isn't shipped at any candidate location
+    /// (caller falls back to PATH).
+    /// </summary>
+    private static string? FindSiblingBinary(string fileName)
+    {
+        foreach (var path in SiblingBinaryCandidates(fileName))
+            if (File.Exists(path)) return path;
+        return null;
+    }
+
+    /// <summary>
+    /// Resolves the bundled bun binary at <c>&lt;install&gt;/bin/bun</c>
     /// (<c>bun.exe</c> on Windows). Returns the absolute path when it
     /// exists, null otherwise. Bundled in CI by the
     /// <c>build-studio-host</c> job; absent in dev builds and direct
@@ -64,8 +101,7 @@ internal sealed class AgentProcessManager : IDisposable
     public static string? ResolveBundledBun()
     {
         var name = OperatingSystem.IsWindows() ? "bun.exe" : "bun";
-        var path = Path.Combine(AppContext.BaseDirectory, "bin", name);
-        return File.Exists(path) ? path : null;
+        return FindSiblingBinary(name);
     }
 
     /// <summary>
@@ -301,12 +337,15 @@ internal sealed class AgentProcessManager : IDisposable
     {
         var configs = new List<McpServerConfig>();
 
-        // Support binaries (jiangyu-mcp, bundled bun) live in <base>/bin
+        // Support binaries (jiangyu-mcp, bundled bun) live in <install>/bin
         // so the studio executable stays alone at the install root and
-        // users see one obvious launcher.
+        // users see one obvious launcher. FindSiblingBinary handles
+        // single-file publishes (where AppContext.BaseDirectory is the
+        // self-extract dir, not the install dir) by checking the host
+        // exe's directory first.
         var exeName = OperatingSystem.IsWindows() ? "jiangyu-mcp.exe" : "jiangyu-mcp";
-        var mcpPath = Path.Combine(AppContext.BaseDirectory, "bin", exeName);
-        if (File.Exists(mcpPath))
+        var mcpPath = FindSiblingBinary(exeName);
+        if (mcpPath is not null)
         {
             configs.Add(new McpServerConfig
             {
@@ -318,7 +357,7 @@ internal sealed class AgentProcessManager : IDisposable
         }
         else
         {
-            Console.Error.WriteLine($"[Agent] jiangyu-mcp binary not found at {mcpPath}; stdio MCP disabled.");
+            Console.Error.WriteLine($"[Agent] jiangyu-mcp binary not found in bin/ next to host exe or AppContext.BaseDirectory; stdio MCP disabled.");
         }
 
         if (HttpMcpUrl is { } url && HttpMcpToken is { } token)
