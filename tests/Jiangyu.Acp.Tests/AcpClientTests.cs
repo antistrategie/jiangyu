@@ -83,6 +83,71 @@ public class AcpClientTests
     }
 
     [Fact]
+    public async Task AuthenticateAsync_SendsMethodIdAndAcceptsEmptyResult()
+    {
+        // ACP authenticate is request/response with the method id in the
+        // params. Copilot returns an empty object on success.
+        using var clientToAgent = new BlockingStream();
+        using var agentToClient = new BlockingStream();
+
+        var agentTask = Task.Run(async () =>
+        {
+            var json = await ReadFramedAsync(clientToAgent);
+            var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            Assert.Equal("authenticate", root.GetProperty("method").GetString());
+            Assert.Equal("github", root.GetProperty("params").GetProperty("methodId").GetString());
+
+            await WriteJsonRpcResponseAsync(agentToClient, root.GetProperty("id").GetInt32(), "{}");
+        });
+
+        var handler = new StubClientHandler();
+        using var client = new AcpClient(handler, agentToClient, clientToAgent);
+        client.Start();
+
+        var response = await client.AuthenticateAsync(new AuthenticateRequest { MethodId = "github" });
+        Assert.NotNull(response);
+
+        await agentTask;
+    }
+
+    [Fact]
+    public async Task AuthenticateAsync_PropagatesAuthRequiredErrorCode()
+    {
+        // ACP signals "you must sign in before session/new" via JSON-RPC
+        // -32000. The client must surface the code on AcpException so the
+        // host's auth_required catch can branch on it.
+        using var clientToAgent = new BlockingStream();
+        using var agentToClient = new BlockingStream();
+
+        var agentTask = Task.Run(async () =>
+        {
+            var json = await ReadFramedAsync(clientToAgent);
+            var doc = JsonDocument.Parse(json);
+            var id = doc.RootElement.GetProperty("id").GetInt32();
+
+            var errorJson =
+                $"{{\"jsonrpc\":\"2.0\",\"id\":{id},\"error\":{{\"code\":-32000,\"message\":\"auth_required\"}}}}";
+            await WriteFramedAsync(agentToClient, errorJson);
+        });
+
+        var handler = new StubClientHandler();
+        using var client = new AcpClient(handler, agentToClient, clientToAgent);
+        client.Start();
+
+        var ex = await Assert.ThrowsAsync<AcpException>(() =>
+            client.NewSessionAsync(new NewSessionRequest
+            {
+                Cwd = "/tmp",
+                McpServers = [],
+            }));
+        Assert.Equal(-32000, ex.ErrorCode);
+        Assert.Equal("auth_required", ex.Message);
+
+        await agentTask;
+    }
+
+    [Fact]
     public async Task ReadTextFile_AgentRequestDelegatedToHandler()
     {
         using var clientToAgent = new BlockingStream();

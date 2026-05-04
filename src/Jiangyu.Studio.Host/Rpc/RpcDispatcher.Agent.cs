@@ -1,5 +1,6 @@
 using System.Text.Json;
 using InfiniFrame;
+using Jiangyu.Acp;
 using Jiangyu.Acp.Schema;
 using Jiangyu.Shared;
 using Jiangyu.Studio.Host.Acp;
@@ -62,7 +63,17 @@ public static partial class RpcDispatcher
         Register("agentSessionsList", HandleAgentSessionsList);
         Register("agentSessionDelete", HandleAgentSessionDelete);
         Register("agentSessionResume", HandleAgentSessionResume);
+        Register("agentSetConfigOption", HandleAgentSetConfigOption);
+        Register("agentSetSessionMode", HandleAgentSetSessionMode);
+        Register("agentAuthenticate", HandleAgentAuthenticate);
     }
+
+    /// <summary>
+    /// ACP signals "you need to sign in" via JSON-RPC error code -32000
+    /// (an ACP extension to the JSON-RPC error space). Match by code only;
+    /// the message text varies between agents and shouldn't be parsed.
+    /// </summary>
+    private const int AcpAuthRequiredCode = -32000;
 
     /// <summary>
     /// Fires off the registry fetch and returns immediately. The result
@@ -150,14 +161,20 @@ public static partial class RpcDispatcher
             }
         };
 
+        // Translate registry-provided bunx/npx launchers to the bundled
+        // bun (when present) so modders without Node installed still get
+        // a working agent. Falls through unchanged for binary agents and
+        // for dev builds without the bundled binary.
+        var (resolvedCommand, resolvedArgs) = AgentProcessManager.ResolveLauncher(command, args);
+
         // Run async so we don't block the InfiniFrame message loop while the
         // agent subprocess starts (bunx can take several seconds to resolve).
         _ = Task.Run(async () =>
         {
             try
             {
-                Console.Error.WriteLine($"[Agent] Starting: {command} {string.Join(' ', args)}");
-                var initResponse = await manager.StartAsync(command, args, handler).ConfigureAwait(false);
+                Console.Error.WriteLine($"[Agent] Starting: {resolvedCommand} {string.Join(' ', resolvedArgs)}");
+                var initResponse = await manager.StartAsync(resolvedCommand, resolvedArgs, handler).ConfigureAwait(false);
                 Console.Error.WriteLine($"[Agent] Initialised: {initResponse.AgentInfo?.Name} v{initResponse.AgentInfo?.Version}");
 
                 if (Volatile.Read(ref _agentStartGeneration) != generation)
@@ -244,9 +261,31 @@ public static partial class RpcDispatcher
             try
             {
                 var response = await manager.NewSessionAsync(projectRoot).ConfigureAwait(false);
+                // Prime the agent's context window with project / toolkit
+                // info before the modder sees the empty chat. The synthetic
+                // turn is suppressed from the UI but lives in the agent's
+                // conversation history. Awaited so the user can't beat the
+                // priming with their first prompt.
+                await manager.PrimeContextAsync(Acp.AgentContext.Blurb).ConfigureAwait(false);
                 SendNotification(window, "agentSessionCreated", new
                 {
                     sessionId = response.SessionId,
+                    modes = response.Modes,
+                    configOptions = response.ConfigOptions,
+                });
+            }
+            catch (AcpException ex) when (ex.ErrorCode == AcpAuthRequiredCode)
+            {
+                // Re-surface the agent's auth methods so the panel can
+                // render a sign-in card without re-fetching them. The
+                // initialize response is the authoritative source —
+                // session/new auth_required errors don't carry the
+                // method list themselves.
+                SendNotification(window, "agentSessionCreated", new
+                {
+                    error = ex.Message,
+                    authRequired = true,
+                    authMethods = _agentStartLastResponse?.AuthMethods,
                 });
             }
             catch (Exception ex)
@@ -258,6 +297,75 @@ public static partial class RpcDispatcher
             }
         });
 
+        return JsonSerializer.SerializeToElement(new { accepted = true });
+    }
+
+    // Priming text and the sentinel used for replay-skip both live in
+    // Acp.AgentContext — see PrimeContextAsync above and
+    // AcpClientHandler.OnSessionUpdateAsync (which strips the synthetic
+    // turn when a session is reloaded).
+
+    /// <summary>
+    /// Pass-through to <c>session/set_config_option</c>. Fire-and-forget so
+    /// the WebView dispatch thread doesn't block on the agent's round-trip
+    /// (which can stall when the agent is mid-prompt). The agent confirms
+    /// by emitting a <c>config_option_update</c> notification, which the UI
+    /// consumes as the source of truth — failures are logged here, not
+    /// surfaced to the modder.
+    /// </summary>
+    private static JsonElement HandleAgentSetConfigOption(IInfiniFrameWindow __, JsonElement? parameters)
+    {
+        var configId = RequireString(parameters, "configId");
+        var manager = _agentManager ?? throw new InvalidOperationException("Agent not running.");
+        var sessionId = manager.SessionId ?? throw new InvalidOperationException("No active session.");
+        if (parameters is null || !parameters.Value.TryGetProperty("value", out var value))
+            throw new ArgumentException("Missing 'value' parameter.");
+
+        // Persist the user's choice in our own session metadata so resume
+        // can replay it. ACP doesn't require agents to persist these and
+        // Claude doesn't — without this layer the setting reverts on
+        // every session reload.
+        var projectRoot = ProjectWatcher.ProjectRoot;
+        if (projectRoot is not null)
+        {
+            try { AgentSessionsStore.SetConfigValue(projectRoot, sessionId, configId, value); }
+            catch (Exception ex) { Console.Error.WriteLine($"[Sessions] persist configValue: {ex.Message}"); }
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try { await manager.SetConfigOptionAsync(sessionId, configId, value).ConfigureAwait(false); }
+            catch (Exception ex) { Console.Error.WriteLine($"[Agent] setConfigOption failed: {ex.Message}"); }
+        });
+        return JsonSerializer.SerializeToElement(new { accepted = true });
+    }
+
+    /// <summary>
+    /// Pass-through to ACP's <c>session/set_mode</c>. Fire-and-forget for
+    /// the same reason as <see cref="HandleAgentSetConfigOption"/>; the
+    /// agent's <c>current_mode_update</c> notification is the UI's source
+    /// of truth for the new mode id.
+    /// </summary>
+    private static JsonElement HandleAgentSetSessionMode(IInfiniFrameWindow __, JsonElement? parameters)
+    {
+        var modeId = RequireString(parameters, "modeId");
+        var manager = _agentManager ?? throw new InvalidOperationException("Agent not running.");
+        var sessionId = manager.SessionId ?? throw new InvalidOperationException("No active session.");
+
+        // Persist alongside set_mode so resume can replay it; see
+        // HandleAgentSetConfigOption for the rationale.
+        var projectRoot = ProjectWatcher.ProjectRoot;
+        if (projectRoot is not null)
+        {
+            try { AgentSessionsStore.SetMode(projectRoot, sessionId, modeId); }
+            catch (Exception ex) { Console.Error.WriteLine($"[Sessions] persist modeId: {ex.Message}"); }
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try { await manager.SetSessionModeAsync(sessionId, modeId).ConfigureAwait(false); }
+            catch (Exception ex) { Console.Error.WriteLine($"[Agent] setSessionMode failed: {ex.Message}"); }
+        });
         return JsonSerializer.SerializeToElement(new { accepted = true });
     }
 
@@ -402,11 +510,42 @@ public static partial class RpcDispatcher
         {
             try
             {
-                await manager.LoadSessionAsync(sessionId, projectRoot).ConfigureAwait(false);
+                var loaded = await manager.LoadSessionAsync(sessionId, projectRoot).ConfigureAwait(false);
                 AgentSessionsStore.Upsert(projectRoot, sessionId);
+
+                // Re-apply the user's persisted mode + config-option
+                // choices in case the agent didn't carry them across the
+                // session/load (Claude doesn't). Best-effort: a single
+                // failure shouldn't poison the resume — log and proceed.
+                var meta = AgentSessionsStore.Load(projectRoot)
+                    .Sessions.FirstOrDefault(s => s.Id == sessionId);
+                if (meta is not null)
+                {
+                    if (meta.CurrentModeId is { } savedMode)
+                    {
+                        try { await manager.SetSessionModeAsync(sessionId, savedMode).ConfigureAwait(false); }
+                        catch (Exception ex) { Console.Error.WriteLine($"[Sessions] replay mode: {ex.Message}"); }
+                    }
+                    if (meta.ConfigValues is { } values)
+                    {
+                        foreach (var (configId, value) in values)
+                        {
+                            try { await manager.SetConfigOptionAsync(sessionId, configId, value).ConfigureAwait(false); }
+                            catch (Exception ex) { Console.Error.WriteLine($"[Sessions] replay configValue {configId}: {ex.Message}"); }
+                        }
+                    }
+                }
+
                 SendNotification(window, "agentSessionResumed", new
                 {
                     sessionId,
+                    modes = loaded.Modes,
+                    configOptions = loaded.ConfigOptions,
+                    // Inform the UI of the values it should reflect (the
+                    // session/load response carries the agent's pre-replay
+                    // state; meta carries our persisted overrides).
+                    persistedModeId = meta?.CurrentModeId,
+                    persistedConfigValues = meta?.ConfigValues,
                 });
             }
             catch (Exception ex)
@@ -414,6 +553,39 @@ public static partial class RpcDispatcher
                 Console.Error.WriteLine($"[Agent] Resume failed: {ex}");
                 SendNotification(window, "agentSessionResumed", new
                 {
+                    error = ex.Message,
+                });
+            }
+        });
+
+        return JsonSerializer.SerializeToElement(new { accepted = true });
+    }
+
+    /// <summary>
+    /// Drives ACP's <c>authenticate</c> handshake using one of the methods
+    /// the agent advertised in initialize. Fire-and-forget: the result
+    /// arrives as an <c>agentAuthenticated</c> notification carrying either
+    /// the chosen <c>methodId</c> on success or an <c>error</c> string. The
+    /// UI then re-fires <c>agentSessionCreate</c> on success.
+    /// </summary>
+    private static JsonElement HandleAgentAuthenticate(IInfiniFrameWindow window, JsonElement? parameters)
+    {
+        var methodId = RequireString(parameters, "methodId");
+        var manager = _agentManager ?? throw new InvalidOperationException("Agent not running.");
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await manager.AuthenticateAsync(methodId).ConfigureAwait(false);
+                SendNotification(window, "agentAuthenticated", new { methodId });
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Agent] authenticate failed: {ex}");
+                SendNotification(window, "agentAuthenticated", new
+                {
+                    methodId,
                     error = ex.Message,
                 });
             }

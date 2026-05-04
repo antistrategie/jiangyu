@@ -19,12 +19,31 @@ public static partial class RpcHandlers
     public static readonly Lock CompileLock = new();
     public static bool CompileRunning;
 
+    /// <summary>
+    /// Optional override that lets Studio.Host route MCP-triggered compiles
+    /// through its streaming pipeline (so the CompileModal shows progress
+    /// when the agent runs <c>jiangyu_compile</c>). Set at host startup;
+    /// null in the standalone <c>jiangyu-mcp</c> binary, where compiles
+    /// run inline without a UI to notify. Returns the same shape as the
+    /// inline path so the agent gets a typed result either way. Takes the
+    /// project root and is responsible for the gate (managing
+    /// <see cref="CompileRunning"/>) since it owns the streaming state.
+    /// </summary>
+    public static Func<string, JsonElement>? CompileRunOverride;
+
     [McpTool("jiangyu_compile",
-        "Compile the current project. Blocking; waits until the build finishes. Returns {success, bundlePath?, errorMessage?}. Rejects if a compile is already running. Requires an open project.")]
+        "Compile the current project. Blocking; waits until the build finishes. Returns {success, bundlePath?, errorMessage?}. Rejects if a compile is already running. Requires an open project.",
+        LongRunning = true)]
     internal static JsonElement CompileBlocking(JsonElement? __)
     {
         var projectRoot = RpcContext.ProjectRoot
             ?? throw new InvalidOperationException("No project open.");
+
+        // Studio.Host injects a streaming runner; defer when present so
+        // the modder sees progress in the UI's CompileModal even though
+        // the agent triggered the build.
+        if (CompileRunOverride is { } streaming)
+            return streaming(projectRoot);
 
         lock (CompileLock)
         {

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Jiangyu.Acp;
 using Jiangyu.Acp.JsonRpc;
 using Jiangyu.Acp.Schema;
@@ -15,6 +16,9 @@ internal sealed class AgentProcessManager : IDisposable
     private AcpClient? _client;
     private string? _sessionId;
     private InitializeResponse? _initializeResponse;
+    // Retained so the manager can briefly suppress chat updates while a
+    // synthetic turn (e.g. context priming) runs — see PrimeContextAsync.
+    private AcpClientHandler? _handler;
     private readonly Lock _lock = new();
 
     /// <summary>
@@ -50,12 +54,52 @@ internal sealed class AgentProcessManager : IDisposable
     }
 
     /// <summary>
+    /// Resolves the bundled bun binary at <c>&lt;base&gt;/bin/bun</c>
+    /// (<c>bun.exe</c> on Windows). Returns the absolute path when it
+    /// exists, null otherwise. Bundled in CI by the
+    /// <c>build-studio-host</c> job; absent in dev builds and direct
+    /// <c>dotnet run</c> invocations, in which case the caller falls
+    /// back to PATH-resolved <c>bunx</c>/<c>npx</c>.
+    /// </summary>
+    public static string? ResolveBundledBun()
+    {
+        var name = OperatingSystem.IsWindows() ? "bun.exe" : "bun";
+        var path = Path.Combine(AppContext.BaseDirectory, "bin", name);
+        return File.Exists(path) ? path : null;
+    }
+
+    /// <summary>
+    /// Translates a registry-provided launcher (typically <c>bunx</c> /
+    /// <c>npx</c> / <c>bun</c> for the npx-distributed agents that
+    /// dominate the ACP registry) into the bundled bun binary, so
+    /// modders without Node.js installed get the agent running. Falls
+    /// through unchanged for binary agents (absolute paths) or when the
+    /// bundled bun isn't present (dev builds rely on PATH).
+    /// </summary>
+    public static (string Command, string[] Args) ResolveLauncher(string command, string[] args)
+    {
+        var bundled = ResolveBundledBun();
+        if (bundled is null) return (command, args);
+
+        return command switch
+        {
+            // `bunx` and `npx` both delegate to bun's package runner; bun
+            // is npm-spec-compatible so this is a drop-in replacement.
+            "bunx" or "npx" => (bundled, ["x", .. args]),
+            // Some registry entries declare `command: "bun"` with `args:
+            // ["x", "package"]` already in place; leave args alone.
+            "bun" => (bundled, args),
+            _ => (command, args),
+        };
+    }
+
+    /// <summary>
     /// Spawns the agent subprocess and initialises the ACP connection.
     /// </summary>
     public async Task<InitializeResponse> StartAsync(
         string command,
         string[] args,
-        IAcpClientHandler handler,
+        AcpClientHandler handler,
         CancellationToken ct = default)
     {
         lock (_lock)
@@ -105,6 +149,7 @@ internal sealed class AgentProcessManager : IDisposable
         {
             _process = process;
             _client = client;
+            _handler = handler;
         }
 
         // Monitor for unexpected process exit.
@@ -166,6 +211,22 @@ internal sealed class AgentProcessManager : IDisposable
 
         lock (_lock) _initializeResponse = response;
         return response;
+    }
+
+    /// <summary>
+    /// Completes the ACP authenticate handshake against the running agent.
+    /// Pass the <c>id</c> from one of the <c>authMethods</c> the agent
+    /// advertised in its initialize response. Some agents (Copilot) gate
+    /// <c>session/new</c> behind this; others (Claude, when configured
+    /// outside Studio) advertise no methods and never need it.
+    /// </summary>
+    public async Task AuthenticateAsync(string methodId, CancellationToken ct = default)
+    {
+        var client = Client ?? throw new InvalidOperationException("Agent not running.");
+        await client.AuthenticateAsync(new AuthenticateRequest
+        {
+            MethodId = methodId,
+        }, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -240,8 +301,11 @@ internal sealed class AgentProcessManager : IDisposable
     {
         var configs = new List<McpServerConfig>();
 
+        // Support binaries (jiangyu-mcp, bundled bun) live in <base>/bin
+        // so the studio executable stays alone at the install root and
+        // users see one obvious launcher.
         var exeName = OperatingSystem.IsWindows() ? "jiangyu-mcp.exe" : "jiangyu-mcp";
-        var mcpPath = Path.Combine(AppContext.BaseDirectory, exeName);
+        var mcpPath = Path.Combine(AppContext.BaseDirectory, "bin", exeName);
         if (File.Exists(mcpPath))
         {
             configs.Add(new McpServerConfig
@@ -299,6 +363,34 @@ internal sealed class AgentProcessManager : IDisposable
     }
 
     /// <summary>
+    /// Fires a synthetic prompt against the current session and suppresses
+    /// every session update / response that flows back, so the user's chat
+    /// stays empty. Intended for project-context priming right after
+    /// <see cref="NewSessionAsync"/>: the agent reads the blurb into its
+    /// context window, the modder never sees it. Cross-agent: every ACP
+    /// agent honours <c>session/prompt</c>, so this works regardless of
+    /// whether the agent's MCP client respects <c>initialize.instructions</c>
+    /// (which Copilot doesn't).
+    /// </summary>
+    public async Task PrimeContextAsync(string text, CancellationToken ct = default)
+    {
+        var handler = _handler ?? throw new InvalidOperationException("Agent not running.");
+        using var _ = handler.SuppressUpdates();
+        try
+        {
+            await PromptAsync(text, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Priming is best-effort — a transient agent failure here
+            // shouldn't poison session creation. Log and proceed; the
+            // worst case is the agent doesn't have context until the
+            // user's first prompt establishes it implicitly.
+            Console.Error.WriteLine($"[Agent] Context priming failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Sends a prompt message to the current session.
     /// </summary>
     public async Task<PromptResponse> PromptAsync(string text, CancellationToken ct = default)
@@ -311,6 +403,38 @@ internal sealed class AgentProcessManager : IDisposable
             SessionId = sessionId,
             Prompt = [new TextContentBlock { Text = text }],
         }, ct);
+    }
+
+    /// <summary>
+    /// Pushes a session-level config option to the agent (model selection,
+    /// thinking budget, etc.). Pass-through to ACP's session/set_config_option.
+    /// The agent acknowledges by emitting a config_option_update notification,
+    /// which the UI consumes as the source of truth.
+    /// </summary>
+    public async Task SetConfigOptionAsync(string sessionId, string configId, JsonElement value, CancellationToken ct = default)
+    {
+        var client = Client ?? throw new InvalidOperationException("Agent not running.");
+        await client.SetConfigOptionAsync(new SetConfigOptionRequest
+        {
+            SessionId = sessionId,
+            ConfigId = configId,
+            Value = value,
+        }, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Switches the session's active mode. Pass-through to ACP's
+    /// session/set_mode (https://agentclientprotocol.com/protocol/session-modes).
+    /// Agent confirms via a current_mode_update notification.
+    /// </summary>
+    public async Task SetSessionModeAsync(string sessionId, string modeId, CancellationToken ct = default)
+    {
+        var client = Client ?? throw new InvalidOperationException("Agent not running.");
+        await client.SetSessionModeAsync(new SetSessionModeRequest
+        {
+            SessionId = sessionId,
+            ModeId = modeId,
+        }, ct).ConfigureAwait(false);
     }
 
     /// <summary>

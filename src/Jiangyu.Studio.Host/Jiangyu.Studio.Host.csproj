@@ -66,16 +66,18 @@
     after Vite writes fresh hashed filenames; otherwise the SDK's evaluation-
     time snapshot would reference files that no longer exist.
   -->
-  <!-- Drop the Mcp build output into Host's bin so AgentProcessManager.
-       BuildMcpServerConfig (which resolves via AppContext.BaseDirectory)
-       finds jiangyu-mcp.dll next to jiangyu-studio.dll on dev runs.
-       Release publish builds the Mcp binary as a separate artefact and
-       deposits it next to jiangyu-studio in CI. -->
+  <!-- Drop the Mcp build output into Host's bin/bin/ on dev runs so
+       AgentProcessManager.BuildMcpServerConfig (which resolves via
+       <AppContext.BaseDirectory>/bin/jiangyu-mcp) finds it. The release
+       layout matches: <studio-install>/jiangyu-studio + <studio-install>/bin/jiangyu-mcp,
+       reserving bin/ for support binaries (mcp + bundled bun) and keeping
+       the studio executable at the install root so users see one obvious
+       launcher. -->
   <Target Name="CopyMcpToOutput" AfterTargets="Build">
     <ItemGroup>
       <McpOutput Include="..\Jiangyu.Mcp\bin\$(Configuration)\$(TargetFramework)\**\*" />
     </ItemGroup>
-    <Copy SourceFiles="@(McpOutput)" DestinationFolder="$(OutDir)%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(McpOutput)" DestinationFolder="$(OutDir)bin\%(RecursiveDir)" SkipUnchangedFiles="true" />
   </Target>
 
   <Target Name="BuildStudioFrontend" BeforeTargets="ResolveProjectStaticWebAssets" Condition="'$(Configuration)' == 'Release' And '$(SkipStudioFrontend)' != 'true'">

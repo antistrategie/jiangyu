@@ -6,7 +6,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 // Mock the RPC layer so button clicks don't try to dispatch through a
 // non-existent host. agentPermissionResponse is the only one PermissionBlock
 // touches.
-const permissionResponseMock = vi.fn(() => Promise.resolve());
+const permissionResponseMock = vi.fn((..._args: unknown[]) => Promise.resolve());
 vi.mock("@lib/agent/rpc", () => ({
   agentPermissionResponse: (...args: unknown[]) => permissionResponseMock(...args),
 }));
@@ -20,13 +20,12 @@ vi.mock("./AgentPanel.module.css", () => ({
 vi.mock("lucide-react", () => ({
   Clock: () => null,
   Plus: () => null,
-  Shield: () => createElement("span", { "data-testid": "shield-outline" }),
-  ShieldCheck: () => createElement("span", { "data-testid": "shield-check" }),
 }));
 
-import { PermissionBlock, TrustToggle } from "./AgentPanel";
+import { AuthCard, PermissionBlock } from "./AgentPanel";
 import { useAgentStore } from "@lib/agent/store";
 import type { PermissionMessage } from "@lib/agent/store";
+import type { AuthMethod } from "@lib/agent/types";
 
 function fourWayMessage(overrides?: Partial<PermissionMessage>): PermissionMessage {
   return {
@@ -53,7 +52,6 @@ function resetStore() {
   useAgentStore.setState({
     autoApproveKinds: new Set(),
     autoRejectKinds: new Set(),
-    trustAll: false,
     messages: [],
   });
 }
@@ -125,49 +123,81 @@ describe("PermissionBlock", () => {
   });
 });
 
-describe("TrustToggle", () => {
-  it("renders the outline shield when trustAll is off", () => {
-    useAgentStore.setState({ trustAll: false });
-    render(createElement(TrustToggle));
-    expect(screen.queryByTestId("shield-outline")).not.toBeNull();
-    expect(screen.queryByTestId("shield-check")).toBeNull();
-    expect(screen.getByRole("button").getAttribute("aria-pressed")).toBe("false");
+describe("AuthCard", () => {
+  const githubMethod: AuthMethod = { id: "github", name: "Sign in with GitHub" };
+  const appleMethod: AuthMethod = { id: "apple", name: "Sign in with Apple" };
+
+  it("renders one button per agent-advertised method", () => {
+    const onPick = vi.fn();
+    render(
+      createElement(AuthCard, {
+        agentName: "copilot",
+        methods: [githubMethod, appleMethod],
+        authenticatingMethodId: null,
+        error: null,
+        onPick,
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Sign in with GitHub" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Sign in with Apple" })).not.toBeNull();
   });
 
-  it("renders the check shield when trustAll is on", () => {
-    useAgentStore.setState({ trustAll: true });
-    render(createElement(TrustToggle));
-    expect(screen.queryByTestId("shield-check")).not.toBeNull();
-    expect(screen.queryByTestId("shield-outline")).toBeNull();
-    expect(screen.getByRole("button").getAttribute("aria-pressed")).toBe("true");
+  it("invokes onPick with the method id on click", () => {
+    const onPick = vi.fn();
+    render(
+      createElement(AuthCard, {
+        agentName: "copilot",
+        methods: [githubMethod],
+        authenticatingMethodId: null,
+        error: null,
+        onPick,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Sign in with GitHub" }));
+    expect(onPick).toHaveBeenCalledWith("github");
   });
 
-  it("click toggles trustAll", () => {
-    useAgentStore.setState({ trustAll: false });
-    render(createElement(TrustToggle));
-    fireEvent.click(screen.getByRole("button"));
-    expect(useAgentStore.getState().trustAll).toBe(true);
-    fireEvent.click(screen.getByRole("button"));
-    expect(useAgentStore.getState().trustAll).toBe(false);
+  it("disables every button while a method is in flight", () => {
+    render(
+      createElement(AuthCard, {
+        agentName: "copilot",
+        methods: [githubMethod, appleMethod],
+        authenticatingMethodId: "github",
+        error: null,
+        onPick: vi.fn(),
+      }),
+    );
+    // The in-flight button advertises progress in its label so the user
+    // sees that the click was registered.
+    const inFlight = screen.getByRole("button", { name: /Signing in.*GitHub/ });
+    expect((inFlight as HTMLButtonElement).disabled).toBe(true);
+    const other = screen.getByRole("button", { name: "Sign in with Apple" });
+    expect((other as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("aria-label reflects the per-kind count when trustAll is off", () => {
-    useAgentStore.setState({
-      trustAll: false,
-      autoApproveKinds: new Set(["edit", "delete"]),
-    });
-    render(createElement(TrustToggle));
-    const label = screen.getByRole("button").getAttribute("aria-label");
-    expect(label).toBe("Auto-approve: 2 kinds");
+  it("shows the agent's auth error inline", () => {
+    render(
+      createElement(AuthCard, {
+        agentName: "copilot",
+        methods: [githubMethod],
+        authenticatingMethodId: null,
+        error: "user cancelled",
+        onPick: vi.fn(),
+      }),
+    );
+    expect(screen.getByText("user cancelled")).not.toBeNull();
   });
 
-  it("aria-label says 'on' when trustAll is on regardless of per-kind state", () => {
-    useAgentStore.setState({
-      trustAll: true,
-      autoApproveKinds: new Set(["edit"]),
-    });
-    render(createElement(TrustToggle));
-    const label = screen.getByRole("button").getAttribute("aria-label");
-    expect(label).toBe("Auto-approve on (this session)");
+  it("falls back to a generic agent name when none is supplied", () => {
+    render(
+      createElement(AuthCard, {
+        agentName: null,
+        methods: [githubMethod],
+        authenticatingMethodId: null,
+        error: null,
+        onPick: vi.fn(),
+      }),
+    );
+    expect(screen.getByText(/This agent needs to authenticate/)).not.toBeNull();
   });
 });

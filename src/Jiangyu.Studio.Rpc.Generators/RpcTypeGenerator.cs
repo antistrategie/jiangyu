@@ -235,6 +235,12 @@ public sealed class RpcTypeGenerator : IIncrementalGenerator
         if (type.ContainingNamespace?.ToDisplayString() == "System" && type.MetadataName == "DateTimeOffset")
             return "string";
 
+        // System.Text.Json.JsonElement carries arbitrary JSON; the wire shape
+        // is preserved verbatim, so the TS side sees it as `unknown` and
+        // narrows at use sites.
+        if (type.ContainingNamespace?.ToDisplayString() == "System.Text.Json" && type.MetadataName == "JsonElement")
+            return "unknown";
+
         // object → unknown.
         if (type.SpecialType == SpecialType.System_Object)
             return "unknown";

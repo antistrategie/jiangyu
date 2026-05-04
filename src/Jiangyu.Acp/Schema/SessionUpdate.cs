@@ -134,7 +134,7 @@ public sealed class ConfigOptionUpdate : SessionUpdate
     public override string UpdateType => "config_option_update";
 
     [JsonPropertyName("configOptions")]
-    public required JsonElement[] ConfigOptions { get; set; }
+    public required ConfigOption[] ConfigOptions { get; set; }
 }
 
 public sealed class SessionInfoUpdate : SessionUpdate

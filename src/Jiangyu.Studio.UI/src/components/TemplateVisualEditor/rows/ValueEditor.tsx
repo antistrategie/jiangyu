@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useCallback } from "react";
 import type { EnumMemberEntry, TemplateMember } from "@lib/rpc";
 import type { EditorValue } from "../types";
 import {
@@ -9,8 +9,6 @@ import {
 import { CommitInput } from "../shared/CommitInput";
 import { SuggestionCombobox, type SuggestionItem } from "../shared/SuggestionCombobox";
 import {
-  getCachedEnumMembers,
-  getCachedEnumEntries,
   getCachedTemplateTypes,
   getCachedProjectClones,
   templatesSearch,
@@ -43,34 +41,18 @@ export function RangeHint({ min, max }: RangeHintProps) {
 // --- NamedArrayIndexPicker ---
 //
 // Dropdown picker for `set "Field" index=N` on a [NamedArray(typeof(T))]
-// member. Fetches the paired enum's members via the cached
-// templatesEnumMembers RPC and labels each option by name; stores the
-// ordinal value on the directive.
+// member. Reads enum entries from the schema query's inlined
+// `member.enumMembers`; falls back to a numeric input when the schema
+// didn't resolve them (e.g. a synthesised cross-drag member).
 
 export interface NamedArrayIndexPickerProps {
-  enumTypeName: string;
+  entries: readonly EnumMemberEntry[] | null | undefined;
   index: number;
   onChange: (index: number) => void;
 }
 
-export function NamedArrayIndexPicker({
-  enumTypeName,
-  index,
-  onChange,
-}: NamedArrayIndexPickerProps) {
-  const [entries, setEntries] = useState<readonly EnumMemberEntry[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    void getCachedEnumEntries(enumTypeName).then((m) => {
-      if (!cancelled) setEntries(m);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [enumTypeName]);
-
-  if (entries === null || entries.length === 0) {
-    // Fall back to numeric while loading, or when the enum isn't resolvable.
+export function NamedArrayIndexPicker({ entries, index, onChange }: NamedArrayIndexPickerProps) {
+  if (!entries || entries.length === 0) {
     return (
       <CommitInput
         type="number"
@@ -217,9 +199,10 @@ function EnumValueEditor({ value, onChange, member }: ValueEditorProps) {
   // when the catalog couldn't resolve a declared type (rare).
   const declaredEnumType = member?.enumTypeName ?? "";
   const showTypeSpan = declaredEnumType === "";
+  const enumMembers = member?.enumMembers;
   const fetchEnumValues = useCallback(
-    () => (declaredEnumType ? getCachedEnumMembers(declaredEnumType) : Promise.resolve([])),
-    [declaredEnumType],
+    () => Promise.resolve(enumMembers?.map((e) => e.name) ?? []),
+    [enumMembers],
   );
   return (
     <div className={styles.setRefRow}>

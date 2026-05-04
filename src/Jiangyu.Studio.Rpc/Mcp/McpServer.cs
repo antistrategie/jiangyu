@@ -24,7 +24,8 @@ public sealed class McpServer
         string Name,
         string Description,
         MethodInfo Method,
-        IReadOnlyList<ParamEntry> Params);
+        IReadOnlyList<ParamEntry> Params,
+        bool LongRunning);
 
     private readonly Dictionary<string, ToolEntry> _tools = new(StringComparer.Ordinal);
 
@@ -46,7 +47,7 @@ public sealed class McpServer
                 .Select(p => new ParamEntry(p.Name, p.Type, p.Description, p.Required))
                 .ToList();
 
-            _tools[attr.Name] = new ToolEntry(attr.Name, attr.Description, method, paramAttrs);
+            _tools[attr.Name] = new ToolEntry(attr.Name, attr.Description, method, paramAttrs, attr.LongRunning);
         }
     }
 
@@ -116,6 +117,10 @@ public sealed class McpServer
             requestedVersion = v.GetString() ?? LatestSupportedMcpVersion;
         }
 
+        // No `instructions` field: cross-client support is patchy (current
+        // Copilot builds drop it). Project context is injected by the host
+        // as a synthetic first-prompt turn after session/new instead, which
+        // works on every agent without depending on spec compliance.
         var result = new
         {
             protocolVersion = requestedVersion,
@@ -205,9 +210,22 @@ public sealed class McpServer
             // RPCs that share the same static state (project root, indexes,
             // agent manager, etc.). The WebView path is already single-threaded
             // by InfiniFrame; this extends that ordering to MCP callers.
+            //
+            // Long-running tools (e.g. jiangyu_compile) declare LongRunning=true
+            // and bypass this lock — holding it for minutes would freeze every
+            // concurrent WebView interaction (typing, mode picker, etc). Such
+            // tools are responsible for their own concurrency (typically a
+            // per-tool gate like CompileLock).
             JsonElement result;
-            lock (RpcHandlers.DispatchLock)
+            if (tool.LongRunning)
+            {
                 result = (JsonElement)tool.Method.Invoke(null, [arguments])!;
+            }
+            else
+            {
+                lock (RpcHandlers.DispatchLock)
+                    result = (JsonElement)tool.Method.Invoke(null, [arguments])!;
+            }
 
             return BuildSuccessResponse(id, result);
         }
@@ -270,83 +288,20 @@ public sealed class McpServer
         return JsonRpcResult(id, JsonSerializer.SerializeToElement(withStructured));
     }
 
-    // Embedded docs live in this same assembly (Jiangyu.Studio.Rpc). Single
-    // source of truth so both the WebView host and the standalone Mcp binary
-    // serve the same markdown.
-    private const string EmbeddedDocsPrefix = "Jiangyu.Studio.Rpc.docs.";
-    private static readonly Assembly LibraryAssembly = typeof(McpServer).Assembly;
-
-    /// <summary>
-    /// Discovered at startup by scanning the assembly manifest for embedded doc
-    /// resources. Each key is the suffix after the prefix (e.g.
-    /// "reference.templates.md"), and the name is derived from the markdown
-    /// front-matter title line or, failing that, from the filename.
-    /// </summary>
-    private static readonly List<(string Key, string Name)> EmbeddedDocs = DiscoverEmbeddedDocs();
-
-    private static List<(string Key, string Name)> DiscoverEmbeddedDocs()
-    {
-        var result = new List<(string Key, string Name)>();
-        foreach (var name in LibraryAssembly.GetManifestResourceNames())
-        {
-            if (!name.StartsWith(EmbeddedDocsPrefix, StringComparison.Ordinal))
-                continue;
-            if (!name.EndsWith(".md", StringComparison.Ordinal))
-                continue;
-
-            var key = name[EmbeddedDocsPrefix.Length..];
-            var friendly = DeriveFriendlyName(key);
-            result.Add((key, friendly));
-        }
-
-        result.Sort((a, b) => string.Compare(a.Key, b.Key, StringComparison.Ordinal));
-        return result;
-    }
-
-    private static string DeriveFriendlyName(string key)
-    {
-        // Try to extract the first markdown heading from the resource.
-        var resourceName = EmbeddedDocsPrefix + key;
-        using var stream = LibraryAssembly.GetManifestResourceStream(resourceName);
-        if (stream is not null)
-        {
-            using var reader = new StreamReader(stream);
-            for (var i = 0; i < 20; i++)
-            {
-                var line = reader.ReadLine();
-                if (line is null) break;
-                if (line.StartsWith("# ", StringComparison.Ordinal))
-                    return line[2..].Trim();
-            }
-        }
-
-        // Fallback: turn "reference.replacements.audio.md" into "Reference Replacements Audio".
-        var stem = key.EndsWith(".md", StringComparison.Ordinal) ? key[..^3] : key;
-        return string.Join(' ', stem.Split('.').Select(
-            s => s.Length > 0 ? char.ToUpperInvariant(s[0]) + s[1..].Replace('-', ' ') : s));
-    }
-
-    private static string? ReadEmbeddedDoc(string key)
-    {
-        var resourceName = EmbeddedDocsPrefix + key;
-        using var stream = LibraryAssembly.GetManifestResourceStream(resourceName);
-        if (stream is null) return null;
-        using var reader = new StreamReader(stream);
-        return reader.ReadToEnd();
-    }
-
+    // Embedded docs live in this same assembly. Discovery + read logic in
+    // EmbeddedDocs.cs so the tool wrappers (jiangyu_docs_*) can share it.
     private static string HandleResourcesList(JsonElement? id)
     {
         var resources = new List<object>();
 
         // Embedded docs from site/
-        foreach (var (key, name) in EmbeddedDocs)
+        foreach (var doc in EmbeddedDocs.All)
         {
             resources.Add(new
             {
-                uri = $"jiangyu://docs/{key}",
-                name,
-                description = $"Jiangyu documentation: {name}.",
+                uri = $"jiangyu://docs/{doc.Key}",
+                name = doc.Name,
+                description = $"Jiangyu documentation: {doc.Name}.",
                 mimeType = "text/markdown",
             });
         }
@@ -379,7 +334,7 @@ public sealed class McpServer
         if (uri.StartsWith("jiangyu://docs/", StringComparison.Ordinal))
         {
             var key = uri["jiangyu://docs/".Length..];
-            var text = ReadEmbeddedDoc(key);
+            var text = EmbeddedDocs.Read(key);
             if (text is not null)
             {
                 var contents = new[]

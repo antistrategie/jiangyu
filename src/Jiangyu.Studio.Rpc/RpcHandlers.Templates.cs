@@ -125,7 +125,7 @@ public static partial class RpcHandlers
     }
 
     [McpTool("jiangyu_templates_query",
-        "Get the full field schema for a template type, or drill into a specific field path. Returns field names, types, whether they're collections, enum types, polymorphic base classes, writable status, and member lists.")]
+        "Field schema for a template type, or for a specific field path. Returns field names, types, collection/scalar/reference flags, polymorphic base classes, writable status, member lists, and — for any enum or [NamedArray(typeof(T))] field — the paired enum's full {name, value} member list inlined as `enumMembers` (and `namedArrayEnumTypeName` for NamedArray fields). Always call this first when you need enum-member names or NamedArray index labels; do NOT guess the enum type and do NOT call jiangyu_templates_enum_members until you've seen the exact name in this response.")]
     [McpParam("typeName", "string", "Template type name (e.g. \"EntityTemplate\").", Required = true)]
     [McpParam("fieldPath", "string", "Dot-separated field path to drill into (e.g. \"Properties.Accuracy\").")]
     internal static JsonElement TemplatesQuery(JsonElement? parameters)
@@ -290,8 +290,8 @@ public static partial class RpcHandlers
     }
 
     [McpTool("jiangyu_templates_enum_members",
-        "List all members of a MENACE game enum type. Returns {\"members\": [{\"name\": \"Basic\", \"value\": 0}, ...]}. Use this to discover valid enum values for set operations with enum=\"...\".")]
-    [McpParam("typeName", "string", "Fully qualified or short enum type name (e.g. \"PerkTier\").", Required = true)]
+        "Direct enum-member lookup by exact type name. Returns {\"members\": [{\"name\": \"Basic\", \"value\": 0}, ...]}. PREFER jiangyu_templates_query first — its response inlines enumMembers for any enum or NamedArray field, in one call, with no need to know the enum's name in advance. Only fall back to this tool when you already have the exact enum type name in hand (e.g. from a prior query response) and don't need the surrounding schema.")]
+    [McpParam("typeName", "string", "Fully qualified or short enum type name (e.g. \"PerkTier\"). Must match the assembly exactly — do not guess. Get the correct name from jiangyu_templates_query's namedArrayEnumTypeName / enumTypeName fields.", Required = true)]
     internal static JsonElement TemplatesEnumMembers(JsonElement? parameters)
     {
         var typeName = RequireString(parameters, "typeName");
@@ -385,6 +385,40 @@ public static partial class RpcHandlers
         return leafType.IsEnum ? catalog.FriendlyName(leafType) : null;
     }
 
+    /// <summary>
+    /// Resolves the enum paired with this member (either as a regular enum
+    /// scalar/element or via <c>[NamedArray(typeof(T))]</c>) and returns its
+    /// members as <see cref="EnumMemberEntry"/> pairs. Inlined on member
+    /// schema so the visual editor doesn't need a follow-up
+    /// <c>templatesEnumMembers</c> RPC for either dropdown surface.
+    /// </summary>
+    private static List<EnumMemberEntry>? ComputeEnumMembers(TemplateTypeCatalog catalog, MemberShape m)
+    {
+        var memberType = m.MemberType;
+        var elementType = TemplateTypeCatalog.GetElementType(memberType);
+        var leafType = elementType ?? memberType;
+        Type? enumType = leafType.IsEnum ? leafType : null;
+
+        if (enumType is null && m.NamedArrayEnumTypeName is not null)
+        {
+            enumType = catalog.ResolveType(m.NamedArrayEnumTypeName, out _, out _);
+        }
+
+        return enumType is { IsEnum: true } ? BuildEnumMembers(enumType) : null;
+    }
+
+    private static List<EnumMemberEntry> BuildEnumMembers(Type enumType)
+    {
+        return [.. enumType
+            .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Select(f => new EnumMemberEntry
+            {
+                Name = f.Name,
+                Value = Convert.ToInt32(f.GetRawConstantValue(), System.Globalization.CultureInfo.InvariantCulture),
+            })
+            .OrderBy(e => e.Value)];
+    }
+
     private static string? ComputeReferenceTypeName(TemplateTypeCatalog catalog, MemberShape m)
     {
         var memberType = m.MemberType;
@@ -469,6 +503,21 @@ public static partial class RpcHandlers
         QueryResult result,
         IReadOnlySet<string> instantiatedClassNames)
     {
+        // Leaf-path enum members: when the terminal type is an enum, surface
+        // {name, value} pairs so the visual editor doesn't need a separate
+        // templatesEnumMembers RPC for the dropdown. NamedArray leaves (the
+        // array unwraps to its element type — Byte for `InitialAttributes` —
+        // so the leaf type isn't an enum, but the paired-enum name lives on
+        // result.NamedArrayEnumTypeName; resolve and inline that too).
+        Type? leafEnumType = result.CurrentType is { IsEnum: true } e
+            ? e
+            : result.NamedArrayEnumTypeName is { } namedEnum
+                ? catalog.ResolveType(namedEnum, out _, out _)
+                : null;
+        var leafEnumMembers = leafEnumType is { IsEnum: true }
+            ? BuildEnumMembers(leafEnumType)
+            : null;
+
         return new TemplateQueryResult
         {
             Kind = result.Kind.ToString().ToLowerInvariant(),
@@ -478,6 +527,8 @@ public static partial class RpcHandlers
             IsWritable = result.IsWritable,
             PatchScalarKind = result.PatchScalarKind?.ToString(),
             EnumMemberNames = result.EnumMemberNames.Count > 0 ? [.. result.EnumMemberNames] : null,
+            EnumMembers = leafEnumMembers,
+            NamedArrayEnumTypeName = result.NamedArrayEnumTypeName,
             ReferenceTargetTypeName = result.ReferenceTargetTypeName,
             IsLikelyOdinOnly = result.IsLikelyOdinOnly ? true : null,
             Members = result.Members?.Select(m => new TemplateMember
@@ -498,6 +549,7 @@ public static partial class RpcHandlers
                 IsReferenceTypePolymorphic = ComputeReferenceTypeIsPolymorphic(catalog, m, instantiatedClassNames),
                 ElementSubtypes = ComputeElementSubtypes(catalog, m),
                 NamedArrayEnumTypeName = m.NamedArrayEnumTypeName,
+                EnumMembers = ComputeEnumMembers(catalog, m),
                 NumericMin = m.NumericMin,
                 NumericMax = m.NumericMax,
                 Tooltip = m.Tooltip,
@@ -562,6 +614,21 @@ public static partial class RpcHandlers
 
         [JsonPropertyName("enumMemberNames")]
         public List<string>? EnumMemberNames { get; set; }
+
+        /// <summary>{name, value} pairs for the leaf enum type. Set whenever
+        /// the terminal type is an enum OR the leaf is a
+        /// <c>[NamedArray(typeof(T))]</c> primitive-element field (in which
+        /// case the members come from the paired enum, not from the leaf
+        /// element type). Lets agents and the visual editor render dropdowns
+        /// without a follow-up <c>templatesEnumMembers</c> call.</summary>
+        [JsonPropertyName("enumMembers")]
+        public List<EnumMemberEntry>? EnumMembers { get; set; }
+
+        /// <summary>Short name of the enum paired with a
+        /// <c>[NamedArray(typeof(T))]</c> primitive-element leaf. Null
+        /// otherwise. Mirrors the same field on member entries.</summary>
+        [JsonPropertyName("namedArrayEnumTypeName")]
+        public string? NamedArrayEnumTypeName { get; set; }
 
         [JsonPropertyName("referenceTargetTypeName")]
         public string? ReferenceTargetTypeName { get; set; }
@@ -634,6 +701,14 @@ public static partial class RpcHandlers
         /// <c>[NamedArray(typeof(T))]</c> array member; null otherwise.</summary>
         [JsonPropertyName("namedArrayEnumTypeName")]
         public string? NamedArrayEnumTypeName { get; set; }
+
+        /// <summary>{name, value} pairs for the member's enum (regular enum
+        /// scalar/element OR the named-array's paired enum). Inlined so the
+        /// visual editor can populate dropdowns without a follow-up
+        /// <c>templatesEnumMembers</c> RPC. Null when the member doesn't
+        /// touch an enum type.</summary>
+        [JsonPropertyName("enumMembers")]
+        public List<EnumMemberEntry>? EnumMembers { get; set; }
 
         [JsonPropertyName("numericMin")]
         public double? NumericMin { get; set; }
@@ -788,7 +863,7 @@ public static partial class RpcHandlers
     }
 
     [McpTool("jiangyu_templates_inspect",
-        "Inspect a specific template instance's full structure and current vanilla values. Returns the object's fields, options, and nested values. Use the collection and pathId from jiangyu_templates_search results.")]
+        "Inspect a specific template instance's full structure and current vanilla values. Returns the object's fields, options, and nested values. Use the collection and pathId from jiangyu_templates_search results. For [NamedArray(typeof(T))] fields each array element carries its paired enum-member name on the element node (so InitialAttributes[4] reads as {\"name\": \"Vitality\", \"value\": 70}); no follow-up enum lookup is needed.")]
     [McpParam("collection", "string", "Asset collection name (e.g. \"resources.assets\").", Required = true)]
     [McpParam("pathId", "integer", "PathID of the template instance (Int64).", Required = true)]
     internal static JsonElement TemplatesInspect(JsonElement? parameters)
@@ -849,7 +924,7 @@ public static partial class RpcHandlers
     }
 
     [McpTool("jiangyu_templates_value",
-        "Read a single field value from a specific template instance by type name and id. Returns {\"found\": true, \"fields\": {...}} with the instance's field values.")]
+        "Read field values from a specific template instance by type name and id. Returns {\"found\": true, \"fields\": [...]} with the instance's field tree. Same shape as jiangyu_templates_inspect — [NamedArray(typeof(T))] elements carry the paired enum-member name on each slot.")]
     [McpParam("typeName", "string", "Template type name (e.g. \"EntityTemplate\").", Required = true)]
     [McpParam("id", "string", "Template instance ID (e.g. \"player_squad.darby\").", Required = true)]
     internal static JsonElement TemplatesValue(JsonElement? parameters)

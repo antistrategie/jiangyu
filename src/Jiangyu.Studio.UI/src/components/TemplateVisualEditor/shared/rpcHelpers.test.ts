@@ -7,11 +7,9 @@ vi.mock("@lib/rpc", () => ({
 import { rpcCall } from "@lib/rpc";
 import {
   vanillaCacheKey,
-  getCachedEnumMembers,
   getCachedTemplateTypes,
   invalidateProjectClonesCache,
   getCachedProjectClones,
-  enumMembersCache,
   templateTypesCache,
 } from "./rpcHelpers";
 
@@ -19,7 +17,6 @@ const mockRpcCall = vi.mocked(rpcCall);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  enumMembersCache.clear();
   templateTypesCache.types = null;
   // Reset the module-level projectClonesCache by invalidating.
   invalidateProjectClonesCache();
@@ -38,26 +35,6 @@ describe("vanillaCacheKey", () => {
     // "A\x00B" key for ("A","B") must differ from ("A\x00B","").
     const ab = vanillaCacheKey("A", "B");
     expect(ab).toBe("A\u0000B");
-  });
-});
-
-describe("getCachedEnumMembers", () => {
-  it("fetches from RPC on first call and caches on second", async () => {
-    mockRpcCall.mockResolvedValue({
-      members: [
-        { name: "None", value: 0 },
-        { name: "Sword", value: 1 },
-      ],
-    });
-
-    const first = await getCachedEnumMembers("ItemSlot");
-    expect(first).toEqual(["None", "Sword"]);
-    expect(mockRpcCall).toHaveBeenCalledTimes(1);
-
-    const second = await getCachedEnumMembers("ItemSlot");
-    expect(second).toEqual(["None", "Sword"]);
-    // Should not make another RPC call.
-    expect(mockRpcCall).toHaveBeenCalledTimes(1);
   });
 });
 

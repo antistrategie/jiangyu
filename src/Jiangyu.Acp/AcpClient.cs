@@ -80,6 +80,11 @@ public sealed class AcpClient : IDisposable
         return await SendAsync<SetConfigOptionRequest, SetConfigOptionResponse>("session/set_config_option", request, ct).ConfigureAwait(false);
     }
 
+    public async Task<SetSessionModeResponse> SetSessionModeAsync(SetSessionModeRequest request, CancellationToken ct = default)
+    {
+        return await SendAsync<SetSessionModeRequest, SetSessionModeResponse>("session/set_mode", request, ct).ConfigureAwait(false);
+    }
+
     private async Task<TResponse> SendAsync<TRequest, TResponse>(string method, TRequest request, CancellationToken ct)
     {
         var @params = JsonSerializer.SerializeToElement(request);

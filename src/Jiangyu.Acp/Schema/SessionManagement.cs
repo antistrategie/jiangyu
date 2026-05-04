@@ -23,11 +23,11 @@ public sealed class LoadSessionResponse
 {
     [JsonPropertyName("modes")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public JsonElement? Modes { get; set; }
+    public SessionModes? Modes { get; set; }
 
     [JsonPropertyName("configOptions")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public JsonElement? ConfigOptions { get; set; }
+    public ConfigOption[]? ConfigOptions { get; set; }
 
     [JsonPropertyName("_meta")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -81,13 +81,34 @@ public sealed class SessionSummary
     public string? Title { get; set; }
 }
 
+public sealed class SetSessionModeRequest
+{
+    [JsonPropertyName("sessionId")]
+    public required string SessionId { get; set; }
+
+    [JsonPropertyName("modeId")]
+    public required string ModeId { get; set; }
+}
+
+public sealed class SetSessionModeResponse
+{
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Meta { get; set; }
+}
+
 public sealed class SetConfigOptionRequest
 {
     [JsonPropertyName("sessionId")]
     public required string SessionId { get; set; }
 
-    [JsonPropertyName("key")]
-    public required string Key { get; set; }
+    /// <summary>Mirrors the <c>id</c> field on the <see cref="ConfigOption"/>
+    /// the agent advertises. ACP wire name is <c>configId</c>; sending
+    /// anything else produces a JSON-RPC -32602 (Invalid params) with
+    /// <c>data._errors.configId</c> set to "expected string, received
+    /// undefined".</summary>
+    [JsonPropertyName("configId")]
+    public required string ConfigId { get; set; }
 
     [JsonPropertyName("value")]
     public required JsonElement Value { get; set; }

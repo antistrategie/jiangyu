@@ -36,14 +36,19 @@ interface MenuItemProps {
   readonly children: ReactNode;
   readonly onClick: () => void;
   readonly disabled?: boolean;
+  /** When true, render as the currently-selected option in a single-pick
+   *  list (e.g. the active mode in a session-options dropdown). */
+  readonly active?: boolean;
 }
 
-export function MenuItem({ children, onClick, disabled }: MenuItemProps) {
+export function MenuItem({ children, onClick, disabled, active }: MenuItemProps) {
+  const cls = active === true ? `${styles.item} ${styles.itemActive}` : styles.item;
   return (
     <button
       type="button"
-      role="menuitem"
-      className={styles.item}
+      role={active === undefined ? "menuitem" : "menuitemradio"}
+      aria-checked={active}
+      className={cls}
       onClick={onClick}
       disabled={disabled}
     >

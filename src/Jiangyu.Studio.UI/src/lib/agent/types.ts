@@ -21,7 +21,63 @@ export interface AuthMethod {
 /** Result of agentSessionCreate (now arrives as `agentSessionCreated` notification). */
 export interface AgentSessionResult {
   readonly sessionId?: string;
+  readonly modes?: SessionModes | null;
+  readonly configOptions?: ConfigOption[] | null;
   readonly error?: string | null;
+  /** Set when the agent rejected session/new with ACP's auth_required
+   *  error (-32000). The host attaches the latest authMethods snapshot
+   *  from initialize so the panel can render a sign-in card without an
+   *  extra round-trip. */
+  readonly authRequired?: boolean;
+  readonly authMethods?: AuthMethod[] | null;
+}
+
+/** Result of agentAuthenticate (arrives as `agentAuthenticated` notification). */
+export interface AgentAuthResult {
+  readonly methodId: string;
+  readonly error?: string | null;
+}
+
+/** Per ACP, agent-declared operating modes for the session
+ *  (e.g. Claude's "default" / "plan" / "explain"). */
+export interface SessionModes {
+  readonly currentModeId?: string | null;
+  readonly availableModes: readonly SessionMode[];
+}
+
+export interface SessionMode {
+  readonly id?: string | null;
+  readonly name?: string | null;
+  readonly description?: string | null;
+}
+
+/** One agent-tunable knob (model selection, thinking budget, etc.). All
+ *  fields are optional because real-world agents emit varying shapes —
+ *  Claude Agent uses `type` + `currentValue` without a stable `key`;
+ *  others use `id` + `value`. The UI reads `key ?? id` and
+ *  `value ?? currentValue`; entries without any identifier are dropped. */
+export interface ConfigOption {
+  readonly key?: string | null;
+  readonly id?: string | null;
+  readonly name?: string | null;
+  readonly description?: string | null;
+  readonly type?: string | null;
+  readonly value?: unknown;
+  readonly currentValue?: unknown;
+  /** Copilot's spelling. Use whichever is set; UI reads `options ?? choices`. */
+  readonly options?: readonly ConfigOptionChoice[] | null;
+  readonly choices?: readonly ConfigOptionChoice[] | null;
+  readonly min?: number | null;
+  readonly max?: number | null;
+  readonly category?: string | null;
+}
+
+export interface ConfigOptionChoice {
+  readonly value?: unknown;
+  /** Copilot uses `name`; some specs use `label`. UI reads `name ?? label`. */
+  readonly name?: string | null;
+  readonly label?: string | null;
+  readonly description?: string | null;
 }
 
 /** Result of agentSessionPrompt RPC. Spec stop reasons:
@@ -115,8 +171,7 @@ export interface CurrentModeUpdate {
 
 export interface ConfigOptionUpdate {
   readonly sessionUpdate: "config_option_update";
-  readonly key: string;
-  readonly value: unknown;
+  readonly configOptions: readonly ConfigOption[];
 }
 
 export interface SessionInfoUpdate {

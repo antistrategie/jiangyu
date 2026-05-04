@@ -40,6 +40,12 @@ public sealed class ObjectInspectionOptions
 [RpcType]
 public sealed class InspectedFieldNode
 {
+    /// <summary>
+    /// For top-level field nodes this is the field's name. For elements of a
+    /// <c>[NamedArray(typeof(T))]</c> array it's the paired enum member's
+    /// name (so each slot reads as e.g. "Vitality" instead of just an
+    /// index). Null on positional elements of plain arrays.
+    /// </summary>
     public string? Name { get; set; }
     public required string Kind { get; set; }
     public string? FieldTypeName { get; set; }

@@ -66,6 +66,12 @@ public static class Program
         // doesn't freeze the app when it first mounts.
         _ = Task.Run(RpcDispatcher.PreloadTemplateCaches);
 
+        // Route MCP-triggered compiles (agent calling jiangyu_compile via the
+        // /mcp endpoint) through the streaming pipeline so the CompileModal
+        // shows live progress. The standalone jiangyu-mcp binary doesn't run
+        // this code, so its compile path stays inline.
+        RpcDispatcher.RegisterCompileOverride();
+
         app.UseAutoServerClose();
 
         // MCP runs over both transports because no agent supports both:

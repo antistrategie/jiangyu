@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Mock the permission-response RPC so the bypass path can fire without a
 // real host. Defined before the store import so the store's
 // `agentPermissionResponse` resolves to the mock.
-const permissionResponseMock = vi.fn(() => Promise.resolve());
+const permissionResponseMock = vi.fn((..._args: unknown[]) => Promise.resolve());
 vi.mock("./rpc", () => ({
   agentPermissionResponse: (...args: unknown[]) => permissionResponseMock(...args),
 }));
@@ -35,9 +35,11 @@ function reset() {
     lastStopReason: null,
     messages: [],
     availableCommands: [],
+    authMethods: [],
+    authenticatingMethodId: null,
+    authError: null,
     autoApproveKinds: new Set(),
     autoRejectKinds: new Set(),
-    trustAll: false,
   });
 }
 
@@ -305,14 +307,6 @@ describe("auto-approve", () => {
     });
   }
 
-  it("trustAll bypasses the prompt and fires the allow option", () => {
-    useAgentStore.getState().setTrustAll(true);
-    fireRequest("tc-1", "edit");
-    // No UI message added; RPC called with the agent's allow_once option.
-    expect(useAgentStore.getState().messages).toHaveLength(0);
-    expect(permissionResponseMock).toHaveBeenCalledWith("tc-1", "selected", "ao");
-  });
-
   it("autoApproveKinds bypasses for the matching kind only", () => {
     useAgentStore.getState().addAutoApproveKind("edit");
     fireRequest("tc-edit", "edit");
@@ -339,7 +333,7 @@ describe("auto-approve", () => {
   });
 
   it("falls back to the UI prompt when the agent offers no allow option", () => {
-    useAgentStore.getState().setTrustAll(true);
+    useAgentStore.getState().addAutoApproveKind("edit");
     useAgentStore.getState().handlePermissionRequest({
       permissionId: "tc-1",
       sessionId: "s-1",
@@ -365,31 +359,22 @@ describe("auto-approve", () => {
     expect(after2).toBe(after1);
   });
 
-  it("setConnecting clears both autoApproveKinds and trustAll", () => {
-    useAgentStore.getState().setTrustAll(true);
+  it("setConnecting clears autoApproveKinds", () => {
     useAgentStore.getState().addAutoApproveKind("edit");
     useAgentStore.getState().setConnecting("agent-1");
-    const s = useAgentStore.getState();
-    expect(s.trustAll).toBe(false);
-    expect(s.autoApproveKinds.size).toBe(0);
+    expect(useAgentStore.getState().autoApproveKinds.size).toBe(0);
   });
 
-  it("setDisconnected clears both autoApproveKinds and trustAll", () => {
-    useAgentStore.getState().setTrustAll(true);
+  it("setDisconnected clears autoApproveKinds", () => {
     useAgentStore.getState().addAutoApproveKind("edit");
     useAgentStore.getState().setDisconnected();
-    const s = useAgentStore.getState();
-    expect(s.trustAll).toBe(false);
-    expect(s.autoApproveKinds.size).toBe(0);
+    expect(useAgentStore.getState().autoApproveKinds.size).toBe(0);
   });
 
-  it("handleSessionCreated clears both autoApproveKinds and trustAll", () => {
-    useAgentStore.getState().setTrustAll(true);
+  it("handleSessionCreated clears autoApproveKinds", () => {
     useAgentStore.getState().addAutoApproveKind("edit");
     useAgentStore.getState().handleSessionCreated({ sessionId: "fresh" });
-    const s = useAgentStore.getState();
-    expect(s.trustAll).toBe(false);
-    expect(s.autoApproveKinds.size).toBe(0);
+    expect(useAgentStore.getState().autoApproveKinds.size).toBe(0);
   });
 
   it("autoRejectKinds bypasses with the reject option", () => {
@@ -445,12 +430,16 @@ describe("auto-approve", () => {
     expect(s.autoApproveKinds.has("edit")).toBe(true);
   });
 
-  it("trustAll does not bypass-reject; per-kind reject still does", () => {
-    // trustAll is the "auto-allow everything" master switch; it shouldn't
-    // override a per-kind reject the user explicitly chose. Reject runs
-    // first in the bypass chain.
-    useAgentStore.getState().setTrustAll(true);
-    useAgentStore.getState().addAutoRejectKind("delete");
+  it("autoRejectKinds and autoApproveKinds for the same kind: reject wins", () => {
+    // Reject runs first in the bypass chain. If the user has both a
+    // reject and an allow registered for the same kind (e.g. they
+    // changed their mind), the latest decision is captured by the
+    // mutation helpers stripping the other side; this test exercises
+    // the bypass-order invariant defensively.
+    useAgentStore.getState().addAutoApproveKind("delete");
+    useAgentStore.setState((s) => ({
+      autoRejectKinds: new Set([...s.autoRejectKinds, "delete"]),
+    }));
     useAgentStore.getState().handlePermissionRequest({
       permissionId: "tc-1",
       sessionId: "s-1",
@@ -594,5 +583,144 @@ describe("session resume", () => {
     useAgentStore.getState().setConnecting("claude-acp", { kind: "resume", sessionId: "s-old" });
     useAgentStore.getState().handleStartResult({ error: "bunx not found" });
     expect(useAgentStore.getState().pendingSession).toBeNull();
+  });
+});
+
+describe("authentication", () => {
+  // The Copilot ACP handshake gates session/new behind authenticate. The
+  // store mirrors that with an authMethods-driven sign-in card; these
+  // tests pin the state transitions so the panel never deadlocks on a
+  // missing or stale auth signal.
+
+  it("handleStartResult populates authMethods from initialize", () => {
+    useAgentStore.getState().setConnecting("copilot-acp");
+    useAgentStore.getState().handleStartResult({
+      agentName: "copilot",
+      authMethods: [{ id: "github", name: "Sign in with GitHub" }],
+    });
+    const s = useAgentStore.getState();
+    expect(s.connected).toBe(true);
+    expect(s.authMethods).toHaveLength(1);
+    expect(s.authMethods[0]?.id).toBe("github");
+    expect(s.authError).toBeNull();
+  });
+
+  it("handleStartResult with no authMethods leaves the list empty (Claude path)", () => {
+    useAgentStore.getState().setConnecting("claude-acp");
+    useAgentStore.getState().handleStartResult({ agentName: "claude" });
+    expect(useAgentStore.getState().authMethods).toHaveLength(0);
+  });
+
+  it("beginAuthenticate marks the in-flight method and clears prior error", () => {
+    useAgentStore.setState({ authError: "old failure" });
+    useAgentStore.getState().beginAuthenticate("github");
+    const s = useAgentStore.getState();
+    expect(s.authenticatingMethodId).toBe("github");
+    expect(s.authError).toBeNull();
+  });
+
+  it("handleAuthResult success clears authMethods so the auto-effect can proceed", () => {
+    useAgentStore.setState({
+      authMethods: [{ id: "github", name: "GitHub" }],
+      authenticatingMethodId: "github",
+    });
+    useAgentStore.getState().handleAuthResult({ methodId: "github" });
+    const s = useAgentStore.getState();
+    expect(s.authenticatingMethodId).toBeNull();
+    expect(s.authMethods).toHaveLength(0);
+    expect(s.authError).toBeNull();
+  });
+
+  it("handleAuthResult error keeps methods so the user can retry", () => {
+    useAgentStore.setState({
+      authMethods: [{ id: "github", name: "GitHub" }],
+      authenticatingMethodId: "github",
+    });
+    useAgentStore.getState().handleAuthResult({
+      methodId: "github",
+      error: "user cancelled",
+    });
+    const s = useAgentStore.getState();
+    expect(s.authenticatingMethodId).toBeNull();
+    expect(s.authError).toBe("user cancelled");
+    expect(s.authMethods).toHaveLength(1);
+  });
+
+  it("handleSessionCreated authRequired re-seeds methods without clearing pendingSession", () => {
+    // After successful authenticate, the auto-effect re-fires session/new.
+    // If the agent still rejects with auth_required (token expired between
+    // the two calls), the panel must re-render the sign-in card without
+    // dropping the user's original create intent.
+    useAgentStore.setState({
+      pendingSession: { kind: "create" },
+      authMethods: [],
+    });
+    useAgentStore.getState().handleSessionCreated({
+      authRequired: true,
+      authMethods: [{ id: "github", name: "GitHub" }],
+      error: "auth_required",
+    });
+    const s = useAgentStore.getState();
+    expect(s.authMethods).toHaveLength(1);
+    expect(s.authError).toBe("auth_required");
+    expect(s.pendingSession).toEqual({ kind: "create" });
+    expect(s.sessionId).toBeNull();
+  });
+
+  it("handleSessionCreated authRequired with no methods surfaces a hard error", () => {
+    // Defensive: if the agent rejected with auth_required but advertised
+    // no methods, we have nothing to drive — escalate to connectError so
+    // the panel doesn't sit on a perpetual spinner.
+    useAgentStore.setState({ pendingSession: { kind: "create" } });
+    useAgentStore.getState().handleSessionCreated({
+      authRequired: true,
+      authMethods: [],
+      error: "agent says auth_required but advertised nothing",
+    });
+    const s = useAgentStore.getState();
+    expect(s.connectError).toBe("agent says auth_required but advertised nothing");
+    expect(s.pendingSession).toBeNull();
+    expect(s.authMethods).toHaveLength(0);
+  });
+
+  it("handleSessionCreated success clears authMethods (opportunistic advertisement)", () => {
+    // Some agents (Copilot) advertise authMethods even when external auth
+    // already covers session/new. A successful create proves auth wasn't
+    // required, so the sign-in card must not linger on the live session.
+    useAgentStore.setState({
+      authMethods: [{ id: "github", name: "GitHub" }],
+      pendingSession: { kind: "create" },
+    });
+    useAgentStore.getState().handleSessionCreated({ sessionId: "s-1" });
+    const s = useAgentStore.getState();
+    expect(s.sessionId).toBe("s-1");
+    expect(s.authMethods).toHaveLength(0);
+    expect(s.authError).toBeNull();
+  });
+
+  it("setConnecting clears auth state from a previous agent", () => {
+    useAgentStore.setState({
+      authMethods: [{ id: "github", name: "GitHub" }],
+      authenticatingMethodId: "github",
+      authError: "stale",
+    });
+    useAgentStore.getState().setConnecting("other-agent");
+    const s = useAgentStore.getState();
+    expect(s.authMethods).toHaveLength(0);
+    expect(s.authenticatingMethodId).toBeNull();
+    expect(s.authError).toBeNull();
+  });
+
+  it("setDisconnected clears auth state", () => {
+    useAgentStore.setState({
+      authMethods: [{ id: "github", name: "GitHub" }],
+      authenticatingMethodId: "github",
+      authError: "stale",
+    });
+    useAgentStore.getState().setDisconnected();
+    const s = useAgentStore.getState();
+    expect(s.authMethods).toHaveLength(0);
+    expect(s.authenticatingMethodId).toBeNull();
+    expect(s.authError).toBeNull();
   });
 });

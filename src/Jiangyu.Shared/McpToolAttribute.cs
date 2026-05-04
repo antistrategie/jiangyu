@@ -16,6 +16,15 @@ public sealed class McpToolAttribute(string name, string description) : Attribut
     /// that a model can decide when and how to call the tool.
     /// </summary>
     public string Description { get; } = description;
+
+    /// <summary>
+    /// True for tools that may run for many seconds (e.g. compile). The MCP
+    /// dispatch skips its global lock for these so an in-flight long-running
+    /// tool doesn't block every concurrent WebView RPC. The tool is then
+    /// responsible for its own concurrency (typically a per-tool gate).
+    /// Off by default.
+    /// </summary>
+    public bool LongRunning { get; set; }
 }
 
 /// <summary>

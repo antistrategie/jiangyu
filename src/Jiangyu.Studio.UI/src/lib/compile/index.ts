@@ -112,11 +112,20 @@ export function useCompile(): UseCompile {
 
   useEffect(() => {
     const unsubStarted = subscribe("compileStarted", () => {
-      // Mark start time here so it reflects the host-side kickoff, not the
-      // request serialisation on the client.
+      // Mark start time + flip to "running" so the status bar lights up
+      // regardless of who kicked off the compile (UI button via start()
+      // already does this; agent-triggered compiles via the MCP override
+      // come straight to this notification with no prior state change).
+      // Also reset accumulators so a fresh run doesn't carry stale logs.
       const now = Date.now();
       startedAtRef.current = now;
-      setState((prev) => ({ ...prev, startedAt: now }));
+      logIdRef.current = 0;
+      warnCountRef.current = 0;
+      setState({
+        ...INITIAL_COMPILE_STATE,
+        status: "running",
+        startedAt: now,
+      });
     });
     const unsubPhase = subscribe("compilePhase", (params) => {
       const e = params as CompilePhaseEvent;

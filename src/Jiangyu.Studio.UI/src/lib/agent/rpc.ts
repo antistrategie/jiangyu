@@ -47,6 +47,29 @@ export function agentPermissionResponse(
   return rpcCall("agentPermissionResponse", { permissionId, outcome, optionId });
 }
 
+/** Push an agent-tunable config option (model, thinking budget, etc.) to
+ *  the active session. The agent confirms by emitting a
+ *  config_option_update notification, which the store consumes as the
+ *  source of truth — callers don't update local state themselves.
+ *  `configId` matches the `id` field on the agent-emitted ConfigOption. */
+export function agentSetConfigOption(configId: string, value: unknown): Promise<unknown> {
+  return rpcCall("agentSetConfigOption", { configId, value });
+}
+
+/** Switch the session's active mode. ACP's session/set_mode. The agent
+ *  confirms by emitting a current_mode_update notification. */
+export function agentSetSessionMode(modeId: string): Promise<unknown> {
+  return rpcCall("agentSetSessionMode", { modeId });
+}
+
+/** Drive ACP's `authenticate` handshake with one of the methods the agent
+ *  advertised in initialize (e.g. Copilot's "github"). Fire-and-forget;
+ *  result arrives as `agentAuthenticated` notification. On success the
+ *  store re-fires session creation. */
+export function agentAuthenticate(methodId: string): Promise<{ accepted: boolean }> {
+  return rpcCall<{ accepted: boolean }>("agentAuthenticate", { methodId });
+}
+
 /** Returns the project's session metadata index (history popover source). */
 export function agentSessionsList(): Promise<AgentSessionsFile> {
   return rpcCall<AgentSessionsFile>("agentSessionsList");

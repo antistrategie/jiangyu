@@ -13,16 +13,19 @@ import {
   agentSessionCancel,
   agentSessionResume,
   agentPermissionResponse,
+  agentAuthenticate,
 } from "@lib/agent/rpc";
 import { useInstalledAgents } from "@lib/agent/installed";
 import { useRegistryModalStore } from "@lib/agent/registryModal";
 import { AgentDropdown, AgentMenu } from "@components/AgentDropdown/AgentDropdown";
 import { AgentHistoryPopover } from "@components/AgentHistoryPopover/AgentHistoryPopover";
 import { Spinner } from "@components/Spinner/Spinner";
-import { Clock, Plus, Shield, ShieldCheck } from "lucide-react";
-import type { AgentStopReason, DiffContent, PermissionOption } from "@lib/agent/types";
+import { Clock, Plus } from "lucide-react";
+import type { AgentStopReason, AuthMethod, PermissionOption } from "@lib/agent/types";
 import type { InstalledAgent } from "@lib/rpc";
 import { DiffStatsForContent, DiffView } from "./DiffView";
+import { Markdown } from "./Markdown";
+import { SessionOptionsBar } from "./SessionOptions";
 import styles from "./AgentPanel.module.css";
 
 const STOP_REASON_LABEL: Record<AgentStopReason | "error", string | null> = {
@@ -42,6 +45,14 @@ export function AgentPanel() {
   const sessionId = useAgentStore((s) => s.sessionId);
   const sessionTitle = useAgentStore((s) => s.sessionTitle);
   const currentModeId = useAgentStore((s) => s.currentModeId);
+  const availableModes = useAgentStore((s) => s.availableModes);
+  // ACP advertises mode ids as URIs (e.g.
+  // "https://agentclientprotocol.com/protocol/session-modes#agent"); the
+  // human label is on the matching availableModes entry. Falls back to a
+  // shortened id for unknown modes so the badge never renders a full URL.
+  const currentMode = availableModes.find((m) => m.id === currentModeId);
+  const modeBadgeLabel =
+    currentMode?.name ?? (currentModeId !== null ? shortenModeId(currentModeId) : null);
   const prompting = useAgentStore((s) => s.prompting);
   const messages = useAgentStore((s) => s.messages);
   const availableCommands = useAgentStore((s) => s.availableCommands);
@@ -51,6 +62,10 @@ export function AgentPanel() {
   const currentAgent = installedAgents.find((a) => a.id === currentAgentId) ?? null;
   const setRegistryOpen = useRegistryModalStore((s) => s.setOpen);
   const replaying = useAgentStore((s) => s.replaying);
+  const authMethods = useAgentStore((s) => s.authMethods);
+  const authenticatingMethodId = useAgentStore((s) => s.authenticatingMethodId);
+  const authError = useAgentStore((s) => s.authError);
+  const needsAuth = authMethods.length > 0;
 
   const [input, setInput] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -143,6 +158,10 @@ export function AgentPanel() {
   const pendingSession = useAgentStore((s) => s.pendingSession);
   useEffect(() => {
     if (!connected || pendingSession === null) return;
+    // Block until the user has cleared any auth gate the agent put up.
+    // The sign-in card drives `agentAuthenticate`, which clears
+    // `authMethods` on success and re-fires this effect via the deps.
+    if (needsAuth) return;
 
     if (pendingSession.kind === "create" && !sessionId) {
       void agentSessionCreate().catch((err: unknown) => {
@@ -161,7 +180,17 @@ export function AgentPanel() {
         });
       });
     }
-  }, [connected, sessionId, pendingSession]);
+  }, [connected, sessionId, pendingSession, needsAuth]);
+
+  const handleAuthenticate = useCallback((methodId: string) => {
+    useAgentStore.getState().beginAuthenticate(methodId);
+    void agentAuthenticate(methodId).catch((err: unknown) => {
+      useAgentStore.getState().handleAuthResult({
+        methodId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }, []);
 
   const handleNewSession = useCallback(
     (agent: InstalledAgent) => {
@@ -189,19 +218,21 @@ export function AgentPanel() {
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    if (!text || !sessionId || prompting || replaying) return;
+    if (!text || !sessionId || replaying) return;
 
     setInput("");
     useAgentStore.getState().clearLastStopReason();
     useAgentStore.getState().addUserMessage(text);
     useAgentStore.getState().setPrompting(true);
 
+    // ACP queues concurrent prompts on the agent side; sending mid-turn
+    // is fine and avoids losing the modder's typed message.
     try {
       await agentSessionPrompt(text);
     } catch {
       useAgentStore.getState().setPrompting(false);
     }
-  }, [input, sessionId, prompting, replaying]);
+  }, [input, sessionId, replaying]);
 
   const handleCancel = useCallback(() => {
     void agentSessionCancel();
@@ -270,9 +301,8 @@ export function AgentPanel() {
     <div className={styles.panel}>
       <div className={styles.header}>
         <span className={styles.sessionTitle}>{deriveSessionLabel(sessionTitle, messages)}</span>
-        {currentModeId !== null && <span className={styles.modeBadge}>{currentModeId}</span>}
+        {modeBadgeLabel !== null && <span className={styles.modeBadge}>{modeBadgeLabel}</span>}
         <div className={styles.headerActions}>
-          <TrustToggle />
           <div className={styles.historyWrap} ref={historyWrapRef}>
             <button
               type="button"
@@ -301,7 +331,15 @@ export function AgentPanel() {
 
       {!sessionId ? (
         <div className={styles.emptyStateWrap}>
-          {connectError !== null ? (
+          {needsAuth ? (
+            <AuthCard
+              agentName={currentAgent?.name ?? null}
+              methods={authMethods}
+              authenticatingMethodId={authenticatingMethodId}
+              error={authError}
+              onPick={handleAuthenticate}
+            />
+          ) : connectError !== null ? (
             <div className={styles.resumeErrorCard}>
               <div className={styles.connectError}>{connectError}</div>
               <button
@@ -362,18 +400,22 @@ export function AgentPanel() {
                 replaying
                   ? "Loading conversation history…"
                   : prompting
-                    ? "Agent is working…"
+                    ? "Type next message (sends after current turn)…"
                     : "Message the agent…"
               }
-              disabled={prompting || replaying}
+              disabled={replaying}
               rows={1}
             />
             <div className={styles.composerActions}>
               <div className={styles.composerActionsLeft}>
-                {/* Future home for model picker, plan/write toggle, context info. */}
+                <SessionOptionsBar />
               </div>
               <div className={styles.composerActionsRight}>
-                {prompting ? (
+                {/* During a turn, show Cancel when there's nothing typed —
+                    that's the user's only sensible action mid-prompt.
+                    As soon as they start typing, swap to Send so the new
+                    message can fire (ACP queues it agent-side). */}
+                {prompting && !input.trim() ? (
                   <button type="button" className={styles.cancelBtn} onClick={handleCancel}>
                     Cancel
                   </button>
@@ -409,6 +451,58 @@ export function AgentPanel() {
  * popover uses for `firstMessage`. "New session" is the empty-canvas
  * fallback when nothing has been typed yet.
  */
+/**
+ * ACP mode ids are typically URIs with a `#fragment` carrying the
+ * short name. Trim to that fragment for the badge fallback when we
+ * don't have a matching availableModes entry to read `name` from.
+ */
+function shortenModeId(id: string): string {
+  const hashIdx = id.lastIndexOf("#");
+  if (hashIdx >= 0 && hashIdx < id.length - 1) return id.slice(hashIdx + 1);
+  const slashIdx = id.lastIndexOf("/");
+  if (slashIdx >= 0 && slashIdx < id.length - 1) return id.slice(slashIdx + 1);
+  return id;
+}
+
+export function AuthCard({
+  agentName,
+  methods,
+  authenticatingMethodId,
+  error,
+  onPick,
+}: {
+  agentName: string | null;
+  methods: readonly AuthMethod[];
+  authenticatingMethodId: string | null;
+  error: string | null;
+  onPick: (methodId: string) => void;
+}) {
+  const busy = authenticatingMethodId !== null;
+  return (
+    <div className={styles.welcomeCard}>
+      <h3 className={styles.welcomeEyebrow}>Sign in</h3>
+      <p className={styles.welcomeBlurb}>
+        {agentName ?? "This agent"} needs to authenticate before it can start a session.
+      </p>
+      {methods.map((m) => {
+        const inFlight = authenticatingMethodId === m.id;
+        return (
+          <button
+            key={m.id}
+            type="button"
+            className={styles.welcomeAction}
+            disabled={busy}
+            onClick={() => onPick(m.id)}
+          >
+            {inFlight ? `Signing in (${m.name})…` : m.name}
+          </button>
+        );
+      })}
+      {error !== null && <div className={styles.connectError}>{error}</div>}
+    </div>
+  );
+}
+
 function deriveSessionLabel(sessionTitle: string | null, messages: readonly ChatMessage[]): string {
   if (sessionTitle !== null && sessionTitle.length > 0) return sessionTitle;
   const firstUser = messages.find((m) => m.role === "user");
@@ -426,9 +520,17 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     case "user":
       return <div className={`${styles.message} ${styles.message_user}`}>{message.text}</div>;
     case "agent":
-      return <div className={`${styles.message} ${styles.message_agent}`}>{message.text}</div>;
+      return (
+        <div className={`${styles.message} ${styles.message_agent}`}>
+          <Markdown text={message.text} />
+        </div>
+      );
     case "thought":
-      return <div className={`${styles.message} ${styles.message_thought}`}>{message.text}</div>;
+      return (
+        <div className={`${styles.message} ${styles.message_thought}`}>
+          <Markdown text={message.text} />
+        </div>
+      );
     case "tool":
       return <ToolBlock message={message} />;
     case "plan":
@@ -480,41 +582,6 @@ function ToolBlock({ message }: { message: ToolMessage }) {
           </div>
         ))}
     </div>
-  );
-}
-
-/**
- * Session-wide trust toggle. When on, every incoming permission request
- * is auto-approved with the agent's first allow_once option and the
- * prompt UI is suppressed. Bounded to the current session — switching
- * agents, creating a new session, or disconnecting clears it.
- */
-export function TrustToggle() {
-  const trustAll = useAgentStore((s) => s.trustAll);
-  const autoApproveCount = useAgentStore((s) => s.autoApproveKinds.size);
-  const setTrustAll = useAgentStore((s) => s.setTrustAll);
-
-  const label = trustAll
-    ? "Auto-approve on (this session)"
-    : autoApproveCount > 0
-      ? `Auto-approve: ${autoApproveCount} kind${autoApproveCount === 1 ? "" : "s"}`
-      : "Auto-approve off";
-
-  return (
-    <button
-      type="button"
-      className={`${styles.headerBtn} ${styles.trustBtn} ${trustAll ? styles.trustBtnActive : ""}`}
-      onClick={() => setTrustAll(!trustAll)}
-      title={label}
-      aria-label={label}
-      aria-pressed={trustAll}
-    >
-      {trustAll ? (
-        <ShieldCheck size={14} aria-hidden="true" />
-      ) : (
-        <Shield size={14} aria-hidden="true" />
-      )}
-    </button>
   );
 }
 

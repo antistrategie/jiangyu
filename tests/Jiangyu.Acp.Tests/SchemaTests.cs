@@ -92,12 +92,13 @@ public class SchemaTests
     [Fact]
     public void SessionUpdate_Deserialises_ConfigOptionUpdate()
     {
-        var json = """{"sessionUpdate":"config_option_update","configOptions":[{"type":"select","currentValue":"claude-4"}]}""";
+        var json = """{"sessionUpdate":"config_option_update","configOptions":[{"key":"model","name":"Model","type":"enum","value":"claude-4"}]}""";
         var update = JsonSerializer.Deserialize<SessionUpdate>(json);
 
         var cfg = Assert.IsType<ConfigOptionUpdate>(update);
         Assert.Single(cfg.ConfigOptions);
-        Assert.Equal("select", cfg.ConfigOptions[0].GetProperty("type").GetString());
+        Assert.Equal("model", cfg.ConfigOptions[0].Key);
+        Assert.Equal("enum", cfg.ConfigOptions[0].Type);
     }
 
     [Fact]

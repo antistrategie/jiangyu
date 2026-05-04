@@ -27,7 +27,10 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
     private const string IndexFileName = "template-index.json";
     private const string ManifestFileName = "template-index-manifest.json";
     private const string ValuesFileName = "template-values.json";
-    internal const int CurrentFormatVersion = 5;
+    // v6: NamedArray inspect elements carry the paired enum member's name on
+    // each slot (ManagedTypeInspectionEnricher). Older caches lack the names
+    // and need a rebuild for the agent's inspect output to be self-describing.
+    internal const int CurrentFormatVersion = 6;
     private const int ValuesInspectDepth = 6;
 
     private static readonly JsonSerializerOptions JsonOptions = new()

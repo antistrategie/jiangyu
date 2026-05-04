@@ -18,10 +18,45 @@ internal sealed class AcpClientHandler : IAcpClientHandler
     private readonly IInfiniFrameWindow _window;
     private readonly ConcurrentDictionary<string, TerminalState> _terminals = new();
     private readonly ConcurrentDictionary<string, TaskCompletionSource<RequestPermissionResponse>> _pendingPermissions = new();
+    // Refcount so nested suppressions compose (e.g. context priming
+    // overlapping a session-load replay). > 0 means drop session updates
+    // before they reach the WebView.
+    private int _suppressUpdates;
+    // True while we're inside the replayed synthetic-context turn during
+    // session/load. The user message that opens the turn matches
+    // AgentContext.Sentinel; subsequent agent_message_chunk / tool_call /
+    // etc. updates belong to that turn until the next non-synthetic
+    // user_message_chunk arrives. Set on the synthetic user message,
+    // cleared when a real user message follows.
+    private bool _skippingReplayedContext;
 
     public AcpClientHandler(IInfiniFrameWindow window)
     {
         _window = window;
+    }
+
+    /// <summary>
+    /// Suppresses agentUpdate notifications to the WebView until the
+    /// returned token is disposed. Used by the host to fire synthetic
+    /// turns (project-context priming) without leaking them into the
+    /// user's chat. Refcounted so nested calls compose.
+    /// </summary>
+    public IDisposable SuppressUpdates()
+    {
+        Interlocked.Increment(ref _suppressUpdates);
+        return new SuppressionToken(this);
+    }
+
+    private sealed class SuppressionToken : IDisposable
+    {
+        private readonly AcpClientHandler _owner;
+        private int _disposed;
+        public SuppressionToken(AcpClientHandler owner) => _owner = owner;
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+                Interlocked.Decrement(ref _owner._suppressUpdates);
+        }
     }
 
     public ValueTask<ReadTextFileResponse> ReadTextFileAsync(ReadTextFileRequest request, CancellationToken ct)
@@ -211,6 +246,35 @@ internal sealed class AcpClientHandler : IAcpClientHandler
 
     public ValueTask OnSessionUpdateAsync(SessionNotification notification, CancellationToken ct)
     {
+        // While a synthetic turn (e.g. context priming) is in flight, the
+        // user shouldn't see any of its session updates flicker through
+        // the chat. The agent still gets the prompt and reply in its
+        // context window — we just don't render them.
+        if (Volatile.Read(ref _suppressUpdates) > 0)
+            return ValueTask.CompletedTask;
+
+        // session/load replays history including the synthetic priming
+        // turn from the original session. Identify it by content (the
+        // sentinel line is unique to the host-injected blurb) and drop
+        // every update from that turn until the next *real* user message
+        // arrives. Only user_message_chunk can transition the flag — the
+        // turn boundary in ACP is "the next user input."
+        if (notification.Update is UserMessageChunkUpdate userMsg)
+        {
+            var text = (userMsg.Content as TextContentBlock)?.Text;
+            var isSynthetic = text is not null && text.StartsWith(AgentContext.Sentinel, StringComparison.Ordinal);
+            if (isSynthetic)
+            {
+                _skippingReplayedContext = true;
+                return ValueTask.CompletedTask;
+            }
+            _skippingReplayedContext = false;
+        }
+        else if (_skippingReplayedContext)
+        {
+            return ValueTask.CompletedTask;
+        }
+
         RpcDispatcher.SendNotification(_window, "agentUpdate", notification);
 
         // Persist agent-set titles to the session metadata file so the

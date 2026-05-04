@@ -286,7 +286,7 @@ export function SetRow({
                   <span className={styles.setInsertAt}>at</span>
                   {namedArrayEnum ? (
                     <NamedArrayIndexPicker
-                      enumTypeName={namedArrayEnum}
+                      entries={member.enumMembers}
                       index={directive.index ?? 0}
                       onChange={(i) => onChange({ ...directive, index: i })}
                     />

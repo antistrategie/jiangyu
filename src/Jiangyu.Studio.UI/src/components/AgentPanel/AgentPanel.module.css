@@ -82,20 +82,6 @@
   border-color: var(--rule);
 }
 
-/* Auto-approve trust toggle. Inactive: muted shield outline. Active:
-   jade fill so the modder can see at a glance the prompt suppression is
-   on. */
-.trustBtn {
-  color: var(--ink-3);
-}
-
-.trustBtnActive,
-.trustBtnActive:hover {
-  color: var(--jade-0);
-  border-color: var(--jade-1);
-  background: color-mix(in oklab, var(--jade-1) 12%, var(--paper-0));
-}
-
 /* ---- Empty state ---- */
 
 .emptyStateWrap {
@@ -281,12 +267,149 @@
   border-left: 2px solid var(--ink-4);
 }
 
+/* ---- Markdown body ---- */
+
+/* Inside a .message bubble. The bubble keeps white-space: pre-wrap so plain
+   text honours newlines, but markdown handles its own block layout — flip
+   back to normal whitespace inside the renderer. */
+.markdown {
+  white-space: normal;
+}
+
+.markdown :first-child {
+  margin-top: 0;
+}
+
+.markdown :last-child {
+  margin-bottom: 0;
+}
+
+.markdown p {
+  margin: 0 0 var(--space-2) 0;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  margin: var(--space-3) 0 var(--space-1) 0;
+  line-height: 1.3;
+}
+
+.markdown h1 {
+  font-size: var(--fs-md);
+}
+
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-size: var(--fs-base);
+}
+
+.markdown ul,
+.markdown ol {
+  margin: 0 0 var(--space-2) 0;
+  padding-left: var(--space-4);
+}
+
+.markdown li {
+  margin: 2px 0;
+}
+
+.markdown li > p {
+  margin: 0;
+}
+
+/* GFM task lists: agents use these in plans / checklists. */
+.markdown li input[type="checkbox"] {
+  margin-right: var(--space-1);
+  vertical-align: baseline;
+}
+
+.markdown a {
+  color: var(--cinnabar-1);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.markdown a:hover {
+  color: var(--cinnabar-2);
+}
+
+.markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--paper-2);
+  padding: 1px 4px;
+}
+
+/* Fenced code blocks. Tool blocks already render dark-on-light for
+   monospace, but here we keep the parchment palette so prose flows into
+   code visually instead of slamming into a black box. */
+.markdown pre {
+  margin: 0 0 var(--space-2) 0;
+  padding: var(--space-2);
+  background: var(--paper-2);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+.markdown pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+
+.markdown blockquote {
+  margin: 0 0 var(--space-2) 0;
+  padding: 0 var(--space-2);
+  border-left: 2px solid var(--ink-4);
+  color: var(--ink-3);
+}
+
+.markdown table {
+  border-collapse: collapse;
+  margin: 0 0 var(--space-2) 0;
+  font-size: var(--fs-sm);
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--rule);
+  padding: 2px var(--space-2);
+  text-align: left;
+}
+
+.markdown th {
+  background: var(--paper-1);
+  font-weight: 600;
+}
+
+.markdown hr {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: var(--space-2) 0;
+}
+
+.markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
 /* ---- Tool calls ---- */
 
 .toolBlock {
   margin: 0 10px;
-  background: var(--bg-inverse, var(--ink-0));
-  color: var(--paper-0);
+  background: var(--paper-2);
+  color: var(--ink-1);
   padding: 6px var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
@@ -297,7 +420,7 @@
   align-items: center;
   gap: 6px;
   width: 100%;
-  margin: 0 0 var(--space-1) 0;
+  margin: 0;
   padding: 0;
   background: transparent;
   border: 0;
@@ -312,13 +435,13 @@
 }
 
 .toolHeader:hover:not(:disabled) .toolName {
-  color: var(--gold-2);
+  color: var(--cinnabar-1);
 }
 
 .toolChevron {
   width: 10px;
   flex: 0 0 auto;
-  color: color-mix(in oklab, var(--paper-0) 55%, transparent);
+  color: color-mix(in oklab, var(--ink-0) 45%, transparent);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   line-height: 1;
@@ -327,10 +450,10 @@
 .toolName {
   font-family: var(--font-label);
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: var(--tracking-wider);
-  color: var(--gold-1);
+  color: var(--ink-1);
   /* Single-line, ellipsis if the agent supplies a very long title (e.g.
      a tool name with a full absolute path). flex-shrink:1 lets it give
      up space; the summary's higher shrink ratio (3 below) means the
@@ -345,7 +468,7 @@
 .toolSummary {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  color: color-mix(in oklab, var(--paper-0) 55%, transparent);
+  color: var(--ink-3);
   text-transform: none;
   letter-spacing: 0;
   font-weight: 400;
@@ -375,13 +498,12 @@
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.4;
+  margin-top: var(--space-1);
 }
 
 .diffPath {
-  /* DiffView renders inside both ToolBlock (dark --bg-inverse surface) and
-     PermissionBlock (light --paper-1 surface). Inheriting the surrounding
-     foreground keeps the path readable in both — the gold the path used to
-     pin to was illegible against the permission block's light background. */
+  /* Inherits the surrounding foreground so the path stays readable on
+     either tool-block (paper-2) or permission-block (paper-1) surfaces. */
   font-family: var(--font-mono);
   font-weight: 600;
   color: inherit;
@@ -420,7 +542,7 @@
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
   line-height: 1.4;
-  border: 1px solid color-mix(in oklab, var(--paper-0) 14%, transparent);
+  border: 1px solid color-mix(in oklab, var(--ink-0) 14%, transparent);
 }
 
 .diffLineContext,
@@ -433,15 +555,15 @@
 }
 
 .diffLineAdded {
-  background: color-mix(in oklab, var(--jade-1, #6ed28a) 18%, transparent);
+  background: color-mix(in oklab, var(--jade-1) 22%, transparent);
 }
 
 .diffLineRemoved {
-  background: color-mix(in oklab, var(--cinnabar-1, #e25c4f) 18%, transparent);
+  background: color-mix(in oklab, var(--cinnabar-1) 22%, transparent);
 }
 
 .diffMarker {
-  color: color-mix(in oklab, var(--paper-0) 60%, transparent);
+  color: color-mix(in oklab, var(--ink-0) 50%, transparent);
   text-align: center;
   user-select: none;
 }
@@ -455,9 +577,9 @@
   padding: 4px 6px;
   font-family: var(--font-label);
   font-size: var(--fs-xs);
-  color: color-mix(in oklab, var(--paper-0) 50%, transparent);
+  color: color-mix(in oklab, var(--ink-0) 45%, transparent);
   text-align: center;
-  border-block: 1px dashed color-mix(in oklab, var(--paper-0) 14%, transparent);
+  border-block: 1px dashed color-mix(in oklab, var(--ink-0) 14%, transparent);
 }
 
 /* ---- Plan ---- */
@@ -678,4 +800,98 @@
   color: var(--ink-3);
   font-style: italic;
   font-size: var(--fs-sm);
+}
+
+/* ---- Session options (mode + config) ---- */
+
+/* Flat row of one trigger button per agent-declared setting. */
+.optionsBar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* Anchor for the popover; positions absolutely above the trigger. */
+.optionsWrap {
+  position: relative;
+  display: inline-block;
+}
+
+.optionsTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px var(--space-2);
+  background: transparent;
+  border: 1px solid var(--rule-faint);
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  max-width: 200px;
+  white-space: nowrap;
+}
+
+.optionsTrigger:hover {
+  background: var(--paper-2);
+  color: var(--ink-0);
+}
+
+/* Active boolean toggle reads as "filled". */
+.optionsTriggerActive {
+  background: var(--ink-0);
+  color: var(--paper-0);
+  border-color: var(--ink-0);
+}
+
+.optionsTriggerActive:hover {
+  background: var(--ink-1);
+  color: var(--paper-0);
+}
+
+.optionsTriggerLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Anchor for the popover. The MenuList component carries its own
+   styling; this just positions it above the trigger (the composer sits
+   at the bottom of the panel, so popovers open upward). */
+.optionsPopoverAnchor {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  min-width: 220px;
+  max-width: 360px;
+  z-index: 10;
+}
+
+/* Free-form input fallback (when an enum/select option declares no
+   choices — agent expects a typed value). Wrapped in MenuList chrome
+   for visual parity with the choice-list popover. */
+.optionsFreeform {
+  background: var(--bg-raised);
+  border: 1px solid var(--ink-0);
+  padding: var(--space-2);
+}
+
+.optionsTextInput,
+.optionsNumberInput {
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  padding: 2px var(--space-2);
+  background: var(--paper-0);
+  border: 1px solid var(--rule-faint);
+  color: var(--ink-0);
+  width: 100%;
+}
+
+.optionsTextInput:focus,
+.optionsNumberInput:focus {
+  outline: none;
+  border-color: var(--ink-2);
 }

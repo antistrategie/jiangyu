@@ -33,11 +33,14 @@ export function computeLineDiff(oldText: string, newText: string): DiffLine[] {
   const lcs = new Int32Array((m + 1) * stride);
   // get/set wrappers because TS treats indexed reads as `number | undefined`
   // under noUncheckedIndexedAccess; the typed array can't actually return
-  // undefined inside the bounds we use here.
+  // undefined inside the bounds we use here. Same idea for old/newLines —
+  // the loop bounds keep us inside [0, length).
   const get = (idx: number): number => lcs[idx] ?? 0;
+  const oldAt = (idx: number): string => oldLines[idx] ?? "";
+  const newAt = (idx: number): string => newLines[idx] ?? "";
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
-      if (oldLines[i - 1] === newLines[j - 1]) {
+      if (oldAt(i - 1) === newAt(j - 1)) {
         lcs[i * stride + j] = get((i - 1) * stride + (j - 1)) + 1;
       } else {
         lcs[i * stride + j] = Math.max(get((i - 1) * stride + j), get(i * stride + (j - 1)));
@@ -56,24 +59,24 @@ export function computeLineDiff(oldText: string, newText: string): DiffLine[] {
   let i = m;
   let j = n;
   while (i > 0 && j > 0) {
-    if (oldLines[i - 1] === newLines[j - 1]) {
-      out.push({ kind: "context", text: oldLines[i - 1] });
+    if (oldAt(i - 1) === newAt(j - 1)) {
+      out.push({ kind: "context", text: oldAt(i - 1) });
       i--;
       j--;
     } else if (get((i - 1) * stride + j) > get(i * stride + (j - 1))) {
-      out.push({ kind: "removed", text: oldLines[i - 1] });
+      out.push({ kind: "removed", text: oldAt(i - 1) });
       i--;
     } else {
-      out.push({ kind: "added", text: newLines[j - 1] });
+      out.push({ kind: "added", text: newAt(j - 1) });
       j--;
     }
   }
   while (i > 0) {
-    out.push({ kind: "removed", text: oldLines[i - 1] });
+    out.push({ kind: "removed", text: oldAt(i - 1) });
     i--;
   }
   while (j > 0) {
-    out.push({ kind: "added", text: newLines[j - 1] });
+    out.push({ kind: "added", text: newAt(j - 1) });
     j--;
   }
 

@@ -12,6 +12,8 @@ export interface AgentSessionMeta {
   firstMessage?: string | null;
   createdAt: number;
   updatedAt: number;
+  currentModeId?: string | null;
+  configValues?: Record<string, unknown> | null;
 }
 
 export interface CompileStartedAck {
@@ -182,6 +184,19 @@ export interface FileEntry {
   size: number;
 }
 
+export interface DocsListResult {
+  docs: DocListEntry[];
+}
+
+export interface DocListEntry {
+  key: string;
+  title: string;
+}
+
+export interface DocsReadResult {
+  text: string;
+}
+
 export interface ConfigStatus {
   gamePath?: string | null;
   gameError?: string | null;
@@ -223,6 +238,8 @@ export interface TemplateQueryResult {
   isWritable: boolean;
   patchScalarKind?: string | null;
   enumMemberNames?: string[] | null;
+  enumMembers?: EnumMemberEntry[] | null;
+  namedArrayEnumTypeName?: string | null;
   referenceTargetTypeName?: string | null;
   isLikelyOdinOnly?: boolean | null;
   members?: TemplateMember[] | null;
@@ -245,6 +262,7 @@ export interface TemplateMember {
   isReferenceTypePolymorphic?: boolean | null;
   elementSubtypes?: string[] | null;
   namedArrayEnumTypeName?: string | null;
+  enumMembers?: EnumMemberEntry[] | null;
   numericMin?: number | null;
   numericMax?: number | null;
   tooltip?: string | null;

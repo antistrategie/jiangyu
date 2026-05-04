@@ -66,19 +66,53 @@ internal static class ManagedTypeInspectionEnricher
             else if (field.Elements is { Count: > 0 } && metadata.ElementResolvedType is not null)
             {
                 bool elementIsEnum = metadata.IsElementEnum;
+                // For [NamedArray(typeof(T))] byte/int arrays each slot pairs
+                // with one enum member; surface its name on the element so
+                // the inspect output reads as { "Vitality": 70 } rather than
+                // { "[4]": 70 }. Computed once per field.
+                IReadOnlyList<string>? namedArraySlots = metadata.NamedArrayEnum is not null
+                    ? GetEnumMembersByValue(metadata.NamedArrayEnum)
+                    : null;
+                int idx = 0;
                 foreach (InspectedFieldNode element in field.Elements)
                 {
                     if (elementIsEnum)
                     {
                         PromoteEnumScalar(element, metadata.ElementResolvedType);
                     }
+                    if (namedArraySlots is not null && idx < namedArraySlots.Count)
+                    {
+                        element.Name = namedArraySlots[idx];
+                    }
                     if (element.Fields is { Count: > 0 })
                     {
                         EnrichFields(element.Fields, metadata.ElementResolvedType);
                     }
+                    idx++;
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Walks a resolved enum's static fields and returns member names ordered
+    /// by their constant value, so callers can index by value (the
+    /// <c>[NamedArray]</c> convention is element[i] ↔ enum member with value
+    /// i). Skips members whose constant value can't be read.
+    /// </summary>
+    private static IReadOnlyList<string> GetEnumMembersByValue(TypeDefinition enumType)
+    {
+        var entries = new List<(long Value, string Name)>();
+        foreach (FieldDefinition field in enumType.Fields)
+        {
+            if (!field.IsStatic || field.Constant is null) continue;
+            if (!TryConvertConstantToLong(field.Constant, out long value)) continue;
+            string? name = field.Name?.ToString();
+            if (string.IsNullOrEmpty(name)) continue;
+            entries.Add((value, name));
+        }
+        entries.Sort((a, b) => a.Value.CompareTo(b.Value));
+        return [.. entries.Select(e => e.Name)];
     }
 
     // Skips when the integer value doesn't map to a single enum member: Flags
@@ -158,9 +192,56 @@ internal static class ManagedTypeInspectionEnricher
                 continue;
             }
 
-            result[fieldName] = CreateMetadata(field.Signature?.FieldType);
+            var metadata = CreateMetadata(field.Signature?.FieldType);
+            // Shape-based [NamedArray(typeof(T))] match: the game's attribute
+            // is a typeof(enum) on a primitive-element array. Same heuristic
+            // the catalog uses (TemplateTypeCatalog.GetNamedArrayEnumShortName)
+            // so renames or il2cpp wrapping don't break detection.
+            var namedArrayEnum = TryFindNamedArrayEnum(field, metadata);
+            if (namedArrayEnum is not null)
+            {
+                metadata = metadata with { NamedArrayEnum = namedArrayEnum };
+            }
+            result[fieldName] = metadata;
         }
         return result;
+    }
+
+    private static TypeDefinition? TryFindNamedArrayEnum(FieldDefinition field, ManagedFieldMetadata metadata)
+    {
+        // Restrict to primitive-element arrays — same gate the catalog uses
+        // to avoid matching unrelated attributes that happen to take
+        // typeof(SomeEnum) as a constructor argument.
+        if (metadata.ElementResolvedType is null || metadata.IsElementEnum) return null;
+        if (field.CustomAttributes.Count == 0) return null;
+
+        foreach (CustomAttribute attr in field.CustomAttributes)
+        {
+            if (attr.Signature is null) continue;
+            foreach (var arg in attr.Signature.FixedArguments)
+            {
+                if (arg.Element is TypeSignature typeSig)
+                {
+                    var resolved = ResolveTypeDefinition(typeSig);
+                    if (resolved is not null && IsEnumTypeDefinition(resolved)) return resolved;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static bool IsEnumTypeDefinition(TypeDefinition typeDefinition)
+    {
+        TypeDefinition? current = typeDefinition;
+        while (current is not null)
+        {
+            if (string.Equals(current.FullName, "System.Enum", StringComparison.Ordinal))
+            {
+                return true;
+            }
+            current = ResolveBaseType(current);
+        }
+        return false;
     }
 
     private static IEnumerable<FieldDefinition> EnumerateInstanceFields(TypeDefinition? typeDefinition)
@@ -315,5 +396,6 @@ internal static class ManagedTypeInspectionEnricher
         bool IsEnum,
         TypeDefinition? ResolvedType,
         TypeDefinition? ElementResolvedType,
-        bool IsElementEnum);
+        bool IsElementEnum,
+        TypeDefinition? NamedArrayEnum = null);
 }

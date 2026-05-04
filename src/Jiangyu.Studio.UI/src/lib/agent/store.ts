@@ -2,13 +2,18 @@ import { create } from "zustand";
 import { subscribe } from "@lib/rpc";
 import type {
   AgentStartResult,
+  AgentAuthResult,
   AgentSessionResult,
   AgentStopReason,
+  AuthMethod,
   SessionNotification,
   SessionUpdate,
   PermissionRequest,
   AgentStatusEvent,
   AvailableCommand,
+  ConfigOption,
+  SessionMode,
+  SessionModes,
   ContentBlock,
   PermissionOption,
   PlanEntry,
@@ -30,6 +35,15 @@ export interface AgentPromptResultEvent {
 /// session updates by the time this lands.
 export interface AgentResumeResult {
   readonly sessionId?: string;
+  readonly modes?: SessionModes | null;
+  readonly configOptions?: ConfigOption[] | null;
+  /** Mode id Studio persisted when the user last picked one for this
+   *  session. Overrides the agent's reported currentModeId because some
+   *  agents (Claude) don't persist set_mode across session/load. */
+  readonly persistedModeId?: string | null;
+  /** configId → value pairs Studio persisted from prior
+   *  set_config_option calls. Same rationale as persistedModeId. */
+  readonly persistedConfigValues?: Readonly<Record<string, unknown>> | null;
   readonly error?: string;
 }
 
@@ -101,6 +115,31 @@ function nextMessageId(): string {
   return `m${messageIdCounter.toString(36)}`;
 }
 
+/** Best-available identifier for a config option (agents emit either
+ *  `key` or `id`; Claude Agent emits neither and we drop those). */
+export function configOptionIdentifier(opt: ConfigOption): string | null {
+  return opt.key ?? opt.id ?? null;
+}
+
+/** Merge a config_option_update payload into the existing list by key.
+ *  New keys append; existing keys overwrite. Entries without any
+ *  identifier are dropped (we have no way to address them). */
+function mergeConfigOptions(
+  existing: readonly ConfigOption[],
+  incoming: readonly ConfigOption[],
+): ConfigOption[] {
+  const byKey = new Map<string, ConfigOption>();
+  for (const opt of existing) {
+    const id = configOptionIdentifier(opt);
+    if (id !== null) byKey.set(id, opt);
+  }
+  for (const opt of incoming) {
+    const id = configOptionIdentifier(opt);
+    if (id !== null) byKey.set(id, opt);
+  }
+  return [...byKey.values()];
+}
+
 /** Extract a flat string from a content block. Non-text blocks render to a
  *  short placeholder so we don't drop them silently. */
 function contentBlockText(block: ContentBlock): string {
@@ -164,8 +203,27 @@ interface AgentStore {
   // Chat
   readonly messages: ChatMessage[];
 
+  /**
+   * ACP authentication methods the agent advertised in initialize. When
+   * non-empty, the panel renders a sign-in card instead of auto-creating a
+   * session — most notably for Copilot, which gates session/new behind
+   * `authenticate`. Cleared on a successful authenticate or when the
+   * agent's session/new succeeds (some agents advertise methods opportun-
+   * istically even when external auth is already in place).
+   */
+  readonly authMethods: readonly AuthMethod[];
+  /** id of the auth method currently being driven; null when idle. */
+  readonly authenticatingMethodId: string | null;
+  readonly authError: string | null;
+
   // Slash commands
   readonly availableCommands: AvailableCommand[];
+
+  // Agent-declared session knobs (model, thinking budget, mode catalogue).
+  // Populated from session/new and session/load responses; mutated by
+  // current_mode_update / config_option_update notifications.
+  readonly availableModes: readonly SessionMode[];
+  readonly configOptions: readonly ConfigOption[];
 
   // Auto-approve. ACP doesn't natively scope `_always` outcomes; clients
   // remember and bypass future prompts. All three fields are session-
@@ -175,12 +233,12 @@ interface AgentStore {
   readonly autoApproveKinds: ReadonlySet<ToolKind>;
   /** Tool kinds the user has chosen `reject_always` for in this session. */
   readonly autoRejectKinds: ReadonlySet<ToolKind>;
-  /** Master switch: every permission request auto-approves until cleared. */
-  readonly trustAll: boolean;
 
   // Actions
   readonly setConnecting: (agentId: string, pendingAction?: PendingSessionAction) => void;
   readonly handleStartResult: (result: AgentStartResult) => void;
+  readonly beginAuthenticate: (methodId: string) => void;
+  readonly handleAuthResult: (result: AgentAuthResult) => void;
   readonly handleSessionCreated: (result: AgentSessionResult) => void;
   readonly beginReplay: (sessionId: string) => void;
   readonly handleResumeResult: (result: AgentResumeResult) => void;
@@ -195,7 +253,6 @@ interface AgentStore {
   readonly handlePermissionRequest: (request: PermissionRequest) => void;
   readonly resolvePermission: (permissionId: string) => void;
   readonly clearMessages: () => void;
-  readonly setTrustAll: (value: boolean) => void;
   readonly addAutoApproveKind: (kind: ToolKind) => void;
   readonly addAutoRejectKind: (kind: ToolKind) => void;
 }
@@ -216,9 +273,13 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   lastStopReason: null,
   messages: [],
   availableCommands: [],
+  availableModes: [],
+  configOptions: [],
+  authMethods: [],
+  authenticatingMethodId: null,
+  authError: null,
   autoApproveKinds: new Set<ToolKind>(),
   autoRejectKinds: new Set<ToolKind>(),
-  trustAll: false,
 
   setConnecting: (agentId, pendingAction = { kind: "create" }) =>
     // Switching agents (or first-time connect) puts the panel into a clean
@@ -245,9 +306,13 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       lastStopReason: null,
       messages: [],
       availableCommands: [],
+      availableModes: [],
+      configOptions: [],
+      authMethods: [],
+      authenticatingMethodId: null,
+      authError: null,
       autoApproveKinds: new Set<ToolKind>(),
       autoRejectKinds: new Set<ToolKind>(),
-      trustAll: false,
     }),
 
   handleStartResult: (result) => {
@@ -261,33 +326,90 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         pendingSession: null,
       });
     } else {
+      // If the agent advertised auth methods, gate the auto-create-session
+      // effect: pendingSession stays as the user asked for, but the panel
+      // will render the sign-in card while authMethods is non-empty. After
+      // a successful authenticate the methods are cleared and the effect
+      // proceeds. Agents that don't gate session/new (Claude when configured
+      // outside Studio) advertise no methods and skip this entirely.
+      const methods = result.authMethods ?? [];
       set({
         connecting: false,
         connectError: null,
         connected: true,
         agentName: result.agentName ?? null,
         agentVersion: result.agentVersion ?? null,
+        authMethods: methods,
+        authError: null,
+      });
+    }
+  },
+
+  beginAuthenticate: (methodId) => set({ authenticatingMethodId: methodId, authError: null }),
+
+  handleAuthResult: (result) => {
+    if (result.error) {
+      set({ authenticatingMethodId: null, authError: result.error });
+    } else {
+      // Auth succeeded — clear the methods so the auto-create-session
+      // effect unblocks, and clear any previous error. pendingSession is
+      // already set (from the original setConnecting), so the panel
+      // resumes whatever the user originally asked for.
+      set({
+        authenticatingMethodId: null,
+        authError: null,
+        authMethods: [],
       });
     }
   },
 
   handleSessionCreated: (result) => {
-    if (result.error) {
+    if (result.authRequired) {
+      // Agent rejected session/new with ACP auth_required. Re-seed the
+      // sign-in card from the snapshot the host attached (the initialize
+      // response may have advertised methods we cleared after a stale
+      // success). Keep pendingSession alive so the auto-create effect
+      // re-fires once authenticate succeeds. If the agent didn't advertise
+      // any methods we have nothing to drive — surface the agent's error
+      // string so the user isn't stuck on a perpetual spinner.
+      const methods = result.authMethods ?? [];
+      if (methods.length === 0) {
+        set({
+          connectError: result.error ?? "Authentication required but no methods advertised.",
+          pendingSession: null,
+        });
+      } else {
+        set({
+          connectError: null,
+          authMethods: methods,
+          authError: result.error ?? null,
+        });
+      }
+    } else if (result.error) {
       set({ connectError: result.error, pendingSession: null });
     } else if (result.sessionId) {
       // New session id = new auto-approve scope. The user's "always allow"
-      // decisions for the previous session don't carry over.
+      // decisions for the previous session don't carry over. Modes and
+      // config options come from the agent's session/new response — seed
+      // them here so the composer's options popover populates immediately.
+      // Some agents (Copilot) advertise authMethods opportunistically even
+      // when external auth is already in place. A successful session/new
+      // proves auth wasn't actually required, so clear the methods so the
+      // sign-in card doesn't linger after the session is live.
       set({
         sessionId: result.sessionId,
         sessionTitle: null,
-        currentModeId: null,
+        currentModeId: result.modes?.currentModeId ?? null,
+        availableModes: result.modes?.availableModes ?? [],
+        configOptions: result.configOptions ?? [],
         lastStopReason: null,
         messages: [],
         availableCommands: [],
         pendingSession: null,
+        authMethods: [],
+        authError: null,
         autoApproveKinds: new Set<ToolKind>(),
         autoRejectKinds: new Set<ToolKind>(),
-        trustAll: false,
       });
     }
   },
@@ -317,9 +439,13 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       pendingSession: null,
       lastStopReason: null,
       availableCommands: [],
+      availableModes: [],
+      configOptions: [],
+      authMethods: [],
+      authenticatingMethodId: null,
+      authError: null,
       autoApproveKinds: new Set<ToolKind>(),
       autoRejectKinds: new Set<ToolKind>(),
-      trustAll: false,
     }),
 
   setSession: (sessionId) =>
@@ -345,6 +471,8 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       sessionId,
       sessionTitle: null,
       currentModeId: null,
+      availableModes: [],
+      configOptions: [],
       lastStopReason: null,
       messages: [],
       availableCommands: [],
@@ -367,8 +495,32 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       });
     } else {
       // Historical updates have all landed by the time this notification
-      // arrives, so we can flip back to live mode.
-      set({ replaying: false });
+      // arrives, so we can flip back to live mode. Modes / config options
+      // come fresh from session/load — repopulate so the composer's
+      // options popover reflects the resumed session's agent state.
+      // Persisted overrides (from Studio's session metadata) win over the
+      // agent's currentValue: the host has already replayed them via
+      // set_mode / set_config_option, so the agent's state matches; the
+      // UI just needs to render with the same values.
+      const persistedConfig = result.persistedConfigValues ?? null;
+      const baseConfig = result.configOptions ?? [];
+      const mergedConfig =
+        persistedConfig !== null
+          ? baseConfig.map((opt) => {
+              const id = opt.key ?? opt.id;
+              if (id !== null && id !== undefined && id in persistedConfig) {
+                return { ...opt, value: persistedConfig[id], currentValue: persistedConfig[id] };
+              }
+              return opt;
+            })
+          : baseConfig;
+
+      set({
+        replaying: false,
+        currentModeId: result.persistedModeId ?? result.modes?.currentModeId ?? null,
+        availableModes: result.modes?.availableModes ?? [],
+        configOptions: mergedConfig,
+      });
     }
   },
 
@@ -495,8 +647,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           return { sessionTitle: update.title ?? null };
 
         case "config_option_update":
-          // Future: surface in settings UI.
-          return s;
+          // Merge by key so the update works whether the agent sends a
+          // full snapshot or a delta with just the changed option(s).
+          return { configOptions: mergeConfigOptions(s.configOptions, update.configOptions) };
 
         default:
           return s;
@@ -507,7 +660,6 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     // Bypass policy. ACP doesn't natively scope `_always` outcomes; this is
     // the client-side memory:
     //
-    //   trustAll              → bypass-allow every request
     //   autoApproveKinds[k]   → bypass-allow requests with kind k
     //   autoRejectKinds[k]    → bypass-reject requests with kind k
     //
@@ -515,7 +667,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     // kind (defensive — the user's last decision wins, and clicking
     // "reject_always" after "allow_always" should be the override).
     // Falls through to the UI prompt when we can't determine the kind or
-    // the agent didn't offer the corresponding option.
+    // the agent didn't offer the corresponding option. Session-wide
+    // "allow all" is the agent's responsibility (Claude exposes a
+    // `bypassPermissions` mode; Copilot exposes an `allow_all` config
+    // option) — the host doesn't shadow that with its own toggle.
     const s = get();
     const kind = request.toolCall.kind ?? null;
     if (kind !== null && s.autoRejectKinds.has(kind)) {
@@ -525,8 +680,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         return;
       }
     }
-    const shouldAutoAllow = s.trustAll || (kind !== null && s.autoApproveKinds.has(kind));
-    if (shouldAutoAllow) {
+    if (kind !== null && s.autoApproveKinds.has(kind)) {
       const allow = pickAllowOption(request.options);
       if (allow) {
         sendPermissionResponse(request.permissionId, "selected", allow.optionId);
@@ -556,8 +710,6 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     })),
 
   clearMessages: () => set({ messages: [] }),
-
-  setTrustAll: (value) => set({ trustAll: value }),
 
   addAutoApproveKind: (kind) =>
     set((s) => {
@@ -655,6 +807,10 @@ subscribe("agentPromptResult", (params) => {
 subscribe("agentStartResult", (params) => {
   const result = params as AgentStartResult;
   useAgentStore.getState().handleStartResult(result);
+});
+
+subscribe("agentAuthenticated", (params) => {
+  useAgentStore.getState().handleAuthResult(params as AgentAuthResult);
 });
 
 subscribe("agentSessionCreated", (params) => {

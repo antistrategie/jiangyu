@@ -47,6 +47,13 @@
   cursor: default;
 }
 
+/* Currently-selected pick in a single-choice list. Subtle paper-2 fill so
+   the active row reads as "this is the current value" without competing
+   with hover. */
+.itemActive {
+  background: var(--paper-2);
+}
+
 .itemIcon,
 .itemIconPlaceholder {
   width: 18px;

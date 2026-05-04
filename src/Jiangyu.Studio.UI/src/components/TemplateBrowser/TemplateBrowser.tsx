@@ -12,7 +12,6 @@ import {
 } from "react";
 import { rpcCall } from "@lib/rpc";
 import type {
-  EnumMembersResult,
   InspectedFieldNode,
   InspectedReference,
   ObjectInspectionResult,
@@ -90,10 +89,6 @@ function templatesInspect(params: {
   maxArraySample?: number;
 }): Promise<ObjectInspectionResult> {
   return rpcCall<ObjectInspectionResult>("templatesInspect", params);
-}
-
-function templatesEnumMembers(typeName: string): Promise<EnumMembersResult> {
-  return rpcCall<EnumMembersResult>("templatesEnumMembers", { typeName });
 }
 
 // --- Helpers ---
@@ -192,9 +187,6 @@ export function TemplateBrowser({
     null,
   );
   const [inspectionLoading, setInspectionLoading] = useState(false);
-  const [namedArrayEnums, setNamedArrayEnums] = useState<
-    Readonly<Record<string, readonly { readonly name: string; readonly value: number }[]>>
-  >({});
 
   // Resizable split
   const [listFraction, setListFraction] = useState(
@@ -369,39 +361,6 @@ export function TemplateBrowser({
         if (memberTokenRef.current === token) setInspectionLoading(false);
       });
   }, [focusedInstance]);
-
-  // --- Collect enum types from the member tree and fetch members ---
-  // Two uses for the resulting map:
-  //  - named arrays: turn array indices into named-array labels in previews.
-  //  - enum-leaf scalars (e.g. SlotType: ItemSlot): turn the numeric value
-  //    surfaced by the inspector into the readable enum-member name.
-  const fetchedEnumRef = useRef(new Set<string>());
-  useEffect(() => {
-    if (!memberData?.members) return;
-    const needed = new Set<string>();
-    for (const m of memberData.members) {
-      if (m.namedArrayEnumTypeName) needed.add(m.namedArrayEnumTypeName);
-      if (m.enumTypeName) needed.add(m.enumTypeName);
-    }
-    if (needed.size === 0) return;
-
-    let cancelled = false;
-    for (const enumName of needed) {
-      if (fetchedEnumRef.current.has(enumName)) continue;
-      fetchedEnumRef.current.add(enumName);
-      void templatesEnumMembers(enumName)
-        .then((result) => {
-          if (cancelled) return;
-          setNamedArrayEnums((prev) => ({ ...prev, [enumName]: result.members }));
-        })
-        .catch(() => {
-          // silently ignore; named arrays just won't get labels
-        });
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [memberData]);
 
   // --- Build index ---
   const handleBuildIndex = useCallback(async () => {
@@ -753,7 +712,6 @@ export function TemplateBrowser({
                 membersLoading={membersLoading}
                 inspectionValues={inspectionValues}
                 inspectionLoading={inspectionLoading}
-                namedArrayEnums={namedArrayEnums}
                 onCreatePatch={(inst) => handleCreatePatch(inst)}
                 onCreateClone={(inst) => handleCreateClone(inst)}
                 onPatchToFile={(inst) => handlePatchToFile(inst)}
@@ -799,9 +757,6 @@ interface TemplateDetailProps {
   membersLoading: boolean;
   inspectionValues: readonly InspectedFieldNode[] | null;
   inspectionLoading: boolean;
-  namedArrayEnums: Readonly<
-    Record<string, readonly { readonly name: string; readonly value: number }[]>
-  >;
   onCreatePatch: (inst?: TemplateInstanceEntry) => void;
   onCreateClone: (inst?: TemplateInstanceEntry) => void;
   onPatchToFile: (inst?: TemplateInstanceEntry) => void;
@@ -823,7 +778,6 @@ function TemplateDetail({
   membersLoading,
   inspectionValues,
   inspectionLoading,
-  namedArrayEnums,
   onCreatePatch,
   onCreateClone,
   onPatchToFile,
@@ -1001,7 +955,6 @@ function TemplateDetail({
                     valueNode={valueNode}
                     parentTypeName={instance.className}
                     fieldPath={m.name}
-                    namedArrayEnums={namedArrayEnums}
                     instanceLookup={instanceLookup}
                     onNavigate={onNavigate}
                   />
@@ -1201,9 +1154,6 @@ interface MemberRowProps {
   valueNode: InspectedFieldNode | null;
   parentTypeName: string;
   fieldPath: string;
-  namedArrayEnums: Readonly<
-    Record<string, readonly { readonly name: string; readonly value: number }[]>
-  >;
   instanceLookup: ReadonlyMap<string, TemplateInstanceEntry>;
   onNavigate: (key: string) => void;
 }
@@ -1213,7 +1163,6 @@ function MemberRow({
   valueNode,
   parentTypeName,
   fieldPath,
-  namedArrayEnums,
   instanceLookup,
   onNavigate,
 }: MemberRowProps) {
@@ -1237,17 +1186,13 @@ function MemberRow({
 
   const isDraggable = member.isWritable || member.isCollection === true;
   const isNamedArray = member.namedArrayEnumTypeName !== undefined && valueNode?.kind === "array";
-  const namedArrayLabelMap =
-    isNamedArray && member.namedArrayEnumTypeName
-      ? buildNamedArrayLabelMap(namedArrayEnums[member.namedArrayEnumTypeName])
-      : null;
+  // Both label maps come from the schema query's inlined enumMembers — the
+  // visual editor used to fetch them via templatesEnumMembers.
+  const namedArrayLabelMap = isNamedArray ? buildNamedArrayLabelMap(member.enumMembers) : null;
   // For enum-leaf scalars (member.enumTypeName set, value is the numeric
   // index), provide the value→name lookup so renderValueLine can surface the
   // enum member name instead of the bare integer.
-  const enumLabelMap =
-    member.enumTypeName && namedArrayEnums[member.enumTypeName]
-      ? buildNamedArrayLabelMap(namedArrayEnums[member.enumTypeName])
-      : null;
+  const enumLabelMap = member.enumTypeName ? buildNamedArrayLabelMap(member.enumMembers) : null;
 
   return (
     <div className={styles.memberBlock}>
@@ -1544,7 +1489,7 @@ function valueNodeKindIsScalar(node: InspectedFieldNode): boolean {
 }
 
 function buildNamedArrayLabelMap(
-  members: readonly { readonly name: string; readonly value: number }[] | undefined,
+  members: readonly { readonly name: string; readonly value: number }[] | null | undefined,
 ): Record<number, string> | null {
   if (!members) return null;
   const map: Record<number, string> = {};

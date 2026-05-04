@@ -111,6 +111,17 @@ internal static class ProjectWatcher
     }
 
     /// <summary>
+    /// Snapshot of currently subscribed windows. Used by background tasks
+    /// (e.g. agent-triggered compile streaming) that need to broadcast
+    /// notifications to every open window without holding the
+    /// <see cref="Lock"/> for the duration of the send.
+    /// </summary>
+    public static IReadOnlyList<IInfiniFrameWindow> SubscribedWindows()
+    {
+        lock (Lock) return [.. Subscribers];
+    }
+
+    /// <summary>
     /// Suppress upcoming <c>fileChanged</c> events for <paramref name="path"/>
     /// to <paramref name="originWindowId"/> only. Other subscribed windows
     /// still receive the notification — that's the cross-window conflict

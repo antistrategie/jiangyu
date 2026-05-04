@@ -122,6 +122,40 @@ internal static class AgentSessionsStore
         }
     }
 
+    /// <summary>Persist the user's chosen mode for a session so resume
+    /// can replay it. No-op when the session record doesn't exist yet —
+    /// the modes UI only opens after Upsert has run for the session.</summary>
+    public static void SetMode(string projectRoot, string id, string modeId)
+    {
+        lock (FileLock)
+        {
+            var file = Load(projectRoot);
+            var idx = file.Sessions.FindIndex(s => s.Id == id);
+            if (idx < 0) return;
+            file.Sessions[idx].CurrentModeId = modeId;
+            file.Sessions[idx].UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            Save(projectRoot, file);
+        }
+    }
+
+    /// <summary>Persist a configOption value the user picked (keyed by
+    /// configId) so resume can replay it. Same no-op semantics as
+    /// <see cref="SetMode"/>.</summary>
+    public static void SetConfigValue(string projectRoot, string id, string configId, JsonElement value)
+    {
+        lock (FileLock)
+        {
+            var file = Load(projectRoot);
+            var idx = file.Sessions.FindIndex(s => s.Id == id);
+            if (idx < 0) return;
+            var meta = file.Sessions[idx];
+            meta.ConfigValues ??= [];
+            meta.ConfigValues[configId] = value;
+            meta.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            Save(projectRoot, file);
+        }
+    }
+
     public static AgentSessionsFile Remove(string projectRoot, string id)
     {
         lock (FileLock)
@@ -169,4 +203,17 @@ public sealed class AgentSessionMeta
     /// <summary>Unix milliseconds.</summary>
     [JsonPropertyName("updatedAt")]
     public long UpdatedAt { get; set; }
+
+    /// <summary>Last mode the user picked for this session (ACP
+    /// <c>session/set_mode</c>). ACP doesn't require agents to persist
+    /// these — Claude doesn't — so Studio re-applies on resume to make
+    /// the choice survive across reloads and host restarts.</summary>
+    [JsonPropertyName("currentModeId")]
+    public string? CurrentModeId { get; set; }
+
+    /// <summary>configId → last value the user chose (ACP
+    /// <c>session/set_config_option</c>). Replayed on resume; same
+    /// rationale as <see cref="CurrentModeId"/>.</summary>
+    [JsonPropertyName("configValues")]
+    public Dictionary<string, JsonElement>? ConfigValues { get; set; }
 }

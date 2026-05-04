@@ -21,4 +21,14 @@
     <ProjectReference Include="..\..\src\Jiangyu.Studio.Host\Jiangyu.Studio.Host.csproj" />
   </ItemGroup>
 
+  <!-- AgentProcessManager.BuildMcpServerConfig only emits the stdio entry
+       when <base>/bin/jiangyu-mcp exists; mirror Studio.Host's
+       CopyMcpToOutput so the test bin layout matches a release. -->
+  <Target Name="CopyMcpToTestOutput" AfterTargets="Build">
+    <ItemGroup>
+      <McpOutput Include="..\..\src\Jiangyu.Mcp\bin\$(Configuration)\$(TargetFramework)\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(McpOutput)" DestinationFolder="$(OutDir)bin\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

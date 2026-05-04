@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
 import type {
-  EnumMemberEntry,
-  EnumMembersResult,
   InspectedFieldNode,
   TemplateMember,
   TemplateSearchResult,
@@ -19,10 +17,6 @@ export function templatesSearch(className?: string): Promise<TemplateSearchResul
   return rpcCall<TemplateSearchResult>("templatesSearch", className ? { className } : undefined);
 }
 
-export function templatesEnumMembers(typeName: string): Promise<EnumMembersResult> {
-  return rpcCall<EnumMembersResult>("templatesEnumMembers", { typeName });
-}
-
 export function templatesParse(
   text: string,
 ): Promise<{ nodes: import("../types").EditorNode[]; errors: import("../types").EditorError[] }> {
@@ -37,7 +31,6 @@ export function templatesSerialise(
 
 // --- Caches ---
 
-export const enumMembersCache = new Map<string, readonly EnumMemberEntry[]>();
 export const templateTypesCache: { types: readonly string[] | null } = { types: null };
 
 // Per-(typeName, id) Promise cache so multiple cards targeting the same
@@ -88,20 +81,7 @@ export function invalidateProjectClonesCache() {
   projectClonesCache = null;
 }
 
-// --- Cached enum / template type lookups ---
-
-export async function getCachedEnumEntries(typeName: string): Promise<readonly EnumMemberEntry[]> {
-  const cached = enumMembersCache.get(typeName);
-  if (cached) return cached;
-  const result = await templatesEnumMembers(typeName);
-  enumMembersCache.set(typeName, result.members);
-  return result.members;
-}
-
-export async function getCachedEnumMembers(typeName: string): Promise<readonly string[]> {
-  const entries = await getCachedEnumEntries(typeName);
-  return entries.map((e) => e.name);
-}
+// --- Cached template type lookups ---
 
 export async function getCachedTemplateTypes(): Promise<readonly string[]> {
   if (templateTypesCache.types) return templateTypesCache.types;
