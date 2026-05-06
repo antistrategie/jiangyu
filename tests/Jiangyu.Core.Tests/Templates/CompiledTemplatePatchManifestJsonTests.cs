@@ -203,6 +203,37 @@ public class CompiledTemplatePatchManifestJsonTests
     }
 
     [Fact]
+    public void AssetReference_RoundTrip()
+    {
+        // The asset reference is the foundation for the future prefab-cloning
+        // template-redirection step, so its wire shape must stay stable across
+        // compiler/loader updates: a value kind discriminator plus a single
+        // string name. The category is derived at apply time from the
+        // destination field's declared Unity type, never carried on the wire.
+        var op = new CompiledTemplateSetOperation
+        {
+            Op = CompiledTemplateOp.Set,
+            FieldPath = "Icon",
+            Value = new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.AssetReference,
+                Asset = new CompiledAssetReference { Name = "item/fancy-pen-icon" },
+            },
+        };
+
+        var json = JsonSerializer.Serialize(op, Options);
+        Assert.Contains("\"AssetReference\"", json);
+        Assert.Contains("\"asset\"", json);
+        Assert.Contains("\"name\":\"item/fancy-pen-icon\"", json);
+
+        var roundTripped = JsonSerializer.Deserialize<CompiledTemplateSetOperation>(json, Options);
+        Assert.NotNull(roundTripped);
+        Assert.Equal(CompiledTemplateValueKind.AssetReference, roundTripped!.Value!.Kind);
+        Assert.NotNull(roundTripped.Value.Asset);
+        Assert.Equal("item/fancy-pen-icon", roundTripped.Value.Asset!.Name);
+    }
+
+    [Fact]
     public void CompositeAndHandlerConstruction_AreDistinctValueKinds()
     {
         // Sanity: two value kinds with the same payload type must serialise

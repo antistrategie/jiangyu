@@ -961,6 +961,193 @@ public class KdlTemplateParserTests
         Assert.Equal(1, result.ErrorCount);
     }
 
+    [Fact]
+    public void AssetReference_BareName_ProducesAssetValue()
+    {
+        var dir = SetupKdl("a.kdl", """
+            patch "ItemDefinition" "fancy-pen" {
+                set "Icon" asset="fancy-pen-icon"
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var op = result.Patches[0].Set[0];
+        Assert.Equal("Icon", op.FieldPath);
+        Assert.Equal(CompiledTemplateValueKind.AssetReference, op.Value!.Kind);
+        var asset = Assert.IsType<CompiledAssetReference>(op.Value.Asset);
+        Assert.Equal("fancy-pen-icon", asset.Name);
+    }
+
+    [Fact]
+    public void AssetReference_SlashedName_IsPreservedVerbatim()
+    {
+        // The recursive folder layout under assets/additions/<category>/ maps
+        // file path to logical name with `/` separators kept intact, so the
+        // parser must not collapse or normalise them away.
+        var dir = SetupKdl("a.kdl", """
+            patch "ItemDefinition" "fancy-pen" {
+                set "Icon" asset="item/fancy/pen-icon"
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var op = result.Patches[0].Set[0];
+        Assert.Equal("item/fancy/pen-icon", op.Value!.Asset!.Name);
+    }
+
+    [Fact]
+    public void AssetReference_InsideClone_ReachesCloneIdPatch()
+    {
+        // Clones produce an inline patch targeting the clone ID; asset
+        // references inside the clone body must compile through the same
+        // path so a modder can re-skin a cloned item with a new sprite.
+        var dir = SetupKdl("a.kdl", """
+            clone "ItemDefinition" from="pen" id="fancy-pen" {
+                set "Icon" asset="fancy-pen-icon"
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        Assert.Single(result.Clones);
+        Assert.Single(result.Patches);
+        var op = result.Patches[0].Set[0];
+        Assert.Equal("fancy-pen", result.Patches[0].TemplateId);
+        Assert.Equal("Icon", op.FieldPath);
+        Assert.Equal(CompiledTemplateValueKind.AssetReference, op.Value!.Kind);
+        Assert.Equal("fancy-pen-icon", op.Value.Asset!.Name);
+    }
+
+    [Fact]
+    public void AssetReference_EmptyName_IsRejected()
+    {
+        var dir = SetupKdl("a.kdl", """
+            patch "ItemDefinition" "fancy-pen" {
+                set "Icon" asset=""
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("asset=", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void AssetReference_PositionalValueAfterAsset_IsRejected()
+    {
+        // The asset name lives in the property value; a trailing positional
+        // is almost certainly a modder confusing the asset shape with ref=.
+        var dir = SetupKdl("a.kdl", """
+            patch "ItemDefinition" "fancy-pen" {
+                set "Icon" asset="sprite" "fancy-pen-icon"
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("asset=", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void AssetReference_ChildBlock_IsRejected()
+    {
+        // An asset reference is a leaf value; a child block is meaningless.
+        // The descent-block guard fires first because the outer `set` has
+        // children but no index=, which is also a correct rejection.
+        var dir = SetupKdl("a.kdl", """
+            patch "ItemDefinition" "fancy-pen" {
+                set "Icon" asset="fancy-pen-icon" {
+                    set "Anything" 1
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.NotEqual(0, result.ErrorCount);
+        Assert.Empty(result.Patches);
+    }
+
+    [Fact]
+    public void AssetReference_TypeProperty_IsRejected()
+    {
+        // The Unity type comes from the destination field's declared type;
+        // letting the modder write type= here would invite drift between the
+        // assertion and the field, so we reject rather than coerce.
+        var dir = SetupKdl("a.kdl", """
+            patch "ItemDefinition" "fancy-pen" {
+                set "Icon" asset="fancy-pen-icon" type="Sprite"
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.NotEqual(0, result.ErrorCount);
+    }
+
+    [Fact]
+    public void AssetReference_DescentBlockWithAsset_IsRejected()
+    {
+        // asset= belongs on the inner set that produces the value, not on
+        // the descent navigation marker; same rule as ref=/enum=/composite=.
+        var dir = SetupKdl("a.kdl", """
+            patch "ItemDefinition" "fancy-pen" {
+                set "Decals" index=0 asset="decal" {
+                    set "Tint" 1.0
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("asset=", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void AssetReference_BackslashSeparator_IsRejected()
+    {
+        // Modders authoring on Windows must still write forward-slashes in
+        // KDL: the asset name is portable text, and the filesystem walk
+        // at compile time normalises native separators when computing the
+        // logical name. Backslash in the authored form is unambiguously a
+        // mistake, so surface it instead of silently translating.
+        var dir = SetupKdl("a.kdl", """
+            patch "ItemDefinition" "fancy-pen" {
+                set "Icon" asset="lrm5\\icon"
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("'/'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AssetReference_ConflictsWithHandler_IsRejected()
+    {
+        var dir = SetupKdl("a.kdl", """
+            patch "SkillTemplate" "active.foo" {
+                append "EventHandlers" handler="AddSkill" asset="something" {
+                    set "Event" enum="AddEvent" "OnHit"
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("asset=", StringComparison.OrdinalIgnoreCase));
+    }
+
     // --- Helpers ---
 
     private static string SetupKdl(string fileName, string content)

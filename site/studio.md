@@ -1,6 +1,6 @@
 # Studio
 
-Studio is Jiangyu's interactive workspace. Find assets, edit replacements and templates, compile your mod, all in one window. The CLI mirrors most of what Studio does; see [CLI](./cli.md) for the scripting surface.
+Studio is Jiangyu's interactive workspace. Find assets, edit replacements and templates, compile your mod, all in one window. The CLI mirrors most of what Studio does; see [CLI](/reference/cli) for the scripting surface.
 
 ## Opening a project
 
@@ -8,7 +8,7 @@ When Studio starts without a project loaded, it shows a welcome screen with thre
 
 - **Open project**: pick a directory containing a `jiangyu.json`.
 - **Recent projects**: up to five recently opened projects, click to reopen.
-- **New project**: scaffold a fresh project. Studio asks for a directory and a project name, then writes the same starter files as `jiangyu init`. See [Manifest](./manifest.md) for the scaffolded shape.
+- **New project**: scaffold a fresh project. Studio asks for a directory and a project name, then writes the same starter files as `jiangyu init`. See [Manifest](/reference/manifest) for the scaffolded shape.
 
 A loaded project shows in the topbar with its directory name and current git branch.
 
@@ -106,7 +106,7 @@ The fastest way to author is by **dragging from the Template Browser** into the 
 - **Drag an instance row** (a specific template id) into the editor body to add a new patch or clone targeting that template. A grip glyph reveals on hover to signal draggability.
 - **Drag a member row** (a field on the template's type) into a patch's body to add a `set` operation for that field. The editor pre-fills the field path, the right value control for the field's type, and the current vanilla value as a placeholder.
 
-See [Templates](./templates.md) for the KDL grammar.
+See [Templates](/templates) for the KDL grammar.
 
 ## Compile
 

@@ -29,4 +29,5 @@ export const VALUE_KIND_LABELS: Record<EditorValueKind, string> = {
   TemplateReference: "Ref",
   Composite: "Composite",
   HandlerConstruction: "Handler",
+  AssetReference: "Asset",
 };

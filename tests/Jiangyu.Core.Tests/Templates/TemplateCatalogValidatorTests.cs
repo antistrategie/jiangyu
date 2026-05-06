@@ -1184,4 +1184,240 @@ public class TemplateCatalogValidatorTests
         Assert.Equal(1, errors);
         Assert.Contains(log.Errors, e => e.Contains("DerivedFieldB", StringComparison.Ordinal));
     }
+
+    [Theory]
+    [InlineData("Icon")]
+    [InlineData("Album")]
+    [InlineData("Bark")]
+    [InlineData("Skin")]
+    public void AssetReference_OnSupportedUnityField_Passes(string fieldPath)
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureAssetHolder",
+                TemplateId = "x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = fieldPath,
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.AssetReference,
+                        Asset = new CompiledAssetReference { Name = "item/sample" },
+                    },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+    }
+
+    [Theory]
+    [InlineData("Geometry")]
+    [InlineData("Prefab")]
+    public void AssetReference_OnDeferredUnityField_PointsAtPrefabCloningTodo(string fieldPath)
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureAssetHolder",
+                TemplateId = "x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = fieldPath,
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.AssetReference,
+                        Asset = new CompiledAssetReference { Name = "item/sample" },
+                    },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("PREFAB_CLONING_TODO", log.Errors[0]);
+    }
+
+    [Fact]
+    public void AssetReference_OnNonAssetField_Errors()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureAssetHolder",
+                TemplateId = "x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "NotAnAsset",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.AssetReference,
+                        Asset = new CompiledAssetReference { Name = "item/sample" },
+                    },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("non-asset", log.Errors[0]);
+    }
+
+    [Fact]
+    public void AssetReference_AdditionsCatalog_AcceptsExistingFile()
+    {
+        // Compile-time: when an additions catalog reports the file exists,
+        // the asset reference passes. The catalog is queried by category +
+        // logical name (path under the category folder, extension stripped).
+        using var dir = new TempDirectory();
+        var spritesDir = Path.Combine(dir.Path, "sprites");
+        Directory.CreateDirectory(Path.Combine(spritesDir, "item"));
+        File.WriteAllBytes(Path.Combine(spritesDir, "item", "fancy-pen-icon.png"), [0]);
+
+        var additions = new FileSystemAssetAdditionsCatalog(dir.Path);
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureAssetHolder",
+                TemplateId = "x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "Icon",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.AssetReference,
+                        Asset = new CompiledAssetReference { Name = "item/fancy-pen-icon" },
+                    },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(
+            patches, clones: null, catalog, log, additions);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+    }
+
+    [Fact]
+    public void AssetReference_AdditionsCatalog_RejectsMissingFile()
+    {
+        using var dir = new TempDirectory();
+        var additions = new FileSystemAssetAdditionsCatalog(dir.Path);
+
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureAssetHolder",
+                TemplateId = "x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "Icon",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.AssetReference,
+                        Asset = new CompiledAssetReference { Name = "item/missing" },
+                    },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(
+            patches, clones: null, catalog, log, additions);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("assets/additions/sprites/item/missing", log.Errors[0]);
+    }
+
+    [Fact]
+    public void AssetReference_AdditionsCatalog_FlagsDuplicateLogicalNames()
+    {
+        // Same stem, different extensions in the same category folder: the
+        // runtime can't disambiguate by name, so the compiler must reject.
+        using var dir = new TempDirectory();
+        var spritesDir = Path.Combine(dir.Path, "sprites");
+        Directory.CreateDirectory(spritesDir);
+        File.WriteAllBytes(Path.Combine(spritesDir, "icon.png"), [0]);
+        File.WriteAllBytes(Path.Combine(spritesDir, "icon.jpg"), [0]);
+
+        var additions = new FileSystemAssetAdditionsCatalog(dir.Path);
+
+        Assert.NotEmpty(additions.ConflictingNames);
+        Assert.Contains("sprites/icon", additions.ConflictingNames);
+    }
+
+    private sealed class TempDirectory : IDisposable
+    {
+        public string Path { get; }
+
+        public TempDirectory()
+        {
+            Path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                "jiangyu-additions-" + Guid.NewGuid().ToString("N")[..8]);
+            Directory.CreateDirectory(Path);
+        }
+
+        public void Dispose()
+        {
+            try { Directory.Delete(Path, recursive: true); }
+            catch { }
+        }
+    }
+
+    [Fact]
+    public void AssetReference_EmptyName_Errors()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureAssetHolder",
+                TemplateId = "x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "Icon",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.AssetReference,
+                        Asset = new CompiledAssetReference { Name = "" },
+                    },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("empty", log.Errors[0]);
+    }
 }

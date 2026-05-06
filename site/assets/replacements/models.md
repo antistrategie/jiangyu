@@ -4,7 +4,7 @@ Replace any 3D model in the game by name. Jiangyu accepts authored glTF or GLB f
 
 ## Studio workflow
 
-1. Open the [Asset Browser](../studio.md#asset-browser) pane.
+1. Open the [Asset Browser](/studio#asset-browser) pane.
 2. Type the asset name in the search box. Filter the type to **Model**.
 3. Select the asset. The detail panel shows a `Replace` row with the folder under `assets/replacements/` to save your replacement at, for example:
 
@@ -16,7 +16,7 @@ Replace any 3D model in the game by name. Jiangyu accepts authored glTF or GLB f
 
 4. Click **Export** to pull the vanilla model out as a starting point. Studio writes a self-contained model package to your chosen destination: a directory named after the target, containing a cleaned `model.gltf` plus any auxiliary textures.
 5. Open the exported `model.gltf` in Blender, edit the meshes, save it back into your project's `assets/replacements/models/<target-name>/` directory.
-6. [Compile](../studio.md#compile).
+6. [Compile](/studio#compile).
 
 ## File layout
 

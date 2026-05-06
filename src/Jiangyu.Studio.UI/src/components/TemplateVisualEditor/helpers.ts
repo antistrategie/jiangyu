@@ -69,6 +69,15 @@ export function inspectedFieldToEditorValue(
       }
       return value;
     }
+    case "AssetReference": {
+      // Vanilla asset-typed fields surface in the inspector as a "reference"
+      // node carrying the asset's Unity name. Reuse the name as the asset
+      // reference value so a clone of an existing template prefills with
+      // the same asset.
+      const refName = node.reference?.name;
+      if (!refName) return undefined;
+      return { kind: "AssetReference", assetName: refName };
+    }
     case null:
     case undefined: {
       // Member is non-scalar non-ref, so the inspected node should be a
@@ -509,6 +518,8 @@ export function makeDefaultValue(member: TemplateMember): EditorValue {
       // catalog/loader derive it from the declared field. The modder only
       // sets it explicitly for polymorphic destinations.
       return { kind: "TemplateReference", referenceId: "" };
+    case "AssetReference":
+      return { kind: "AssetReference", assetName: "" };
     default:
       // Polymorphic owned-element collection (e.g. EventHandlers): the
       // element is a freshly-constructed ScriptableObject subordinate to the

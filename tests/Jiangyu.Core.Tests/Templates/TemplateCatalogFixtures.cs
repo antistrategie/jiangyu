@@ -16,6 +16,16 @@ namespace UnityEngine
     public class ScriptableObject
     {
     }
+
+    // Stand-ins for Unity asset classes the validator dispatches on by
+    // simple Type.Name. They don't need to inherit from UnityEngine.Object
+    // for the validator's purpose; AssetCategory only consults the name.
+    public class Sprite { }
+    public class Texture2D { }
+    public class AudioClip { }
+    public class Material { }
+    public class Mesh { }
+    public class GameObject { }
 }
 
 namespace Menace.Tools
@@ -96,6 +106,22 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
     {
         public int Uses { get; set; }
         public float Cooldown { get; set; }
+    }
+
+    // Template carrying Unity-asset-typed fields, used by the asset-reference
+    // validator tests. Fields cover the supported categories plus the two
+    // deferred ones (Mesh, GameObject) so the validator's deferral message
+    // can be exercised against a real declared type, and a non-asset field
+    // for the rejection path.
+    public class FixtureAssetHolder : Menace.Tools.DataTemplate
+    {
+        public UnityEngine.Sprite? Icon { get; set; }
+        public UnityEngine.Texture2D? Album { get; set; }
+        public UnityEngine.AudioClip? Bark { get; set; }
+        public UnityEngine.Material? Skin { get; set; }
+        public UnityEngine.Mesh? Geometry { get; set; }
+        public UnityEngine.GameObject? Prefab { get; set; }
+        public string? NotAnAsset { get; set; }
     }
 
     public interface IFixtureAoEShape

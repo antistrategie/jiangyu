@@ -4,7 +4,7 @@ Replace any `Texture2D` in the game by name. The new pixels reach every consumer
 
 ## Studio workflow
 
-1. Open the [Asset Browser](../studio.md#asset-browser) pane.
+1. Open the [Asset Browser](/studio#asset-browser) pane.
 2. Type the asset name in the search box. Filter the type to **Texture** if you want only textures.
 3. Select the asset. The detail panel shows a `Replace` row with the path under `assets/replacements/` to save your replacement at, for example:
 
@@ -16,7 +16,7 @@ Replace any `Texture2D` in the game by name. The new pixels reach every consumer
 
 4. Click **Export** to pull the vanilla pixels out as a starting point.
 5. Open the exported PNG in your image editor, make your changes, save it under your project's `assets/replacements/` directory at the path Studio showed. For the example above, that's `assets/replacements/textures/window_background.png`.
-6. [Compile](../studio.md#compile).
+6. [Compile](/studio#compile).
 
 ## File layout
 

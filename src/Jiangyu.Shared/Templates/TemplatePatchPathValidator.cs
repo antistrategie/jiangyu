@@ -223,6 +223,11 @@ public static class TemplatePatchPathValidator
             // applier substitutes the array element type when the modder
             // omitted handler="X" against a monomorphic destination).
             CompiledTemplateValueKind.HandlerConstruction => IsSupportedComposite(value.HandlerConstruction, depth, requireTypeName: false),
+            // The asset name is the only load-bearing field; the category is
+            // derived from the destination field's declared Unity type at
+            // apply time, so the value kind itself doesn't carry it.
+            CompiledTemplateValueKind.AssetReference =>
+                value.Asset != null && !string.IsNullOrWhiteSpace(value.Asset.Name),
             _ => false,
         };
     }

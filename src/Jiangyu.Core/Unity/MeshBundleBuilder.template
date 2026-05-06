@@ -76,6 +76,12 @@ public static class MeshBundleBuilder
         // destination game texture relies on alpha.
         if (Directory.Exists("Assets/SpriteSources"))
         {
+            // Both replacement and addition sprites stage flat in this
+            // directory with the sprite_source__ prefix. The bundle stores
+            // each sprite under the prefix-stripped stem; for additions the
+            // C# pipeline pre-flattens slashes to `__` (see
+            // AssetCategory.ToBundleAssetName) so the same prefix-strip
+            // produces the bundle name the runtime resolver expects.
             foreach (var pngFile in Directory.GetFiles("Assets/SpriteSources", "*.*", SearchOption.TopDirectoryOnly))
             {
                 var ext = Path.GetExtension(pngFile).ToLowerInvariant();

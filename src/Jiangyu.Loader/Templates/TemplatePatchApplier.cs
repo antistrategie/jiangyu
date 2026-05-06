@@ -28,11 +28,13 @@ namespace Jiangyu.Loader.Templates;
 internal sealed class TemplatePatchApplier
 {
     private readonly TemplatePatchCatalog _catalog;
+    private readonly ModAssetResolver _assetResolver;
     private readonly HashSet<string> _appliedTypes = new(StringComparer.Ordinal);
 
-    public TemplatePatchApplier(TemplatePatchCatalog catalog)
+    public TemplatePatchApplier(TemplatePatchCatalog catalog, ModAssetResolver assetResolver = null)
     {
         _catalog = catalog;
+        _assetResolver = assetResolver;
     }
 
     public bool HasPendingPatches
@@ -116,7 +118,7 @@ internal sealed class TemplatePatchApplier
 
             foreach (var op in templateEntry.Value)
             {
-                switch (TryApplyOperation(template, templateTypeName, templateEntry.Key, op, log))
+                switch (TryApplyOperation(template, templateTypeName, templateEntry.Key, op, _assetResolver, log))
                 {
                     case ApplyOutcome.Applied:
                         applied++;
@@ -140,7 +142,8 @@ internal sealed class TemplatePatchApplier
     }
 
     private static ApplyOutcome TryApplyOperation(
-        object template, string templateTypeName, string templateId, LoadedPatchOperation op, MelonLogger.Instance log)
+        object template, string templateTypeName, string templateId, LoadedPatchOperation op,
+        ModAssetResolver assetResolver, MelonLogger.Instance log)
     {
         if (!TryParseInnerSegments(op.FieldPath, out var innerSegments, out var parseError))
         {
@@ -345,7 +348,7 @@ internal sealed class TemplatePatchApplier
             }
         }
 
-        var outcome = ApplyAndVerify(templateTypeName, templateId, op, terminalType, setter, getter, log);
+        var outcome = ApplyAndVerify(templateTypeName, templateId, op, terminalType, setter, getter, assetResolver, log);
         if (outcome != ApplyOutcome.Applied)
             return outcome;
 
@@ -384,9 +387,9 @@ internal sealed class TemplatePatchApplier
 
     private static ApplyOutcome ApplyAndVerify(
         string templateTypeName, string templateId, LoadedPatchOperation op, Type memberType,
-        Action<object> setter, Func<object> getter, MelonLogger.Instance log)
+        Action<object> setter, Func<object> getter, ModAssetResolver assetResolver, MelonLogger.Instance log)
     {
-        if (!TryConvertScalar(op.Value, memberType, log, out var converted, out var conversionError))
+        if (!TryConvertScalar(op.Value, memberType, assetResolver, log, out var converted, out var conversionError))
         {
             log.Warning(FormatPrefix(templateTypeName, templateId, op) + conversionError);
             return ApplyOutcome.ConversionFailed;
@@ -1376,7 +1379,7 @@ internal sealed class TemplatePatchApplier
     }
 
     private static bool TryConvertScalar(
-        CompiledTemplateValue value, Type targetType, MelonLogger.Instance log,
+        CompiledTemplateValue value, Type targetType, ModAssetResolver assetResolver, MelonLogger.Instance log,
         out object converted, out string error)
     {
         if (value == null)
@@ -1503,11 +1506,14 @@ internal sealed class TemplatePatchApplier
             case CompiledTemplateValueKind.TemplateReference:
                 return TryResolveTemplateReference(value.Reference, targetType, out converted, out error);
 
+            case CompiledTemplateValueKind.AssetReference:
+                return TryResolveAssetReference(value.Asset, targetType, assetResolver, out converted, out error);
+
             case CompiledTemplateValueKind.Composite:
-                return TryConstructComposite(value.Composite, targetType, log, out converted, out error);
+                return TryConstructComposite(value.Composite, targetType, assetResolver, log, out converted, out error);
 
             case CompiledTemplateValueKind.HandlerConstruction:
-                return TryConstructHandler(value.HandlerConstruction, targetType, log, out converted, out error);
+                return TryConstructHandler(value.HandlerConstruction, targetType, assetResolver, log, out converted, out error);
 
             default:
                 error = $"unknown value kind {value.Kind}.";
@@ -1525,7 +1531,7 @@ internal sealed class TemplatePatchApplier
     /// empty, the array's element type is used (monomorphic case).
     /// </summary>
     private static bool TryConstructHandler(
-        CompiledTemplateComposite handler, Type targetType, MelonLogger.Instance log,
+        CompiledTemplateComposite handler, Type targetType, ModAssetResolver assetResolver, MelonLogger.Instance log,
         out object converted, out string error)
     {
         converted = null;
@@ -1550,7 +1556,7 @@ internal sealed class TemplatePatchApplier
             };
         }
 
-        if (!TryConstructComposite(effectivePayload, targetType, log, out converted, out error))
+        if (!TryConstructComposite(effectivePayload, targetType, assetResolver, log, out converted, out error))
             return false;
 
         if (converted is UnityEngine.Object asUnity)
@@ -1581,7 +1587,7 @@ internal sealed class TemplatePatchApplier
     //    any IL2CPP-side ctor — fields are written individually below.
     //  - Pure managed types: Activator.CreateInstance (parameterless ctor).
     private static bool TryConstructComposite(
-        CompiledTemplateComposite composite, Type targetType, MelonLogger.Instance log,
+        CompiledTemplateComposite composite, Type targetType, ModAssetResolver assetResolver, MelonLogger.Instance log,
         out object converted, out string error)
     {
         converted = null;
@@ -1680,6 +1686,7 @@ internal sealed class TemplatePatchApplier
                     composite.TypeName,
                     "<construction>",
                     loadedOp,
+                    assetResolver,
                     log);
                 if (outcome != ApplyOutcome.Applied)
                 {
@@ -1804,6 +1811,52 @@ internal sealed class TemplatePatchApplier
             error = $"(IntPtr) ctor invocation threw: {ex.InnerException?.Message ?? ex.Message}";
             return false;
         }
+    }
+
+    // Resolves a modder-authored asset reference (a single name string) to a
+    // live Unity Object. The lookup category is the destination field's
+    // declared Unity type; the resolver walks the mod-bundle catalog first
+    // and falls back to the live game-asset registry. See
+    // ModAssetResolver for the JIANGYU-CONTRACT detail on resolution order.
+    private static bool TryResolveAssetReference(
+        Jiangyu.Shared.Templates.CompiledAssetReference reference, Type targetType,
+        ModAssetResolver assetResolver, out object converted, out string error)
+    {
+        converted = null;
+
+        if (reference == null || string.IsNullOrEmpty(reference.Name))
+        {
+            error = "value kind AssetReference but reference name is missing.";
+            return false;
+        }
+
+        if (assetResolver == null)
+        {
+            error = $"AssetReference '{reference.Name}': no asset resolver wired into the applier.";
+            return false;
+        }
+
+        if (!Jiangyu.Shared.Replacements.AssetCategory.IsSupported(targetType.Name))
+        {
+            error = $"AssetReference '{reference.Name}' targets {targetType.FullName}, "
+                + "which is not a supported asset category. "
+                + "Sprite, Texture2D, AudioClip, and Material are supported today; "
+                + "Mesh and GameObject wait on the prefab-construction layer "
+                + "(see PREFAB_CLONING_TODO.md).";
+            return false;
+        }
+
+        var resolved = assetResolver.TryFind(targetType, reference.Name);
+        if (resolved == null)
+        {
+            error = $"AssetReference '{reference.Name}': no asset of type {targetType.Name} "
+                + "found in the mod bundle catalog or the live game-asset registry.";
+            return false;
+        }
+
+        converted = resolved;
+        error = null;
+        return true;
     }
 
     // Resolves a modder-authored (templateType, templateId) pair to the live

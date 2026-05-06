@@ -1,6 +1,6 @@
 # CLI
 
-The `jiangyu` CLI mirrors most of Studio's authoring operations. Its job is to make Jiangyu scriptable: build pipelines, CI checks, batch exports, ad-hoc inspection. For interactive authoring, [Studio](./studio.md) is the better surface.
+The `jiangyu` CLI mirrors most of Studio's authoring operations. Its job is to make Jiangyu scriptable: build pipelines, CI checks, batch exports, ad-hoc inspection. For interactive authoring, [Studio](/studio) is the better surface.
 
 All commands run from your project directory. Run `jiangyu <command> --help` for the authoritative flag listing. This page covers what each command is *for*.
 
@@ -10,7 +10,7 @@ All commands run from your project directory. Run `jiangyu <command> --help` for
 
 Scaffolds a new mod project in the current directory. Writes `jiangyu.json` (with `name` derived from the directory) and a `.gitignore` excluding `.jiangyu/` and `compiled/`.
 
-Equivalent to Studio's "New project" dialog. See [Manifest](./manifest.md) for the scaffolded shape.
+Equivalent to Studio's "New project" dialog. See [Manifest](/reference/manifest) for the scaffolded shape.
 
 ### `jiangyu compile`
 

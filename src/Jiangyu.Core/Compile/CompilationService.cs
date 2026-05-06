@@ -106,6 +106,14 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var replacementSprites = spriteDiscovery.UniqueSprites;
         var replacementAudio = DiscoverReplacementAudioEntries(projectDir, replacementRoot, config.GetCachePath(), _log);
 
+        // Asset additions: files under assets/additions/<category>/ are
+        // bundled with their relative path (extension stripped) as the
+        // Unity Object name, so a template's asset="item/fancy-pen-icon"
+        // resolves to the bundle entry of the same name.
+        replacementTextures.AddRange(DiscoverAdditionTextureEntries(additionRoot));
+        replacementSprites.AddRange(DiscoverAdditionSpriteEntries(additionRoot));
+        replacementAudio.AddRange(DiscoverAdditionAudioEntries(additionRoot));
+
         // Atlas compositing: for atlas-backed sprite replacements, composite the modder's
         // images into a copy of the original atlas and emit as Texture2D replacements.
         if (spriteDiscovery.AtlasGroups.Count > 0)
@@ -200,13 +208,19 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
                 var supplement = Il2CppMetadataCache.LoadIfPresent(input.Config.GetCachePath());
                 using var catalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirs, supplement);
+                var additionsCatalog = new FileSystemAssetAdditionsCatalog(additionRoot);
+                foreach (var conflict in additionsCatalog.ConflictingNames)
+                {
+                    _log.Error($"Asset addition '{conflict}': two files share the same logical name in the same category. Rename one or remove the duplicate.");
+                }
                 var catalogErrors = TemplateCatalogValidator.Validate(
                     templatePatchResult.Patches,
                     templateCloneResult.Clones,
                     catalog,
-                    _log);
-                if (catalogErrors > 0)
-                    return Fail($"Template validation failed with {catalogErrors} error(s). See errors above.");
+                    _log,
+                    additionsCatalog);
+                if (catalogErrors > 0 || additionsCatalog.ConflictingNames.Count > 0)
+                    return Fail($"Template validation failed with {catalogErrors + additionsCatalog.ConflictingNames.Count} error(s). See errors above.");
             }
         }
         _log.Info($"  [timing] Template compilation: {phaseSw.Elapsed.TotalSeconds:F1}s");
@@ -719,6 +733,87 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         }
 
         return [.. entries.OrderBy(entry => entry.Name, StringComparer.Ordinal)];
+    }
+
+    /// <summary>
+    /// Walk <c>assets/additions/&lt;category&gt;/</c> recursively and produce
+    /// one bundle entry per file. The bundle name is the relative path with
+    /// the extension stripped and slashes flattened to <c>__</c> (see
+    /// <see cref="Jiangyu.Shared.Replacements.AssetCategory.ToBundleAssetName"/>);
+    /// the runtime resolver applies the same translation to the modder's
+    /// KDL reference so a slashed authoring form matches a flat bundle key.
+    /// Additions don't consult the asset index because the asset name is
+    /// the modder's choice rather than a target lookup.
+    /// </summary>
+    private static IEnumerable<GlbMeshBundleCompiler.CompiledTexture> DiscoverAdditionTextureEntries(string additionRoot)
+    {
+        var dir = Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Textures);
+        if (!Directory.Exists(dir))
+            return [];
+
+        return CollectAssetFiles(dir, "*.png", "*.jpg", "*.jpeg")
+            .Select(file => new GlbMeshBundleCompiler.CompiledTexture
+            {
+                Name = Jiangyu.Shared.Replacements.AssetCategory.ToBundleAssetName(LogicalAdditionName(dir, file)),
+                Content = File.ReadAllBytes(file),
+                Linear = false,
+            })
+            .OrderBy(entry => entry.Name, StringComparer.Ordinal);
+    }
+
+    private static IEnumerable<GlbMeshBundleCompiler.ImportedSpriteAsset> DiscoverAdditionSpriteEntries(string additionRoot)
+    {
+        var dir = Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Sprites);
+        if (!Directory.Exists(dir))
+            return [];
+
+        return CollectAssetFiles(dir, "*.png", "*.jpg", "*.jpeg")
+            .Select(file =>
+            {
+                var bundleName = Jiangyu.Shared.Replacements.AssetCategory.ToBundleAssetName(LogicalAdditionName(dir, file));
+                return new GlbMeshBundleCompiler.ImportedSpriteAsset
+                {
+                    Name = bundleName,
+                    SourceFilePath = file,
+                    Extension = Path.GetExtension(file),
+                    StagingName = $"sprite_source__{bundleName}",
+                };
+            })
+            .OrderBy(entry => entry.Name, StringComparer.Ordinal);
+    }
+
+    private static IEnumerable<GlbMeshBundleCompiler.ImportedAudioAsset> DiscoverAdditionAudioEntries(string additionRoot)
+    {
+        var dir = Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Audio);
+        if (!Directory.Exists(dir))
+            return [];
+
+        return CollectAssetFiles(dir, "*.wav", "*.ogg", "*.mp3")
+            .Select(file => new GlbMeshBundleCompiler.ImportedAudioAsset
+            {
+                Name = Jiangyu.Shared.Replacements.AssetCategory.ToBundleAssetName(LogicalAdditionName(dir, file)),
+                SourceFilePath = file,
+                Extension = Path.GetExtension(file),
+            })
+            .OrderBy(entry => entry.Name, StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Build the bundle-entry name for a file under
+    /// <c>assets/additions/&lt;category&gt;/</c>: the relative path with the
+    /// file extension stripped and platform separators normalised to
+    /// <c>/</c>. Unity Object names accept <c>/</c> (this is how Resources
+    /// hierarchies are addressed), and the loader's asset resolver looks up
+    /// by exactly this name so the modder writes the same string in the
+    /// template (<c>asset="item/fancy-pen-icon"</c>) that they use for the
+    /// folder layout.
+    /// </summary>
+    private static string LogicalAdditionName(string categoryRoot, string filePath)
+    {
+        var relative = Path.GetRelativePath(categoryRoot, filePath);
+        var ext = Path.GetExtension(relative);
+        var stem = ext.Length == 0 ? relative : relative.Substring(0, relative.Length - ext.Length);
+        return stem.Replace('\\', '/');
     }
 
     private static AssetIndex? LoadAssetIndex(string cachePath)

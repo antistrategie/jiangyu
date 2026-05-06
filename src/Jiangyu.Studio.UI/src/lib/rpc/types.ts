@@ -255,6 +255,7 @@ export interface TemplateMember {
   isCollection?: boolean | null;
   isScalar?: boolean | null;
   isTemplateReference?: boolean | null;
+  isAssetReference?: boolean | null;
   patchScalarKind?: string | null;
   elementTypeName?: string | null;
   enumTypeName?: string | null;

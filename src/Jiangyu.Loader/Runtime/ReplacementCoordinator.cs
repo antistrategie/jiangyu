@@ -40,7 +40,7 @@ internal class ReplacementCoordinator
         _directReplacements = new DirectMeshReplacementApplier(_materialReplacements, _meshPreparation);
         _drivenReplacements = new DrivenPrefabReplacementManager(_pinned);
         _templatePatches = new TemplatePatchCatalog();
-        _templatePatchApplier = new TemplatePatchApplier(_templatePatches);
+        _templatePatchApplier = new TemplatePatchApplier(_templatePatches, new ModAssetResolver(_catalog));
         _templateClones = new TemplateCloneCatalog();
         _templateCloneApplier = new TemplateCloneApplier(_templateClones);
         _harmonyPatchInstaller = new LoaderHarmonyPatchInstaller(

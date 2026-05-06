@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Jiangyu
   text: Modkit for MENACE
-  tagline: "A general-purpose modkit: asset replacements, template patches, visual editor."
+  tagline: "A general-purpose modkit: bundled assets, template patches, visual editor."
   actions:
     - theme: brand
       text: What is Jiangyu?
@@ -14,7 +14,7 @@ hero:
       link: /getting-started
     - theme: alt
       text: Reference
-      link: /reference/studio
+      link: /studio
 
 features:
   - title: Drop-in replacements

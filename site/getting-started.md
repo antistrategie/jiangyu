@@ -1,6 +1,6 @@
 # Getting started
 
-This walkthrough takes you from zero to a working mod that replaces the MENACE main-menu logo. Once you've shipped one replacement end to end, the [Reference](./reference/studio.md) pages cover the other asset types and template patches.
+This walkthrough takes you from zero to a working mod that replaces the MENACE main-menu logo. Once you've shipped one replacement end to end, the [Reference](./studio.md) pages cover the other asset types and template patches.
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@ You need:
     - [`Jiangyu.Loader.dll`](https://github.com/antistrategie/jiangyu/releases/latest/download/Jiangyu.Loader.dll), the in-game loader.
     - **Studio** for your platform: [Windows](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-studio-win-x64.zip) or [Linux](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-studio-linux-x64.zip).
     - **CLI** (optional, for scripting): [Windows](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-cli-win-x64.zip) or [Linux](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-cli-linux-x64.zip).
-- **Unity Editor** (optional). Required for asset replacements (textures, sprites, models, audio); template-only mods don't need it. Install via [Unity Hub](https://unity.com/download), download `6000.0.72f1` from the [Unity archive](https://unity.com/releases/editor/archive), and add it to Hub.
+- **Unity Editor** (optional). Required for bundled assets (textures, sprites, models, audio); template-only mods don't need it. Install via [Unity Hub](https://unity.com/download), download `6000.0.72f1` from the [Unity archive](https://unity.com/releases/editor/archive), and add it to Hub.
 - **An image editor** (anything that exports PNG: GIMP, Photoshop, Krita).
 
 ::: tip Unity version
@@ -55,7 +55,7 @@ RedLogo/
 
 You're going to replace `menace_logo_main_menue`, the logo MENACE shows on the main menu. (The spelling `menue` is the actual name of the asset; use it as-is.)
 
-1. Open the [Asset Browser](./reference/studio.md#asset-browser) from the palette: press **Ctrl+Shift+P** and run **Open Asset Browser**.
+1. Open the [Asset Browser](./studio.md#asset-browser) from the palette: press **Ctrl+Shift+P** and run **Open Asset Browser**.
 2. The first time, the browser shows a gate with an **Index assets** button. Click it. The first build takes a few minutes. Later searches read the cached index instantly.
 3. Once the index finishes building, type `menace_logo_main_menue` in the search box.
 4. Filter the type to **Texture** if you want to narrow the results.
@@ -112,10 +112,10 @@ If something looks wrong, check `<MENACE>/MelonLoader/Latest.log`. Jiangyu logs 
 
 You've shipped one texture replacement. The same Studio workflow handles every other replacement type:
 
-- [Texture replacements](./reference/replacements/textures.md) covers the texture contract in full.
-- [Sprite replacements](./reference/replacements/sprites.md) for UI sprites and atlas-backed sprites.
-- [Model replacements](./reference/replacements/models.md) for skinned 3D meshes.
-- [Audio replacements](./reference/replacements/audio.md) for voice lines, SFX, and music.
-- [Templates](./reference/templates.md) for tweaking game data: stats, skills, weapons, perks.
+- [Texture replacements](/assets/replacements/textures) covers the texture contract in full.
+- [Sprite replacements](/assets/replacements/sprites) for UI sprites and atlas-backed sprites.
+- [Model replacements](/assets/replacements/models) for skinned 3D meshes.
+- [Audio replacements](/assets/replacements/audio) for voice lines, SFX, and music.
+- [Templates](/templates) for tweaking game data: stats, skills, weapons, perks.
 
-The [Studio reference](./reference/studio.md) covers every Studio surface in detail. The [CLI reference](./reference/cli.md) covers the equivalent command-line surface for build pipelines and scripting.
+The [Studio reference](./studio.md) covers every Studio surface in detail. The [CLI reference](/reference/cli) covers the equivalent command-line surface for build pipelines and scripting.

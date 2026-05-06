@@ -467,6 +467,14 @@ public static class KdlTemplateParser
                         .Select(EditorDirectiveToCompiled).ToList() ?? [],
                 },
             },
+            KdlEditorValueKind.AssetReference => new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.AssetReference,
+                Asset = new CompiledAssetReference
+                {
+                    Name = value.AssetName ?? string.Empty,
+                },
+            },
             _ => new CompiledTemplateValue
             {
                 Kind = CompiledTemplateValueKind.String,
@@ -529,6 +537,11 @@ public static class KdlTemplateParser
                 CompositeType = v.HandlerConstruction?.TypeName,
                 CompositeDirectives = v.HandlerConstruction?.Operations
                     .Select(CompiledOpToEditor).ToList(),
+            },
+            CompiledTemplateValueKind.AssetReference => new KdlEditorValue
+            {
+                Kind = KdlEditorValueKind.AssetReference,
+                AssetName = v.Asset?.Name,
             },
             _ => new KdlEditorValue { Kind = KdlEditorValueKind.String, String = "" },
         };
@@ -986,10 +999,11 @@ public static class KdlTemplateParser
 
         if (GetProperty(node, "ref") != null
             || GetProperty(node, "enum") != null
-            || GetProperty(node, "composite") != null)
+            || GetProperty(node, "composite") != null
+            || GetProperty(node, "asset") != null)
         {
             log.Error(
-                $"{pos}: 'set' with a child block must not carry ref=, enum=, or composite= properties; "
+                $"{pos}: 'set' with a child block must not carry ref=, enum=, composite=, or asset= properties; "
                 + "those belong on the inner 'set' that produces the value.");
             return false;
         }
@@ -1083,6 +1097,11 @@ public static class KdlTemplateParser
         var refType = GetProperty(node, "ref");
         if (refType != null)
             return TryParseRefValue(node, refType, pos, log, out value);
+
+        // Check for asset=
+        var assetName = GetProperty(node, "asset");
+        if (assetName != null)
+            return TryParseAssetValue(node, assetName, pos, log, out value);
 
         // Check for enum=
         var enumType = GetProperty(node, "enum");
@@ -1229,6 +1248,74 @@ public static class KdlTemplateParser
         return true;
     }
 
+    // asset="path/to/name"
+    //
+    // Reference to a Unity asset shipped by the mod under
+    // assets/additions/<category>/<name>.<ext>, or an indexed game asset of
+    // the same name. The category is derived from the destination field's
+    // declared Unity type at compile and apply time, so the modder writes
+    // the name only. The name preserves directory separators as `/`.
+    private static bool TryParseAssetValue(
+        KdlNode node, string assetName, string pos, ILogSink log,
+        out CompiledTemplateValue value)
+    {
+        value = null!;
+
+        if (string.IsNullOrWhiteSpace(assetName))
+        {
+            log.Error($"{pos}: asset= must be a non-empty asset name.");
+            return false;
+        }
+
+        // KDL asset references are portable text the modder hand-writes;
+        // require a single canonical separator so the same KDL compiles
+        // identically on Linux and Windows. The filesystem walk at compile
+        // time normalises native separators when computing logical names,
+        // but the authored form must stay forward-slash.
+        if (assetName.Contains('\\'))
+        {
+            log.Error(
+                $"{pos}: asset=\"{assetName}\" uses '\\' as a path separator; "
+                + "use '/' instead. KDL asset names are portable text and the "
+                + "filesystem layout under assets/additions/ is normalised at compile time.");
+            return false;
+        }
+
+        // The field path is the only positional argument; asset references
+        // carry their payload in the property value, not a second positional.
+        if (node.Arguments.Count > 1)
+        {
+            log.Error(
+                $"{pos}: asset= must not carry a positional value beyond the field name. "
+                + "The asset name lives in the property value (asset=\"name\").");
+            return false;
+        }
+
+        if (node.HasChildren)
+        {
+            log.Error($"{pos}: asset= must not carry a child block; it is a leaf reference.");
+            return false;
+        }
+
+        if (GetProperty(node, "type") != null)
+        {
+            log.Error(
+                $"{pos}: asset= is exclusive with type=. The asset's Unity type "
+                + "is derived from the destination field, not declared in source.");
+            return false;
+        }
+
+        value = new CompiledTemplateValue
+        {
+            Kind = CompiledTemplateValueKind.AssetReference,
+            Asset = new CompiledAssetReference
+            {
+                Name = assetName,
+            },
+        };
+        return true;
+    }
+
     // enum="EnumType" "EnumValue"
     private static bool TryParseEnumValue(
         KdlNode node, string enumType, string pos, ILogSink log,
@@ -1283,10 +1370,11 @@ public static class KdlTemplateParser
         if (GetProperty(node, "ref") != null
             || GetProperty(node, "enum") != null
             || GetProperty(node, "composite") != null
+            || GetProperty(node, "asset") != null
             || GetProperty(node, "type") != null)
         {
             log.Error(
-                $"{pos}: 'handler=' is exclusive with ref=, enum=, composite=, and type=. "
+                $"{pos}: 'handler=' is exclusive with ref=, enum=, composite=, asset=, and type=. "
                 + "It signals construction of a new ScriptableObject; the others are different value shapes.");
             return false;
         }

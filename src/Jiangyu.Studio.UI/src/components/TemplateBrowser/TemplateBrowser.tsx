@@ -1130,6 +1130,13 @@ function formatValue(value: InspectedFieldNode | null): string {
   if (value.kind === "reference" && value.reference) {
     return value.reference.name ?? `[pathId=${value.reference.pathId}]`;
   }
+  if (value.kind === "assetReference") {
+    // The inspector emits "reference" for vanilla asset-typed fields today,
+    // so this branch covers the modder-edited pathway where a patch has
+    // been merged into the inspected view as an AssetReference value.
+    const name = (value as { asset?: { name?: string } | null }).asset?.name;
+    return name ? `→ ${name}` : "→ ?";
+  }
   if (value.kind === "string" && value.value !== null) return JSON.stringify(String(value.value));
   if (value.kind === "array") {
     const count = value.count ?? value.elements?.length ?? 0;

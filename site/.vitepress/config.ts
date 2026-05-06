@@ -46,42 +46,78 @@ export default defineConfig({
 
     nav: [
       { text: "Get started", link: "/getting-started" },
-      { text: "Reference", link: "/reference/studio" },
+      { text: "Concepts", link: "/concepts/" },
+      { text: "Assets", link: "/assets/" },
+      { text: "Templates", link: "/templates" },
+      { text: "Studio", link: "/studio" },
       { text: "Troubleshooting", link: "/troubleshooting" },
     ],
 
     sidebar: [
       {
-        text: "Start here",
+        text: "Introduction",
         items: [
           { text: "What is Jiangyu?", link: "/what-is-jiangyu" },
           { text: "Getting started", link: "/getting-started" },
         ],
       },
       {
-        text: "Reference",
+        text: "Concepts",
         items: [
-          { text: "Studio", link: "/reference/studio" },
+          { text: "Overview", link: "/concepts/" },
+        ],
+      },
+      {
+        text: "Assets",
+        items: [
+          { text: "Overview", link: "/assets/" },
           {
             text: "Replacements",
             collapsed: false,
             items: [
-              { text: "Textures", link: "/reference/replacements/textures" },
-              { text: "Sprites", link: "/reference/replacements/sprites" },
-              { text: "Models", link: "/reference/replacements/models" },
-              { text: "Audio", link: "/reference/replacements/audio" },
+              { text: "Overview", link: "/assets/replacements/" },
+              { text: "Textures", link: "/assets/replacements/textures" },
+              { text: "Sprites", link: "/assets/replacements/sprites" },
+              { text: "Models", link: "/assets/replacements/models" },
+              { text: "Audio", link: "/assets/replacements/audio" },
             ],
           },
-          { text: "Templates (KDL)", link: "/reference/templates" },
-          { text: "Manifest (jiangyu.json)", link: "/reference/manifest" },
           {
-            text: "AI Agent",
+            text: "Additions",
             collapsed: false,
             items: [
-              { text: "Overview", link: "/reference/ai/" },
-              { text: "Available tools", link: "/reference/ai/tools" },
+              { text: "Overview", link: "/assets/additions/" },
+              { text: "Sprites", link: "/assets/additions/sprites" },
+              { text: "Textures", link: "/assets/additions/textures" },
+              { text: "Audio", link: "/assets/additions/audio" },
             ],
           },
+        ],
+      },
+      {
+        text: "Templates",
+        items: [
+          { text: "Templates (KDL)", link: "/templates" },
+        ],
+      },
+      {
+        text: "Studio",
+        items: [
+          { text: "Overview", link: "/studio" },
+          {
+            text: "AI agent",
+            collapsed: false,
+            items: [
+              { text: "Overview", link: "/studio/agent" },
+              { text: "Available tools", link: "/studio/agent-tools" },
+            ],
+          },
+        ],
+      },
+      {
+        text: "Reference",
+        items: [
+          { text: "Manifest (jiangyu.json)", link: "/reference/manifest" },
           { text: "CLI", link: "/reference/cli" },
         ],
       },

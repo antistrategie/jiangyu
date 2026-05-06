@@ -6,7 +6,7 @@ Most sprites in MENACE are packed into atlases. Jiangyu handles atlases for you 
 
 ## Studio workflow
 
-1. Open the [Asset Browser](../studio.md#asset-browser) pane.
+1. Open the [Asset Browser](/studio#asset-browser) pane.
 2. Type the asset name in the search box. Filter the type to **Sprite** if you want only sprites.
 3. Select the asset. The detail panel shows a `Replace` row with the path under `assets/replacements/` to save your replacement at, for example:
 
@@ -21,7 +21,7 @@ Most sprites in MENACE are packed into atlases. Jiangyu handles atlases for you 
 
 4. Click **Export** to pull the vanilla pixels out as a starting point.
 5. Open the exported PNG in your image editor, make your changes, save it under your project's `assets/replacements/` directory at the path Studio showed. For the example above, that's `assets/replacements/sprites/UICheckMark.png`.
-6. [Compile](../studio.md#compile).
+6. [Compile](/studio#compile).
 
 ## File layout
 

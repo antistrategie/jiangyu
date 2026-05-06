@@ -1,4 +1,5 @@
 using Jiangyu.Core.Abstractions;
+using Jiangyu.Shared.Replacements;
 using Jiangyu.Shared.Templates;
 
 namespace Jiangyu.Core.Templates;
@@ -20,14 +21,15 @@ public static class TemplateCatalogValidator
         IEnumerable<CompiledTemplatePatch>? patches,
         IEnumerable<CompiledTemplateClone>? clones,
         TemplateTypeCatalog catalog,
-        ILogSink log)
+        ILogSink log,
+        IAssetAdditionsCatalog? additions = null)
     {
         var errors = 0;
 
         if (patches != null)
         {
             foreach (var patch in patches)
-                errors += ValidatePatch(patch, catalog, log);
+                errors += ValidatePatch(patch, catalog, additions, log);
         }
 
         if (clones != null)
@@ -79,6 +81,7 @@ public static class TemplateCatalogValidator
                     op,
                     node.TemplateType,
                     catalog,
+                    additions: null,
                     message => localErrors.Add(message));
 
                 if (errorCount > 0)
@@ -107,7 +110,11 @@ public static class TemplateCatalogValidator
         }
     }
 
-    private static int ValidatePatch(CompiledTemplatePatch patch, TemplateTypeCatalog catalog, ILogSink log)
+    private static int ValidatePatch(
+        CompiledTemplatePatch patch,
+        TemplateTypeCatalog catalog,
+        IAssetAdditionsCatalog? additions,
+        ILogSink log)
     {
         var templateType = patch.TemplateType ?? "EntityTemplate";
         var label = $"{templateType}:{patch.TemplateId}";
@@ -126,6 +133,7 @@ public static class TemplateCatalogValidator
                 op,
                 templateType,
                 catalog,
+                additions,
                 message => log.Error($"Template patch '{label}.{FormatFullPath(op)}' — {message}"));
         }
         return errors;
@@ -150,6 +158,7 @@ public static class TemplateCatalogValidator
         CompiledTemplateSetOperation op,
         string templateType,
         TemplateTypeCatalog catalog,
+        IAssetAdditionsCatalog? additions,
         Action<string> reportError)
     {
         if (string.IsNullOrWhiteSpace(op.FieldPath)) return 0;
@@ -304,13 +313,18 @@ public static class TemplateCatalogValidator
                 if (ValidateEnumValue(op.Value, declaredType, result.EnumMemberNames, reportError))
                     return 1;
             }
+            else if (op.Value.Kind == CompiledTemplateValueKind.AssetReference)
+            {
+                if (ValidateAssetReference(op.Value, declaredType, catalog, additions, reportError))
+                    return 1;
+            }
         }
 
         if (op.Value?.Kind == CompiledTemplateValueKind.Composite && op.Value.Composite != null)
-            return ValidateCompositeValue(op.Value.Composite, FormatFullPath(op), catalog, reportError);
+            return ValidateCompositeValue(op.Value.Composite, FormatFullPath(op), catalog, additions, reportError);
 
         if (op.Value?.Kind == CompiledTemplateValueKind.HandlerConstruction && op.Value.HandlerConstruction != null)
-            return ValidateHandlerConstruction(op.Value.HandlerConstruction, op, result, catalog, reportError);
+            return ValidateHandlerConstruction(op.Value.HandlerConstruction, op, result, catalog, additions, reportError);
 
         return 0;
     }
@@ -386,6 +400,86 @@ public static class TemplateCatalogValidator
     }
 
     /// <summary>
+    /// Cross-checks an authored
+    /// <see cref="CompiledTemplateValueKind.AssetReference"/> value against
+    /// the destination field's declared Unity type. The category folder
+    /// (sprites, textures, audio, materials) is derived from that type via
+    /// <see cref="AssetCategory.IsSupported"/>; this validator catches the
+    /// authoring mistakes that would otherwise reach the loader: asset= on a
+    /// non-asset field, an empty name, and references against deferred Unity
+    /// types (Mesh / GameObject) so the modder learns about the
+    /// prefab-construction dependency at compile time rather than at apply
+    /// time.
+    ///
+    /// Returns <c>true</c> when an error was reported. The caller should
+    /// short-circuit on <c>true</c>.
+    /// </summary>
+    private static bool ValidateAssetReference(
+        CompiledTemplateValue value,
+        Type? declaredType,
+        TemplateTypeCatalog catalog,
+        IAssetAdditionsCatalog? additions,
+        Action<string> reportError)
+    {
+        if (declaredType is null)
+        {
+            reportError("asset= value on a field whose declared type could not be resolved.");
+            return true;
+        }
+
+        var className = declaredType.Name;
+
+        if (!AssetCategory.IsSupported(className))
+        {
+            // Surface the deferred-kinds case with the same pointer the
+            // shared dispatcher would throw, so a modder reading the compile
+            // error and a future implementer reading the dispatcher's stack
+            // trace land on the same design doc.
+            if (className is "Mesh" or "GameObject" or "PrefabHierarchyObject")
+            {
+                reportError(
+                    $"asset= for field type {catalog.FriendlyName(declaredType)} "
+                    + "is not yet supported. Mesh and prefab additions wait on "
+                    + "the prefab-construction layer (see PREFAB_CLONING_TODO.md).");
+            }
+            else
+            {
+                reportError(
+                    "asset= on a non-asset field type "
+                    + $"(declared {catalog.FriendlyName(declaredType)}). "
+                    + "Asset references resolve to Unity assets like Sprite, "
+                    + "Texture2D, AudioClip, or Material.");
+            }
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(value.Asset?.Name))
+        {
+            reportError("asset= value has an empty name.");
+            return true;
+        }
+
+        // File-existence check against assets/additions/<category>/. Only
+        // runs when the compiler hands us a catalog; the editor-validation
+        // path passes null because it doesn't have project-root context and
+        // the actual missing-asset diagnostic surfaces at compile time.
+        if (additions != null)
+        {
+            var category = AssetCategory.ForClassName(className);
+            if (category != null && !additions.Contains(category, value.Asset!.Name))
+            {
+                reportError(
+                    $"asset=\"{value.Asset.Name}\" was not found at "
+                    + $"assets/additions/{category}/{value.Asset.Name}.<ext>. "
+                    + "Add the asset file or correct the reference name.");
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Validate a HandlerConstruction value: the named subtype must exist,
     /// must descend from the destination collection's element type, and
     /// every inner field must resolve on the subtype with a compatible
@@ -398,6 +492,7 @@ public static class TemplateCatalogValidator
         CompiledTemplateSetOperation op,
         QueryResult destination,
         TemplateTypeCatalog catalog,
+        IAssetAdditionsCatalog? additions,
         Action<string> reportError)
     {
         // Destination must be a collection element-type (auto-unwrapped from
@@ -467,6 +562,7 @@ public static class TemplateCatalogValidator
             subtype.FullName ?? subtype.Name,
             $"handler= construction for '{FormatFullPath(op)}'",
             catalog,
+            additions,
             reportError);
     }
 
@@ -474,6 +570,7 @@ public static class TemplateCatalogValidator
         CompiledTemplateComposite composite,
         string contextPath,
         TemplateTypeCatalog catalog,
+        IAssetAdditionsCatalog? additions,
         Action<string> reportError)
     {
         if (string.IsNullOrWhiteSpace(composite.TypeName)) return 0;
@@ -490,6 +587,7 @@ public static class TemplateCatalogValidator
             type.FullName ?? composite.TypeName,
             $"composite '{contextPath}'",
             catalog,
+            additions,
             reportError);
     }
 
@@ -498,13 +596,14 @@ public static class TemplateCatalogValidator
         string typeName,
         string contextLabel,
         TemplateTypeCatalog catalog,
+        IAssetAdditionsCatalog? additions,
         Action<string> reportError)
     {
         var errors = 0;
         foreach (var inner in operations)
         {
             void InnerReport(string message) => reportError($"{contextLabel}: {message}");
-            errors += ValidateOperation(inner, typeName, catalog, InnerReport);
+            errors += ValidateOperation(inner, typeName, catalog, additions, InnerReport);
         }
         return errors;
     }

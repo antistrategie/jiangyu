@@ -119,6 +119,20 @@ public class TemplatePatchPathValidatorTests
                     TemplateId = "skill.some_skill",
                 },
             },
+            new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.AssetReference,
+                Asset = new CompiledAssetReference { Name = "lrm5/icon" },
+            },
+            // Asset references in modder-facing logical form (slashes preserved)
+            // pass the validator; the bundle-side translation to flat
+            // `__` happens at compile staging and runtime resolution, not in
+            // the wire-format check.
+            new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.AssetReference,
+                Asset = new CompiledAssetReference { Name = "flat" },
+            },
         };
 
     [Theory]
@@ -154,6 +168,17 @@ public class TemplatePatchPathValidatorTests
             {
                 Kind = CompiledTemplateValueKind.TemplateReference,
                 Reference = new CompiledTemplateReference { TemplateType = null, TemplateId = "" },
+            },
+            new CompiledTemplateValue { Kind = CompiledTemplateValueKind.AssetReference, Asset = null },
+            new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.AssetReference,
+                Asset = new CompiledAssetReference { Name = "" },
+            },
+            new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.AssetReference,
+                Asset = new CompiledAssetReference { Name = "   " },
             },
         };
 

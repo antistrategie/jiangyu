@@ -150,6 +150,9 @@ public sealed class CompiledTemplateValue
     [JsonPropertyName("reference")]
     public CompiledTemplateReference? Reference { get; set; }
 
+    [JsonPropertyName("asset")]
+    public CompiledAssetReference? Asset { get; set; }
+
     [JsonPropertyName("composite")]
     public CompiledTemplateComposite? Composite { get; set; }
 
@@ -237,4 +240,28 @@ public enum CompiledTemplateValueKind
     /// inline composites stay on the <see cref="Composite"/> path.
     /// </summary>
     HandlerConstruction,
+
+    /// <summary>
+    /// Reference to a Unity asset shipped by the mod under
+    /// <c>assets/additions/&lt;category&gt;/&lt;name&gt;.&lt;ext&gt;</c> or to a
+    /// game-indexed asset of the same name. The category is inferred from the
+    /// destination field's declared Unity type (Sprite, Texture2D, AudioClip,
+    /// Material, Mesh) at compile and apply time, so the modder writes the
+    /// name only. The applier resolves to the live Unity Object via the mod's
+    /// loaded AssetBundle, falling back to the game-asset registry.
+    /// </summary>
+    AssetReference,
+}
+
+/// <summary>
+/// Payload for a <see cref="CompiledTemplateValueKind.AssetReference"/> value.
+/// <para><c>Name</c> is the asset's logical key: the path under
+/// <c>assets/additions/&lt;category&gt;/</c> with the file extension stripped
+/// and directory separators preserved as <c>/</c>. The category is derived
+/// from the destination field's declared Unity type, not stored here.</para>
+/// </summary>
+public sealed class CompiledAssetReference
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
 }

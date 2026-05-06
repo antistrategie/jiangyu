@@ -58,6 +58,35 @@ public class KdlEditorRoundTripTests
     }
 
     [Fact]
+    public void AssetValue_RoundTrips()
+    {
+        // The asset reference shape is the foundation for the prefab-cloning
+        // template-redirection step, so the editor model must preserve it
+        // intact. KDL: `asset="lrm5/icon"` parses into AssetReference value
+        // with the modder-facing slashed name; serialise back emits the
+        // same form.
+        const string kdl = """
+            patch "ItemDefinition" "fancy-pen" {
+                set "Icon" asset="lrm5/icon"
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+        var d = doc.Nodes[0].Directives[0];
+        Assert.Equal(KdlEditorOp.Set, d.Op);
+        Assert.Equal(KdlEditorValueKind.AssetReference, d.Value!.Kind);
+        Assert.Equal("lrm5/icon", d.Value.AssetName);
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        Assert.Contains("asset=\"lrm5/icon\"", text);
+
+        var doc2 = KdlTemplateParser.ParseText(text);
+        Assert.Empty(doc2.Errors);
+        Assert.Equal("lrm5/icon", doc2.Nodes[0].Directives[0].Value!.AssetName);
+    }
+
+    [Fact]
     public void EnumValue_RoundTrips()
     {
         const string kdl = """

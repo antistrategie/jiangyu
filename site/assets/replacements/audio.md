@@ -4,7 +4,7 @@ Replace any `AudioClip` in the game by name. When the game plays a clip whose na
 
 ## Studio workflow
 
-1. Open the [Asset Browser](../studio.md#asset-browser) pane.
+1. Open the [Asset Browser](/studio#asset-browser) pane.
 2. Type the asset name in the search box. Filter the type to **Audio** if you want only audio.
 3. Select the asset. The detail panel shows:
 
@@ -22,7 +22,7 @@ Replace any `AudioClip` in the game by name. When the game plays a clip whose na
 
 4. Click **Export** to pull the vanilla clip out as a starting point. Audio is exported in whatever format Unity embedded (typically `.ogg`; module formats like `.it`, `.xm`, `.mod` pass through unchanged).
 5. Open the exported file in your audio editor, make your changes, save it under your project's `assets/replacements/` directory at the path Studio showed. For the example above, that's `assets/replacements/audio/mortar_incoming_whistle_04.wav`.
-6. [Compile](../studio.md#compile).
+6. [Compile](/studio#compile).
 
 ## File layout
 

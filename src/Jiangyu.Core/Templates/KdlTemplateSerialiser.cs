@@ -239,6 +239,10 @@ public static class KdlTemplateSerialiser
             case KdlEditorValueKind.HandlerConstruction:
                 WriteFieldBag(sb, "handler", v);
                 break;
+
+            case KdlEditorValueKind.AssetReference:
+                sb.Append($"asset=\"{Esc(v.AssetName ?? "")}\"");
+                break;
         }
     }
 

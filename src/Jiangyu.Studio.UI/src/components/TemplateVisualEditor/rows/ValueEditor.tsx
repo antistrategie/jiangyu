@@ -181,6 +181,9 @@ export function ValueEditor({ value, onChange, member }: ValueEditorProps) {
     case "TemplateReference":
       return <RefValueEditor value={value} onChange={onChange} member={member} />;
 
+    case "AssetReference":
+      return <AssetValueEditor value={value} onChange={onChange} member={member} />;
+
     case "Composite":
     case "HandlerConstruction":
       // Field-bag values are rendered by CompositeEditor at SetRow level.
@@ -189,6 +192,26 @@ export function ValueEditor({ value, onChange, member }: ValueEditorProps) {
     default:
       return <span className={styles.setKind}>?</span>;
   }
+}
+
+function AssetValueEditor({ value, onChange, member }: ValueEditorProps) {
+  // Asset references carry only the logical name (the path under
+  // assets/additions/<category>/ with the extension stripped). Category is
+  // derived from the destination field's Unity type at apply time, so the
+  // editor surfaces just a name input plus a category hint label.
+  const category = member?.typeName ?? "asset";
+  return (
+    <div className={styles.setRefRow}>
+      <span className={styles.setRefLabel}>{category}</span>
+      <CommitInput
+        type="text"
+        className={styles.setValueInput}
+        value={value.assetName ?? ""}
+        placeholder="path/to/asset"
+        onCommit={(v) => onChange({ kind: "AssetReference", assetName: v })}
+      />
+    </div>
+  );
 }
 
 function EnumValueEditor({ value, onChange, member }: ValueEditorProps) {

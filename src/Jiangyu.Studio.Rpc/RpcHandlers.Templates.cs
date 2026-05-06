@@ -368,6 +368,14 @@ public static partial class RpcHandlers
             return "TemplateReference";
         }
 
+        // Unity asset leaves (Sprite/Texture2D/AudioClip/Material) patch via
+        // an asset reference: a single name string the loader resolves
+        // against the mod-bundle catalog or the live game-asset registry.
+        if (Jiangyu.Shared.Replacements.AssetCategory.IsSupported(leafType.Name))
+        {
+            return "AssetReference";
+        }
+
         return null;
     }
 
@@ -542,6 +550,7 @@ public static partial class RpcHandlers
                 IsCollection = TemplateTypeCatalog.GetElementType(m.MemberType) != null ? true : null,
                 IsScalar = TemplateTypeCatalog.IsScalar(m.MemberType) ? true : null,
                 IsTemplateReference = TemplateTypeCatalog.IsTemplateReferenceTarget(m.MemberType) ? true : null,
+                IsAssetReference = Jiangyu.Shared.Replacements.AssetCategory.IsSupported(m.MemberType.Name) ? true : null,
                 PatchScalarKind = ComputeMemberPatchScalarKind(m),
                 ElementTypeName = ComputeElementTypeName(catalog, m),
                 EnumTypeName = ComputeEnumTypeName(catalog, m),
@@ -669,6 +678,14 @@ public static partial class RpcHandlers
 
         [JsonPropertyName("isTemplateReference")]
         public bool? IsTemplateReference { get; set; }
+
+        /// <summary>True when the member's declared Unity type is a supported
+        /// asset class (Sprite, Texture2D, AudioClip, Material). The visual
+        /// editor uses this to surface an asset reference picker instead of
+        /// the template-reference one. Null on non-asset members so the
+        /// JSON wire stays compact.</summary>
+        [JsonPropertyName("isAssetReference")]
+        public bool? IsAssetReference { get; set; }
 
         [JsonPropertyName("patchScalarKind")]
         public string? PatchScalarKind { get; set; }

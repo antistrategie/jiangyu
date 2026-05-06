@@ -121,6 +121,17 @@ public enum KdlEditorValueKind
     /// when this kind is present.
     /// </summary>
     HandlerConstruction,
+
+    /// <summary>
+    /// Reference to a Unity asset shipped in the mod under
+    /// <c>assets/additions/&lt;category&gt;/</c> (or matching a vanilla
+    /// game asset by name). Mirrors
+    /// <see cref="Jiangyu.Shared.Templates.CompiledTemplateValueKind.AssetReference"/>.
+    /// The category is derived from the destination field's declared Unity
+    /// type at apply time, so the editor only stores the asset's logical
+    /// name on <see cref="KdlEditorValue.AssetName"/>.
+    /// </summary>
+    AssetReference,
 }
 
 public sealed class KdlEditorValue
@@ -154,6 +165,15 @@ public sealed class KdlEditorValue
 
     [JsonPropertyName("compositeType")]
     public string? CompositeType { get; set; }
+
+    /// <summary>
+    /// Asset reference logical name. Set when
+    /// <see cref="Kind"/> is <see cref="KdlEditorValueKind.AssetReference"/>;
+    /// matches the file path under <c>assets/additions/&lt;category&gt;/</c>
+    /// with the extension stripped and slashes preserved.
+    /// </summary>
+    [JsonPropertyName("assetName")]
+    public string? AssetName { get; set; }
 
     /// <summary>
     /// Patch operations applied to the constructed composite/handler instance.

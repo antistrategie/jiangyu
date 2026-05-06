@@ -14,7 +14,13 @@ export type EditorValueKind =
   // (e.g. EventHandlers). Same shape as Composite — compositeType names the
   // concrete subtype, compositeDirectives hold the patch operations applied
   // to the freshly-constructed instance.
-  | "HandlerConstruction";
+  | "HandlerConstruction"
+  // Unity asset reference: a single name string the loader resolves
+  // against the mod-bundle catalog (assets/additions/<category>/<name>) or
+  // the live game-asset registry. The category is derived from the
+  // destination field's declared Unity type, so the editor only stores
+  // the name on assetName.
+  | "AssetReference";
 
 export interface EditorValue {
   kind: EditorValueKind;
@@ -32,6 +38,7 @@ export interface EditorValue {
    *  Remove/Clear) is allowed inside, with nested composite/handler values
    *  authored the same way as outer directives. */
   compositeDirectives?: EditorDirective[];
+  assetName?: string;
 }
 
 export type DirectiveOp = "Set" | "Append" | "Insert" | "Remove" | "Clear";

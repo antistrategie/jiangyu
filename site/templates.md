@@ -6,11 +6,11 @@ Templates are MENACE's authored game data. There are dozens of subtypes (`Entity
 
 ## Studio workflow
 
-1. Open the [Template Browser](./studio.md#template-browser) pane.
+1. Open the [Template Browser](/studio#template-browser) pane.
 2. Type the template id or type in the search box. Pick the template you want to edit. The browser shows its fields and current values in the detail panel.
 3. Open the **Scaffold** dropdown in the detail panel and pick **Create Patch** or **Create Clone**. Studio generates the KDL snippet and either appends it to the template file you're currently editing, opens a picker so you can choose an existing `templates/*.kdl` file, or creates a new one. **Add patch to file…** and **Add clone to file…** in the same dropdown always go through the picker.
 4. Studio opens the resulting KDL file in the code editor. Edit it directly to author the patch or clone.
-5. [Compile](./studio.md#compile).
+5. [Compile](/studio#compile).
 
 ## File layout
 
@@ -54,6 +54,8 @@ Clones run before patches at load time, so the clone's id is targetable by `ref=
 ## Operations
 
 Inside a `patch` or `clone` block, operations modify fields on the targeted template. A patch is a list of operations rather than a desired final state: `set "Damage" 50` only changes `Damage`; `append "Perks" ref="..."` only adds an entry. This keeps each modder's intent intact when patches from different mods stack (see [Composition](#composition-across-installed-mods)).
+
+For the apply-order model (clones before patches, source order within a template) and how operations compose conceptually, see [Concepts](/concepts/#template-operations).
 
 | Operation                                            | Purpose                                              |
 | ---------------------------------------------------- | ---------------------------------------------------- |
