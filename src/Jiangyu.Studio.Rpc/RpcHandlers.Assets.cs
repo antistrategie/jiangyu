@@ -236,6 +236,66 @@ public static partial class RpcHandlers
         });
     }
 
+    [McpTool("jiangyu_assets_project_additions",
+        "List asset additions shipped by the current project under assets/additions/<category>/. Filtered by Unity type so the caller (typically the asset-reference picker) only sees additions whose category matches the destination field. Returns {\"additions\": [{\"name\", \"file\"}, ...]} where name is the modder-facing logical name (slashes preserved, extension stripped).")]
+    [McpParam("unityType", "string", "Unity Object class name of the destination field (\"Sprite\", \"Texture2D\", \"AudioClip\", \"Material\"). Drives which assets/additions/<category>/ subtree is scanned.", Required = true)]
+    internal static JsonElement AssetsProjectAdditions(JsonElement? parameters)
+    {
+        var unityType = RequireString(parameters, "unityType");
+
+        var root = RpcContext.ProjectRoot;
+        if (root is null)
+            return JsonSerializer.SerializeToElement(new { additions = Array.Empty<ProjectAdditionEntry>() });
+
+        string? category;
+        try
+        {
+            category = Jiangyu.Shared.Replacements.AssetCategory.ForClassName(unityType);
+        }
+        catch (NotSupportedException)
+        {
+            // Mesh/GameObject etc. throw — they're recognised but deferred to
+            // the prefab-construction layer. The picker has nothing to offer
+            // for those fields today, so respond with an empty list rather
+            // than surfacing the exception.
+            return JsonSerializer.SerializeToElement(new { additions = Array.Empty<ProjectAdditionEntry>() });
+        }
+        if (category is null)
+            return JsonSerializer.SerializeToElement(new { additions = Array.Empty<ProjectAdditionEntry>() });
+
+        var categoryRoot = Path.Combine(root, "assets", "additions", category);
+        if (!Directory.Exists(categoryRoot))
+            return JsonSerializer.SerializeToElement(new { additions = Array.Empty<ProjectAdditionEntry>() });
+
+        var extensions = Jiangyu.Shared.Replacements.AssetCategory.AdditionExtensionsForCategory(category);
+        if (extensions.Count == 0)
+            return JsonSerializer.SerializeToElement(new { additions = Array.Empty<ProjectAdditionEntry>() });
+
+        var results = new List<ProjectAdditionEntry>();
+        foreach (var file in Directory.EnumerateFiles(categoryRoot, "*", SearchOption.AllDirectories))
+        {
+            var ext = Path.GetExtension(file);
+            if (!extensions.Contains(ext, StringComparer.OrdinalIgnoreCase))
+                continue;
+            var name = Jiangyu.Shared.Replacements.AssetCategory.LogicalAdditionName(categoryRoot, file);
+            var relativeFile = Path.GetRelativePath(root, file).Replace('\\', '/');
+            results.Add(new ProjectAdditionEntry { Name = name, File = relativeFile });
+        }
+
+        results.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
+        return JsonSerializer.SerializeToElement(new { additions = results });
+    }
+
+    [RpcType]
+    internal sealed class ProjectAdditionEntry
+    {
+        [JsonPropertyName("name")]
+        public required string Name { get; set; }
+
+        [JsonPropertyName("file")]
+        public required string File { get; set; }
+    }
+
     [RpcType]
     internal sealed class AssetIndexStatus
     {

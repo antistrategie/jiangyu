@@ -751,7 +751,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         if (!Directory.Exists(dir))
             return [];
 
-        return CollectAssetFiles(dir, "*.png", "*.jpg", "*.jpeg")
+        return CollectAdditionFiles(dir, Jiangyu.Shared.Replacements.AssetCategory.Textures)
             .Select(file => new GlbMeshBundleCompiler.CompiledTexture
             {
                 Name = Jiangyu.Shared.Replacements.AssetCategory.ToBundleAssetName(LogicalAdditionName(dir, file)),
@@ -767,7 +767,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         if (!Directory.Exists(dir))
             return [];
 
-        return CollectAssetFiles(dir, "*.png", "*.jpg", "*.jpeg")
+        return CollectAdditionFiles(dir, Jiangyu.Shared.Replacements.AssetCategory.Sprites)
             .Select(file =>
             {
                 var bundleName = Jiangyu.Shared.Replacements.AssetCategory.ToBundleAssetName(LogicalAdditionName(dir, file));
@@ -788,7 +788,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         if (!Directory.Exists(dir))
             return [];
 
-        return CollectAssetFiles(dir, "*.wav", "*.ogg", "*.mp3")
+        return CollectAdditionFiles(dir, Jiangyu.Shared.Replacements.AssetCategory.Audio)
             .Select(file => new GlbMeshBundleCompiler.ImportedAudioAsset
             {
                 Name = Jiangyu.Shared.Replacements.AssetCategory.ToBundleAssetName(LogicalAdditionName(dir, file)),
@@ -799,22 +799,25 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
     }
 
     /// <summary>
-    /// Build the bundle-entry name for a file under
-    /// <c>assets/additions/&lt;category&gt;/</c>: the relative path with the
-    /// file extension stripped and platform separators normalised to
-    /// <c>/</c>. Unity Object names accept <c>/</c> (this is how Resources
-    /// hierarchies are addressed), and the loader's asset resolver looks up
-    /// by exactly this name so the modder writes the same string in the
-    /// template (<c>asset="item/fancy-pen-icon"</c>) that they use for the
-    /// folder layout.
+    /// Walk an additions category directory and collect every file whose
+    /// extension is in the category's shared allowlist. Routing through
+    /// <see cref="Jiangyu.Shared.Replacements.AssetCategory.AdditionExtensionsForCategory"/>
+    /// keeps the compile pipeline and the studio picker in lockstep so the
+    /// dropdown can never advertise a file the build wouldn't include.
     /// </summary>
-    private static string LogicalAdditionName(string categoryRoot, string filePath)
+    private static string[] CollectAdditionFiles(string directory, string category)
     {
-        var relative = Path.GetRelativePath(categoryRoot, filePath);
-        var ext = Path.GetExtension(relative);
-        var stem = ext.Length == 0 ? relative : relative.Substring(0, relative.Length - ext.Length);
-        return stem.Replace('\\', '/');
+        var extensions = Jiangyu.Shared.Replacements.AssetCategory.AdditionExtensionsForCategory(category);
+        if (extensions.Count == 0)
+            return [];
+        var globs = new string[extensions.Count];
+        for (var i = 0; i < extensions.Count; i++)
+            globs[i] = "*" + extensions[i];
+        return CollectAssetFiles(directory, globs);
     }
+
+    private static string LogicalAdditionName(string categoryRoot, string filePath)
+        => Jiangyu.Shared.Replacements.AssetCategory.LogicalAdditionName(categoryRoot, filePath);
 
     private static AssetIndex? LoadAssetIndex(string cachePath)
     {

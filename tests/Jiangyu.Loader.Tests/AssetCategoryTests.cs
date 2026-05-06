@@ -91,4 +91,58 @@ public sealed class AssetCategoryTests
     {
         Assert.Equal(string.Empty, AssetCategory.ToBundleAssetName(""));
     }
+
+    [Fact]
+    public void LogicalAdditionName_StripsExtensionAndPreservesSlashes()
+    {
+        // The logical name is what the modder writes in KDL
+        // (`asset="lrm5/icon"`); the compile pipeline and the studio picker
+        // both build it from a filesystem path so they have to agree on
+        // the same shape.
+        var root = System.IO.Path.Combine("any", "assets", "additions", "sprites");
+        var file = System.IO.Path.Combine(root, "lrm5", "icon.png");
+        Assert.Equal("lrm5/icon", AssetCategory.LogicalAdditionName(root, file));
+    }
+
+    [Fact]
+    public void LogicalAdditionName_HandlesFilesAtCategoryRoot()
+    {
+        var root = System.IO.Path.Combine("p", "assets", "additions", "sprites");
+        var file = System.IO.Path.Combine(root, "icon.png");
+        Assert.Equal("icon", AssetCategory.LogicalAdditionName(root, file));
+    }
+
+    [Fact]
+    public void LogicalAdditionName_StripsMultiDotExtensionOnce()
+    {
+        // Path.GetExtension returns only the trailing extension, so a name
+        // like "icon.tex.png" keeps the inner ".tex" segment; the modder
+        // referencing this asset in KDL writes "icon.tex".
+        var root = System.IO.Path.Combine("p", "assets", "additions", "sprites");
+        var file = System.IO.Path.Combine(root, "icon.tex.png");
+        Assert.Equal("icon.tex", AssetCategory.LogicalAdditionName(root, file));
+    }
+
+    [Theory]
+    [InlineData(AssetCategory.Sprites, new[] { ".png", ".jpg", ".jpeg" })]
+    [InlineData(AssetCategory.Textures, new[] { ".png", ".jpg", ".jpeg" })]
+    [InlineData(AssetCategory.Audio, new[] { ".wav", ".ogg", ".mp3" })]
+    public void AdditionExtensionsForCategory_KnownCategories(string category, string[] expected)
+    {
+        Assert.Equal(expected, AssetCategory.AdditionExtensionsForCategory(category));
+    }
+
+    [Theory]
+    [InlineData(AssetCategory.Materials)]
+    [InlineData(AssetCategory.Meshes)]
+    [InlineData(AssetCategory.Prefabs)]
+    [InlineData("unknown")]
+    public void AdditionExtensionsForCategory_UnsupportedReturnsEmpty(string category)
+    {
+        // Categories without an addition pipeline (Materials hasn't grown a
+        // bundle dictionary, Meshes/Prefabs wait on prefab construction)
+        // return empty so the studio picker offers nothing rather than
+        // suggesting files the build will silently drop.
+        Assert.Empty(AssetCategory.AdditionExtensionsForCategory(category));
+    }
 }

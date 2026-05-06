@@ -84,4 +84,45 @@ public static class AssetCategory
             return string.Empty;
         return logicalName.Replace("/", "__").Replace("\\", "__");
     }
+
+    /// <summary>
+    /// Build the modder-facing logical name for a file under
+    /// <c>assets/additions/&lt;category&gt;/</c>: the relative path with the
+    /// file extension stripped and platform separators normalised to
+    /// <c>/</c>. The compile pipeline (when packing additions into the
+    /// bundle) and the studio (when listing project additions for asset
+    /// reference dropdowns) both call through here so the same
+    /// <c>asset="lrm5/icon"</c> string the modder writes in KDL is what
+    /// they see in the picker and what the bundle indexes by.
+    /// </summary>
+    public static string LogicalAdditionName(string categoryRoot, string filePath)
+    {
+        var relative = System.IO.Path.GetRelativePath(categoryRoot, filePath);
+        var ext = System.IO.Path.GetExtension(relative);
+        var stem = ext.Length == 0 ? relative : relative.Substring(0, relative.Length - ext.Length);
+        return stem.Replace('\\', '/');
+    }
+
+    private static readonly string[] _imageExtensions = [".png", ".jpg", ".jpeg"];
+    private static readonly string[] _audioExtensions = [".wav", ".ogg", ".mp3"];
+    private static readonly string[] _noExtensions = [];
+
+    /// <summary>
+    /// Source-file extensions the compile pipeline knows how to pack as
+    /// additions for a given category, lower-cased and dot-prefixed
+    /// (<c>.png</c>, <c>.wav</c>). The studio's asset-reference picker
+    /// uses the same list so it only suggests files the build will
+    /// actually include in the bundle. <c>Materials</c> intentionally
+    /// returns an empty list: <c>BundleReplacementCatalog</c> has no
+    /// Materials dictionary yet, so a "material addition" file would
+    /// be silently dropped at compile time.
+    /// </summary>
+    public static System.Collections.Generic.IReadOnlyList<string> AdditionExtensionsForCategory(string category)
+        => category switch
+        {
+            Sprites => _imageExtensions,
+            Textures => _imageExtensions,
+            Audio => _audioExtensions,
+            _ => _noExtensions,
+        };
 }

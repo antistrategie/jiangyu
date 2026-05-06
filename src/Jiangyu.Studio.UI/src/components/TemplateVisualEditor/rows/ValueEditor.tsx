@@ -11,8 +11,10 @@ import { SuggestionCombobox, type SuggestionItem } from "../shared/SuggestionCom
 import {
   getCachedTemplateTypes,
   getCachedProjectClones,
+  getCachedProjectAdditions,
   templatesSearch,
 } from "../shared/rpcHelpers";
+import { assetsSearch } from "@lib/assets";
 import styles from "../TemplateVisualEditor.module.css";
 
 // --- RangeHint ---
@@ -198,17 +200,43 @@ function AssetValueEditor({ value, onChange, member }: ValueEditorProps) {
   // Asset references carry only the logical name (the path under
   // assets/additions/<category>/ with the extension stripped). Category is
   // derived from the destination field's Unity type at apply time, so the
-  // editor surfaces just a name input plus a category hint label.
-  const category = member?.typeName ?? "asset";
+  // editor surfaces a name input plus a category hint label, with a
+  // picker that mirrors the template-reference one: project additions
+  // first (tagged so the modder can tell their own files from vanilla
+  // ones), then any same-type vanilla game asset, deduped by name.
+  const unityType = member?.typeName ?? "";
+  const fetchAssetSuggestions = useCallback(async (): Promise<readonly SuggestionItem[]> => {
+    if (!unityType) return [];
+    const [additions, gameAssets] = await Promise.all([
+      getCachedProjectAdditions(unityType),
+      assetsSearch({ kind: unityType, limit: 5_000 }).catch(() => []),
+    ]);
+    const additionItems: SuggestionItem[] = additions.map((a) => ({
+      label: a.name,
+      tag: "addition",
+    }));
+    // Dedup vanilla suggestions against additions and against each other —
+    // the asset index can list the same logical name in multiple
+    // collections, and an addition shadowing a vanilla asset is always
+    // intentional, so additions win.
+    const seen = new Set(additionItems.map((i) => i.label));
+    const gameItems: SuggestionItem[] = [];
+    for (const entry of gameAssets) {
+      if (!entry.name || seen.has(entry.name)) continue;
+      seen.add(entry.name);
+      gameItems.push({ label: entry.name });
+    }
+    return [...additionItems, ...gameItems];
+  }, [unityType]);
+
   return (
     <div className={styles.setRefRow}>
-      <span className={styles.setRefLabel}>{category}</span>
-      <CommitInput
-        type="text"
-        className={styles.setValueInput}
+      <span className={styles.setRefLabel}>{unityType || "asset"}</span>
+      <SuggestionCombobox
         value={value.assetName ?? ""}
         placeholder="path/to/asset"
-        onCommit={(v) => onChange({ kind: "AssetReference", assetName: v })}
+        fetchSuggestions={fetchAssetSuggestions}
+        onChange={(v) => onChange({ kind: "AssetReference", assetName: v })}
       />
     </div>
   );

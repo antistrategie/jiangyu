@@ -10,6 +10,8 @@ import {
   getCachedTemplateTypes,
   invalidateProjectClonesCache,
   getCachedProjectClones,
+  invalidateProjectAdditionsCache,
+  getCachedProjectAdditions,
   templateTypesCache,
 } from "./rpcHelpers";
 
@@ -18,8 +20,9 @@ const mockRpcCall = vi.mocked(rpcCall);
 beforeEach(() => {
   vi.clearAllMocks();
   templateTypesCache.types = null;
-  // Reset the module-level projectClonesCache by invalidating.
+  // Reset module-level caches by invalidating.
   invalidateProjectClonesCache();
+  invalidateProjectAdditionsCache();
 });
 
 describe("vanillaCacheKey", () => {
@@ -73,5 +76,55 @@ describe("invalidateProjectClonesCache", () => {
     const second = await getCachedProjectClones();
     expect(second).toHaveLength(0);
     expect(mockRpcCall).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("getCachedProjectAdditions", () => {
+  it("caches per Unity type and returns the same entries on a second call", async () => {
+    mockRpcCall.mockResolvedValue({
+      additions: [{ name: "lrm5/icon", file: "assets/additions/sprites/lrm5/icon.png" }],
+    });
+
+    const first = await getCachedProjectAdditions("Sprite");
+    expect(first.map((a) => a.name)).toEqual(["lrm5/icon"]);
+    expect(mockRpcCall).toHaveBeenCalledTimes(1);
+    expect(mockRpcCall).toHaveBeenCalledWith("assetsProjectAdditions", { unityType: "Sprite" });
+
+    const second = await getCachedProjectAdditions("Sprite");
+    expect(second).toBe(first);
+    expect(mockRpcCall).toHaveBeenCalledTimes(1);
+  });
+
+  it("fetches separately for distinct Unity types", async () => {
+    // Sprites and audio live under different category folders; the
+    // picker calling for one type must not see the other type's entries.
+    // Caching them under separate keys is what keeps that isolation.
+    mockRpcCall.mockImplementation((_, params) => {
+      const unityType = (params as { unityType: string }).unityType;
+      if (unityType === "Sprite") {
+        return Promise.resolve({ additions: [{ name: "icon", file: "f1.png" }] });
+      }
+      return Promise.resolve({ additions: [{ name: "shot", file: "f2.wav" }] });
+    });
+
+    const sprites = await getCachedProjectAdditions("Sprite");
+    const audio = await getCachedProjectAdditions("AudioClip");
+
+    expect(sprites.map((a) => a.name)).toEqual(["icon"]);
+    expect(audio.map((a) => a.name)).toEqual(["shot"]);
+    expect(mockRpcCall).toHaveBeenCalledTimes(2);
+  });
+
+  it("invalidate clears every cached type", async () => {
+    mockRpcCall.mockResolvedValue({ additions: [{ name: "a", file: "f" }] });
+
+    await getCachedProjectAdditions("Sprite");
+    await getCachedProjectAdditions("AudioClip");
+    expect(mockRpcCall).toHaveBeenCalledTimes(2);
+
+    invalidateProjectAdditionsCache();
+
+    await getCachedProjectAdditions("Sprite");
+    expect(mockRpcCall).toHaveBeenCalledTimes(3);
   });
 });

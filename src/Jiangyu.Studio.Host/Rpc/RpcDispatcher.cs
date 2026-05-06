@@ -70,6 +70,7 @@ public static partial class RpcDispatcher
         Register("assetsSearch", (_, p) => RpcHandlers.AssetsSearch(p));
         Register("assetsExport", (_, p) => RpcHandlers.AssetsExport(p));
         Register("assetsPreview", (_, p) => RpcHandlers.AssetsPreview(p));
+        Register("assetsProjectAdditions", (_, p) => RpcHandlers.AssetsProjectAdditions(p));
         Register("getProjectConfig", (_, p) => RpcHandlers.GetProjectConfig(p));
         Register("compileBlocking", (_, p) => RpcHandlers.CompileBlocking(p));
         Register("getCompileSummary", (_, p) => RpcHandlers.GetCompileSummary(p));

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type {
   InspectedFieldNode,
+  ProjectAdditionEntry,
   TemplateMember,
   TemplateSearchResult,
   TemplateValueResult,
@@ -79,6 +80,37 @@ export async function getCachedProjectClones(): Promise<readonly ProjectCloneEnt
 
 export function invalidateProjectClonesCache() {
   projectClonesCache = null;
+}
+
+// --- Project additions ---
+
+// Per-Unity-type cache: the picker only ever asks for one category at a
+// time (the destination field's type), and additions for sprites are
+// independent of additions for audio. A flat Map keeps the cache hits
+// minimal without re-fetching the whole project on every type switch.
+const projectAdditionsCache = new Map<string, Promise<readonly ProjectAdditionEntry[]>>();
+
+export function assetsProjectAdditions(
+  unityType: string,
+): Promise<{ additions: readonly ProjectAdditionEntry[] }> {
+  return rpcCall<{ additions: readonly ProjectAdditionEntry[] }>("assetsProjectAdditions", {
+    unityType,
+  });
+}
+
+export function getCachedProjectAdditions(
+  unityType: string,
+): Promise<readonly ProjectAdditionEntry[]> {
+  let cached = projectAdditionsCache.get(unityType);
+  if (!cached) {
+    cached = assetsProjectAdditions(unityType).then((r) => r.additions);
+    projectAdditionsCache.set(unityType, cached);
+  }
+  return cached;
+}
+
+export function invalidateProjectAdditionsCache() {
+  projectAdditionsCache.clear();
 }
 
 // --- Cached template type lookups ---

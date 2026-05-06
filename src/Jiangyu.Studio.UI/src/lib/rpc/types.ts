@@ -140,6 +140,11 @@ export interface TemplateReferenceEntry {
   fieldName: string;
 }
 
+export interface ProjectAdditionEntry {
+  name: string;
+  file: string;
+}
+
 export interface AssetIndexStatus {
   state: string;
   reason?: string | null;
