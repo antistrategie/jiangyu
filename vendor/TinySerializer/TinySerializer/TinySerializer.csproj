@@ -1,10 +1,26 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+    <!--
+        Vendored from https://github.com/gestiran/TinySerializer (Apache-2.0).
+        Retargeted from net4.8 to net10.0 for use under Jiangyu.Core. Treated
+        as a dormant fork - if upstream resumes, we can git subtree pull;
+        otherwise this is the canonical copy.
+    -->
     <PropertyGroup>
-        <TargetFramework>net4.8</TargetFramework>
+        <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>disable</ImplicitUsings>
         <Nullable>disable</Nullable>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <RootNamespace>TinySerializer</RootNamespace>
+        <!-- Vendored third-party code: don't run analysers and suppress all
+             diagnostics we don't intend to act on. -->
+        <EnableNETAnalyzers>false</EnableNETAnalyzers>
+        <NoWarn>$(NoWarn);CS0169;CS0618;CS0162;CS0219;CS0414;CS8632;CS0436;CA2200;CA2022;SYSLIB0050</NoWarn>
+        <MinVerSkip>true</MinVerSkip>
     </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Remove="MinVer" />
+    </ItemGroup>
 
 </Project>
