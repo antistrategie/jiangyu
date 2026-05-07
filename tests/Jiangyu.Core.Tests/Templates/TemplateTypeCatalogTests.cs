@@ -288,6 +288,53 @@ public class TemplateTypeCatalogTests
     }
 
     [Fact]
+    public void GetElementType_UnwrapsHashSet()
+    {
+        using var catalog = Load();
+        var type = catalog.ResolveType("FixtureEntity", out _, out _)!;
+        var members = TemplateTypeCatalog.GetMembers(type);
+        var skillsRemoved = members.Single(m => m.Name == "SkillsRemoved");
+
+        var element = TemplateTypeCatalog.GetElementType(skillsRemoved.MemberType);
+        Assert.NotNull(element);
+        Assert.Equal("FixtureSkillTemplate", element!.Name);
+    }
+
+    [Fact]
+    public void IsHashSetCollection_DistinguishesHashSetFromList()
+    {
+        using var catalog = Load();
+        var type = catalog.ResolveType("FixtureEntity", out _, out _)!;
+        var members = TemplateTypeCatalog.GetMembers(type);
+        var skillsRemoved = members.Single(m => m.Name == "SkillsRemoved");
+        var skills = members.Single(m => m.Name == "Skills");
+
+        Assert.True(TemplateTypeCatalog.IsHashSetCollection(skillsRemoved.MemberType));
+        Assert.False(TemplateTypeCatalog.IsHashSetCollection(skills.MemberType));
+    }
+
+    [Fact]
+    public void GetMembers_FlagsIsOdinHashSet_OnlyForHashSetFields()
+    {
+        using var catalog = Load();
+        var type = catalog.ResolveType("FixtureEntity", out _, out _)!;
+        var members = TemplateTypeCatalog.GetMembers(type);
+
+        var skillsRemoved = members.Single(m => m.Name == "SkillsRemoved");
+        Assert.True(skillsRemoved.IsOdinHashSet);
+        // HashSet is also Odin-only because Unity can't natively serialise it.
+        Assert.True(skillsRemoved.IsLikelyOdinOnly);
+
+        // List<T> field is a collection but not a HashSet.
+        var skills = members.Single(m => m.Name == "Skills");
+        Assert.False(skills.IsOdinHashSet);
+
+        // Plain scalar field is neither.
+        var properties = members.Single(m => m.Name == "Properties");
+        Assert.False(properties.IsOdinHashSet);
+    }
+
+    [Fact]
     public void IsScalar_ReturnsTrueForPrimitives_StringsAndEnums()
     {
         using var catalog = Load();
@@ -502,5 +549,53 @@ public class TemplateTypeCatalogTests
             out _, out _)!;
 
         Assert.False(catalog.HasReferenceSubtype(leaf));
+    }
+
+    // --- HasPolymorphicSubtype: broader sibling of HasReferenceSubtype that
+    // also fires for interface and abstract destinations whose concrete
+    // impls aren't ScriptableObject-rooted (e.g. ITacticalCondition with
+    // 37 POCO implementations in MENACE). Phase 2f's deep-descent fix
+    // depends on this gate firing for interface-typed collection elements
+    // so the navigator applies the type=hint instead of trying to
+    // resolve members against the abstract base.
+
+    [Fact]
+    public void HasPolymorphicSubtype_TrueForReferenceSubtypeCase()
+    {
+        // Backwards compat: anything HasReferenceSubtype returned true
+        // for must still return true here.
+        using var catalog = Load();
+        var baseType = catalog.ResolveType("FixtureBaseDataTemplate", out _, out _)!;
+
+        Assert.True(catalog.HasPolymorphicSubtype(baseType));
+    }
+
+    [Fact]
+    public void HasPolymorphicSubtype_TrueForInterfaceWithImpl()
+    {
+        // The Phase 2f case: IFixtureAoEShape is an interface (not a
+        // ScriptableObject), with FixtureAoEShapeImpl as a concrete
+        // implementation. HasReferenceSubtype returned false here
+        // (no impl is a ScriptableObject); HasPolymorphicSubtype must
+        // return true so the navigator applies the type= hint when
+        // descending through a polymorphic Odin field.
+        using var catalog = Load();
+        var iface = catalog.ResolveType(
+            "Jiangyu.Core.Tests.Templates.Fixtures.Gameplay.IFixtureAoEShape",
+            out _, out _)!;
+
+        Assert.False(catalog.HasReferenceSubtype(iface));
+        Assert.True(catalog.HasPolymorphicSubtype(iface));
+    }
+
+    [Fact]
+    public void HasPolymorphicSubtype_FalseForLeafType()
+    {
+        using var catalog = Load();
+        var leaf = catalog.ResolveType(
+            "Jiangyu.Core.Tests.Templates.Fixtures.Gameplay.FixtureConcreteDerived",
+            out _, out _)!;
+
+        Assert.False(catalog.HasPolymorphicSubtype(leaf));
     }
 }

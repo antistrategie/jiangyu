@@ -174,6 +174,65 @@ public class KdlTemplateParserTests
     }
 
     [Fact]
+    public void Parse_RemoveWithValue_ParsesAsHashSetRemoval()
+    {
+        // HashSet<T> Remove takes a value rather than an index — by-value
+        // removal, since HashSet has no positional order. Parser accepts
+        // both forms; validator decides which the destination supports.
+        var dir = SetupKdl("hashset_remove.kdl", """
+            patch "WeaponTemplate" "weapon.test" {
+                remove "ItemSlots" enum="ItemSlot" "Pistol"
+                remove "SkillsRemoved" ref="SkillTemplate" "active.aimed_shot"
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var ops = result.Patches[0].Set;
+        Assert.Equal(2, ops.Count);
+
+        Assert.Equal(CompiledTemplateOp.Remove, ops[0].Op);
+        Assert.Equal("ItemSlots", ops[0].FieldPath);
+        Assert.Null(ops[0].Index);
+        Assert.NotNull(ops[0].Value);
+        Assert.Equal(CompiledTemplateValueKind.Enum, ops[0].Value!.Kind);
+        Assert.Equal("Pistol", ops[0].Value!.EnumValue);
+
+        Assert.Equal(CompiledTemplateOp.Remove, ops[1].Op);
+        Assert.Equal("SkillsRemoved", ops[1].FieldPath);
+        Assert.Null(ops[1].Index);
+        Assert.NotNull(ops[1].Value);
+        Assert.Equal(CompiledTemplateValueKind.TemplateReference, ops[1].Value!.Kind);
+    }
+
+    [Fact]
+    public void Parse_RemoveWithBothIndexAndValue_FailsWithClearError()
+    {
+        var dir = SetupKdl("remove_both.kdl", """
+            patch "WeaponTemplate" "weapon.test" {
+                remove "ItemSlots" index=2 enum="ItemSlot" "Pistol"
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+        Assert.True(result.ErrorCount > 0);
+    }
+
+    [Fact]
+    public void Parse_RemoveWithNeitherIndexNorValue_FailsWithClearError()
+    {
+        var dir = SetupKdl("remove_neither.kdl", """
+            patch "WeaponTemplate" "weapon.test" {
+                remove "ItemSlots"
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+        Assert.True(result.ErrorCount > 0);
+    }
+
+    [Fact]
     public void ParseAll_ClearRejectsIndex()
     {
         var dir = SetupKdl("clear-with-index.kdl", """
@@ -883,6 +942,76 @@ public class KdlTemplateParserTests
         Assert.Equal(CompiledTemplateValueKind.HandlerConstruction, op.Value!.Kind);
         Assert.Equal("MoraleStateCondition", op.Value.HandlerConstruction!.TypeName);
         Assert.Equal(2, op.Value.HandlerConstruction.Operations.Count);
+    }
+
+    [Fact]
+    public void Set_WithCellProperty_CarriesIndexPath()
+    {
+        // Phase 2d: cell="r,c" parses to a CompiledTemplateSetOperation
+        // whose IndexPath holds the coordinate list. Mutually exclusive
+        // with index= (collection writes use scalar Index).
+        var dir = SetupKdl("c.kdl", """
+            patch "PerkTemplate" "perk.sharpshooter" {
+                set "AOETiles" cell="4,4" #true
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var op = result.Patches[0].Set[0];
+        Assert.Equal(CompiledTemplateOp.Set, op.Op);
+        Assert.Equal("AOETiles", op.FieldPath);
+        Assert.Null(op.Index);
+        Assert.NotNull(op.IndexPath);
+        Assert.Equal(new[] { 4, 4 }, op.IndexPath);
+    }
+
+    [Fact]
+    public void Set_WithBothIndexAndCell_IsRejected()
+    {
+        // Mutual exclusion: pick one addressing scheme. cell= is
+        // multi-dim cell address; index= is 1D collection element.
+        var dir = SetupKdl("bad.kdl", """
+            patch "PerkTemplate" "perk.x" {
+                set "AOETiles" index=0 cell="1,1" #true
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("both index= and cell=", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Set_CellOnNonSetOp_IsRejected()
+    {
+        var dir = SetupKdl("bad.kdl", """
+            patch "PerkTemplate" "perk.x" {
+                append "AOETiles" cell="0,0" #true
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("cell= is only valid on 'set'", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Set_CellWithNonIntegerCoord_IsRejected()
+    {
+        var dir = SetupKdl("bad.kdl", """
+            patch "PerkTemplate" "perk.x" {
+                set "AOETiles" cell="abc,1" #true
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains(_log.Errors, e => e.Contains("comma-separated list of non-negative integers", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

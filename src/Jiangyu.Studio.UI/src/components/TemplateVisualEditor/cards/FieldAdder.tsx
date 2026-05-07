@@ -12,10 +12,22 @@ export interface FieldAdderProps {
   members: readonly TemplateMember[];
   membersLoaded: boolean;
   existingFields: string[];
+  /** Field names that already have a matrix grid open on this card.
+   *  Picking a matrix member that's already open is a no-op (no
+   *  duplicate grids). Optional — defaults to empty for non-card
+   *  callers like CompositeEditor where matrix members aren't
+   *  supported. */
+  existingMatrixFields?: ReadonlySet<string>;
   /** Template type (or composite type) this adder belongs to. Used to reject
    *  drags of fields from unrelated templates. Empty string = accept any. */
   targetTemplateType: string;
   onAdd: (directive: StampedDirective) => void;
+  /** Picking an Odin multi-dim member (AOETiles, ChunkTileFlags) opts
+   *  the field into a matrix grid editor on the card instead of
+   *  dispatching a directive. Optional — when absent, matrix members
+   *  are filtered out of the dropdown so the modder isn't offered
+   *  something we can't wire. */
+  onAddMatrix?: (name: string) => void;
   onDrop?: (e: React.DragEvent) => void;
   /** Optional vanilla-value lookup (top-level field name → vanilla node). When
    *  provided, picking a field pre-fills the directive with that field's
@@ -37,8 +49,10 @@ export function FieldAdder({
   members,
   membersLoaded,
   existingFields,
+  existingMatrixFields,
   targetTemplateType,
   onAdd,
+  onAddMatrix,
   onDrop,
   vanillaFields,
   onStartDescent,
@@ -59,18 +73,24 @@ export function FieldAdder({
   }, [open]);
 
   const existingSet = new Set(existingFields);
+  const matrixSet = existingMatrixFields ?? new Set<string>();
   const lowerQuery = query.toLowerCase();
   const filtered = members.filter(
     (m) =>
-      (m.isWritable || m.isCollection) &&
+      (m.isWritable || m.isCollection || m.isOdinMultiDimArray) &&
       !m.isHiddenInInspector &&
-      // Odin-routed members live in the serializationData blob. We surface
-      // them when they are polymorphic-constructible (scalarSubtypes is
-      // populated): the modder picks a concrete subtype, fills its fields,
-      // and the loader applier constructs the value at runtime. Hide
-      // Odin-routed members without subtype choices because there's no
-      // sensible default editor for them yet.
+      // Odin-routed members live in the serializationData blob. Surface
+      // them in the dropdown when (a) we have an opt-in handler and the
+      // member is a multi-dim primitive array (AOETiles, ChunkTileFlags
+      // — picked → grid opens), (b) the member is a HashSet<T> (picked →
+      // modder gets append/remove rows; same UX as List<T>), or (c) they
+      // are polymorphic-constructible (scalarSubtypes populated — picked
+      // → modder fills inner fields, loader applier constructs the value).
+      // Hide everything else because there's no sensible default editor
+      // for it yet.
       (!m.isLikelyOdinOnly ||
+        (m.isOdinMultiDimArray && onAddMatrix !== undefined) ||
+        m.isOdinHashSet ||
         (m.scalarSubtypes !== null &&
           m.scalarSubtypes !== undefined &&
           m.scalarSubtypes.length > 0)) &&
@@ -78,15 +98,25 @@ export function FieldAdder({
   );
   // Multi-directive fields (collections, named arrays) stay in `available`
   // even when an entry already exists, because adding another directive is
-  // the normal flow rather than a duplicate.
-  const available = filtered.filter((m) => !existingSet.has(m.name) || allowsMultipleDirectives(m));
-  const alreadyAdded = filtered.filter(
-    (m) => existingSet.has(m.name) && !allowsMultipleDirectives(m),
-  );
+  // the normal flow rather than a duplicate. Matrix fields use a separate
+  // opt-in set because the dropdown shouldn't offer to "add" a grid
+  // that's already open on this card.
+  const available = filtered.filter((m) => {
+    if (m.isOdinMultiDimArray) return !matrixSet.has(m.name);
+    return !existingSet.has(m.name) || allowsMultipleDirectives(m);
+  });
+  const alreadyAdded = filtered.filter((m) => {
+    if (m.isOdinMultiDimArray) return matrixSet.has(m.name);
+    return existingSet.has(m.name) && !allowsMultipleDirectives(m);
+  });
 
   const handleSelect = (member: TemplateMember) => {
-    const vanilla = vanillaFields?.get(member.name);
-    onAdd(makeDefaultDirective(member, vanilla));
+    if (member.isOdinMultiDimArray && onAddMatrix) {
+      onAddMatrix(member.name);
+    } else {
+      const vanilla = vanillaFields?.get(member.name);
+      onAdd(makeDefaultDirective(member, vanilla));
+    }
     setQuery("");
     setOpen(false);
   };

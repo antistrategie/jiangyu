@@ -681,6 +681,47 @@
   white-space: nowrap;
 }
 
+/* Multi-dim matrix grid for Odin-routed T[,] fields (AOETiles etc.). The
+   browser shows it read-only; the visual editor reuses the same shape
+   for click-to-edit cells. */
+.matrixGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--space-1) 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.matrixRow {
+  display: flex;
+  gap: 1px;
+}
+
+.matrixCell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.6em;
+  height: 1.6em;
+  padding: 0 var(--space-1);
+  background: var(--paper-1);
+  border: 1px solid var(--ink-30);
+  color: var(--ink-60);
+  user-select: none;
+}
+
+.matrixCellTrue {
+  background: var(--accent-20);
+  color: var(--accent-100);
+  border-color: var(--accent-50);
+}
+
+.matrixCellFalse {
+  background: var(--paper-0);
+  color: var(--ink-30);
+}
+
 .fieldInfoEnum {
   display: flex;
   flex-wrap: wrap;

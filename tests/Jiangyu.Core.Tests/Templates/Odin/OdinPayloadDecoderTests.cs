@@ -242,6 +242,216 @@ public class OdinPayloadDecoderTests
         Assert.Equal(2, node.Fields!.Count);
     }
 
+    [Fact]
+    public void DecodeBinary_ReshapesMultiDimArrayAsMatrix()
+    {
+        // Sirenix Odin encodes T[,] as a flat sequence: a Name="ranks"
+        // string carrying pipe-separated dimensions, then row-major cells.
+        // The decoder reshape lifts dimensions onto the node, sets
+        // Kind="matrix", and trims the header from Elements so consumers
+        // see a clean grid.
+        var bytes = WriteBlob(w =>
+        {
+            w.BeginArrayNode(5);
+            w.WriteString("ranks", "2|2");
+            w.WriteBoolean(null, true);
+            w.WriteBoolean(null, false);
+            w.WriteBoolean(null, false);
+            w.WriteBoolean(null, true);
+            w.EndArrayNode();
+        });
+
+        var fields = OdinPayloadDecoder.DecodeBinary(bytes);
+        var node = Assert.Single(fields!);
+        Assert.Equal("matrix", node.Kind);
+        Assert.NotNull(node.Dimensions);
+        Assert.Equal(new[] { 2, 2 }, node.Dimensions);
+        Assert.Equal(4, node.Count);
+        Assert.NotNull(node.Elements);
+        Assert.Collection(node.Elements!,
+            e => Assert.Equal(true, e.Value),
+            e => Assert.Equal(false, e.Value),
+            e => Assert.Equal(false, e.Value),
+            e => Assert.Equal(true, e.Value));
+    }
+
+    [Fact]
+    public void DecodeBinary_LeavesArrayUnreshapedWhenHeaderShapeWrong()
+    {
+        // No ranks header → stays as a regular array.
+        var bytes = WriteBlob(w =>
+        {
+            w.BeginArrayNode(2);
+            w.WriteBoolean(null, true);
+            w.WriteBoolean(null, false);
+            w.EndArrayNode();
+        });
+
+        var fields = OdinPayloadDecoder.DecodeBinary(bytes);
+        var node = Assert.Single(fields!);
+        Assert.Equal("array", node.Kind);
+        Assert.Null(node.Dimensions);
+    }
+
+    [Fact]
+    public void DecodeBinary_LeavesArrayUnreshapedWhenCellCountMismatchesProduct()
+    {
+        // Defensive guard: if dimensions parse cleanly but element count
+        // doesn't equal the product of axes, the header isn't a real
+        // ranks marker — keep the array unmolested rather than truncating
+        // or padding the modder's data.
+        var bytes = WriteBlob(w =>
+        {
+            w.BeginArrayNode(3);
+            w.WriteString("ranks", "5|5"); // claims 25 cells
+            w.WriteBoolean(null, true);   // but only 2 follow
+            w.WriteBoolean(null, false);
+            w.EndArrayNode();
+        });
+
+        var fields = OdinPayloadDecoder.DecodeBinary(bytes);
+        var node = Assert.Single(fields!);
+        Assert.Equal("array", node.Kind);
+        Assert.Null(node.Dimensions);
+    }
+
+    [Fact]
+    public void ReshapeMatrices_RewritesUnreshapedArrayInPlace()
+    {
+        // Simulates an old values cache that was built before the matrix
+        // reshape shipped: the Odin decoder produced a kind=array node
+        // with a "ranks" header still inline in Elements.
+        var fields = new List<InspectedFieldNode>
+        {
+            new()
+            {
+                Name = "AOETiles",
+                Kind = "array",
+                FieldTypeName = "System.Boolean[,]",
+                Count = 4,
+                Elements =
+                [
+                    new() { Name = "ranks", Kind = "string", Value = "2|2" },
+                    new() { Kind = "bool", Value = true },
+                    new() { Kind = "bool", Value = false },
+                    new() { Kind = "bool", Value = false },
+                    new() { Kind = "bool", Value = true },
+                ],
+            },
+        };
+
+        OdinPayloadDecoder.ReshapeMatrices(fields);
+
+        var node = Assert.Single(fields);
+        Assert.Equal("matrix", node.Kind);
+        Assert.Equal(new[] { 2, 2 }, node.Dimensions);
+        Assert.Equal(4, node.Count);
+        Assert.NotNull(node.Elements);
+        Assert.Equal(4, node.Elements!.Count);
+        Assert.Equal(true, node.Elements[0].Value);
+    }
+
+    [Fact]
+    public void ReshapeMatrices_AcceptsJsonElementValuesFromDeserialisedCache()
+    {
+        // Cached values come back from disk with `Value` typed as
+        // JsonElement (default System.Text.Json behaviour for object?).
+        // The reshape must read the ranks string out of either a boxed
+        // string or a JsonElement of kind String.
+        using var doc = System.Text.Json.JsonDocument.Parse("\"3|2\"");
+        var ranksValue = doc.RootElement.Clone();
+
+        var fields = new List<InspectedFieldNode>
+        {
+            new()
+            {
+                Name = "Cells",
+                Kind = "array",
+                Elements =
+                [
+                    new() { Name = "ranks", Kind = "string", Value = ranksValue },
+                    new() { Kind = "bool", Value = true },
+                    new() { Kind = "bool", Value = false },
+                    new() { Kind = "bool", Value = true },
+                    new() { Kind = "bool", Value = false },
+                    new() { Kind = "bool", Value = true },
+                    new() { Kind = "bool", Value = false },
+                ],
+            },
+        };
+
+        OdinPayloadDecoder.ReshapeMatrices(fields);
+
+        var node = Assert.Single(fields);
+        Assert.Equal("matrix", node.Kind);
+        Assert.Equal(new[] { 3, 2 }, node.Dimensions);
+        Assert.Equal(6, node.Count);
+        Assert.Equal(6, node.Elements!.Count);
+    }
+
+    [Fact]
+    public void ReshapeMatrices_IsIdempotentOnAlreadyReshapedNodes()
+    {
+        var fields = new List<InspectedFieldNode>
+        {
+            new()
+            {
+                Name = "Already",
+                Kind = "matrix",
+                Dimensions = [2, 2],
+                Count = 4,
+                Elements =
+                [
+                    new() { Kind = "bool", Value = true },
+                    new() { Kind = "bool", Value = false },
+                    new() { Kind = "bool", Value = false },
+                    new() { Kind = "bool", Value = true },
+                ],
+            },
+        };
+
+        OdinPayloadDecoder.ReshapeMatrices(fields);
+
+        var node = Assert.Single(fields);
+        Assert.Equal("matrix", node.Kind);
+        Assert.Equal(new[] { 2, 2 }, node.Dimensions);
+        Assert.Equal(4, node.Elements!.Count);
+    }
+
+    [Fact]
+    public void ReshapeMatrices_RecursesIntoNestedFieldsAndElements()
+    {
+        // Multi-dim arrays nested inside an object's Fields or another
+        // array's Elements must also get the reshape, not just top-level.
+        var fields = new List<InspectedFieldNode>
+        {
+            new()
+            {
+                Name = "Wrapper",
+                Kind = "object",
+                Fields =
+                [
+                    new()
+                    {
+                        Name = "Inner",
+                        Kind = "array",
+                        Elements =
+                        [
+                            new() { Name = "ranks", Kind = "string", Value = "1|1" },
+                            new() { Kind = "bool", Value = true },
+                        ],
+                    },
+                ],
+            },
+        };
+
+        OdinPayloadDecoder.ReshapeMatrices(fields);
+
+        var inner = fields[0].Fields![0];
+        Assert.Equal("matrix", inner.Kind);
+        Assert.Equal(new[] { 1, 1 }, inner.Dimensions);
+    }
+
     [Theory]
     [InlineData("Menace.Tactical.Foo, Assembly-CSharp", "Menace.Tactical.Foo")]
     [InlineData("System.Int32[], mscorlib", "System.Int32[]")]

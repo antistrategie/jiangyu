@@ -290,7 +290,7 @@ internal sealed class TemplatePatchApplier
         Type terminalType;
 
         if (op.Op == CompiledTemplateOp.Remove)
-            return TryApplyRemove(current, terminal, templateTypeName, templateId, op, log);
+            return TryApplyRemove(current, terminal, templateTypeName, templateId, op, assetResolver, log);
 
         if (op.Op == CompiledTemplateOp.Clear)
             return TryApplyClear(current, terminal, templateTypeName, templateId, op, log);
@@ -302,6 +302,20 @@ internal sealed class TemplatePatchApplier
                 log.Warning(FormatPrefix(templateTypeName, templateId, op)
                     + $"cannot read terminal collection '{terminal.Name}': {readError}");
                 return ApplyOutcome.MemberMissing;
+            }
+
+            // HashSet Append uses dedicated dispatch: HashSet has no
+            // positional indexer, so the ApplyAndVerify readback path
+            // (which compares the written value against the last
+            // element) doesn't apply. Add returns bool but is idempotent
+            // and we trust the underlying call.
+            if (op.Op == CompiledTemplateOp.Append
+                && collection != null
+                && IsHashSetType(collectionType))
+            {
+                return TryApplyHashSetAdd(
+                    current, terminal, collection, collectionType,
+                    templateTypeName, templateId, op, assetResolver, log);
             }
 
             int? insertIndex = op.Op == CompiledTemplateOp.InsertAt ? op.Index : null;
@@ -339,6 +353,19 @@ internal sealed class TemplatePatchApplier
                     + $"cannot bind '{terminal.Name}' index={op.Index.Value}: {elementError}");
                 return ApplyOutcome.MemberMissing;
             }
+        }
+        else if (op.Op == CompiledTemplateOp.Set && op.IndexPath is { Count: > 0 })
+        {
+            // Multi-dim cell write: `set "Field" cell="r,c" <value>`. We
+            // route these through Il2CppMdArrayAccessor instead of the
+            // C# property layer because Il2CppInterop has no wrapper
+            // class for multi-dim arrays — its generator falls back to
+            // Il2CppObjectBase and the auto-generated getter throws NRE
+            // on first access. See the type-doc on
+            // Il2CppMdArrayAccessor for the canonical layout, the prior
+            // art (SimRailConnect), and a link to the upstream tracker
+            // (BepInEx/Il2CppInterop#218, planned for v2 but stalled).
+            return TryApplyMdCellWrite(current, terminal, templateTypeName, templateId, op, log);
         }
         else if (terminal.Index.HasValue)
         {
@@ -612,7 +639,13 @@ internal sealed class TemplatePatchApplier
                 }
                 catch (Exception ex)
                 {
-                    error = $"read of property '{name}' on {type.FullName} threw: {ex.Message}";
+                    // Reflection wraps the real exception in
+                    // TargetInvocationException; unwrap so the modder
+                    // sees what the getter actually threw (NREs, IL2CPP
+                    // null-pointer, etc.) instead of the placeholder.
+                    var inner = ex.InnerException ?? ex;
+                    error = $"read of property '{name}' on {type.FullName} threw: "
+                        + $"{inner.GetType().Name}: {inner.Message}";
                     return false;
                 }
             }
@@ -980,6 +1013,14 @@ internal sealed class TemplatePatchApplier
                     parent, fieldName, collection, collectionType, elementType, fieldSetter, insertIndex,
                     out setter, out getter, out error);
 
+            case CollectionShape.HashSet:
+                // HashSet Append is dispatched directly from
+                // TryApplyOperation (TryApplyHashSetAdd) and never
+                // reaches here. InsertAt is rejected by the validator.
+                error = $"internal: HashSet<{elementType.Name}> reached "
+                    + $"TryBindCollectionMutation — should have been short-circuited.";
+                return false;
+
             case CollectionShape.ReferenceArray:
             case CollectionShape.StructArray:
                 return BindArrayMutation(
@@ -992,10 +1033,215 @@ internal sealed class TemplatePatchApplier
         }
     }
 
-    private enum CollectionShape { List, ReferenceArray, StructArray }
+    // Append on HashSet<T>: convert the value, invoke Add(T) on the live
+    // Multi-dim cell write via raw IL2CPP memory access. Il2CppInterop
+    // doesn't expose a wrapper class for multi-dim arrays
+    // (BepInEx/Il2CppInterop#218 — planned for v2.0.0 but stalled since
+    // 2024-09), so the generated property getter throws NRE for fields
+    // declared <c>bool[,]</c> / <c>byte[,]</c> / etc. We sidestep the
+    // wrapper layer by reading the field's IntPtr directly out of the
+    // instance and walking the IL2CPP array header (klass*, monitor*,
+    // bounds*, max_length, then element data at offset 0x20). Element
+    // size is inferred from the value kind: Boolean and Byte → 1 byte,
+    // Int32 → 4 bytes. Reads back the cell after writing to verify the
+    // write landed.
+    private static ApplyOutcome TryApplyMdCellWrite(
+        object current, PathSegment terminal,
+        string templateTypeName, string templateId, LoadedPatchOperation op,
+        MelonLogger.Instance log)
+    {
+        if (op.Value is null)
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"multi-dim Set on '{terminal.Name}' has no value; the compiled patch is malformed.");
+            return ApplyOutcome.ConversionFailed;
+        }
+
+        if (!Il2CppMdArrayAccessor.TryGetFieldArrayPointer(
+                current, terminal.Name, out var arrayPtr, out var lookupError))
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"native MD-array lookup for '{terminal.Name}' failed: {lookupError}");
+            return ApplyOutcome.MemberMissing;
+        }
+
+        var rank = op.IndexPath.Count;
+        if (!Il2CppMdArrayAccessor.TryReadDimensions(
+                arrayPtr, rank, out var dims, out var dimError))
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"native MD-array bounds read for '{terminal.Name}' failed: {dimError}");
+            return ApplyOutcome.MemberMissing;
+        }
+
+        if (!Il2CppMdArrayAccessor.TryComputeRowMajorIndex(
+                op.IndexPath, dims, out var flatIndex, out var indexError))
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"cell {string.Join(",", op.IndexPath)} on '{terminal.Name}': {indexError}");
+            return ApplyOutcome.MemberMissing;
+        }
+
+        // Element size dispatch. For modder-authored cell writes the
+        // value kind reflects what they wrote in KDL. The IL2CPP-side
+        // element size has to match: the validator already ensures
+        // value-kind/destination-type compatibility for ordinary
+        // collections, but multi-dim arrays' element type is hidden
+        // behind Il2CppObjectBase so we trust the value kind here and
+        // log a readback mismatch if the write doesn't stick.
+        var value = op.Value;
+        switch (value.Kind)
+        {
+            case CompiledTemplateValueKind.Boolean:
+                {
+                    var newByte = value.Boolean == true ? (byte)1 : (byte)0;
+                    Il2CppMdArrayAccessor.WriteByteCell(arrayPtr, flatIndex, newByte);
+                    var readback = Il2CppMdArrayAccessor.ReadByteCell(arrayPtr, flatIndex);
+                    if (readback != newByte)
+                    {
+                        log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                            + $"wrote {newByte} to cell {string.Join(",", op.IndexPath)} of "
+                            + $"'{terminal.Name}', read back {readback} - element size may be wrong.");
+                        return ApplyOutcome.Applied;
+                    }
+                    log.Msg(FormatPrefix(templateTypeName, templateId, op)
+                        + $"set {string.Join(",", op.IndexPath)}={value.Boolean == true} on "
+                        + $"'{terminal.Name}' (native MD-array, dims={string.Join("x", dims)}).");
+                    return ApplyOutcome.Applied;
+                }
+
+            case CompiledTemplateValueKind.Byte:
+                {
+                    var newByte = (byte)(value.Int32 ?? 0);
+                    Il2CppMdArrayAccessor.WriteByteCell(arrayPtr, flatIndex, newByte);
+                    var readback = Il2CppMdArrayAccessor.ReadByteCell(arrayPtr, flatIndex);
+                    if (readback != newByte)
+                    {
+                        log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                            + $"wrote {newByte} to cell {string.Join(",", op.IndexPath)} of "
+                            + $"'{terminal.Name}', read back {readback}.");
+                        return ApplyOutcome.Applied;
+                    }
+                    log.Msg(FormatPrefix(templateTypeName, templateId, op)
+                        + $"set {string.Join(",", op.IndexPath)}=0x{newByte:X2} on '{terminal.Name}' "
+                        + $"(native MD-array, dims={string.Join("x", dims)}).");
+                    return ApplyOutcome.Applied;
+                }
+
+            case CompiledTemplateValueKind.Int32:
+                {
+                    var newInt = value.Int32 ?? 0;
+                    Il2CppMdArrayAccessor.WriteInt32Cell(arrayPtr, flatIndex, newInt);
+                    var readback = Il2CppMdArrayAccessor.ReadInt32Cell(arrayPtr, flatIndex);
+                    if (readback != newInt)
+                    {
+                        log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                            + $"wrote {newInt} to cell {string.Join(",", op.IndexPath)} of "
+                            + $"'{terminal.Name}', read back {readback} - element size may be wrong "
+                            + "(byte-backed enum stored in 1 byte? Use kind=Byte instead).");
+                        return ApplyOutcome.Applied;
+                    }
+                    log.Msg(FormatPrefix(templateTypeName, templateId, op)
+                        + $"set {string.Join(",", op.IndexPath)}={newInt} on '{terminal.Name}' "
+                        + $"(native MD-array, dims={string.Join("x", dims)}).");
+                    return ApplyOutcome.Applied;
+                }
+
+            default:
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"native MD-array write doesn't yet handle value kind {value.Kind}; "
+                    + $"on '{terminal.Name}', cell {string.Join(",", op.IndexPath)} not applied.");
+                return ApplyOutcome.ConversionFailed;
+        }
+    }
+
+    // set (or a fresh one when the field is null), log idempotently. Add
+    // returns bool — true if newly added, false if already present —
+    // both outcomes satisfy "ensure present", so neither is a failure.
+    // Bypasses ApplyAndVerify because HashSet has no positional
+    // indexer, so the standard "readback last element" check doesn't
+    // apply.
+    private static ApplyOutcome TryApplyHashSetAdd(
+        object current, PathSegment terminal, object collection, Type collectionType,
+        string templateTypeName, string templateId, LoadedPatchOperation op,
+        ModAssetResolver assetResolver, MelonLogger.Instance log)
+    {
+        var elementType = collectionType.GetGenericArguments()[0];
+
+        if (op.Value == null)
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"Append on HashSet '{terminal.Name}' has no value; the compiled patch is malformed.");
+            return ApplyOutcome.ConversionFailed;
+        }
+
+        if (!TryConvertScalar(op.Value, elementType, assetResolver, log, out var converted, out var convertError))
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op) + convertError);
+            return ApplyOutcome.ConversionFailed;
+        }
+
+        if (!TryGetWritableMember(current, terminal.Name, out _, out var fieldSetter, out _))
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"parent {current.GetType().FullName} has no writable '{terminal.Name}' for Append.");
+            return ApplyOutcome.MemberMissing;
+        }
+
+        var live = collection;
+        if (live == null)
+        {
+            var setCtor = collectionType.GetConstructor(Type.EmptyTypes);
+            if (setCtor == null)
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"cannot materialise null {collectionType.FullName}: no parameterless ctor.");
+                return ApplyOutcome.ConversionFailed;
+            }
+            live = setCtor.Invoke(null);
+            fieldSetter(live);
+        }
+
+        var addMethod = FindInstanceAddMethod(collectionType);
+        if (addMethod == null)
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"{collectionType.FullName} has no instance Add({elementType.Name}) method.");
+            return ApplyOutcome.MemberMissing;
+        }
+
+        try
+        {
+            var added = addMethod.Invoke(live, new[] { converted }) as bool?;
+            log.Msg(FormatPrefix(templateTypeName, templateId, op)
+                + (added == false
+                    ? $"value {FormatValue(converted)} already present in {collectionType.Name}; no-op."
+                    : $"appended {FormatValue(converted)} to {collectionType.Name}."));
+        }
+        catch (Exception ex)
+        {
+            log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                + $"add threw: {(ex.InnerException ?? ex).Message}");
+            return ApplyOutcome.ConversionFailed;
+        }
+
+        return ApplyOutcome.Applied;
+    }
+
+    private enum CollectionShape { List, HashSet, ReferenceArray, StructArray }
 
     private static bool TryGetCollectionShape(Type collectionType, out CollectionShape shape, out Type elementType)
     {
+        // HashSet checked before the generic Add-method probe because
+        // HashSet<T>.Add also satisfies that probe; without this branch
+        // the Remove-by-value path can't tell a HashSet from a List.
+        if (IsHashSetType(collectionType))
+        {
+            shape = CollectionShape.HashSet;
+            elementType = collectionType.GetGenericArguments()[0];
+            return true;
+        }
+
         var addMethod = FindInstanceAddMethod(collectionType);
         if (addMethod != null)
         {
@@ -1020,6 +1266,19 @@ internal sealed class TemplatePatchApplier
 
         shape = default;
         elementType = null;
+        return false;
+    }
+
+    private static bool IsHashSetType(Type type)
+    {
+        for (var current = type; current != null; current = current.BaseType)
+        {
+            if (!current.IsGenericType) continue;
+            var def = current.GetGenericTypeDefinition().FullName;
+            if (def == "System.Collections.Generic.HashSet`1"
+                || def == "Il2CppSystem.Collections.Generic.HashSet`1")
+                return true;
+        }
         return false;
     }
 
@@ -1214,7 +1473,7 @@ internal sealed class TemplatePatchApplier
     // indexed element to delete.
     private static ApplyOutcome TryApplyRemove(
         object current, PathSegment terminal, string templateTypeName, string templateId,
-        LoadedPatchOperation op, MelonLogger.Instance log)
+        LoadedPatchOperation op, ModAssetResolver assetResolver, MelonLogger.Instance log)
     {
         if (!TryReadMember(current, terminal.Name, out var collection, out var collectionType, out var readError))
         {
@@ -1242,6 +1501,55 @@ internal sealed class TemplatePatchApplier
             log.Warning(FormatPrefix(templateTypeName, templateId, op)
                 + $"parent {current.GetType().FullName} has no writable '{terminal.Name}' for remove.");
             return ApplyOutcome.MemberMissing;
+        }
+
+        // HashSet<T>: by-value removal via instance Remove(T). The
+        // validator already rejected index-based Remove on HashSet, so a
+        // populated op.Value is the contract here.
+        if (shape == CollectionShape.HashSet)
+        {
+            if (op.Value == null)
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"Remove on HashSet '{terminal.Name}' has no value; the compiled patch is malformed.");
+                return ApplyOutcome.ConversionFailed;
+            }
+
+            if (!TryConvertScalar(op.Value, elementType, assetResolver, log, out var converted, out var convertError))
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op) + convertError);
+                return ApplyOutcome.ConversionFailed;
+            }
+
+            var removeMethod = collectionType.GetMethod(
+                "Remove",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                binder: null,
+                types: new[] { elementType },
+                modifiers: null);
+            if (removeMethod == null)
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"{collectionType.FullName} has no instance Remove({elementType.Name}) method.");
+                return ApplyOutcome.MemberMissing;
+            }
+
+            try
+            {
+                var removed = (bool?)removeMethod.Invoke(collection, new[] { converted });
+                log.Msg(FormatPrefix(templateTypeName, templateId, op)
+                    + (removed == true
+                        ? $"removed {FormatValue(converted)} from {collectionType.Name}."
+                        : $"value {FormatValue(converted)} not present in {collectionType.Name}; no-op."));
+            }
+            catch (Exception ex)
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"remove threw: {(ex.InnerException ?? ex).Message}");
+                return ApplyOutcome.ConversionFailed;
+            }
+
+            return ApplyOutcome.Applied;
         }
 
         var removeIndex = op.Index
@@ -1318,6 +1626,9 @@ internal sealed class TemplatePatchApplier
             switch (shape)
             {
                 case CollectionShape.List:
+                case CollectionShape.HashSet:
+                    // Both BCL and Il2Cpp List/HashSet expose a parameterless
+                    // Clear(); the helper just invokes that.
                     ClearList(collection, collectionType);
                     break;
 
@@ -1769,6 +2080,7 @@ internal sealed class TemplatePatchApplier
                     innerOp.Op,
                     innerOp.FieldPath,
                     innerOp.Index,
+                    (IReadOnlyList<int>?)innerOp.IndexPath ?? Array.Empty<int>(),
                     (IReadOnlyList<TemplateDescentStep>?)innerOp.Descent ?? Array.Empty<TemplateDescentStep>(),
                     innerOp.Value,
                     $"composite:{composite.TypeName}");

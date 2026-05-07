@@ -1,9 +1,9 @@
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { ChevronDown, GripVertical, X } from "lucide-react";
 import { parseCrossMemberPayload } from "@lib/drag/crossMember";
 import { useToastStore } from "@lib/toast";
 import { onKeyActivate } from "@lib/ui/a11y";
-import { allowsMultipleDirectives, type StampedNode } from "../helpers";
+import { allowsMultipleDirectives, isCellAddressedSet, type StampedNode } from "../helpers";
 import { useTemplateMembers } from "../hooks";
 import { useEditorDispatch, useNodeIndex } from "../store";
 import { CommitInput } from "../shared/CommitInput";
@@ -17,6 +17,7 @@ import {
   synthMemberFromPayload,
 } from "../shared/rpcHelpers";
 import { DirectiveBody } from "./DirectiveBody";
+import { MatrixFieldEditor } from "./MatrixEditor";
 import styles from "../TemplateVisualEditor.module.css";
 
 export interface NodeCardProps {
@@ -53,6 +54,55 @@ export function NodeCard({
 
   const memberMap = new Map(members.map((m) => [m.name, m]));
 
+  // UI-only opt-in for matrix grids. Picking an Odin multi-dim member
+  // from FieldAdder or dropping one onto the card adds it here so the
+  // grid surfaces immediately, even before the modder has clicked any
+  // cells. Cleared by the matrix grid's X button along with any cell
+  // directives. Not serialised — a saved patch with no cell directives
+  // intentionally has no grid on reload.
+  const [addedMatrixFields, setAddedMatrixFields] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
+
+  // Field names rendered as matrix grids: only fields that have at least
+  // one cell-addressed Set directive OR were explicitly opted in. We
+  // deliberately do NOT auto-surface every cataloged Odin multi-dim
+  // member — empty grids on every PerkTemplate would be visual noise.
+  const matrixFieldNames = useMemo(() => {
+    const set = new Set<string>(addedMatrixFields);
+    for (const d of node.directives) {
+      if (isCellAddressedSet(d)) set.add(d.fieldPath);
+    }
+    return set;
+  }, [addedMatrixFields, node.directives]);
+
+  const addMatrixField = useCallback((name: string) => {
+    setAddedMatrixFields((prev) => {
+      if (prev.has(name)) return prev;
+      const next = new Set(prev);
+      next.add(name);
+      return next;
+    });
+  }, []);
+
+  const removeMatrixField = useCallback(
+    (name: string) => {
+      setAddedMatrixFields((prev) => {
+        if (!prev.has(name)) return prev;
+        const next = new Set(prev);
+        next.delete(name);
+        return next;
+      });
+      const filtered = node.directives.filter(
+        (d) => !(isCellAddressedSet(d) && d.fieldPath === name),
+      );
+      if (filtered.length !== node.directives.length) {
+        dispatch({ type: "setDirectives", nodeIndex, directives: filtered });
+      }
+    },
+    [node.directives, dispatch, nodeIndex],
+  );
+
   // Card-level drop: accept member drags to add set directives.
   const handleNodeDrop = useCallback(
     (e: React.DragEvent) => {
@@ -67,6 +117,14 @@ export function NodeCard({
           message: `Field does not belong to ${node.templateType}`,
           detail: `"${member.fieldPath}" belongs to ${member.templateType}`,
         });
+        return;
+      }
+      // Odin multi-dim members surface as a matrix grid, not a regular
+      // SetRow. Drop one onto the card and we opt-in instead of
+      // dispatching a directive (the modder still has to click cells).
+      const catalogMember = memberMap.get(member.fieldPath);
+      if (catalogMember?.isOdinMultiDimArray) {
+        addMatrixField(member.fieldPath);
         return;
       }
       if (
@@ -87,7 +145,7 @@ export function NodeCard({
         directive: makeDefaultDirective(synthMember, vanilla),
       });
     },
-    [node, vanillaFields, dispatch, nodeIndex],
+    [node, vanillaFields, memberMap, addMatrixField, dispatch, nodeIndex],
   );
 
   const fetchInstances = useCallback(async (): Promise<readonly SuggestionItem[]> => {
@@ -220,12 +278,34 @@ export function NodeCard({
 
       {!collapsed && (
         <div className={styles.cardBody}>
+          {/* Matrix grid editors for Odin-routed multi-dim array fields
+              (AOETiles, ChunkTileFlags, …). Opt-in via FieldAdder /
+              card-drop / an existing cell directive — empty grids on
+              every card would be visual noise. Each cell click adds,
+              updates, or removes a Set directive with cell="r,c"
+              addressing. */}
+          {Array.from(matrixFieldNames).map((fieldName) => {
+            const vanilla = vanillaFields.get(fieldName);
+            const matrix = vanilla?.kind === "matrix" ? vanilla : null;
+            return (
+              <MatrixFieldEditor
+                key={fieldName}
+                fieldName={fieldName}
+                matrix={matrix}
+                member={memberMap.get(fieldName) ?? null}
+                directives={node.directives}
+                onRemove={() => removeMatrixField(fieldName)}
+              />
+            );
+          })}
           <DirectiveBody
             node={node}
             members={members}
             membersLoaded={membersLoaded}
             memberMap={memberMap}
             vanillaFields={vanillaFields}
+            matrixFieldNames={matrixFieldNames}
+            onAddMatrix={addMatrixField}
             handleNodeDrop={handleNodeDrop}
           />
         </div>

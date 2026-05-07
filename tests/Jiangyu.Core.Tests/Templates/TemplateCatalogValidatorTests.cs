@@ -255,6 +255,65 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
+    public void Enum_StringValueOnEnumField_Coerced()
+    {
+        // Modders shouldn't have to repeat enum= when the field's
+        // declared type already pins down the enum: writing
+        // `set "DamageType" "Plasma"` should compile to the same
+        // CompiledTemplateValue as `set "DamageType" enum="…" "Plasma"`.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var op = new CompiledTemplateSetOperation
+        {
+            Op = CompiledTemplateOp.Set,
+            FieldPath = "DamageType",
+            Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.String, String = "Plasma" },
+        };
+        var patches = new[]
+        {
+            new CompiledTemplatePatch { TemplateType = "FixtureProperties", TemplateId = "x", Set = [op] },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+        Assert.Equal(CompiledTemplateValueKind.Enum, op.Value.Kind);
+        Assert.Equal("FixtureDamageType", op.Value.EnumType);
+        Assert.Equal("Plasma", op.Value.EnumValue);
+    }
+
+    [Fact]
+    public void Enum_StringValueWithUnknownMember_Errors()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureProperties",
+                TemplateId = "x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "DamageType",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.String,
+                        String = "Telepathic",
+                    },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("not a member of enum FixtureDamageType", log.Errors[0]);
+    }
+
+    [Fact]
     public void Reference_ExplicitMismatchedType_Errors()
     {
         using var catalog = Load();
@@ -694,6 +753,206 @@ public class TemplateCatalogValidatorTests
 
         Assert.Equal(1, errors);
         Assert.Contains("FixtureAttribute-indexed array", log.Errors[0]);
+    }
+
+    // --- HashSet ops (Phase 2e) ---
+
+    [Fact]
+    public void HashSet_Append_Passes()
+    {
+        // HashSet<T>.Add semantics — append is the natural opt-in syntax.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Append,
+                    FieldPath = "SkillsRemoved",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.TemplateReference,
+                        Reference = new CompiledTemplateReference { TemplateId = "skill.test" },
+                    },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+        Assert.Equal(0, errors);
+    }
+
+    [Fact]
+    public void HashSet_RemoveByValue_Passes()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Remove,
+                    FieldPath = "SkillsRemoved",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.TemplateReference,
+                        Reference = new CompiledTemplateReference { TemplateId = "skill.test" },
+                    },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+        Assert.Equal(0, errors);
+    }
+
+    [Fact]
+    public void HashSet_Clear_Passes()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Clear,
+                    FieldPath = "SkillsRemoved",
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+        Assert.Equal(0, errors);
+    }
+
+    [Fact]
+    public void HashSet_InsertAt_Errors()
+    {
+        // HashSet has no positional order, so InsertAt is nonsensical.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.InsertAt,
+                    FieldPath = "SkillsRemoved",
+                    Index = 0,
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.TemplateReference,
+                        Reference = new CompiledTemplateReference { TemplateId = "skill.test" },
+                    },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+        Assert.Equal(1, errors);
+        Assert.Contains("HashSet", log.Errors[0]);
+        Assert.Contains("InsertAt", log.Errors[0]);
+    }
+
+    [Fact]
+    public void HashSet_RemoveByIndex_Errors()
+    {
+        // HashSet has no positional addressing — Remove must use a value.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Remove,
+                    FieldPath = "SkillsRemoved",
+                    Index = 0,
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+        Assert.Equal(1, errors);
+        Assert.Contains("HashSet", log.Errors[0]);
+    }
+
+    [Fact]
+    public void HashSet_SetWithIndex_Errors()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "SkillsRemoved",
+                    Index = 0,
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.TemplateReference,
+                        Reference = new CompiledTemplateReference { TemplateId = "skill.test" },
+                    },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+        Assert.Equal(1, errors);
+        Assert.Contains("HashSet", log.Errors[0]);
+    }
+
+    [Fact]
+    public void List_RemoveByValue_Errors()
+    {
+        // List<T> Remove still requires index — by-value is HashSet only.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Remove,
+                    FieldPath = "Skills",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.TemplateReference,
+                        Reference = new CompiledTemplateReference { TemplateId = "skill.test" },
+                    },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+        Assert.Equal(1, errors);
+        Assert.Contains("List", log.Errors[0]);
     }
 
     // --- Polymorphic descent (subtype-hint) validator dispatch ---

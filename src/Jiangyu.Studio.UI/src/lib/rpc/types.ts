@@ -102,6 +102,7 @@ export interface InspectedFieldNode {
   elements?: InspectedFieldNode[] | null;
   fields?: InspectedFieldNode[] | null;
   reason?: string | null;
+  dimensions?: number[] | null;
 }
 
 export interface InspectedReference {
@@ -276,6 +277,12 @@ export interface TemplateMember {
   tooltip?: string | null;
   isHiddenInInspector?: boolean | null;
   isSoundIdField?: boolean | null;
+  isOdinMultiDimArray?: boolean | null;
+  multiDimRank?: number | null;
+  multiDimDimensions?: number[] | null;
+  multiDimElementType?: string | null;
+  multiDimElementKind?: string | null;
+  isOdinHashSet?: boolean | null;
 }
 
 export interface ProjectCloneEntry {

@@ -161,6 +161,266 @@
   container-type: inline-size;
 }
 
+/* --- Matrix field editor (Odin multi-dim arrays) ---
+   Header strip mirrors setRowHeader: same horizontal padding, an
+   uppercase font-label "matrix" prefix in place of the op label, mono
+   field name, bordered font-label chips for dims/element type, then a
+   right-aligned cinnabar dirty count and a hover-revealed X delete.
+   Body grid sits below the header indented to align with the field
+   name, matching the visual depth of other directive rows. */
+
+.matrixField {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--rule-faint);
+}
+
+.matrixFieldHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  min-height: 32px;
+}
+
+.matrixFieldKind {
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  padding: 1px var(--space-1);
+  flex-shrink: 0;
+}
+
+.matrixFieldName {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--fg-strong);
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.matrixFieldChip {
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  border: 1px solid var(--rule);
+  padding: 1px var(--space-1);
+  flex-shrink: 0;
+}
+
+.matrixFieldDirty {
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--cinnabar-1);
+  flex-shrink: 0;
+}
+
+/* Eats the gap between the chips on the left and the dirty count + X
+   button on the right. Keeps the right-side cluster pinned regardless
+   of whether the dirty count is rendered. */
+.matrixFieldSpacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.matrixFieldDelete {
+  background: none;
+  border: none;
+  padding: 2px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+  opacity: 0;
+}
+
+.matrixField:hover .matrixFieldDelete {
+  opacity: 1;
+}
+
+.matrixFieldDelete:hover {
+  color: var(--cinnabar-1);
+}
+
+.matrixFieldHint {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+/* Spacer in the header that occupies the same column as setRow's
+   drag grip (rowDragGrip is 14px wide), so the "matrix" badge sits
+   at the same x as the op label on adjacent SetRows. */
+.matrixHeaderRail {
+  width: 14px;
+  flex-shrink: 0;
+}
+
+/* Indent the grid body to start where the field name begins in the
+   header. Sum of header padding-left (var(--space-3) = 12px), drag-rail
+   width (14px), gap (var(--space-2) = 8px), kind label width (~36px
+   for "matrix" at 9px font-label + 1px*var(--space-1) padding), and
+   another gap. Reads like a directive row whose value happens to be
+   a 2D grid. */
+.matrixGridWrap {
+  padding: 0 var(--space-3) var(--space-2)
+    calc(var(--space-3) + 14px + var(--space-2) + 36px + var(--space-2));
+}
+
+.matrixGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.matrixRow {
+  display: flex;
+  gap: 1px;
+}
+
+.matrixCell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.6em;
+  height: 1.6em;
+  padding: 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  color: var(--fg-muted);
+  user-select: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1;
+}
+
+.matrixCell:hover {
+  border-color: var(--cinnabar-1);
+}
+
+.matrixCell:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.matrixCellTrue {
+  background: var(--cinnabar-2);
+  color: var(--cinnabar-0);
+  border-color: var(--cinnabar-1);
+}
+
+.matrixCellFalse {
+  background: var(--bg-raised);
+  color: var(--fg-subtle);
+}
+
+.matrixCellDirty {
+  outline: 1px solid var(--cinnabar-1);
+  outline-offset: -1px;
+}
+
+/* Flags cells need extra room for the bitmask numeric label (up to 3
+   chars for byte-wide enums) and a relative wrapper to anchor the
+   checkbox popover. */
+.matrixCellWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.matrixCellFlags {
+  min-width: 2.4em;
+  padding: 0 var(--space-1);
+}
+
+.matrixCellPopover {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 10;
+  min-width: 14em;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  box-shadow: 0 4px 12px rgba(26, 23, 19, 0.18);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.matrixFlagPopoverHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--rule-faint);
+}
+
+.matrixFlagPopoverCoord {
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.matrixFlagClear {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--cinnabar-1);
+  cursor: pointer;
+}
+
+.matrixFlagClear:hover {
+  text-decoration: underline;
+}
+
+.matrixFlagOption {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px var(--space-1);
+  cursor: pointer;
+}
+
+.matrixFlagOption:hover {
+  background: var(--bg-sunken);
+}
+
+.matrixFlagName {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--fg-strong);
+}
+
+.matrixFlagBit {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+
 /* --- Set row --- */
 
 .setRow {

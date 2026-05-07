@@ -170,8 +170,13 @@ public static partial class RpcHandlers
             throw new InvalidOperationException(result.ErrorMessage ?? "Query failed.");
 
         EnsureIndexCached(resolution.Context!);
+        // Build the Odin matrix registry now if it isn't already; it needs
+        // the values cache plus the index, and templatesQuery is the
+        // common entry that surfaces these schemas to the UI.
+        EnsureValuesCached(resolution.Context!);
         return JsonSerializer.SerializeToElement(
-            MapQueryResult(catalog, result, _cachedInstantiatedClassNames), TemplatesJsonOptions);
+            MapQueryResult(catalog, result, _cachedInstantiatedClassNames, _cachedOdinMatrixSchemas),
+            TemplatesJsonOptions);
     }
 
     // Catalog loads are expensive (reflection over Assembly-CSharp.dll), and the
@@ -573,8 +578,15 @@ public static partial class RpcHandlers
     private static TemplateQueryResult MapQueryResult(
         TemplateTypeCatalog catalog,
         QueryResult result,
-        IReadOnlySet<string> instantiatedClassNames)
+        IReadOnlySet<string> instantiatedClassNames,
+        IReadOnlyDictionary<string, Dictionary<string, OdinMatrixFieldSchema>> odinMatrixSchemas)
     {
+        // Owner type for the members list — used as the registry key.
+        // Type.Name strips the IL2CPP namespace prefix so it matches the
+        // simple class name recorded by the indexer.
+        var ownerTypeName = result.CurrentType?.Name;
+        odinMatrixSchemas.TryGetValue(ownerTypeName ?? string.Empty, out var ownerMatrixSchemas);
+
         // Leaf-path enum members: when the terminal type is an enum, surface
         // {name, value} pairs so the visual editor doesn't need a separate
         // templatesEnumMembers RPC for the dropdown. NamedArray leaves (the
@@ -603,32 +615,43 @@ public static partial class RpcHandlers
             NamedArrayEnumTypeName = result.NamedArrayEnumTypeName,
             ReferenceTargetTypeName = result.ReferenceTargetTypeName,
             IsLikelyOdinOnly = result.IsLikelyOdinOnly ? true : null,
-            Members = result.Members?.Select(m => new TemplateMember
+            Members = result.Members?.Select(m =>
             {
-                Name = m.Name,
-                TypeName = catalog.FriendlyName(m.MemberType),
-                TypeFullName = m.MemberType.FullName,
-                IsWritable = m.IsWritable,
-                IsInherited = m.IsInherited,
-                IsLikelyOdinOnly = m.IsLikelyOdinOnly ? true : null,
-                IsCollection = TemplateTypeCatalog.GetElementType(m.MemberType) != null ? true : null,
-                IsScalar = TemplateTypeCatalog.IsScalar(m.MemberType) ? true : null,
-                IsTemplateReference = TemplateTypeCatalog.IsTemplateReferenceTarget(m.MemberType) ? true : null,
-                IsAssetReference = Jiangyu.Shared.Replacements.AssetCategory.IsSupported(m.MemberType.Name) ? true : null,
-                PatchScalarKind = ComputeMemberPatchScalarKind(m),
-                ElementTypeName = ComputeElementTypeName(catalog, m),
-                EnumTypeName = ComputeEnumTypeName(catalog, m),
-                ReferenceTypeName = ComputeReferenceTypeName(catalog, m),
-                IsReferenceTypePolymorphic = ComputeReferenceTypeIsPolymorphic(catalog, m, instantiatedClassNames),
-                ElementSubtypes = ComputeElementSubtypes(catalog, m),
-                ScalarSubtypes = ComputeScalarSubtypes(catalog, m),
-                NamedArrayEnumTypeName = m.NamedArrayEnumTypeName,
-                EnumMembers = ComputeEnumMembers(catalog, m),
-                NumericMin = m.NumericMin,
-                NumericMax = m.NumericMax,
-                Tooltip = m.Tooltip,
-                IsHiddenInInspector = m.IsHiddenInInspector ? true : null,
-                IsSoundIdField = m.IsSoundIdField ? true : null,
+                OdinMatrixFieldSchema? matrixSchema = null;
+                ownerMatrixSchemas?.TryGetValue(m.Name, out matrixSchema);
+                return new TemplateMember
+                {
+                    Name = m.Name,
+                    TypeName = catalog.FriendlyName(m.MemberType),
+                    TypeFullName = m.MemberType.FullName,
+                    IsWritable = m.IsWritable,
+                    IsInherited = m.IsInherited,
+                    IsLikelyOdinOnly = m.IsLikelyOdinOnly ? true : null,
+                    IsCollection = TemplateTypeCatalog.GetElementType(m.MemberType) != null ? true : null,
+                    IsScalar = TemplateTypeCatalog.IsScalar(m.MemberType) ? true : null,
+                    IsTemplateReference = TemplateTypeCatalog.IsTemplateReferenceTarget(m.MemberType) ? true : null,
+                    IsAssetReference = Jiangyu.Shared.Replacements.AssetCategory.IsSupported(m.MemberType.Name) ? true : null,
+                    PatchScalarKind = ComputeMemberPatchScalarKind(m),
+                    ElementTypeName = ComputeElementTypeName(catalog, m),
+                    EnumTypeName = ComputeEnumTypeName(catalog, m),
+                    ReferenceTypeName = ComputeReferenceTypeName(catalog, m),
+                    IsReferenceTypePolymorphic = ComputeReferenceTypeIsPolymorphic(catalog, m, instantiatedClassNames),
+                    ElementSubtypes = ComputeElementSubtypes(catalog, m),
+                    ScalarSubtypes = ComputeScalarSubtypes(catalog, m),
+                    NamedArrayEnumTypeName = m.NamedArrayEnumTypeName,
+                    EnumMembers = ComputeEnumMembers(catalog, m),
+                    NumericMin = m.NumericMin,
+                    NumericMax = m.NumericMax,
+                    Tooltip = m.Tooltip,
+                    IsHiddenInInspector = m.IsHiddenInInspector ? true : null,
+                    IsSoundIdField = m.IsSoundIdField ? true : null,
+                    IsOdinMultiDimArray = matrixSchema != null ? true : null,
+                    MultiDimRank = matrixSchema?.Rank,
+                    MultiDimDimensions = matrixSchema?.Dimensions.ToList(),
+                    MultiDimElementType = matrixSchema?.ElementTypeName,
+                    MultiDimElementKind = matrixSchema?.ElementKind,
+                    IsOdinHashSet = m.IsOdinHashSet ? true : null,
+                };
             }).ToList(),
         };
     }
@@ -816,6 +839,52 @@ public static partial class RpcHandlers
 
         [JsonPropertyName("isSoundIdField")]
         public bool? IsSoundIdField { get; set; }
+
+        /// <summary>True when this member is an Odin-routed multi-dim
+        /// primitive array (e.g. <c>AOETiles</c>, <c>ChunkTileFlags</c>).
+        /// The catalog's declared type is the catch-all
+        /// <c>Il2CppObjectBase</c>; this flag plus the multi-dim* siblings
+        /// are derived by scanning indexed instances for a kind=matrix
+        /// node. Lets the visual editor surface a grid widget and
+        /// FieldAdder list these otherwise-hidden fields.</summary>
+        [JsonPropertyName("isOdinMultiDimArray")]
+        public bool? IsOdinMultiDimArray { get; set; }
+
+        /// <summary>Rank of the Odin multi-dim array (2 for [,], 3 for
+        /// [,,]). Null when <see cref="IsOdinMultiDimArray"/> is false.</summary>
+        [JsonPropertyName("multiDimRank")]
+        public int? MultiDimRank { get; set; }
+
+        /// <summary>Per-axis lengths from a representative populated
+        /// instance. Acts as the editor's default grid shape when the
+        /// patch target's vanilla value is null. Null when no instance
+        /// of this template type carries a populated matrix for this
+        /// field.</summary>
+        [JsonPropertyName("multiDimDimensions")]
+        public List<int>? MultiDimDimensions { get; set; }
+
+        /// <summary>Element type short name (e.g. "Boolean",
+        /// "ChunkTileFlags") parsed from the inspect-side
+        /// <c>fieldTypeName</c>. The visual editor pairs this with
+        /// <c>templatesEnumMembers</c> for [Flags] cells.</summary>
+        [JsonPropertyName("multiDimElementType")]
+        public string? MultiDimElementType { get; set; }
+
+        /// <summary>Wire-format element kind ("bool", "int", "string",
+        /// "scalar"). Mirrors the per-cell <c>InspectedFieldNode.Kind</c>
+        /// so the editor can branch its render mode without having to
+        /// re-inspect the matrix.</summary>
+        [JsonPropertyName("multiDimElementKind")]
+        public string? MultiDimElementKind { get; set; }
+
+        /// <summary>True when the member's declared type is a
+        /// <c>HashSet&lt;T&gt;</c>. Switches the editor and the loader
+        /// applier into HashSet semantics: Append maps to <c>Add</c>
+        /// (idempotent), Remove takes a value (not an index), and the
+        /// validator rejects InsertAt / Set-with-index because HashSet
+        /// has no order.</summary>
+        [JsonPropertyName("isOdinHashSet")]
+        public bool? IsOdinHashSet { get; set; }
     }
 
     [RpcType]
@@ -890,6 +959,23 @@ public static partial class RpcHandlers
     private static HashSet<string> _cachedInstantiatedClassNames = new(StringComparer.Ordinal);
     private static Dictionary<(string ClassName, string Name), TemplateInstanceEntry> _cachedInstanceLookup = new();
 
+    // Per-(templateType, fieldName) schema for Odin-routed multi-dim
+    // arrays, derived by scanning the values cache for kind=matrix nodes.
+    // The catalog itself sees these fields as Il2CppObjectBase; this
+    // registry lets templatesQuery surface the real element type and
+    // representative dimensions so the visual editor can render a grid
+    // even for templates whose vanilla value is null (Sirenix Odin omits
+    // defaults from the wire format, so a single populated instance per
+    // type is enough to recover the shape for all instances).
+    private sealed record OdinMatrixFieldSchema(
+        int Rank,
+        IReadOnlyList<int> Dimensions,
+        string? ElementTypeName,
+        string ElementKind);
+
+    private static Dictionary<string, Dictionary<string, OdinMatrixFieldSchema>> _cachedOdinMatrixSchemas
+        = new(StringComparer.Ordinal);
+
     private static void ClearIndexCaches()
     {
         _cachedIndex = null;
@@ -900,6 +986,61 @@ public static partial class RpcHandlers
         _cachedValues = null;
         _cachedValuesPath = null;
         _cachedValuesMtime = default;
+        _cachedOdinMatrixSchemas.Clear();
+    }
+
+    // Rebuilds the (templateType → fieldName → schema) registry by joining
+    // the index against the values cache and scanning each instance's
+    // top-level fields for kind=matrix nodes. First instance wins per
+    // (type, field); two instances disagreeing on shape would be a bug
+    // worth investigating from source mode anyway.
+    private static void RebuildOdinMatrixRegistry()
+    {
+        _cachedOdinMatrixSchemas.Clear();
+        if (_cachedIndex is null || _cachedValues is null) return;
+
+        foreach (var instance in _cachedIndex.Instances)
+        {
+            var key = TemplateIndex.IdentityKey(instance.Identity);
+            if (!_cachedValues.TryGetValue(key, out var fields)) continue;
+
+            foreach (var field in fields)
+            {
+                if (!string.Equals(field.Kind, "matrix", StringComparison.Ordinal)) continue;
+                if (string.IsNullOrEmpty(field.Name)) continue;
+
+                if (!_cachedOdinMatrixSchemas.TryGetValue(instance.ClassName, out var perType))
+                {
+                    perType = new Dictionary<string, OdinMatrixFieldSchema>(StringComparer.Ordinal);
+                    _cachedOdinMatrixSchemas[instance.ClassName] = perType;
+                }
+                if (perType.ContainsKey(field.Name)) continue;
+
+                perType[field.Name] = BuildMatrixSchema(field);
+            }
+        }
+    }
+
+    private static OdinMatrixFieldSchema BuildMatrixSchema(InspectedFieldNode field)
+    {
+        var dims = field.Dimensions ?? new List<int>();
+        var elementKind = field.Elements is { Count: > 0 } els
+            ? els[0]?.Kind ?? "scalar"
+            : "scalar";
+        return new OdinMatrixFieldSchema(
+            Rank: dims.Count,
+            Dimensions: dims,
+            ElementTypeName: ExtractMatrixElementTypeName(field.FieldTypeName),
+            ElementKind: elementKind);
+    }
+
+    private static string? ExtractMatrixElementTypeName(string? fieldTypeName)
+    {
+        if (string.IsNullOrEmpty(fieldTypeName)) return null;
+        // Strip a trailing `[]`, `[,]`, `[,,]` etc.
+        var stripped = System.Text.RegularExpressions.Regex.Replace(fieldTypeName, @"\[,*\]$", "");
+        var lastDot = stripped.LastIndexOf('.');
+        return lastDot >= 0 ? stripped[(lastDot + 1)..] : stripped;
     }
 
     // Reloads <see cref="_cachedIndex"/> from disk when the file's mtime
@@ -931,6 +1072,7 @@ public static partial class RpcHandlers
                 _cachedInstanceLookup[(instance.ClassName, instance.Name)] = instance;
             }
         }
+        RebuildOdinMatrixRegistry();
         return _cachedIndex;
     }
 
@@ -951,6 +1093,7 @@ public static partial class RpcHandlers
         _cachedValues = service.LoadValues();
         _cachedValuesPath = cachePath;
         _cachedValuesMtime = valuesMtime;
+        RebuildOdinMatrixRegistry();
         return _cachedValues;
     }
 

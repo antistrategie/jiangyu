@@ -245,15 +245,77 @@ public static class TemplateCatalogValidator
             return 1;
         }
 
-        // Reference handling. The catalog is the single source of truth for
-        // the lookup type — modders don't have to repeat ref="…" when the
-        // declared field type is concrete (e.g. PerkTemplate). Two paths:
-        //   - value.Kind == String on a reference-target field → coerce to a
-        //     TemplateReference value with TemplateType=null. Loader derives
+        // HashSet<T> destinations have no positional order, so order-based
+        // ops are nonsensical even though the syntax parses. Conversely,
+        // List<T> Remove still needs index= — by-value removal is HashSet
+        // territory only. Lists, arrays, and other ordered collections
+        // skip all four guards.
+        if (result.UnwrappedFrom is not null
+            && TemplateTypeCatalog.IsHashSetCollection(result.UnwrappedFrom))
+        {
+            if (op.Op == CompiledTemplateOp.InsertAt)
+            {
+                reportError(
+                    $"op=InsertAt is not supported on HashSet field '{op.FieldPath}' — "
+                    + "HashSet has no positional order. Use 'append' (Add semantics) instead.");
+                return 1;
+            }
+            if (op.Op == CompiledTemplateOp.Set && op.Index.HasValue)
+            {
+                reportError(
+                    $"op=Set with index= is not supported on HashSet field '{op.FieldPath}' — "
+                    + "HashSet has no positional addressing. Use 'append' to add or "
+                    + "'remove' with a value to drop an entry.");
+                return 1;
+            }
+            if (op.Op == CompiledTemplateOp.Remove && op.Index.HasValue)
+            {
+                reportError(
+                    $"op=Remove on HashSet field '{op.FieldPath}' uses a value, not index= — "
+                    + "remove the index property and supply the entry to drop "
+                    + "(e.g. 'remove \"" + op.FieldPath + "\" enum=\"…\" \"…\"').");
+                return 1;
+            }
+        }
+        else if (op.Op == CompiledTemplateOp.Remove
+            && result.UnwrappedFrom is not null
+            && !op.Index.HasValue
+            && op.Value is not null)
+        {
+            reportError(
+                $"op=Remove on List-shaped field '{op.FieldPath}' requires index=N — "
+                + "by-value removal is only supported on HashSet collections.");
+            return 1;
+        }
+
+        // Multi-dim cell write (Phase 2d): catalog sees Odin-routed
+        // multi-dim arrays as Il2CppObjectBase wrappers, so we cannot
+        // structurally verify rank or element type at compile time. The
+        // shape-level path validator already rejected the malformed cases
+        // (negative coords, mixing index= with cell=). Runtime applier
+        // does the rank/element check against the live array. Reject
+        // cell= on collection destinations (lists/arrays use index=).
+        if (op.Op == CompiledTemplateOp.Set && op.IndexPath is { Count: > 0 } && result.UnwrappedFrom is not null)
+        {
+            reportError(
+                $"op=Set carries cell={string.Join(",", op.IndexPath)} but the target is a collection; "
+                + "use index=N for collection writes — cell= is reserved for multi-dim arrays.");
+            return 1;
+        }
+
+        // Reference / enum shorthand. The catalog is the single source of
+        // truth for the destination type — modders don't have to repeat
+        // ref="…" or enum="…" when the declared field type already pins
+        // it down. Three coercions:
+        //   - value.Kind == String on a reference-target field → coerce to
+        //     a TemplateReference with TemplateType=null. Loader derives
         //     the lookup type from the field at apply time.
+        //   - value.Kind == String on an enum field → coerce to an Enum
+        //     with EnumType = declared type's short name. Validates the
+        //     member name against the declared enum's known members.
         //   - value.Kind == TemplateReference: validate ref= matches the
-        //     declared type when present; require ref= when the declared type
-        //     is abstract (polymorphic).
+        //     declared type when present; require ref= when the declared
+        //     type is abstract (polymorphic).
         var declaredType = result.CurrentType;
         var fieldIsReferenceTarget = declaredType is not null
             && TemplateTypeCatalog.IsTemplateReferenceTarget(declaredType);
@@ -307,6 +369,35 @@ public static class TemplateCatalogValidator
                         + "is polymorphic; specify ref=\"<TemplateType>\".");
                     return 1;
                 }
+            }
+            else if (op.Value.Kind == CompiledTemplateValueKind.String
+                && declaredType is { IsEnum: true })
+            {
+                // String shorthand for enum-typed fields: derive the
+                // EnumType from the declared field type so the modder
+                // can write `set "MoraleState" "Fleeing"` instead of the
+                // redundant `set "MoraleState" enum="MoraleState" "Fleeing"`.
+                var memberName = op.Value.String ?? string.Empty;
+                if (string.IsNullOrEmpty(memberName))
+                {
+                    reportError(
+                        $"empty value on enum field '{op.FieldPath}' "
+                        + $"(declared {declaredType.Name}).");
+                    return 1;
+                }
+                if (!result.EnumMemberNames.Contains(memberName, StringComparer.Ordinal))
+                {
+                    reportError(
+                        $"'{memberName}' is not a member of enum {declaredType.Name} "
+                        + $"(known: {string.Join(", ", result.EnumMemberNames)}).");
+                    return 1;
+                }
+                op.Value = new CompiledTemplateValue
+                {
+                    Kind = CompiledTemplateValueKind.Enum,
+                    EnumType = declaredType.Name,
+                    EnumValue = memberName,
+                };
             }
             else if (op.Value.Kind == CompiledTemplateValueKind.Enum)
             {

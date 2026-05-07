@@ -83,6 +83,27 @@ public static class TemplatePatchPathValidator
                     error = $"op=Set has negative index {op.Index.Value}.";
                     return false;
                 }
+                if (op.IndexPath != null)
+                {
+                    if (op.Index.HasValue)
+                    {
+                        error = "op=Set cannot carry both 'index' and 'indexPath'; use one or the other.";
+                        return false;
+                    }
+                    if (op.IndexPath.Count == 0)
+                    {
+                        error = "op=Set 'indexPath' must list at least one axis coordinate.";
+                        return false;
+                    }
+                    foreach (var coord in op.IndexPath)
+                    {
+                        if (coord < 0)
+                        {
+                            error = $"op=Set 'indexPath' has negative coordinate {coord}.";
+                            return false;
+                        }
+                    }
+                }
                 if (terminalIndexed)
                 {
                     error = "op=Set cannot have an indexed terminal segment; use 'set \"<Field>\" index=N' to write one collection element.";
@@ -94,6 +115,11 @@ public static class TemplatePatchPathValidator
                 if (op.Index.HasValue)
                 {
                     error = "op=Append cannot carry an 'index' field; Append writes to the tail.";
+                    return false;
+                }
+                if (op.IndexPath != null)
+                {
+                    error = "op=Append cannot carry an 'indexPath' field; multi-dim cell writes belong on op=Set.";
                     return false;
                 }
                 if (terminalIndexed)
@@ -122,12 +148,22 @@ public static class TemplatePatchPathValidator
                 return RequireValue(op.Value, out error);
 
             case CompiledTemplateOp.Remove:
-                if (!op.Index.HasValue)
+                // Two valid shapes: index=N (List<T>: positional) or a value
+                // (HashSet<T>: by-value). Mutually exclusive — having both
+                // means the modder confused collection shapes. Catalog-level
+                // validator picks the shape-correct one against the
+                // destination type.
+                if (op.Index.HasValue && op.Value != null)
                 {
-                    error = "op=Remove requires an 'index' field.";
+                    error = "op=Remove takes either index=N (for List<T>) or a value (for HashSet<T>), not both.";
                     return false;
                 }
-                if (op.Index.Value < 0)
+                if (!op.Index.HasValue && op.Value == null)
+                {
+                    error = "op=Remove requires either an 'index' field (List<T>) or a value (HashSet<T>).";
+                    return false;
+                }
+                if (op.Index.HasValue && op.Index.Value < 0)
                 {
                     error = $"op=Remove has negative index {op.Index.Value}.";
                     return false;
@@ -135,11 +171,6 @@ public static class TemplatePatchPathValidator
                 if (terminalIndexed)
                 {
                     error = "op=Remove cannot have an indexed terminal segment; the position comes from the 'index' field.";
-                    return false;
-                }
-                if (op.Value != null)
-                {
-                    error = "op=Remove cannot carry a value; Remove takes no value.";
                     return false;
                 }
                 error = null;

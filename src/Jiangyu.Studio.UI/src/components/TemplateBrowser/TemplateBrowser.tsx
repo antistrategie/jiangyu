@@ -1185,7 +1185,8 @@ function MemberRow({
     member.isCollection === true ||
     member.isTemplateReference === true ||
     valueNode?.kind === "object" ||
-    valueNode?.kind === "array";
+    valueNode?.kind === "array" ||
+    valueNode?.kind === "matrix";
 
   const handleToggle = useCallback(() => setExpanded((prev) => !prev), []);
 
@@ -1376,6 +1377,18 @@ function MemberRow({
               </div>
             )}
 
+          {/* Multi-dim matrix: render as a 2D grid (3D+ falls back to flat). */}
+          {valueNode?.kind === "matrix" &&
+            valueNode.dimensions &&
+            valueNode.dimensions.length === 2 &&
+            valueNode.elements && (
+              <MatrixGrid
+                rows={valueNode.dimensions[0] ?? 0}
+                cols={valueNode.dimensions[1] ?? 0}
+                cells={valueNode.elements}
+              />
+            )}
+
           {/* Scalar value with depth, when already at leaf */}
           {valueNode && valueNodeKindIsScalar(valueNode) && (
             <div className={styles.memberFieldInfo}>
@@ -1388,6 +1401,71 @@ function MemberRow({
       )}
     </div>
   );
+}
+
+/**
+ * Read-only 2D grid renderer for `kind: "matrix"` nodes from the Odin
+ * decoder (e.g. AOETiles' `bool[9,9]`). Cells are flat row-major in
+ * `cells`; we reshape to rows×cols at render time. The visual editor's
+ * write path uses the same shape via cell-addressed Set directives.
+ */
+function MatrixGrid({
+  rows,
+  cols,
+  cells,
+}: {
+  rows: number;
+  cols: number;
+  cells: readonly InspectedFieldNode[];
+}) {
+  if (rows <= 0 || cols <= 0 || cells.length !== rows * cols) {
+    return (
+      <div className={styles.memberFieldInfo}>
+        <span className={styles.fieldInfoItem}>
+          (matrix shape mismatch: {rows}×{cols} declared, {cells.length} cells)
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className={styles.matrixGrid}>
+      {Array.from({ length: rows }, (_, r) => (
+        // eslint-disable-next-line @eslint-react/no-array-index-key -- r is the matrix row index, not iteration order; stable across renders.
+        <div key={r} className={styles.matrixRow}>
+          {Array.from({ length: cols }, (_, c) => {
+            const cell = cells[r * cols + c];
+            return (
+              <span
+                // eslint-disable-next-line @eslint-react/no-array-index-key -- (r,c) is the matrix cell coordinate, fixed by the matrix shape.
+                key={c}
+                className={`${styles.matrixCell} ${matrixCellTone(cell)}`}
+                title={`[${r},${c}] ${formatMatrixCell(cell)}`}
+              >
+                {formatMatrixCell(cell)}
+              </span>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function matrixCellTone(cell: InspectedFieldNode | undefined): string {
+  if (!cell) return "";
+  if (cell.kind === "bool")
+    return cell.value === true ? styles.matrixCellTrue : styles.matrixCellFalse;
+  return "";
+}
+
+function formatMatrixCell(cell: InspectedFieldNode | undefined): string {
+  if (!cell) return "·";
+  if (cell.kind === "bool") return cell.value === true ? "■" : "·";
+  if (cell.value !== undefined && cell.value !== null) {
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string -- numeric or enum scalar
+    return String(cell.value);
+  }
+  return "·";
 }
 
 // --- Value rendering helpers ---

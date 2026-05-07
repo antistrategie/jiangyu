@@ -4,6 +4,10 @@ export const SCALAR_OPS: DirectiveOp[] = ["Set"];
 export const COLLECTION_OPS: DirectiveOp[] = ["Set", "Append", "Insert", "Remove", "Clear"];
 // Named arrays are fixed-size enum-indexed; only per-slot Set makes sense.
 export const NAMED_ARRAY_OPS: DirectiveOp[] = ["Set"];
+// HashSet has no positional order: no Insert, no Set-with-index. Append
+// maps to Add (idempotent) and Remove takes a value rather than an
+// index. The validator and applier enforce these contracts.
+export const HASHSET_OPS: DirectiveOp[] = ["Append", "Remove", "Clear"];
 export const OP_LABELS: Record<DirectiveOp, string> = {
   Set: "set",
   Append: "append",

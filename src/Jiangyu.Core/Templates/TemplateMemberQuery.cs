@@ -221,16 +221,18 @@ public static class TemplateMemberQuery
                 unwrappedFrom = memberType;
 
                 // Polymorphic descent: when the unwrapped element type has
-                // strict reference subtypes (e.g. SkillEventHandlerTemplate
-                // → Attack/AddSkill/...), the catalogue can't see the inner
-                // members of the concrete instance from the abstract base
-                // alone. The modder declares the concrete subtype via
-                // type="X" on the descent block; the parser threads it
-                // through as SubtypeHints[i]. Switch the navigator to that
-                // type before continuing.
+                // strict subtypes (reference-style ScriptableObjects like
+                // SkillEventHandlerTemplate → Attack/AddSkill/..., OR
+                // interface-typed Odin fields like ITacticalCondition[] →
+                // AndCondition/MoraleStateCondition/...), the catalogue
+                // can't see the inner members of the concrete instance
+                // from the abstract base alone. The modder declares the
+                // concrete subtype via type="X" on the descent block;
+                // the parser threads it through as SubtypeHints[i].
+                // Switch the navigator to that type before continuing.
                 if (hasIndexer
                     && i < fieldSegments.Length - 1
-                    && catalog.HasReferenceSubtype(elementType))
+                    && catalog.HasPolymorphicSubtype(elementType))
                 {
                     var hint = subtypeHints != null && subtypeHints.TryGetValue(i, out var hinted) ? hinted : null;
                     if (hint == null)
@@ -260,13 +262,14 @@ public static class TemplateMemberQuery
                             + $"is not a subtype of '{catalog.FriendlyName(elementType)}'.{note}");
                     }
 
-                    if (!elementType.IsAssignableFrom(resolved))
-                    {
-                        return QueryResult.FromError(
-                            $"type=\"{hint}\" is not a subtype of '{catalog.FriendlyName(elementType)}' "
-                            + $"required by '{member.Name}[…]'.");
-                    }
-
+                    // ResolveSubtypeHint already verified the relationship
+                    // via reflection + the metadata supplement (which
+                    // records interface impls Cpp2IL recovered from
+                    // global-metadata.dat). A managed
+                    // elementType.IsAssignableFrom(resolved) check would
+                    // double-count and falsely reject interface impls,
+                    // because IL2CPP wraps interfaces as classes and
+                    // strips the implements relations.
                     currentType = resolved;
                     lastMemberType = resolved;
                 }

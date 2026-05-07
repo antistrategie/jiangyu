@@ -202,6 +202,7 @@ public static class TemplatePatchEmitter
             Op = op.Op,
             FieldPath = effectivePath,
             Index = op.Index,
+            IndexPath = op.IndexPath != null ? new List<int>(op.IndexPath) : null,
             Descent = op.Descent != null ? CloneDescent(op.Descent) : null,
             Value = op.Value,
         };

@@ -5,6 +5,7 @@ import {
   buildDescentMemberDirective,
   groupDirectives,
   insertAtPendingAnchor,
+  isCellAddressedSet,
   rewriteDescentSlotIndex,
   type PendingAnchor,
   type StampedDirective,
@@ -33,6 +34,14 @@ export interface DirectiveBodyProps {
   membersLoaded: boolean;
   memberMap: Map<string, TemplateMember>;
   vanillaFields: ReadonlyMap<string, InspectedFieldNode>;
+  /** Field names whose cell-addressed Set directives are owned by a
+   *  matrix grid editor higher in the card. Loose-row rendering skips
+   *  those directives so they don't duplicate. */
+  matrixFieldNames: ReadonlySet<string>;
+  /** Picking an Odin multi-dim member from the FieldAdder dropdown
+   *  routes here instead of dispatching an addDirective — the matrix
+   *  grid is opt-in UI state, not a serialised directive. */
+  onAddMatrix: (name: string) => void;
   handleNodeDrop: (e: React.DragEvent) => void;
 }
 
@@ -42,6 +51,8 @@ export function DirectiveBody({
   membersLoaded,
   memberMap,
   vanillaFields,
+  matrixFieldNames,
+  onAddMatrix,
   handleNodeDrop,
 }: DirectiveBodyProps) {
   const dispatch = useEditorDispatch();
@@ -196,6 +207,18 @@ export function DirectiveBody({
         const endIndex = startIndex + (g.kind === "loose" ? 1 : g.members.length);
         const renderPendingAfter = pendingAfterFlatIndex === endIndex - 1;
         if (g.kind === "loose") {
+          // Cell-addressed Sets are owned by the matrix grid for fields
+          // listed in matrixFieldNames; skip them here. The directive
+          // stays in node.directives — index arithmetic for groups,
+          // pending insertion, and reorder all key off node.directives,
+          // so swallowing the row at render time is safe.
+          const d = g.directive;
+          const isMatrixCellRow = isCellAddressedSet(d) && matrixFieldNames.has(d.fieldPath);
+          if (isMatrixCellRow) {
+            return renderPendingAfter ? (
+              <React.Fragment key={g.directive._uiId}>{renderPending()}</React.Fragment>
+            ) : null;
+          }
           return (
             <React.Fragment key={g.directive._uiId}>
               {looseRow(g.directive, startIndex)}
@@ -244,8 +267,10 @@ export function DirectiveBody({
         members={members}
         membersLoaded={membersLoaded}
         existingFields={node.directives.map((d) => d.fieldPath)}
+        existingMatrixFields={matrixFieldNames}
         targetTemplateType={node.templateType}
         onAdd={onAddDirective}
+        onAddMatrix={onAddMatrix}
         onDrop={handleNodeDrop}
         vanillaFields={vanillaFields}
         onStartDescent={handleStartPending}
@@ -272,7 +297,10 @@ export function DirectiveBody({
 
 export interface DescentHeaderProps {
   readonly field: string;
-  readonly slotIndex: number;
+  /** Null when the descent step is scalar polymorphic (no collection
+   *  index); a number for collection-element descent. The header hides
+   *  the "at N" affordance when null. */
+  readonly slotIndex: number | null;
   readonly subtype: string | null;
   readonly subtypeChoices: readonly string[] | null;
   readonly subtypeMode: "fixed" | "clearable" | "picker";
@@ -355,15 +383,19 @@ export function DescentHeader({
       <span className={styles.setField} title={field}>
         {field}
       </span>
-      <span className={styles.setInsertAt}>at</span>
-      <CommitInput
-        type="number"
-        className={styles.setIndexInput}
-        value={slotIndex}
-        min={0}
-        step={1}
-        onCommit={(v) => onChangeIndex(Number(v))}
-      />
+      {slotIndex !== null && (
+        <>
+          <span className={styles.setInsertAt}>at</span>
+          <CommitInput
+            type="number"
+            className={styles.setIndexInput}
+            value={slotIndex}
+            min={0}
+            step={1}
+            onCommit={(v) => onChangeIndex(Number(v))}
+          />
+        </>
+      )}
       {subtypeMode === "picker" && subtype === null ? (
         <SubtypePicker
           fetchSubtypeChoices={fetchSubtypeChoices}
@@ -393,7 +425,8 @@ export function DescentHeader({
 
 export interface DescentGroupProps {
   field: string;
-  slotIndex: number;
+  /** Null = scalar polymorphic descent; number = collection-element descent. */
+  slotIndex: number | null;
   subtype: string | null;
   /** Inclusive flat index of this group's first member directive. */
   startIndex: number;
@@ -487,6 +520,10 @@ function DescentGroup({
   };
 
   const handleChangeSlotIndex = (next: number) => {
+    // Scalar polymorphic descent has no index to rewrite; the header
+    // hides the affordance, so this should never be called for the
+    // null branch. Defensive no-op.
+    if (slotIndex === null) return;
     onSetDirectives(
       rewriteDescentSlotIndex(directives, startIndex, endIndex, field, slotIndex, next),
     );
@@ -497,7 +534,13 @@ function DescentGroup({
   // (each is bound to a subtype-specific field that won't survive a
   // type change) and re-shows the subtype picker.
   const handleClearSubtype = () => {
-    if (onConvertToPending) onConvertToPending(field, slotIndex, startIndex, endIndex);
+    // onConvertToPending currently expects a non-null index (its only
+    // call site is collection-element descent groups). Scalar descent
+    // groups don't expose the clear-subtype affordance, so this
+    // doesn't fire for them — defensive guard for the type system.
+    if (onConvertToPending && slotIndex !== null) {
+      onConvertToPending(field, slotIndex, startIndex, endIndex);
+    }
   };
 
   // Polymorphic collection with multi-choice: clearing the chip drops the
@@ -560,7 +603,8 @@ function DescentGroup({
 
 export interface PendingDescentGroupProps {
   field: string;
-  slotIndex: number;
+  /** Null = scalar polymorphic descent; number = collection-element descent. */
+  slotIndex: number | null;
   subtype: string | null;
   outerMember: TemplateMember | undefined;
   onChangeIndex: (index: number) => void;

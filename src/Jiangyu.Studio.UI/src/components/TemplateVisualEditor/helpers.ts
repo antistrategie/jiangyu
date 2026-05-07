@@ -225,11 +225,29 @@ export function resolveRefTypeDisplay(
 /**
  * Collections accept multiple directives on the same fieldPath: Append/
  * Insert/Remove for plain collections, Set at distinct enum indices for
- * named arrays. Scalars, references, and plain composites map 1:1 to a
- * single Set, so duplicates would clobber each other.
+ * named arrays. Odin multi-dim arrays accept one Set per cell address.
+ * Scalars, references, and plain composites map 1:1 to a single Set, so
+ * duplicates would clobber each other.
  */
-export function allowsMultipleDirectives(member: { isCollection?: boolean | null }): boolean {
-  return member.isCollection === true;
+export function allowsMultipleDirectives(member: {
+  isCollection?: boolean | null;
+  isOdinMultiDimArray?: boolean | null;
+}): boolean {
+  return member.isCollection === true || member.isOdinMultiDimArray === true;
+}
+
+/**
+ * Type predicate for directives that address a single cell of an Odin
+ * multi-dim array — Set ops with a populated indexPath of rank ≥ 2.
+ * Used by NodeCard, DirectiveBody, and MatrixFieldEditor to decide
+ * which directives belong to a matrix grid vs the flat directive list.
+ * Narrowing the indexPath to `number[]` lets callers index into it
+ * without further null guards.
+ */
+export function isCellAddressedSet<T extends { op: string; indexPath?: number[] | null }>(
+  d: T,
+): d is T & { op: "Set"; indexPath: number[] } {
+  return d.op === "Set" && d.indexPath != null && d.indexPath.length >= 2;
 }
 
 /**
@@ -314,7 +332,9 @@ export type DirectiveGroup<T> =
   | {
       kind: "group";
       field: string;
-      index: number;
+      /** Null when the descent step is scalar polymorphic descent (no
+       *  collection index); a number for collection-element descent. */
+      index: number | null;
       subtype: string | null;
       members: { directive: T; suffix: string }[];
     };
@@ -357,7 +377,7 @@ export function groupDirectives<
     const group: Extract<DirectiveGroup<T>, { kind: "group" }> = {
       kind: "group",
       field: outerStep.field,
-      index: outerStep.index,
+      index: outerStep.index ?? null,
       subtype,
       members: [{ directive: d, suffix: d.fieldPath }],
     };
@@ -450,12 +470,18 @@ export function insertAtPendingAnchor<T>(
  */
 export function buildDescentMemberDirective<T extends EditorDirective>(
   field: string,
-  slotIndex: number,
+  /** Null = scalar polymorphic descent; number = collection-element descent. */
+  slotIndex: number | null,
   subtype: string | null,
   innerDirective: T,
 ): T {
-  const outerStep: DescentStep =
-    subtype !== null ? { field, index: slotIndex, subtype } : { field, index: slotIndex };
+  // Scalar polymorphic descent omits index; collection descent carries it.
+  const outerStep: DescentStep = (() => {
+    if (slotIndex === null) {
+      return subtype !== null ? { field, subtype } : { field };
+    }
+    return subtype !== null ? { field, index: slotIndex, subtype } : { field, index: slotIndex };
+  })();
   const combined: DescentStep[] = [outerStep, ...(innerDirective.descent ?? [])];
   return {
     ...innerDirective,

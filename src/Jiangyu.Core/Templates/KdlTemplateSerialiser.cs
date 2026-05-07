@@ -139,6 +139,7 @@ public static class KdlTemplateSerialiser
             Op = d.Op,
             FieldPath = d.FieldPath,
             Index = d.Index,
+            IndexPath = d.IndexPath,
             Descent = remaining,
             Value = d.Value,
             Line = d.Line,
@@ -170,10 +171,24 @@ public static class KdlTemplateSerialiser
         if ((d.Op == KdlEditorOp.Insert || d.Op == KdlEditorOp.Set) && d.Index != null)
             sb.Append(CultureInfo.InvariantCulture, $" index={d.Index.Value}");
 
+        // Multi-dim cell address: set "Field" cell="r,c" <value>. Mutually
+        // exclusive with index= at parse time; if both somehow appear, the
+        // serialiser still emits both and the path validator rejects it.
+        if (d.Op == KdlEditorOp.Set && d.IndexPath is { Count: > 0 } cellPath)
+            sb.Append($" cell=\"{string.Join(",", cellPath)}\"");
+
         if (d.Op == KdlEditorOp.Remove)
         {
+            // Remove takes either index= (List<T>) or a value (HashSet<T>).
+            // Mutually exclusive at parse time; emit whichever the
+            // directive carries.
             if (d.Index != null)
                 sb.Append(CultureInfo.InvariantCulture, $" index={d.Index.Value}");
+            else if (d.Value != null)
+            {
+                sb.Append(' ');
+                WriteValue(sb, d.Value);
+            }
             return;
         }
 

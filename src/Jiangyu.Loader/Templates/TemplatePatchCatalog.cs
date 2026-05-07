@@ -151,16 +151,23 @@ internal sealed class TemplatePatchCatalog
             patchesForType[templateId] = operationsForTemplate;
         }
 
-        // Set ops dedup by fieldPath — later replaces earlier, whether from the
-        // same mod or a later-loaded mod. Append ops never dedup, so two
-        // appends on the same collection apply as two additions in order.
+        // Set ops dedup by destination — later replaces earlier, whether
+        // from the same mod or a later-loaded mod. The destination is
+        // the descent prefix + fieldPath + indexPath: two writes that
+        // target the same exact slot collide; writes to different
+        // descent indexes (e.g. Conditions[0] vs Conditions[1]) and
+        // different cell coordinates do not. Append ops never dedup, so
+        // two appends on the same collection apply as two additions in
+        // order.
         if (op.Op == CompiledTemplateOp.Set)
         {
             for (var i = 0; i < operationsForTemplate.Count; i++)
             {
                 var existing = operationsForTemplate[i];
                 if (existing.Op == CompiledTemplateOp.Set
-                    && string.Equals(existing.FieldPath, effectivePath, StringComparison.Ordinal))
+                    && string.Equals(existing.FieldPath, effectivePath, StringComparison.Ordinal)
+                    && DescentEquals(existing.Descent, op.Descent)
+                    && IndexPathEquals(existing.IndexPath, op.IndexPath))
                 {
                     log.Warning(
                         $"Override template patch '{templateType}:{templateId}.{effectivePath}': "
@@ -172,18 +179,60 @@ internal sealed class TemplatePatchCatalog
             }
         }
 
-        operationsForTemplate.Add(new LoadedPatchOperation(op.Op, effectivePath, op.Index, op.Descent, op.Value, mod.Name));
+        operationsForTemplate.Add(new LoadedPatchOperation(op.Op, effectivePath, op.Index, op.IndexPath, op.Descent, op.Value, mod.Name));
         PatchCount++;
+    }
+
+    // Two descent prefixes match when each step's field, index, and
+    // subtype align. Null and empty are treated identically (an op with
+    // no outer descent has Descent=null on the wire). Internal so the
+    // test project can lock the dedup invariants directly.
+    internal static bool DescentEquals(IReadOnlyList<TemplateDescentStep> a, IReadOnlyList<TemplateDescentStep> b)
+    {
+        var ac = a?.Count ?? 0;
+        var bc = b?.Count ?? 0;
+        if (ac != bc) return false;
+        for (var i = 0; i < ac; i++)
+        {
+            var sa = a[i];
+            var sb = b[i];
+            if (!string.Equals(sa.Field, sb.Field, StringComparison.Ordinal)) return false;
+            if (sa.Index != sb.Index) return false;
+            if (!string.Equals(sa.Subtype ?? string.Empty, sb.Subtype ?? string.Empty, StringComparison.Ordinal))
+                return false;
+        }
+        return true;
+    }
+
+    // Cell coordinate equality for matrix Set ops. Empty and null
+    // collapse to "no cell coords"; otherwise both length and per-axis
+    // values must match. Internal for direct test access.
+    internal static bool IndexPathEquals(IReadOnlyList<int> a, IReadOnlyList<int> b)
+    {
+        var ac = a?.Count ?? 0;
+        var bc = b?.Count ?? 0;
+        if (ac != bc) return false;
+        for (var i = 0; i < ac; i++)
+            if (a[i] != b[i]) return false;
+        return true;
     }
 }
 
 internal sealed class LoadedPatchOperation
 {
-    public LoadedPatchOperation(CompiledTemplateOp op, string fieldPath, int? index, IReadOnlyList<TemplateDescentStep> descent, CompiledTemplateValue value, string ownerLabel)
+    public LoadedPatchOperation(
+        CompiledTemplateOp op,
+        string fieldPath,
+        int? index,
+        IReadOnlyList<int> indexPath,
+        IReadOnlyList<TemplateDescentStep> descent,
+        CompiledTemplateValue value,
+        string ownerLabel)
     {
         Op = op;
         FieldPath = fieldPath;
         Index = index;
+        IndexPath = indexPath;
         Descent = descent;
         Value = value;
         OwnerLabel = ownerLabel;
@@ -193,6 +242,12 @@ internal sealed class LoadedPatchOperation
     /// <summary>Inner-relative member path on the destination instance.</summary>
     public string FieldPath { get; }
     public int? Index { get; }
+    /// <summary>
+    /// Multi-dim cell address for Set ops against an N-dimensional array.
+    /// Null for non-multi-dim writes; empty list is treated the same as
+    /// null. Mutually exclusive with <see cref="Index"/>.
+    /// </summary>
+    public IReadOnlyList<int> IndexPath { get; }
     /// <summary>
     /// Outer descent prefix as a structural step list. The applier walks
     /// each step in order — descending into element <c>Index</c> of

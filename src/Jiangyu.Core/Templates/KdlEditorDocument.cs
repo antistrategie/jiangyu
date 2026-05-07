@@ -80,6 +80,15 @@ public sealed class KdlEditorDirective
     [JsonPropertyName("index")]
     public int? Index { get; set; }
 
+    /// <summary>
+    /// Multi-dimensional cell address for Set ops against an N-dim
+    /// Odin-routed array (e.g. AOETiles' bool[,]). Mutually exclusive with
+    /// <see cref="Index"/>. Mirrors
+    /// <see cref="CompiledTemplateSetOperation.IndexPath"/>.
+    /// </summary>
+    [JsonPropertyName("indexPath")]
+    public List<int>? IndexPath { get; set; }
+
     /// <summary>Absent for remove ops.</summary>
     [JsonPropertyName("value")]
     public KdlEditorValue? Value { get; set; }

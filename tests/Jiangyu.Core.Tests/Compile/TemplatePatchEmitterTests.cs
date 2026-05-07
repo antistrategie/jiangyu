@@ -51,6 +51,37 @@ public class TemplatePatchEmitterTests
     }
 
     [Fact]
+    public void SetOp_WithIndexPath_PassesThrough()
+    {
+        // Multi-dim cell writes (set "AOETiles" cell="2,6" #true) compile
+        // to ops carrying IndexPath = [2, 6]. The emitter must forward
+        // that — without it, the loader's catalog dedup collapses
+        // distinct cells into one and only the last one applies.
+        var log = new RecordingLogSink();
+        var patches = new List<CompiledTemplatePatch>
+        {
+            new()
+            {
+                TemplateType = "PerkTemplate",
+                TemplateId = "perk.test",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "AOETiles",
+                    IndexPath = [2, 6],
+                    Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Boolean, Boolean = true },
+                }],
+            },
+        };
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.True(result.Success);
+        var op = Assert.Single(Assert.Single(result.Patches!).Set);
+        Assert.Equal(new[] { 2, 6 }, op.IndexPath);
+    }
+
+    [Fact]
     public void SetOp_IndexedTerminal_Errors()
     {
         var log = new RecordingLogSink();
@@ -463,8 +494,10 @@ public class TemplatePatchEmitterTests
     }
 
     [Fact]
-    public void RemoveOp_WithValue_Errors()
+    public void RemoveOp_WithBothIndexAndValue_Errors()
     {
+        // Both an index and a value present → confused collection shape.
+        // Either is valid in isolation: index for List<T>, value for HashSet<T>.
         var log = new RecordingLogSink();
         var patches = SinglePatch("EntityTemplate", "unit.marine",
             new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Remove, FieldPath = "Skills", Index = 2, Value = Int32(10) });
@@ -472,11 +505,11 @@ public class TemplatePatchEmitterTests
         var result = TemplatePatchEmitter.Emit(patches, log);
 
         Assert.False(result.Success);
-        Assert.Contains("op=Remove cannot carry a value", log.Errors[0]);
+        Assert.Contains("not both", log.Errors[0]);
     }
 
     [Fact]
-    public void RemoveOp_MissingIndex_Errors()
+    public void RemoveOp_WithNeitherIndexNorValue_Errors()
     {
         var log = new RecordingLogSink();
         var patches = SinglePatch("EntityTemplate", "unit.marine",
@@ -485,7 +518,7 @@ public class TemplatePatchEmitterTests
         var result = TemplatePatchEmitter.Emit(patches, log);
 
         Assert.False(result.Success);
-        Assert.Contains("op=Remove requires an 'index'", log.Errors[0]);
+        Assert.Contains("requires either", log.Errors[0]);
     }
 
     [Fact]

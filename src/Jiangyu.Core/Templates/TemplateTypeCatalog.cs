@@ -21,6 +21,8 @@ public sealed class TemplateTypeCatalog : IDisposable
     private const string Il2CppObjectBaseFullName = "Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase";
     private const string Il2CppSystemListFullName = "Il2CppSystem.Collections.Generic.List`1";
     private const string BclListFullName = "System.Collections.Generic.List`1";
+    private const string Il2CppSystemHashSetFullName = "Il2CppSystem.Collections.Generic.HashSet`1";
+    private const string BclHashSetFullName = "System.Collections.Generic.HashSet`1";
 
     // Il2CppInterop-generated wrappers for native Il2Cpp arrays. Both expose
     // a writable int indexer on the element type, so callers (query nav + the
@@ -232,7 +234,8 @@ public sealed class TemplateTypeCatalog : IDisposable
                     IsInherited: !ReferenceEquals(current, type),
                     IsWritable: writable,
                     IsLikelyOdinOnly: IsLikelyOdinOnly(property),
-                    NamedArrayEnumTypeName: GetNamedArrayEnumShortName(property)));
+                    NamedArrayEnumTypeName: GetNamedArrayEnumShortName(property),
+                    IsOdinHashSet: IsHashSetCollection(property.PropertyType)));
             }
 
             foreach (var field in current.GetFields(flags))
@@ -252,7 +255,8 @@ public sealed class TemplateTypeCatalog : IDisposable
                     IsInherited: !ReferenceEquals(current, type),
                     IsWritable: writable,
                     IsLikelyOdinOnly: IsLikelyOdinOnly(field),
-                    NamedArrayEnumTypeName: GetNamedArrayEnumShortName(field)));
+                    NamedArrayEnumTypeName: GetNamedArrayEnumShortName(field),
+                    IsOdinHashSet: IsHashSetCollection(field.FieldType)));
             }
         }
 
@@ -273,7 +277,11 @@ public sealed class TemplateTypeCatalog : IDisposable
 
         // Walk the base chain so Il2CppStructArray<T> / Il2CppReferenceArray<T>
         // (and any future subclass of Il2CppArrayBase<T>) unwrap to T without
-        // having to enumerate every leaf wrapper here.
+        // having to enumerate every leaf wrapper here. HashSet<T> is treated
+        // as a collection too: its runtime instance accepts Add(T)/Remove(T)/
+        // Clear() and the visual editor needs the element type to render
+        // append/remove rows. Order-based ops (Insert / Set-with-index) are
+        // rejected by the validator instead.
         for (var current = type; current != null; current = current.BaseType)
         {
             if (!current.IsGenericType)
@@ -282,6 +290,8 @@ public sealed class TemplateTypeCatalog : IDisposable
             var definitionName = current.GetGenericTypeDefinition().FullName;
             if (definitionName == Il2CppSystemListFullName
                 || definitionName == BclListFullName
+                || definitionName == Il2CppSystemHashSetFullName
+                || definitionName == BclHashSetFullName
                 || Il2CppArrayDefinitionFullNames.Contains(definitionName ?? string.Empty))
             {
                 return current.GenericTypeArguments.FirstOrDefault();
@@ -289,6 +299,27 @@ public sealed class TemplateTypeCatalog : IDisposable
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// True when <paramref name="type"/> is a (BCL or Il2Cpp) <c>HashSet&lt;T&gt;</c>.
+    /// HashSet fields differ from List fields in two ways the editor and
+    /// applier care about: they have no positional index (so InsertAt and
+    /// Set-with-index are nonsensical), and Remove takes a value rather
+    /// than an index. Used by the catalog to set the <c>IsOdinHashSet</c>
+    /// member flag and by the validator / applier to switch behaviour.
+    /// </summary>
+    public static bool IsHashSetCollection(Type type)
+    {
+        for (var current = type; current != null; current = current.BaseType)
+        {
+            if (!current.IsGenericType) continue;
+            var definitionName = current.GetGenericTypeDefinition().FullName;
+            if (definitionName == Il2CppSystemHashSetFullName
+                || definitionName == BclHashSetFullName)
+                return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -326,6 +357,21 @@ public sealed class TemplateTypeCatalog : IDisposable
             if (IsTemplateReferenceTarget(candidate)) return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// True when <paramref name="baseType"/> has any concrete strict
+    /// descendant — interface impls, abstract-class subtypes, or
+    /// reference-style subtypes. Distinct from
+    /// <see cref="HasReferenceSubtype"/>, which only counts subtypes
+    /// that are template-reference targets (ScriptableObject/DataTemplate).
+    /// Used by the navigator to gate polymorphic descent: any abstract /
+    /// interface destination with concrete impls needs a subtype hint
+    /// before the navigator can resolve subsequent member lookups.
+    /// </summary>
+    public bool HasPolymorphicSubtype(Type baseType)
+    {
+        return EnumerateConcreteSubtypes(baseType).Count > 0;
     }
 
     public static bool IsTemplateReferenceTarget(Type type)
@@ -880,4 +926,12 @@ public sealed record MemberShape(
     /// <summary>True when the field carries the game's SoundID marker
     /// (<c>Stem.SoundIDAttribute</c>). Field type is <c>Stem.ID</c>; UI may
     /// label these or eventually offer a sound-bus picker.</summary>
-    bool IsSoundIdField = false);
+    bool IsSoundIdField = false,
+    /// <summary>True when the field's declared type is a
+    /// <c>HashSet&lt;T&gt;</c>. Triggers a different op contract from
+    /// list-shaped collections: Append maps to <c>Add</c> (idempotent),
+    /// Remove takes a value (not an index), and InsertAt / Set-with-index
+    /// are rejected because HashSet has no order. Always paired with
+    /// <see cref="IsLikelyOdinOnly"/> = true since Unity can't natively
+    /// serialise HashSet.</summary>
+    bool IsOdinHashSet = false);

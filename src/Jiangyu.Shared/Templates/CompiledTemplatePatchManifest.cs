@@ -72,6 +72,17 @@ public sealed class CompiledTemplateSetOperation
     public int? Index { get; set; }
 
     /// <summary>
+    /// Multi-dimensional cell address for <see cref="CompiledTemplateOp.Set"/>
+    /// against an N-dimensional array (Sirenix Odin <c>T[,]</c> /
+    /// <c>T[,,]</c> shape). Each entry is a zero-based axis coordinate;
+    /// length matches the array's rank. Mutually exclusive with
+    /// <see cref="Index"/>: collection writes use scalar Index; multi-dim
+    /// cell writes use IndexPath. Null for non-multi-dim writes.
+    /// </summary>
+    [JsonPropertyName("indexPath")]
+    public List<int>? IndexPath { get; set; }
+
+    /// <summary>
     /// Outer descent prefix as a structural step list. Each step navigates
     /// into one polymorphic / collection-element slot before the inner
     /// <see cref="FieldPath"/> write applies. Produced by the KDL parser

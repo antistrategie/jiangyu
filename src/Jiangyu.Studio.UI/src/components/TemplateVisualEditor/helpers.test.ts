@@ -4,6 +4,7 @@ import {
   allowsMultipleDirectives,
   groupDirectives,
   inspectedFieldToEditorValue,
+  isCellAddressedSet,
   isFieldBagValue,
   makeDefaultValue,
   resolveEnumCommitType,
@@ -111,12 +112,43 @@ describe("allowsMultipleDirectives", () => {
     expect(allowsMultipleDirectives({ isCollection: true })).toBe(true);
   });
 
+  it("is true for Odin multi-dim arrays (one Set per cell)", () => {
+    expect(allowsMultipleDirectives({ isOdinMultiDimArray: true })).toBe(true);
+  });
+
   it("is false for non-collection scalars", () => {
     expect(allowsMultipleDirectives({})).toBe(false);
   });
 
   it("is false when isCollection is null", () => {
     expect(allowsMultipleDirectives({ isCollection: null })).toBe(false);
+  });
+});
+
+// --- isCellAddressedSet ---
+
+describe("isCellAddressedSet", () => {
+  it("matches Set ops with a 2D indexPath", () => {
+    expect(isCellAddressedSet({ op: "Set", indexPath: [0, 0] })).toBe(true);
+    expect(isCellAddressedSet({ op: "Set", indexPath: [4, 4] })).toBe(true);
+  });
+
+  it("matches Set ops with a 3D indexPath", () => {
+    expect(isCellAddressedSet({ op: "Set", indexPath: [1, 2, 3] })).toBe(true);
+  });
+
+  it("rejects Set ops without an indexPath", () => {
+    expect(isCellAddressedSet({ op: "Set" })).toBe(false);
+    expect(isCellAddressedSet({ op: "Set", indexPath: null })).toBe(false);
+  });
+
+  it("rejects Set ops with a 1D indexPath (those are list indices, not cells)", () => {
+    expect(isCellAddressedSet({ op: "Set", indexPath: [3] })).toBe(false);
+  });
+
+  it("rejects non-Set ops even when indexPath is present", () => {
+    expect(isCellAddressedSet({ op: "Append", indexPath: [0, 0] })).toBe(false);
+    expect(isCellAddressedSet({ op: "Remove", indexPath: [0, 0] })).toBe(false);
   });
 });
 

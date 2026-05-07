@@ -505,7 +505,22 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
     {
         var path = Path.Combine(CachePath, ValuesFileName);
         if (!File.Exists(path)) return null;
-        return JsonSerializer.Deserialize<Dictionary<string, List<InspectedFieldNode>>>(File.ReadAllText(path), JsonOptions);
+        var loaded = JsonSerializer.Deserialize<Dictionary<string, List<InspectedFieldNode>>>(File.ReadAllText(path), JsonOptions);
+        if (loaded is not null)
+        {
+            // Apply the Odin matrix reshape on load. Old caches built
+            // before the decoder grew matrix support carry the original
+            // <c>kind=array</c> shape with a <c>"ranks"</c> header inline;
+            // this rewrites them in place so consumers always see
+            // <c>kind=matrix</c> with proper dimensions, no re-index
+            // required. Idempotent on caches already produced with the
+            // reshape applied.
+            foreach (var fields in loaded.Values)
+            {
+                Jiangyu.Core.Templates.Odin.OdinPayloadDecoder.ReshapeMatrices(fields);
+            }
+        }
+        return loaded;
     }
 
     private static Dictionary<string, List<InspectedFieldNode>> ExtractTemplateValues(

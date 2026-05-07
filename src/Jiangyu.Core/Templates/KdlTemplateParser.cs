@@ -348,6 +348,7 @@ public static class KdlTemplateParser
             },
             FieldPath = directive.FieldPath,
             Index = directive.Index,
+            IndexPath = directive.IndexPath != null ? new List<int>(directive.IndexPath) : null,
             Descent = directive.Descent != null ? CloneDescent(directive.Descent) : null,
             Value = directive.Value != null ? EditorValueToCompiled(directive.Value) : null,
         };
@@ -395,6 +396,7 @@ public static class KdlTemplateParser
             },
             FieldPath = op.FieldPath,
             Index = op.Index,
+            IndexPath = op.IndexPath != null ? new List<int>(op.IndexPath) : null,
             Descent = op.Descent != null ? CloneDescent(op.Descent) : null,
             Value = op.Value != null ? CompiledValueToEditor(op.Value) : null,
         };
@@ -839,26 +841,62 @@ public static class KdlTemplateParser
             return true;
         }
 
-        // Remove needs index= property, no value
+        // Remove takes either index=N (for List<T>: positional removal) or
+        // a value (for HashSet<T>: by-value removal). The two forms are
+        // mutually exclusive — having both means the modder confused
+        // collection shapes. The validator does the final compatibility
+        // check against the destination's declared type.
         if (opKind == CompiledTemplateOp.Remove)
         {
-            var removeIndexProp = GetPropertyValue(node, "index");
-            if (removeIndexProp == null || removeIndexProp.AsInt32() == null)
-            {
-                log.Error($"{pos}: 'remove' requires an index=N property.");
-                return false;
-            }
             if (node.HasChildren)
             {
                 log.Error($"{pos}: 'remove' does not take a child block.");
                 return false;
             }
 
+            var removeIndexProp = GetPropertyValue(node, "index");
+            var hasIndex = removeIndexProp != null && removeIndexProp.AsInt32() != null;
+            var hasValue =
+                node.Arguments.Count >= 2
+                || GetProperty(node, "enum") != null
+                || GetProperty(node, "ref") != null
+                || GetProperty(node, "asset") != null
+                || GetProperty(node, "composite") != null
+                || GetProperty(node, "handler") != null;
+
+            if (hasIndex && hasValue)
+            {
+                log.Error(
+                    $"{pos}: 'remove' takes either index=N (for List<T>) or a value (for HashSet<T>), not both.");
+                return false;
+            }
+            if (!hasIndex && !hasValue)
+            {
+                log.Error(
+                    $"{pos}: 'remove' requires either an index=N property (for List<T>) "
+                    + "or a value argument (for HashSet<T>).");
+                return false;
+            }
+
+            if (hasIndex)
+            {
+                ops.Add(new CompiledTemplateSetOperation
+                {
+                    Op = opKind,
+                    FieldPath = fieldPath,
+                    Index = removeIndexProp!.AsInt32(),
+                });
+                return true;
+            }
+
+            if (!TryParseValue(node, pos, log, out var removeValue))
+                return false;
+
             ops.Add(new CompiledTemplateSetOperation
             {
                 Op = opKind,
                 FieldPath = fieldPath,
-                Index = removeIndexProp.AsInt32(),
+                Value = removeValue,
             });
             return true;
         }
@@ -917,6 +955,37 @@ public static class KdlTemplateParser
                 return TryParseDescentBlock(node, pos, log, ops, fieldPath, parsedIndex);
             }
         }
+
+        // Multi-dimensional cell address: set "Field" cell="r,c" <value>.
+        // Mutually exclusive with index= because index= drives 1D collection
+        // writes while cell= drives N-dim arrays. Parsing happens on every
+        // op kind so a misuse (e.g. cell= on append) gets a specific error.
+        List<int>? parsedIndexPath = null;
+        if (GetProperty(node, "cell") is { Length: > 0 } cellRaw)
+        {
+            if (opKind != CompiledTemplateOp.Set)
+            {
+                log.Error($"{pos}: cell= is only valid on 'set'; multi-dim arrays are written one cell at a time.");
+                return false;
+            }
+            if (parsedIndex.HasValue)
+            {
+                log.Error($"{pos}: 'set' cannot carry both index= and cell=; use one or the other.");
+                return false;
+            }
+
+            var coords = cellRaw.Split(',');
+            parsedIndexPath = new List<int>(coords.Length);
+            foreach (var raw in coords)
+            {
+                if (!int.TryParse(raw.Trim(), out var coord) || coord < 0)
+                {
+                    log.Error($"{pos}: 'set' cell= must be a comma-separated list of non-negative integers (e.g. cell=\"3,4\").");
+                    return false;
+                }
+                parsedIndexPath.Add(coord);
+            }
+        }
         else if (opKind == CompiledTemplateOp.Append)
         {
             if (GetPropertyValue(node, "index") != null)
@@ -963,6 +1032,7 @@ public static class KdlTemplateParser
             Op = opKind,
             FieldPath = fieldPath,
             Index = parsedIndex,
+            IndexPath = parsedIndexPath,
             Value = value,
         });
         return true;

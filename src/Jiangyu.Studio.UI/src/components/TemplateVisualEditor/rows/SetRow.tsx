@@ -7,6 +7,7 @@ import type { EditorValue } from "../types";
 import {
   SCALAR_OPS,
   COLLECTION_OPS,
+  HASHSET_OPS,
   NAMED_ARRAY_OPS,
   OP_LABELS,
   VALUE_KIND_LABELS,
@@ -139,7 +140,14 @@ export function SetRow({
   }, [opOpen]);
 
   const namedArrayEnum = member?.namedArrayEnumTypeName;
-  const ops = namedArrayEnum ? NAMED_ARRAY_OPS : isCollection ? COLLECTION_OPS : SCALAR_OPS;
+  const isHashSet = member?.isOdinHashSet === true;
+  const ops = namedArrayEnum
+    ? NAMED_ARRAY_OPS
+    : isHashSet
+      ? HASHSET_OPS
+      : isCollection
+        ? COLLECTION_OPS
+        : SCALAR_OPS;
   const isRemove = directive.op === "Remove";
   const isClear = directive.op === "Clear";
   const isFieldBag = isFieldBagValue(directive.value);
@@ -196,9 +204,11 @@ export function SetRow({
                     type="button"
                     className={`${styles.setOpMenuItem} ${op === directive.op ? styles.setOpMenuItemActive : ""}`}
                     onClick={() => {
-                      // Remove and Clear both drop the value; Clear drops the
-                      // index as well. Other ops keep / synthesise a value
-                      // and set a default index when the op needs one.
+                      // Clear drops both index and value. Remove drops the
+                      // value on List<T> destinations (index-based) but
+                      // KEEPS the value on HashSet destinations (by-value
+                      // removal). Other ops keep / synthesise a value and
+                      // set a default index when the op needs one.
                       const updated: StampedDirective =
                         op === "Clear"
                           ? {
@@ -206,27 +216,40 @@ export function SetRow({
                               fieldPath: directive.fieldPath,
                               _uiId: directive._uiId,
                             }
-                          : op === "Remove"
+                          : op === "Remove" && isHashSet
                             ? {
                                 op,
                                 fieldPath: directive.fieldPath,
-                                index: directive.index ?? 0,
-                                _uiId: directive._uiId,
-                              }
-                            : {
-                                ...directive,
-                                op,
                                 value:
                                   directive.value ??
                                   (member
                                     ? makeDefaultValue(member)
                                     : { kind: "String", string: "" }),
-                              };
-                      if (
-                        (op === "Insert" || op === "Remove" || op === "Set") &&
-                        updated.index === undefined
-                      )
-                        updated.index = 0;
+                                _uiId: directive._uiId,
+                              }
+                            : op === "Remove"
+                              ? {
+                                  op,
+                                  fieldPath: directive.fieldPath,
+                                  index: directive.index ?? 0,
+                                  _uiId: directive._uiId,
+                                }
+                              : {
+                                  ...directive,
+                                  op,
+                                  value:
+                                    directive.value ??
+                                    (member
+                                      ? makeDefaultValue(member)
+                                      : { kind: "String", string: "" }),
+                                };
+                      // Index defaulting only applies when the op
+                      // genuinely uses an index (List Insert / Remove /
+                      // Set-with-index). HashSet Remove is value-based
+                      // and must not get a phantom index=0.
+                      const opNeedsIndex =
+                        op === "Insert" || op === "Set" || (op === "Remove" && !isHashSet);
+                      if (opNeedsIndex && updated.index === undefined) updated.index = 0;
                       onChange(updated);
                       setOpOpen(false);
                     }}
@@ -250,17 +273,29 @@ export function SetRow({
               {member?.isSoundIdField && <span className={styles.fieldBadge}>sound</span>}
             </span>
             <div className={styles.setValue}>
-              <div className={styles.setInsertRow}>
-                <span className={styles.setInsertAt}>at</span>
-                <CommitInput
-                  type="number"
-                  className={styles.setIndexInput}
-                  value={directive.index ?? 0}
-                  min={0}
-                  step={1}
-                  onCommit={(v) => onChange({ ...directive, index: Number(v) })}
-                />
-              </div>
+              {isHashSet ? (
+                // HashSet Remove is by-value; show the value editor and
+                // skip the "at" + index input the List path uses.
+                directive.value ? (
+                  <ValueEditor
+                    value={directive.value}
+                    onChange={(v) => onChange({ ...directive, value: v })}
+                    member={member}
+                  />
+                ) : null
+              ) : (
+                <div className={styles.setInsertRow}>
+                  <span className={styles.setInsertAt}>at</span>
+                  <CommitInput
+                    type="number"
+                    className={styles.setIndexInput}
+                    value={directive.index ?? 0}
+                    min={0}
+                    step={1}
+                    onCommit={(v) => onChange({ ...directive, index: Number(v) })}
+                  />
+                </div>
+              )}
             </div>
           </>
         ) : isClear ? (

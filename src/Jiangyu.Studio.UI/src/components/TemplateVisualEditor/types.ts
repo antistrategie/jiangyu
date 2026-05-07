@@ -44,13 +44,14 @@ export interface EditorValue {
 export type DirectiveOp = "Set" | "Append" | "Insert" | "Remove" | "Clear";
 
 /** One descent step along a template patch path. Mirrors the KDL syntax
- *  `set "Field" index=N type="Subtype" { ... }`: navigate into element
- *  `index` of collection `field`, switching the validated type to `subtype`
- *  when the destination is polymorphic. Mirrors the host
- *  `Jiangyu.Shared.Templates.TemplateDescentStep`. */
+ *  `set "Field" index=N type="Subtype" { ... }` (or `set "Field" type="X"
+ *  { ... }` for scalar polymorphic descent, where `index` is null). The
+ *  validator switches to `subtype` when the destination is polymorphic.
+ *  Mirrors the host `Jiangyu.Shared.Templates.TemplateDescentStep`. */
 export interface DescentStep {
   field: string;
-  index: number;
+  /** Null = scalar polymorphic descent (no collection index). */
+  index?: number | null;
   subtype?: string;
 }
 
@@ -60,6 +61,11 @@ export interface EditorDirective {
    *  Descent context (if any) lives in `descent`, never in this string. */
   fieldPath: string;
   index?: number;
+  /** Multi-dimensional cell address for `Set` ops against an N-dim
+   *  Odin-routed array (e.g. AOETiles' bool[,]). Mutually exclusive with
+   *  `index` (which is for 1D collections). Mirrors the host
+   *  `CompiledTemplateSetOperation.IndexPath`. */
+  indexPath?: number[];
   value?: EditorValue;
   /** Outer descent prefix as a structural step list. Mirrors
    *  KdlEditorDirective.Descent on the host. The serialiser groups

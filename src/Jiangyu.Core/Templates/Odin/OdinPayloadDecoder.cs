@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Jiangyu.Core.Models;
 using TinySerializer.Core.DataReaderWriters.Binary;
 using TinySerializer.Core.Misc;
@@ -239,9 +240,99 @@ public static class OdinPayloadDecoder
 
         var elements = new List<InspectedFieldNode>();
         ReadEntries(reader, binder, externalReferences, elements, depth + 1, maxDepth);
-        node.Elements = elements;
         reader.ExitArray();
+
+        // Multi-dim reshape: Sirenix Odin emits T[,] / T[,,] arrays as a
+        // flat sequence prefixed by a Name="ranks" string element carrying
+        // pipe-separated dimensions (e.g. "9|9"). When the array's first
+        // element matches that shape AND the remaining elements all fit
+        // exactly into the product of those dimensions, lift the
+        // dimensions onto the node and drop the ranks prefix from
+        // Elements. Consumers see a clean matrix shape ready for grid
+        // rendering and cell-addressed writes.
+        if (TryStripMatrixHeader(elements, out var dims, out var cells))
+        {
+            node.Kind = "matrix";
+            node.Dimensions = dims;
+            node.Count = cells.Count;
+            node.Elements = cells;
+            return node;
+        }
+
+        node.Elements = elements;
         return node;
+    }
+
+    private static bool TryStripMatrixHeader(
+        List<InspectedFieldNode> elements,
+        out List<int> dimensions,
+        out List<InspectedFieldNode> cells)
+    {
+        dimensions = null!;
+        cells = null!;
+        if (elements.Count < 2) return false;
+
+        var head = elements[0];
+        if (!string.Equals(head.Name, "ranks", StringComparison.Ordinal)) return false;
+        if (head.Kind != "string") return false;
+        // `Value` is `object?` — when freshly produced by the decoder it's a
+        // boxed string; when loaded from a serialised cache it's a
+        // JsonElement of kind String. Accept both shapes.
+        var ranksRaw = head.Value switch
+        {
+            string s => s,
+            JsonElement je when je.ValueKind == JsonValueKind.String => je.GetString(),
+            _ => null,
+        };
+        if (ranksRaw is null) return false;
+
+        var parts = ranksRaw.Split('|');
+        var parsed = new List<int>(parts.Length);
+        long product = 1;
+        foreach (var part in parts)
+        {
+            if (!int.TryParse(part, out var dim) || dim < 0)
+                return false;
+            parsed.Add(dim);
+            product *= dim;
+            if (product < 0 || product > int.MaxValue)
+                return false;
+        }
+
+        var expectedCells = (int)product;
+        if (elements.Count - 1 != expectedCells)
+            return false;
+
+        dimensions = parsed;
+        cells = elements.GetRange(1, expectedCells);
+        return true;
+    }
+
+    /// <summary>
+    /// Walks a deserialised field tree and applies the matrix reshape to
+    /// any <c>kind=array</c> node whose first element is a Sirenix
+    /// <c>"ranks"</c> header. Lets callers fix up values caches built
+    /// before the reshape shipped — and is idempotent on already-reshaped
+    /// data, so it's safe to call on fresh decoder output too.
+    /// </summary>
+    public static void ReshapeMatrices(List<InspectedFieldNode>? fields)
+    {
+        if (fields is null) return;
+        foreach (var field in fields)
+        {
+            if (field.Fields is not null) ReshapeMatrices(field.Fields);
+            if (field.Elements is not null) ReshapeMatrices(field.Elements);
+
+            if (string.Equals(field.Kind, "array", StringComparison.Ordinal)
+                && field.Elements is { } elements
+                && TryStripMatrixHeader(elements, out var dims, out var cells))
+            {
+                field.Kind = "matrix";
+                field.Dimensions = dims;
+                field.Count = cells.Count;
+                field.Elements = cells;
+            }
+        }
     }
 
     /// <summary>

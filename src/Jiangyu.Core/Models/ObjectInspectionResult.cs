@@ -57,6 +57,15 @@ public sealed class InspectedFieldNode
     public List<InspectedFieldNode>? Elements { get; set; }
     public List<InspectedFieldNode>? Fields { get; set; }
     public string? Reason { get; set; }
+    /// <summary>
+    /// Per-axis lengths for nodes with <c>Kind == "matrix"</c> — Sirenix
+    /// Odin emits multi-dim arrays as a flat sequence prefixed by a "ranks"
+    /// header (e.g. "9|9"); the decoder reshapes that into a matrix node so
+    /// the browser can render a 2D grid and modders can address cells via
+    /// patch <c>cell="r,c"</c> writes. <see cref="Elements"/> stays flat in
+    /// row-major order; consumers compute (row, col) from the index.
+    /// </summary>
+    public List<int>? Dimensions { get; set; }
 }
 
 [RpcType]

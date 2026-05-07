@@ -154,6 +154,40 @@ public class KdlEditorRoundTripTests
     }
 
     [Fact]
+    public void RemoveByValue_RoundTrips()
+    {
+        // HashSet<T> Remove: by-value, no index. Parser accepts the
+        // value form; serialiser emits it back the same way.
+        const string kdl = """
+            patch "WeaponTemplate" "weapon.test" {
+                remove "ItemSlots" enum="ItemSlot" "Pistol"
+                remove "SkillsRemoved" ref="SkillTemplate" "active.aimed_shot"
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+
+        var slotRemove = doc.Nodes[0].Directives[0];
+        Assert.Equal(KdlEditorOp.Remove, slotRemove.Op);
+        Assert.Equal("ItemSlots", slotRemove.FieldPath);
+        Assert.Null(slotRemove.Index);
+        Assert.NotNull(slotRemove.Value);
+        Assert.Equal(KdlEditorValueKind.Enum, slotRemove.Value!.Kind);
+        Assert.Equal("Pistol", slotRemove.Value.EnumValue);
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        Assert.Contains("remove \"ItemSlots\" enum=\"ItemSlot\" \"Pistol\"", text);
+        Assert.Contains(
+            "remove \"SkillsRemoved\" ref=\"SkillTemplate\" \"active.aimed_shot\"",
+            text);
+
+        var doc2 = KdlTemplateParser.ParseText(text);
+        Assert.Empty(doc2.Errors);
+        Assert.Equal(slotRemove.Value.EnumValue, doc2.Nodes[0].Directives[0].Value!.EnumValue);
+    }
+
+    [Fact]
     public void CompositeValue_RoundTrips()
     {
         const string kdl = """
