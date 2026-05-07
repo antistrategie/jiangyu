@@ -207,3 +207,26 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Other
         public int Placeholder { get; set; }
     }
 }
+
+namespace Il2CppJiangyu.Core.Tests.Templates.Fixtures.Wrapped
+{
+    // Il2Cpp-prefixed namespace twin used to exercise the resolver's prefix-
+    // stripping path. Its short-name twin lives in a deliberately different
+    // tail namespace (Fixtures.Plain, not Fixtures.Wrapped) so that a hint
+    // matching only one of them via prefix-strip selects unambiguously.
+    public class FixtureWrappedTwin
+    {
+        public int Placeholder { get; set; }
+    }
+}
+
+namespace Jiangyu.Core.Tests.Templates.Fixtures.Plain
+{
+    // Plain-namespace short-name twin. The unwrapped form of the
+    // Il2Cpp-wrapped twin's namespace differs from this one, so each twin is
+    // hint-selectable on its own.
+    public class FixtureWrappedTwin
+    {
+        public string? Other { get; set; }
+    }
+}

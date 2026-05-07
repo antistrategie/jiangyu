@@ -13,10 +13,24 @@ namespace Jiangyu.Core.Templates;
 /// </summary>
 public static class TemplateMemberQuery
 {
+    /// <summary>
+    /// Resolve <paramref name="query"/> against <paramref name="catalog"/>.
+    /// </summary>
+    /// <param name="subtypeHints">
+    /// Per-segment concrete-subtype overrides used to descend through
+    /// polymorphic reference arrays. Keyed by segment index.
+    /// </param>
+    /// <param name="namespaceHint">
+    /// Optional CLR namespace of the source type, forwarded to
+    /// <see cref="TemplateTypeCatalog.ResolveType"/> to disambiguate
+    /// short-name collisions. See that method's docs for the prefix-stripping
+    /// rules.
+    /// </param>
     public static QueryResult Run(
         TemplateTypeCatalog catalog,
         string query,
-        IReadOnlyDictionary<int, string>? subtypeHints = null)
+        IReadOnlyDictionary<int, string>? subtypeHints = null,
+        string? namespaceHint = null)
     {
         if (string.IsNullOrWhiteSpace(query))
             return QueryResult.FromError("query is empty.");
@@ -32,7 +46,7 @@ public static class TemplateMemberQuery
         // Find the longest prefix of dot-joined identifier segments (i.e.
         // segments without '[') that resolves to a known type. Anything after
         // becomes the field path.
-        var typeCutoff = FindBestTypePrefix(catalog, segments, out var resolvedType, out var resolutionError);
+        var typeCutoff = FindBestTypePrefix(catalog, segments, namespaceHint, out var resolvedType, out var resolutionError);
         if (resolvedType == null)
             return QueryResult.FromError(resolutionError ?? $"no type prefix in '{trimmed}' matched a known type.");
 
@@ -52,6 +66,7 @@ public static class TemplateMemberQuery
     private static int FindBestTypePrefix(
         TemplateTypeCatalog catalog,
         string[] segments,
+        string? namespaceHint,
         out Type? resolvedType,
         out string? error)
     {
@@ -69,7 +84,7 @@ public static class TemplateMemberQuery
         for (var len = 1; len <= maxPrefixLen; len++)
         {
             var candidate = string.Join('.', segments.Take(len));
-            var match = catalog.ResolveType(candidate, out var candidates, out var resolveError);
+            var match = catalog.ResolveType(candidate, out var candidates, out var resolveError, namespaceHint);
             if (match != null)
             {
                 bestLen = len;

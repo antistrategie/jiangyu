@@ -98,6 +98,14 @@ public sealed class TemplateInstanceEntry
     [JsonPropertyName("className")]
     public required string ClassName { get; init; }
 
+    /// <summary>
+    /// CLR namespace of the script class, when known. Disambiguates short-name
+    /// collisions (e.g. <c>Effects.Attack</c> vs <c>AI.Behaviors.Attack</c>) at
+    /// query time. Null when the script reports an empty namespace.
+    /// </summary>
+    [JsonPropertyName("namespaceName")]
+    public string? NamespaceName { get; init; }
+
     [JsonPropertyName("identity")]
     public required TemplateIdentity Identity { get; init; }
 

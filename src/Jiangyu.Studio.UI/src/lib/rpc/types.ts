@@ -126,6 +126,7 @@ export interface TemplateIdentity {
 export interface TemplateInstanceEntry {
   name: string;
   className: string;
+  namespaceName?: string | null;
   identity: TemplateIdentity;
   references?: TemplateEdge[] | null;
 }

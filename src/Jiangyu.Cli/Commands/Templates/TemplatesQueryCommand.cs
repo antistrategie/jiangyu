@@ -39,6 +39,10 @@ public static class TemplatesQueryCommand
         {
             Description = "Include read-only members (not patchable)",
         };
+        var namespaceOption = new Option<string?>("--namespace")
+        {
+            Description = "CLR namespace hint to disambiguate short-name collisions (e.g. \"Menace.Tactical.Skills.Effects\")",
+        };
 
         var command = new Command("query", "Navigate the template type tree offline from Assembly-CSharp.dll")
         {
@@ -46,6 +50,7 @@ public static class TemplatesQueryCommand
             assemblyOption,
             jsonOption,
             includeReadOnlyOption,
+            namespaceOption,
         };
 
         command.SetAction(parseResult =>
@@ -54,6 +59,7 @@ public static class TemplatesQueryCommand
             var assemblyOverride = parseResult.GetValue(assemblyOption);
             var emitJson = parseResult.GetValue(jsonOption);
             var includeReadOnly = parseResult.GetValue(includeReadOnlyOption);
+            var namespaceHint = parseResult.GetValue(namespaceOption);
 
             string? assemblyPath = assemblyOverride;
             string? gamePath = null;
@@ -111,7 +117,7 @@ public static class TemplatesQueryCommand
             {
                 var supplement = cachePath is not null ? Il2CppMetadataCache.LoadIfPresent(cachePath) : null;
                 using var catalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirectories, supplement);
-                var result = TemplateMemberQuery.Run(catalog, path);
+                var result = TemplateMemberQuery.Run(catalog, path, namespaceHint: namespaceHint);
 
                 return result.Kind switch
                 {

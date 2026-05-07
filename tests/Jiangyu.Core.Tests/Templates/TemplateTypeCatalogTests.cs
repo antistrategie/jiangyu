@@ -49,6 +49,91 @@ public class TemplateTypeCatalogTests
     }
 
     [Fact]
+    public void ResolveType_NamespaceHintDisambiguatesShortName()
+    {
+        using var catalog = Load();
+        var type = catalog.ResolveType(
+            "FixtureSkillTemplate",
+            out _,
+            out var error,
+            namespaceHint: "Jiangyu.Core.Tests.Templates.Fixtures.Gameplay");
+        Assert.Null(error);
+        Assert.NotNull(type);
+        Assert.Equal("Jiangyu.Core.Tests.Templates.Fixtures.Gameplay.FixtureSkillTemplate", type!.FullName);
+    }
+
+    [Fact]
+    public void ResolveType_NamespaceHintMatchesIl2CppWrappedCandidate()
+    {
+        // Script assets report the unwrapped namespace; runtime assembly
+        // types are wrapped under Il2Cpp*. The hint here is the unwrapped
+        // form, and only the Il2Cpp-prefixed twin matches it (after the
+        // resolver strips the prefix). The plain twin is in a different
+        // tail namespace (Fixtures.Plain) so it does not satisfy the hint.
+        using var catalog = Load();
+        var type = catalog.ResolveType(
+            "FixtureWrappedTwin",
+            out _,
+            out var error,
+            namespaceHint: "Jiangyu.Core.Tests.Templates.Fixtures.Wrapped");
+
+        Assert.Null(error);
+        Assert.NotNull(type);
+        Assert.Equal(
+            "Il2CppJiangyu.Core.Tests.Templates.Fixtures.Wrapped.FixtureWrappedTwin",
+            type!.FullName);
+    }
+
+    [Fact]
+    public void ResolveType_NamespaceHintMatchesPlainCandidate()
+    {
+        // Symmetric direction: hint matches the plain twin directly without
+        // any prefix stripping, while the Il2Cpp-prefixed twin's namespace
+        // (Il2CppJiangyu.*.Wrapped) does not match this hint after stripping.
+        using var catalog = Load();
+        var type = catalog.ResolveType(
+            "FixtureWrappedTwin",
+            out _,
+            out var error,
+            namespaceHint: "Jiangyu.Core.Tests.Templates.Fixtures.Plain");
+
+        Assert.Null(error);
+        Assert.NotNull(type);
+        Assert.Equal(
+            "Jiangyu.Core.Tests.Templates.Fixtures.Plain.FixtureWrappedTwin",
+            type!.FullName);
+    }
+
+    [Fact]
+    public void ResolveType_NamespaceHintDoesNotOverStripNonIl2CppNamespaces()
+    {
+        // Negative guard: a hint that would only match if the resolver
+        // stripped a non-Il2Cpp prefix from the candidate must NOT match.
+        using var catalog = Load();
+        var type = catalog.ResolveType(
+            "FixtureSkillTemplate",
+            out _,
+            out _,
+            namespaceHint: "Core.Tests.Templates.Fixtures.Gameplay");
+        Assert.Null(type);
+    }
+
+    [Fact]
+    public void ResolveType_NamespaceHintFallsBackToAmbiguityWhenMiss()
+    {
+        using var catalog = Load();
+        var type = catalog.ResolveType(
+            "FixtureSkillTemplate",
+            out var candidates,
+            out var error,
+            namespaceHint: "Some.Namespace.That.Does.Not.Exist");
+        Assert.Null(type);
+        Assert.NotNull(error);
+        Assert.Contains("ambiguous", error);
+        Assert.Equal(2, candidates.Count);
+    }
+
+    [Fact]
     public void ResolveType_ReportsMissing()
     {
         using var catalog = Load();

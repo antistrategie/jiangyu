@@ -94,12 +94,23 @@ public sealed class TemplateTypeCatalog : IDisposable
     /// assembly. Accepts both short names (<c>EntityTemplate</c>) and
     /// fully-qualified names (<c>Il2CppMenace.Tactical.EntityTemplate</c>).
     /// Populates <paramref name="ambiguousCandidates"/> when a short name
-    /// matches multiple types.
+    /// matches multiple types and no <paramref name="namespaceHint"/> narrows
+    /// the choice.
     /// </summary>
+    /// <param name="namespaceHint">
+    /// Optional CLR namespace of the source type (as the script asset reports
+    /// it, e.g. <c>Menace.Tactical.Skills.Effects</c>). Compared against each
+    /// candidate's <see cref="Type.Namespace"/>, with Il2CppInterop's
+    /// <c>Il2Cpp</c> prefix stripped from the candidate before comparing
+    /// because the script asset stores the unwrapped form. Ignored on the
+    /// FQN-match path: callers that already have a fully-qualified name take
+    /// precedence over any hint.
+    /// </param>
     public Type? ResolveType(
         string nameOrFullName,
         out IReadOnlyList<Type> ambiguousCandidates,
-        out string? error)
+        out string? error,
+        string? namespaceHint = null)
     {
         ambiguousCandidates = [];
 
@@ -112,6 +123,8 @@ public sealed class TemplateTypeCatalog : IDisposable
         var exact = _allTypes.FirstOrDefault(t => t.FullName == nameOrFullName);
         if (exact != null)
         {
+            // FQN match wins; a stale or wrong hint is silently accepted here
+            // by design (the caller asked for a specific FullName).
             error = null;
             return exact;
         }
@@ -128,6 +141,26 @@ public sealed class TemplateTypeCatalog : IDisposable
 
         if (shortMatches.Length > 1)
         {
+            if (!string.IsNullOrWhiteSpace(namespaceHint))
+            {
+                var hintMatches = shortMatches
+                    .Where(t => NamespaceMatchesHint(t.Namespace, namespaceHint))
+                    .ToArray();
+
+                if (hintMatches.Length == 1)
+                {
+                    error = null;
+                    return hintMatches[0];
+                }
+
+                if (hintMatches.Length > 1)
+                {
+                    ambiguousCandidates = hintMatches;
+                    error = $"type name '{nameOrFullName}' is ambiguous even within namespace '{namespaceHint}'.";
+                    return null;
+                }
+            }
+
             ambiguousCandidates = shortMatches;
             error = $"type name '{nameOrFullName}' is ambiguous.";
             return null;
@@ -135,6 +168,30 @@ public sealed class TemplateTypeCatalog : IDisposable
 
         error = $"no type '{nameOrFullName}' found in the assembly.";
         return null;
+    }
+
+    private const string Il2CppNamespacePrefix = "Il2Cpp";
+
+    private static bool NamespaceMatchesHint(string? candidateNamespace, string namespaceHint)
+    {
+        if (string.IsNullOrEmpty(candidateNamespace))
+            return false;
+        if (string.Equals(candidateNamespace, namespaceHint, StringComparison.Ordinal))
+            return true;
+
+        // Il2CppInterop wraps native types under an Il2Cpp-prefixed namespace
+        // (e.g. Il2CppMenace.Tactical.Skills.Effects), but the script asset
+        // reports the unwrapped form (Menace.Tactical.Skills.Effects). Strip
+        // the prefix once and re-compare so the index entry's hint still
+        // matches the wrapped candidate.
+        if (candidateNamespace.StartsWith(Il2CppNamespacePrefix, StringComparison.Ordinal))
+        {
+            var unwrapped = candidateNamespace[Il2CppNamespacePrefix.Length..];
+            if (string.Equals(unwrapped, namespaceHint, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>

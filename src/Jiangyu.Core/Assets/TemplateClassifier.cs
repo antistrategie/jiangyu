@@ -19,9 +19,13 @@ public static class TemplateClassifier
         !string.IsNullOrWhiteSpace(className)
         && className.EndsWith("Template", StringComparison.Ordinal);
 
-    public static bool TryGetTemplateClassName(IUnityObjectBase asset, out string? className)
+    public static bool TryGetTemplateClassName(
+        IUnityObjectBase asset,
+        out string? className,
+        out string? namespaceName)
     {
         className = null;
+        namespaceName = null;
 
         if (asset is not IMonoBehaviour monoBehaviour)
         {
@@ -40,6 +44,7 @@ public static class TemplateClassifier
         }
 
         className = scriptClassName;
+        namespaceName = NullIfEmpty(script.Namespace.String);
         return true;
     }
 
@@ -59,9 +64,11 @@ public static class TemplateClassifier
         IMonoBehaviour monoBehaviour,
         IAssemblyManager assemblyManager,
         out string? className,
+        out string? namespaceName,
         out string? ancestorClassName)
     {
         className = null;
+        namespaceName = null;
         ancestorClassName = null;
 
         if (!monoBehaviour.TryGetScript(out IMonoScript? script))
@@ -94,9 +101,19 @@ public static class TemplateClassifier
         }
 
         className = scriptClassName;
+        // Prefer the resolved TypeDefinition's namespace; it's authoritative
+        // for the inheritance path (we already walked the managed type graph)
+        // and avoids a second round-trip through Utf8String. Fall back to the
+        // script asset's namespace for the rare case where TypeDefinition
+        // doesn't carry one.
+        namespaceName = NullIfEmpty(typeDefinition.Namespace?.ToString())
+            ?? NullIfEmpty(script.Namespace.String);
         ancestorClassName = ancestor;
         return true;
     }
+
+    private static string? NullIfEmpty(string? value) =>
+        string.IsNullOrEmpty(value) ? null : value;
 
     /// <summary>
     /// Walk the base type chain (skipping the type itself) looking for a class name

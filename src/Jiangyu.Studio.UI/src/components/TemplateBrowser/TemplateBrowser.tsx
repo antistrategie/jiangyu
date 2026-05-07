@@ -78,8 +78,12 @@ function templatesSearch(): Promise<TemplateSearchResult> {
   return rpcCall<TemplateSearchResult>("templatesSearch");
 }
 
-function templatesQuery(typeName: string, fieldPath?: string): Promise<TemplateQueryResult> {
-  return rpcCall<TemplateQueryResult>("templatesQuery", { typeName, fieldPath });
+function templatesQuery(
+  typeName: string,
+  fieldPath?: string,
+  namespaceName?: string | null,
+): Promise<TemplateQueryResult> {
+  return rpcCall<TemplateQueryResult>("templatesQuery", { typeName, fieldPath, namespaceName });
 }
 
 function templatesInspect(params: {
@@ -325,10 +329,10 @@ export function TemplateBrowser({
   useEffect(() => {
     if (!focusedInstance) return;
     const token = ++memberTokenRef.current;
-    const { className, identity } = focusedInstance;
+    const { className, namespaceName, identity } = focusedInstance;
 
     // Fetch schema (existing)
-    void templatesQuery(className)
+    void templatesQuery(className, undefined, namespaceName)
       .then((result) => {
         if (memberTokenRef.current !== token) return;
         setMemberData(result);

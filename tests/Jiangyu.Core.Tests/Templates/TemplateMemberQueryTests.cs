@@ -209,6 +209,36 @@ public class TemplateMemberQueryTests
     }
 
     [Fact]
+    public void AmbiguousShortName_NamespaceHintResolves()
+    {
+        using var catalog = Load();
+        var result = TemplateMemberQuery.Run(
+            catalog,
+            "FixtureSkillTemplate",
+            namespaceHint: "Jiangyu.Core.Tests.Templates.Fixtures.Gameplay");
+
+        Assert.Equal(QueryResultKind.TypeNode, result.Kind);
+        Assert.Equal(
+            "Jiangyu.Core.Tests.Templates.Fixtures.Gameplay.FixtureSkillTemplate",
+            result.CurrentType!.FullName);
+        // Confirms the resolved type carries Gameplay's fields, not Other's.
+        Assert.Contains(result.Members!, m => m.Name == "Uses");
+    }
+
+    [Fact]
+    public void AmbiguousShortName_NamespaceHintMissFallsBackToError()
+    {
+        using var catalog = Load();
+        var result = TemplateMemberQuery.Run(
+            catalog,
+            "FixtureSkillTemplate",
+            namespaceHint: "Some.Namespace.That.Does.Not.Exist");
+
+        Assert.Equal(QueryResultKind.Error, result.Kind);
+        Assert.Contains("ambiguous", result.ErrorMessage!);
+    }
+
+    [Fact]
     public void UnknownMember_Errors()
     {
         using var catalog = Load();

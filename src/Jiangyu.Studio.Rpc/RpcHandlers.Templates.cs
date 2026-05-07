@@ -128,10 +128,12 @@ public static partial class RpcHandlers
         "Field schema for a template type, or for a specific field path. Returns field names, types, collection/scalar/reference flags, polymorphic base classes, writable status, member lists, and — for any enum or [NamedArray(typeof(T))] field — the paired enum's full {name, value} member list inlined as `enumMembers` (and `namedArrayEnumTypeName` for NamedArray fields). Always call this first when you need enum-member names or NamedArray index labels; do NOT guess the enum type and do NOT call jiangyu_templates_enum_members until you've seen the exact name in this response.")]
     [McpParam("typeName", "string", "Template type name (e.g. \"EntityTemplate\").", Required = true)]
     [McpParam("fieldPath", "string", "Dot-separated field path to drill into (e.g. \"Properties.Accuracy\").")]
+    [McpParam("namespaceName", "string", "Optional CLR namespace of the script class (e.g. \"Menace.Tactical.Skills.Effects\"). Disambiguates short-name collisions.")]
     internal static JsonElement TemplatesQuery(JsonElement? parameters)
     {
         var typeName = RequireString(parameters, "typeName");
         var fieldPath = TryGetString(parameters, "fieldPath");
+        var namespaceName = TryGetString(parameters, "namespaceName");
 
         var resolution = EnvironmentContext.ResolveFromGlobalConfig();
         if (!resolution.Success)
@@ -156,7 +158,7 @@ public static partial class RpcHandlers
             ? typeName
             : $"{typeName}.{fieldPath}";
 
-        var result = TemplateMemberQuery.Run(catalog, queryPath);
+        var result = TemplateMemberQuery.Run(catalog, queryPath, namespaceHint: namespaceName);
 
         if (result.Kind == QueryResultKind.Error)
             throw new InvalidOperationException(result.ErrorMessage ?? "Query failed.");

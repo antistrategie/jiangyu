@@ -27,10 +27,10 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
     private const string IndexFileName = "template-index.json";
     private const string ManifestFileName = "template-index-manifest.json";
     private const string ValuesFileName = "template-values.json";
-    // v6: NamedArray inspect elements carry the paired enum member's name on
-    // each slot (ManagedTypeInspectionEnricher). Older caches lack the names
-    // and need a rebuild for the agent's inspect output to be self-describing.
-    internal const int CurrentFormatVersion = 6;
+    // v7: TemplateInstanceEntry carries the script's CLR namespace so the
+    // member-query catalogue can disambiguate short-name collisions like
+    // Effects.Attack vs AI.Behaviors.Attack. Older caches lack the field.
+    internal const int CurrentFormatVersion = 7;
     private const int ValuesInspectDepth = 6;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -250,7 +250,8 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
             foreach (IUnityObjectBase asset in collection)
             {
                 // Fast path: suffix match.
-                if (TemplateClassifier.TryGetTemplateClassName(asset, out string? templateClassName))
+                if (TemplateClassifier.TryGetTemplateClassName(
+                    asset, out string? templateClassName, out string? templateNamespace))
                 {
                     var identity = new TemplateIdentity
                     {
@@ -261,6 +262,7 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
                     {
                         Name = asset.GetBestName(),
                         ClassName = templateClassName!,
+                        NamespaceName = templateNamespace,
                         Identity = identity,
                     });
                     classificationByType.TryAdd(templateClassName!, ("suffix", null));
@@ -273,7 +275,11 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
                 if (assemblyManager is not null
                     && asset is IMonoBehaviour monoBehaviour
                     && TemplateClassifier.TryGetInheritedTemplateClassName(
-                        monoBehaviour, assemblyManager, out string? inheritedClassName, out string? ancestorClassName))
+                        monoBehaviour,
+                        assemblyManager,
+                        out string? inheritedClassName,
+                        out string? inheritedNamespace,
+                        out string? ancestorClassName))
                 {
                     var identity = new TemplateIdentity
                     {
@@ -284,6 +290,7 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
                     {
                         Name = asset.GetBestName(),
                         ClassName = inheritedClassName!,
+                        NamespaceName = inheritedNamespace,
                         Identity = identity,
                     });
                     classificationByType.TryAdd(inheritedClassName!, ("inheritance", ancestorClassName));
