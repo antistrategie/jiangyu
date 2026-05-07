@@ -996,8 +996,14 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
-    public void HandlerConstruction_RejectsOnNonCollectionField()
+    public void HandlerConstruction_RejectsOnConcreteScalarField()
     {
+        // InitialSkill is a FixtureSkillTemplate scalar with no subclasses.
+        // handler= on a non-collection-non-polymorphic field is meaningless
+        // (the modder probably wanted ref= or composite=), so the validator
+        // rejects to surface the typo. Polymorphic-scalar destinations
+        // (interface/abstract field types with subclasses) are exercised
+        // separately by HandlerConstruction_AcceptsOnPolymorphicScalarField.
         using var catalog = Load();
         var log = new RecordingLog();
         var patches = new[]
@@ -1029,7 +1035,228 @@ public class TemplateCatalogValidatorTests
         var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
 
         Assert.Equal(1, errors);
-        Assert.Contains(log.Errors, e => e.Contains("not a collection", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(log.Errors, e => e.Contains("non-polymorphic", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ScalarPolymorphicDescent_AcceptsTypedInnerWrite()
+    {
+        // Phase 2a: descend into a polymorphic scalar field (interface-typed,
+        // Odin-routed in production) by naming the concrete subtype on the
+        // outer set. The inner directive resolves against the subtype's
+        // members, so writes to subclass-specific fields validate cleanly.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "Radius",
+                        Descent = [new TemplateDescentStep
+                        {
+                            Field = "AoEShape",
+                            Index = null,
+                            Subtype = "FixtureAoEShapeImpl",
+                        }],
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.Int32,
+                            Int32 = 3,
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+    }
+
+    [Fact]
+    public void ScalarPolymorphicDescent_RejectsHintNotInSubtypeFamily()
+    {
+        // Negative guard: a type= on a scalar descent must name a real
+        // subtype of the field's declared type. Hints that resolve to
+        // unrelated classes are rejected.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "Radius",
+                        Descent = [new TemplateDescentStep
+                        {
+                            Field = "AoEShape",
+                            Index = null,
+                            Subtype = "FixtureSkillTemplate", // not an IFixtureAoEShape
+                        }],
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.Int32,
+                            Int32 = 1,
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains(log.Errors, e => e.Contains("not a subtype", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void HandlerConstruction_AppendsOdinRoutedListElement()
+    {
+        // Phase 2c: appending a polymorphic non-ScriptableObject element to
+        // an Odin-routed reference array (FixtureEntity.AoEShapes is
+        // IFixtureAoEShape[]). The applier's TryConstructComposite handles
+        // plain managed classes alongside ScriptableObjects, so the
+        // validator must accept the Append shape symmetrically.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Append,
+                        FieldPath = "AoEShapes",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.HandlerConstruction,
+                            HandlerConstruction = new CompiledTemplateComposite
+                            {
+                                TypeName = "FixtureAoEShapeImpl",
+                                Operations = SetOps(
+                                    ("Radius", new CompiledTemplateValue
+                                    {
+                                        Kind = CompiledTemplateValueKind.Int32,
+                                        Int32 = 7,
+                                    })),
+                            },
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+    }
+
+    [Fact]
+    public void HandlerConstruction_RejectsEmptyTypeNameOnPolymorphicScalar()
+    {
+        // Polymorphic scalar destination always needs a TypeName because the
+        // gate above already confirmed it has subtypes the modder must pick.
+        // Without one, the runtime applier would synthesise the abstract
+        // base name and crash on construction; rejecting at validate time
+        // keeps the failure obvious.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "AoEShape",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.HandlerConstruction,
+                            HandlerConstruction = new CompiledTemplateComposite
+                            {
+                                TypeName = "",
+                                Operations = [],
+                            },
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains(log.Errors, e => e.Contains("must name a concrete subtype", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void HandlerConstruction_AcceptsOnPolymorphicScalarField()
+    {
+        // FixtureEntity.AoEShape is IFixtureAoEShape scalar with concrete
+        // implementations. handler="<Subtype>" on a Set must be accepted so
+        // the modder can construct an Odin-routed condition like
+        // Attack.DamageFilterCondition: ITacticalCondition without writing
+        // to a collection slot.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "AoEShape",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.HandlerConstruction,
+                            HandlerConstruction = new CompiledTemplateComposite
+                            {
+                                TypeName = "FixtureAoEShapeImpl",
+                                Operations = SetOps(
+                                    ("Radius", new CompiledTemplateValue
+                                    {
+                                        Kind = CompiledTemplateValueKind.Int32,
+                                        Int32 = 4,
+                                    })),
+                            },
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
     }
 
     [Fact]

@@ -226,6 +226,71 @@ public class TemplateMemberQueryTests
     }
 
     [Fact]
+    public void ElementTypeContext_DisambiguatesAmbiguousBareTypeName()
+    {
+        // Visual-editor flow: templatesQuery is asked for a polymorphic
+        // subtype short name ("FixtureConcreteDerived") with no preceding
+        // path. The bare lookup is ambiguous because of the Other.*
+        // namespace twin; passing the parent collection's element type
+        // narrows to the subtype family, which contains exactly one
+        // candidate.
+        using var catalog = Load();
+        var result = TemplateMemberQuery.Run(
+            catalog,
+            "FixtureConcreteDerived",
+            elementTypeContext: "FixtureBaseDataTemplate");
+
+        Assert.Equal(QueryResultKind.TypeNode, result.Kind);
+        Assert.Equal(
+            "Jiangyu.Core.Tests.Templates.Fixtures.Gameplay.FixtureConcreteDerived",
+            result.CurrentType!.FullName);
+    }
+
+    [Fact]
+    public void ElementTypeContext_NotProvidedStillFailsForAmbiguousTypeName()
+    {
+        // Sanity check: without the context, the ambiguity persists. Pinning
+        // this so a regression that silently picks one twin doesn't go
+        // unnoticed.
+        using var catalog = Load();
+        var result = TemplateMemberQuery.Run(catalog, "FixtureConcreteDerived");
+
+        Assert.Equal(QueryResultKind.Error, result.Kind);
+        Assert.Contains("ambiguous", result.ErrorMessage!);
+    }
+
+    [Fact]
+    public void PolymorphicDescent_ResolvesShortNameAgainstSubtypeFamilyOnly()
+    {
+        // FixtureConcreteDerived exists in two namespaces: one is a subtype
+        // of FixtureBaseDataTemplate (the descent's element type), the other
+        // is a plain class. The polymorphic descent resolver picks the
+        // subtype-family member without ambiguity, mirroring the production
+        // case where "Attack" routes to Effects.Attack rather than the
+        // unrelated AI.Behaviors.Attack.
+        using var catalog = Load();
+        var hints = new Dictionary<int, string> { [0] = "FixtureConcreteDerived" };
+        var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.Handlers[0].DerivedField", hints);
+
+        Assert.Equal(QueryResultKind.Leaf, result.Kind);
+        Assert.Equal(CompiledTemplateValueKind.Int32, result.PatchScalarKind);
+    }
+
+    [Fact]
+    public void PolymorphicDescent_HintNotInSubtypeFamilyErrors()
+    {
+        // FixtureSkillTemplate isn't a subtype of FixtureBaseDataTemplate;
+        // the descent must reject it instead of resolving to a sibling
+        // hierarchy.
+        using var catalog = Load();
+        var hints = new Dictionary<int, string> { [0] = "FixtureSkillTemplate" };
+        var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.Handlers[0].Anything", hints);
+
+        Assert.Equal(QueryResultKind.Error, result.Kind);
+        Assert.Contains("not a subtype", result.ErrorMessage!);
+    }
+
+    [Fact]
     public void AmbiguousShortName_NamespaceHintMissFallsBackToError()
     {
         using var catalog = Load();

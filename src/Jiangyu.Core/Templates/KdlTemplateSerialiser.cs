@@ -97,7 +97,9 @@ public static class KdlTemplateSerialiser
                 }
 
                 WriteIndent(sb, indent);
-                sb.Append($"set \"{Esc(outerStep.Field)}\" index={outerStep.Index.ToString(CultureInfo.InvariantCulture)}");
+                sb.Append($"set \"{Esc(outerStep.Field)}\"");
+                if (outerStep.Index.HasValue)
+                    sb.Append($" index={outerStep.Index.Value.ToString(CultureInfo.InvariantCulture)}");
                 if (!string.IsNullOrEmpty(outerStep.Subtype))
                     sb.Append($" type=\"{Esc(outerStep.Subtype)}\"");
                 sb.AppendLine(" {");

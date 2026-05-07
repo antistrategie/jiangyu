@@ -26,11 +26,22 @@ public static class TemplateMemberQuery
     /// short-name collisions. See that method's docs for the prefix-stripping
     /// rules.
     /// </param>
+    /// <param name="elementTypeContext">
+    /// Optional parent collection element-type. When the caller knows the
+    /// query's root type is a polymorphic subtype within a known family
+    /// (e.g. the visual editor's "Attack" picked from a list of
+    /// <c>SkillEventHandlerTemplate</c> descendants), passing the family
+    /// here restricts short-name resolution to the subtype set, picking
+    /// <c>Effects.Attack</c> over the unrelated <c>AI.Behaviors.Attack</c>
+    /// without needing a namespace hint. Ignored when the type prefix
+    /// already resolves unambiguously.
+    /// </param>
     public static QueryResult Run(
         TemplateTypeCatalog catalog,
         string query,
         IReadOnlyDictionary<int, string>? subtypeHints = null,
-        string? namespaceHint = null)
+        string? namespaceHint = null,
+        string? elementTypeContext = null)
     {
         if (string.IsNullOrWhiteSpace(query))
             return QueryResult.FromError("query is empty.");
@@ -47,6 +58,32 @@ public static class TemplateMemberQuery
         // segments without '[') that resolves to a known type. Anything after
         // becomes the field path.
         var typeCutoff = FindBestTypePrefix(catalog, segments, namespaceHint, out var resolvedType, out var resolutionError);
+
+        // When the bare type lookup is ambiguous AND the caller supplied an
+        // element-type context, retry the resolution restricted to subtypes
+        // of that family. Picks Effects.Attack over AI.Behaviors.Attack
+        // without making the caller produce an FQN or namespace hint.
+        if (resolvedType == null
+            && !string.IsNullOrWhiteSpace(elementTypeContext)
+            && segments.Length > 0)
+        {
+            var firstSegment = segments[0];
+            // Only retry when the first segment was the type-prefix attempt;
+            // ambiguity past the first segment is a different shape (a
+            // member off a resolved type, etc.) and not what this hint is for.
+            var elementContextType = catalog.ResolveType(elementTypeContext, out _, out _);
+            if (elementContextType != null)
+            {
+                var subtypeMatch = catalog.ResolveSubtypeHint(elementContextType, firstSegment, out _);
+                if (subtypeMatch != null)
+                {
+                    resolvedType = subtypeMatch;
+                    typeCutoff = 1;
+                    resolutionError = null;
+                }
+            }
+        }
+
         if (resolvedType == null)
             return QueryResult.FromError(resolutionError ?? $"no type prefix in '{trimmed}' matched a known type.");
 
@@ -206,15 +243,21 @@ public static class TemplateMemberQuery
                             + $"(at '{attempted}').");
                     }
 
-                    var resolved = catalog.ResolveType(hint, out var ambiguous, out var hintError);
+                    // Resolve the hint within the element type's concrete-
+                    // subtype set, not against the whole assembly. This both
+                    // disambiguates (e.g. "Attack" picks Effects.Attack
+                    // unambiguously over AI.Behaviors.Attack, which is not a
+                    // SkillEventHandlerTemplate subtype) and tightens the
+                    // error message when the hint is genuinely off-tree.
+                    var resolved = catalog.ResolveSubtypeHint(elementType, hint, out var matchedFullNames);
                     if (resolved == null)
                     {
-                        var ambiguityNote = ambiguous.Count > 0
-                            ? " candidates: " + string.Join(", ", ambiguous.Select(t => t.FullName))
+                        var note = matchedFullNames.Count > 0
+                            ? " candidates: " + string.Join(", ", matchedFullNames)
                             : string.Empty;
                         return QueryResult.FromError(
-                            $"type=\"{hint}\" on descent into '{member.Name}[…]' did not resolve "
-                            + $"({hintError ?? "unknown error"}).{ambiguityNote}");
+                            $"type=\"{hint}\" on descent into '{member.Name}[…]' "
+                            + $"is not a subtype of '{catalog.FriendlyName(elementType)}'.{note}");
                     }
 
                     if (!elementType.IsAssignableFrom(resolved))
@@ -231,6 +274,35 @@ public static class TemplateMemberQuery
             else
             {
                 currentType = memberType;
+
+                // Scalar polymorphic descent: a non-collection field whose
+                // declared type is a polymorphic base (e.g. Odin-routed
+                // Attack.DamageFilterCondition: ITacticalCondition). The
+                // modder supplies type="<Subtype>" on the outer descent
+                // block; the parser threads it through subtypeHints. Switch
+                // currentType so subsequent segments resolve subclass
+                // members. We only perform this when the next segment is
+                // about to navigate past this one (i < length-1) and there
+                // is something to switch to.
+                if (!hasIndexer
+                    && i < fieldSegments.Length - 1
+                    && subtypeHints != null
+                    && subtypeHints.TryGetValue(i, out var scalarHint)
+                    && !string.IsNullOrEmpty(scalarHint))
+                {
+                    var resolvedScalar = catalog.ResolveSubtypeHint(memberType, scalarHint, out var matchedFullNames);
+                    if (resolvedScalar == null)
+                    {
+                        var note = matchedFullNames.Count > 0
+                            ? " candidates: " + string.Join(", ", matchedFullNames)
+                            : string.Empty;
+                        return QueryResult.FromError(
+                            $"type=\"{scalarHint}\" on descent into '{member.Name}' "
+                            + $"is not a subtype of '{catalog.FriendlyName(memberType)}'.{note}");
+                    }
+                    currentType = resolvedScalar;
+                    lastMemberType = resolvedScalar;
+                }
             }
         }
 

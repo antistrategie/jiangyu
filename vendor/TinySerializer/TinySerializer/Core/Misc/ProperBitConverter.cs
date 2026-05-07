@@ -1,14 +1,14 @@
 #pragma warning disable 0675
-    
-    using System;
-    using System.Globalization;
-    using System.Runtime.InteropServices;
-    
-    namespace TinySerializer.Core.Misc {
+
+using System;
+using System.Globalization;
+using System.Runtime.InteropServices;
+
+namespace TinySerializer.Core.Misc {
     public static class ProperBitConverter {
         private static readonly uint[] ByteToHexCharLookupLowerCase = CreateByteToHexLookup(false);
         private static readonly uint[] ByteToHexCharLookupUpperCase = CreateByteToHexLookup(true);
-        
+
         private static readonly byte[] HexToByteLookup = new byte[] {
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -27,10 +27,10 @@
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
         };
-        
+
         private static uint[] CreateByteToHexLookup(bool upperCase) {
             uint[] result = new uint[256];
-            
+
             if (upperCase) {
                 for (int i = 0; i < 256; i++) {
                     string s = i.ToString("X2", CultureInfo.InvariantCulture);
@@ -42,89 +42,89 @@
                     result[i] = ((uint)s[0]) + ((uint)s[1] << 16);
                 }
             }
-            
+
             return result;
         }
-        
+
         public static string BytesToHexString(byte[] bytes, bool lowerCaseHexChars = true) {
             uint[] lookup = lowerCaseHexChars ? ByteToHexCharLookupLowerCase : ByteToHexCharLookupUpperCase;
             char[] result = new char[bytes.Length * 2];
-            
+
             for (int i = 0; i < bytes.Length; i++) {
                 int offset = i * 2;
                 uint val = lookup[bytes[i]];
                 result[offset] = (char)val;
                 result[offset + 1] = (char)(val >> 16);
             }
-            
+
             return new string(result);
         }
-        
+
         public static byte[] HexStringToBytes(string hex) {
             int length = hex.Length;
             int rLength = length / 2;
-            
+
             if (length % 2 != 0) {
                 throw new ArgumentException("Hex string must have an even length.");
             }
-            
+
             byte[] result = new byte[rLength];
-            
+
             for (int i = 0; i < rLength; i++) {
                 int offset = i * 2;
-                
+
                 byte b1;
                 byte b2;
-                
+
                 try {
                     b1 = HexToByteLookup[hex[offset]];
-                    
+
                     if (b1 == 0xff) {
                         throw new ArgumentException("Expected a hex character, got '" + hex[offset] + "' at string index '" + offset + "'.");
                     }
                 } catch (IndexOutOfRangeException) {
                     throw new ArgumentException("Expected a hex character, got '" + hex[offset] + "' at string index '" + offset + "'.");
                 }
-                
+
                 try {
                     b2 = HexToByteLookup[hex[offset + 1]];
-                    
+
                     if (b2 == 0xff) {
                         throw new ArgumentException("Expected a hex character, got '" + hex[offset + 1] + "' at string index '" + (offset + 1) + "'.");
                     }
                 } catch (IndexOutOfRangeException) {
                     throw new ArgumentException("Expected a hex character, got '" + hex[offset + 1] + "' at string index '" + (offset + 1) + "'.");
                 }
-                
+
                 result[i] = (byte)(b1 << 4 | b2);
             }
-            
+
             return result;
         }
-        
+
         public static short ToInt16(byte[] buffer, int index) {
             short value = default(short);
-            
+
             value |= buffer[index + 1];
             value <<= 8;
             value |= buffer[index];
-            
+
             return value;
         }
-        
+
         public static ushort ToUInt16(byte[] buffer, int index) {
             ushort value = default;
-            
+
             value |= buffer[index + 1];
             value <<= 8;
             value |= buffer[index];
-            
+
             return value;
         }
-        
+
         public static int ToInt32(byte[] buffer, int index) {
             int value = default;
-            
+
             value |= buffer[index + 3];
             value <<= 8;
             value |= buffer[index + 2];
@@ -132,13 +132,13 @@
             value |= buffer[index + 1];
             value <<= 8;
             value |= buffer[index];
-            
+
             return value;
         }
-        
+
         public static uint ToUInt32(byte[] buffer, int index) {
             uint value = default;
-            
+
             value |= buffer[index + 3];
             value <<= 8;
             value |= buffer[index + 2];
@@ -146,13 +146,13 @@
             value |= buffer[index + 1];
             value <<= 8;
             value |= buffer[index];
-            
+
             return value;
         }
-        
+
         public static long ToInt64(byte[] buffer, int index) {
             long value = default;
-            
+
             value |= buffer[index + 7];
             value <<= 8;
             value |= buffer[index + 6];
@@ -168,13 +168,13 @@
             value |= buffer[index + 1];
             value <<= 8;
             value |= buffer[index];
-            
+
             return value;
         }
-        
+
         public static ulong ToUInt64(byte[] buffer, int index) {
             ulong value = default;
-            
+
             value |= buffer[index + 7];
             value <<= 8;
             value |= buffer[index + 6];
@@ -190,13 +190,13 @@
             value |= buffer[index + 1];
             value <<= 8;
             value |= buffer[index];
-            
+
             return value;
         }
-        
+
         public static float ToSingle(byte[] buffer, int index) {
             SingleByteUnion union = default;
-            
+
             if (BitConverter.IsLittleEndian) {
                 union.Byte0 = buffer[index];
                 union.Byte1 = buffer[index + 1];
@@ -208,13 +208,13 @@
                 union.Byte1 = buffer[index + 2];
                 union.Byte0 = buffer[index + 3];
             }
-            
+
             return union.Value;
         }
-        
+
         public static double ToDouble(byte[] buffer, int index) {
             DoubleByteUnion union = default;
-            
+
             if (BitConverter.IsLittleEndian) {
                 union.Byte0 = buffer[index];
                 union.Byte1 = buffer[index + 1];
@@ -234,13 +234,13 @@
                 union.Byte1 = buffer[index + 6];
                 union.Byte0 = buffer[index + 7];
             }
-            
+
             return union.Value;
         }
-        
+
         public static decimal ToDecimal(byte[] buffer, int index) {
             DecimalByteUnion union = default;
-            
+
             if (BitConverter.IsLittleEndian) {
                 union.Byte0 = buffer[index];
                 union.Byte1 = buffer[index + 1];
@@ -276,13 +276,13 @@
                 union.Byte1 = buffer[index + 14];
                 union.Byte0 = buffer[index + 15];
             }
-            
+
             return union.Value;
         }
-        
+
         public static Guid ToGuid(byte[] buffer, int index) {
             GuidByteUnion union = default(GuidByteUnion);
-            
+
             union.Byte0 = buffer[index];
             union.Byte1 = buffer[index + 1];
             union.Byte2 = buffer[index + 2];
@@ -293,7 +293,7 @@
             union.Byte7 = buffer[index + 7];
             union.Byte8 = buffer[index + 8];
             union.Byte9 = buffer[index + 9];
-            
+
             if (BitConverter.IsLittleEndian) {
                 union.Byte10 = buffer[index + 10];
                 union.Byte11 = buffer[index + 11];
@@ -309,10 +309,10 @@
                 union.Byte11 = buffer[index + 14];
                 union.Byte10 = buffer[index + 15];
             }
-            
+
             return union.Value;
         }
-        
+
         public static void GetBytes(byte[] buffer, int index, short value) {
             if (BitConverter.IsLittleEndian) {
                 buffer[index] = (byte)value;
@@ -322,7 +322,7 @@
                 buffer[index + 1] = (byte)value;
             }
         }
-        
+
         public static void GetBytes(byte[] buffer, int index, ushort value) {
             if (BitConverter.IsLittleEndian) {
                 buffer[index] = (byte)value;
@@ -332,7 +332,7 @@
                 buffer[index + 1] = (byte)value;
             }
         }
-        
+
         public static void GetBytes(byte[] buffer, int index, int value) {
             if (BitConverter.IsLittleEndian) {
                 buffer[index] = (byte)value;
@@ -346,7 +346,7 @@
                 buffer[index + 3] = (byte)value;
             }
         }
-        
+
         public static void GetBytes(byte[] buffer, int index, uint value) {
             if (BitConverter.IsLittleEndian) {
                 buffer[index] = (byte)value;
@@ -360,7 +360,7 @@
                 buffer[index + 3] = (byte)value;
             }
         }
-        
+
         public static void GetBytes(byte[] buffer, int index, long value) {
             if (BitConverter.IsLittleEndian) {
                 buffer[index] = (byte)value;
@@ -382,7 +382,7 @@
                 buffer[index + 7] = (byte)value;
             }
         }
-        
+
         public static void GetBytes(byte[] buffer, int index, ulong value) {
             if (BitConverter.IsLittleEndian) {
                 buffer[index] = (byte)value;
@@ -404,11 +404,11 @@
                 buffer[index + 7] = (byte)value;
             }
         }
-        
+
         public static void GetBytes(byte[] buffer, int index, float value) {
             SingleByteUnion union = default(SingleByteUnion);
             union.Value = value;
-            
+
             if (BitConverter.IsLittleEndian) {
                 buffer[index] = union.Byte0;
                 buffer[index + 1] = union.Byte1;
@@ -421,11 +421,11 @@
                 buffer[index + 3] = union.Byte0;
             }
         }
-        
+
         public static void GetBytes(byte[] buffer, int index, double value) {
             DoubleByteUnion union = default(DoubleByteUnion);
             union.Value = value;
-            
+
             if (BitConverter.IsLittleEndian) {
                 buffer[index] = union.Byte0;
                 buffer[index + 1] = union.Byte1;
@@ -446,11 +446,11 @@
                 buffer[index + 7] = union.Byte0;
             }
         }
-        
+
         public static void GetBytes(byte[] buffer, int index, decimal value) {
             DecimalByteUnion union = default(DecimalByteUnion);
             union.Value = value;
-            
+
             if (BitConverter.IsLittleEndian) {
                 buffer[index] = union.Byte0;
                 buffer[index + 1] = union.Byte1;
@@ -487,11 +487,11 @@
                 buffer[index + 15] = union.Byte0;
             }
         }
-        
+
         public static void GetBytes(byte[] buffer, int index, Guid value) {
             GuidByteUnion union = default(GuidByteUnion);
             union.Value = value;
-            
+
             buffer[index] = union.Byte0;
             buffer[index + 1] = union.Byte1;
             buffer[index + 2] = union.Byte2;
@@ -502,7 +502,7 @@
             buffer[index + 7] = union.Byte7;
             buffer[index + 8] = union.Byte8;
             buffer[index + 9] = union.Byte9;
-            
+
             if (BitConverter.IsLittleEndian) {
                 buffer[index + 10] = union.Byte10;
                 buffer[index + 11] = union.Byte11;
@@ -519,159 +519,159 @@
                 buffer[index + 15] = union.Byte10;
             }
         }
-        
+
         [StructLayout(LayoutKind.Explicit)]
         private struct SingleByteUnion {
             [FieldOffset(0)]
             public byte Byte0;
-            
+
             [FieldOffset(1)]
             public byte Byte1;
-            
+
             [FieldOffset(2)]
             public byte Byte2;
-            
+
             [FieldOffset(3)]
             public byte Byte3;
-            
+
             [FieldOffset(0)]
             public float Value;
         }
-        
+
         [StructLayout(LayoutKind.Explicit)]
         private struct DoubleByteUnion {
             [FieldOffset(0)]
             public byte Byte0;
-            
+
             [FieldOffset(1)]
             public byte Byte1;
-            
+
             [FieldOffset(2)]
             public byte Byte2;
-            
+
             [FieldOffset(3)]
             public byte Byte3;
-            
+
             [FieldOffset(4)]
             public byte Byte4;
-            
+
             [FieldOffset(5)]
             public byte Byte5;
-            
+
             [FieldOffset(6)]
             public byte Byte6;
-            
+
             [FieldOffset(7)]
             public byte Byte7;
-            
+
             [FieldOffset(0)]
             public double Value;
         }
-        
+
         [StructLayout(LayoutKind.Explicit)]
         private struct DecimalByteUnion {
             [FieldOffset(0)]
             public byte Byte0;
-            
+
             [FieldOffset(1)]
             public byte Byte1;
-            
+
             [FieldOffset(2)]
             public byte Byte2;
-            
+
             [FieldOffset(3)]
             public byte Byte3;
-            
+
             [FieldOffset(4)]
             public byte Byte4;
-            
+
             [FieldOffset(5)]
             public byte Byte5;
-            
+
             [FieldOffset(6)]
             public byte Byte6;
-            
+
             [FieldOffset(7)]
             public byte Byte7;
-            
+
             [FieldOffset(8)]
             public byte Byte8;
-            
+
             [FieldOffset(9)]
             public byte Byte9;
-            
+
             [FieldOffset(10)]
             public byte Byte10;
-            
+
             [FieldOffset(11)]
             public byte Byte11;
-            
+
             [FieldOffset(12)]
             public byte Byte12;
-            
+
             [FieldOffset(13)]
             public byte Byte13;
-            
+
             [FieldOffset(14)]
             public byte Byte14;
-            
+
             [FieldOffset(15)]
             public byte Byte15;
-            
+
             [FieldOffset(0)]
             public decimal Value;
         }
-        
+
         [StructLayout(LayoutKind.Explicit)]
         private struct GuidByteUnion {
             [FieldOffset(0)]
             public byte Byte0;
-            
+
             [FieldOffset(1)]
             public byte Byte1;
-            
+
             [FieldOffset(2)]
             public byte Byte2;
-            
+
             [FieldOffset(3)]
             public byte Byte3;
-            
+
             [FieldOffset(4)]
             public byte Byte4;
-            
+
             [FieldOffset(5)]
             public byte Byte5;
-            
+
             [FieldOffset(6)]
             public byte Byte6;
-            
+
             [FieldOffset(7)]
             public byte Byte7;
-            
+
             [FieldOffset(8)]
             public byte Byte8;
-            
+
             [FieldOffset(9)]
             public byte Byte9;
-            
+
             [FieldOffset(10)]
             public byte Byte10;
-            
+
             [FieldOffset(11)]
             public byte Byte11;
-            
+
             [FieldOffset(12)]
             public byte Byte12;
-            
+
             [FieldOffset(13)]
             public byte Byte13;
-            
+
             [FieldOffset(14)]
             public byte Byte14;
-            
+
             [FieldOffset(15)]
             public byte Byte15;
-            
+
             [FieldOffset(0)]
             public Guid Value;
         }

@@ -72,6 +72,16 @@ public static class Il2CppMetadataExtractor
             {
                 foreach (var type in module.GetAllTypes())
                 {
+                    // Concrete-class to interface-impl pairings: required for
+                    // the catalog to discover Odin-routed polymorphic field
+                    // subtypes (Il2CppInterop strips interface declarations
+                    // from CIL, so reflection on the wrapper assembly can't
+                    // see them). Walked here on every type, not just
+                    // DataTemplate descendants, because interface impls
+                    // (e.g. ITacticalCondition implementations) live across
+                    // the type hierarchy.
+                    CollectInterfaceImplementations(type, supplement);
+
                     if (!DescendsFromDataTemplate(type)) continue;
                     foreach (var field in type.Fields)
                     {
@@ -87,8 +97,63 @@ public static class Il2CppMetadataExtractor
 
         log.Info(
             $"  IL2CPP: extracted {supplement.NamedArrays.Count} NamedArray pairing(s), "
-            + $"{supplement.Fields.Count} attributed field(s).");
+            + $"{supplement.Fields.Count} attributed field(s), "
+            + $"{supplement.InterfaceImpls.Count} interface implementation(s).");
         return supplement;
+    }
+
+    /// <summary>
+    /// Record (concrete class, implemented interface) pairs, walking up
+    /// the inheritance chain so concrete subclasses inherit interface
+    /// impls declared on abstract bases (the common MENACE pattern is
+    /// <c>MoraleStateCondition : TacticalCondition</c> where the abstract
+    /// <c>TacticalCondition</c> declares <c>: ITacticalCondition</c>).
+    /// Skips interfaces themselves and abstract bases as the recorded
+    /// "concrete" — those are non-instantiable and would only confuse the
+    /// catalog's subtype-pick UI.
+    /// </summary>
+    private static void CollectInterfaceImplementations(
+        TypeDefinition type,
+        Il2CppMetadataSupplement supplement)
+    {
+        if (type.IsInterface) return;
+        if (type.IsAbstract) return;
+
+        var concreteFullName = type.FullName;
+        if (string.IsNullOrEmpty(concreteFullName)) return;
+
+        // Collect every interface declared at this type or any of its
+        // ancestors. We deduplicate per-concrete-type because diamond
+        // inheritance can otherwise produce repeats.
+        var seenInterfaces = new HashSet<string>(StringComparer.Ordinal);
+        var current = (TypeDefinition?)type;
+        var depth = 0;
+        const int maxDepth = 32;
+        while (current is not null && depth++ < maxDepth)
+        {
+            foreach (var iface in current.Interfaces)
+            {
+                var ifaceType = iface.Interface?.ToTypeDefOrRef();
+                var ifaceFullName = ifaceType?.FullName;
+                if (string.IsNullOrEmpty(ifaceFullName)) continue;
+                if (!seenInterfaces.Add(ifaceFullName)) continue;
+
+                supplement.InterfaceImpls.Add(new InterfaceImplementation
+                {
+                    ConcreteFullName = concreteFullName,
+                    InterfaceFullName = ifaceFullName,
+                });
+            }
+
+            try
+            {
+                current = current.BaseType?.Resolve();
+            }
+            catch
+            {
+                break;
+            }
+        }
     }
 
     private static void EnsureStaticInit()

@@ -10,10 +10,10 @@ namespace TinySerializer.Core.Formatters {
         protected override T[] GetUninitializedObject() {
             return null;
         }
-        
+
         protected override void Read(ref T[] value, IDataReader reader) {
             string name;
-            
+
             if (reader.PeekEntry(out name) == EntryType.PrimitiveArray) {
                 reader.ReadPrimitiveArray(out value);
                 RegisterReferenceID(value, reader);
@@ -21,12 +21,12 @@ namespace TinySerializer.Core.Formatters {
                 reader.SkipEntry();
             }
         }
-        
+
         protected override void Write(ref T[] value, IDataWriter writer) {
             writer.WritePrimitiveArray(value);
         }
     }
-    
+
     public sealed class WeakPrimitiveArrayFormatter : WeakMinimalBaseFormatter {
         private static readonly Dictionary<Type, PrimitiveArrayType> PrimitiveTypes = new Dictionary<Type, PrimitiveArrayType>(FastTypeComparer.Instance) {
             { typeof(char), PrimitiveArrayType.PrimitiveArray_char },
@@ -44,7 +44,7 @@ namespace TinySerializer.Core.Formatters {
             { typeof(double), PrimitiveArrayType.PrimitiveArray_double },
             { typeof(Guid), PrimitiveArrayType.PrimitiveArray_Guid },
         };
-        
+
         public enum PrimitiveArrayType {
             PrimitiveArray_char,
             PrimitiveArray_sbyte,
@@ -61,150 +61,150 @@ namespace TinySerializer.Core.Formatters {
             PrimitiveArray_double,
             PrimitiveArray_Guid,
         }
-        
+
         private readonly Type ElementType;
         private readonly PrimitiveArrayType PrimitiveType;
-        
+
         public WeakPrimitiveArrayFormatter(Type arrayType, Type elementType) : base(arrayType) {
             ElementType = elementType;
-            
+
             if (!PrimitiveTypes.TryGetValue(elementType, out PrimitiveType)) {
                 throw new SerializationAbortException("The type '" + elementType.GetNiceFullName()
                                                       + "' is not a type that can be written as a primitive array, yet the primitive array formatter is being used for it.");
             }
         }
-        
+
         protected override object GetUninitializedObject() {
             return null;
         }
-        
+
         protected override void Read(ref object value, IDataReader reader) {
             string name;
-            
+
             if (reader.PeekEntry(out name) == EntryType.PrimitiveArray) {
                 switch (PrimitiveType) {
                     case PrimitiveArrayType.PrimitiveArray_char: {
-                        char[] readValue;
-                        reader.ReadPrimitiveArray<char>(out readValue);
-                        value = readValue;
-                    }
-                        
+                            char[] readValue;
+                            reader.ReadPrimitiveArray<char>(out readValue);
+                            value = readValue;
+                        }
+
                         break;
-                    
+
                     case PrimitiveArrayType.PrimitiveArray_sbyte: {
-                        sbyte[] readValue;
-                        reader.ReadPrimitiveArray<sbyte>(out readValue);
-                        value = readValue;
-                    }
-                        
+                            sbyte[] readValue;
+                            reader.ReadPrimitiveArray<sbyte>(out readValue);
+                            value = readValue;
+                        }
+
                         break;
-                    
+
                     case PrimitiveArrayType.PrimitiveArray_short: {
-                        short[] readValue;
-                        reader.ReadPrimitiveArray<short>(out readValue);
-                        value = readValue;
-                    }
-                        
+                            short[] readValue;
+                            reader.ReadPrimitiveArray<short>(out readValue);
+                            value = readValue;
+                        }
+
                         break;
-                    
+
                     case PrimitiveArrayType.PrimitiveArray_int: {
-                        int[] readValue;
-                        reader.ReadPrimitiveArray<int>(out readValue);
-                        value = readValue;
-                    }
-                        
+                            int[] readValue;
+                            reader.ReadPrimitiveArray<int>(out readValue);
+                            value = readValue;
+                        }
+
                         break;
-                    
+
                     case PrimitiveArrayType.PrimitiveArray_long: {
-                        long[] readValue;
-                        reader.ReadPrimitiveArray<long>(out readValue);
-                        value = readValue;
-                    }
-                        
+                            long[] readValue;
+                            reader.ReadPrimitiveArray<long>(out readValue);
+                            value = readValue;
+                        }
+
                         break;
-                    
+
                     case PrimitiveArrayType.PrimitiveArray_byte: {
-                        byte[] readValue;
-                        reader.ReadPrimitiveArray<byte>(out readValue);
-                        value = readValue;
-                    }
-                        
+                            byte[] readValue;
+                            reader.ReadPrimitiveArray<byte>(out readValue);
+                            value = readValue;
+                        }
+
                         break;
-                    
+
                     case PrimitiveArrayType.PrimitiveArray_ushort: {
-                        ushort[] readValue;
-                        reader.ReadPrimitiveArray<ushort>(out readValue);
-                        value = readValue;
-                    }
-                        
+                            ushort[] readValue;
+                            reader.ReadPrimitiveArray<ushort>(out readValue);
+                            value = readValue;
+                        }
+
                         break;
-                    
+
                     case PrimitiveArrayType.PrimitiveArray_uint: {
-                        uint[] readValue;
-                        reader.ReadPrimitiveArray<uint>(out readValue);
-                        value = readValue;
-                    }
-                        
+                            uint[] readValue;
+                            reader.ReadPrimitiveArray<uint>(out readValue);
+                            value = readValue;
+                        }
+
                         break;
-                    
+
                     case PrimitiveArrayType.PrimitiveArray_ulong: {
-                        ulong[] readValue;
-                        reader.ReadPrimitiveArray<ulong>(out readValue);
-                        value = readValue;
-                    }
-                        
+                            ulong[] readValue;
+                            reader.ReadPrimitiveArray<ulong>(out readValue);
+                            value = readValue;
+                        }
+
                         break;
-                    
+
                     case PrimitiveArrayType.PrimitiveArray_decimal: {
-                        decimal[] readValue;
-                        reader.ReadPrimitiveArray<decimal>(out readValue);
-                        value = readValue;
-                    }
-                        
+                            decimal[] readValue;
+                            reader.ReadPrimitiveArray<decimal>(out readValue);
+                            value = readValue;
+                        }
+
                         break;
-                    
+
                     case PrimitiveArrayType.PrimitiveArray_bool: {
-                        bool[] readValue;
-                        reader.ReadPrimitiveArray<bool>(out readValue);
-                        value = readValue;
-                    }
-                        
+                            bool[] readValue;
+                            reader.ReadPrimitiveArray<bool>(out readValue);
+                            value = readValue;
+                        }
+
                         break;
-                    
+
                     case PrimitiveArrayType.PrimitiveArray_float: {
-                        float[] readValue;
-                        reader.ReadPrimitiveArray<float>(out readValue);
-                        value = readValue;
-                    }
-                        
+                            float[] readValue;
+                            reader.ReadPrimitiveArray<float>(out readValue);
+                            value = readValue;
+                        }
+
                         break;
-                    
+
                     case PrimitiveArrayType.PrimitiveArray_double: {
-                        double[] readValue;
-                        reader.ReadPrimitiveArray<double>(out readValue);
-                        value = readValue;
-                    }
-                        
+                            double[] readValue;
+                            reader.ReadPrimitiveArray<double>(out readValue);
+                            value = readValue;
+                        }
+
                         break;
-                    
+
                     case PrimitiveArrayType.PrimitiveArray_Guid: {
-                        Guid[] readValue;
-                        reader.ReadPrimitiveArray<Guid>(out readValue);
-                        value = readValue;
-                    }
-                        
+                            Guid[] readValue;
+                            reader.ReadPrimitiveArray<Guid>(out readValue);
+                            value = readValue;
+                        }
+
                         break;
-                    
+
                     default:
                         throw new NotImplementedException();
                 }
-                
+
                 RegisterReferenceID(value, reader);
             } else {
                 reader.SkipEntry();
             }
         }
-        
+
         protected override void Write(ref object value, IDataWriter writer) {
             switch (PrimitiveType) {
                 case PrimitiveArrayType.PrimitiveArray_char: writer.WritePrimitiveArray<char>((char[])value); break;

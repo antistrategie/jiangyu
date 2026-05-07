@@ -381,7 +381,109 @@ public sealed class TemplateTypeCatalog : IDisposable
             if (HasStrictDescendant(candidate)) continue;
             subtypes.Add(candidate);
         }
+
+        // Interface fallback: Il2CppInterop wraps interfaces as CLASSES
+        // (extending Il2CppObjectBase) and strips the implements relations
+        // from concrete types' CIL, so `System.Type.IsAssignableFrom` on a
+        // wrapped interface returns false for every concrete impl, AND
+        // `baseType.IsInterface` itself returns false. The metadata
+        // supplement records (concrete, interface) pairs walked from the
+        // Cpp2IL-enriched assemblies, which preserve the relationship from
+        // global-metadata.dat. Run the supplement lookup unconditionally
+        // when a supplement is available; the worst case (baseType isn't
+        // actually an interface) is a no-op since no entry matches.
+        if (_supplement != null)
+        {
+            var seen = new HashSet<Type>(subtypes);
+            // The supplement walks the unwrapped Cpp2IL types, so it stores
+            // names in the form "Menace.Tactical.Skills.MoraleStateCondition".
+            // The MetadataLoadContext-loaded Assembly-CSharp.dll exposes the
+            // wrapped form "Il2CppMenace.Tactical.Skills.MoraleStateCondition".
+            // Look up both shapes — the wrapped one is the one we expect to
+            // find at runtime, the unwrapped one is a fallback for any
+            // Cpp2IL output that happens to land without the prefix.
+            var ifaceShortNames = new[]
+            {
+                baseType.FullName,
+                baseType.FullName?.StartsWith(Il2CppNamespacePrefix, StringComparison.Ordinal) == true
+                    ? baseType.FullName![Il2CppNamespacePrefix.Length..]
+                    : null,
+            };
+            foreach (var ifaceLookup in ifaceShortNames)
+            {
+                if (string.IsNullOrEmpty(ifaceLookup)) continue;
+                foreach (var concreteFullName in _supplement.GetInterfaceImplementations(ifaceLookup))
+                {
+                    var concrete = ResolveSupplementName(concreteFullName);
+                    if (concrete is null) continue;
+                    if (!seen.Add(concrete)) continue;
+                    if (HasStrictDescendant(concrete)) continue;
+                    subtypes.Add(concrete);
+                }
+            }
+        }
+
         return subtypes;
+    }
+
+    /// <summary>
+    /// Resolve a name string emitted by the metadata supplement to a Type
+    /// in the loaded assembly. The supplement walks Cpp2IL output which
+    /// uses the unwrapped namespace form; the catalog's MetadataLoadContext
+    /// sees the Il2CppInterop-wrapped form. We try both.
+    /// </summary>
+    private Type? ResolveSupplementName(string fullName)
+    {
+        if (string.IsNullOrEmpty(fullName)) return null;
+        var direct = _allTypes.FirstOrDefault(t => t.FullName == fullName);
+        if (direct != null) return direct;
+
+        // Inject the Il2Cpp prefix at the namespace root and retry.
+        var prefixed = Il2CppNamespacePrefix + fullName;
+        return _allTypes.FirstOrDefault(t => t.FullName == prefixed);
+    }
+
+    /// <summary>
+    /// Resolve a subtype-hint string (short name or fully-qualified name)
+    /// constrained to concrete subtypes of <paramref name="baseType"/>.
+    /// Returns null when no candidate matches; <paramref name="ambiguousFullNames"/>
+    /// is populated only when several subtypes share the requested short
+    /// name, so callers can present a hint-narrowed disambiguation error.
+    /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="ResolveType"/>, this never returns a non-subtype:
+    /// short-name collisions with classes outside the subtype family (e.g.
+    /// <c>Effects.Attack</c> vs the unrelated <c>AI.Behaviors.Attack</c>) are
+    /// resolved by ignoring the non-subtype, which is the right behaviour
+    /// for both polymorphic descent navigation and handler-construction
+    /// validation.
+    /// </remarks>
+    public Type? ResolveSubtypeHint(
+        Type baseType,
+        string hint,
+        out IReadOnlyList<string> ambiguousFullNames)
+    {
+        ambiguousFullNames = [];
+        if (string.IsNullOrEmpty(hint))
+            return null;
+
+        var subtypes = EnumerateConcreteSubtypes(baseType);
+
+        var exact = subtypes.FirstOrDefault(t => t.FullName == hint);
+        if (exact != null)
+            return exact;
+
+        var shortMatches = subtypes.Where(t => t.Name == hint).ToArray();
+        if (shortMatches.Length == 1)
+            return shortMatches[0];
+
+        if (shortMatches.Length > 1)
+        {
+            ambiguousFullNames = shortMatches.Select(t => t.FullName ?? t.Name).ToArray();
+            return null;
+        }
+
+        return null;
     }
 
     private bool HasStrictDescendant(Type type)

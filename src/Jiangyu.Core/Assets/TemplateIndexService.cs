@@ -537,6 +537,7 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
             if (asset is IMonoBehaviour mono)
             {
                 ManagedTypeInspectionEnricher.Enrich(mono, gameData.AssemblyManager, inspection.Fields);
+                OdinPayloadEnricher.Enrich(inspection.Fields);
             }
 
             // Extract m_Structure fields as the template payload.

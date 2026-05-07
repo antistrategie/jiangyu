@@ -155,8 +155,12 @@ internal sealed class TemplatePatchApplier
         var chain = new List<ChainEntry>(descentCount + innerSegments.Length);
         object current = template;
 
-        // Walk descent steps first: each navigates into element [Index] of
-        // collection [Field], optionally casting to the [Subtype] wrapper.
+        // Walk descent steps first. Two shapes per step:
+        //   - Index non-null: collection-element descent into element [Index]
+        //     of collection [Field], optionally casting to [Subtype].
+        //   - Index null: scalar polymorphic descent into the value held by
+        //     the (non-collection) field [Field], casting to [Subtype] so
+        //     subsequent path resolution sees subclass-specific members.
         if (op.Descent != null)
         {
             for (var i = 0; i < op.Descent.Count; i++)
@@ -183,28 +187,45 @@ internal sealed class TemplatePatchApplier
                     ValueIsStruct = memberType.IsValueType,
                 };
 
-                if (!TryIndexInto(value, step.Index, out var element, out var elementType, out var indexError))
+                object element;
+                Type elementType;
+                if (step.Index.HasValue)
                 {
-                    log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                        + $"cannot index descent step '{step.Field}' index={step.Index}: {indexError}");
-                    return ApplyOutcome.MemberMissing;
-                }
+                    // Collection-element descent: index into the list/array
+                    // and optionally cast the element to a concrete subtype.
+                    if (!TryIndexInto(value, step.Index.Value, out element, out elementType, out var indexError))
+                    {
+                        log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                            + $"cannot index descent step '{step.Field}' index={step.Index}: {indexError}");
+                        return ApplyOutcome.MemberMissing;
+                    }
 
-                if (element == null)
-                {
-                    log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                        + $"element {step.Index} of '{step.Field}' is null.");
-                    return ApplyOutcome.MemberMissing;
-                }
+                    if (element == null)
+                    {
+                        log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                            + $"element {step.Index} of '{step.Field}' is null.");
+                        return ApplyOutcome.MemberMissing;
+                    }
 
-                // We don't support writing mutated struct-elements back into
-                // collections on this slice. Reject early so modders know.
-                if (elementType.IsValueType)
+                    // We don't support writing mutated struct-elements back into
+                    // collections on this slice. Reject early so modders know.
+                    if (elementType.IsValueType)
+                    {
+                        log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                            + $"element {step.Index} of '{step.Field}' is a value-type "
+                            + $"({elementType.FullName}); in-collection struct mutation is not supported on this slice.");
+                        return ApplyOutcome.MemberMissing;
+                    }
+                }
+                else
                 {
-                    log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                        + $"element {step.Index} of '{step.Field}' is a value-type "
-                        + $"({elementType.FullName}); in-collection struct mutation is not supported on this slice.");
-                    return ApplyOutcome.MemberMissing;
+                    // Scalar polymorphic descent (Phase 2a): no index. We
+                    // already read `value` from the field above; treat the
+                    // field's runtime value as the descent target. The
+                    // subtype cast below makes its concrete members visible
+                    // to subsequent path resolution.
+                    element = value;
+                    elementType = memberType;
                 }
 
                 // Polymorphic descent: the Il2CppInterop wrapper for a
@@ -212,13 +233,17 @@ internal sealed class TemplatePatchApplier
                 // so reflection on it sees only the base's own members
                 // (typically zero). Cast to the concrete subtype wrapper
                 // when the modder declared one via type="X" on the descent
-                // block so subclass fields are visible.
+                // block so subclass fields are visible. Same logic applies
+                // to scalar polymorphic descent.
                 if (!string.IsNullOrEmpty(step.Subtype))
                 {
+                    var castContext = step.Index.HasValue
+                        ? $"'{step.Field}[{step.Index}]'"
+                        : $"'{step.Field}'";
                     if (!TryCastToSubtype(element, step.Subtype, out var castElement, out var castError))
                     {
                         log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                            + $"cannot cast '{step.Field}[{step.Index}]' to subtype "
+                            + $"cannot cast {castContext} to subtype "
                             + $"'{step.Subtype}': {castError}");
                         return ApplyOutcome.MemberMissing;
                     }
@@ -393,6 +418,35 @@ internal sealed class TemplatePatchApplier
         {
             log.Warning(FormatPrefix(templateTypeName, templateId, op) + conversionError);
             return ApplyOutcome.ConversionFailed;
+        }
+
+        // C# reflection's PropertyInfo.SetValue does a managed-type
+        // assignability check that fails for IL2CPP-wrapped interface
+        // assignments (e.g. assigning MoraleStateCondition to an
+        // ITacticalCondition-typed field). The two wrappers are sibling
+        // classes in CIL because Il2CppInterop strips interface impls.
+        // Cast the wrapper to memberType via Il2CppObjectBase.Cast<T> when
+        // necessary; the cast is a wrapper-only conversion (same native
+        // pointer underneath) so semantics are preserved.
+        if (converted is Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase il2cppObj
+            && memberType != null
+            && !memberType.IsInstanceOfType(converted)
+            && typeof(Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase).IsAssignableFrom(memberType))
+        {
+            try
+            {
+                var castMethod = typeof(Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase)
+                    .GetMethod(nameof(Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase.Cast))!
+                    .MakeGenericMethod(memberType);
+                converted = castMethod.Invoke(il2cppObj, null);
+            }
+            catch (Exception ex)
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"could not cast value to member type {memberType.FullName}: "
+                    + (ex.InnerException ?? ex).Message);
+                return ApplyOutcome.ConversionFailed;
+            }
         }
 
         try
@@ -655,7 +709,7 @@ internal sealed class TemplatePatchApplier
             return false;
         }
 
-        if (!element.GetType().IsAssignableFrom(concreteType))
+        if (!IsAssignableFromIl2Cpp(element.GetType(), concreteType))
         {
             error = $"'{subtypeShortName}' (full name '{concreteType.FullName}') "
                 + $"does not derive from '{element.GetType().FullName}'.";
@@ -677,6 +731,44 @@ internal sealed class TemplatePatchApplier
     }
 
     private static readonly Dictionary<string, Type> SubtypeResolutionCache = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Assignability check that works for IL2CPP-wrapped interface types.
+    /// Il2CppInterop wraps interfaces as plain classes (extending
+    /// <c>Il2CppObjectBase</c>) and strips the implements relationships
+    /// from concrete-class CIL, so <see cref="Type.IsAssignableFrom"/>
+    /// returns false for cases like
+    /// <c>ITacticalCondition.IsAssignableFrom(MoraleStateCondition)</c>.
+    /// We try managed reflection first (fast, covers the class-inheritance
+    /// case) then fall back to the native IL2CPP runtime check, which
+    /// consults the unstripped type metadata table and recognises interface
+    /// impls correctly.
+    /// </summary>
+    private static bool IsAssignableFromIl2Cpp(Type targetType, Type candidateType)
+    {
+        if (targetType.IsAssignableFrom(candidateType))
+            return true;
+
+        // Both wrapper types must descend from Il2CppObjectBase to ask the
+        // native runtime; pure managed types fall through with false.
+        if (!typeof(Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase).IsAssignableFrom(targetType))
+            return false;
+        if (!typeof(Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase).IsAssignableFrom(candidateType))
+            return false;
+
+        try
+        {
+            var targetPtr = Il2CppInterop.Runtime.Il2CppClassPointerStore.GetNativeClassPointer(targetType);
+            var candidatePtr = Il2CppInterop.Runtime.Il2CppClassPointerStore.GetNativeClassPointer(candidateType);
+            if (targetPtr == IntPtr.Zero || candidatePtr == IntPtr.Zero)
+                return false;
+            return Il2CppInterop.Runtime.IL2CPP.il2cpp_class_is_assignable_from(targetPtr, candidatePtr);
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// Find the Il2CppInterop wrapper type for <paramref name="shortName"/>,
@@ -707,7 +799,7 @@ internal sealed class TemplatePatchApplier
                 .GetTypes()
                 .FirstOrDefault(t => t.Name == shortName
                     && t.Namespace == ns
-                    && elementType.IsAssignableFrom(t));
+                    && IsAssignableFromIl2Cpp(elementType, t));
         }
         catch { /* fall through */ }
 
@@ -729,7 +821,7 @@ internal sealed class TemplatePatchApplier
             foreach (var candidate in types)
             {
                 if (candidate.Name != shortName) continue;
-                if (!elementType.IsAssignableFrom(candidate)) continue;
+                if (!IsAssignableFromIl2Cpp(elementType, candidate)) continue;
                 anywhere = candidate;
                 break;
             }
@@ -1605,7 +1697,7 @@ internal sealed class TemplatePatchApplier
             return false;
         }
 
-        if (!targetType.IsAssignableFrom(resolvedType))
+        if (!IsAssignableFromIl2Cpp(targetType, resolvedType))
         {
             error = $"Composite typeName '{composite.TypeName}' ({resolvedType.FullName}) is not assignable to member type {targetType.FullName}.";
             return false;

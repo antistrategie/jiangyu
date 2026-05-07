@@ -699,6 +699,45 @@ public class KdlEditorRoundTripTests
     }
 
     [Fact]
+    public void ScalarPolymorphicDescent_RoundTrips_NoIndex()
+    {
+        // Phase 2a: descent into a non-collection polymorphic field. The
+        // outer step has type= but no index=, marking scalar descent in the
+        // wire format (TemplateDescentStep.Index is null). The serialiser
+        // must omit index= so the round-trip parses back to the same
+        // null-Index step rather than synthesising index=0.
+        const string kdl = """
+            patch "Attack" "fire_assault_rifle_attack" {
+                set "DamageFilterCondition" type="MoraleStateCondition" {
+                    set "MoraleState" 1
+                }
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+        var directive = Assert.Single(doc.Nodes[0].Directives);
+        var step = Assert.Single(directive.Descent!);
+        Assert.Equal("DamageFilterCondition", step.Field);
+        Assert.Null(step.Index);
+        Assert.Equal("MoraleStateCondition", step.Subtype);
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        Assert.Contains("set \"DamageFilterCondition\" type=\"MoraleStateCondition\"", text);
+        // Critical guard: the serialiser must NOT emit index= for a scalar
+        // descent step. Otherwise the round-trip turns scalar descent into
+        // a (non-existent) collection descent at element 0.
+        Assert.DoesNotContain("DamageFilterCondition\" index=", text);
+
+        var doc2 = KdlTemplateParser.ParseText(text);
+        Assert.Empty(doc2.Errors);
+        var step2 = Assert.Single(doc2.Nodes[0].Directives[0].Descent!);
+        Assert.Equal("DamageFilterCondition", step2.Field);
+        Assert.Null(step2.Index);
+        Assert.Equal("MoraleStateCondition", step2.Subtype);
+    }
+
+    [Fact]
     public void DescentBlock_MultipleSiblingsGroupUnderOneOuter()
     {
         const string kdl = """

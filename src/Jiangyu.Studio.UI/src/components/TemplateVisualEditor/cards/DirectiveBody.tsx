@@ -289,6 +289,33 @@ export interface DescentHeaderProps {
   readonly subtypeChipTitle?: string;
 }
 
+/**
+ * Local-state input for the subtype picker. SuggestionCombobox is controlled,
+ * but our DescentHeader caller has no place to hold per-keystroke text: any
+ * non-null subtype it observes immediately replaces the picker with a chip,
+ * which would commit each character as a (bogus) subtype name. This wrapper
+ * holds the typed text in its own state and only invokes onChangeSubtype
+ * when the user picks a real entry from the dropdown (via onCommit).
+ */
+function SubtypePicker({
+  fetchSubtypeChoices,
+  onChangeSubtype,
+}: {
+  fetchSubtypeChoices: () => Promise<readonly string[]>;
+  onChangeSubtype: (subtype: string | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  return (
+    <SuggestionCombobox
+      value={query}
+      placeholder="Pick subtype…"
+      fetchSuggestions={fetchSubtypeChoices}
+      onChange={setQuery}
+      onCommit={(v) => onChangeSubtype(v === "" ? null : v)}
+    />
+  );
+}
+
 export function DescentHeader({
   field,
   slotIndex,
@@ -338,11 +365,9 @@ export function DescentHeader({
         onCommit={(v) => onChangeIndex(Number(v))}
       />
       {subtypeMode === "picker" && subtype === null ? (
-        <SuggestionCombobox
-          value=""
-          placeholder="Pick subtype…"
-          fetchSuggestions={fetchSubtypeChoices}
-          onChange={(v) => onChangeSubtype(v === "" ? null : v)}
+        <SubtypePicker
+          fetchSubtypeChoices={fetchSubtypeChoices}
+          onChangeSubtype={onChangeSubtype}
         />
       ) : subtype !== null && (subtypeMode === "clearable" || subtypeMode === "picker") ? (
         <button
@@ -421,8 +446,17 @@ function DescentGroup({
   // to the outer member's element type (monomorphic owned-element list,
   // e.g. List<PropertyChange>).
   const innerType = subtype ?? outerMember?.elementTypeName ?? "";
+  // When innerType is a polymorphic subtype short name (e.g. "Attack" within
+  // a SkillEventHandlerTemplate family), pass the outer element type so the
+  // resolver can disambiguate against unrelated short-name twins. Suppress
+  // for the monomorphic fallback path (innerType === elementTypeName) so we
+  // don't waste RPC keys on a no-op context.
+  const subtypeElementContext =
+    subtype !== null ? (outerMember?.elementTypeName ?? undefined) : undefined;
   const { members: innerMembers, loaded: innerMembersLoaded } = useTemplateMembers(
     innerType || undefined,
+    true,
+    subtypeElementContext,
   );
 
   // Members that already have a directive in the group — used to dim the
@@ -552,9 +586,13 @@ function PendingDescentGroup({
   const subtypeChoices = outerMember?.elementSubtypes ?? null;
   const isPolymorphic = subtypeChoices !== null && subtypeChoices.length > 0;
   const innerType = subtype ?? outerMember?.elementTypeName ?? "";
+  const subtypeElementContext =
+    subtype !== null ? (outerMember?.elementTypeName ?? undefined) : undefined;
 
   const { members: innerMembers, loaded: innerMembersLoaded } = useTemplateMembers(
     innerType || undefined,
+    true,
+    subtypeElementContext,
   );
 
   return (

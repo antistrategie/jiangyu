@@ -498,7 +498,11 @@ export function rewriteDescentSlotIndex<T extends EditorDirective>(
 export function makeDefaultValue(member: TemplateMember): EditorValue {
   const kind = member.patchScalarKind;
   const elementType = member.elementTypeName;
-  const subtypes = member.elementSubtypes;
+  // Polymorphic subtype choices come from one of two sources:
+  //  - elementSubtypes: collection element family (existing handler= flow)
+  //  - scalarSubtypes: scalar polymorphic field (Phase 2b: Odin construction)
+  // Both produce a HandlerConstruction value; the modder UX is identical.
+  const subtypes = member.elementSubtypes ?? member.scalarSubtypes;
 
   switch (kind) {
     case "Boolean":

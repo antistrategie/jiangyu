@@ -337,7 +337,12 @@ export function SetRow({
           value={directive.value}
           onChange={(v) => onChange({ ...directive, value: v })}
           vanillaNode={vanillaNode}
-          elementSubtypes={member?.elementSubtypes ?? null}
+          // Both shapes of polymorphic destination route through the same
+          // picker UX: collection-element subtypes (elementSubtypes) and
+          // scalar-polymorphic subtypes (scalarSubtypes, the Phase 2b
+          // Odin-construction case).
+          elementSubtypes={member?.elementSubtypes ?? member?.scalarSubtypes ?? null}
+          elementType={member?.elementTypeName ?? member?.typeName ?? undefined}
         />
       )}
     </div>
@@ -398,6 +403,12 @@ export interface CompositeEditorProps {
    *  collection: the concrete subtypes the modder can pick. Drives the
    *  subtype combobox shown in place of the body until a type is chosen. */
   elementSubtypes?: readonly string[] | null;
+  /** Outer collection element-type when this composite sits in a
+   *  polymorphic owned-element list (e.g. SkillEventHandlerTemplate for an
+   *  EventHandlers slot). Threaded into useTemplateMembers so the resolver
+   *  can disambiguate value.compositeType when its short name collides
+   *  with an unrelated class outside the subtype family. */
+  elementType?: string | undefined;
 }
 
 export function CompositeEditor({
@@ -405,6 +416,7 @@ export function CompositeEditor({
   onChange,
   vanillaNode,
   elementSubtypes,
+  elementType,
 }: CompositeEditorProps) {
   // Directives flow in from two places: parse (stampNodes recurses through
   // composites and assigns _uiId per directive) and FieldAdder (always builds
@@ -416,7 +428,11 @@ export function CompositeEditor({
     () => (value.compositeDirectives ?? []) as StampedDirective[],
     [value.compositeDirectives],
   );
-  const { members, loaded: membersLoaded } = useTemplateMembers(value.compositeType);
+  const { members, loaded: membersLoaded } = useTemplateMembers(
+    value.compositeType,
+    true,
+    elementType,
+  );
 
   const handleDirectiveChange = (index: number, updated: StampedDirective) => {
     const next = directives.map((d, i) => (i === index ? updated : d));

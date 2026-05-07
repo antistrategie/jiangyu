@@ -42,7 +42,7 @@ depends = ["test:core", "test:loader", "test:studio"]
 
 [tasks."format:roslyn"]
 description = "Apply Roslyn formatting/style fixes to first-party code"
-run = "dotnet format Jiangyu.slnx --no-restore --exclude vendor/AssetRipper"
+run = "dotnet format Jiangyu.slnx --no-restore --exclude vendor/*"
 
 [tasks."format:studio"]
 description = "Run Prettier for Studio"

@@ -129,6 +129,15 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
         int Radius { get; }
     }
 
+    // Concrete implementation of the polymorphic-scalar interface IFixtureAoEShape.
+    // Used by HandlerConstruction validator tests for Odin-routed scalar
+    // construction on a non-collection field. Radius is settable because the
+    // Phase 2b construction path writes inner ops via reflection.
+    public class FixtureAoEShapeImpl : IFixtureAoEShape
+    {
+        public int Radius { get; set; }
+    }
+
     public abstract class FixtureCondition
     {
         public string? Label { get; set; }
@@ -205,6 +214,18 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Other
     public class FixtureSkillTemplate
     {
         public int Placeholder { get; set; }
+    }
+
+    // Non-subtype short-name twin of Gameplay.FixtureConcreteDerived. The
+    // polymorphic-descent resolver must restrict to subtypes of the
+    // descent's element type and not return this class when descending
+    // through a List<FixtureBaseDataTemplate>: this type doesn't extend
+    // that base. Mirrors the production Effects.Attack vs
+    // AI.Behaviors.Attack collision: the latter is short-name-identical
+    // but not in the SkillEventHandlerTemplate hierarchy.
+    public class FixtureConcreteDerived
+    {
+        public string? UnrelatedField { get; set; }
     }
 }
 

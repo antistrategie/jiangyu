@@ -129,11 +129,13 @@ public static partial class RpcHandlers
     [McpParam("typeName", "string", "Template type name (e.g. \"EntityTemplate\").", Required = true)]
     [McpParam("fieldPath", "string", "Dot-separated field path to drill into (e.g. \"Properties.Accuracy\").")]
     [McpParam("namespaceName", "string", "Optional CLR namespace of the script class (e.g. \"Menace.Tactical.Skills.Effects\"). Disambiguates short-name collisions.")]
+    [McpParam("elementType", "string", "Optional parent collection element-type for polymorphic subtype lookups. When the typeName is a subtype short name (e.g. \"Attack\") and the caller knows the parent family (e.g. \"SkillEventHandlerTemplate\"), this restricts resolution to that family's concrete subtypes.")]
     internal static JsonElement TemplatesQuery(JsonElement? parameters)
     {
         var typeName = RequireString(parameters, "typeName");
         var fieldPath = TryGetString(parameters, "fieldPath");
         var namespaceName = TryGetString(parameters, "namespaceName");
+        var elementType = TryGetString(parameters, "elementType");
 
         var resolution = EnvironmentContext.ResolveFromGlobalConfig();
         if (!resolution.Success)
@@ -158,7 +160,11 @@ public static partial class RpcHandlers
             ? typeName
             : $"{typeName}.{fieldPath}";
 
-        var result = TemplateMemberQuery.Run(catalog, queryPath, namespaceHint: namespaceName);
+        var result = TemplateMemberQuery.Run(
+            catalog,
+            queryPath,
+            namespaceHint: namespaceName,
+            elementTypeContext: elementType);
 
         if (result.Kind == QueryResultKind.Error)
             throw new InvalidOperationException(result.ErrorMessage ?? "Query failed.");
@@ -508,6 +514,62 @@ public static partial class RpcHandlers
             .OrderBy(n => n, StringComparer.Ordinal)];
     }
 
+    /// <summary>
+    /// Concrete subtype choices for a polymorphic scalar field (declared
+    /// type is itself an interface or abstract base with concrete
+    /// descendants, but isn't a Unity-asset reference target — that case
+    /// goes through ref= picking instead). The visual editor surfaces these
+    /// as a "Pick handler" combobox the same way it does for collection
+    /// elements; the resulting patch is a Set with a HandlerConstruction
+    /// value. Used for Odin-routed scalar fields like
+    /// <c>Attack.DamageFilterCondition: ITacticalCondition</c>.
+    /// </summary>
+    private static List<string>? ComputeScalarSubtypes(TemplateTypeCatalog catalog, MemberShape m)
+    {
+        var memberType = m.MemberType;
+        if (TemplateTypeCatalog.GetElementType(memberType) != null) return null;
+        if (TemplateTypeCatalog.IsScalar(memberType)) return null;
+        // ScriptableObject / DataTemplate-typed scalars are picked via ref=,
+        // not constructed via handler=. EnumerateConcreteSubtypes on its own
+        // doesn't filter those out, so we exclude them explicitly.
+        if (TemplateTypeCatalog.IsTemplateReferenceTarget(memberType)) return null;
+        if (TemplateTypeCatalog.IsDataTemplateType(memberType)) return null;
+        // Catch-all wrapper types describe "any IL2CPP object" — every game
+        // class is a "subtype" of these in the catalogue's view, which is
+        // both useless to a modder (thousands of irrelevant choices) and a
+        // wrong signal that the field is constructible. Multi-dimensional
+        // arrays land here too because GetElementType only recognises 1D
+        // collections; a richer editor for those is a separate task.
+        if (IsCatchAllRuntimeType(memberType)) return null;
+
+        // Use the broad concrete-descendant set rather than HasReferenceSubtype:
+        // Odin-routed interface fields (e.g. ITacticalCondition) typically
+        // have plain-managed-class concrete impls, not ScriptableObjects.
+        var subtypes = catalog.EnumerateConcreteSubtypes(memberType);
+        if (subtypes.Count == 0) return null;
+        return [.. subtypes
+            .Select(catalog.FriendlyName)
+            .OrderBy(n => n, StringComparer.Ordinal)];
+    }
+
+    /// <summary>
+    /// True for runtime "any-object" wrapper types whose subtypes span the
+    /// entire game-type graph and so don't represent a meaningful authoring
+    /// choice. Surfacing them as polymorphic-construct destinations would
+    /// dump the modder into a thousands-long picker that doesn't compose
+    /// to a usable value.
+    /// </summary>
+    private static bool IsCatchAllRuntimeType(Type type)
+    {
+        return type.FullName switch
+        {
+            "Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase" => true,
+            "Il2CppSystem.Object" => true,
+            "System.Object" => true,
+            _ => false,
+        };
+    }
+
     private static TemplateQueryResult MapQueryResult(
         TemplateTypeCatalog catalog,
         QueryResult result,
@@ -559,6 +621,7 @@ public static partial class RpcHandlers
                 ReferenceTypeName = ComputeReferenceTypeName(catalog, m),
                 IsReferenceTypePolymorphic = ComputeReferenceTypeIsPolymorphic(catalog, m, instantiatedClassNames),
                 ElementSubtypes = ComputeElementSubtypes(catalog, m),
+                ScalarSubtypes = ComputeScalarSubtypes(catalog, m),
                 NamedArrayEnumTypeName = m.NamedArrayEnumTypeName,
                 EnumMembers = ComputeEnumMembers(catalog, m),
                 NumericMin = m.NumericMin,
@@ -715,6 +778,16 @@ public static partial class RpcHandlers
         /// keeps the standard composite/ref flow.</summary>
         [JsonPropertyName("elementSubtypes")]
         public List<string>? ElementSubtypes { get; set; }
+
+        /// <summary>Concrete subtype short-names the modder can pick when
+        /// constructing a value for a polymorphic scalar field (declared
+        /// type is itself an interface or abstract base, e.g. Odin-routed
+        /// <c>Attack.DamageFilterCondition: ITacticalCondition</c>). Drives
+        /// the same picker UX as <see cref="ElementSubtypes"/> but the
+        /// resulting patch is a Set rather than an Append, and the
+        /// destination is the field itself rather than an element slot.</summary>
+        [JsonPropertyName("scalarSubtypes")]
+        public List<string>? ScalarSubtypes { get; set; }
 
         /// <summary>Short name of the enum paired with a
         /// <c>[NamedArray(typeof(T))]</c> array member; null otherwise.</summary>

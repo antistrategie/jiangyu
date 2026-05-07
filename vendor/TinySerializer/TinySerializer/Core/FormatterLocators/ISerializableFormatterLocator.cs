@@ -14,18 +14,18 @@ namespace TinySerializer.Core.FormatterLocators {
                 formatter = null;
                 return false;
             }
-            
+
             try {
                 formatter = (IFormatter)Activator.CreateInstance(typeof(SerializableFormatter<>).MakeGenericType(type));
             } catch (Exception ex) {
-            #pragma warning disable CS0618
+#pragma warning disable CS0618
                 if (allowWeakFallbackFormatters && (ex is ExecutionEngineException || ex.GetBaseException() is ExecutionEngineException))
-            #pragma warning restore CS0618
+#pragma warning restore CS0618
                 {
                     formatter = new WeakSerializableFormatter(type);
                 } else throw;
             }
-            
+
             return true;
         }
     }

@@ -119,6 +119,74 @@ public class TemplateTypeCatalogTests
     }
 
     [Fact]
+    public void EnumerateConcreteSubtypes_UsesSupplementForInterfaceImpls()
+    {
+        // IL2CPP wrappers strip interface impl declarations from CIL, so
+        // Type.IsAssignableFrom returns false even for legitimate impls.
+        // The catalogue consults the metadata supplement when present;
+        // entries are keyed by the unwrapped namespace (the form Cpp2IL
+        // emits), and the catalogue retries with an `Il2Cpp` prefix to
+        // match wrapped types. Test fixtures live in a non-Il2Cpp
+        // namespace, so we exercise the direct-name match path here.
+        var supplement = new Il2CppMetadataSupplement
+        {
+            InterfaceImpls =
+            {
+                new InterfaceImplementation
+                {
+                    ConcreteFullName = "Jiangyu.Core.Tests.Templates.Fixtures.Gameplay.FixtureAoEShapeImpl",
+                    InterfaceFullName = "Jiangyu.Core.Tests.Templates.Fixtures.Gameplay.IFixtureAoEShape",
+                },
+            },
+        };
+        using var catalog = LoadWithSupplement(supplement);
+
+        // The fixture interface IS a real .NET interface (not an IL2CPP-
+        // stripped class wrapper), so reflection's IsAssignableFrom already
+        // works. The supplement entry should still resolve and not produce
+        // a duplicate; the resolver dedupes via a HashSet.
+        var iface = catalog.ResolveType("IFixtureAoEShape", out _, out _);
+        Assert.NotNull(iface);
+
+        var subs = catalog.EnumerateConcreteSubtypes(iface!);
+        Assert.Contains(subs, s => s.Name == "FixtureAoEShapeImpl");
+        // Reflection gives one match; supplement adds the same Type instance
+        // (deduped). Total count == 1, no duplicates.
+        Assert.Equal(1, subs.Count(s => s.Name == "FixtureAoEShapeImpl"));
+    }
+
+    [Fact]
+    public void EnumerateConcreteSubtypes_SupplementEntryUnderDifferentInterfaceDoesNotLeak()
+    {
+        // Negative guard: a supplement entry keyed under one interface's
+        // FullName must not surface as a subtype when the catalogue is
+        // asked about a different interface.
+        var supplement = new Il2CppMetadataSupplement
+        {
+            InterfaceImpls =
+            {
+                new InterfaceImplementation
+                {
+                    ConcreteFullName = "Jiangyu.Core.Tests.Templates.Fixtures.Gameplay.FixtureAoEShapeImpl",
+                    InterfaceFullName = "ImaginaryNs.IPretendInterface",
+                },
+            },
+        };
+        using var catalog = LoadWithSupplement(supplement);
+
+        var iface = catalog.ResolveType("IFixtureAoEShape", out _, out _);
+        Assert.NotNull(iface);
+
+        var subs = catalog.EnumerateConcreteSubtypes(iface!);
+        // FixtureAoEShapeImpl appears once via reflection (real interface
+        // impl); the supplement entry keyed under a *different* interface
+        // would only add a second match if the catalogue mis-routed the
+        // lookup. Assert the count stays at one — no double-add, no leak.
+        Assert.Single(subs);
+        Assert.Equal("FixtureAoEShapeImpl", subs[0].Name);
+    }
+
+    [Fact]
     public void ResolveType_NamespaceHintFallsBackToAmbiguityWhenMiss()
     {
         using var catalog = Load();

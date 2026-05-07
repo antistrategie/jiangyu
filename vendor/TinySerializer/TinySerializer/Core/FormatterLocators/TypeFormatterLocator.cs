@@ -12,7 +12,7 @@ namespace TinySerializer.Core.FormatterLocators {
                 formatter = null;
                 return false;
             }
-            
+
             formatter = new TypeFormatter();
             return true;
         }

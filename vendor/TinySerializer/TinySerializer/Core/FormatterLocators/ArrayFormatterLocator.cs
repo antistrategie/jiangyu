@@ -12,17 +12,17 @@ namespace TinySerializer.Core.FormatterLocators {
                 formatter = null;
                 return false;
             }
-            
+
             Type elementType = type.GetElementType();
-            
+
             if (type.GetArrayRank() == 1) {
                 if (FormatterUtilities.IsPrimitiveArrayType(elementType)) {
                     try {
                         formatter = (IFormatter)Activator.CreateInstance(typeof(PrimitiveArrayFormatter<>).MakeGenericType(elementType));
                     } catch (Exception ex) {
-                    #pragma warning disable CS0618
+#pragma warning disable CS0618
                         if (allowWeakFallbackFormatters && (ex is ExecutionEngineException || ex.GetBaseException() is ExecutionEngineException))
-                    #pragma warning restore CS0618
+#pragma warning restore CS0618
                         {
                             formatter = new WeakPrimitiveArrayFormatter(type, elementType);
                         } else throw;
@@ -31,9 +31,9 @@ namespace TinySerializer.Core.FormatterLocators {
                     try {
                         formatter = (IFormatter)Activator.CreateInstance(typeof(ArrayFormatter<>).MakeGenericType(elementType));
                     } catch (Exception ex) {
-                    #pragma warning disable CS0618
+#pragma warning disable CS0618
                         if (allowWeakFallbackFormatters && (ex is ExecutionEngineException || ex.GetBaseException() is ExecutionEngineException))
-                    #pragma warning restore CS0618
+#pragma warning restore CS0618
                         {
                             formatter = new WeakArrayFormatter(type, elementType);
                         } else throw;
@@ -43,15 +43,15 @@ namespace TinySerializer.Core.FormatterLocators {
                 try {
                     formatter = (IFormatter)Activator.CreateInstance(typeof(MultiDimensionalArrayFormatter<,>).MakeGenericType(type, type.GetElementType()));
                 } catch (Exception ex) {
-                #pragma warning disable CS0618
+#pragma warning disable CS0618
                     if (allowWeakFallbackFormatters && (ex is ExecutionEngineException || ex.GetBaseException() is ExecutionEngineException))
-                #pragma warning restore CS0618
+#pragma warning restore CS0618
                     {
                         formatter = new WeakMultiDimensionalArrayFormatter(type, elementType);
                     } else throw;
                 }
             }
-            
+
             return true;
         }
     }

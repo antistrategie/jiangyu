@@ -64,12 +64,16 @@ export function FieldAdder({
     (m) =>
       (m.isWritable || m.isCollection) &&
       !m.isHiddenInInspector &&
-      // Odin-routed members (interface-typed fields, abstract non-Unity types,
-      // anything Unity's native serialiser can't handle) live in the Odin
-      // serializationData blob. The data-only patching path can't write into
-      // that blob, so picking one would just produce an empty composite the
-      // modder can't fill — hide them rather than offer a dead end.
-      !m.isLikelyOdinOnly &&
+      // Odin-routed members live in the serializationData blob. We surface
+      // them when they are polymorphic-constructible (scalarSubtypes is
+      // populated): the modder picks a concrete subtype, fills its fields,
+      // and the loader applier constructs the value at runtime. Hide
+      // Odin-routed members without subtype choices because there's no
+      // sensible default editor for them yet.
+      (!m.isLikelyOdinOnly ||
+        (m.scalarSubtypes !== null &&
+          m.scalarSubtypes !== undefined &&
+          m.scalarSubtypes.length > 0)) &&
       m.name.toLowerCase().includes(lowerQuery),
   );
   // Multi-directive fields (collections, named arrays) stay in `available`

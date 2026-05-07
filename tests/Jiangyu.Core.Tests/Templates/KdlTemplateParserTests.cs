@@ -611,11 +611,16 @@ public class KdlTemplateParserTests
     }
 
     [Fact]
-    public void DescentBlock_RequiresIndexProperty()
+    public void DescentBlock_RequiresIndexOrTypeProperty()
     {
+        // A descent block needs either index= (collection element descent)
+        // or type= (Phase 2a scalar polymorphic descent into an
+        // Odin-routed interface field). A bare set "X" { ... } with
+        // neither is meaningless — the parser rejects to surface the
+        // typo rather than treat the block as a value or silently no-op.
         var dir = SetupKdl("bad.kdl", """
             patch "PerkTemplate" "perk.x" {
-                set "EventHandlers" type="AddSkill" {
+                set "EventHandlers" {
                     set "ShowHUDText" #true
                 }
             }
@@ -625,6 +630,34 @@ public class KdlTemplateParserTests
 
         Assert.Equal(1, result.ErrorCount);
         Assert.Contains(_log.Errors, e => e.Contains("index=", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void DescentBlock_AcceptsScalarPolymorphicDescent()
+    {
+        // Phase 2a: set "Field" type="X" { ... } without an index is the
+        // scalar polymorphic descent shape (used for Odin-routed interface
+        // fields like Attack.DamageFilterCondition). Each inner directive
+        // gets a descent step with null Index and Subtype="X" prepended.
+        var dir = SetupKdl("d.kdl", """
+            patch "Attack" "fire_assault_rifle_attack" {
+                set "DamageFilterCondition" type="MoraleStateCondition" {
+                    set "MoraleState" 1
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var op = result.Patches[0].Set[0];
+        Assert.Equal(CompiledTemplateOp.Set, op.Op);
+        Assert.Equal("MoraleState", op.FieldPath);
+        Assert.NotNull(op.Descent);
+        var step = Assert.Single(op.Descent!);
+        Assert.Equal("DamageFilterCondition", step.Field);
+        Assert.Null(step.Index);
+        Assert.Equal("MoraleStateCondition", step.Subtype);
     }
 
     [Fact]
@@ -820,6 +853,36 @@ public class KdlTemplateParserTests
         Assert.Equal(CompiledTemplateOp.Set, op.Op);
         Assert.Equal(1, op.Index);
         Assert.Equal("Cooldown", op.Value!.HandlerConstruction!.TypeName);
+    }
+
+    [Fact]
+    public void HandlerConstruction_SetOnPolymorphicScalarFieldCarriesSubtype()
+    {
+        // Phase 2b: handler= on a Set against a non-collection polymorphic
+        // scalar field (e.g. Attack.DamageFilterCondition: ITacticalCondition)
+        // produces a HandlerConstruction value the same shape as collection
+        // appends. The destination's polymorphism is exercised by the
+        // catalog validator separately; here we only assert the parser
+        // accepts the shape.
+        var dir = SetupKdl("h.kdl", """
+            patch "Attack" "fire_assault_rifle_attack" {
+                set "DamageFilterCondition" handler="MoraleStateCondition" {
+                    set "Negated" #false
+                    set "MoraleState" 1
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var op = result.Patches[0].Set[0];
+        Assert.Equal(CompiledTemplateOp.Set, op.Op);
+        Assert.Equal("DamageFilterCondition", op.FieldPath);
+        Assert.Null(op.Index);
+        Assert.Equal(CompiledTemplateValueKind.HandlerConstruction, op.Value!.Kind);
+        Assert.Equal("MoraleStateCondition", op.Value.HandlerConstruction!.TypeName);
+        Assert.Equal(2, op.Value.HandlerConstruction.Operations.Count);
     }
 
     [Fact]

@@ -92,6 +92,7 @@ public sealed class ObjectInspectionService(string gameDataPath, string cachePat
             if (asset is IMonoBehaviour monoBehaviour)
             {
                 ManagedTypeInspectionEnricher.Enrich(monoBehaviour, gameData.AssemblyManager, inspection.Fields);
+                OdinPayloadEnricher.Enrich(inspection.Fields);
             }
 
             return new ObjectInspectionResult

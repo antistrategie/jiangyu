@@ -321,7 +321,13 @@ public static class TemplateCatalogValidator
         }
 
         if (op.Value?.Kind == CompiledTemplateValueKind.Composite && op.Value.Composite != null)
-            return ValidateCompositeValue(op.Value.Composite, FormatFullPath(op), catalog, additions, reportError);
+            return ValidateCompositeValue(
+                op.Value.Composite,
+                FormatFullPath(op),
+                result.CurrentType,
+                catalog,
+                additions,
+                reportError);
 
         if (op.Value?.Kind == CompiledTemplateValueKind.HandlerConstruction && op.Value.HandlerConstruction != null)
             return ValidateHandlerConstruction(op.Value.HandlerConstruction, op, result, catalog, additions, reportError);
@@ -495,58 +501,84 @@ public static class TemplateCatalogValidator
         IAssetAdditionsCatalog? additions,
         Action<string> reportError)
     {
-        // Destination must be a collection element-type (auto-unwrapped from
-        // the array). UnwrappedFrom is non-null when the navigator stopped
-        // on a collection; CurrentType is the unwrapped element type.
-        if (destination.UnwrappedFrom is null)
-        {
-            reportError(
-                "handler= construction targets a collection element-type, "
-                + $"but field '{FormatFullPath(op)}' is not a collection.");
-            return 1;
-        }
-
+        // Two valid destinations:
+        //  - Collection element-type, auto-unwrapped from the array. The
+        //    canonical Append/Insert pattern: handler= constructs an owned
+        //    ScriptableObject element to push into the list.
+        //  - Polymorphic scalar field, where the declared type itself has
+        //    concrete subtypes the modder must pick from. Phase 2b: lets
+        //    Odin-routed interface/abstract scalar fields like
+        //    Attack.DamageFilterCondition (ITacticalCondition) be set to a
+        //    fresh concrete instance.
+        //
+        // CurrentType is the resolved destination type in either case; only
+        // the rejection rule differs.
         var elementType = destination.CurrentType;
         if (elementType is null)
         {
-            reportError($"handler= construction on '{FormatFullPath(op)}': cannot resolve element type.");
+            reportError($"handler= construction on '{FormatFullPath(op)}': cannot resolve destination type.");
+            return 1;
+        }
+
+        var isCollectionDestination = destination.UnwrappedFrom is not null;
+        // For collection-element handlers, the existing ScriptableObject-only
+        // semantics apply (HasReferenceSubtype). For scalar polymorphic
+        // destinations the subtypes may be plain managed classes (Odin-routed
+        // interface impls, etc.), so we use the broader concrete-descendant
+        // check via EnumerateConcreteSubtypes.
+        var isPolymorphicScalar = !isCollectionDestination
+            && catalog.EnumerateConcreteSubtypes(elementType).Count > 0;
+
+        if (!isCollectionDestination && !isPolymorphicScalar)
+        {
+            reportError(
+                "handler= construction targets a collection element or a "
+                + "polymorphic scalar field, but field "
+                + $"'{FormatFullPath(op)}' is concrete and non-polymorphic. "
+                + "For a concrete inline value, use composite=\"<TypeName>\".");
             return 1;
         }
 
         // Resolve the named subtype. Allow empty/null when the destination
-        // is monomorphic (element type has no strict subtypes), in which
-        // case we use the element type itself.
+        // is monomorphic (no strict subtypes), in which case we use the
+        // element type itself. For both gates we want a broad
+        // concrete-descendant view: HasReferenceSubtype counts only
+        // ScriptableObject descendants, while EnumerateConcreteSubtypes
+        // also picks up plain managed classes via the metadata supplement
+        // (Odin-routed interfaces with managed impls). The polymorphic-
+        // scalar destination always needs a TypeName because we already
+        // confirmed it has subtypes above.
         Type subtype;
         var typeName = construction.TypeName;
         if (string.IsNullOrWhiteSpace(typeName))
         {
-            if (catalog.HasReferenceSubtype(elementType))
+            if (isPolymorphicScalar
+                || catalog.HasReferenceSubtype(elementType)
+                || catalog.EnumerateConcreteSubtypes(elementType).Count > 0)
             {
                 reportError(
                     $"handler= on '{FormatFullPath(op)}' must name a concrete subtype: "
-                    + $"element type {catalog.FriendlyName(elementType)} has subclasses.");
+                    + $"destination type {catalog.FriendlyName(elementType)} has subclasses.");
                 return 1;
             }
             subtype = elementType;
         }
         else
         {
-            var resolved = catalog.ResolveType(typeName, out var ambiguous, out var typeError);
+            // Restrict resolution to subtypes of the destination element
+            // type. Mirrors the polymorphic-descent navigator: short-name
+            // collisions with unrelated classes (production case:
+            // Effects.Attack vs AI.Behaviors.Attack) are filtered out
+            // structurally, so the modder's handler= picks the correct one.
+            var resolved = catalog.ResolveSubtypeHint(elementType, typeName, out var ambiguous);
             if (resolved is null)
             {
                 var ambiguityNote = ambiguous.Count > 0
-                    ? " candidates: " + string.Join(", ", ambiguous.Select(t => t.FullName))
+                    ? " candidates: " + string.Join(", ", ambiguous)
                     : string.Empty;
                 reportError(
-                    $"handler=\"{typeName}\" did not resolve "
-                    + $"({typeError ?? "unknown error"}).{ambiguityNote}");
-                return 1;
-            }
-            if (!elementType.IsAssignableFrom(resolved))
-            {
-                reportError(
-                    $"handler=\"{typeName}\" (full name '{resolved.FullName}') is not a subtype of "
-                    + $"{catalog.FriendlyName(elementType)} required by '{FormatFullPath(op)}'.");
+                    $"handler=\"{typeName}\" is not a subtype of "
+                    + $"{catalog.FriendlyName(elementType)} required by '{FormatFullPath(op)}'.{ambiguityNote}");
                 return 1;
             }
             subtype = resolved;
@@ -569,17 +601,41 @@ public static class TemplateCatalogValidator
     private static int ValidateCompositeValue(
         CompiledTemplateComposite composite,
         string contextPath,
+        Type? destinationType,
         TemplateTypeCatalog catalog,
         IAssetAdditionsCatalog? additions,
         Action<string> reportError)
     {
         if (string.IsNullOrWhiteSpace(composite.TypeName)) return 0;
 
-        var type = catalog.ResolveType(composite.TypeName, out _, out var typeError);
-        if (type == null)
+        // Restrict to subtypes of the destination type when one is known and
+        // is itself polymorphic. This filters out short-name twins outside
+        // the subtype family (the production case is Effects.Attack vs
+        // AI.Behaviors.Attack: only the former assigns to a
+        // SkillEventHandlerTemplate-typed destination).
+        Type? type;
+        if (destinationType != null && catalog.HasReferenceSubtype(destinationType))
         {
-            reportError(typeError ?? $"unknown composite type '{composite.TypeName}'.");
-            return 1;
+            type = catalog.ResolveSubtypeHint(destinationType, composite.TypeName, out var ambiguous);
+            if (type == null)
+            {
+                var note = ambiguous.Count > 0
+                    ? " candidates: " + string.Join(", ", ambiguous)
+                    : string.Empty;
+                reportError(
+                    $"composite type=\"{composite.TypeName}\" is not a subtype of "
+                    + $"{catalog.FriendlyName(destinationType)} required by composite '{contextPath}'.{note}");
+                return 1;
+            }
+        }
+        else
+        {
+            type = catalog.ResolveType(composite.TypeName, out _, out var typeError);
+            if (type == null)
+            {
+                reportError(typeError ?? $"unknown composite type '{composite.TypeName}'.");
+                return 1;
+            }
         }
 
         return ValidateInnerOperations(
@@ -627,7 +683,12 @@ public static class TemplateCatalogValidator
         for (var i = 0; i < descent.Count; i++)
         {
             var step = descent[i];
-            sb.Append('.').Append(step.Field).Append('[').Append(step.Index).Append(']');
+            sb.Append('.').Append(step.Field);
+            // Bracketed indexer marks a collection descent for the navigator;
+            // a bare member name is a scalar polymorphic descent. The
+            // navigator distinguishes the two via the segment shape.
+            if (step.Index.HasValue)
+                sb.Append('[').Append(step.Index.Value).Append(']');
             if (!string.IsNullOrEmpty(step.Subtype))
                 (hints ??= [])[i] = step.Subtype;
         }
@@ -646,7 +707,12 @@ public static class TemplateCatalogValidator
             return op.FieldPath;
         var sb = new System.Text.StringBuilder();
         foreach (var step in descent)
-            sb.Append(step.Field).Append('[').Append(step.Index).Append(']').Append('.');
+        {
+            sb.Append(step.Field);
+            if (step.Index.HasValue)
+                sb.Append('[').Append(step.Index.Value).Append(']');
+            sb.Append('.');
+        }
         sb.Append(op.FieldPath);
         return sb.ToString();
     }

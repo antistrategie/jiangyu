@@ -981,11 +981,21 @@ public static class KdlTemplateParser
         List<CompiledTemplateSetOperation> ops,
         string outerField, int? outerIndex)
     {
-        if (outerIndex == null)
+        // Two valid descent shapes:
+        //  - Collection descent (outerIndex non-null): navigate into element
+        //    [N] of the named collection. type= optional for monomorphic
+        //    element types, required for polymorphic.
+        //  - Scalar polymorphic descent (outerIndex null + type= present):
+        //    navigate into the named scalar field, casting to the named
+        //    concrete subtype. Used for Odin-routed interface-typed fields
+        //    like Attack.DamageFilterCondition: ITacticalCondition.
+        var subtypeHintEarly = GetProperty(node, "type");
+        if (outerIndex == null && string.IsNullOrEmpty(subtypeHintEarly))
         {
             log.Error(
-                $"{pos}: 'set' with a child block requires an index= property. "
-                + "Descent blocks navigate into element N of the named collection.");
+                $"{pos}: 'set' with a child block requires either index= "
+                + "(collection descent into element N) or type=\"<Subtype>\" "
+                + "(scalar polymorphic descent into a non-collection field).");
             return false;
         }
 
@@ -1048,7 +1058,8 @@ public static class KdlTemplateParser
         var newStep = new TemplateDescentStep
         {
             Field = outerField,
-            Index = outerIndex.Value,
+            // Null index marks a scalar polymorphic descent (type-only).
+            Index = outerIndex,
             Subtype = subtypeHint,
         };
 

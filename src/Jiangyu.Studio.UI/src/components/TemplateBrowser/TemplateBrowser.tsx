@@ -1310,6 +1310,8 @@ function MemberRow({
                     label={label}
                     typeName={elemType}
                     subFields={elemSubFields}
+                    instanceLookup={instanceLookup}
+                    onNavigate={onNavigate}
                   />
                 );
               })}
@@ -1361,6 +1363,8 @@ function MemberRow({
                       label={`[${idx}]`}
                       typeName={elem.fieldTypeName ?? ""}
                       subFields={arrSubFields}
+                      instanceLookup={instanceLookup}
+                      onNavigate={onNavigate}
                     />
                   );
                 })}
@@ -1517,14 +1521,27 @@ function ExpandableElementRow({
   label,
   typeName,
   subFields,
+  instanceLookup,
+  onNavigate,
 }: {
   elem: InspectedFieldNode;
   label: string;
   typeName: string;
   subFields: readonly InspectedFieldNode[] | null;
+  instanceLookup: ReadonlyMap<string, TemplateInstanceEntry>;
+  onNavigate: (key: string) => void;
 }) {
   const [subExpanded, setSubExpanded] = useState(false);
   const hasChildren = subFields !== null;
+
+  // When the element resolves to a known template, render the value as a
+  // navigable link instead of plain text. Covers reference-array fields like
+  // SkillTemplate.EventHandlers (List<SkillEventHandlerTemplate>) and
+  // SkillGroup.Skills (List<SkillTemplate>).
+  const referenceLink =
+    elem.kind === "reference" && elem.reference
+      ? renderReferenceLink(elem.reference, instanceLookup, onNavigate)
+      : null;
 
   return (
     <div>
@@ -1552,7 +1569,7 @@ function ExpandableElementRow({
         )}
         <span className={styles.memberNestedLabel}>{label}</span>
         <span className={styles.memberNestedType}>{typeName}</span>
-        <span className={styles.memberNestedValue}>{formatValue(elem)}</span>
+        <span className={styles.memberNestedValue}>{referenceLink ?? formatValue(elem)}</span>
       </div>
       {subExpanded && subFields && (
         <div className={styles.memberNestedSubList}>

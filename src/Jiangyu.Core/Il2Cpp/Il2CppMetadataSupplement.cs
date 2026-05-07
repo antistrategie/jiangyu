@@ -16,7 +16,7 @@ public sealed class Il2CppMetadataSupplement
 {
     // Bumped every time the schema changes — cache files older than the
     // current version are treated as stale and rebuilt.
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
 
     [JsonPropertyName("schemaVersion")]
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
@@ -41,6 +41,38 @@ public sealed class Il2CppMetadataSupplement
     /// </summary>
     [JsonPropertyName("fields")]
     public List<FieldMetadata> Fields { get; set; } = [];
+
+    /// <summary>
+    /// Concrete-class to implemented-interface pairs walked from the
+    /// Cpp2IL-enriched AsmResolver assemblies. Il2CppInterop wrapper
+    /// generation strips interface implementations from CIL, so the
+    /// catalogue's <see cref="System.Type.IsAssignableFrom"/> can't see
+    /// them — this map fills that gap. Populated only for concrete classes
+    /// (interfaces themselves and abstract bases are skipped: the bases are
+    /// expressible via class inheritance which IL2CPP does preserve).
+    /// </summary>
+    [JsonPropertyName("interfaceImpls")]
+    public List<InterfaceImplementation> InterfaceImpls { get; set; } = [];
+
+    /// <summary>
+    /// Returns the concrete-class full names that implement
+    /// <paramref name="interfaceFullName"/>, or an empty list when the
+    /// interface has no recorded implementations (or the supplement was
+    /// built before this field was populated).
+    /// </summary>
+    public IReadOnlyList<string> GetInterfaceImplementations(string? interfaceFullName)
+    {
+        if (string.IsNullOrEmpty(interfaceFullName) || InterfaceImpls.Count == 0)
+            return [];
+
+        var matches = new List<string>();
+        foreach (var entry in InterfaceImpls)
+        {
+            if (string.Equals(entry.InterfaceFullName, interfaceFullName, StringComparison.Ordinal))
+                matches.Add(entry.ConcreteFullName);
+        }
+        return matches;
+    }
 
     public bool TryFindNamedArrayEnum(string? declaringTypeShortName, string fieldName, out string? enumShortName)
     {
@@ -118,6 +150,15 @@ public sealed class FieldMetadata
     /// render a sound-aware indicator.</summary>
     [JsonPropertyName("isSoundId")]
     public bool? IsSoundId { get; set; }
+}
+
+public sealed class InterfaceImplementation
+{
+    [JsonPropertyName("concreteFullName")]
+    public required string ConcreteFullName { get; set; }
+
+    [JsonPropertyName("interfaceFullName")]
+    public required string InterfaceFullName { get; set; }
 }
 
 public sealed class NamedArrayPairing

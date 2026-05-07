@@ -12,7 +12,7 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
             { '[', EntryType.PrimitiveArray },
             { ']', EntryType.EndOfArray },
         };
-        
+
         private static readonly Dictionary<char, char> UnescapeDictionary = new Dictionary<char, char>() {
             { 'a', '\a' },
             { 'b', '\b' },
@@ -22,53 +22,53 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
             { 't', '\t' },
             { '0', '\0' }
         };
-        
+
         private StreamReader reader;
         private int bufferIndex = 0;
         private char[] buffer = new char[256];
         private char? lastReadChar;
         private char? peekedChar;
         private Queue<char> emergencyPlayback;
-        
+
         public DeserializationContext Context { get; private set; }
-        
+
         public JsonTextReader(Stream stream, DeserializationContext context) {
             if (stream == null) {
                 throw new ArgumentNullException("stream");
             }
-            
+
             if (context == null) {
                 throw new ArgumentNullException("context");
             }
-            
+
             if (stream.CanRead == false) {
                 throw new ArgumentException("Cannot read from stream");
             }
-            
+
             reader = new StreamReader(stream);
             Context = context;
         }
-        
+
         public void Reset() {
             peekedChar = null;
-            
+
             if (emergencyPlayback != null) {
                 emergencyPlayback.Clear();
             }
         }
-        
+
         public void Dispose() { }
-        
+
         public void ReadToNextEntry(out string name, out string valueContent, out EntryType entry) {
             int valueSeparatorIndex = -1;
             bool insideString = false;
             EntryType? foundEntryType;
-            
+
             bufferIndex = -1;
-            
+
             while (reader.EndOfStream == false) {
                 char c = PeekChar();
-                
+
                 if (insideString && lastReadChar == '\\') {
                     if (c == '\\') {
                         lastReadChar = null;
@@ -84,23 +84,23 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
                             case 't':
                             case '0':
                                 c = UnescapeDictionary[c];
-                                
+
                                 lastReadChar = c;
                                 buffer[bufferIndex] = c;
                                 SkipChar();
                                 continue;
-                            
+
                             case 'u':
                                 SkipChar();
-                                
+
                                 char c1 = ConsumeChar();
                                 char c2 = ConsumeChar();
                                 char c3 = ConsumeChar();
                                 char c4 = ConsumeChar();
-                                
+
                                 if (IsHex(c1) && IsHex(c2) && IsHex(c3) && IsHex(c4)) {
                                     c = ParseHexChar(c1, c2, c3, c4);
-                                    
+
                                     lastReadChar = c;
                                     buffer[bufferIndex] = c;
                                     continue;
@@ -108,13 +108,13 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
                                     Context.Config.DebugContext.LogError("A wild non-hex value appears at position " + reader.BaseStream.Position + "! \\-u-" + c1 + "-" + c2 + "-"
                                                                          + c3 + "-" + c4 + "; current buffer: '" + new string(buffer, 0, bufferIndex + 1)
                                                                          + "'. If the error handling policy is resilient, an attempt will be made to recover from this emergency without a fatal parse error...");
-                                    
+
                                     lastReadChar = null;
-                                    
+
                                     if (emergencyPlayback == null) {
                                         emergencyPlayback = new Queue<char>(5);
                                     }
-                                    
+
                                     emergencyPlayback.Enqueue('u');
                                     emergencyPlayback.Enqueue(c1);
                                     emergencyPlayback.Enqueue(c2);
@@ -125,11 +125,11 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
                         }
                     }
                 }
-                
+
                 if (insideString == false && c == ':' && valueSeparatorIndex == -1) {
                     valueSeparatorIndex = bufferIndex + 1;
                 }
-                
+
                 if (c == '"') {
                     if (insideString && lastReadChar == '\\') {
                         lastReadChar = '"';
@@ -142,7 +142,7 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
                         continue;
                     }
                 }
-                
+
                 if (insideString) {
                     ReadCharIntoBuffer();
                 } else {
@@ -150,11 +150,11 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
                         SkipChar();
                         continue;
                     }
-                    
+
                     if (EntryDelineators.TryGetValue(c, out foundEntryType)) {
                         if (foundEntryType == null) {
                             SkipChar();
-                            
+
                             if (bufferIndex == -1) {
                                 continue;
                             } else {
@@ -163,22 +163,22 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
                             }
                         } else {
                             entry = foundEntryType.Value;
-                            
+
                             switch (entry) {
                                 case EntryType.StartOfNode: {
-                                    EntryType dummy;
-                                    ConsumeChar();
-                                    ParseEntryFromBuffer(out name, out valueContent, out dummy, valueSeparatorIndex, EntryType.StartOfNode);
-                                    return;
-                                }
-                                
+                                        EntryType dummy;
+                                        ConsumeChar();
+                                        ParseEntryFromBuffer(out name, out valueContent, out dummy, valueSeparatorIndex, EntryType.StartOfNode);
+                                        return;
+                                    }
+
                                 case EntryType.PrimitiveArray: {
-                                    EntryType dummy;
-                                    ConsumeChar();
-                                    ParseEntryFromBuffer(out name, out valueContent, out dummy, valueSeparatorIndex, EntryType.PrimitiveArray);
-                                    return;
-                                }
-                                
+                                        EntryType dummy;
+                                        ConsumeChar();
+                                        ParseEntryFromBuffer(out name, out valueContent, out dummy, valueSeparatorIndex, EntryType.PrimitiveArray);
+                                        return;
+                                    }
+
                                 case EntryType.EndOfNode:
                                     if (bufferIndex == -1) {
                                         ConsumeChar();
@@ -189,19 +189,19 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
                                         ParseEntryFromBuffer(out name, out valueContent, out entry, valueSeparatorIndex, null);
                                         return;
                                     }
-                                
+
                                 case EntryType.EndOfArray: {
-                                    if (bufferIndex == -1) {
-                                        ConsumeChar();
-                                        name = null;
-                                        valueContent = null;
-                                        return;
-                                    } else {
-                                        ParseEntryFromBuffer(out name, out valueContent, out entry, valueSeparatorIndex, null);
-                                        return;
+                                        if (bufferIndex == -1) {
+                                            ConsumeChar();
+                                            name = null;
+                                            valueContent = null;
+                                            return;
+                                        } else {
+                                            ParseEntryFromBuffer(out name, out valueContent, out entry, valueSeparatorIndex, null);
+                                            return;
+                                        }
                                     }
-                                }
-                                
+
                                 default:
                                     throw new NotImplementedException();
                             }
@@ -211,7 +211,7 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
                     }
                 }
             }
-            
+
             if (bufferIndex == -1) {
                 name = null;
                 valueContent = null;
@@ -220,7 +220,7 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
                 ParseEntryFromBuffer(out name, out valueContent, out entry, valueSeparatorIndex, EntryType.EndOfStream);
             }
         }
-        
+
         private void ParseEntryFromBuffer(out string name, out string valueContent, out EntryType entry, int valueSeparatorIndex, EntryType? hintEntry) {
             if (bufferIndex >= 0) {
                 if (valueSeparatorIndex == -1) {
@@ -232,15 +232,15 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
                     } else {
                         name = null;
                         valueContent = new string(buffer, 0, bufferIndex + 1);
-                        
+
                         EntryType? guessedPrimitiveType = GuessPrimitiveType(valueContent);
-                        
+
                         if (guessedPrimitiveType != null) {
                             entry = guessedPrimitiveType.Value;
                         } else {
                             entry = EntryType.Invalid;
                         }
-                        
+
                         return;
                     }
                 } else {
@@ -249,76 +249,76 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
                     } else {
                         name = new string(buffer, 0, valueSeparatorIndex);
                     }
-                    
+
                     if (StringComparer.Ordinal.Equals(name, JsonConfig.REGULAR_ARRAY_CONTENT_SIG) && hintEntry == EntryType.StartOfArray) {
                         valueContent = null;
                         entry = EntryType.StartOfArray;
                         return;
                     }
-                    
+
                     if (StringComparer.Ordinal.Equals(name, JsonConfig.PRIMITIVE_ARRAY_CONTENT_SIG) && hintEntry == EntryType.StartOfArray) {
                         valueContent = null;
                         entry = EntryType.PrimitiveArray;
                         return;
                     }
-                    
+
                     if (StringComparer.Ordinal.Equals(name, JsonConfig.INTERNAL_REF_SIG)) {
                         name = null;
                         valueContent = new string(buffer, 0, bufferIndex + 1);
                         entry = EntryType.InternalReference;
                         return;
                     }
-                    
+
                     if (StringComparer.Ordinal.Equals(name, JsonConfig.EXTERNAL_INDEX_REF_SIG)) {
                         name = null;
                         valueContent = new string(buffer, 0, bufferIndex + 1);
                         entry = EntryType.ExternalReferenceByIndex;
                         return;
                     }
-                    
+
                     if (StringComparer.Ordinal.Equals(name, JsonConfig.EXTERNAL_GUID_REF_SIG)) {
                         name = null;
                         valueContent = new string(buffer, 0, bufferIndex + 1);
                         entry = EntryType.ExternalReferenceByGuid;
                         return;
                     }
-                    
+
                     if (StringComparer.Ordinal.Equals(name, JsonConfig.EXTERNAL_STRING_REF_SIG_OLD)) {
                         name = null;
                         valueContent = new string(buffer, 0, bufferIndex + 1);
                         entry = EntryType.ExternalReferenceByString;
                         return;
                     }
-                    
+
                     if (StringComparer.Ordinal.Equals(name, JsonConfig.EXTERNAL_STRING_REF_SIG_FIXED)) {
                         name = null;
                         valueContent = new string(buffer, 0, bufferIndex + 1);
                         entry = EntryType.ExternalReferenceByString;
                         return;
                     }
-                    
+
                     if (bufferIndex >= valueSeparatorIndex) {
                         valueContent = new string(buffer, valueSeparatorIndex + 1, bufferIndex - valueSeparatorIndex);
                     } else {
                         valueContent = null;
                     }
-                    
+
                     if (valueContent != null) {
                         if (StringComparer.Ordinal.Equals(name, JsonConfig.REGULAR_ARRAY_LENGTH_SIG)) {
                             entry = EntryType.StartOfArray;
                             return;
                         }
-                        
+
                         if (StringComparer.Ordinal.Equals(name, JsonConfig.PRIMITIVE_ARRAY_LENGTH_SIG)) {
                             entry = EntryType.PrimitiveArray;
                             return;
                         }
-                        
+
                         if (valueContent.Length == 0 && hintEntry.HasValue) {
                             entry = hintEntry.Value;
                             return;
                         }
-                        
+
                         if (StringComparer.OrdinalIgnoreCase.Equals(valueContent, "null")) {
                             entry = EntryType.Null;
                             return;
@@ -351,7 +351,7 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
                             return;
                         } else {
                             EntryType? guessedPrimitiveType = GuessPrimitiveType(valueContent);
-                            
+
                             if (guessedPrimitiveType != null) {
                                 entry = guessedPrimitiveType.Value;
                                 return;
@@ -360,20 +360,20 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
                     }
                 }
             }
-            
+
             if (hintEntry != null) {
                 name = null;
                 valueContent = null;
                 entry = hintEntry.Value;
                 return;
             }
-            
+
             if (bufferIndex == -1) {
                 Context.Config.DebugContext.LogError("Failed to parse empty entry in the stream.");
             } else {
                 Context.Config.DebugContext.LogError("Tried and failed to parse entry with content '" + new string(buffer, 0, bufferIndex + 1) + "'.");
             }
-            
+
             if (hintEntry == EntryType.EndOfStream) {
                 name = null;
                 valueContent = null;
@@ -384,14 +384,14 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
                 entry = EntryType.Invalid;
             }
         }
-        
+
         private bool IsHex(char c) {
             return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
         }
-        
+
         private uint ParseSingleChar(char c, uint multiplier) {
             uint p = 0;
-            
+
             if (c >= '0' && c <= '9') {
                 p = (uint)(c - '0') * multiplier;
             } else if (c >= 'A' && c <= 'F') {
@@ -399,16 +399,16 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
             } else if (c >= 'a' && c <= 'f') {
                 p = (uint)((c - 'a') + 10) * multiplier;
             }
-            
+
             return p;
         }
-        
+
         private char ParseHexChar(char c1, char c2, char c3, char c4) {
             uint p1 = ParseSingleChar(c1, 0x1000);
             uint p2 = ParseSingleChar(c2, 0x100);
             uint p3 = ParseSingleChar(c3, 0x10);
             uint p4 = ParseSingleChar(c4, 0x1);
-            
+
             try {
                 return (char)(p1 + p2 + p3 + p4);
             } catch (Exception) {
@@ -416,24 +416,24 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
                 return ' ';
             }
         }
-        
+
         private char ReadCharIntoBuffer() {
             bufferIndex++;
-            
+
             if (bufferIndex >= buffer.Length - 1) {
                 char[] newBuffer = new char[buffer.Length * 2];
                 Buffer.BlockCopy(buffer, 0, newBuffer, 0, buffer.Length * sizeof(char));
                 buffer = newBuffer;
             }
-            
+
             char c = ConsumeChar();
-            
+
             buffer[bufferIndex] = c;
             lastReadChar = c;
-            
+
             return c;
         }
-        
+
         private EntryType? GuessPrimitiveType(string content) {
             if (StringComparer.OrdinalIgnoreCase.Equals(content, "null")) {
                 return EntryType.Null;
@@ -448,10 +448,10 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
             } else if (content.Length >= 1) {
                 return EntryType.Integer;
             }
-            
+
             return null;
         }
-        
+
         private char PeekChar() {
             if (peekedChar == null) {
                 if (emergencyPlayback != null && emergencyPlayback.Count > 0) {
@@ -460,10 +460,10 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
                     peekedChar = (char)reader.Read();
                 }
             }
-            
+
             return peekedChar.Value;
         }
-        
+
         private void SkipChar() {
             if (peekedChar == null) {
                 if (emergencyPlayback != null && emergencyPlayback.Count > 0) {
@@ -475,7 +475,7 @@ namespace TinySerializer.Core.DataReaderWriters.Json {
                 peekedChar = null;
             }
         }
-        
+
         private char ConsumeChar() {
             if (peekedChar == null) {
                 if (emergencyPlayback != null && emergencyPlayback.Count > 0) {
