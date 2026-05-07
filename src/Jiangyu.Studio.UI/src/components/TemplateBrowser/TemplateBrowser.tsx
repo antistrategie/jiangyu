@@ -1379,8 +1379,7 @@ function MemberRow({
 
           {/* Multi-dim matrix: render as a 2D grid (3D+ falls back to flat). */}
           {valueNode?.kind === "matrix" &&
-            valueNode.dimensions &&
-            valueNode.dimensions.length === 2 &&
+            valueNode.dimensions?.length === 2 &&
             valueNode.elements && (
               <MatrixGrid
                 rows={valueNode.dimensions[0] ?? 0}
@@ -1430,13 +1429,11 @@ function MatrixGrid({
   return (
     <div className={styles.matrixGrid}>
       {Array.from({ length: rows }, (_, r) => (
-        // eslint-disable-next-line @eslint-react/no-array-index-key -- r is the matrix row index, not iteration order; stable across renders.
         <div key={r} className={styles.matrixRow}>
           {Array.from({ length: cols }, (_, c) => {
             const cell = cells[r * cols + c];
             return (
               <span
-                // eslint-disable-next-line @eslint-react/no-array-index-key -- (r,c) is the matrix cell coordinate, fixed by the matrix shape.
                 key={c}
                 className={`${styles.matrixCell} ${matrixCellTone(cell)}`}
                 title={`[${r},${c}] ${formatMatrixCell(cell)}`}

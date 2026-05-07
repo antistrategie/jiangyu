@@ -77,23 +77,21 @@ export function FieldAdder({
   const lowerQuery = query.toLowerCase();
   const filtered = members.filter(
     (m) =>
-      (m.isWritable || m.isCollection || m.isOdinMultiDimArray) &&
-      !m.isHiddenInInspector &&
+      (m.isWritable || m.isCollection === true || m.isOdinMultiDimArray === true) &&
+      m.isHiddenInInspector !== true &&
       // Odin-routed members live in the serializationData blob. Surface
       // them in the dropdown when (a) we have an opt-in handler and the
-      // member is a multi-dim primitive array (AOETiles, ChunkTileFlags
-      // — picked → grid opens), (b) the member is a HashSet<T> (picked →
+      // member is a multi-dim primitive array (AOETiles, ChunkTileFlags;
+      // picked, grid opens), (b) the member is a HashSet<T> (picked,
       // modder gets append/remove rows; same UX as List<T>), or (c) they
-      // are polymorphic-constructible (scalarSubtypes populated — picked
-      // → modder fills inner fields, loader applier constructs the value).
+      // are polymorphic-constructible (scalarSubtypes populated; picked,
+      // modder fills inner fields, loader applier constructs the value).
       // Hide everything else because there's no sensible default editor
       // for it yet.
-      (!m.isLikelyOdinOnly ||
-        (m.isOdinMultiDimArray && onAddMatrix !== undefined) ||
-        m.isOdinHashSet ||
-        (m.scalarSubtypes !== null &&
-          m.scalarSubtypes !== undefined &&
-          m.scalarSubtypes.length > 0)) &&
+      (m.isLikelyOdinOnly !== true ||
+        (m.isOdinMultiDimArray === true && onAddMatrix !== undefined) ||
+        m.isOdinHashSet === true ||
+        (m.scalarSubtypes != null && m.scalarSubtypes.length > 0)) &&
       m.name.toLowerCase().includes(lowerQuery),
   );
   // Multi-directive fields (collections, named arrays) stay in `available`

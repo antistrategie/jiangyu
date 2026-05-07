@@ -7,6 +7,7 @@ import { isCellAddressedSet, type StampedDirective } from "../helpers";
 import { uiId } from "../shared/uiId";
 import type { EditorValue } from "../types";
 import styles from "../TemplateVisualEditor.module.css";
+import { formatFlagsLabel, formatFlagsTitle, isFlagsEnum, stripArraySuffix } from "./matrixHelpers";
 
 /**
  * Per-field grid editor for Odin-routed multi-dim arrays. The Odin
@@ -75,52 +76,6 @@ function useEnumMembers(typeName: string | undefined): readonly EnumMemberEntry[
   return resolved.type === typeName ? resolved.members : [];
 }
 
-// [Flags] heuristic: every non-zero member is a single power of two, and
-// there are at least two such bits. The catalog doesn't surface the
-// FlagsAttribute over the wire today, so we infer it from the value
-// shape; standard-library [Flags] enums always satisfy this.
-export function isFlagsEnum(members: readonly EnumMemberEntry[]): boolean {
-  let powerOfTwoCount = 0;
-  for (const m of members) {
-    if (m.value === 0) continue;
-    if (m.value < 0) return false;
-    if ((m.value & (m.value - 1)) !== 0) return false;
-    powerOfTwoCount++;
-  }
-  return powerOfTwoCount >= 2;
-}
-
-export function stripArraySuffix(typeName: string): string {
-  // Matches a trailing `[]`, `[,]`, `[,,]`, etc.
-  return typeName.replace(/\[,*\]$/, "");
-}
-
-function formatFlagsLabel(value: number): string {
-  if (value === 0) return "·";
-  // Hex stays single-glyph through 0xF; decimal handles the larger spans
-  // (e.g. 255 for a fully-set ChunkTileFlags byte).
-  return value <= 0xf ? value.toString(16).toUpperCase() : value.toString();
-}
-
-function formatFlagsTitle(
-  value: number,
-  members: readonly EnumMemberEntry[],
-  r: number,
-  c: number,
-  isPending: boolean,
-): string {
-  const coord = `[${r},${c}]${isPending ? " (edited)" : ""}`;
-  if (value === 0) {
-    const zero = members.find((m) => m.value === 0);
-    return `${coord} ${zero ? zero.name : "(none)"}`;
-  }
-  const names: string[] = [];
-  for (const m of members) {
-    if (m.value !== 0 && (value & m.value) === m.value) names.push(m.name);
-  }
-  return `${coord} ${names.length > 0 ? names.join(" | ") : value.toString()}`;
-}
-
 export function MatrixFieldEditor({
   fieldName,
   matrix,
@@ -171,14 +126,19 @@ export function MatrixFieldEditor({
   // Element type: prefer the catalog (set when the backend matched the
   // field via the Odin matrix registry), fall back to parsing the
   // vanilla matrix's declared field type. The catalog accepts short
-  // names, so we don't need the full namespace either way.
+  // names, so we don't need the full namespace either way. Property
+  // reads are hoisted out of useMemo so its dep array matches what the
+  // closure actually reads (React Compiler rejects compound-path
+  // deps because the chain implicitly reads the parent object too).
+  const memberElementType = member?.multiDimElementType;
+  const matrixFieldTypeName = matrix?.fieldTypeName;
   const elementTypeName = useMemo(() => {
-    if (member?.multiDimElementType) return member.multiDimElementType;
-    if (!matrix?.fieldTypeName) return undefined;
-    const stripped = stripArraySuffix(matrix.fieldTypeName);
+    if (memberElementType) return memberElementType;
+    if (!matrixFieldTypeName) return undefined;
+    const stripped = stripArraySuffix(matrixFieldTypeName);
     const lastDot = stripped.lastIndexOf(".");
     return lastDot >= 0 ? stripped.slice(lastDot + 1) : stripped;
-  }, [member?.multiDimElementType, matrix?.fieldTypeName]);
+  }, [memberElementType, matrixFieldTypeName]);
 
   // Cell-kind hint from the catalog (mirrors InspectedFieldNode.Kind on
   // a representative cell), used when there's no vanilla matrix to peek
@@ -341,7 +301,6 @@ export function MatrixFieldEditor({
       <div className={styles.matrixGridWrap}>
         <div className={styles.matrixGrid}>
           {Array.from({ length: rows }, (_, r) => (
-            // eslint-disable-next-line @eslint-react/no-array-index-key -- r is the matrix row index.
             <div key={r} className={styles.matrixRow}>
               {Array.from({ length: cols }, (_, c) => {
                 const eff = effectiveCellValue(r, c);
@@ -355,7 +314,6 @@ export function MatrixFieldEditor({
                   return (
                     <button
                       type="button"
-                      // eslint-disable-next-line @eslint-react/no-array-index-key -- (r,c) is the cell coordinate.
                       key={c}
                       className={`${styles.matrixCell} ${tone} ${dirty}`}
                       title={`[${r},${c}]${isPending ? " (edited)" : ""}`}
@@ -371,7 +329,6 @@ export function MatrixFieldEditor({
                   const tone = mask !== 0 ? styles.matrixCellTrue : styles.matrixCellFalse;
                   const isOpen = openCellKey === cellKey;
                   return (
-                    // eslint-disable-next-line @eslint-react/no-array-index-key -- (r,c) is the cell coordinate.
                     <span key={c} className={styles.matrixCellWrap}>
                       <button
                         type="button"
@@ -431,7 +388,6 @@ export function MatrixFieldEditor({
                 return (
                   <button
                     type="button"
-                    // eslint-disable-next-line @eslint-react/no-array-index-key -- (r,c) is the cell coordinate.
                     key={c}
                     className={`${styles.matrixCell} ${styles.matrixCellFalse} ${dirty}`}
                     title={`[${r},${c}]${isPending ? " (edited)" : ""}`}

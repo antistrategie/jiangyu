@@ -52,7 +52,7 @@ export function NodeCard({
   const vanillaTargetId = isPatch ? node.templateId : node.sourceId;
   const vanillaFields = useVanillaFields(node.templateType, vanillaTargetId);
 
-  const memberMap = new Map(members.map((m) => [m.name, m]));
+  const memberMap = useMemo(() => new Map(members.map((m) => [m.name, m])), [members]);
 
   // UI-only opt-in for matrix grids. Picking an Odin multi-dim member
   // from FieldAdder or dropping one onto the card adds it here so the

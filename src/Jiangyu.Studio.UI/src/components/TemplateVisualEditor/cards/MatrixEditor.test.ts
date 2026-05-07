@@ -15,7 +15,8 @@ vi.mock("@lib/rpc", () => ({
   rpcCall: vi.fn(),
 }));
 
-import { MatrixFieldEditor, isFlagsEnum, stripArraySuffix } from "./MatrixEditor";
+import { MatrixFieldEditor } from "./MatrixEditor";
+import { isFlagsEnum, stripArraySuffix } from "./matrixHelpers";
 import { EditorDispatchContext, NodeIndexContext } from "../store";
 
 describe("isFlagsEnum", () => {

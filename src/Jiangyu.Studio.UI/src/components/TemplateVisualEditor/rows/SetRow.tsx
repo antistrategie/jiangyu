@@ -220,11 +220,7 @@ export function SetRow({
                             ? {
                                 op,
                                 fieldPath: directive.fieldPath,
-                                value:
-                                  directive.value ??
-                                  (member
-                                    ? makeDefaultValue(member)
-                                    : { kind: "String", string: "" }),
+                                value: directive.value ?? makeDefaultValue(member),
                                 _uiId: directive._uiId,
                               }
                             : op === "Remove"
