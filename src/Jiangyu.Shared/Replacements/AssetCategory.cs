@@ -30,11 +30,11 @@ public static class AssetCategory
     /// Map a Unity Object simple class name (e.g. <c>"Sprite"</c>) to its
     /// addition/replacement category folder, or null when the class is not
     /// a supported asset kind. Throws <see cref="System.NotSupportedException"/>
-    /// for class names that are recognised as Unity assets but whose
-    /// authoring path is intentionally deferred — currently <c>Mesh</c>
-    /// and <c>GameObject</c>, which wait on the prefab-construction layer
-    /// (<c>PREFAB_CLONING_TODO.md</c>) before the addition pipeline can
-    /// produce them.
+    /// for class names that are recognised as Unity assets but cannot be
+    /// satisfied by an addition: <c>Mesh</c> (no template field is typed
+    /// <c>Mesh</c> in MENACE; ship a prefab addition instead) and
+    /// <c>PrefabHierarchyObject</c> (AssetRipper's extraction wrapper, not a
+    /// real template field type).
     /// </summary>
     public static string? ForClassName(string className) => className switch
     {
@@ -42,14 +42,17 @@ public static class AssetCategory
         "Texture2D" => Textures,
         "AudioClip" => Audio,
         "Material" => Materials,
+        "GameObject" => Prefabs,
         "Mesh" => throw new System.NotSupportedException(
-            "Mesh additions are deferred until the prefab-construction layer lands. "
-            + "Until then a clone cannot point at a new Mesh from inside a template; "
-            + "see PREFAB_CLONING_TODO.md."),
-        "GameObject" or "PrefabHierarchyObject" => throw new System.NotSupportedException(
-            "Prefab additions are deferred until the prefab-construction layer lands. "
-            + "Until then a clone cannot point at a new prefab from inside a template; "
-            + "see PREFAB_CLONING_TODO.md."),
+            "Mesh additions are not supported because no template field in MENACE is "
+            + "typed Mesh; templates carry GameObject references instead. "
+            + "Author a prefab addition (see PREFAB_CLONING_TODO.md, "
+            + "site/assets/additions/prefabs) that wraps the mesh inside a "
+            + "SkinnedMeshRenderer."),
+        "PrefabHierarchyObject" => throw new System.NotSupportedException(
+            "PrefabHierarchyObject is AssetRipper's extraction wrapper, not a Unity "
+            + "Object type that appears on template fields. Asset references targeting "
+            + "a PHO are author error: target the backing GameObject instead."),
         _ => null,
     };
 
@@ -63,7 +66,7 @@ public static class AssetCategory
     /// </summary>
     public static bool IsSupported(string className) => className switch
     {
-        "Sprite" or "Texture2D" or "AudioClip" or "Material" => true,
+        "Sprite" or "Texture2D" or "AudioClip" or "Material" or "GameObject" => true,
         _ => false,
     };
 
@@ -123,6 +126,9 @@ public static class AssetCategory
             Sprites => _imageExtensions,
             Textures => _imageExtensions,
             Audio => _audioExtensions,
+            Prefabs => _bundleExtensions,
             _ => _noExtensions,
         };
+
+    private static readonly string[] _bundleExtensions = [".bundle"];
 }

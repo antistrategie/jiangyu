@@ -2,6 +2,10 @@
 
 Replace any 3D model in the game by name. Jiangyu accepts authored glTF or GLB files from Blender (or any DCC tool that produces skinned glTF). At compile time it normalises the authored mesh onto the game's skeleton contract. At runtime, the loader swaps the live `SkinnedMeshRenderer`'s mesh, rebinds bones, and rewires materials so every existing reference picks up your replacement, including units spawned later in a session.
 
+::: tip Replacement vs. addition
+This page covers **replacing** a vanilla mesh in place. To **add** a new model that didn't exist before (e.g. a brand-new unit with its own prefab), see [Prefab additions](/assets/additions/prefabs). The two flows are orthogonal: replacement is mesh-level surgery on an existing prefab; addition ships a complete new GameObject.
+:::
+
 ## Studio workflow
 
 1. Open the [Asset Browser](/studio#asset-browser) pane.

@@ -14,9 +14,29 @@ Equivalent to Studio's "New project" dialog. See [Manifest](/reference/manifest)
 
 ### `jiangyu compile`
 
-Compiles the project's replacements and templates into a shippable mod under `compiled/`. Reads `jiangyu.json`, walks `assets/replacements/` and `templates/`, emits AssetBundles and the compiled manifest.
+Compiles the project's replacements and templates into a shippable mod under `compiled/`. Reads `jiangyu.json`, walks `assets/replacements/` and `templates/`, emits AssetBundles and the compiled manifest. If `unity/Assets/Prefabs/` has any `.prefab` files, invokes Unity batchmode against the `unity/` project to build prefab addition bundles.
 
 Equivalent to Studio's Compile dossier. Returns non-zero on any compile error.
+
+### `jiangyu unity init`
+
+Scaffolds the per-mod Unity Editor project at `unity/` for [prefab addition](/assets/additions/prefabs) authoring. Idempotent: re-running refreshes Jiangyu-managed files under `unity/Assets/Jiangyu/` and `.gitignore`; modder content elsewhere is preserved.
+
+Only needed for mods that ship prefab additions. Data-only and replacement-only mods never need to run this.
+
+### `jiangyu unity open`
+
+Launches Unity Editor on the mod's `unity/` project. Uses the editor path resolved from your global config's `unityEditor` field. Detaches; the CLI returns immediately.
+
+### `jiangyu unity import-prefab <name>`
+
+Extracts a vanilla game prefab plus its transitive dependency closure (meshes, materials, textures, shaders) into `unity/Assets/Imported/<name>/` as Unity-native assets so you can author against a real game baseline. Auto-bootstraps `unity/` if missing. Targeted extraction: only the dependency closure of the named asset is written, not the whole game.
+
+```sh
+jiangyu unity import-prefab rmc_default_female_soldier_2
+```
+
+Pass `--path-id` and/or `--collection` when the name is ambiguous (use `jiangyu assets search` to disambiguate).
 
 ## Assets
 

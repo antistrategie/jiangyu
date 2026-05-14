@@ -160,6 +160,12 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var bundleName = manifest.Name.ToLowerInvariant().Replace(" ", "_");
         var outputDir = Path.Combine(projectDir, "compiled");
         Directory.CreateDirectory(outputDir);
+
+        // Clear stale .bundle artefacts from previous compiles so removed
+        // prefab additions don't linger and ship. The main mod bundle and any
+        // currently-staged addition bundles are re-written below.
+        foreach (var stale in Directory.EnumerateFiles(outputDir, "*.bundle"))
+            File.Delete(stale);
         var unityProjectDir = Path.Combine(projectDir, ".jiangyu", "unity_project");
         var builtBundle = Path.Combine(unityProjectDir, "AssetBundles", bundleName);
 
@@ -171,6 +177,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         // after a slow build succeeded.
         List<CompiledTemplatePatch>? patchSource = null;
         List<CompiledTemplateClone>? cloneSource = null;
+        List<CompiledTemplateBinding>? bindingSource = null;
 
         phaseSw.Restart();
         if (hasKdlTemplates)
@@ -178,9 +185,13 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             var kdlResult = KdlTemplateParser.ParseAll(templatesDir, _log);
             if (kdlResult.ErrorCount > 0)
                 return Fail($"KDL template parsing failed with {kdlResult.ErrorCount} error(s). See errors above.");
-            _log.Info($"  Parsed {kdlResult.Patches.Count} template patch(es) and {kdlResult.Clones.Count} clone(s) from KDL.");
+            var bindingsNote = kdlResult.Bindings.Count > 0
+                ? $", {kdlResult.Bindings.Count} binding(s)"
+                : string.Empty;
+            _log.Info($"  Parsed {kdlResult.Patches.Count} template patch(es) and {kdlResult.Clones.Count} clone(s){bindingsNote} from KDL.");
             patchSource = kdlResult.Patches;
             cloneSource = kdlResult.Clones;
+            bindingSource = kdlResult.Bindings;
         }
 
         var templatePatchResult = TemplatePatchEmitter.Emit(patchSource, _log);
@@ -208,17 +219,28 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
                 var supplement = Il2CppMetadataCache.LoadIfPresent(input.Config.GetCachePath());
                 using var catalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirs, supplement);
-                var additionsCatalog = new FileSystemAssetAdditionsCatalog(additionRoot);
+                var additionsCatalog = new FileSystemAssetAdditionsCatalog(
+                    additionRoot,
+                    unityPrefabsDir: Path.Combine(projectDir, "unity", "Assets", "Prefabs"));
                 foreach (var conflict in additionsCatalog.ConflictingNames)
                 {
                     _log.Error($"Asset addition '{conflict}': two files share the same logical name in the same category. Rename one or remove the duplicate.");
                 }
+                // Load the vanilla game asset index so the validator also
+                // accepts asset="..." references targeting in-game assets,
+                // not just mod-shipped additions. Null when the index hasn't
+                // been built yet — validator falls back to additions-only.
+                var loadedAssetIndex = assetPipeline.LoadIndex();
+                IGameAssetIndex? gameAssetIndex = loadedAssetIndex != null
+                    ? new GameAssetIndex(loadedAssetIndex)
+                    : null;
                 var catalogErrors = TemplateCatalogValidator.Validate(
                     templatePatchResult.Patches,
                     templateCloneResult.Clones,
                     catalog,
                     _log,
-                    additionsCatalog);
+                    additionsCatalog,
+                    gameAssetIndex);
                 if (catalogErrors > 0 || additionsCatalog.ConflictingNames.Count > 0)
                     return Fail($"Template validation failed with {catalogErrors + additionsCatalog.ConflictingNames.Count} error(s). See errors above.");
             }
@@ -228,6 +250,16 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var compiledManifest = ModManifest.FromJson(manifest.ToJson());
         compiledManifest.TemplatePatches = templatePatchResult.Patches;
         compiledManifest.TemplateClones = templateCloneResult.Clones;
+        compiledManifest.TemplateBindings = bindingSource;
+
+        var unityBuildOutputDir = Path.Combine(projectDir, ".jiangyu", "unity-build");
+        await BuildUnityAdditionPrefabs(projectDir, unityBuildOutputDir, unityEditorPath);
+
+        AdditionPrefabStaging.Stage(
+            sourceDirs: [Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Prefabs), unityBuildOutputDir],
+            outputDir,
+            compiledManifest,
+            _log);
 
         // Template-only compile: no asset replacements, just emit the compiled manifest.
         if (totalCompileInputCount == 0)
@@ -326,6 +358,75 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
     public static string BuildModelReplacementAlias(string targetName, long pathId)
         => $"{targetName}--{pathId}";
+
+    /// <summary>
+    /// Invokes Unity batchmode against the modder's <c>unity/</c> project to
+    /// build each prefab under <c>Assets/Prefabs/</c> into its own AssetBundle.
+    /// Bundles land in <c>&lt;projectDir&gt;/.jiangyu/unity-build/</c> where
+    /// <see cref="AdditionPrefabStaging.Stage"/> picks them up. No-op when
+    /// <see cref="AdditionPrefabStaging.ShouldInvokeUnityForPrefabs"/> returns
+    /// false.
+    /// </summary>
+    private async Task BuildUnityAdditionPrefabs(string projectDir, string unityBuildOutputDir, string unityEditorPath)
+    {
+        if (!AdditionPrefabStaging.ShouldInvokeUnityForPrefabs(projectDir))
+            return;
+
+        var unityProjectDir = Path.Combine(projectDir, "unity");
+        var prefabsDir = Path.Combine(unityProjectDir, "Assets", "Prefabs");
+        var prefabFiles = Directory.EnumerateFiles(prefabsDir, "*.prefab", SearchOption.AllDirectories).ToArray();
+
+        Directory.CreateDirectory(unityBuildOutputDir);
+        // Clear unity-build/ entirely. Just deleting *.bundle leaves stale
+        // .manifest files that make Unity's incremental build think the
+        // bundles are still current, so it skips rebuild and produces no
+        // output. Full wipe forces Unity to rebuild from scratch each time,
+        // which is fast for the few-prefabs case Layer 1 targets.
+        foreach (var stale in Directory.EnumerateFiles(unityBuildOutputDir))
+            File.Delete(stale);
+
+        _log.Info($"  Building {prefabFiles.Length} prefab(s) from unity/Assets/Prefabs/...");
+
+        var logFile = Path.Combine(unityProjectDir, "build.log");
+        var arguments = string.Join(" ",
+            "-batchmode",
+            "-nographics",
+            "-quit",
+            $"-projectPath \"{unityProjectDir}\"",
+            "-executeMethod Jiangyu.Mod.BuildBundles.BuildAll",
+            $"-logFile \"{logFile}\"");
+
+        var process = new System.Diagnostics.Process
+        {
+            StartInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = unityEditorPath,
+                Arguments = arguments,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            }
+        };
+
+        process.Start();
+        await process.WaitForExitAsync();
+
+        if (process.ExitCode != 0)
+        {
+            _log.Error($"Unity exited with code {process.ExitCode} building unity/ prefab bundles.");
+            _log.Error($"  Log: {logFile}");
+            if (File.Exists(logFile))
+            {
+                var lines = await File.ReadAllLinesAsync(logFile);
+                foreach (var line in lines.Skip(Math.Max(0, lines.Length - 20)))
+                    _log.Error($"  {line}");
+            }
+            throw new InvalidOperationException("Unity batchmode build for unity/ prefab bundles failed.");
+        }
+
+        var builtBundles = Directory.EnumerateFiles(unityBuildOutputDir, "*.bundle").Count();
+        _log.Info($"  Unity built {builtBundles} prefab bundle(s) into {unityBuildOutputDir}");
+    }
 
     public static string BuildReplacementAlias(string targetName, long? pathId)
         => pathId.HasValue ? $"{targetName}--{pathId.Value}" : targetName;

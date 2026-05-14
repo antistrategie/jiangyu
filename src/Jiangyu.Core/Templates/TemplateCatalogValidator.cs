@@ -22,14 +22,15 @@ public static class TemplateCatalogValidator
         IEnumerable<CompiledTemplateClone>? clones,
         TemplateTypeCatalog catalog,
         ILogSink log,
-        IAssetAdditionsCatalog? additions = null)
+        IAssetAdditionsCatalog? additions = null,
+        IGameAssetIndex? gameAssets = null)
     {
         var errors = 0;
 
         if (patches != null)
         {
             foreach (var patch in patches)
-                errors += ValidatePatch(patch, catalog, additions, log);
+                errors += ValidatePatch(patch, catalog, additions, log, gameAssets);
         }
 
         if (clones != null)
@@ -114,7 +115,8 @@ public static class TemplateCatalogValidator
         CompiledTemplatePatch patch,
         TemplateTypeCatalog catalog,
         IAssetAdditionsCatalog? additions,
-        ILogSink log)
+        ILogSink log,
+        IGameAssetIndex? gameAssets = null)
     {
         var templateType = patch.TemplateType ?? "EntityTemplate";
         var label = $"{templateType}:{patch.TemplateId}";
@@ -134,7 +136,8 @@ public static class TemplateCatalogValidator
                 templateType,
                 catalog,
                 additions,
-                message => log.Error($"Template patch '{label}.{FormatFullPath(op)}' — {message}"));
+                message => log.Error($"Template patch '{label}.{FormatFullPath(op)}' — {message}"),
+                gameAssets);
         }
         return errors;
     }
@@ -159,7 +162,8 @@ public static class TemplateCatalogValidator
         string templateType,
         TemplateTypeCatalog catalog,
         IAssetAdditionsCatalog? additions,
-        Action<string> reportError)
+        Action<string> reportError,
+        IGameAssetIndex? gameAssets = null)
     {
         if (string.IsNullOrWhiteSpace(op.FieldPath)) return 0;
 
@@ -406,7 +410,7 @@ public static class TemplateCatalogValidator
             }
             else if (op.Value.Kind == CompiledTemplateValueKind.AssetReference)
             {
-                if (ValidateAssetReference(op.Value, declaredType, catalog, additions, reportError))
+                if (ValidateAssetReference(op.Value, declaredType, catalog, additions, reportError, gameAssets))
                     return 1;
             }
         }
@@ -418,10 +422,11 @@ public static class TemplateCatalogValidator
                 result.CurrentType,
                 catalog,
                 additions,
-                reportError);
+                reportError,
+                gameAssets);
 
         if (op.Value?.Kind == CompiledTemplateValueKind.HandlerConstruction && op.Value.HandlerConstruction != null)
-            return ValidateHandlerConstruction(op.Value.HandlerConstruction, op, result, catalog, additions, reportError);
+            return ValidateHandlerConstruction(op.Value.HandlerConstruction, op, result, catalog, additions, reportError, gameAssets);
 
         return 0;
     }
@@ -516,7 +521,8 @@ public static class TemplateCatalogValidator
         Type? declaredType,
         TemplateTypeCatalog catalog,
         IAssetAdditionsCatalog? additions,
-        Action<string> reportError)
+        Action<string> reportError,
+        IGameAssetIndex? gameAssets = null)
     {
         if (declaredType is null)
         {
@@ -532,12 +538,20 @@ public static class TemplateCatalogValidator
             // shared dispatcher would throw, so a modder reading the compile
             // error and a future implementer reading the dispatcher's stack
             // trace land on the same design doc.
-            if (className is "Mesh" or "GameObject" or "PrefabHierarchyObject")
+            if (className is "Mesh")
             {
                 reportError(
-                    $"asset= for field type {catalog.FriendlyName(declaredType)} "
-                    + "is not yet supported. Mesh and prefab additions wait on "
-                    + "the prefab-construction layer (see PREFAB_CLONING_TODO.md).");
+                    $"asset= on a {catalog.FriendlyName(declaredType)} field is not "
+                    + "supported. No template field in MENACE is typed Mesh; ship a "
+                    + "prefab addition (see PREFAB_CLONING_TODO.md) that wraps the "
+                    + "mesh in a SkinnedMeshRenderer instead.");
+            }
+            else if (className is "PrefabHierarchyObject")
+            {
+                reportError(
+                    $"asset= on a {catalog.FriendlyName(declaredType)} field is not "
+                    + "supported. PrefabHierarchyObject is an AssetRipper extraction "
+                    + "wrapper; target the backing GameObject instead.");
             }
             else
             {
@@ -560,15 +574,22 @@ public static class TemplateCatalogValidator
         // runs when the compiler hands us a catalog; the editor-validation
         // path passes null because it doesn't have project-root context and
         // the actual missing-asset diagnostic surfaces at compile time.
+        // Falls back to the vanilla game asset index so references can
+        // point at existing in-game assets (e.g. asset="rmc_default_male_soldier"
+        // for a vanilla soldier model) without the modder having to ship
+        // their own copy.
         if (additions != null)
         {
             var category = AssetCategory.ForClassName(className);
-            if (category != null && !additions.Contains(category, value.Asset!.Name))
+            if (category != null
+                && !additions.Contains(category, value.Asset!.Name)
+                && !(gameAssets?.Contains(category, value.Asset!.Name) ?? false))
             {
                 reportError(
                     $"asset=\"{value.Asset.Name}\" was not found at "
-                    + $"assets/additions/{category}/{value.Asset.Name}.<ext>. "
-                    + "Add the asset file or correct the reference name.");
+                    + $"assets/additions/{category}/{value.Asset.Name}.<ext> "
+                    + "and no vanilla game asset of that name exists in the "
+                    + $"'{category}' category. Add the asset file or correct the reference name.");
                 return true;
             }
         }
@@ -590,7 +611,8 @@ public static class TemplateCatalogValidator
         QueryResult destination,
         TemplateTypeCatalog catalog,
         IAssetAdditionsCatalog? additions,
-        Action<string> reportError)
+        Action<string> reportError,
+        IGameAssetIndex? gameAssets = null)
     {
         // Two valid destinations:
         //  - Collection element-type, auto-unwrapped from the array. The
@@ -686,7 +708,8 @@ public static class TemplateCatalogValidator
             $"handler= construction for '{FormatFullPath(op)}'",
             catalog,
             additions,
-            reportError);
+            reportError,
+            gameAssets);
     }
 
     private static int ValidateCompositeValue(
@@ -695,7 +718,8 @@ public static class TemplateCatalogValidator
         Type? destinationType,
         TemplateTypeCatalog catalog,
         IAssetAdditionsCatalog? additions,
-        Action<string> reportError)
+        Action<string> reportError,
+        IGameAssetIndex? gameAssets = null)
     {
         if (string.IsNullOrWhiteSpace(composite.TypeName)) return 0;
 
@@ -735,7 +759,8 @@ public static class TemplateCatalogValidator
             $"composite '{contextPath}'",
             catalog,
             additions,
-            reportError);
+            reportError,
+            gameAssets);
     }
 
     private static int ValidateInnerOperations(
@@ -744,13 +769,14 @@ public static class TemplateCatalogValidator
         string contextLabel,
         TemplateTypeCatalog catalog,
         IAssetAdditionsCatalog? additions,
-        Action<string> reportError)
+        Action<string> reportError,
+        IGameAssetIndex? gameAssets = null)
     {
         var errors = 0;
         foreach (var inner in operations)
         {
             void InnerReport(string message) => reportError($"{contextLabel}: {message}");
-            errors += ValidateOperation(inner, typeName, catalog, additions, InnerReport);
+            errors += ValidateOperation(inner, typeName, catalog, additions, InnerReport, gameAssets);
         }
         return errors;
     }

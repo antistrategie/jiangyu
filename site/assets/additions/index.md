@@ -15,6 +15,7 @@ assets/additions/
   sprites/
   textures/
   audio/
+  prefabs/         (also produced by unity/ batchmode build)
 ```
 
 Each category folder is walked recursively. The asset's runtime name is its **path under the category folder, with the extension stripped**. So `assets/additions/sprites/lrm5/icon.png` becomes a `Sprite` referenced as `asset="lrm5/icon"`.
@@ -40,6 +41,7 @@ The category is **inferred** from the destination field's declared Unity type. `
 | Texture | `UnityEngine.Texture2D` | [Textures](/assets/additions/textures) |
 | Audio | `UnityEngine.AudioClip` | [Audio](/assets/additions/audio) |
 | Material | `UnityEngine.Material` | (no dedicated page) |
+| Prefab | `UnityEngine.GameObject`, `List<UnityEngine.GameObject>` | [Prefabs](/assets/additions/prefabs) |
 
 ## Compile-time checks
 

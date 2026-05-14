@@ -1340,6 +1340,123 @@ public class KdlTemplateParserTests
         Assert.Contains(_log.Errors, e => e.Contains("asset=", StringComparison.OrdinalIgnoreCase));
     }
 
+    // --- Bind directive ---
+
+    [Fact]
+    public void ParseAll_Bind_LeaderArmor()
+    {
+        var dir = SetupKdl("bindings.kdl", """
+            bind "leader_armor" leader="squad_leader.darby_clone" armor="armor.darby_clone"
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var binding = Assert.Single(result.Bindings);
+        Assert.Equal("leader_armor", binding.Kind);
+        Assert.Equal("squad_leader.darby_clone", binding.Attributes["leader"]);
+        Assert.Equal("armor.darby_clone", binding.Attributes["armor"]);
+    }
+
+    [Fact]
+    public void ParseAll_Bind_MultipleBindings_AllPreserved()
+    {
+        var dir = SetupKdl("bindings.kdl", """
+            bind "leader_armor" leader="squad_leader.a_clone" armor="armor.a_clone"
+            bind "leader_armor" leader="squad_leader.b_clone" armor="armor.b_clone"
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        Assert.Equal(2, result.Bindings.Count);
+        Assert.Contains(result.Bindings, b => b.Attributes["leader"] == "squad_leader.a_clone" && b.Attributes["armor"] == "armor.a_clone");
+        Assert.Contains(result.Bindings, b => b.Attributes["leader"] == "squad_leader.b_clone" && b.Attributes["armor"] == "armor.b_clone");
+    }
+
+    [Fact]
+    public void ParseAll_Bind_AcrossFiles()
+    {
+        var dir = SetupKdl(
+            ("a.kdl", "bind \"leader_armor\" leader=\"l_a\" armor=\"a_a\""),
+            ("b.kdl", "bind \"leader_armor\" leader=\"l_b\" armor=\"a_b\""));
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        Assert.Equal(2, result.Bindings.Count);
+    }
+
+    [Fact]
+    public void ParseAll_Bind_MissingKind_Errors()
+    {
+        var dir = SetupKdl("bindings.kdl", """
+            bind leader="x" armor="y"
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.NotEqual(0, result.ErrorCount);
+        Assert.Empty(result.Bindings);
+        Assert.Contains(_log.Errors, e => e.Contains("'bind' requires a kind argument"));
+    }
+
+    [Fact]
+    public void ParseAll_Bind_UnknownKind_Errors()
+    {
+        var dir = SetupKdl("bindings.kdl", """
+            bind "wat" leader="x" armor="y"
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.NotEqual(0, result.ErrorCount);
+        Assert.Empty(result.Bindings);
+        Assert.Contains(_log.Errors, e => e.Contains("kind 'wat' is not recognised"));
+    }
+
+    [Fact]
+    public void ParseAll_Bind_LeaderArmor_MissingArmorAttr_Errors()
+    {
+        var dir = SetupKdl("bindings.kdl", """
+            bind "leader_armor" leader="x"
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.NotEqual(0, result.ErrorCount);
+        Assert.Empty(result.Bindings);
+        Assert.Contains(_log.Errors, e => e.Contains("missing required attribute") && e.Contains("armor"));
+    }
+
+    [Fact]
+    public void ParseAll_Bind_LeaderArmor_MissingLeaderAttr_Errors()
+    {
+        var dir = SetupKdl("bindings.kdl", """
+            bind "leader_armor" armor="y"
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.NotEqual(0, result.ErrorCount);
+        Assert.Empty(result.Bindings);
+        Assert.Contains(_log.Errors, e => e.Contains("missing required attribute") && e.Contains("leader"));
+    }
+
+    [Fact]
+    public void ParseAll_Bind_EmptyAttrValue_Errors()
+    {
+        var dir = SetupKdl("bindings.kdl", """
+            bind "leader_armor" leader="" armor="y"
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.NotEqual(0, result.ErrorCount);
+        Assert.Empty(result.Bindings);
+        Assert.Contains(_log.Errors, e => e.Contains("'leader' must be a non-empty string"));
+    }
+
     // --- Helpers ---
 
     private static string SetupKdl(string fileName, string content)

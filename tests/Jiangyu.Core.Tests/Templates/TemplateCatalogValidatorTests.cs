@@ -1,6 +1,8 @@
 using Jiangyu.Core.Abstractions;
+using Jiangyu.Core.Models;
 using Jiangyu.Core.Templates;
 using Jiangyu.Core.Tests.Templates.Fixtures.Gameplay;
+using Jiangyu.Shared.Replacements;
 using Jiangyu.Shared.Templates;
 using static Jiangyu.Core.Tests.Templates.CompiledTemplateTestHelpers;
 
@@ -1676,6 +1678,7 @@ public class TemplateCatalogValidatorTests
     [InlineData("Album")]
     [InlineData("Bark")]
     [InlineData("Skin")]
+    [InlineData("Prefab")]
     public void AssetReference_OnSupportedUnityField_Passes(string fieldPath)
     {
         using var catalog = Load();
@@ -1707,7 +1710,6 @@ public class TemplateCatalogValidatorTests
 
     [Theory]
     [InlineData("Geometry")]
-    [InlineData("Prefab")]
     public void AssetReference_OnDeferredUnityField_PointsAtPrefabCloningTodo(string fieldPath)
     {
         using var catalog = Load();
@@ -1905,5 +1907,124 @@ public class TemplateCatalogValidatorTests
 
         Assert.Equal(1, errors);
         Assert.Contains("empty", log.Errors[0]);
+    }
+
+    // Asset references fall through additions catalog → game asset index, so
+    // a name in the vanilla game (e.g. asset="rmc_default_male_soldier") is
+    // accepted even when the mod doesn't ship its own copy. Only the
+    // "neither catalog has it" case errors.
+
+    [Fact]
+    public void AssetReference_VanillaAccepted_WhenAdditionsCatalogEmpty()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var additions = new EmptyAdditions();
+        var gameAssets = new GameAssetIndex(new AssetIndex
+        {
+            Assets = new List<AssetEntry>
+            {
+                new() { Name = "vanilla_prefab", ClassName = "GameObject" },
+            },
+        });
+
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureAssetHolder",
+                TemplateId = "x",
+                Set = [PrefabAssetSet("vanilla_prefab")],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log, additions, gameAssets);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+    }
+
+    [Fact]
+    public void AssetReference_NeitherCatalog_Errors()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var additions = new EmptyAdditions();
+        var gameAssets = new GameAssetIndex(new AssetIndex { Assets = new() });
+
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureAssetHolder",
+                TemplateId = "x",
+                Set = [PrefabAssetSet("nobody_has_this")],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log, additions, gameAssets);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("nobody_has_this", log.Errors[0]);
+        Assert.Contains("no vanilla game asset", log.Errors[0]);
+    }
+
+    [Fact]
+    public void AssetReference_AdditionsCatalogWins_WhenBothHaveIt()
+    {
+        // The mod's local additions take precedence — the validator never
+        // even consults the game index when additions.Contains returns true.
+        // This documents the order of resolution: project-shipped first,
+        // vanilla fallback only when missing locally.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var additions = new StubAdditions(AssetCategory.Prefabs, "shared_name");
+        var gameAssets = new GameAssetIndex(new AssetIndex
+        {
+            Assets = new List<AssetEntry>
+            {
+                new() { Name = "shared_name", ClassName = "GameObject" },
+            },
+        });
+
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureAssetHolder",
+                TemplateId = "x",
+                Set = [PrefabAssetSet("shared_name")],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log, additions, gameAssets);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+    }
+
+    private static CompiledTemplateSetOperation PrefabAssetSet(string assetName) => new()
+    {
+        Op = CompiledTemplateOp.Set,
+        FieldPath = "Prefab",
+        Value = new CompiledTemplateValue
+        {
+            Kind = CompiledTemplateValueKind.AssetReference,
+            Asset = new CompiledAssetReference { Name = assetName },
+        },
+    };
+
+    private sealed class EmptyAdditions : IAssetAdditionsCatalog
+    {
+        public bool Contains(string category, string name) => false;
+    }
+
+    private sealed class StubAdditions : IAssetAdditionsCatalog
+    {
+        private readonly string _category;
+        private readonly string _name;
+        public StubAdditions(string category, string name) { _category = category; _name = name; }
+        public bool Contains(string category, string name)
+            => category == _category && name == _name;
     }
 }

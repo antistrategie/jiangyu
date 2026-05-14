@@ -55,11 +55,13 @@ Names match against other mods' `name` fields (case-sensitive). The literal name
 
 The compiler writes additional fields into `compiled/jiangyu.json`. **Don't author these by hand.** The next compile will overwrite them.
 
-| Field             | Source                                                          |
-| ----------------- | --------------------------------------------------------------- |
-| `meshes`          | mesh compilation; one entry per replaced skinned-renderer path  |
-| `templatePatches` | emitted from `templates/*.kdl`                                  |
-| `templateClones`  | emitted from `templates/*.kdl`                                  |
+| Field               | Source                                                                       |
+| ------------------- | ---------------------------------------------------------------------------- |
+| `meshes`            | mesh compilation; one entry per replaced skinned-renderer path               |
+| `templatePatches`   | emitted from `templates/*.kdl`                                               |
+| `templateClones`    | emitted from `templates/*.kdl`                                               |
+| `templateBindings`  | emitted from `templates/*.kdl` (`bind "<kind>" ...` directives)              |
+| `additionPrefabs`   | logical names of prefab addition bundles staged into the compiled output (see [Prefabs](/assets/additions/prefabs)) |
 
 `compiled/jiangyu.json` ships inside the compiled mod folder. Modders read it for debugging compiled output, never edit it.
 

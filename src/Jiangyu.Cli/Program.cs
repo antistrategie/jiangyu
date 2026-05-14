@@ -8,7 +8,8 @@ var root = new RootCommand("Jiangyu — modkit for MENACE")
     InitCommand.Create(),
     CompileCommand.Create(),
     AssetsCommand.Create(),
-    TemplatesCommand.Create()
+    TemplatesCommand.Create(),
+    UnityCommand.Create()
 };
 
 return await root.Parse(args).InvokeAsync();

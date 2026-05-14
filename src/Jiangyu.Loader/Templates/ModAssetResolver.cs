@@ -16,10 +16,13 @@ namespace Jiangyu.Loader.Templates;
 //       filtered by Unity Object name, so a clone can point at a vanilla
 //       asset (e.g. a stock icon) without the modder having to ship a copy.
 //
-// Scope: derived from the asset-addition design discussion 2026-05-06; the
-// supported destination types match AssetCategory.IsSupported (Sprite,
-// Texture2D, AudioClip, Material). Mesh and GameObject categories defer to
-// the prefab-construction layer; see PREFAB_CLONING_TODO.md.
+// Scope: the supported destination types match AssetCategory.IsSupported
+// (Sprite, Texture2D, AudioClip, Material, GameObject). GameObject additions
+// flow from `assets/additions/prefabs/<name>.bundle` and are registered into
+// `BundleReplacementCatalog.AdditionPrefabs` when the bundle is loaded; the
+// `additionPrefabs` list on jiangyu.json tells the loader which bundled
+// GameObjects to treat as additions vs mesh-replacement targets. Mesh and
+// PrefabHierarchyObject still defer to the prefab-construction layer.
 internal sealed class ModAssetResolver
 {
     private readonly BundleReplacementCatalog _bundles;
@@ -60,6 +63,10 @@ internal sealed class ModAssetResolver
             case nameof(AudioClip):
                 if (_bundles.ReplacementAudioClips.TryGetValue(bundleKey, out var audio))
                     return audio;
+                break;
+            case nameof(GameObject):
+                if (_bundles.AdditionPrefabs.TryGetValue(bundleKey, out var prefab))
+                    return prefab;
                 break;
                 // Material additions don't have a dedicated bundle dictionary
                 // yet; they fall through to the game-asset registry until the

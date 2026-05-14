@@ -90,6 +90,7 @@ export default defineConfig({
               { text: "Sprites", link: "/assets/additions/sprites" },
               { text: "Textures", link: "/assets/additions/textures" },
               { text: "Audio", link: "/assets/additions/audio" },
+              { text: "Prefabs", link: "/assets/additions/prefabs" },
             ],
           },
         ],

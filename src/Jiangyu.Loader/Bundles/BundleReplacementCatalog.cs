@@ -16,12 +16,21 @@ internal sealed class BundleReplacementCatalog
     private readonly Dictionary<string, string> _textureOwners = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _spriteOwners = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _audioOwners = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _additionPrefabOwners = new(StringComparer.Ordinal);
 
     public Dictionary<string, ReplacementMesh> Meshes { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, ReplacementPrefab> Prefabs { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, Texture2D> ReplacementTextures { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, Sprite> ReplacementSprites { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, AudioClip> ReplacementAudioClips { get; } = new(StringComparer.Ordinal);
+
+    // Mod-shipped addition prefabs declared on jiangyu.json's additionPrefabs
+    // list. Looked up by Unity Object.name, satisfying KDL asset= references
+    // targeting GameObject-typed fields via ModAssetResolver Phase 1 before
+    // the Phase 2 fallback consults the live game-asset registry. Distinct
+    // dictionary from Prefabs (which carries ReplacementPrefab metadata for
+    // the mesh-replacement path).
+    public Dictionary<string, GameObject> AdditionPrefabs { get; } = new(StringComparer.Ordinal);
 
     public BundleReplacementCatalog(List<UnityEngine.Object> pinned)
     {
@@ -87,6 +96,15 @@ internal sealed class BundleReplacementCatalog
         var manifestPath = mod.ManifestPath;
         var meshMappings = LoadMeshMappings(manifestPath, log);
         var meshMetadata = LoadCompiledMeshMetadata(manifestPath, log);
+        var additionPrefabNames = LoadAdditionPrefabNames(manifestPath, log);
+
+        // An addition bundle's filename stem is its identity (matches the
+        // manifest's additionPrefabs entry, matches the KDL asset= name after
+        // ToBundleAssetName translation). Check this once per bundle so the
+        // identity doesn't depend on the Unity Object.name inside, which the
+        // modder may have set independently of the file layout.
+        var bundleStem = Path.GetFileNameWithoutExtension(bundlePath);
+        var isAdditionBundle = additionPrefabNames.Contains(bundleStem);
 
         var bundle = BundleLoader.LoadFromFile(bundlePath);
         if (bundle == IntPtr.Zero)
@@ -126,7 +144,15 @@ internal sealed class BundleReplacementCatalog
             var assetPtr = BundleLoader.LoadAsset(bundle, assetName, goTypePtr);
             if (assetPtr != IntPtr.Zero)
             {
-                RegisterPrefabAsset(ownerLabel, assetName, assetPtr, bundleToGame, meshMetadata, log);
+                var prefab = new GameObject(assetPtr);
+                if (isAdditionBundle)
+                {
+                    RegisterAdditionPrefab(ownerLabel, prefab, bundleStem, log);
+                }
+                else
+                {
+                    RegisterPrefabAsset(ownerLabel, assetName, prefab, bundleToGame, meshMetadata, log);
+                }
                 continue;
             }
 
@@ -163,12 +189,11 @@ internal sealed class BundleReplacementCatalog
     private void RegisterPrefabAsset(
         string ownerLabel,
         string assetName,
-        IntPtr assetPtr,
+        GameObject prefab,
         Dictionary<string, string> bundleToGame,
         Dictionary<string, CompiledMeshMetadataRecord> meshMetadata,
         MelonLogger.Instance log)
     {
-        var prefab = new GameObject(assetPtr);
         _pinned.Add(prefab);
 
         var instance = UnityEngine.Object.Instantiate(prefab);
@@ -312,6 +337,67 @@ internal sealed class BundleReplacementCatalog
             RegisterTextureOverride(loadedSprite.name, backingTexture, ownerLabel + " (sprite backing)", log);
             _pinned.Add(backingTexture);
         }
+    }
+
+    // Register a GameObject from a modder-shipped addition bundle. Skips the
+    // mesh-replacement processing in RegisterPrefabAsset entirely; the prefab
+    // is held under the bundle's filename stem (matches the KDL asset=
+    // reference after ToBundleAssetName translation) for ModAssetResolver
+    // Phase 1 lookups. Object.name on the GameObject is irrelevant here so
+    // modders can name prefabs whatever they want inside Unity without
+    // affecting the lookup contract.
+    private void RegisterAdditionPrefab(string ownerLabel, GameObject prefab, string key, MelonLogger.Instance log)
+    {
+        prefab.hideFlags = HideFlags.DontUnloadUnusedAsset;
+        _pinned.Add(prefab);
+
+        // Rebind shaders to the runtime's resolved shader by name.
+        // AssetRipper extracts shaders as stubs (real HLSL isn't recoverable
+        // from compiled bytecode), so bundled materials would otherwise fall
+        // back to Hidden/InternalErrorShader (magenta) at render time. The
+        // runtime has the real shaders loaded for the game's own assets, so
+        // Shader.Find(name) resolves to a working shader of the same name.
+        // Material properties (colors, textures, keywords) are preserved
+        // because we only swap the shader pointer.
+        //
+        // Materials whose shader name doesn't resolve at runtime (e.g.
+        // "Universal Render Pipeline/Lit" — MENACE ships its own Menace/*
+        // family and not the URP package's stock shaders) are left on their
+        // broken stub shader so the magenta render in-game makes the
+        // mis-authoring visible.
+        var rebinds = 0;
+        var unresolved = 0;
+        foreach (var renderer in prefab.GetComponentsInChildren<Renderer>(true))
+        {
+            var mats = renderer.sharedMaterials;
+            for (int i = 0; i < mats.Length; i++)
+            {
+                var mat = mats[i];
+                if (mat == null || mat.shader == null) continue;
+                var name = mat.shader.name;
+                if (string.IsNullOrEmpty(name)) continue;
+                var runtimeShader = Shader.Find(name);
+                if (runtimeShader == null)
+                {
+                    log.Warning($"    Material '{mat.name}' references shader '{name}' but Shader.Find returned null; will render magenta in-game. Use a Menace/* shader instead.");
+                    unresolved++;
+                    continue;
+                }
+                mat.shader = runtimeShader;
+                rebinds++;
+            }
+            renderer.sharedMaterials = mats;
+        }
+
+        if (_additionPrefabOwners.TryGetValue(key, out var previousOwner))
+            log.Warning($"  Override addition prefab '{key}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
+
+        AdditionPrefabs[key] = prefab;
+        _additionPrefabOwners[key] = ownerLabel;
+        var suffix = unresolved > 0
+            ? $"; rebound {rebinds} shader(s); {unresolved} unresolved (will render magenta)"
+            : $"; rebound {rebinds} shader(s)";
+        log.Msg($"  Registered addition prefab: {key} (object name: {prefab.name}{suffix})");
     }
 
     private void RegisterMeshAsset(
@@ -579,6 +665,38 @@ internal sealed class BundleReplacementCatalog
         }
 
         return result.OrderBy(binding => binding.Slot).ToArray();
+    }
+
+    private static HashSet<string> LoadAdditionPrefabNames(string manifestPath, MelonLogger.Instance log)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        if (!File.Exists(manifestPath))
+            return set;
+
+        try
+        {
+            var json = File.ReadAllText(manifestPath);
+            var doc = System.Text.Json.JsonDocument.Parse(json);
+
+            if (doc.RootElement.TryGetProperty("additionPrefabs", out var element) &&
+                element.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (item.ValueKind == System.Text.Json.JsonValueKind.String)
+                    {
+                        var name = item.GetString();
+                        if (!string.IsNullOrWhiteSpace(name))
+                            set.Add(name!);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Error($"  Failed to read additionPrefabs from jiangyu.json: {ex.Message}");
+        }
+        return set;
     }
 
     private static Dictionary<string, string> LoadMeshMappings(string manifestPath, MelonLogger.Instance log)

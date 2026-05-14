@@ -15,6 +15,7 @@ public static class KdlTemplateParser
     public readonly record struct ParseResult(
         List<CompiledTemplatePatch> Patches,
         List<CompiledTemplateClone> Clones,
+        List<CompiledTemplateBinding> Bindings,
         int ErrorCount);
 
     /// <summary>
@@ -26,6 +27,7 @@ public static class KdlTemplateParser
     {
         var patches = new List<CompiledTemplatePatch>();
         var clones = new List<CompiledTemplateClone>();
+        var bindings = new List<CompiledTemplateBinding>();
         var errorCount = 0;
 
         var kdlFiles = Directory.EnumerateFiles(templatesDir, "*.kdl", SearchOption.AllDirectories)
@@ -33,7 +35,7 @@ public static class KdlTemplateParser
             .ToList();
 
         if (kdlFiles.Count == 0)
-            return new ParseResult(patches, clones, 0);
+            return new ParseResult(patches, clones, bindings, 0);
 
         // Cross-file uniqueness: (type, id) → source file
         var patchSeen = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -80,9 +82,15 @@ public static class KdlTemplateParser
                     clones.Add(clone);
                 }
             }
+
+            // Bindings have no cross-file uniqueness constraint; duplicate
+            // (kind, attribute-set) pairs are treated as redundant but harmless
+            // by the loader. Surfacing collisions at apply time would be more
+            // useful than a parse-time error.
+            bindings.AddRange(fileResult.Bindings);
         }
 
-        return new ParseResult(patches, clones, errorCount);
+        return new ParseResult(patches, clones, bindings, errorCount);
     }
 
     /// <summary>
@@ -199,10 +207,16 @@ public static class KdlTemplateParser
                     }
                     break;
 
+                case "bind":
+                    // Editor support for `bind` is currently parse-only; the
+                    // directive doesn't show up in the Studio visual editor.
+                    // We accept the node so unknown-node errors don't appear.
+                    break;
+
                 default:
                     doc.Errors.Add(new KdlEditorError
                     {
-                        Message = $"Unknown top-level node '{node.Name}'. Expected 'patch' or 'clone'.",
+                        Message = $"Unknown top-level node '{node.Name}'. Expected 'patch', 'clone', or 'bind'.",
                         Line = line,
                     });
                     break;
@@ -560,12 +574,14 @@ public static class KdlTemplateParser
     private readonly record struct FileResult(
         List<CompiledTemplatePatch> Patches,
         List<CompiledTemplateClone> Clones,
+        List<CompiledTemplateBinding> Bindings,
         int ErrorCount);
 
     private static FileResult ParseFile(string filePath, string relativePath, ILogSink log)
     {
         var patches = new List<CompiledTemplatePatch>();
         var clones = new List<CompiledTemplateClone>();
+        var bindings = new List<CompiledTemplateBinding>();
         var errorCount = 0;
 
         string text;
@@ -576,7 +592,7 @@ public static class KdlTemplateParser
         catch (Exception ex)
         {
             log.Error($"KDL: cannot read '{relativePath}': {ex.Message}");
-            return new FileResult(patches, clones, 1);
+            return new FileResult(patches, clones, bindings, 1);
         }
 
         KdlDocument doc;
@@ -587,7 +603,7 @@ public static class KdlTemplateParser
         catch (Exception ex)
         {
             log.Error($"KDL: parse error in '{relativePath}': {ex.Message}");
-            return new FileResult(patches, clones, 1);
+            return new FileResult(patches, clones, bindings, 1);
         }
 
         // Per-file uniqueness
@@ -630,14 +646,85 @@ public static class KdlTemplateParser
                         patches.Add(clonePatches);
                     break;
 
+                case "bind":
+                    if (!TryParseBindNode(node, pos, log, out var binding))
+                    {
+                        errorCount++;
+                        break;
+                    }
+
+                    bindings.Add(binding);
+                    break;
+
                 default:
-                    log.Error($"{pos}: unknown top-level node '{node.Name}'. Expected 'patch' or 'clone'.");
+                    log.Error($"{pos}: unknown top-level node '{node.Name}'. Expected 'patch', 'clone', or 'bind'.");
                     errorCount++;
                     break;
             }
         }
 
-        return new FileResult(patches, clones, errorCount);
+        return new FileResult(patches, clones, bindings, errorCount);
+    }
+
+    // bind "<kind>" <kind-specific attrs>
+    //   leader_armor: leader="<unitLeaderTemplateCloneId>" armor="<armorTemplateCloneId>"
+    private static bool TryParseBindNode(
+        KdlNode node, string pos, ILogSink log,
+        out CompiledTemplateBinding binding)
+    {
+        binding = null!;
+
+        if (node.Arguments.Count < 1)
+        {
+            log.Error($"{pos}: 'bind' requires a kind argument, e.g. bind \"leader_armor\" leader=\"...\" armor=\"...\"");
+            return false;
+        }
+        var kind = node.Arguments[0].AsString();
+        if (string.IsNullOrWhiteSpace(kind))
+        {
+            log.Error($"{pos}: 'bind' kind must be a non-empty string.");
+            return false;
+        }
+
+        var attrs = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var prop in node.Properties)
+        {
+            var value = prop.Value.AsString();
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                log.Error($"{pos}: 'bind' attribute '{prop.Key}' must be a non-empty string.");
+                return false;
+            }
+            attrs[prop.Key] = value;
+        }
+
+        // Per-kind required-attribute validation. New kinds register here.
+        List<string> missingAttrs;
+        switch (kind)
+        {
+            case "leader_armor":
+                missingAttrs = MissingAttributes(attrs, "leader", "armor");
+                break;
+            default:
+                log.Error($"{pos}: 'bind' kind '{kind}' is not recognised. Known kinds: leader_armor.");
+                return false;
+        }
+        if (missingAttrs.Count > 0)
+        {
+            log.Error($"{pos}: 'bind \"{kind}\"' is missing required attribute(s): {string.Join(", ", missingAttrs)}.");
+            return false;
+        }
+
+        binding = new CompiledTemplateBinding { Kind = kind, Attributes = attrs };
+        return true;
+    }
+
+    private static List<string> MissingAttributes(Dictionary<string, string> attrs, params string[] required)
+    {
+        var missing = new List<string>();
+        foreach (var name in required)
+            if (!attrs.ContainsKey(name)) missing.Add(name);
+        return missing;
     }
 
     // patch "TemplateType" "templateId" { ... }

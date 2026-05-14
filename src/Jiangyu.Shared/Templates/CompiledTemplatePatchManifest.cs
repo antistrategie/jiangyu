@@ -9,6 +9,35 @@ public sealed class CompiledTemplatePatchManifest
 
     [JsonPropertyName("templateClones")]
     public List<CompiledTemplateClone>? TemplateClones { get; set; }
+
+    [JsonPropertyName("templateBindings")]
+    public List<CompiledTemplateBinding>? TemplateBindings { get; set; }
+}
+
+/// <summary>
+/// Modder-authored declarative binding between two existing templates,
+/// expressed in KDL as a <c>bind "&lt;kind&gt;" ...</c> directive. The kind
+/// discriminator picks which binding semantic applies; each kind defines its
+/// own required attribute set, surfaced here through <see cref="Attributes"/>.
+///
+/// Current kinds:
+/// <list type="bullet">
+/// <item><b>leader_armor</b>: links a cloned <c>UnitLeaderTemplate</c> to a
+/// cloned <c>ArmorTemplate</c> for runtime visual dispatch
+/// (<c>EntityVisuals.DetermineArmorPrefab</c>). Attributes: <c>leader</c>,
+/// <c>armor</c>.</item>
+/// </list>
+///
+/// Bindings don't mutate any MENACE template field — they're pure Jiangyu
+/// metadata consumed by the loader's runtime patches.
+/// </summary>
+public sealed class CompiledTemplateBinding
+{
+    [JsonPropertyName("kind")]
+    public string Kind { get; set; } = string.Empty;
+
+    [JsonPropertyName("attributes")]
+    public Dictionary<string, string> Attributes { get; set; } = new(StringComparer.Ordinal);
 }
 
 /// <summary>

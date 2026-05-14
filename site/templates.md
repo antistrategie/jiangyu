@@ -83,6 +83,22 @@ Collection-style edits compose without per-mod compatibility patches. Genuine sc
 
 Within a single project, `(templateType, templateId)` collisions remain a hard error at compile time (see [File layout](#file-layout)).
 
+## Bindings
+
+A `bind` block declares a runtime relationship between two existing templates that doesn't fit naturally into a `set` on a template field. The loader reads bindings out of `jiangyu.json` and wires them into MENACE's runtime behaviour through targeted Harmony patches; the templates themselves stay structurally vanilla.
+
+```kdl
+bind "leader_armor" leader="squad_leader.darby_clone" armor="armor.darby_clone"
+```
+
+The first positional argument is the binding **kind**. Each kind has its own required attribute set and runtime semantics. New kinds slot in here without affecting existing ones.
+
+| Kind            | Required attrs   | What it does                                                                                                                                                                                                                                       |
+| --------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `leader_armor`  | `leader`, `armor` | When the named cloned `UnitLeaderTemplate` is the leader template at element spawn (in `EntityVisuals.DetermineArmorPrefab`), reads the visual model from the named cloned `ArmorTemplate`'s `SquadLeaderModel{Gender}{SkinColor}` (leader, idx 0) or `MaleModels[0]` / `FemaleModels[0]` (grunts) instead of the runtime's default lookup. Lets you swap the visual for a specific cloned unit without touching the vanilla armor every other squad inherits from. |
+
+Bindings are **pure Jiangyu metadata** — they don't mutate any MENACE template field. That keeps the strategy UI's data walks structurally vanilla; otherwise rerouting `UnitLeaderTemplate.InfantryUnitTemplate` to a cloned `EntityTemplate` collapses the squad list UI.
+
 ## Field paths
 
 Field paths navigate into nested members:

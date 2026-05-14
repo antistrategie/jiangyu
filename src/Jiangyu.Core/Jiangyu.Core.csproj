@@ -23,12 +23,33 @@
     <ProjectReference Include="..\..\vendor\AssetRipper\Source\AssetRipper.Export.Modules.Models\AssetRipper.Export.Modules.Models.csproj" />
     <ProjectReference Include="..\..\vendor\AssetRipper\Source\AssetRipper.Export.Modules.Textures\AssetRipper.Export.Modules.Textures.csproj" />
     <ProjectReference Include="..\..\vendor\AssetRipper\Source\AssetRipper.Export.Modules.Audio\AssetRipper.Export.Modules.Audio.csproj" />
+    <ProjectReference Include="..\..\vendor\AssetRipper\Source\AssetRipper.Export.UnityProjects\AssetRipper.Export.UnityProjects.csproj" />
     <ProjectReference Include="..\..\vendor\TinySerializer\TinySerializer\TinySerializer.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Unity\BundleBuilder.template" />
     <EmbeddedResource Include="Unity\MeshBundleBuilder.template" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Templates/UnityProject/ contains files copied verbatim into the
+         modder's scaffolded unity/ project. The .cs files here are Unity
+         Editor scripts the modder's Unity Editor compiles, not Jiangyu.Core
+         source. Exclude from this assembly's compile + content pickup; ship
+         them as embedded resources keyed by the destination-relative path. -->
+    <Compile Remove="Templates\UnityProject\**\*" />
+    <None Remove="Templates\UnityProject\**\*" />
+    <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\Editor\BuildBundles.cs"
+                      LogicalName="UnityProject/Assets/Jiangyu/Editor/BuildBundles.cs" />
+    <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\Editor\ImportedPrefabPostProcessor.cs"
+                      LogicalName="UnityProject/Assets/Jiangyu/Editor/ImportedPrefabPostProcessor.cs" />
+    <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\README.md"
+                      LogicalName="UnityProject/Assets/Jiangyu/README.md" />
+    <EmbeddedResource Include="Templates\UnityProject\Packages\manifest.json"
+                      LogicalName="UnityProject/Packages/manifest.json" />
+    <EmbeddedResource Include="Templates\UnityProject\.gitignore"
+                      LogicalName="UnityProject/.gitignore" />
   </ItemGroup>
 
   <ItemGroup>

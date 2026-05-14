@@ -1,4 +1,5 @@
-﻿using AssetRipper.Assets.Bundles;
+﻿using AssetRipper.Assets;
+using AssetRipper.Assets.Bundles;
 using AssetRipper.Export.Configuration;
 using AssetRipper.Export.UnityProjects.PathIdMapping;
 using AssetRipper.Export.UnityProjects.Project;
@@ -123,6 +124,29 @@ public class ExportHandler
 				.Distinct()
 				.Select(v => v.ToString()));
 		}
+	}
+
+	/// <summary>
+	/// Exports a subset of the game's assets via
+	/// <see cref="ProjectExporter.ExportSubset"/>. Skips the post-exporters
+	/// (ProjectVersion.txt, package manifest, streaming assets, DLLs, path-id
+	/// map) because they operate at the whole-project level and don't make
+	/// sense for a single-prefab extraction.
+	///
+	/// Added by Jiangyu (see PREFAB_CLONING_TODO.md).
+	/// </summary>
+	public void ExportSubset(GameData gameData, string outputPath, FileSystem fileSystem, ISet<IUnityObjectBase> assetsToExport)
+	{
+		Logger.Info(LogCategory.Export, $"Exporting subset of {assetsToExport.Count} asset(s) to {outputPath}");
+		Settings.ExportRootPath = outputPath;
+		Settings.SetProjectSettings(gameData.ProjectVersion);
+
+		ProjectExporter projectExporter = new(Settings, gameData.AssemblyManager);
+		BeforeExport(projectExporter);
+		projectExporter.DoFinalOverrides(Settings);
+		projectExporter.ExportSubset(gameData.GameBundle, Settings, fileSystem, assetsToExport);
+
+		Logger.Info(LogCategory.Export, "Finished subset export");
 	}
 
 	protected virtual void BeforeExport(ProjectExporter projectExporter)

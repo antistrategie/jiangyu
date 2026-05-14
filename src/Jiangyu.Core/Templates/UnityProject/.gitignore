@@ -1,0 +1,18 @@
+# Unity project artifacts
+Library/
+Temp/
+Logs/
+UserSettings/
+obj/
+
+# Build outputs
+*.csproj
+*.sln
+
+# Editor IDE state
+.vs/
+.idea/
+
+# OS noise
+.DS_Store
+Thumbs.db

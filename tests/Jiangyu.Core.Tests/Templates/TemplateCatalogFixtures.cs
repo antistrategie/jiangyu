@@ -109,10 +109,10 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
     }
 
     // Template carrying Unity-asset-typed fields, used by the asset-reference
-    // validator tests. Fields cover the supported categories plus the two
-    // deferred ones (Mesh, GameObject) so the validator's deferral message
-    // can be exercised against a real declared type, and a non-asset field
-    // for the rejection path.
+    // validator tests. Fields cover the supported categories (Sprite, Texture2D,
+    // AudioClip, Material, GameObject) plus the deferred Mesh so the
+    // validator's deferral message can be exercised against a real declared
+    // type, and a non-asset field for the rejection path.
     public class FixtureAssetHolder : Menace.Tools.DataTemplate
     {
         public UnityEngine.Sprite? Icon { get; set; }

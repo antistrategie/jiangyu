@@ -33,6 +33,13 @@ public interface IAssetAdditionsCatalog
 /// <c>icon.png</c> and <c>icon.jpg</c> in the same directory — are reported
 /// via <see cref="ConflictingNames"/> so the compiler can surface a
 /// modder-facing error before the bundle picks one arbitrarily.
+///
+/// For the <see cref="AssetCategory.Prefabs"/> category the catalog also
+/// indexes <c>unity/Assets/Prefabs/**/*.prefab</c> when a Unity authoring
+/// project is scaffolded, since those prefabs are about to be built into
+/// bundles by Unity batchmode during compile. Without this the validator
+/// would reject <c>asset="..."</c> references targeting the modder's
+/// in-Unity prefabs before they've been built.
 /// </summary>
 public sealed class FileSystemAssetAdditionsCatalog : IAssetAdditionsCatalog
 {
@@ -42,6 +49,7 @@ public sealed class FileSystemAssetAdditionsCatalog : IAssetAdditionsCatalog
         AssetCategory.Textures,
         AssetCategory.Audio,
         AssetCategory.Materials,
+        AssetCategory.Prefabs,
     ];
 
     private readonly Dictionary<string, HashSet<string>> _byCategory =
@@ -55,30 +63,57 @@ public sealed class FileSystemAssetAdditionsCatalog : IAssetAdditionsCatalog
     /// </summary>
     public List<string> ConflictingNames { get; } = new();
 
-    public FileSystemAssetAdditionsCatalog(string additionRoot)
+    public FileSystemAssetAdditionsCatalog(string additionRoot, string? unityPrefabsDir = null)
     {
-        if (string.IsNullOrEmpty(additionRoot) || !Directory.Exists(additionRoot))
-            return;
-
-        foreach (var category in CategoryFolders)
+        if (!string.IsNullOrEmpty(additionRoot) && Directory.Exists(additionRoot))
         {
-            var dir = Path.Combine(additionRoot, category);
-            if (!Directory.Exists(dir))
-                continue;
-
-            var names = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+            foreach (var category in CategoryFolders)
             {
-                var relative = Path.GetRelativePath(dir, file);
+                var dir = Path.Combine(additionRoot, category);
+                if (!Directory.Exists(dir))
+                    continue;
+
+                var names = GetOrCreateBucket(category);
+                foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                {
+                    var relative = Path.GetRelativePath(dir, file);
+                    var stem = StripExtension(relative).Replace('\\', '/');
+                    if (!names.Add(stem))
+                    {
+                        ConflictingNames.Add($"{category}/{stem}");
+                    }
+                }
+            }
+        }
+
+        // The Unity authoring project's prefabs are addition sources too:
+        // mise compile invokes Unity batchmode against unity/ to turn them
+        // into bundles in .jiangyu/unity-build/ before StageAdditionPrefabBundles
+        // runs. Index them here so validator-time existence checks against
+        // KDL asset= references succeed.
+        if (!string.IsNullOrEmpty(unityPrefabsDir) && Directory.Exists(unityPrefabsDir))
+        {
+            var names = GetOrCreateBucket(AssetCategory.Prefabs);
+            foreach (var file in Directory.EnumerateFiles(unityPrefabsDir, "*.prefab", SearchOption.AllDirectories))
+            {
+                var relative = Path.GetRelativePath(unityPrefabsDir, file);
                 var stem = StripExtension(relative).Replace('\\', '/');
                 if (!names.Add(stem))
                 {
-                    ConflictingNames.Add($"{category}/{stem}");
+                    ConflictingNames.Add($"{AssetCategory.Prefabs}/{stem}");
                 }
             }
-
-            _byCategory[category] = names;
         }
+    }
+
+    private HashSet<string> GetOrCreateBucket(string category)
+    {
+        if (!_byCategory.TryGetValue(category, out var bucket))
+        {
+            bucket = new HashSet<string>(StringComparer.Ordinal);
+            _byCategory[category] = bucket;
+        }
+        return bucket;
     }
 
     public bool Contains(string category, string name)

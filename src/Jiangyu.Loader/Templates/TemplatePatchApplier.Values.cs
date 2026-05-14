@@ -356,9 +356,10 @@ internal sealed partial class TemplatePatchApplier
         {
             error = $"AssetReference '{reference.Name}' targets {targetType.FullName}, "
                 + "which is not a supported asset category. "
-                + "Sprite, Texture2D, AudioClip, and Material are supported today; "
-                + "Mesh and GameObject wait on the prefab-construction layer "
-                + "(see PREFAB_CLONING_TODO.md).";
+                + "Supported: Sprite, Texture2D, AudioClip, Material, GameObject. "
+                + "Mesh and PrefabHierarchyObject are not supported because no template "
+                + "field in MENACE consumes them directly; ship a prefab addition for "
+                + "new visual content.";
             return false;
         }
 
