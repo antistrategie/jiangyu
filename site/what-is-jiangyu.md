@@ -23,4 +23,4 @@ The toolkit has three pieces:
 
 - **Asset bundles built with the Unity Editor.** Studio drives `Unity.exe` to compile your replacements into AssetBundles. Game files like `resources.assets` are not modified.
 - **Static template analysis.** Jiangyu reads MENACE's IL2CPP types offline (Cpp2IL + AsmResolver). You don't need to launch the game to extract template definitions.
-- **Metadata-only asset index.** Indexing records each asset's name, type, path, and small per-asset details (audio frequency, sprite atlas rects), no actual asset data. Pixels, audio samples, and mesh geometry are pulled lazily when you export or preview an asset. Full extraction of MENACE's assets would be tens of gigabytes; the index stays small.
+- **Metadata-only asset index.** Indexing records each asset's name, type, path, and small per-asset details (audio frequency, sprite atlas rects), no actual asset data. Pixels, audio samples, and mesh geometry are pulled lazily when you export or preview an asset. Full extraction of MENACE's assets would be tens of gigabytes, so the index stays small instead.

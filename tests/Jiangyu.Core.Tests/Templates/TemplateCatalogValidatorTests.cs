@@ -1710,8 +1710,10 @@ public class TemplateCatalogValidatorTests
 
     [Theory]
     [InlineData("Geometry")]
-    public void AssetReference_OnDeferredUnityField_PointsAtPrefabCloningTodo(string fieldPath)
+    public void AssetReference_OnMeshField_PointsAtPrefabAdditionWorkflow(string fieldPath)
     {
+        // Mesh fields aren't supported as asset-reference destinations; the
+        // diagnostic should redirect modders to the prefab-addition workflow.
         using var catalog = Load();
         var log = new RecordingLog();
         var patches = new[]
@@ -1736,7 +1738,8 @@ public class TemplateCatalogValidatorTests
         var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
 
         Assert.Equal(1, errors);
-        Assert.Contains("PREFAB_CLONING_TODO", log.Errors[0]);
+        Assert.Contains("prefab addition", log.Errors[0]);
+        Assert.Contains("SkinnedMeshRenderer", log.Errors[0]);
     }
 
     [Fact]

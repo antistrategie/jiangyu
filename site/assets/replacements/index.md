@@ -1,6 +1,6 @@
 # Replacements
 
-A **replacement** swaps an existing game asset by name. The new file ships in your mod's bundle; at load time Jiangyu finds every game asset of the same name and points it at the modded content.
+A **replacement** swaps an existing game asset by name. The new file ships in your mod's bundle, and at load time Jiangyu finds every game asset of the same name and points it at the modded content.
 
 The modder workflow is:
 

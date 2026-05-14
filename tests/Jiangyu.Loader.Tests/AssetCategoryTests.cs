@@ -10,6 +10,7 @@ public sealed class AssetCategoryTests
     [InlineData("Texture2D", AssetCategory.Textures)]
     [InlineData("AudioClip", AssetCategory.Audio)]
     [InlineData("Material", AssetCategory.Materials)]
+    [InlineData("GameObject", AssetCategory.Prefabs)]
     public void ForClassName_SupportedKinds_ReturnFolderName(string className, string expected)
     {
         Assert.Equal(expected, AssetCategory.ForClassName(className));
@@ -20,41 +21,45 @@ public sealed class AssetCategoryTests
     [InlineData("Texture2D")]
     [InlineData("AudioClip")]
     [InlineData("Material")]
+    [InlineData("GameObject")]
     public void IsSupported_TrueForKindsAppliersResolveToday(string className)
     {
         Assert.True(AssetCategory.IsSupported(className));
     }
 
     [Fact]
-    public void ForClassName_Mesh_ThrowsDeferralWithPointerToTodo()
+    public void ForClassName_Mesh_ThrowsWithPrefabAdditionGuidance()
     {
-        // Mesh and GameObject have folder constants reserved (so producers
-        // and the prefab-construction layer agree on the path), but the
-        // dispatcher refuses them today. The thrown message points the
-        // future implementer at PREFAB_CLONING_TODO so the deferral is
-        // discoverable from a stack trace alone.
+        // Mesh fields don't appear on MENACE templates; templates carry
+        // GameObject references and ship the mesh inside a
+        // SkinnedMeshRenderer. The thrown message points the caller at the
+        // prefab-addition workflow.
         var ex = Assert.Throws<System.NotSupportedException>(
             () => AssetCategory.ForClassName("Mesh"));
-        Assert.Contains("PREFAB_CLONING_TODO", ex.Message);
+        Assert.Contains("prefab addition", ex.Message);
+        Assert.Contains("SkinnedMeshRenderer", ex.Message);
     }
 
     [Fact]
-    public void ForClassName_GameObject_ThrowsDeferralWithPointerToTodo()
+    public void ForClassName_PrefabHierarchyObject_ThrowsWithGameObjectGuidance()
     {
+        // PrefabHierarchyObject is AssetRipper's extraction wrapper, never a
+        // real template field type.
         var ex = Assert.Throws<System.NotSupportedException>(
-            () => AssetCategory.ForClassName("GameObject"));
-        Assert.Contains("PREFAB_CLONING_TODO", ex.Message);
+            () => AssetCategory.ForClassName("PrefabHierarchyObject"));
+        Assert.Contains("AssetRipper", ex.Message);
+        Assert.Contains("backing GameObject", ex.Message);
     }
 
     [Fact]
-    public void IsSupported_DeferredKinds_ReturnFalse()
+    public void IsSupported_MeshAndWrapperKinds_ReturnFalse()
     {
-        // IsSupported is the safe pre-check before ForClassName; deferred
-        // kinds report unsupported rather than throwing, so the validator
+        // IsSupported is the safe pre-check before ForClassName; kinds that
+        // ForClassName throws on report unsupported here, so the validator
         // and applier can produce a clean modder-facing error instead of
         // surfacing the exception.
         Assert.False(AssetCategory.IsSupported("Mesh"));
-        Assert.False(AssetCategory.IsSupported("GameObject"));
+        Assert.False(AssetCategory.IsSupported("PrefabHierarchyObject"));
     }
 
     [Fact]
@@ -135,14 +140,21 @@ public sealed class AssetCategoryTests
     [Theory]
     [InlineData(AssetCategory.Materials)]
     [InlineData(AssetCategory.Meshes)]
-    [InlineData(AssetCategory.Prefabs)]
     [InlineData("unknown")]
     public void AdditionExtensionsForCategory_UnsupportedReturnsEmpty(string category)
     {
-        // Categories without an addition pipeline (Materials hasn't grown a
-        // bundle dictionary, Meshes/Prefabs wait on prefab construction)
-        // return empty so the studio picker offers nothing rather than
-        // suggesting files the build will silently drop.
+        // Categories without an addition pipeline return empty so the studio
+        // picker offers nothing rather than suggesting files the build will
+        // silently drop.
         Assert.Empty(AssetCategory.AdditionExtensionsForCategory(category));
+    }
+
+    [Fact]
+    public void AdditionExtensionsForCategory_Prefabs_ReturnsBundle()
+    {
+        // Prefab additions ship as `.bundle` files (Unity AssetBundles built
+        // either via the scaffolded Unity project or dropped under
+        // assets/additions/prefabs/).
+        Assert.Contains(".bundle", AssetCategory.AdditionExtensionsForCategory(AssetCategory.Prefabs));
     }
 }

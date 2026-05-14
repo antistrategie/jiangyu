@@ -8,7 +8,7 @@ Ship a new `AudioClip` and reference it from a template clone. Use this when a c
 assets/additions/audio/<logical-name>.<ext>
 ```
 
-`<ext>` is `.wav`, `.ogg`, or `.mp3`. Subdirectories are allowed; the path under `audio/` (with the extension stripped) is the logical name.
+`<ext>` is `.wav`, `.ogg`, or `.mp3`. Subdirectories are allowed, and the path under `audio/` (with the extension stripped) is the logical name.
 
 ## KDL syntax
 
@@ -22,14 +22,11 @@ clone "SkillTemplate" from="active.shoot" id="active.shoot_custom" {
 
 Same as [sprite additions](/assets/additions/sprites#compile-time-errors).
 
-## Runtime resolution
+## Additions vs replacements
 
-Audio additions ride the existing template-apply path: at apply time the loader resolves the asset reference and writes the resulting `AudioClip` into the cloned template's field via reflection. This is **not** the same as audio replacement, which Harmony-patches `AudioSource.Play` to substitute clips by name at playback time.
+An audio addition is played by whatever code path the game uses for the field you wrote it into. If the cloned skill plays `FireSound`, your clip plays whenever that skill fires its sound.
 
-In practice that means:
-
-- An audio addition is played by whatever code path the game uses for the field you wrote it into. If the cloned skill plays `FireSound` via `AudioSource.PlayOneShot(skill.FireSound)`, your clip plays.
-- An audio addition does **not** automatically substitute for some vanilla sound everywhere it's referenced. Use an [audio replacement](/assets/replacements/audio) for that.
+An addition does **not** substitute for some vanilla sound everywhere it's referenced. Use an [audio replacement](/assets/replacements/audio) for that.
 
 ## CLI alternative
 

@@ -3,7 +3,7 @@
 Replace any 3D model in the game by name. Jiangyu accepts authored glTF or GLB files from Blender (or any DCC tool that produces skinned glTF). At compile time it normalises the authored mesh onto the game's skeleton contract. At runtime, the loader swaps the live `SkinnedMeshRenderer`'s mesh, rebinds bones, and rewires materials so every existing reference picks up your replacement, including units spawned later in a session.
 
 ::: tip Replacement vs. addition
-This page covers **replacing** a vanilla mesh in place. To **add** a new model that didn't exist before (e.g. a brand-new unit with its own prefab), see [Prefab additions](/assets/additions/prefabs). The two flows are orthogonal: replacement is mesh-level surgery on an existing prefab; addition ships a complete new GameObject.
+This page covers **replacing** a vanilla mesh in place. To **add** a new model that didn't exist before (e.g. a brand-new unit with its own prefab), see [Prefab additions](/assets/additions/prefabs). The two flows are orthogonal: replacement is mesh-level surgery on an existing prefab, and addition ships a complete new GameObject.
 :::
 
 ## Studio workflow
@@ -53,7 +53,7 @@ Concrete rules:
 
 If the compiler can't match any of your meshes to expected targets, it rejects the build and lists the expected paths.
 
-**Adding new meshes isn't supported.** The compiler only emits replacements for renderer paths that already exist in the game prefab; meshes in your glTF that don't match an expected target are silently dropped. To add geometry beyond what the original model has, combine it into one of the existing meshes.
+**Adding new meshes isn't supported.** The compiler only emits replacements for renderer paths that already exist in the game prefab, and meshes in your glTF that don't match an expected target are silently dropped. To add geometry beyond what the original model has, combine it into one of the existing meshes.
 
 ## Skinning weights
 
@@ -109,4 +109,4 @@ jiangyu assets search el.local_forces_basic_soldier_white --type PrefabHierarchy
 jiangyu assets export model el.local_forces_basic_soldier_white
 ```
 
-`assets export model` accepts `--path-id` (and `--collection`) to pick a specific instance when the name is ambiguous, and `--raw` to keep the native AssetRipper representation for inspection (don't author against `--raw`; use the default cleaned export).
+`assets export model` accepts `--path-id` (and `--collection`) to pick a specific instance when the name is ambiguous, and `--raw` to keep the native AssetRipper representation for inspection. Don't author against `--raw`. Use the default cleaned export.

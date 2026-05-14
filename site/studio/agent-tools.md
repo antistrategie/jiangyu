@@ -1,6 +1,6 @@
 # Available tools
 
-These are the tools Studio exposes to AI agents via the Model Context Protocol (MCP). You don't call these directly; the agent uses them automatically when working on your requests. This page documents what the agent can do.
+These are the tools Studio exposes to AI agents via the Model Context Protocol (MCP). You don't call these directly. The agent uses them automatically when working on your requests, and this page documents what the agent can do.
 
 ## Template tools
 
@@ -66,7 +66,7 @@ These are the tools Studio exposes to AI agents via the Model Context Protocol (
 
 In addition to callable tools, Studio provides MCP resources the agent can fetch:
 
-- `jiangyu://project-context` — current project root, manifest content, and configuration status.
-- `jiangyu://docs/{key}` — reference documentation (same content as `jiangyu_docs_read`).
+- `jiangyu://project-context`: current project root, manifest content, and configuration status.
+- `jiangyu://docs/{key}`: reference documentation (same content as `jiangyu_docs_read`).
 
 These give the agent background knowledge about your project without needing to call tools.

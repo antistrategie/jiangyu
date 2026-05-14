@@ -1,6 +1,6 @@
 # Manifest (`jiangyu.json`)
 
-Every mod has a `jiangyu.json` at its root. It carries the mod's identity (name, version, author) and its dependency list. Replacements aren't listed in the manifest. They're discovered by convention from `assets/replacements/`. Template patches aren't authored in the manifest either; they live in `templates/*.kdl`.
+Every mod has a `jiangyu.json` at its root. It carries the mod's identity (name, version, author) and its dependency list. Replacements aren't listed in the manifest. They're discovered by convention from `assets/replacements/`. Template patches aren't authored in the manifest either, but live in `templates/*.kdl`.
 
 ## Default scaffold
 

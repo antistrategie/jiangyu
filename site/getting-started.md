@@ -12,11 +12,11 @@ You need:
     - [`Jiangyu.Loader.dll`](https://github.com/antistrategie/jiangyu/releases/latest/download/Jiangyu.Loader.dll), the in-game loader.
     - **Studio** for your platform: [Windows](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-studio-win-x64.zip) or [Linux](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-studio-linux-x64.zip).
     - **CLI** (optional, for scripting): [Windows](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-cli-win-x64.zip) or [Linux](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-cli-linux-x64.zip).
-- **Unity Editor** (optional). Required for bundled assets (textures, sprites, models, audio); template-only mods don't need it. Install via [Unity Hub](https://unity.com/download), download `6000.0.72f1` from the [Unity archive](https://unity.com/releases/editor/archive), and add it to Hub.
+- **Unity Editor** (optional). Required for bundled assets (textures, sprites, models, audio). Template-only mods don't need it. Install via [Unity Hub](https://unity.com/download), download `6000.0.72f1` from the [Unity archive](https://unity.com/releases/editor/archive), and add it to Hub.
 - **An image editor** (anything that exports PNG: GIMP, Photoshop, Krita).
 
 ::: tip Unity version
-Studio shows the exact version Jiangyu expects once its path is set; trust Studio over the docs if they differ. The expected version tracks MENACE's Unity build, so an editor update may be needed when MENACE updates.
+Studio shows the exact version Jiangyu expects once its path is set, and you should trust Studio over the docs if they differ. The expected version tracks MENACE's Unity build, so an editor update may be needed when MENACE updates.
 :::
 
 ## Install the Jiangyu Loader
@@ -53,7 +53,7 @@ RedLogo/
 
 ## Find a target asset
 
-You're going to replace `menace_logo_main_menue`, the logo MENACE shows on the main menu. (The spelling `menue` is the actual name of the asset; use it as-is.)
+You're going to replace `menace_logo_main_menue`, the logo MENACE shows on the main menu. (The spelling `menue` is the actual name of the asset, so use it as-is.)
 
 1. Open the [Asset Browser](./studio.md#asset-browser) from the palette: press **Ctrl+Shift+P** and run **Open Asset Browser**.
 2. The first time, the browser shows a gate with an **Index assets** button. Click it. The first build takes a few minutes. Later searches read the cached index instantly.

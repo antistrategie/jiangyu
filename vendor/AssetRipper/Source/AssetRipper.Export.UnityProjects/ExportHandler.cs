@@ -133,7 +133,8 @@ public class ExportHandler
 	/// map) because they operate at the whole-project level and don't make
 	/// sense for a single-prefab extraction.
 	///
-	/// Added by Jiangyu (see PREFAB_CLONING_TODO.md).
+	/// Added by Jiangyu for `jiangyu unity import-prefab` (targeted prefab
+	/// extraction without the full-project artefacts).
 	/// </summary>
 	public void ExportSubset(GameData gameData, string outputPath, FileSystem fileSystem, ISet<IUnityObjectBase> assetsToExport)
 	{

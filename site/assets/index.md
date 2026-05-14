@@ -2,7 +2,7 @@
 
 Jiangyu mods can put two kinds of asset content into the game:
 
-- **[Replacements](/assets/replacements/textures)** swap an existing game asset by name. The new file ships in the mod's bundle; at load time Jiangyu finds every game asset of the same name and points it at the modded content. Use replacements for re-skins, voice swaps, music changes, and any other "make the existing thing look or sound different" workflow.
+- **[Replacements](/assets/replacements/textures)** swap an existing game asset by name. The new file ships in the mod's bundle, and at load time Jiangyu finds every game asset of the same name and points it at the modded content. Use replacements for re-skins, voice swaps, music changes, and any other "make the existing thing look or sound different" workflow.
 
 - **[Additions](/assets/additions/)** introduce a brand-new asset that didn't exist in the game. Templates and clones can then point at it (`set "Icon" asset="my-new-icon"`). Use additions when a cloned item, weapon, or skill needs its own icon, sprite, or audio.
 

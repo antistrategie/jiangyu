@@ -2,8 +2,7 @@
 
 Inventory of every template field that holds a `UnityEngine.GameObject` (or a
 list/wrapper around one), and the runtime path that turns one into an
-instantiated visual. Inputs to the prefab-cloning roadmap in
-`PREFAB_CLONING_TODO.md`.
+instantiated visual.
 
 ## Method
 
@@ -191,10 +190,10 @@ Concrete change list:
 - Compile pipeline: pack `assets/additions/prefabs/*` GameObjects into the
   bundle. Source extensions need to grow `.prefab` / bundle handling for that
   category in `AdditionExtensionsForCategory`.
-- KDL authoring stays as already decided in
-  `PREFAB_CLONING_TODO.md`: `set "Prefabs" index=0 asset="my_alien"`. The
-  existing nested-array-element set plus AssetReference path handles this
-  once the AssetCategory + ModAssetResolver cases are added.
+- KDL authoring: `set "Prefabs" index=0 asset="my_alien"` (or `clear "Prefabs"` +
+  `append "Prefabs" asset="my_alien"` to replace the whole list). The existing
+  nested-array-element set plus AssetReference path handles this once the
+  AssetCategory + ModAssetResolver cases are added.
 
 ## Confirmed by runtime spike (2026-05-14)
 

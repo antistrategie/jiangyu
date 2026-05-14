@@ -70,14 +70,16 @@ For the apply-order model (clones before patches, source order within a template
 | `remove "<field>" index=N`                           | Remove element N from a collection field.            |
 | `clear "<field>"`                                    | Empty a collection field. Composes with `append` for "replace the whole list". |
 
-Indexes are zero-based. `append` doesn't take an `index=` property; use `insert` for positional writes. `clear` takes neither index nor value.
+Indexes are zero-based. `append` doesn't take an `index=` property, so use `insert` for positional writes. `clear` takes neither index nor value.
+
+
 
 ## Composition across installed mods
 
 The loader merges patches from all installed mods before applying. Mods load in lexical folder-name order.
 
 - **`set` dedups by field path.** Two installed mods setting the same field on the same template: later-loaded mod wins, earlier is dropped, and the loader logs an `Override template patch ...` warning naming both mods.
-- **`append`, `insert`, `remove`, `clear` accumulate.** No deduplication; all ops apply in load order. Three mods each appending a perk to the same tree leave three perks added.
+- **`append`, `insert`, `remove`, `clear` accumulate.** No deduplication, and all ops apply in load order. Three mods each appending a perk to the same tree leave three perks added.
 
 Collection-style edits compose without per-mod compatibility patches. Genuine scalar conflicts become explicit warnings rather than silent overrides.
 
@@ -85,19 +87,17 @@ Within a single project, `(templateType, templateId)` collisions remain a hard e
 
 ## Bindings
 
-A `bind` block declares a runtime relationship between two existing templates that doesn't fit naturally into a `set` on a template field. The loader reads bindings out of `jiangyu.json` and wires them into MENACE's runtime behaviour through targeted Harmony patches; the templates themselves stay structurally vanilla.
+A `bind` block declares a runtime relationship between two existing templates that doesn't fit into a `set` on a template field.
 
 ```kdl
 bind "leader_armor" leader="squad_leader.darby_clone" armor="armor.darby_clone"
 ```
 
-The first positional argument is the binding **kind**. Each kind has its own required attribute set and runtime semantics. New kinds slot in here without affecting existing ones.
+The first positional argument is the binding **kind**. Each kind has its own required attribute set.
 
-| Kind            | Required attrs   | What it does                                                                                                                                                                                                                                       |
-| --------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `leader_armor`  | `leader`, `armor` | When the named cloned `UnitLeaderTemplate` is the leader template at element spawn (in `EntityVisuals.DetermineArmorPrefab`), reads the visual model from the named cloned `ArmorTemplate`'s `SquadLeaderModel{Gender}{SkinColor}` (leader, idx 0) or `MaleModels[0]` / `FemaleModels[0]` (grunts) instead of the runtime's default lookup. Lets you swap the visual for a specific cloned unit without touching the vanilla armor every other squad inherits from. |
-
-Bindings are **pure Jiangyu metadata** — they don't mutate any MENACE template field. That keeps the strategy UI's data walks structurally vanilla; otherwise rerouting `UnitLeaderTemplate.InfantryUnitTemplate` to a cloned `EntityTemplate` collapses the squad list UI.
+| Kind            | Required attrs    | What it does                                                                                                                                                                                                                                       |
+| --------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `leader_armor`  | `leader`, `armor` | The named cloned `UnitLeaderTemplate` renders its elements using the named cloned `ArmorTemplate`'s `SquadLeaderModel{Gender}{SkinColor}` (the leader) or `MaleModels[0]` / `FemaleModels[0]` (the grunts). Swaps the visual for one specific cloned unit without affecting any other unit using the same vanilla armor. |
 
 ## Field paths
 
@@ -110,7 +110,7 @@ Field paths navigate into nested members:
 
 ## Descent: editing inside a collection element
 
-When you need to edit fields *inside* an element of a collection, wrap the inner edits in a `set "<field>" index=N { ... }` block. The outer `set` carries no value of its own; it just navigates. Inner directives operate on the element's own fields.
+When you need to edit fields *inside* an element of a collection, wrap the inner edits in a `set "<field>" index=N { ... }` block. The outer `set` carries no value of its own and just navigates, while inner directives operate on the element's own fields.
 
 ```kdl
 patch "EntityTemplate" "player_squad.darby" {
@@ -121,7 +121,7 @@ patch "EntityTemplate" "player_squad.darby" {
 }
 ```
 
-Each inner `set` flattens to a single compiled patch op behind the scenes; the descent block is purely an authoring shape that keeps deeply-indexed paths readable.
+The descent block is purely an authoring shape that keeps deeply-indexed paths readable.
 
 ### Polymorphic descent: type=
 
@@ -135,13 +135,13 @@ patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
 }
 ```
 
-The `type=` hint is required at any polymorphic-abstract descent boundary; the compiler errors loudly when it's missing, naming the available subclasses. For non-polymorphic collections (where the element type is concrete and unambiguous), `type=` is unnecessary.
+The `type=` hint is required at any polymorphic-abstract descent boundary. The compiler errors loudly when it's missing, naming the available subclasses. For non-polymorphic collections (where the element type is concrete and unambiguous), `type=` is unnecessary.
 
 Descent blocks may nest: each inner `set "<field>" index=N type="..." { ... }` works the same way, descending one level further.
 
 ## Construction: adding new collection elements
 
-To add a brand-new element to a polymorphic-reference collection (most commonly an event handler on a skill or perk), use `handler="<SubtypeName>" { ... }` on `append`, `insert`, or `set` (with `index=`). The constructed element gets a fresh `ScriptableObject` instance, populated with the inner field values, and pushed/inserted/replaced into the named collection at apply time.
+To add a brand-new element to a polymorphic-reference collection (most commonly an event handler on a skill or perk), use `handler="<SubtypeName>" { ... }` on `append`, `insert`, or `set` (with `index=`). The inner block sets fields on the new element.
 
 ```kdl
 patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
@@ -158,12 +158,12 @@ patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
 Authored side-by-side they look almost identical, but they're different operations:
 
 ```kdl
-// Edit one field of slot 0; every other field on the existing handler is preserved.
+// Edit one field of slot 0. Every other field on the existing handler is preserved.
 set "EventHandlers" index=0 type="AddSkill" {
     set "ShowHUDText" #true
 }
 
-// Replace slot 0 with a freshly-constructed AddSkill; every other field on the new
+// Replace slot 0 with a freshly-constructed AddSkill. Every other field on the new
 // handler is its type's default (zero, null, empty list, …).
 set "EventHandlers" index=0 handler="AddSkill" {
     set "ShowHUDText" #true
@@ -172,12 +172,12 @@ set "EventHandlers" index=0 handler="AddSkill" {
 
 If the vanilla slot 0 already had `Cooldown=2.5` and three `TagsCanPreventSkillUse` entries:
 
-- `type=` leaves you with `ShowHUDText=true`, `Cooldown=2.5`, `TagsCanPreventSkillUse=[…vanilla…]` — preserved.
-- `handler=` leaves you with `ShowHUDText=true`, `Cooldown=0`, `TagsCanPreventSkillUse=[]` — destroyed.
+- `type=` leaves you with `ShowHUDText=true`, `Cooldown=2.5`, `TagsCanPreventSkillUse=[…vanilla…]` (preserved).
+- `handler=` leaves you with `ShowHUDText=true`, `Cooldown=0`, `TagsCanPreventSkillUse=[]` (destroyed).
 
 Pick `type=` to flip a field on a vanilla-shipped element. Pick `handler=` only when you want to recreate the slot from scratch and you've configured every field you care about in the inner block.
 
-Inner directives inside a `handler=` block accept the full `set` / `append` / `insert` / `remove` / `clear` vocabulary and apply against the freshly-constructed instance — so you can author "construct an `AddSkill` and append two `PropertyChange` entries to its `Properties` list" inline rather than splitting into separate patches.
+Inner directives inside a `handler=` block accept the full `set` / `append` / `insert` / `remove` / `clear` vocabulary and apply against the freshly-constructed instance, so you can author "construct an `AddSkill` and append two `PropertyChange` entries to its `Properties` list" inline rather than splitting into separate patches.
 
 The `handler=` subtype name is required when the array's element type is abstract polymorphic (the common case for event handlers). It can be omitted when the element type is monomorphic (the array's declared element type is the only construction option). The compiler errors when the subtype is missing for a polymorphic destination, when the named subtype isn't a subclass of the destination's element type, or when an inner field doesn't exist on the constructed type.
 
@@ -195,7 +195,7 @@ A value at the end of a `set`, `append`, or `insert` line is one of:
 | Composite           | `composite="<TypeName>" { ...nested set ops... }`        | inline value-type composite (e.g. `RoleData`)            |
 | Handler construction | `handler="<SubtypeName>" { ...nested set ops... }`      | construct a new ScriptableObject element (see above)     |
 
-`composite=` builds an inline value embedded in the parent's serialised data; `handler=` constructs a separate ScriptableObject asset that the parent references via PPtr. The two are dispatched by the runtime based on the value kind, not just the syntax.
+`composite=` builds an inline value embedded in the parent. `handler=` constructs a separate element that the parent references. Pick `composite=` for inline value-type fields (`RoleData`, `LocalizedLine`) and `handler=` for adding elements to polymorphic-reference lists (event handlers on skills and perks).
 
 The compiler infers numeric width (Byte, Int32, Single) from the destination field's type. For polymorphic destinations (an abstract base type with multiple concrete subclasses), specify the type explicitly via `ref=`, `composite=`, `handler=`, or `type=` as appropriate.
 
@@ -212,7 +212,7 @@ jiangyu templates inspect --type UnitLeaderTemplate \
     --name squad_leader.darby --output text
 ```
 
-`templates inspect --output text` is the scan-friendly view; the default JSON output is for scripting. Pass `--with-mod <project-path>` to inspect the effective template state after your project's clones and patches apply, before you launch MENACE.
+`templates inspect --output text` is the scan-friendly view. The default JSON output is for scripting. Pass `--with-mod <project-path>` to inspect the effective template state after your project's clones and patches apply, before you launch MENACE.
 
 ## Compile-time errors
 
@@ -227,7 +227,7 @@ Compile refuses the build, with a clear message, when:
 - An `enum=` value isn't a member of the named enum.
 - A `ref=` target isn't a template of the declared type.
 
-Some fields are flagged as Odin-only in the inspect output; the compiler rejects writes to them.
+Some fields are flagged as Odin-only in the inspect output, and the compiler rejects writes to them.
 
 ## CLI alternative
 

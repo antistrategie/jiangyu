@@ -112,10 +112,9 @@ public sealed partial class ProjectExporter
 	/// <paramref name="assetsToExport"/>, otherwise produced files will carry
 	/// references to assets that were not written.
 	///
-	/// Added by Jiangyu (see PREFAB_CLONING_TODO.md) to support
-	/// <c>jiangyu unity import-prefab &lt;name&gt;</c>, which extracts a
-	/// single prefab plus its dependency closure without paying the cost of
-	/// a full game-project export.
+	/// Added by Jiangyu to support <c>jiangyu unity import-prefab &lt;name&gt;</c>,
+	/// which extracts a single prefab plus its dependency closure without
+	/// paying the cost of a full game-project export.
 	/// </summary>
 	public void ExportSubset(GameBundle fileCollection, CoreConfiguration options, FileSystem fileSystem, ISet<IUnityObjectBase> assetsToExport)
 	{

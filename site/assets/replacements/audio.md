@@ -18,9 +18,9 @@ Replace any `AudioClip` in the game by name. When the game plays a clip whose na
     - A `Channels` row with the channel count, for example `1`.
     - An inline player to audition the vanilla clip.
 
-    Author your replacement at the **same frequency and channel count**. Mismatches are resampled by Unity at runtime, which pitch-shifts the result; see [Frequency and channels](#frequency-and-channels) below.
+    Author your replacement at the **same frequency and channel count**. Mismatches are resampled by Unity at runtime, which pitch-shifts the result. See [Frequency and channels](#frequency-and-channels) below.
 
-4. Click **Export** to pull the vanilla clip out as a starting point. Audio is exported in whatever format Unity embedded (typically `.ogg`; module formats like `.it`, `.xm`, `.mod` pass through unchanged).
+4. Click **Export** to pull the vanilla clip out as a starting point. Audio is exported in whatever format Unity embedded (typically `.ogg`, although module formats like `.it`, `.xm`, `.mod` pass through unchanged).
 5. Open the exported file in your audio editor, make your changes, save it under your project's `assets/replacements/` directory at the path Studio showed. For the example above, that's `assets/replacements/audio/mortar_incoming_whistle_04.wav`.
 6. [Compile](/studio#compile).
 
@@ -36,7 +36,7 @@ The basename (without extension) is the **target name** and must match the `Audi
 
 ## Frequency and channels
 
-Unity resamples mismatched audio at runtime, which pitch-shifts the sound. Match the vanilla clip's frequency and channel count when you save your replacement. Studio's detail panel shows both values; on the CLI, `assets search <name> --type AudioClip` includes them in the output.
+Unity resamples mismatched audio at runtime, which pitch-shifts the sound. Match the vanilla clip's frequency and channel count when you save your replacement. Studio's detail panel shows both values, and on the CLI, `assets search <name> --type AudioClip` includes them in the output.
 
 If you author a replacement at 48 kHz stereo for a target that ships as 44.1 kHz mono, the sound will play back too fast and high. Mono targets need mono replacements. Stereo targets need stereo replacements.
 

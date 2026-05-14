@@ -1,6 +1,6 @@
 # Studio
 
-Studio is Jiangyu's interactive workspace. Find assets, edit replacements and templates, compile your mod, all in one window. The CLI mirrors most of what Studio does; see [CLI](/reference/cli) for the scripting surface.
+Studio is Jiangyu's interactive workspace. Find assets, edit replacements and templates, compile your mod, all in one window. The CLI mirrors most of what Studio does. See [CLI](/reference/cli) for the scripting surface.
 
 ## Opening a project
 
@@ -43,7 +43,7 @@ While dragging, an overlay covers the hovered pane and divides it into five drop
 What happens on drop depends on what you grabbed:
 
 - **A single tab** (dragged from its title):
-  - Edge → splits the target pane in that direction; the tab opens in the new sub-pane.
+  - Edge → splits the target pane in that direction, and the tab opens in the new sub-pane.
   - Centre → the tab joins the target pane's tab strip. Code panes only.
 - **A whole pane** (dragged from empty space in the tab strip):
   - Edge → moves the dragged pane to that side of the target.
@@ -79,7 +79,7 @@ The Asset Browser searches the asset index built by `jiangyu assets index` (or b
 - **Kind filter pills**: **All**, **Model**, **Mesh**, **Texture**, **Sprite**, **Audio**. Click one to narrow results.
 - **Results list**: each row shows the asset name, class, collection, and pathId.
 - **Detail panel**: when you select a result, a side panel shows class, collection, pathId, and asset-specific metadata (frequency and channels for audio, atlas and rect for sprites). The `Replace` row gives the path under `assets/replacements/` to drop your replacement at. The `Affects` row shows the count when the name is shared.
-- **Preview pane**: textures and sprites render inline; audio shows an inline player; models render in a 3D viewer with orbit controls.
+- **Preview pane**: textures and sprites render inline, audio shows an inline player, and models render in a 3D viewer with orbit controls.
 - **Export**: pulls the vanilla asset out as a starting point. The dropdown picks the destination: **Project** (your project's configured export path), **Default** (`<project>/.jiangyu/exports/`), or **Browse** to choose elsewhere. Multi-select to export several at once. Successful exports push a toast with a Reveal action that opens the file location.
 
 ## Template Browser
@@ -96,7 +96,7 @@ Studio caches the template index alongside the asset index. Re-run **Index templ
 
 ## Template Visual Editor
 
-When you open a `templates/*.kdl` file in a code pane, the editor bar shows a **Visual** / **Source** toggle. The Visual mode edits the same patches and clones with structured controls instead of free-form text. The default mode is set under [Settings → Template editor](#settings); the toggle remembers per-file overrides.
+When you open a `templates/*.kdl` file in a code pane, the editor bar shows a **Visual** / **Source** toggle. The Visual mode edits the same patches and clones with structured controls instead of free-form text. The default mode is set under [Settings → Template editor](#settings), and the toggle remembers per-file overrides.
 
 - **Visual**: every field on the template appears as a row. Edits add `set` operations (or `append`/`insert`/`remove` for collection fields) to the underlying patch. The current vanilla value is shown next to your edit so you always know what you're overriding.
 - **Source**: the raw KDL text for the same file. Edits in either mode round-trip through the parser, so you can pop into Source for a fiddly edit and back to Visual without losing structure.

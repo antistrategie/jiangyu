@@ -543,8 +543,8 @@ public static class TemplateCatalogValidator
                 reportError(
                     $"asset= on a {catalog.FriendlyName(declaredType)} field is not "
                     + "supported. No template field in MENACE is typed Mesh; ship a "
-                    + "prefab addition (see PREFAB_CLONING_TODO.md) that wraps the "
-                    + "mesh in a SkinnedMeshRenderer instead.");
+                    + "prefab addition that wraps the mesh in a SkinnedMeshRenderer "
+                    + "instead.");
             }
             else if (className is "PrefabHierarchyObject")
             {

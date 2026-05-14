@@ -10,7 +10,7 @@ Jiangyu is built around progressive layers. You only learn the next tier when yo
 
 2. **Template patching and cloning.** Tweak existing game data (stats, skills, weapons, perks) by writing KDL under `templates/`. Patches edit a vanilla template in place. Clones deep-copy a vanilla template into a new ID and let further patches diverge from the source.
 
-3. **Asset additions referenced from clones.** When a cloned weapon needs its own icon (or audio, or texture), drop the file into `assets/additions/` and reference it from the clone's KDL with `set "Icon" asset="..."`. The compiler verifies the reference resolves to a real file; the loader resolves the runtime asset by name at apply time.
+3. **Asset additions referenced from clones.** When a cloned weapon needs its own icon (or audio, or texture), drop the file into `assets/additions/` and reference it from the clone's KDL with `set "Icon" asset="..."`. The compiler verifies the reference resolves to a real file, and the loader resolves the runtime asset by name at apply time.
 
 4. **Unity-authored content.** For genuinely new prefabs, custom shaders, or anything that needs the Unity Editor authoring surface.
 
@@ -28,7 +28,7 @@ For additions, the modder picks the name. The folder layout under `assets/additi
 
 ## Asset replacement vs addition
 
-A replacement edits the world: every game site that references the vanilla asset picks up the modded content. An addition ships a brand-new asset that didn't exist in the vanilla game; only template clones that explicitly reference it pick it up.
+A replacement edits the world: every game site that references the vanilla asset picks up the modded content. An addition ships a brand-new asset that didn't exist in the vanilla game, and only template clones that explicitly reference it pick it up.
 
 | | Replacement | Addition |
 | --- | --- | --- |
@@ -52,7 +52,7 @@ Templates take five **operations** on a field:
 
 For the full syntax of each op, including descent (`type=`) and construction (`handler=`), see [Templates](/templates#operations).
 
-Patches and clones are both lists of operations. A patch targets an existing template by ID; a clone deep-copies a vanilla template into a new ID and then applies its inline operations to the copy.
+Patches and clones are both lists of operations. A patch targets an existing template by ID. A clone deep-copies a vanilla template into a new ID and then applies its inline operations to the copy.
 
 ### Sequential within a template
 

@@ -20,13 +20,13 @@ Equivalent to Studio's Compile dossier. Returns non-zero on any compile error.
 
 ### `jiangyu unity init`
 
-Scaffolds the per-mod Unity Editor project at `unity/` for [prefab addition](/assets/additions/prefabs) authoring. Idempotent: re-running refreshes Jiangyu-managed files under `unity/Assets/Jiangyu/` and `.gitignore`; modder content elsewhere is preserved.
+Scaffolds the per-mod Unity Editor project at `unity/` for [prefab addition](/assets/additions/prefabs) authoring. Idempotent: re-running refreshes Jiangyu-managed files under `unity/Assets/Jiangyu/` and `.gitignore`, and modder content elsewhere is preserved.
 
 Only needed for mods that ship prefab additions. Data-only and replacement-only mods never need to run this.
 
 ### `jiangyu unity open`
 
-Launches Unity Editor on the mod's `unity/` project. Uses the editor path resolved from your global config's `unityEditor` field. Detaches; the CLI returns immediately.
+Launches Unity Editor on the mod's `unity/` project, detaching so the CLI returns immediately. Uses the editor path resolved from your global config's `unityEditor` field.
 
 ### `jiangyu unity import-prefab <name>`
 
@@ -44,7 +44,7 @@ The asset pipeline is index-first: build the catalogue once, then search and exp
 
 ### `jiangyu assets index`
 
-Builds the searchable asset index and an attribute-hint supplement (covering `[NamedArray]`, `[Range]`, `[Min]`, `[Tooltip]`, `[HideInInspector]`, `[SoundID]`) used by the compiler and template inspector. Run this once after a game update or first-time setup; subsequent commands read the cached output.
+Builds the searchable asset index and an attribute-hint supplement (covering `[NamedArray]`, `[Range]`, `[Min]`, `[Tooltip]`, `[HideInInspector]`, `[SoundID]`) used by the compiler and template inspector. Run this once after a game update or first-time setup, and subsequent commands read the cached output.
 
 The index lives in your global cache (XDG / LocalAppData). Configure the cache root with the `cache` field in the global config (see [Configuration](#configuration)).
 
@@ -58,7 +58,7 @@ jiangyu assets search local_forces --type PrefabHierarchyObject
 jiangyu assets search mortar --type AudioClip
 ```
 
-The output includes each match's pathId, collection, and the suggested replacement path under `assets/replacements/`. `--type` takes raw Unity class names (`Texture2D`, `Sprite`, `AudioClip`, `PrefabHierarchyObject`, `GameObject`, `Mesh`); these are the same values as the asset index's `className` field.
+The output includes each match's pathId, collection, and the suggested replacement path under `assets/replacements/`. `--type` takes raw Unity class names (`Texture2D`, `Sprite`, `AudioClip`, `PrefabHierarchyObject`, `GameObject`, `Mesh`). These are the same values as the asset index's `className` field.
 
 ### `jiangyu assets export <kind> <name>`
 
@@ -90,13 +90,13 @@ Power-user inspection tools. Useful when you're debugging a replacement that com
 | `assets inspect package <dir>`    | Validate an exported model package.                       |
 | `assets inspect object`           | Dump a game object's observed field tree.                 |
 
-Each takes its own flag set; run with `--help` for specifics.
+Each takes its own flag set, so run with `--help` for specifics.
 
 ## Templates
 
 ### `jiangyu templates index`
 
-Builds the template index by walking `Assembly-CSharp.dll` and the live `DataTemplate` instances in `resources.assets`. Like the asset index, this is a one-time-per-game-update operation; later template commands read the cached output.
+Builds the template index by walking `Assembly-CSharp.dll` and the live `DataTemplate` instances in `resources.assets`. Like the asset index, this is a one-time-per-game-update operation, and later template commands read the cached output.
 
 ### `jiangyu templates list`
 
@@ -120,7 +120,7 @@ jiangyu templates inspect --type UnitLeaderTemplate \
     --name squad_leader.darby --output text
 ```
 
-`--output text` is the scan-friendly view; the default JSON output is for scripting. Pass `--with-mod <project-path>` to preview the effective state after your project's clones and patches apply, before launching MENACE.
+`--output text` is the scan-friendly view, and the default JSON output is for scripting. Pass `--with-mod <project-path>` to preview the effective state after your project's clones and patches apply, before launching MENACE.
 
 ### `jiangyu templates query`
 
@@ -144,11 +144,11 @@ The CLI reads global configuration from a JSON file in your platform's standard 
 | `unityEditor` | Path to a Unity Editor binary, used by `compile` to build AssetBundles. |
 | `cache`       | Cache root for the asset index, exports, and the attribute-hint supplement. |
 
-Studio's Settings dialog and the CLI write to the same file. The CLI doesn't have a config-edit subcommand; edit the file directly or use Studio.
+Studio's Settings dialog and the CLI write to the same file. The CLI doesn't have a config-edit subcommand, so edit the file directly or use Studio.
 
 ## Exit codes
 
 - `0`: success.
 - `1`: any handled error (missing config, parse failure, compile failure, ambiguous asset name, etc.). Error messages go to stderr.
 
-The CLI doesn't distinguish error categories beyond `0` vs `1` today; check stderr for the specific cause.
+The CLI doesn't distinguish error categories beyond `0` vs `1` today, so check stderr for the specific cause.

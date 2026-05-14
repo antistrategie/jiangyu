@@ -56,7 +56,7 @@ Compile refuses the build, with a clear message, when:
 
 - An `asset="..."` reference doesn't resolve to a file under `assets/additions/sprites/`.
 - Two files share the same logical name with different extensions.
-- The destination field's declared Unity type isn't `Sprite`. The same `asset="..."` syntax works for textures and audio (with the appropriate Unity field type); the category is inferred from the field, not stated in KDL.
+- The destination field's declared Unity type isn't `Sprite`. The same `asset="..."` syntax works for textures and audio (with the appropriate Unity field type), since the category is inferred from the field rather than stated in KDL.
 
 ## Runtime resolution
 

@@ -29,7 +29,7 @@ Before you can chat, you need an agent installed:
 3. Click **Add more agents…** to open the registry browser.
 4. Browse available agents, then click **Install** on the one you want.
 
-Currently supported agents are distributed via `bunx` (Studio bundles its own Bun runtime; no system Node.js required).
+Currently supported agents are distributed via `bunx`. Studio bundles its own Bun runtime, so no system Node.js is required.
 
 ::: tip API key
 Most agents need an API key for their LLM provider. The agent will prompt you for authentication on first use. Jiangyu Studio does not store your API key or any account credentials. The agent process manages its own credentials.
@@ -63,9 +63,9 @@ Type `/` in the input to see available agent commands. These vary by agent but t
 
 When the agent wants to write or modify files, it asks for permission. You'll see an inline prompt with the proposed action and three choices:
 
-- **Allow once** — approve this single action.
-- **Allow always** — approve this and future similar actions for the session.
-- **Reject** — deny this action; the agent can try something else.
+- **Allow once**: approve this single action.
+- **Allow always**: approve this and future similar actions for the session.
+- **Reject**: deny this action so the agent can try something else.
 
 Read-only actions (searching, inspecting, listing files) never require permission.
 

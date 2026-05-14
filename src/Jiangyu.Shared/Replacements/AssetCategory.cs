@@ -46,9 +46,8 @@ public static class AssetCategory
         "Mesh" => throw new System.NotSupportedException(
             "Mesh additions are not supported because no template field in MENACE is "
             + "typed Mesh; templates carry GameObject references instead. "
-            + "Author a prefab addition (see PREFAB_CLONING_TODO.md, "
-            + "site/assets/additions/prefabs) that wraps the mesh inside a "
-            + "SkinnedMeshRenderer."),
+            + "Author a prefab addition (see site/assets/additions/prefabs) that "
+            + "wraps the mesh inside a SkinnedMeshRenderer."),
         "PrefabHierarchyObject" => throw new System.NotSupportedException(
             "PrefabHierarchyObject is AssetRipper's extraction wrapper, not a Unity "
             + "Object type that appears on template fields. Asset references targeting "

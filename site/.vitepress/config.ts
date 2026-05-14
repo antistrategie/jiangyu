@@ -63,9 +63,7 @@ export default defineConfig({
       },
       {
         text: "Concepts",
-        items: [
-          { text: "Overview", link: "/concepts/" },
-        ],
+        items: [{ text: "Overview", link: "/concepts/" }],
       },
       {
         text: "Assets",
@@ -78,8 +76,8 @@ export default defineConfig({
               { text: "Overview", link: "/assets/replacements/" },
               { text: "Textures", link: "/assets/replacements/textures" },
               { text: "Sprites", link: "/assets/replacements/sprites" },
-              { text: "Models", link: "/assets/replacements/models" },
               { text: "Audio", link: "/assets/replacements/audio" },
+              { text: "Models", link: "/assets/replacements/models" },
             ],
           },
           {
@@ -97,9 +95,7 @@ export default defineConfig({
       },
       {
         text: "Templates",
-        items: [
-          { text: "Templates (KDL)", link: "/templates" },
-        ],
+        items: [{ text: "Templates (KDL)", link: "/templates" }],
       },
       {
         text: "Studio",
