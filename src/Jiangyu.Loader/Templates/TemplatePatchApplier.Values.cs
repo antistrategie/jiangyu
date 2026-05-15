@@ -143,6 +143,20 @@ internal sealed partial class TemplatePatchApplier
             case CompiledTemplateValueKind.AssetReference:
                 return TryResolveAssetReference(value.Asset, targetType, assetResolver, out converted, out error);
 
+            case CompiledTemplateValueKind.Null:
+                // Null literal: only valid on reference-typed fields. Reject
+                // value types (Nullable<T> fields would be writable but no
+                // MENACE template field uses them, so the simpler check —
+                // "not a value type" — is sufficient and keeps the error
+                // message honest about the supported case.
+                if (targetType.IsValueType)
+                {
+                    error = $"null cannot be assigned to value-typed field {targetType.FullName}; null is only valid for reference fields (GameObject, ScriptableObject, etc.).";
+                    return false;
+                }
+                converted = null;
+                return true;
+
             case CompiledTemplateValueKind.Composite:
                 return TryConstructComposite(value.Composite, targetType, assetResolver, log, out converted, out error);
 

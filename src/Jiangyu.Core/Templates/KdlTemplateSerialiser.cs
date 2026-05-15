@@ -260,6 +260,10 @@ public static class KdlTemplateSerialiser
             case KdlEditorValueKind.AssetReference:
                 sb.Append($"asset=\"{Esc(v.AssetName ?? "")}\"");
                 break;
+
+            case KdlEditorValueKind.Null:
+                sb.Append("#null");
+                break;
         }
     }
 

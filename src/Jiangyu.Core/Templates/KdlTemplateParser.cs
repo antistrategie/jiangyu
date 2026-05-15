@@ -491,6 +491,10 @@ public static class KdlTemplateParser
                     Name = value.AssetName ?? string.Empty,
                 },
             },
+            KdlEditorValueKind.Null => new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.Null,
+            },
             _ => new CompiledTemplateValue
             {
                 Kind = CompiledTemplateValueKind.String,
@@ -558,6 +562,10 @@ public static class KdlTemplateParser
             {
                 Kind = KdlEditorValueKind.AssetReference,
                 AssetName = v.Asset?.Name,
+            },
+            CompiledTemplateValueKind.Null => new KdlEditorValue
+            {
+                Kind = KdlEditorValueKind.Null,
             },
             _ => new KdlEditorValue { Kind = KdlEditorValueKind.String, String = "" },
         };
@@ -1315,8 +1323,15 @@ public static class KdlTemplateParser
                 return TryParseNumberValue(arg, pos, log, out value);
 
             case KdlValueType.Null:
-                log.Error($"{pos}: null values are not supported in template patches.");
-                return false;
+                // Explicit null literal: emit a Null-kind compiled value. The
+                // applier rejects this for value-typed fields (it can only
+                // assign to reference-typed scalars), so the type check is
+                // deferred to apply time when the destination field is known.
+                value = new CompiledTemplateValue
+                {
+                    Kind = CompiledTemplateValueKind.Null,
+                };
+                return true;
 
             default:
                 log.Error($"{pos}: unsupported KDL value type '{arg.ValueType}'.");

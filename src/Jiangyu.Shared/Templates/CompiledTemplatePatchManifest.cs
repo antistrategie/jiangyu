@@ -291,6 +291,14 @@ public enum CompiledTemplateValueKind
     /// loaded AssetBundle, falling back to the game-asset registry.
     /// </summary>
     AssetReference,
+
+    /// <summary>
+    /// Explicit null literal. Written as <c>set "Field" null</c> in KDL. Used
+    /// to clear a scalar reference field (GameObject, ScriptableObject,
+    /// MonoBehaviour, etc.) so the runtime falls back to its default-when-null
+    /// behaviour. Value types and primitives reject this kind at apply time.
+    /// </summary>
+    Null,
 }
 
 /// <summary>

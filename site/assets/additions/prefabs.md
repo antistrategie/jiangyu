@@ -22,6 +22,7 @@ This creates:
 │   ├── Jiangyu/              jiangyu-managed (re-init refreshes)
 │   │   ├── Editor/BuildBundles.cs
 │   │   ├── Editor/ImportedPrefabPostProcessor.cs
+│   │   ├── Editor/BakeHumanoid.cs
 │   │   └── README.md
 │   └── Prefabs/              your prefabs go here
 ├── Packages/manifest.json    seeded with no dependencies, extend as needed
@@ -41,6 +42,36 @@ Re-running `jiangyu unity init` is idempotent. It refreshes `Assets/Jiangyu/` an
 #### Importing a vanilla prefab to start from
 
 `jiangyu unity import-prefab <name>` extracts a vanilla game prefab plus its dependencies (mesh, materials, textures, Avatar, AnimatorController) into `unity/Assets/Imported/<name>/`. Useful when you want to clone-and-modify rather than author from scratch.
+
+#### Baking a humanoid character from a glTF
+
+Authoring a soldier-shape addition prefab by hand is mostly correct steps plus a handful of gotchas any one of which silently breaks the result. `BakeHumanoid` automates them:
+
+- **Avatar build**. Unity Editor's Avatar auto-config misidentifies bones on non-Mecanim rigs and fails silently. `BakeHumanoid` builds the Avatar via `AvatarBuilder.BuildHumanAvatar` with an explicit MENACE→Unity humanoid bone map (Hips→Hips, UpperArm_L→LeftUpperArm, etc.) so the avatar comes out usable first try.
+- **T-pose muscle-zero**. The avatar's calibration is captured from the current scene-state bone transforms. The script assumes (and the HelpBox documents) the glTF is in T-pose at rest; if it isn't, Mecanim retargets badly. Whatever produces your glTF should bake T-pose into the rest pose before exporting.
+- **Material clone without leakage**. The Menace/* shader is an AssetRipper stub and renders magenta in the Editor; you can't preview. The script clones shader + non-texture properties + keywords from a vanilla soldier reference material, then assigns the baked atlas to `_BaseMap` and 1×1 neutral defaults to `_NormalMap`/`_MaskMap` so the runtime doesn't fall back to its "white" mask map (Metallic=1 → chrome-blue render). Reference textures that wouldn't UV-map correctly onto the new mesh are explicitly nulled rather than left to leak through.
+- **Root parent over Hips**. The reference avatar's `m_TOS` uses paths like `Root/Hips/Spine/...`. Without a `Root` GameObject above `Hips` the Mecanim bone resolution misses and the character stays stuck in T-pose at runtime.
+- **LODGroup wiring**. Scans SMRs for meshes named `<basename>_LOD<N>`, sorts by index, and configures screen-space thresholds.
+- **Animator config**. Attaches the reference's `runtimeAnimatorController` and copies `applyRootMotion` + `cullingMode`.
+
+You can do all of this by hand in Unity Editor instead; the script doesn't gate access to anything Unity-public. It exists because every one of those steps has a sharp edge, and encoding them in the editor utility means the next humanoid character doesn't have to re-discover them.
+
+Open via `Jiangyu → Bake humanoid prefab from glTF…`, or invoke batchmode via `-executeMethod Jiangyu.Mod.BakeHumanoid.BakeBatch` with `-gltfFolder`, `-referencePrefab`, `-outputDir`, `-outputName`. Output layout:
+
+```text
+Assets/Prefabs/MyCharacter/
+├── main.prefab               the addition prefab
+├── baked.mat                 atlas-textured material, Menace/* shader
+└── avatar.asset              humanoid Avatar with T-pose muscle-zero
+```
+
+Then KDL reference is `asset="MyCharacter/main"`.
+
+::: warning Requirements on the input glTF
+- T-pose at rest. The avatar's muscle-zero is built from current bone transforms; a non-T-pose rest will retarget badly.
+- MENACE humanoid bone names: Hips, Spine, Spine2, Neck, Head, Shoulder_L, UpperArm_L, LowerArm_L, Hand_L, UpperLeg_L, LowerLeg_L, Foot_L, and R-side equivalents.
+- LOD meshes named `<basename>_LOD0..LODN`. Basename is auto-detected from the mesh names.
+:::
 
 ### Pre-built bundle drop (escape hatch)
 
@@ -63,11 +94,11 @@ For a single-GameObject field, use the scalar form:
 
 ```kdl
 patch "ArmorTemplate" "armor.player_fatigues" {
-    set "SquadLeaderModelFixed" asset="darby_voymastina"
+    set "SquadLeaderModelFixed" asset="my_squad_leader"
 }
 ```
 
-The category is **inferred** from the destination field's declared Unity type. `Prefabs` on `EntityTemplate` is `List<UnityEngine.GameObject>`, so the compiler looks for `darby_voymastina` under the prefab addition path (either `unity/Assets/Prefabs/darby_voymastina.prefab` or `assets/additions/prefabs/darby_voymastina.bundle`).
+The category is **inferred** from the destination field's declared Unity type. `Prefabs` on `EntityTemplate` is `List<UnityEngine.GameObject>`, so the compiler looks for `my_squad_leader` under the prefab addition path (either `unity/Assets/Prefabs/my_squad_leader.prefab` or `assets/additions/prefabs/my_squad_leader.bundle`).
 
 ### Soldier visual overrides on a specific cloned unit
 
@@ -79,11 +110,11 @@ clone "UnitLeaderTemplate" from="squad_leader.darby" id="squad_leader.darby_clon
 }
 
 clone "ArmorTemplate" from="armor.player_fatigues" id="armor.darby_clone" {
-    set "SquadLeaderModelFemaleBlack" asset="my_darby_voymastina"
+    set "SquadLeaderModelFemaleBlack" asset="my_squad_leader_clone"
     clear "MaleModels"
-    append "MaleModels" asset="my_darby_voymastina"
+    append "MaleModels" asset="my_squad_leader_clone"
     clear "FemaleModels"
-    append "FemaleModels" asset="my_darby_voymastina"
+    append "FemaleModels" asset="my_squad_leader_clone"
 }
 
 bind "leader_armor" leader="squad_leader.darby_clone" armor="armor.darby_clone"
@@ -101,7 +132,7 @@ clone "ArmorTemplate" from="armor.player_fatigues" id="armor.darby_clone" {
 }
 ```
 
-The lookup is by Unity Object name and is case-sensitive. Asset categories are inferred from the destination field's Unity type just like for project additions.
+The lookup against the vanilla asset registry is by Unity Object name and is case-sensitive. The addition prefab lookup (Phase 1, against bundles your mod ships) is case-insensitive: Unity normalises asset bundle filenames to lowercase on write, so a prefab authored under `Assets/Prefabs/MyCharacter/main.prefab` lands on disk as `mycharacter__main.bundle`, and your KDL ref can still write `asset="MyCharacter/main"`. Asset categories are inferred from the destination field's Unity type just like for project additions.
 
 ## Constraints
 

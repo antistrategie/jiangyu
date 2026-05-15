@@ -259,6 +259,10 @@ public static class TemplatePatchPathValidator
             // apply time, so the value kind itself doesn't carry it.
             CompiledTemplateValueKind.AssetReference =>
                 value.Asset != null && !string.IsNullOrWhiteSpace(value.Asset.Name),
+            // Null literal carries no payload — the value kind itself is the
+            // complete signal. The applier checks the destination field is a
+            // reference type at apply time.
+            CompiledTemplateValueKind.Null => true,
             _ => false,
         };
     }

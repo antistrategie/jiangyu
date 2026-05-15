@@ -158,6 +158,7 @@ public static class GlbMeshBundleCompiler
         public required string SourceFilePath { get; init; }
         public required string Extension { get; init; }
         public required string StagingName { get; init; }
+        public bool IsAddition { get; init; }
     }
 
     internal static async Task<BuildResult> BuildAsync(
@@ -1730,6 +1731,9 @@ public static class GlbMeshBundleCompiler
         var spriteSourceDir = Path.Combine(assetsDir, "SpriteSources");
         if (Directory.Exists(spriteSourceDir))
             Directory.Delete(spriteSourceDir, recursive: true);
+        var spriteAdditionDir = Path.Combine(assetsDir, "SpriteAdditions");
+        if (Directory.Exists(spriteAdditionDir))
+            Directory.Delete(spriteAdditionDir, recursive: true);
 
         if (directAudioAssets.Count == 0 && directSprites.Count == 0)
             return;
@@ -1746,15 +1750,32 @@ public static class GlbMeshBundleCompiler
             File.Copy(asset.SourceFilePath, destinationPath, overwrite: true);
         }
 
-        if (directSprites.Count > 0)
+        // Replacement sprites stage through SpriteSources/ and go through the
+        // runtime-created Texture2D path in the builder so alpha survives the
+        // in-place mutation. Addition sprites stage through SpriteAdditions/
+        // and go through Unity's standard TextureImporter path so the bundle
+        // serialiser produces correct internal PPtrs. The runtime-Texture2D
+        // path leaves the sprite's m_RD.texture pointing at an unresolvable
+        // fileID and the bundle ends up aliasing the slot with whatever asset
+        // shares it at runtime (observed: a vanilla AudioClip, which makes
+        // Sprite.texture throw and takes down the UI canvas that tries to
+        // render the sprite).
+        var anyReplacementSprite = directSprites.Any(s => !s.IsAddition);
+        var anyAdditionSprite = directSprites.Any(s => s.IsAddition);
+        if (anyReplacementSprite)
             Directory.CreateDirectory(spriteSourceDir);
+        if (anyAdditionSprite)
+            Directory.CreateDirectory(spriteAdditionDir);
+
         foreach (var asset in directSprites)
         {
             var extension = string.IsNullOrWhiteSpace(asset.Extension) ? string.Empty : asset.Extension;
             if (!string.IsNullOrEmpty(extension) && !extension.StartsWith('.'))
                 extension = $".{extension}";
 
-            var destinationPath = Path.Combine(spriteSourceDir, $"{asset.StagingName}{extension}");
+            var targetDir = asset.IsAddition ? spriteAdditionDir : spriteSourceDir;
+            var destinationName = asset.IsAddition ? asset.Name : asset.StagingName;
+            var destinationPath = Path.Combine(targetDir, $"{destinationName}{extension}");
             File.Copy(asset.SourceFilePath, destinationPath, overwrite: true);
         }
     }

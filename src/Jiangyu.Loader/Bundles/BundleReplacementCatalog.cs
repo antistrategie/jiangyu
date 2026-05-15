@@ -3,6 +3,8 @@ using Jiangyu.Shared.Bundles;
 using MelonLoader;
 using UnityEngine;
 using Jiangyu.Loader.Replacements;
+using MenaceFootprints = Il2CppMenace.Tactical.Footprints;
+using MenaceRagdoll = Il2CppMenace.Tactical.Ragdoll;
 
 namespace Jiangyu.Loader.Bundles;
 
@@ -16,7 +18,10 @@ internal sealed class BundleReplacementCatalog
     private readonly Dictionary<string, string> _textureOwners = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _spriteOwners = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _audioOwners = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _additionPrefabOwners = new(StringComparer.Ordinal);
+    // Mirrors AdditionPrefabs' case-insensitive keying so duplicate-detection
+    // stays consistent when a later mod ships the same prefab under a
+    // different-cased name.
+    private readonly Dictionary<string, string> _additionPrefabOwners = new(StringComparer.OrdinalIgnoreCase);
 
     public Dictionary<string, ReplacementMesh> Meshes { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, ReplacementPrefab> Prefabs { get; } = new(StringComparer.Ordinal);
@@ -30,7 +35,12 @@ internal sealed class BundleReplacementCatalog
     // the Phase 2 fallback consults the live game-asset registry. Distinct
     // dictionary from Prefabs (which carries ReplacementPrefab metadata for
     // the mesh-replacement path).
-    public Dictionary<string, GameObject> AdditionPrefabs { get; } = new(StringComparer.Ordinal);
+    //
+    // Case-insensitive on purpose: Unity normalises asset bundle names to
+    // lowercase when writing, so a bundle authored as Voymastina/Voymastina
+    // lands on disk as voymastina__voymastina.bundle. Modders shouldn't be
+    // forced to lowercase their KDL asset= references to compensate.
+    public Dictionary<string, GameObject> AdditionPrefabs { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     public BundleReplacementCatalog(List<UnityEngine.Object> pinned)
     {
@@ -156,17 +166,24 @@ internal sealed class BundleReplacementCatalog
                 continue;
             }
 
-            var texturePtr = BundleLoader.LoadAsset(bundle, assetName, textureTypePtr);
-            if (texturePtr != IntPtr.Zero)
-            {
-                RegisterTextureAsset(ownerLabel, texturePtr, log);
-                continue;
-            }
-
+            // Try Sprite before Texture2D: PNG assets imported via Unity's
+            // TextureImporter produce a single bundle asset where both types
+            // are loadable from the same name (Texture2D is the main asset
+            // and Sprite is a sub-asset). Loading Texture2D first would hide
+            // the sprite from the catalog and break KDL asset= references
+            // typed against Sprite. Pure texture replacements (no sprite
+            // sub-asset) return null here and fall through cleanly.
             var spritePtr = BundleLoader.LoadAsset(bundle, assetName, spriteTypePtr);
             if (spritePtr != IntPtr.Zero)
             {
                 RegisterSpriteAsset(ownerLabel, spritePtr, log);
+                continue;
+            }
+
+            var texturePtr = BundleLoader.LoadAsset(bundle, assetName, textureTypePtr);
+            if (texturePtr != IntPtr.Zero)
+            {
+                RegisterTextureAsset(ownerLabel, texturePtr, log);
                 continue;
             }
 
@@ -330,7 +347,21 @@ internal sealed class BundleReplacementCatalog
         // for the unique-texture-backed case, which compile-time validation
         // ensures is the only case we accept). Explicit texture replacements
         // take precedence if both are registered under the same name.
-        var backingTexture = loadedSprite.texture;
+        //
+        // The .texture cast can throw if the bundle's sprite was built through
+        // a path that produced an unresolvable m_RD.texture PPtr (older
+        // runtime-Texture2D pipeline). Skip the backing-texture registration
+        // for those sprites rather than aborting the whole bundle load.
+        Texture2D backingTexture;
+        try
+        {
+            backingTexture = loadedSprite.texture;
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"    Sprite '{loadedSprite.name}': backing texture access failed ({ex.GetType().Name}); skipping backing-texture registration.");
+            return;
+        }
         if (backingTexture != null && !ReplacementTextures.ContainsKey(loadedSprite.name))
         {
             backingTexture.hideFlags = HideFlags.DontUnloadUnusedAsset;
@@ -389,15 +420,46 @@ internal sealed class BundleReplacementCatalog
             renderer.sharedMaterials = mats;
         }
 
+        var soldierScripts = AttachSoldierScriptsIfHumanoid(prefab, log);
+
         if (_additionPrefabOwners.TryGetValue(key, out var previousOwner))
             log.Warning($"  Override addition prefab '{key}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
 
         AdditionPrefabs[key] = prefab;
         _additionPrefabOwners[key] = ownerLabel;
-        var suffix = unresolved > 0
+        var shaderSuffix = unresolved > 0
             ? $"; rebound {rebinds} shader(s); {unresolved} unresolved (will render magenta)"
             : $"; rebound {rebinds} shader(s)";
-        log.Msg($"  Registered addition prefab: {key} (object name: {prefab.name}{suffix})");
+        log.Msg($"  Registered addition prefab: {key} (object name: {prefab.name}{shaderSuffix}{soldierScripts})");
+    }
+
+    // Soldier-shape addition prefabs require MENACE's Footprints and Ragdoll
+    // MonoBehaviours to spawn without freezing the actor pipeline. AssetRipper
+    // strips MonoBehaviours from imported prefabs, so a clone-and-rebundle of a
+    // vanilla soldier loses them. We re-attach them at load time with default
+    // (empty) configuration; fields like m_Template / m_Parts can be populated
+    // later if MENACE's spawn pipeline requires them.
+    private static string AttachSoldierScriptsIfHumanoid(GameObject prefab, MelonLogger.Instance log)
+    {
+        var animator = prefab.GetComponent<Animator>();
+        if (animator == null || animator.avatar == null || !animator.avatar.isHuman)
+            return string.Empty;
+
+        var added = new List<string>(2);
+        if (prefab.GetComponent<MenaceFootprints>() == null)
+        {
+            prefab.AddComponent<MenaceFootprints>();
+            added.Add("Footprints");
+        }
+        if (prefab.GetComponent<MenaceRagdoll>() == null)
+        {
+            prefab.AddComponent<MenaceRagdoll>();
+            added.Add("Ragdoll");
+        }
+        if (added.Count == 0)
+            return string.Empty;
+
+        return $"; attached {string.Join(", ", added)}";
     }
 
     private void RegisterMeshAsset(

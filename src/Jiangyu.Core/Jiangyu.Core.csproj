@@ -44,6 +44,8 @@
                       LogicalName="UnityProject/Assets/Jiangyu/Editor/BuildBundles.cs" />
     <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\Editor\ImportedPrefabPostProcessor.cs"
                       LogicalName="UnityProject/Assets/Jiangyu/Editor/ImportedPrefabPostProcessor.cs" />
+    <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\Editor\BakeHumanoid.cs"
+                      LogicalName="UnityProject/Assets/Jiangyu/Editor/BakeHumanoid.cs" />
     <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\README.md"
                       LogicalName="UnityProject/Assets/Jiangyu/README.md" />
     <EmbeddedResource Include="Templates\UnityProject\Packages\manifest.json"

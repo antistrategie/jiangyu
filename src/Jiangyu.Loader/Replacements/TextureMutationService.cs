@@ -19,6 +19,7 @@ internal sealed class TextureMutationService
     private readonly Dictionary<string, Texture2D> _replacementTextures;
     private readonly HashSet<int> _mutatedInstanceIds = new();
     private readonly HashSet<int> _failedInstanceIds = new();
+    private readonly HashSet<IntPtr> _spriteTextureCastBlocklist = new();
 
     public TextureMutationService(Dictionary<string, Texture2D> replacementTextures)
     {
@@ -107,7 +108,26 @@ internal sealed class TextureMutationService
             if (!_replacementTextures.TryGetValue(gameSprite.name, out var replacement) || replacement == null)
                 continue;
 
-            var gameTexture = gameSprite.texture;
+            // Some sprites in MENACE's runtime carry a backing-texture PPtr that
+            // resolves to a non-Texture2D Object (observed: AudioClip). The
+            // IL2CPP marshaller hard-fails the Sprite.texture cast in that case.
+            // Skip and remember the bad sprite by pointer so the next apply tick
+            // doesn't repeat the throw.
+            var spritePtr = gameSprite.Pointer;
+            if (_spriteTextureCastBlocklist.Contains(spritePtr))
+                continue;
+
+            Texture2D? gameTexture;
+            try
+            {
+                gameTexture = gameSprite.texture;
+            }
+            catch (Exception ex)
+            {
+                _spriteTextureCastBlocklist.Add(spritePtr);
+                log.Warning($"  Skipping sprite '{gameSprite.name}': backing texture cast failed ({ex.GetType().Name}: {ex.Message}).");
+                continue;
+            }
             if (gameTexture == null)
                 continue;
 

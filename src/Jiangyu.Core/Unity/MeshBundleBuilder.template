@@ -11,6 +11,12 @@ public static class MeshBundleBuilder
     private const uint Magic = 0x4D455348; // "MESH"
     private const uint TextureMagic = 0x54585452; // "TXTR"
 
+    private static bool IsSpriteSourceExtension(string path)
+    {
+        var ext = Path.GetExtension(path).ToLowerInvariant();
+        return ext == ".png" || ext == ".jpg" || ext == ".jpeg";
+    }
+
     public static void Build()
     {
         var args = Environment.GetCommandLineArgs();
@@ -84,8 +90,7 @@ public static class MeshBundleBuilder
             // produces the bundle name the runtime resolver expects.
             foreach (var pngFile in Directory.GetFiles("Assets/SpriteSources", "*.*", SearchOption.TopDirectoryOnly))
             {
-                var ext = Path.GetExtension(pngFile).ToLowerInvariant();
-                if (ext != ".png" && ext != ".jpg" && ext != ".jpeg")
+                if (!IsSpriteSourceExtension(pngFile))
                     continue;
 
                 var spriteName = Path.GetFileNameWithoutExtension(pngFile);
@@ -121,6 +126,45 @@ public static class MeshBundleBuilder
                 AssetDatabase.CreateAsset(sprite, assetPath);
                 AssetImporter.GetAtPath(assetPath).assetBundleName = bundleName;
                 assetPaths.Add(assetPath);
+                spriteAssetCount++;
+            }
+        }
+
+        // Addition sprites go through Unity's standard TextureImporter path
+        // because they're consumed as UI icons (the runtime-Texture2D path
+        // above leaves m_RD.texture serialised as an unresolvable PPtr in the
+        // bundle; the runtime ends up aliasing it with whatever asset shares
+        // the fileID slot, which trashes the UI canvas when something tries
+        // to render the sprite). The PNG sits as a project asset and Unity's
+        // importer produces a properly-serialisable Texture2D + Sprite pair.
+        if (Directory.Exists("Assets/SpriteAdditions"))
+        {
+            foreach (var pngFile in Directory.GetFiles("Assets/SpriteAdditions", "*.*", SearchOption.TopDirectoryOnly))
+            {
+                if (!IsSpriteSourceExtension(pngFile))
+                    continue;
+
+                AssetDatabase.ImportAsset(pngFile, ImportAssetOptions.ForceSynchronousImport);
+                var importer = AssetImporter.GetAtPath(pngFile) as TextureImporter;
+                if (importer == null)
+                    throw new InvalidDataException($"Failed to acquire TextureImporter for '{pngFile}'");
+
+                importer.textureType = TextureImporterType.Sprite;
+                importer.spriteImportMode = SpriteImportMode.Single;
+                importer.alphaIsTransparency = true;
+                importer.alphaSource = TextureImporterAlphaSource.FromInput;
+                importer.mipmapEnabled = false;
+                importer.filterMode = FilterMode.Bilinear;
+                importer.wrapMode = TextureWrapMode.Clamp;
+                importer.textureCompression = TextureImporterCompression.Uncompressed;
+                importer.assetBundleName = bundleName;
+                importer.SaveAndReimport();
+
+                var importedSprite = AssetDatabase.LoadAssetAtPath<Sprite>(pngFile);
+                if (importedSprite == null)
+                    throw new InvalidDataException($"Failed to import sprite '{pngFile}'");
+
+                assetPaths.Add(pngFile);
                 spriteAssetCount++;
             }
         }

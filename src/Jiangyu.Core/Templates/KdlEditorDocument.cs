@@ -141,6 +141,14 @@ public enum KdlEditorValueKind
     /// name on <see cref="KdlEditorValue.AssetName"/>.
     /// </summary>
     AssetReference,
+
+    /// <summary>
+    /// Explicit null literal. Mirrors
+    /// <see cref="Jiangyu.Shared.Templates.CompiledTemplateValueKind.Null"/>.
+    /// Used to clear a scalar reference field; the destination field's type
+    /// is checked at apply time.
+    /// </summary>
+    Null,
 }
 
 public sealed class KdlEditorValue

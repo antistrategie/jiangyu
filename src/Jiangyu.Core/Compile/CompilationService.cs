@@ -878,6 +878,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                     SourceFilePath = file,
                     Extension = Path.GetExtension(file),
                     StagingName = $"sprite_source__{bundleName}",
+                    IsAddition = true,
                 };
             })
             .OrderBy(entry => entry.Name, StringComparer.Ordinal);

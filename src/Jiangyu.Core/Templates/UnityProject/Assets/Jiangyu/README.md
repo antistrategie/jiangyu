@@ -14,6 +14,12 @@ AssetBundle.
 `Editor/ImportedPrefabPostProcessor.cs` strips missing-script components from
 prefabs under `Assets/Imported/` so they save without errors.
 
+`Editor/BakeHumanoid.cs` bakes a humanoid addition prefab (avatar + material +
+LODGroup + animator) from a glTF source plus a vanilla MENACE soldier
+reference. Open it via `Jiangyu → Bake humanoid prefab from glTF…` or invoke
+batchmode via `Jiangyu.Mod.BakeHumanoid.BakeBatch`. The glTF skeleton must be
+in T-pose at rest with MENACE humanoid bone names.
+
 ## Shaders
 
 Use the `Menace/*` shaders (`Menace/building`, etc.) on bundled materials.

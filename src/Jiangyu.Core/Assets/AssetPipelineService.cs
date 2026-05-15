@@ -23,6 +23,8 @@ using AssetRipper.SourceGenerated.Classes.ClassID_28;
 using AssetRipper.SourceGenerated.Classes.ClassID_4;
 using AssetRipper.SourceGenerated.Classes.ClassID_43;
 using AssetRipper.SourceGenerated.Classes.ClassID_83;
+using AssetRipper.SourceGenerated.Classes.ClassID_114;
+using AssetRipper.SourceGenerated.Classes.ClassID_115;
 using AssetRipper.SourceGenerated.Classes.ClassID_137;
 using AssetRipper.SourceGenerated.Classes.ClassID_213;
 using AssetRipper.SourceGenerated.Extensions;
@@ -351,7 +353,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
             throw new ArgumentException("destDir is required.", nameof(destDir));
 
         var settings = new AssetRipper.Export.Configuration.FullConfiguration();
-        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level0;
+        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level2;
 
         var adapter = new AssetRipperProgressAdapter(_progress);
         Logger.Add(adapter);
@@ -430,6 +432,24 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
             var keep = WalkDependencyClosure(gameData, target);
             _log.Info($"Dependency closure: {keep.Count} asset(s).");
             _progress.Finish();
+
+            var componentScripts = new SortedDictionary<string, int>(StringComparer.Ordinal);
+            foreach (var asset in keep)
+            {
+                if (asset is not IMonoBehaviour mb) continue;
+                if (!mb.IsComponentOnGameObject()) continue;
+                if (!mb.TryGetScript(out IMonoScript? script)) continue;
+                var ns = script.Namespace.String;
+                var cls = script.ClassName_R.String;
+                var key = string.IsNullOrEmpty(ns) ? cls : $"{ns}.{cls}";
+                componentScripts.TryGetValue(key, out var n);
+                componentScripts[key] = n + 1;
+            }
+            if (componentScripts.Count > 0)
+            {
+                var summary = string.Join(", ", componentScripts.Select(kv => $"{kv.Value}x {kv.Key}"));
+                _log.Info($"MonoBehaviour components on imported prefab graph: {summary}");
+            }
 
             // Export just the kept assets via the Jiangyu-patched
             // ExportHandler.ExportSubset path. AssetRipper builds collections

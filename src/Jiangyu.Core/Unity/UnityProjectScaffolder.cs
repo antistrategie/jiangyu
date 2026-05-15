@@ -66,6 +66,12 @@ public sealed class UnityProjectScaffolder
 
         WriteFromTemplate(
             unityDir,
+            templateLogicalPath: "UnityProject/Assets/Jiangyu/Editor/BakeHumanoid.cs",
+            destRelative: Path.Combine("Assets", "Jiangyu", "Editor", "BakeHumanoid.cs"),
+            result);
+
+        WriteFromTemplate(
+            unityDir,
             templateLogicalPath: "UnityProject/Assets/Jiangyu/README.md",
             destRelative: Path.Combine("Assets", "Jiangyu", "README.md"),
             result);

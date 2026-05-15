@@ -194,8 +194,11 @@ A value at the end of a `set`, `append`, or `insert` line is one of:
 | Enum                | `enum="<EnumType>" "<value>"`                            | `set "Tier" enum="PerkTier" "Advanced"`                  |
 | Composite           | `composite="<TypeName>" { ...nested set ops... }`        | inline value-type composite (e.g. `RoleData`)            |
 | Handler construction | `handler="<SubtypeName>" { ...nested set ops... }`      | construct a new ScriptableObject element (see above)     |
+| Null                | `#null`                                                  | `set "CustomHead" #null` (clear a reference field)       |
 
 `composite=` builds an inline value embedded in the parent. `handler=` constructs a separate element that the parent references. Pick `composite=` for inline value-type fields (`RoleData`, `LocalizedLine`) and `handler=` for adding elements to polymorphic-reference lists (event handlers on skills and perks).
+
+`#null` clears a reference-typed scalar field (GameObject, ScriptableObject, MonoBehaviour, etc.) so the runtime falls back to its default-when-null behaviour. Useful on cloned templates where the source's field holds an overlay you don't want; e.g. dropping a soldier clone's `CustomHead` so the body mesh's own head shows through. Value-typed fields (numbers, enums, structs) reject `#null` at compile time.
 
 The compiler infers numeric width (Byte, Int32, Single) from the destination field's type. For polymorphic destinations (an abstract base type with multiple concrete subclasses), specify the type explicitly via `ref=`, `composite=`, `handler=`, or `type=` as appropriate.
 
