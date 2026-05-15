@@ -5,6 +5,13 @@
     <RootNamespace>Jiangyu.Studio.Rpc.Generators</RootNamespace>
     <IsRoslynComponent>true</IsRoslynComponent>
     <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+    <!--
+      RS1036 wants source generators to declare EnforceExtendedAnalyzerRules,
+      but enforcing those rules forbids file IO (RS1035) and this generator
+      deliberately writes a TypeScript file as a build-time side-effect. Opt
+      out of the guidance warning instead.
+    -->
+    <NoWarn>$(NoWarn);RS1036</NoWarn>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>

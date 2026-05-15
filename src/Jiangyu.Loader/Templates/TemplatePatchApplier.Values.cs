@@ -318,8 +318,8 @@ internal sealed partial class TemplatePatchApplier
                     innerOp.Op,
                     innerOp.FieldPath,
                     innerOp.Index,
-                    (IReadOnlyList<int>?)innerOp.IndexPath ?? Array.Empty<int>(),
-                    (IReadOnlyList<TemplateDescentStep>?)innerOp.Descent ?? Array.Empty<TemplateDescentStep>(),
+                    (IReadOnlyList<int>)innerOp.IndexPath ?? Array.Empty<int>(),
+                    (IReadOnlyList<TemplateDescentStep>)innerOp.Descent ?? Array.Empty<TemplateDescentStep>(),
                     innerOp.Value,
                     $"composite:{composite.TypeName}");
 

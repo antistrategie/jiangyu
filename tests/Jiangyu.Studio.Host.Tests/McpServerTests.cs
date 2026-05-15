@@ -127,7 +127,7 @@ public class McpServerTests
         Assert.True(compileTool.HasValue, "jiangyu_compile_summary tool not found");
         var schema = compileTool.Value.GetProperty("inputSchema");
         var props = schema.GetProperty("properties");
-        Assert.Equal(0, props.EnumerateObject().Count());
+        Assert.Empty(props.EnumerateObject());
         Assert.False(schema.TryGetProperty("required", out _));
     }
 

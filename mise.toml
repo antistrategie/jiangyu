@@ -28,6 +28,14 @@ run = "dotnet build Jiangyu.slnx -c Release"
 description = "Run Jiangyu.Core tests"
 run = "dotnet test tests/Jiangyu.Core.Tests/Jiangyu.Core.Tests.csproj"
 
+[tasks."test:acp"]
+description = "Run Jiangyu.Acp tests"
+run = "dotnet test tests/Jiangyu.Acp.Tests/Jiangyu.Acp.Tests.csproj"
+
+[tasks."test:studio-host"]
+description = "Run Jiangyu.Studio.Host tests"
+run = "dotnet test tests/Jiangyu.Studio.Host.Tests/Jiangyu.Studio.Host.Tests.csproj"
+
 [tasks."test:loader"]
 description = "Run Jiangyu.Loader tests"
 run = "dotnet test tests/Jiangyu.Loader.Tests/Jiangyu.Loader.Tests.csproj"
@@ -38,7 +46,7 @@ run = "cd src/Jiangyu.Studio.UI && bun run test"
 
 [tasks.test]
 description = "Run all tests"
-depends = ["test:core", "test:loader", "test:studio"]
+depends = ["test:core", "test:acp", "test:studio-host", "test:loader", "test:studio"]
 
 [tasks."format:roslyn"]
 description = "Apply Roslyn formatting/style fixes to first-party code"

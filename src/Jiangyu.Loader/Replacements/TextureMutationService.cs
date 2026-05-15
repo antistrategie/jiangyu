@@ -117,7 +117,7 @@ internal sealed class TextureMutationService
             if (_spriteTextureCastBlocklist.Contains(spritePtr))
                 continue;
 
-            Texture2D? gameTexture;
+            Texture2D gameTexture;
             try
             {
                 gameTexture = gameSprite.texture;

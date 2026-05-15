@@ -29,6 +29,7 @@ C# for the core stack: CLI compiler, MelonLoader loader, shared libraries. TypeS
 ## Tooling
 
 - For Roslyn IDE/code-style diagnostics, prefer `dotnet format Jiangyu.slnx --verify-no-changes --severity info --no-restore --exclude vendor/*` over build output alone.
+- Before declaring work done, run one solution-wide build and grep for non-vendor warnings: `dotnet build Jiangyu.slnx -c Release 2>&1 | grep -E 'warning [A-Z]+[0-9]+' | grep -vE 'vendor/|warning NU1902'`. Per-project builds bury new warnings in vendor noise; CI surfaces them as deduplicated annotations and fails the run if any are unexpected. Treat any non-empty result as a fix-now item even if the warning is on a line you didn't touch.
 
 ## Commits
 
