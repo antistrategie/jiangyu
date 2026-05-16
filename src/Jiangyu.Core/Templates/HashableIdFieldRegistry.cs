@@ -63,7 +63,7 @@ public static class HashableIdFieldRegistry
         { "tactical_ui_soundbank", -1602990657 },
     };
 
-    public static bool TryResolve(string typeFqn, string fieldName, string value, out int result, out string error)
+    public static bool TryResolve(string typeFqn, string fieldName, string? value, out int result, out string? error)
     {
         result = 0;
         error = null;

@@ -110,7 +110,7 @@ public static class KdlTemplateSerialiser
             else
             {
                 WriteIndent(sb, indent);
-                WriteFlatDirective(sb, d);
+                WriteFlatDirective(sb, d, indent);
                 sb.AppendLine();
             }
 
@@ -153,8 +153,11 @@ public static class KdlTemplateSerialiser
     /// Emit a non-descent directive (Descent null/empty). Covers scalar set,
     /// append, insert, remove, clear, and the indexed-set form for collection
     /// elements (the index lives on <see cref="KdlEditorDirective.Index"/>).
+    /// <paramref name="indent"/> is the directive's own indent level so any
+    /// nested composite value emitted via <see cref="WriteValue"/> can indent
+    /// its inner block relative to the current depth.
     /// </summary>
-    private static void WriteFlatDirective(StringBuilder sb, KdlEditorDirective d)
+    private static void WriteFlatDirective(StringBuilder sb, KdlEditorDirective d, int indent)
     {
         var op = d.Op switch
         {
@@ -187,7 +190,7 @@ public static class KdlTemplateSerialiser
             else if (d.Value != null)
             {
                 sb.Append(' ');
-                WriteValue(sb, d.Value);
+                WriteValue(sb, d.Value, indent);
             }
             return;
         }
@@ -198,7 +201,7 @@ public static class KdlTemplateSerialiser
         if (d.Value != null)
         {
             sb.Append(' ');
-            WriteValue(sb, d.Value);
+            WriteValue(sb, d.Value, indent);
         }
     }
 
@@ -208,7 +211,7 @@ public static class KdlTemplateSerialiser
             sb.Append("    ");
     }
 
-    private static void WriteValue(StringBuilder sb, KdlEditorValue v)
+    private static void WriteValue(StringBuilder sb, KdlEditorValue v, int indent)
     {
         switch (v.Kind)
         {
@@ -250,11 +253,11 @@ public static class KdlTemplateSerialiser
                 break;
 
             case KdlEditorValueKind.Composite:
-                WriteFieldBag(sb, "composite", v);
+                WriteFieldBag(sb, "composite", v, indent);
                 break;
 
             case KdlEditorValueKind.HandlerConstruction:
-                WriteFieldBag(sb, "handler", v);
+                WriteFieldBag(sb, "handler", v, indent);
                 break;
 
             case KdlEditorValueKind.AssetReference:
@@ -267,7 +270,15 @@ public static class KdlTemplateSerialiser
         }
     }
 
-    private static void WriteFieldBag(StringBuilder sb, string keyword, KdlEditorValue v)
+    /// <summary>
+    /// Emit a composite or handler value bag. <paramref name="parentIndent"/>
+    /// is the indent of the surrounding directive; inner ops emit at
+    /// <c>parentIndent + 1</c> and the closing brace lines up with the
+    /// surrounding directive. Threaded through so nested composites
+    /// (Sound inside SoundBank, SoundVariation inside Sound) keep their
+    /// indentation in lockstep with depth.
+    /// </summary>
+    private static void WriteFieldBag(StringBuilder sb, string keyword, KdlEditorValue v, int parentIndent)
     {
         // Omit composite=/handler= when the type is empty so inference applies
         // on re-parse. The validator clears the type for monomorphic
@@ -287,13 +298,9 @@ public static class KdlTemplateSerialiser
         }
 
         sb.AppendLine(" {");
-        // Reuse the outer directive emission so inner ops render the same
-        // way as their top-level counterparts. Indent two levels deeper
-        // than the surrounding directive's indent — the parent directive
-        // already sits at indent 1 (inside a patch/clone), and its child
-        // block opens at indent 2.
-        WriteDirectiveBlock(sb, v.CompositeDirectives, indent: 2);
-        sb.Append("    }");
+        WriteDirectiveBlock(sb, v.CompositeDirectives, parentIndent + 1);
+        WriteIndent(sb, parentIndent);
+        sb.Append('}');
     }
 
     private static string Esc(string s)

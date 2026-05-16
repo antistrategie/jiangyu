@@ -668,6 +668,50 @@ public class KdlEditorRoundTripTests
     }
 
     [Fact]
+    public void NestedComposite_IndentsConsistentlyWithDepth()
+    {
+        // Three composite levels deep: SoundBank.sounds (Sound) ->
+        // Sound.variations (SoundVariation) -> SoundVariation fields.
+        // Each inner block should sit one indent deeper than its parent,
+        // and the closing brace should align with the line that opened it.
+        const string kdl = """
+            patch "SoundBank" "weapons_soundbank" {
+                append "sounds" composite="Sound" from="aimed_shot" {
+                    set "id" "test_rifle_fire"
+                    clear "variations"
+                    append "variations" composite="SoundVariation" {
+                        set "clip" asset="weapons/test_rifle/fire_01"
+                    }
+                }
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+
+        // The inner-most directive sits three levels deep (12 spaces) and
+        // its closing brace lines up with the variations-block opener (8
+        // spaces). The serialiser used to hardcode the composite child
+        // block at indent=2, so this line was emitted at 8 spaces with a
+        // closing brace at 4 instead.
+        Assert.Contains("            set \"clip\" asset=\"weapons/test_rifle/fire_01\"\n", text);
+        Assert.Contains("        }\n", text); // variations block close
+        Assert.Contains("    }\n", text);     // sounds block close
+        Assert.Contains("}\n", text);          // patch close
+
+        // Round-trip: re-parsing the emitted text yields the same shape.
+        var roundTripped = KdlTemplateParser.ParseText(text);
+        Assert.Empty(roundTripped.Errors);
+        var soundsAppend = roundTripped.Nodes[0].Directives[0];
+        var soundComposite = soundsAppend.Value!.CompositeDirectives!;
+        var variationsAppend = soundComposite.First(d => d.Op == KdlEditorOp.Append && d.FieldPath == "variations");
+        Assert.NotNull(variationsAppend.Value!.CompositeDirectives);
+        Assert.Single(variationsAppend.Value.CompositeDirectives);
+    }
+
+    [Fact]
     public void EmptyComposite_RoundTrips()
     {
         const string kdl = """
