@@ -18,6 +18,50 @@ export function templatesSearch(className?: string): Promise<TemplateSearchResul
   return rpcCall<TemplateSearchResult>("templatesSearch", className ? { className } : undefined);
 }
 
+// Per-compositeType candidate-name cache. The server already caches its own
+// result; this layer just avoids one round trip when the same combobox opens
+// twice in a session. Backed by a Promise so concurrent fetches dedupe.
+const prototypeCandidatesCache = new Map<string, Promise<readonly string[]>>();
+
+export function templatesPrototypeCandidates(compositeType: string): Promise<readonly string[]> {
+  let cached = prototypeCandidatesCache.get(compositeType);
+  cached ??= rpcCall<{ candidates: readonly string[] }>("templatesPrototypeCandidates", {
+    compositeType,
+  })
+    .then((r) => r.candidates)
+    .catch(() => [] as readonly string[]);
+  prototypeCandidatesCache.set(compositeType, cached);
+  return cached;
+}
+
+// Set of composite type short-names that have a working `from=` prototype
+// lookup, fetched once from the server. The CompositeEditor uses this to
+// gate whether to render the `from=` input; types not in this set have no
+// candidates and the input would always be empty. Backed by a Promise so
+// concurrent reads dedupe.
+let prototypeSupportedTypesPromise: Promise<ReadonlySet<string>> | null = null;
+
+export function templatesPrototypeSupportedTypes(): Promise<ReadonlySet<string>> {
+  prototypeSupportedTypesPromise ??= rpcCall<{ types: readonly string[] }>(
+    "templatesPrototypeSupportedTypes",
+  )
+    .then((r) => new Set(r.types) as ReadonlySet<string>)
+    .catch(() => new Set<string>() as ReadonlySet<string>);
+  return prototypeSupportedTypesPromise;
+}
+
+// Same Il2Cpp / Stem-prefix normalisation the server does. Mirrors
+// RpcHandlers.Templates.NormaliseCompositeTypeShortName. Keeps the client's
+// lookup against the supported-types set apples-to-apples with the server's
+// registry keys.
+export function normaliseCompositeTypeShortName(compositeType: string | null | undefined): string {
+  if (!compositeType) return "";
+  let normalised = compositeType;
+  if (normalised.startsWith("Il2Cpp")) normalised = normalised.substring(6);
+  const lastDot = normalised.lastIndexOf(".");
+  return lastDot >= 0 ? normalised.substring(lastDot + 1) : normalised;
+}
+
 export function templatesParse(
   text: string,
 ): Promise<{ nodes: import("../types").EditorNode[]; errors: import("../types").EditorError[] }> {

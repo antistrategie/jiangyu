@@ -234,6 +234,17 @@ public sealed class CompiledTemplateComposite
     /// </summary>
     [JsonPropertyName("operations")]
     public List<CompiledTemplateSetOperation> Operations { get; set; } = [];
+
+    /// <summary>
+    /// Optional prototype-source key. When non-empty, the applier finds an
+    /// existing element in the destination collection whose name-like
+    /// identifier matches <see cref="From"/>, deep-copies it, and then
+    /// applies <see cref="Operations"/> on the copy instead of allocating a
+    /// fresh instance. Lets the modder inherit Inspector-baked defaults
+    /// (e.g. <c>Sound.fixedVolume=1</c>) without enumerating every field.
+    /// </summary>
+    [JsonPropertyName("from")]
+    public string? From { get; set; }
 }
 
 /// <summary>

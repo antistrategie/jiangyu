@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Plus } from "lucide-react";
 import type { TemplateMember } from "@lib/rpc";
 import { INSTANCE_DRAG_TAG, MEMBER_DRAG_TAG, getActiveTemplateDrag } from "@lib/drag/crossInstance";
@@ -6,6 +7,7 @@ import type { InspectedFieldNode } from "@lib/rpc";
 import { allowsMultipleDirectives } from "../helpers";
 import type { StampedDirective } from "../helpers";
 import { makeDefaultDirective } from "../shared/rpcHelpers";
+import { useAnchorPosition } from "../shared/useAnchorPosition";
 import styles from "../TemplateVisualEditor.module.css";
 
 export interface FieldAdderProps {
@@ -62,11 +64,19 @@ export function FieldAdder({
   const [fieldDragOver, setFieldDragOver] = useState<"accept" | "reject" | false>(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  // Portalled to document.body so it escapes the card's compositor-promoted
+  // stacking context; without this, the dropdown is trapped under the next
+  // card. Position glues to the wrapper's bounding rect via useAnchorPosition.
+  const position = useAnchorPosition(wrapRef, open);
 
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (wrapRef.current?.contains(target)) return;
+      if (dropdownRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -190,59 +200,76 @@ export function FieldAdder({
         }}
         onKeyDown={handleKeyDown}
       />
-      {open && (
-        <div className={styles.fieldAdderDropdown}>
-          {!membersLoaded && <div className={styles.fieldAdderHint}>Loading fields…</div>}
-          {membersLoaded && filtered.length === 0 && query.length > 0 && (
-            <div className={styles.fieldAdderHint}>No matching fields</div>
-          )}
-          {membersLoaded && filtered.length === 0 && query.length === 0 && members.length === 0 && (
-            <div className={styles.fieldAdderHint}>No fields available</div>
-          )}
-          {available.map((m) => (
-            <React.Fragment key={m.name}>
+      {open &&
+        position &&
+        createPortal(
+          <div
+            className={styles.fieldAdderDropdown}
+            ref={dropdownRef}
+            style={{
+              position: "fixed",
+              top: position.top,
+              left: position.left,
+              right: "auto",
+              width: position.width,
+              zIndex: 9999,
+            }}
+          >
+            {!membersLoaded && <div className={styles.fieldAdderHint}>Loading fields…</div>}
+            {membersLoaded && filtered.length === 0 && query.length > 0 && (
+              <div className={styles.fieldAdderHint}>No matching fields</div>
+            )}
+            {membersLoaded &&
+              filtered.length === 0 &&
+              query.length === 0 &&
+              members.length === 0 && (
+                <div className={styles.fieldAdderHint}>No fields available</div>
+              )}
+            {available.map((m) => (
+              <React.Fragment key={m.name}>
+                <button
+                  type="button"
+                  className={styles.fieldAdderItem}
+                  onClick={() => handleSelect(m)}
+                >
+                  <span className={styles.fieldAdderItemName}>{m.name}</span>
+                  <span className={styles.fieldAdderItemType}>{m.typeName}</span>
+                  {m.isCollection && <span className={styles.fieldAdderItemBadge}>collection</span>}
+                </button>
+                {onStartDescent && m.isCollection === true && (
+                  <button
+                    type="button"
+                    className={`${styles.fieldAdderItem} ${styles.fieldAdderItemDescent}`}
+                    onClick={() => {
+                      onStartDescent(m.name, m.elementTypeName ?? "", m.elementSubtypes ?? null);
+                      setQuery("");
+                      setOpen(false);
+                    }}
+                    title="Edit fields of an existing element instead of appending a new one"
+                  >
+                    <span className={styles.fieldAdderItemName}>↳ Edit slot of {m.name}…</span>
+                  </button>
+                )}
+              </React.Fragment>
+            ))}
+            {alreadyAdded.length > 0 && available.length > 0 && (
+              <div className={styles.fieldAdderSep}>Already added</div>
+            )}
+            {alreadyAdded.map((m) => (
               <button
+                key={m.name}
                 type="button"
-                className={styles.fieldAdderItem}
+                className={`${styles.fieldAdderItem} ${styles.fieldAdderItemDim}`}
                 onClick={() => handleSelect(m)}
+                title="Already added; click to add another directive"
               >
                 <span className={styles.fieldAdderItemName}>{m.name}</span>
                 <span className={styles.fieldAdderItemType}>{m.typeName}</span>
-                {m.isCollection && <span className={styles.fieldAdderItemBadge}>collection</span>}
               </button>
-              {onStartDescent && m.isCollection === true && (
-                <button
-                  type="button"
-                  className={`${styles.fieldAdderItem} ${styles.fieldAdderItemDescent}`}
-                  onClick={() => {
-                    onStartDescent(m.name, m.elementTypeName ?? "", m.elementSubtypes ?? null);
-                    setQuery("");
-                    setOpen(false);
-                  }}
-                  title="Edit fields of an existing element instead of appending a new one"
-                >
-                  <span className={styles.fieldAdderItemName}>↳ Edit slot of {m.name}…</span>
-                </button>
-              )}
-            </React.Fragment>
-          ))}
-          {alreadyAdded.length > 0 && available.length > 0 && (
-            <div className={styles.fieldAdderSep}>Already added</div>
-          )}
-          {alreadyAdded.map((m) => (
-            <button
-              key={m.name}
-              type="button"
-              className={`${styles.fieldAdderItem} ${styles.fieldAdderItemDim}`}
-              onClick={() => handleSelect(m)}
-              title="Already added — click to add another directive"
-            >
-              <span className={styles.fieldAdderItemName}>{m.name}</span>
-              <span className={styles.fieldAdderItemType}>{m.typeName}</span>
-            </button>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

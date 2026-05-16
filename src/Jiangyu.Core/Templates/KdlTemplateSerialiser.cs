@@ -269,7 +269,16 @@ public static class KdlTemplateSerialiser
 
     private static void WriteFieldBag(StringBuilder sb, string keyword, KdlEditorValue v)
     {
-        sb.Append($"{keyword}=\"{Esc(v.CompositeType ?? "")}\"");
+        // Omit composite=/handler= when the type is empty so inference applies
+        // on re-parse. The validator clears the type for monomorphic
+        // destinations in editor-doc mode; compile-path docs always carry a
+        // concrete type.
+        var hasType = !string.IsNullOrWhiteSpace(v.CompositeType);
+        var hasFrom = !string.IsNullOrWhiteSpace(v.CompositeFrom);
+        if (hasType)
+            sb.Append($"{keyword}=\"{Esc(v.CompositeType!)}\"");
+        if (hasFrom)
+            sb.Append((hasType ? " " : "") + $"from=\"{Esc(v.CompositeFrom!)}\"");
 
         if (v.CompositeDirectives == null || v.CompositeDirectives.Count == 0)
         {

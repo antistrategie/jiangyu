@@ -160,6 +160,10 @@ internal sealed partial class TemplatePatchApplier
         Action<object> setter;
         Func<object> getter;
         Type terminalType;
+        // Tracks the destination collection for Append/InsertAt so the
+        // composite-construction path can find a prototype element when
+        // composite.From is set. Populated inside the Append branch below.
+        object appendDestination = null;
 
         if (op.Op == CompiledTemplateOp.Remove)
             return TryApplyRemove(current, terminal, templateTypeName, templateId, op, assetResolver, log);
@@ -175,6 +179,7 @@ internal sealed partial class TemplatePatchApplier
                     + $"cannot read terminal collection '{terminal.Name}': {readError}");
                 return ApplyOutcome.MemberMissing;
             }
+            appendDestination = collection;
 
             // HashSet Append uses dedicated dispatch: HashSet has no
             // positional indexer, so the ApplyAndVerify readback path
@@ -272,7 +277,16 @@ internal sealed partial class TemplatePatchApplier
             }
         }
 
-        var outcome = ApplyAndVerify(templateTypeName, templateId, op, terminalType, setter, getter, assetResolver, log);
+        ApplyOutcome outcome;
+        if (appendDestination != null)
+        {
+            using (WithAppendDestination(appendDestination))
+                outcome = ApplyAndVerify(templateTypeName, templateId, op, terminalType, setter, getter, assetResolver, log);
+        }
+        else
+        {
+            outcome = ApplyAndVerify(templateTypeName, templateId, op, terminalType, setter, getter, assetResolver, log);
+        }
         if (outcome != ApplyOutcome.Applied)
             return outcome;
 

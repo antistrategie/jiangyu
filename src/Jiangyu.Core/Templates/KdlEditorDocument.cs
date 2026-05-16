@@ -184,6 +184,16 @@ public sealed class KdlEditorValue
     public string? CompositeType { get; set; }
 
     /// <summary>
+    /// Optional prototype-source key on Composite values. When non-empty,
+    /// the applier finds an existing element in the destination collection
+    /// whose `name` property matches this string, deep-copies it, then
+    /// applies <see cref="CompositeDirectives"/> on the copy. Lets modders
+    /// inherit Inspector-baked defaults without enumerating every field.
+    /// </summary>
+    [JsonPropertyName("compositeFrom")]
+    public string? CompositeFrom { get; set; }
+
+    /// <summary>
     /// Asset reference logical name. Set when
     /// <see cref="Kind"/> is <see cref="KdlEditorValueKind.AssetReference"/>;
     /// matches the file path under <c>assets/additions/&lt;category&gt;/</c>

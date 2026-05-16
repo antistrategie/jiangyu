@@ -269,7 +269,7 @@ export function TemplateVisualEditor({
               <NodeCard
                 node={node}
                 collapsed={collapsed.has(node._uiId)}
-                onToggleCollapse={() => handleToggleCollapse(node._uiId)}
+                onToggleCollapse={handleToggleCollapse}
                 isDragging={handlers.isDragging}
                 onDragStart={handlers.onDragStart}
                 onDragEnd={handlers.onDragEnd}

@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, GripVertical, X } from "lucide-react";
 import { parseCrossMemberPayload } from "@lib/drag/crossMember";
 import { useToastStore } from "@lib/toast";
 import type { InspectedFieldNode, TemplateMember } from "@lib/rpc";
 import type { EditorValue } from "../types";
+import { useAnchorPosition } from "../shared/useAnchorPosition";
 import {
   SCALAR_OPS,
   COLLECTION_OPS,
@@ -24,7 +26,13 @@ import { CommitInput } from "../shared/CommitInput";
 import { SuggestionCombobox } from "../shared/SuggestionCombobox";
 import { ValueEditor, NamedArrayIndexPicker } from "./ValueEditor";
 import { FieldAdder } from "../cards/FieldAdder";
-import { makeDefaultDirective, synthMemberFromPayload } from "../shared/rpcHelpers";
+import {
+  makeDefaultDirective,
+  normaliseCompositeTypeShortName,
+  synthMemberFromPayload,
+  templatesPrototypeCandidates,
+  templatesPrototypeSupportedTypes,
+} from "../shared/rpcHelpers";
 import styles from "../TemplateVisualEditor.module.css";
 
 // --- DirectiveRow ---
@@ -129,11 +137,18 @@ export function SetRow({
   const isCollection = member?.isCollection ?? false;
   const [opOpen, setOpOpen] = useState(false);
   const opRef = useRef<HTMLDivElement>(null);
+  const opMenuRef = useRef<HTMLDivElement>(null);
+  // Portalled so the menu can escape the card's compositor-promoted
+  // stacking context; otherwise it gets trapped under the next card.
+  const opMenuPosition = useAnchorPosition(opRef, opOpen);
 
   useEffect(() => {
     if (!opOpen) return;
     const handler = (e: MouseEvent) => {
-      if (opRef.current && !opRef.current.contains(e.target as Node)) setOpOpen(false);
+      const target = e.target as Node;
+      if (opRef.current?.contains(target)) return;
+      if (opMenuRef.current?.contains(target)) return;
+      setOpOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -196,65 +211,77 @@ export function SetRow({
               {OP_LABELS[directive.op]}
               <ChevronDown size={10} />
             </button>
-            {opOpen && (
-              <div className={styles.setOpMenu}>
-                {ops.map((op) => (
-                  <button
-                    key={op}
-                    type="button"
-                    className={`${styles.setOpMenuItem} ${op === directive.op ? styles.setOpMenuItemActive : ""}`}
-                    onClick={() => {
-                      // Clear drops both index and value. Remove drops the
-                      // value on List<T> destinations (index-based) but
-                      // KEEPS the value on HashSet destinations (by-value
-                      // removal). Other ops keep / synthesise a value and
-                      // set a default index when the op needs one.
-                      const updated: StampedDirective =
-                        op === "Clear"
-                          ? {
-                              op,
-                              fieldPath: directive.fieldPath,
-                              _uiId: directive._uiId,
-                            }
-                          : op === "Remove" && isHashSet
+            {opOpen &&
+              opMenuPosition &&
+              createPortal(
+                <div
+                  className={styles.setOpMenu}
+                  ref={opMenuRef}
+                  style={{
+                    position: "fixed",
+                    top: opMenuPosition.top,
+                    left: opMenuPosition.left,
+                    zIndex: 9999,
+                  }}
+                >
+                  {ops.map((op) => (
+                    <button
+                      key={op}
+                      type="button"
+                      className={`${styles.setOpMenuItem} ${op === directive.op ? styles.setOpMenuItemActive : ""}`}
+                      onClick={() => {
+                        // Clear drops both index and value. Remove drops the
+                        // value on List<T> destinations (index-based) but
+                        // KEEPS the value on HashSet destinations (by-value
+                        // removal). Other ops keep / synthesise a value and
+                        // set a default index when the op needs one.
+                        const updated: StampedDirective =
+                          op === "Clear"
                             ? {
                                 op,
                                 fieldPath: directive.fieldPath,
-                                value: directive.value ?? makeDefaultValue(member),
                                 _uiId: directive._uiId,
                               }
-                            : op === "Remove"
+                            : op === "Remove" && isHashSet
                               ? {
                                   op,
                                   fieldPath: directive.fieldPath,
-                                  index: directive.index ?? 0,
+                                  value: directive.value ?? makeDefaultValue(member),
                                   _uiId: directive._uiId,
                                 }
-                              : {
-                                  ...directive,
-                                  op,
-                                  value:
-                                    directive.value ??
-                                    (member
-                                      ? makeDefaultValue(member)
-                                      : { kind: "String", string: "" }),
-                                };
-                      // Index defaulting only applies when the op
-                      // genuinely uses an index (List Insert / Remove /
-                      // Set-with-index). HashSet Remove is value-based
-                      // and must not get a phantom index=0.
-                      const opNeedsIndex =
-                        op === "Insert" || op === "Set" || (op === "Remove" && !isHashSet);
-                      if (opNeedsIndex && updated.index === undefined) updated.index = 0;
-                      onChange(updated);
-                      setOpOpen(false);
-                    }}
-                  >
-                    {OP_LABELS[op]}
-                  </button>
-                ))}
-              </div>
-            )}
+                              : op === "Remove"
+                                ? {
+                                    op,
+                                    fieldPath: directive.fieldPath,
+                                    index: directive.index ?? 0,
+                                    _uiId: directive._uiId,
+                                  }
+                                : {
+                                    ...directive,
+                                    op,
+                                    value:
+                                      directive.value ??
+                                      (member
+                                        ? makeDefaultValue(member)
+                                        : { kind: "String", string: "" }),
+                                  };
+                        // Index defaulting only applies when the op
+                        // genuinely uses an index (List Insert / Remove /
+                        // Set-with-index). HashSet Remove is value-based
+                        // and must not get a phantom index=0.
+                        const opNeedsIndex =
+                          op === "Insert" || op === "Set" || (op === "Remove" && !isHashSet);
+                        if (opNeedsIndex && updated.index === undefined) updated.index = 0;
+                        onChange(updated);
+                        setOpOpen(false);
+                      }}
+                    >
+                      {OP_LABELS[op]}
+                    </button>
+                  ))}
+                </div>,
+                document.body,
+              )}
           </div>
         ) : (
           <span className={styles.setOpLabel}>{OP_LABELS[directive.op]}</span>
@@ -465,6 +492,25 @@ export function CompositeEditor({
     elementType,
   );
 
+  // Whether this composite type has a working `from=` prototype lookup
+  // on the server. Server-driven: types absent from the registry get no
+  // from= input. The set is fetched once and cached for the editor session.
+  const fromLookupType = value.compositeType ?? elementType ?? "";
+  const [supportedSet, setSupportedSet] = useState<ReadonlySet<string> | null>(null);
+  useEffect(() => {
+    if (!fromLookupType) return;
+    let cancelled = false;
+    void templatesPrototypeSupportedTypes().then((s) => {
+      if (!cancelled) setSupportedSet(s);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [fromLookupType]);
+  const prototypesSupported =
+    fromLookupType !== "" &&
+    supportedSet?.has(normaliseCompositeTypeShortName(fromLookupType)) === true;
+
   const handleDirectiveChange = (index: number, updated: StampedDirective) => {
     const next = directives.map((d, i) => (i === index ? updated : d));
     onChange({ ...value, compositeDirectives: next });
@@ -586,6 +632,24 @@ export function CompositeEditor({
           <span className={styles.compositeType}>
             {value.compositeType ?? (isHandler ? "handler" : "composite")}
           </span>
+        )}
+        {!isHandler && prototypesSupported && (
+          <div className={styles.setValue}>
+            <div className={styles.setInsertRow}>
+              <span className={styles.setInsertAt}>From</span>
+              <div className={styles.compositeFromCombo}>
+                <SuggestionCombobox
+                  value={value.compositeFrom ?? ""}
+                  placeholder=""
+                  fetchSuggestions={() => templatesPrototypeCandidates(fromLookupType)}
+                  onChange={(next) => {
+                    const { compositeFrom: _drop, ...rest } = value;
+                    onChange(next === "" ? rest : { ...rest, compositeFrom: next });
+                  }}
+                />
+              </div>
+            </div>
+          </div>
         )}
       </div>
       {directives.map((d, di) => (

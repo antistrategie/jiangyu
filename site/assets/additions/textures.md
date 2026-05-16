@@ -25,14 +25,3 @@ The category is inferred from the destination field's declared Unity type. The c
 ## Compile-time errors
 
 Same as [sprite additions](/assets/additions/sprites#compile-time-errors): missing files, duplicate logical names, and wrong destination field type are all rejected at compile time.
-
-## Runtime resolution
-
-Same two-phase lookup: mod bundle catalog first, live game-asset registry second. A texture addition with the same name as a vanilla texture overrides only at the apply-time write into the cloned template's field, not globally.
-
-## CLI alternative
-
-```sh
-jiangyu assets export texture <vanilla-texture-name> --output assets/additions/textures/my-folder/my-texture.png
-jiangyu compile
-```

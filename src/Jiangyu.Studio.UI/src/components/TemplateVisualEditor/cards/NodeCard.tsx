@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { memo, useCallback, useMemo, useRef, useState } from "react";
 import { ChevronDown, GripVertical, X } from "lucide-react";
 import { parseCrossMemberPayload } from "@lib/drag/crossMember";
 import { useToastStore } from "@lib/toast";
@@ -23,7 +23,9 @@ import styles from "../TemplateVisualEditor.module.css";
 export interface NodeCardProps {
   node: StampedNode;
   collapsed: boolean;
-  onToggleCollapse: () => void;
+  /** Takes the node's uiId so the parent can pass one stable callback for
+   *  every card. NodeCard re-binds it locally with node._uiId. */
+  onToggleCollapse: (uiId: string) => void;
   isDragging: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
@@ -31,7 +33,7 @@ export interface NodeCardProps {
   onDropCard: () => void;
 }
 
-export function NodeCard({
+function NodeCardImpl({
   node,
   collapsed,
   onToggleCollapse,
@@ -178,11 +180,11 @@ export function NodeCard({
         tabIndex={0}
         aria-expanded={!collapsed}
         onClick={() => {
-          if (!justDraggedRef.current) onToggleCollapse();
+          if (!justDraggedRef.current) onToggleCollapse(node._uiId);
           justDraggedRef.current = false;
         }}
         onKeyDown={onKeyActivate(() => {
-          onToggleCollapse();
+          onToggleCollapse(node._uiId);
         })}
       >
         <span
@@ -313,3 +315,12 @@ export function NodeCard({
     </div>
   );
 }
+
+// Memoise the card so a parent re-render (e.g. one sibling node's edit,
+// scroll-driven layout work, or a search-filter input keystroke) skips
+// re-rendering every other card. The reducer preserves entry identity
+// for unchanged StampedNode entries, so the `node` prop is referentially
+// stable across most mutations. The drag handler bag is identity-stable
+// thanks to useDragReorder's per-owner caching. Memo with the default
+// shallow compare is enough.
+export const NodeCard = memo(NodeCardImpl);

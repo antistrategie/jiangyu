@@ -34,4 +34,5 @@ export const VALUE_KIND_LABELS: Record<EditorValueKind, string> = {
   Composite: "Composite",
   HandlerConstruction: "Handler",
   AssetReference: "Asset",
+  Null: "null",
 };

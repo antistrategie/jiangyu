@@ -84,6 +84,8 @@ public static partial class RpcDispatcher
         Register("templatesProjectClones", (_, p) => RpcHandlers.TemplatesProjectClones(p));
         Register("templatesInspect", (_, p) => RpcHandlers.TemplatesInspect(p));
         Register("templatesValue", (_, p) => RpcHandlers.TemplatesValue(p));
+        Register("templatesPrototypeCandidates", (_, p) => RpcHandlers.TemplatesPrototypeCandidates(p));
+        Register("templatesPrototypeSupportedTypes", (_, p) => RpcHandlers.TemplatesPrototypeSupportedTypes(p));
 
         RegisterAgentHandlers();
     }

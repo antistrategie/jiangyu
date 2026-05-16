@@ -23,14 +23,15 @@ public static class TemplateCatalogValidator
         TemplateTypeCatalog catalog,
         ILogSink log,
         IAssetAdditionsCatalog? additions = null,
-        IGameAssetIndex? gameAssets = null)
+        IGameAssetIndex? gameAssets = null,
+        bool mutateHashableIds = true)
     {
         var errors = 0;
 
         if (patches != null)
         {
             foreach (var patch in patches)
-                errors += ValidatePatch(patch, catalog, additions, log, gameAssets);
+                errors += ValidatePatch(patch, catalog, additions, log, gameAssets, mutateHashableIds);
         }
 
         if (clones != null)
@@ -48,6 +49,51 @@ public static class TemplateCatalogValidator
     /// <see cref="KdlEditorDocument.Errors"/> and normalises directive value
     /// payloads in-place (numeric kind coercion, implicit concrete references).
     /// </summary>
+    /// <summary>
+    /// Walk an editor document and clear <c>composite=</c>/<c>handler=</c>
+    /// type names and <c>ref=</c> types when the destination field has only
+    /// one valid concrete subtype. Used right before serialising so the
+    /// emitted KDL skips redundant attributes and re-parse / inference
+    /// restores the same shape. Does not collect errors; pair with
+    /// <see cref="ValidateEditorDocument"/> when both are needed.
+    /// </summary>
+    public static void NormaliseForEmit(
+        KdlEditorDocument document,
+        TemplateTypeCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(catalog);
+
+        foreach (var node in document.Nodes)
+        {
+            if (string.IsNullOrWhiteSpace(node.TemplateType)) continue;
+            if (catalog.ResolveType(node.TemplateType, out _, out _) is null) continue;
+
+            foreach (var directive in node.Directives)
+            {
+                if (string.IsNullOrWhiteSpace(directive.FieldPath)) continue;
+
+                var op = KdlTemplateParser.EditorDirectiveToCompiled(directive);
+                var swallowed = new List<string>();
+                ValidateOperation(
+                    op,
+                    node.TemplateType,
+                    catalog,
+                    additions: null,
+                    swallowed.Add,
+                    mutateHashableIds: false,
+                    clearRedundantTypes: true);
+
+                // Re-import the normalised wire form. Skip when validation
+                // surfaced errors so we don't paper over a broken directive
+                // by emitting a half-cleared value.
+                if (swallowed.Count > 0) continue;
+                var normalised = KdlTemplateParser.CompiledOpToEditorDirective(op);
+                directive.Value = normalised.Value;
+            }
+        }
+    }
+
     public static void ValidateEditorDocument(
         KdlEditorDocument document,
         TemplateTypeCatalog catalog)
@@ -83,7 +129,8 @@ public static class TemplateCatalogValidator
                     node.TemplateType,
                     catalog,
                     additions: null,
-                    message => localErrors.Add(message));
+                    message => localErrors.Add(message),
+                    mutateHashableIds: false);
 
                 if (errorCount > 0)
                 {
@@ -116,7 +163,8 @@ public static class TemplateCatalogValidator
         TemplateTypeCatalog catalog,
         IAssetAdditionsCatalog? additions,
         ILogSink log,
-        IGameAssetIndex? gameAssets = null)
+        IGameAssetIndex? gameAssets = null,
+        bool mutateHashableIds = true)
     {
         var templateType = patch.TemplateType ?? "EntityTemplate";
         var label = $"{templateType}:{patch.TemplateId}";
@@ -137,7 +185,8 @@ public static class TemplateCatalogValidator
                 catalog,
                 additions,
                 message => log.Error($"Template patch '{label}.{FormatFullPath(op)}' — {message}"),
-                gameAssets);
+                gameAssets,
+                mutateHashableIds);
         }
         return errors;
     }
@@ -163,7 +212,9 @@ public static class TemplateCatalogValidator
         TemplateTypeCatalog catalog,
         IAssetAdditionsCatalog? additions,
         Action<string> reportError,
-        IGameAssetIndex? gameAssets = null)
+        IGameAssetIndex? gameAssets = null,
+        bool mutateHashableIds = true,
+        bool clearRedundantTypes = false)
     {
         if (string.IsNullOrWhiteSpace(op.FieldPath)) return 0;
 
@@ -180,6 +231,36 @@ public static class TemplateCatalogValidator
             // "not a field of X" eats useful context.
             reportError(result.ErrorMessage ?? $"'{FormatFullPath(op)}' is not a field of {templateType}.");
             return 1;
+        }
+
+        // Hashable-id resolution: when the destination is one of the
+        // string-keyed Int32 fields (Sound.id, ID.itemId, ID.bankId), a
+        // string-typed authored value resolves deterministically. FNV-1a
+        // for content-addressed ids, or a bank-name lookup for ID.bankId.
+        // The compile path mutates op.Value to Int32 so the manifest is
+        // loader-ready; the editor path does NOT mutate, so a parse →
+        // validate → serialise round-trip preserves the modder's original
+        // string. ValidateEditorDocument sets mutateHashableIds=false to
+        // keep the editor model on the authored string form.
+        if (op.Value is { Kind: CompiledTemplateValueKind.String } stringValue
+            && result.PatchScalarKind is CompiledTemplateValueKind.Int32
+            && HashableIdFieldRegistry.IsHashable(templateType, op.FieldPath))
+        {
+            if (!HashableIdFieldRegistry.TryResolve(templateType, op.FieldPath, stringValue.String, out var resolved, out var resolveErr))
+            {
+                reportError($"cannot resolve hashable id for '{templateType}.{op.FieldPath}' from \"{stringValue.String}\": {resolveErr}");
+                return 1;
+            }
+            if (mutateHashableIds)
+            {
+                op.Value.Kind = CompiledTemplateValueKind.Int32;
+                op.Value.Int32 = resolved;
+                op.Value.String = null;
+            }
+            // Skip the numeric coercion below; when we haven't mutated,
+            // the value is still String on an Int32 field which would
+            // otherwise fail there.
+            return 0;
         }
 
         if (op.Value is not null
@@ -365,6 +446,12 @@ public static class TemplateCatalogValidator
                             + $"{catalog.FriendlyName(declaredType!)}.");
                         return 1;
                     }
+                    // Editor-doc normalisation: drop ref="X" when the declared
+                    // field is monomorphic so the inference shape (a bare id
+                    // string) round-trips. The applier still derives the type
+                    // from the field at apply time.
+                    if (clearRedundantTypes && !declaredType.IsAbstract)
+                        refPayload.TemplateType = null;
                 }
                 else if (declaredType!.IsAbstract)
                 {
@@ -423,10 +510,21 @@ public static class TemplateCatalogValidator
                 catalog,
                 additions,
                 reportError,
-                gameAssets);
+                gameAssets,
+                mutateHashableIds,
+                clearRedundantTypes);
 
         if (op.Value?.Kind == CompiledTemplateValueKind.HandlerConstruction && op.Value.HandlerConstruction != null)
-            return ValidateHandlerConstruction(op.Value.HandlerConstruction, op, result, catalog, additions, reportError, gameAssets);
+            return ValidateHandlerConstruction(
+                op.Value.HandlerConstruction,
+                op,
+                result,
+                catalog,
+                additions,
+                reportError,
+                gameAssets,
+                mutateHashableIds,
+                clearRedundantTypes);
 
         return 0;
     }
@@ -612,7 +710,9 @@ public static class TemplateCatalogValidator
         TemplateTypeCatalog catalog,
         IAssetAdditionsCatalog? additions,
         Action<string> reportError,
-        IGameAssetIndex? gameAssets = null)
+        IGameAssetIndex? gameAssets = null,
+        bool mutateHashableIds = true,
+        bool clearRedundantTypes = false)
     {
         // Two valid destinations:
         //  - Collection element-type, auto-unwrapped from the array. The
@@ -697,6 +797,17 @@ public static class TemplateCatalogValidator
             subtype = resolved;
         }
 
+        // Editor-doc normalisation: drop handler= when the destination
+        // element type is monomorphic (no concrete subclasses besides itself
+        // and not abstract). Compile-path docs keep the explicit name.
+        if (clearRedundantTypes
+            && !elementType.IsAbstract
+            && !catalog.HasReferenceSubtype(elementType)
+            && catalog.EnumerateConcreteSubtypes(elementType).Count == 0)
+        {
+            construction.TypeName = string.Empty;
+        }
+
         // Inner directives validate against the resolved subtype using the
         // same op semantics as the outer level. Use FullName so ambiguous
         // short names (test fixtures with two FixtureSkillTemplate classes
@@ -709,7 +820,9 @@ public static class TemplateCatalogValidator
             catalog,
             additions,
             reportError,
-            gameAssets);
+            gameAssets,
+            mutateHashableIds,
+            clearRedundantTypes);
     }
 
     private static int ValidateCompositeValue(
@@ -719,9 +832,48 @@ public static class TemplateCatalogValidator
         TemplateTypeCatalog catalog,
         IAssetAdditionsCatalog? additions,
         Action<string> reportError,
-        IGameAssetIndex? gameAssets = null)
+        IGameAssetIndex? gameAssets = null,
+        bool mutateHashableIds = true,
+        bool clearRedundantTypes = false)
     {
-        if (string.IsNullOrWhiteSpace(composite.TypeName)) return 0;
+        // Inferred composite: the parser emits TypeName="" for child blocks
+        // without an explicit composite=/handler= property. Resolve from the
+        // destination's element type when monomorphic; reject when
+        // polymorphic so the modder writes composite="X" with a candidate
+        // listed in the error.
+        if (string.IsNullOrWhiteSpace(composite.TypeName))
+        {
+            if (destinationType == null)
+            {
+                reportError(
+                    $"inferred composite at '{contextPath}' has no destination type to infer from; "
+                    + "declare the element type explicitly via composite=\"TypeName\".");
+                return 1;
+            }
+            if (catalog.HasReferenceSubtype(destinationType))
+            {
+                var candidates = catalog.EnumerateConcreteSubtypes(destinationType);
+                var note = candidates.Count > 0
+                    ? " candidates: " + string.Join(", ", candidates.Select(t => t.Name))
+                    : string.Empty;
+                reportError(
+                    $"inferred composite at '{contextPath}' targets polymorphic destination "
+                    + $"{catalog.FriendlyName(destinationType)}; declare the concrete element type via "
+                    + $"composite=\"X\" (or handler=\"X\" for ScriptableObject construction).{note}");
+                return 1;
+            }
+            if (destinationType.IsAbstract)
+            {
+                reportError(
+                    $"inferred composite at '{contextPath}' targets abstract type "
+                    + $"{catalog.FriendlyName(destinationType)}; declare a concrete element type explicitly.");
+                return 1;
+            }
+            // Fill in the inferred type. CompiledTemplateComposite is the
+            // wire model the emitter consumes, so the applier sees a
+            // concrete name without further inference.
+            composite.TypeName = destinationType.FullName ?? destinationType.Name;
+        }
 
         // Restrict to subtypes of the destination type when one is known and
         // is itself polymorphic. This filters out short-name twins outside
@@ -753,6 +905,20 @@ public static class TemplateCatalogValidator
             }
         }
 
+        // Editor-doc normalisation: drop composite=/handler= when the
+        // destination has exactly one possible concrete subtype (monomorphic
+        // and non-abstract), so the inference shape round-trips on re-parse.
+        // Compile-path docs keep the explicit name because the applier reads
+        // it directly without re-running inference.
+        if (clearRedundantTypes
+            && destinationType is not null
+            && !destinationType.IsAbstract
+            && !catalog.HasReferenceSubtype(destinationType)
+            && catalog.EnumerateConcreteSubtypes(destinationType).Count == 0)
+        {
+            composite.TypeName = string.Empty;
+        }
+
         return ValidateInnerOperations(
             composite.Operations,
             type.FullName ?? composite.TypeName,
@@ -760,7 +926,9 @@ public static class TemplateCatalogValidator
             catalog,
             additions,
             reportError,
-            gameAssets);
+            gameAssets,
+            mutateHashableIds,
+            clearRedundantTypes);
     }
 
     private static int ValidateInnerOperations(
@@ -770,13 +938,23 @@ public static class TemplateCatalogValidator
         TemplateTypeCatalog catalog,
         IAssetAdditionsCatalog? additions,
         Action<string> reportError,
-        IGameAssetIndex? gameAssets = null)
+        IGameAssetIndex? gameAssets = null,
+        bool mutateHashableIds = true,
+        bool clearRedundantTypes = false)
     {
         var errors = 0;
         foreach (var inner in operations)
         {
             void InnerReport(string message) => reportError($"{contextLabel}: {message}");
-            errors += ValidateOperation(inner, typeName, catalog, additions, InnerReport, gameAssets);
+            errors += ValidateOperation(
+                inner,
+                typeName,
+                catalog,
+                additions,
+                InnerReport,
+                gameAssets,
+                mutateHashableIds,
+                clearRedundantTypes);
         }
         return errors;
     }

@@ -471,6 +471,7 @@ public static class KdlTemplateParser
                     TypeName = value.CompositeType ?? string.Empty,
                     Operations = value.CompositeDirectives?
                         .Select(EditorDirectiveToCompiled).ToList() ?? [],
+                    From = string.IsNullOrWhiteSpace(value.CompositeFrom) ? null : value.CompositeFrom,
                 },
             },
             KdlEditorValueKind.HandlerConstruction => new CompiledTemplateValue
@@ -548,6 +549,7 @@ public static class KdlTemplateParser
             {
                 Kind = KdlEditorValueKind.Composite,
                 CompositeType = v.Composite?.TypeName,
+                CompositeFrom = v.Composite?.From,
                 CompositeDirectives = v.Composite?.Operations
                     .Select(CompiledOpToEditor).ToList(),
             },
@@ -1007,16 +1009,6 @@ public static class KdlTemplateParser
                 log.Error($"{pos}: 'insert' requires an index=N property.");
                 return false;
             }
-            if (node.HasChildren
-                && GetProperty(node, "composite") == null
-                && GetProperty(node, "handler") == null)
-            {
-                log.Error(
-                    $"{pos}: 'insert' with a child block requires composite=\"TypeName\" (inline value) or "
-                    + "handler=\"SubtypeName\" (ScriptableObject construction) to declare the element type.");
-                return false;
-            }
-
             parsedIndex = indexProp.AsInt32();
         }
         else if (opKind == CompiledTemplateOp.Set)
@@ -1086,16 +1078,6 @@ public static class KdlTemplateParser
             if (GetPropertyValue(node, "index") != null)
             {
                 log.Error($"{pos}: 'append' does not take an index= property; use 'insert' for positional writes.");
-                return false;
-            }
-            if (node.HasChildren
-                && GetProperty(node, "composite") == null
-                && GetProperty(node, "handler") == null)
-            {
-                log.Error(
-                    $"{pos}: 'append' with a child block requires composite=\"TypeName\" (inline value) or "
-                    + "handler=\"SubtypeName\" (ScriptableObject construction) to declare the element type. "
-                    + "Plain descent blocks are 'set'-only.");
                 return false;
             }
         }
@@ -1283,6 +1265,18 @@ public static class KdlTemplateParser
         var enumType = GetProperty(node, "enum");
         if (enumType != null)
             return TryParseEnumValue(node, enumType, pos, log, out value);
+
+        // Inferred composite: a child block with no value-type property and
+        // no positional value. The element type is determined from the
+        // destination at validation time, which lets monomorphic
+        // destinations (List<Sound>, List<SoundVariation>, List<ID>) omit
+        // the redundant composite="X" declaration. Polymorphic
+        // destinations still need explicit composite=/handler=; the
+        // validator rejects inferred-composite there with a candidate
+        // list. Authoring sentinel: TypeName="" tells the validator to
+        // infer rather than resolve.
+        if (node.HasChildren && node.Arguments.Count < 2)
+            return TryParseCompositeValue(node, string.Empty, pos, log, out value);
 
         // Must have a second argument with the literal value
         if (node.Arguments.Count < 2)
@@ -1607,6 +1601,13 @@ public static class KdlTemplateParser
         if (!TryParseInnerOperations(node, pos, log, out var ops))
             return false;
 
+        // Optional from="..." prototype-source. The applier looks up an
+        // existing element in the destination collection by this key
+        // (matched against the element's name property), deep-copies it,
+        // and applies the inner ops on the copy. Lets the modder inherit
+        // editor-baked defaults instead of enumerating every field.
+        var from = GetProperty(node, "from");
+
         value = new CompiledTemplateValue
         {
             Kind = CompiledTemplateValueKind.Composite,
@@ -1614,6 +1615,7 @@ public static class KdlTemplateParser
             {
                 TypeName = typeName,
                 Operations = ops,
+                From = string.IsNullOrWhiteSpace(from) ? null : from,
             },
         };
         return true;

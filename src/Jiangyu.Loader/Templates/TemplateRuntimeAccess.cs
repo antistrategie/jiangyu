@@ -239,15 +239,68 @@ internal static class TemplateRuntimeAccess
     }
 
     /// <summary>
-    /// Resolves a template type name to a concrete non-abstract Type from the
-    /// DataTemplateLoader's assembly. Supports both short and fully-qualified
-    /// names. Ambiguous short names produce a clear error listing candidates.
+    /// Resolves a template type name to a concrete non-abstract Type. Searches
+    /// the DataTemplateLoader's assembly first (the common case: game
+    /// templates live there), then falls back to all loaded Il2Cpp wrapper
+    /// assemblies. The fallback exists because some asset types (e.g.
+    /// <c>Stem.SoundBank</c>) live in <c>Assembly-CSharp-firstpass</c> rather
+    /// than the main <c>Assembly-CSharp</c>. Supports both short and
+    /// fully-qualified names. Ambiguous short names produce a clear error
+    /// listing candidates.
     /// </summary>
     public static Type ResolveTemplateType(string templateTypeName, out string error)
     {
         error = null;
 
-        var assembly = typeof(DataTemplateLoader).Assembly;
+        var primaryMatch = ResolveInAssembly(typeof(DataTemplateLoader).Assembly, templateTypeName, out var primaryAmbiguous, out var primaryCandidates);
+        if (primaryMatch != null)
+            return primaryMatch;
+        if (primaryAmbiguous)
+        {
+            error = $"template type name '{templateTypeName}' is ambiguous; candidates: {string.Join(", ", primaryCandidates)}.";
+            return null;
+        }
+
+        // Fallback: walk all loaded assemblies. Filtering by an `Il2Cpp` name
+        // prefix is wrong because Il2CppInterop-generated wrapper assemblies
+        // keep their original filenames (e.g. `Assembly-CSharp-firstpass`
+        // hosts the `Il2CppStem` namespace). The type-name match below
+        // self-filters: only assemblies that actually expose a matching type
+        // contribute, so cost stays bounded even when walking every loaded
+        // assembly.
+        var fallbackMatches = new List<Type>();
+        var primaryAssembly = typeof(DataTemplateLoader).Assembly;
+        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            if (asm == primaryAssembly)
+                continue;
+            if (asm.IsDynamic)
+                continue;
+            var match = ResolveInAssembly(asm, templateTypeName, out var ambiguousInAsm, out var asmCandidates);
+            if (match != null)
+                fallbackMatches.Add(match);
+            else if (ambiguousInAsm && asmCandidates != null)
+                fallbackMatches.AddRange(asmCandidates);
+        }
+
+        if (fallbackMatches.Count == 1)
+            return fallbackMatches[0];
+        if (fallbackMatches.Count > 1)
+        {
+            var candidates = string.Join(", ", fallbackMatches.Select(t => t.FullName).Distinct());
+            error = $"template type name '{templateTypeName}' is ambiguous across loaded assemblies; candidates: {candidates}.";
+            return null;
+        }
+
+        error = $"no template type '{templateTypeName}' found in any loaded assembly.";
+        return null;
+    }
+
+    private static Type ResolveInAssembly(Assembly assembly, string templateTypeName, out bool ambiguous, out List<Type> candidates)
+    {
+        ambiguous = false;
+        candidates = null;
+
         Type[] allTypes;
         try
         {
@@ -256,6 +309,10 @@ internal static class TemplateRuntimeAccess
         catch (ReflectionTypeLoadException ex)
         {
             allTypes = ex.Types.Where(t => t != null).ToArray();
+        }
+        catch
+        {
+            return null;
         }
 
         var exact = allTypes.FirstOrDefault(t => t.FullName == templateTypeName && !t.IsAbstract);
@@ -268,12 +325,9 @@ internal static class TemplateRuntimeAccess
 
         if (matches.Length > 1)
         {
-            var candidates = string.Join(", ", matches.Select(t => t.FullName));
-            error = $"template type name '{templateTypeName}' is ambiguous; candidates: {candidates}.";
-            return null;
+            ambiguous = true;
+            candidates = matches.ToList();
         }
-
-        error = $"no template type '{templateTypeName}' found in the DataTemplateLoader's assembly.";
         return null;
     }
 

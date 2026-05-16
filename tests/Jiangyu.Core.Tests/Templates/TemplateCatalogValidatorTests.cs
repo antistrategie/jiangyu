@@ -470,6 +470,182 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
+    public void NormaliseForEmit_ClearsCompositeTypeOnMonomorphicDestination()
+    {
+        using var catalog = Load();
+        var document = new KdlEditorDocument
+        {
+            Nodes =
+            [
+                new KdlEditorNode
+                {
+                    Kind = KdlEditorNodeKind.Patch,
+                    TemplateType = "FixtureEntity",
+                    TemplateId = "unit.x",
+                    Directives =
+                    [
+                        new KdlEditorDirective
+                        {
+                            Op = KdlEditorOp.Set,
+                            FieldPath = "Properties",
+                            Value = new KdlEditorValue
+                            {
+                                Kind = KdlEditorValueKind.Composite,
+                                CompositeType = "FixtureProperties",
+                                CompositeDirectives =
+                                [
+                                    new KdlEditorDirective
+                                    {
+                                        Op = KdlEditorOp.Set,
+                                        FieldPath = "Accuracy",
+                                        Value = new KdlEditorValue
+                                        {
+                                            Kind = KdlEditorValueKind.Int32,
+                                            Int32 = 5,
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                },
+            ],
+        };
+
+        TemplateCatalogValidator.NormaliseForEmit(document, catalog);
+
+        var directive = document.Nodes[0].Directives[0];
+        Assert.Equal(KdlEditorValueKind.Composite, directive.Value?.Kind);
+        Assert.True(string.IsNullOrEmpty(directive.Value?.CompositeType));
+    }
+
+    [Fact]
+    public void NormaliseForEmit_DoesNotMutateValidationOutput()
+    {
+        // ValidateEditorDocument keeps the filled-in CompositeType so the
+        // Studio chip can display it. NormaliseForEmit is a separate pass
+        // intended only for the on-disk emit path.
+        using var catalog = Load();
+        var document = new KdlEditorDocument
+        {
+            Nodes =
+            [
+                new KdlEditorNode
+                {
+                    Kind = KdlEditorNodeKind.Patch,
+                    TemplateType = "FixtureEntity",
+                    TemplateId = "unit.x",
+                    Directives =
+                    [
+                        new KdlEditorDirective
+                        {
+                            Op = KdlEditorOp.Set,
+                            FieldPath = "Properties",
+                            Value = new KdlEditorValue
+                            {
+                                Kind = KdlEditorValueKind.Composite,
+                                CompositeType = "FixtureProperties",
+                                CompositeDirectives = [],
+                            },
+                        },
+                    ],
+                },
+            ],
+        };
+
+        TemplateCatalogValidator.ValidateEditorDocument(document, catalog);
+
+        Assert.Empty(document.Errors);
+        Assert.Equal("FixtureProperties", document.Nodes[0].Directives[0].Value?.CompositeType);
+    }
+
+    [Fact]
+    public void InferredComposite_FillsTypeFromMonomorphicDestination()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "Properties",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.Composite,
+                            Composite = new CompiledTemplateComposite
+                            {
+                                TypeName = string.Empty,
+                                Operations =
+                                [
+                                    new CompiledTemplateSetOperation
+                                    {
+                                        Op = CompiledTemplateOp.Set,
+                                        FieldPath = "Accuracy",
+                                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 5 },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+        var filled = patches[0].Set[0].Value!.Composite!.TypeName;
+        Assert.EndsWith("FixtureProperties", filled);
+    }
+
+    [Fact]
+    public void InferredComposite_RejectsPolymorphicDestinationWithCandidates()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Append,
+                        FieldPath = "Handlers",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.Composite,
+                            Composite = new CompiledTemplateComposite
+                            {
+                                TypeName = string.Empty,
+                                Operations = [],
+                            },
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("polymorphic destination", log.Errors[0]);
+        Assert.Contains("composite=", log.Errors[0]);
+        Assert.Contains("FixtureConcreteDerived", log.Errors[0]);
+    }
+
+    [Fact]
     public void EditorDocument_RejectsNamedArrayAppend()
     {
         using var catalog = Load();

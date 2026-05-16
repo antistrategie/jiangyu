@@ -191,6 +191,9 @@ export function ValueEditor({ value, onChange, member }: ValueEditorProps) {
       // Field-bag values are rendered by CompositeEditor at SetRow level.
       return null;
 
+    case "Null":
+      return <span className={styles.setValueNull}>null</span>;
+
     default:
       return <span className={styles.setKind}>?</span>;
   }

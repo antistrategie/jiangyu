@@ -571,8 +571,14 @@ public class TemplatePatchEmitterTests
     }
 
     [Fact]
-    public void CompositeValue_MissingTypeName_Errors()
+    public void CompositeValue_MissingTypeName_EmittedForInference()
     {
+        // An empty TypeName on Composite is the deferred-inference sentinel
+        // emitted when the modder writes `append "Field" { ... }` without
+        // composite="X". The catalog-aware validator (TemplateCatalogValidator)
+        // is responsible for filling it in from the destination's element
+        // type or rejecting on polymorphic destinations. At the emitter
+        // layer the value is structurally valid and round-trips.
         var log = new RecordingLogSink();
         var patches = SinglePatch("UnitLeaderTemplate", "hero.elena",
             new CompiledTemplateSetOperation
@@ -592,8 +598,8 @@ public class TemplatePatchEmitterTests
 
         var result = TemplatePatchEmitter.Emit(patches, log);
 
-        Assert.False(result.Success);
-        Assert.Contains("unsupported or incomplete", log.Errors[0]);
+        Assert.True(result.Success);
+        Assert.Empty(log.Errors);
     }
 
     [Fact]

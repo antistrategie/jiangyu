@@ -20,7 +20,11 @@ export type EditorValueKind =
   // the live game-asset registry. The category is derived from the
   // destination field's declared Unity type, so the editor only stores
   // the name on assetName.
-  | "AssetReference";
+  | "AssetReference"
+  // Explicit `#null` literal. Clears a scalar reference field; the
+  // destination type is checked at apply time. The wire format carries
+  // no payload other than the kind tag itself.
+  | "Null";
 
 export interface EditorValue {
   kind: EditorValueKind;
@@ -38,6 +42,12 @@ export interface EditorValue {
    *  Remove/Clear) is allowed inside, with nested composite/handler values
    *  authored the same way as outer directives. */
   compositeDirectives?: EditorDirective[];
+  /** Optional prototype-source key for Composite values. When set, the
+   *  applier looks up an existing element in the destination collection
+   *  whose `name` property matches this string, deep-copies it, and applies
+   *  compositeDirectives on the copy. Lets modders inherit Inspector-baked
+   *  defaults without enumerating every field. */
+  compositeFrom?: string;
   assetName?: string;
 }
 

@@ -249,10 +249,12 @@ public static class TemplatePatchPathValidator
             CompiledTemplateValueKind.TemplateReference =>
                 value.Reference != null
                 && !string.IsNullOrWhiteSpace(value.Reference.TemplateId),
-            CompiledTemplateValueKind.Composite => IsSupportedComposite(value.Composite, depth, requireTypeName: true),
-            // HandlerConstruction allows an empty TypeName (the runtime
-            // applier substitutes the array element type when the modder
-            // omitted handler="X" against a monomorphic destination).
+            // Composite allows an empty TypeName: the compile-time validator
+            // infers it from the destination's element type when the
+            // destination is monomorphic, and rejects with a candidate list
+            // when polymorphic. HandlerConstruction uses the same shape with
+            // runtime inference instead.
+            CompiledTemplateValueKind.Composite => IsSupportedComposite(value.Composite, depth, requireTypeName: false),
             CompiledTemplateValueKind.HandlerConstruction => IsSupportedComposite(value.HandlerConstruction, depth, requireTypeName: false),
             // The asset name is the only load-bearing field; the category is
             // derived from the destination field's declared Unity type at

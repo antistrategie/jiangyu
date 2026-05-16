@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { GripVertical } from "lucide-react";
 import {
   Fragment,
+  memo,
   useCallback,
   useDeferredValue,
   useEffect,
@@ -536,6 +537,17 @@ export function TemplateBrowser({
     [instanceLookup, typeFilter, pushNav],
   );
 
+  // Stable callback for row selection. Each InstanceRow passes its own key
+  // in at call time, so a single closure serves all rows; no per-row arrow
+  // means the memo'd InstanceRow doesn't bail on prop-identity changes.
+  const handleInstanceSelect = useCallback(
+    (key: string) => {
+      setFocusedKey(key);
+      pushNav(key);
+    },
+    [pushNav],
+  );
+
   // --- Virtualiser ---
   const listRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual returns non-memoisable functions; the only API the library exposes.
@@ -681,19 +693,16 @@ export function TemplateBrowser({
                   const ownerInst = refs?.[0]
                     ? instanceLookup.get(`${refs[0].source.collection}:${refs[0].source.pathId}`)
                     : undefined;
-                  const select = () => {
-                    setFocusedKey(key);
-                    pushNav(key);
-                  };
                   return (
                     <InstanceRow
                       key={key}
+                      instanceKey={key}
                       inst={inst}
                       ownerInst={ownerInst}
                       focused={focused}
                       virtualSize={vRow.size}
                       virtualStart={vRow.start}
-                      onSelect={select}
+                      onSelect={handleInstanceSelect}
                     />
                   );
                 })}
@@ -1051,19 +1060,30 @@ function ReferenceNode({
 // --- Member row ---
 
 interface InstanceRowProps {
+  /** Stable key passed back into onSelect so a single shared callback can
+   *  handle every row; keeps onSelect prop-identity-stable for memo. */
+  instanceKey: string;
   inst: TemplateInstanceEntry;
   ownerInst: TemplateInstanceEntry | undefined;
   focused: boolean;
   virtualSize: number;
   virtualStart: number;
-  onSelect: () => void;
+  onSelect: (key: string) => void;
 }
 
 /// Instance row in the list panel — virtualised, draggable into the visual
 /// editor. Pulled into its own component so each row can hold its own drag
 /// state and render the hover-revealed grip glyph without lifting that state
 /// to the (already-busy) parent component.
-function InstanceRow({
+///
+/// Memoised because the browser hosts thousands of rows: a single parent
+/// re-render (search input, focus change, fetched-data update) would
+/// otherwise force every visible row to re-render even when its own props
+/// haven't changed. Coupled with the parent's stable handleInstanceSelect
+/// callback (which takes the row's key at call time), the only props that
+/// shift during scroll are virtualStart/virtualSize on visible rows.
+const InstanceRow = memo(function InstanceRow({
+  instanceKey,
   inst,
   ownerInst,
   focused,
@@ -1072,6 +1092,7 @@ function InstanceRow({
   onSelect,
 }: InstanceRowProps) {
   const [dragging, setDragging] = useState(false);
+  const handleClick = useCallback(() => onSelect(instanceKey), [onSelect, instanceKey]);
   return (
     <div
       className={`${styles.row} ${focused ? styles.rowFocused : ""} ${dragging ? styles.rowDragging : ""}`}
@@ -1112,8 +1133,8 @@ function InstanceRow({
         height: `${virtualSize}px`,
         transform: `translateY(${virtualStart}px)`,
       }}
-      onClick={onSelect}
-      onKeyDown={onKeyActivate(onSelect)}
+      onClick={handleClick}
+      onKeyDown={onKeyActivate(handleClick)}
     >
       <span className={styles.rowDragGrip} aria-hidden>
         <GripVertical size={10} />
@@ -1122,7 +1143,7 @@ function InstanceRow({
       {ownerInst && <span className={styles.rowOwner}>← {ownerInst.name}</span>}
     </div>
   );
-}
+});
 
 // --- Helpers for value rendering ---
 

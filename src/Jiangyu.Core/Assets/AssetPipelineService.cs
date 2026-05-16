@@ -42,7 +42,13 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
     private const string ManifestFileName = "index-manifest.json";
     private const string PreviewDirName = "previews";
     private const int ThumbnailMaxDimension = 256;
-    internal const int CurrentFormatVersion = 3;
+    // Bump on any change to AssetEntry shape or BuildAssetIndex behaviour
+    // that older index files can't represent. Stale indexes get rebuilt by
+    // GetIndexStatus's version check.
+    //   v3: baseline (sprite atlas + AudioClip frequency/channels).
+    //   v4: per-asset NamedChildren for prototype-source surfaces
+    //       (Stem.SoundBank sounds[].name lookup).
+    internal const int CurrentFormatVersion = 4;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -164,7 +170,12 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         _log.Info($"Loading game data from: {GameDataPath}");
 
         var settings = new CoreConfiguration();
-        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level0;
+        // Level2 inflates MonoBehaviour structures via the typed managed
+        // metadata (the same level ObjectInspectionService uses). Required
+        // for the asset-index build to walk Stem.SoundBank.sounds[] and
+        // populate AssetEntry.NamedChildren; lower levels leave
+        // m_Structure as an opaque node with no Fields list.
+        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level2;
 
         var adapter = new AssetRipperProgressAdapter(_progress);
         Logger.Add(adapter);
@@ -1667,12 +1678,66 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
                     if (audioClip.Has_Channels())
                         entry.AudioChannels = audioClip.Channels;
                 }
+                else if (asset is AssetRipper.SourceGenerated.Classes.ClassID_114.IMonoBehaviour monoBehaviour
+                         && entry.Name is { } entryName
+                         && entryName.EndsWith("_soundbank", StringComparison.Ordinal))
+                {
+                    entry.NamedChildren = TryExtractSoundBankSoundNames(monoBehaviour, gameData);
+                }
 
                 entries.Add(entry);
             }
         }
 
         return new AssetIndex { Assets = entries };
+    }
+
+    /// <summary>
+    /// Walks a Stem.SoundBank asset's <c>m_Structure.sounds[]</c> list and
+    /// returns each entry's <c>name</c> field. Used by the asset-index build
+    /// to bake per-bank prototype names into AssetEntry.NamedChildren so the
+    /// Studio's composite from= autocomplete can answer "what's in this
+    /// bank" via a flat dictionary lookup instead of re-running live
+    /// AssetRipper inspection.
+    /// </summary>
+    private static List<string>? TryExtractSoundBankSoundNames(
+        AssetRipper.SourceGenerated.Classes.ClassID_114.IMonoBehaviour monoBehaviour,
+        GameData gameData)
+    {
+        try
+        {
+            // Depth 4 is enough for m_Structure -> sounds -> element -> name.
+            // ArraySample 4096 covers any bank without truncation.
+            var inspection = ObjectFieldInspector.Inspect(monoBehaviour, maxDepth: 4, maxArraySampleLength: 4096);
+            ManagedTypeInspectionEnricher.Enrich(monoBehaviour, gameData.AssemblyManager, inspection.Fields);
+            OdinPayloadEnricher.Enrich(inspection.Fields);
+
+            var structure = inspection.Fields.FirstOrDefault(f =>
+                string.Equals(f.Name, "m_Structure", StringComparison.Ordinal));
+            var sounds = structure?.Fields?.FirstOrDefault(f =>
+                string.Equals(f.Name, "sounds", StringComparison.Ordinal));
+            if (sounds?.Elements is null || sounds.Elements.Count == 0)
+                return null;
+
+            var names = new List<string>(sounds.Elements.Count);
+            foreach (var element in sounds.Elements)
+            {
+                if (element.Fields is null) continue;
+                var nameField = element.Fields.FirstOrDefault(f =>
+                    string.Equals(f.Name, "name", StringComparison.Ordinal));
+                var value = nameField?.Value?.ToString();
+                if (!string.IsNullOrEmpty(value))
+                    names.Add(value);
+            }
+            return names.Count > 0 ? names : null;
+        }
+        catch
+        {
+            // Per-bank inspection failure is non-fatal: a missing
+            // NamedChildren list just falls back to empty autocomplete for
+            // that one bank rather than failing the whole index build.
+            return null;
+        }
     }
 
     private static string BuildCanonicalAssetPath(string? collectionName, string? className, string? assetName, long pathId)

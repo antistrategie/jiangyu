@@ -256,6 +256,14 @@ public static partial class RpcHandlers
         var document = p.Deserialize<KdlEditorDocument>()
             ?? throw new ArgumentException("Could not deserialise editor document");
 
+        // Strip composite=/handler=/ref= type attributes from values where
+        // the destination field is monomorphic, so the emitted KDL relies
+        // on inference. Studio displays the type from a parse-side fill-in,
+        // but the on-disk text stays terse.
+        var catalog = TryGetCachedCatalog();
+        if (catalog != null)
+            TemplateCatalogValidator.NormaliseForEmit(document, catalog);
+
         var text = KdlTemplateSerialiser.Serialise(document);
         return JsonSerializer.SerializeToElement(new { text });
     }
@@ -347,6 +355,94 @@ public static partial class RpcHandlers
     {
         [JsonPropertyName("members")]
         public required List<EnumMemberEntry> Members { get; set; }
+    }
+
+    // Cached per-composite-type candidate-name lookups. Cleared whenever the
+    // values cache is rebuilt (sound names are sourced from the bank
+    // inspection cache, so the invariant is the same).
+    private static readonly Dictionary<string, List<string>> _prototypeCandidatesCache = new(StringComparer.Ordinal);
+
+    // Registry of composite types that have a working `from=` prototype
+    // lookup. Maps the canonical short name to a callback that produces the
+    // candidate names. The Studio UI queries this set to decide whether to
+    // render the `from=` input at all; types not in the registry get no
+    // input, since the candidate list would always be empty.
+    //
+    // Each entry's name aliases (Il2Cpp/Stem prefixes) are handled by the
+    // normalisation step in TemplatesPrototypeCandidates / IsSupported;
+    // only the short name appears here.
+    private static readonly Dictionary<string, Func<List<string>>> _prototypeProviders = new(StringComparer.Ordinal)
+    {
+        { "Sound", CollectSoundCandidates },
+    };
+
+    private static string NormaliseCompositeTypeShortName(string compositeType)
+    {
+        if (string.IsNullOrEmpty(compositeType)) return string.Empty;
+        var normalised = compositeType;
+        if (normalised.StartsWith("Il2Cpp", StringComparison.Ordinal))
+            normalised = normalised.Substring(6);
+        return normalised.Contains('.') ? normalised.Substring(normalised.LastIndexOf('.') + 1) : normalised;
+    }
+
+    [McpTool("jiangyu_templates_prototype_supported_types",
+        "List composite type short names that support `from=` prototype-source lookups. The Studio UI queries this set on first load to decide whether to render the `from=` input for a given composite; types absent from this list have no candidates and the input is suppressed. Aliases (Il2Cpp/Stem prefixes) normalise to the short names returned here.")]
+    internal static JsonElement TemplatesPrototypeSupportedTypes(JsonElement? __)
+    {
+        return JsonSerializer.SerializeToElement(new { types = _prototypeProviders.Keys.ToArray() });
+    }
+
+    [McpTool("jiangyu_templates_prototype_candidates",
+        "List candidate prototype-source names for a composite type. Used by the visual editor's `from=` autocomplete on composite values; returns the names a modder could write as `from=\"X\"` to seed a fresh element from an existing one. Sound is the only composite type with semantically-named elements (`sounds[].name` inside each SoundBank); other composite types in MENACE are either nameless structs (SoundVariation, ID), ref-keyed elements that would need a per-type lookup (Perk, EntityLootEntry), or top-level templates that go through `clone` rather than `composite=`. Empty list for those.")]
+    [McpParam("compositeType", "string", "Composite type name (e.g. \"Sound\", \"Stem.Sound\", or \"Il2CppStem.Sound\").", Required = true)]
+    internal static JsonElement TemplatesPrototypeCandidates(JsonElement? parameters)
+    {
+        var compositeType = RequireString(parameters, "compositeType");
+        var shortName = NormaliseCompositeTypeShortName(compositeType);
+
+        if (_prototypeCandidatesCache.TryGetValue(shortName, out var cached))
+            return JsonSerializer.SerializeToElement(new { candidates = cached });
+
+        var candidates = _prototypeProviders.TryGetValue(shortName, out var provider)
+            ? provider()
+            : new List<string>();
+
+        _prototypeCandidatesCache[shortName] = candidates;
+        return JsonSerializer.SerializeToElement(new { candidates });
+    }
+
+    // Read pre-built sound names from the asset index. The asset-index
+    // build (index format v4+) walks each SoundBank's sounds[] array once
+    // and stores the names on AssetEntry.NamedChildren, so this is a flat
+    // dictionary lookup at RPC time, no live AssetRipper inspection, no
+    // host-thread freeze, no per-call cost beyond reading the cached index.
+    private static List<string> CollectSoundCandidates()
+    {
+        var names = new List<string>();
+        var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+        if (!resolution.Success) return names;
+
+        var pipeline = resolution.Context!.CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
+        var index = pipeline.LoadIndex();
+        if (index?.Assets is null) return names;
+
+        foreach (var entry in index.Assets)
+        {
+            if (entry.NamedChildren is null || entry.NamedChildren.Count == 0)
+                continue;
+            if (!string.Equals(entry.ClassName, "MonoBehaviour", StringComparison.Ordinal))
+                continue;
+            if (entry.Name is null || !entry.Name.EndsWith("_soundbank", StringComparison.Ordinal))
+                continue;
+
+            foreach (var name in entry.NamedChildren)
+            {
+                if (!string.IsNullOrEmpty(name))
+                    names.Add(name);
+            }
+        }
+
+        return names;
     }
 
     [RpcType]
@@ -987,6 +1083,7 @@ public static partial class RpcHandlers
         _cachedValuesPath = null;
         _cachedValuesMtime = default;
         _cachedOdinMatrixSchemas.Clear();
+        _prototypeCandidatesCache.Clear();
     }
 
     // Rebuilds the (templateType → fieldName → schema) registry by joining

@@ -181,6 +181,25 @@ Inner directives inside a `handler=` block accept the full `set` / `append` / `i
 
 The `handler=` subtype name is required when the array's element type is abstract polymorphic (the common case for event handlers). It can be omitted when the element type is monomorphic (the array's declared element type is the only construction option). The compiler errors when the subtype is missing for a polymorphic destination, when the named subtype isn't a subclass of the destination's element type, or when an inner field doesn't exist on the constructed type.
 
+### `from=`: inherit an existing element's fields
+
+`append` and `insert` accept `from="<name>"` to seed the new element from a named entry already in the destination collection. Inner directives apply on top, so only the fields you want to change need to be listed:
+
+```kdl
+patch "SoundBank" "weapons_soundbank" {
+    append "sounds" from="aimed_shot" {
+        set "id" "custom_rifle_fire"
+        set "name" "custom_rifle_fire"
+        clear "variations"
+        append "variations" {
+            set "clip" asset="weapons/custom_rifle/fire_01"
+        }
+    }
+}
+```
+
+This copies every field of the `aimed_shot` sound (volume, pitch, retrigger mode, distance falloff, etc.) and then overrides `id`, `name`, and `variations` on the copy. Without `from=`, every scalar field defaults to zero and the modder has to remember to set sensible playback parameters. The `from=` name matches the source element's `name` property; the destination composite type doesn't need to be named explicitly when only one type is possible.
+
 ## Value kinds
 
 A value at the end of a `set`, `append`, or `insert` line is one of:

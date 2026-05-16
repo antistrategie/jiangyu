@@ -14,6 +14,13 @@
   border: 1px solid var(--rule);
   display: flex;
   flex-direction: column;
+  /* Compositor-promote each card so the cascade of hover-driven paints
+     inside it (delete-icon fade-ins, op-button border swaps, matrix cell
+     hovers) doesn't repaint the scroll container's scrollbar every
+     frame on WebKitGTK. This creates a stacking context, which traps
+     absolute-positioned descendants; SuggestionCombobox renders its
+     dropdown through a portal at `document.body` to escape. */
+  will-change: transform;
 }
 
 .cardHeader {
@@ -241,6 +248,7 @@
   flex-shrink: 0;
   line-height: 1;
   opacity: 0;
+  transition: opacity var(--ease-fast-linear) 120ms;
 }
 
 .matrixField:hover .matrixFieldDelete {
@@ -513,6 +521,20 @@
   accent-color: var(--cinnabar-1);
 }
 
+/* Explicit `#null` literal. Rendered in place of an input so it's
+   visually distinct from a missing/blank value (italic muted-ink chip,
+   not a blank field). Matches the input cell's box metrics (full width,
+   same padding/border/line-height) so the chip sits exactly where an
+   input would, vertically centred by the row's align-items: center. */
+.setValueNull {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-style: italic;
+  color: var(--fg-muted);
+  padding: 2px var(--space-2);
+}
+
 .setValueSelect {
   width: 100%;
   font-family: var(--font-mono);
@@ -560,6 +582,10 @@
   flex-shrink: 0;
   line-height: 1;
   opacity: 0;
+  /* Entry delay: scroll-pass hovers (< 120ms) don't reveal the icon; only
+     deliberate hovers do. Stops the cascade of delete icons flashing into
+     visibility as the cursor crosses directive rows during scroll. */
+  transition: opacity var(--ease-fast-linear) 120ms;
 }
 
 .setRow:hover .setDelete,
@@ -849,7 +875,9 @@
   cursor: grab;
   color: var(--fg-muted);
   opacity: 0;
-  transition: opacity var(--ease-fast);
+  /* Entry delay so cursor-passes during scroll don't trigger the fade.
+     See .rowDragGrip in TemplateBrowser.module.css for the rationale. */
+  transition: opacity var(--ease-fast) 120ms;
   flex-shrink: 0;
 }
 
@@ -1196,6 +1224,10 @@
   color: var(--fg-muted);
 }
 
+.compositeFromCombo {
+  width: 160px;
+}
+
 .compositeRow {
   display: flex;
   align-items: center;
@@ -1230,6 +1262,7 @@
   flex-shrink: 0;
   line-height: 1;
   opacity: 0;
+  transition: opacity var(--ease-fast-linear) 120ms;
 }
 
 .compositeRow:hover .compositeFieldDelete {

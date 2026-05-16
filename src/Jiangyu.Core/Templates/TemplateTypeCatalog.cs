@@ -76,19 +76,48 @@ public sealed class TemplateTypeCatalog : IDisposable
 
         var resolver = new PathAssemblyResolver(paths);
         var context = new MetadataLoadContext(resolver);
-        var assembly = context.LoadFromAssemblyPath(assemblyPath);
+        var primary = context.LoadFromAssemblyPath(assemblyPath);
 
-        Type[] allTypes;
-        try
+        // Some asset types (e.g. Stem.SoundBank used for audio routing) live in
+        // Assembly-CSharp-firstpass alongside Assembly-CSharp rather than in the
+        // primary. Load any sibling Assembly-CSharp*.dll so the catalogue can
+        // resolve them too. System Il2Cpp* DLLs (mscorlib, System.Core) are
+        // excluded; they don't contain modder-targetable template types and
+        // loading every one of them slows MetadataLoadContext startup.
+        var assembliesToScan = new List<Assembly> { primary };
+        var primaryDir = Path.GetDirectoryName(assemblyPath);
+        if (!string.IsNullOrEmpty(primaryDir) && Directory.Exists(primaryDir))
         {
-            allTypes = assembly.GetTypes();
-        }
-        catch (ReflectionTypeLoadException ex)
-        {
-            allTypes = ex.Types.Where(t => t != null).ToArray()!;
+            foreach (var dll in Directory.EnumerateFiles(primaryDir, "Assembly-CSharp*.dll"))
+            {
+                if (string.Equals(dll, assemblyPath, StringComparison.Ordinal))
+                    continue;
+                try
+                {
+                    assembliesToScan.Add(context.LoadFromAssemblyPath(dll));
+                }
+                catch
+                {
+                    // Non-fatal: a malformed sibling shouldn't prevent the
+                    // primary catalogue from loading.
+                }
+            }
         }
 
-        return new TemplateTypeCatalog(context, allTypes, supplement);
+        var allTypes = new List<Type>();
+        foreach (var asm in assembliesToScan)
+        {
+            try
+            {
+                allTypes.AddRange(asm.GetTypes());
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                allTypes.AddRange(ex.Types.Where(t => t != null)!);
+            }
+        }
+
+        return new TemplateTypeCatalog(context, allTypes.ToArray(), supplement);
     }
 
     /// <summary>

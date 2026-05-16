@@ -34,20 +34,23 @@ button {
   color: var(--ink-0);
 }
 
-/* Scrollbars — thin, ink-on-paper */
+/* Scrollbars. Thin, ink-on-paper. The thumb uses background-clip:padding-box
+   plus a transparent border to give the thumb a visual gap from the track
+   edge without painting the page background colour into the widget itself.
+   No :hover style: thumb hover hit-tests fire from content mouse movement on
+   WebKitGTK, which repaints the thumb every frame and reads as flicker. */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--rule);
-  border: 2px solid var(--bg);
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--ink-0);
+  background-color: var(--rule);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 5px;
 }
 
 /* Checkboxes — ink-on-paper, cinnabar when checked, hard-edged */

@@ -92,6 +92,16 @@ describe("ValueEditor", () => {
     expect(input.value).toBe("Sword");
   });
 
+  it("Null renders a visible chip with the literal 'null' text", () => {
+    render(
+      createElement(ValueEditor, {
+        value: { kind: "Null" },
+        onChange: vi.fn(),
+      }),
+    );
+    expect(screen.getByText("null")).toBeTruthy();
+  });
+
   it("TemplateReference renders RefValueEditor", () => {
     render(
       createElement(ValueEditor, {

@@ -76,6 +76,18 @@ public sealed class AssetEntry
 
     [JsonPropertyName("audioChannels")]
     public int? AudioChannels { get; set; }
+
+    /// <summary>
+    /// For asset types that hold named sub-elements modders can target as
+    /// prototype sources via composite= from="..." authoring (currently
+    /// Stem.SoundBank's sounds[]), this lists each sub-element's name. The
+    /// asset-index build extracts these once so editor autocompletes and
+    /// validators can answer "what names are available inside this asset"
+    /// without re-running live AssetRipper inspection. Null on assets with
+    /// no such surface.
+    /// </summary>
+    [JsonPropertyName("namedChildren")]
+    public List<string>? NamedChildren { get; set; }
 }
 
 public sealed class IndexManifest

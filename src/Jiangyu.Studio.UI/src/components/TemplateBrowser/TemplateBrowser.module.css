@@ -262,6 +262,15 @@
   font-size: var(--fs-sm);
   cursor: pointer;
   user-select: none;
+  /* Entry delay on the hover background change. Cursor-passes during
+     scroll (well under 120ms per row) skip the swap entirely; deliberate
+     hovers still highlight. Same idea as the grip fade-in delay. */
+  transition: background var(--ease-fast-linear) 120ms;
+  /* Promote each row to its own compositor layer so the virtualised
+     translateY() updates don't trigger a full-viewport repaint. Without
+     this, every scroll tick on WebKitGTK can repaint the entire list
+     pane (visible as flicker). */
+  will-change: transform;
 }
 
 /* Faint grip glyph that appears on hover for draggable browser rows. Matches
@@ -274,7 +283,13 @@
   cursor: grab;
   color: var(--fg-muted);
   opacity: 0;
-  transition: opacity var(--ease-fast);
+  /* 120ms entry delay before the fade-in starts: during scroll the cursor
+     passes over many rows in well under that window, so transient
+     hovers don't trigger the fade. Deliberate hovers (> 120ms) still get
+     the smooth reveal. Exit fade is immediate (transition only applies
+     to the property change; reverting opacity to 0 has no transition
+     spec to follow when leaving :hover). */
+  transition: opacity var(--ease-fast) 120ms;
   flex-shrink: 0;
 }
 

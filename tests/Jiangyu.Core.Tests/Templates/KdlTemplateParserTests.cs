@@ -290,6 +290,68 @@ public class KdlTemplateParserTests
     }
 
     [Fact]
+    public void ParseAll_NestedComposite_SoundBankPatch()
+    {
+        // Lock in recursive nested construction for the bank-routed audio
+        // addition surface: a SoundBank patch appends a Sound, which appends
+        // SoundVariations, whose `clip` field is an AudioClip asset addition.
+        var dir = SetupKdl("soundbank.kdl", """
+            patch "SoundBank" "weapons_soundbank" {
+                append "sounds" composite="Sound" {
+                    set "id" 99999001
+                    set "name" "custom_rifle_fire"
+                    append "variations" composite="SoundVariation" {
+                        set "clip" asset="weapons/custom_rifle/fire_01"
+                    }
+                    append "variations" composite="SoundVariation" {
+                        set "clip" asset="weapons/custom_rifle/fire_02"
+                    }
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        Assert.Single(result.Patches);
+
+        var patch = result.Patches[0];
+        Assert.Equal("SoundBank", patch.TemplateType);
+        Assert.Equal("weapons_soundbank", patch.TemplateId);
+
+        var soundOp = patch.Set[0];
+        Assert.Equal(CompiledTemplateOp.Append, soundOp.Op);
+        Assert.Equal("sounds", soundOp.FieldPath);
+        Assert.Equal(CompiledTemplateValueKind.Composite, soundOp.Value!.Kind);
+
+        var soundComposite = soundOp.Value.Composite!;
+        Assert.Equal("Sound", soundComposite.TypeName);
+        Assert.Equal(99999001, soundComposite.ValueAt("id").Int32);
+        Assert.Equal("custom_rifle_fire", soundComposite.ValueAt("name").String);
+
+        // The Sound composite's body contains two nested append ops on the
+        // variations list. This confirms the parser walks construction
+        // bodies recursively; flat-construction would have surfaced a parse
+        // error here.
+        var variationAppends = soundComposite.Operations
+            .Where(o => o.Op == CompiledTemplateOp.Append && o.FieldPath == "variations")
+            .ToList();
+        Assert.Equal(2, variationAppends.Count);
+
+        foreach (var va in variationAppends)
+        {
+            Assert.Equal(CompiledTemplateValueKind.Composite, va.Value!.Kind);
+            var variationComposite = va.Value.Composite!;
+            Assert.Equal("SoundVariation", variationComposite.TypeName);
+
+            var clipValue = variationComposite.ValueAt("clip");
+            Assert.Equal(CompiledTemplateValueKind.AssetReference, clipValue.Kind);
+            Assert.NotNull(clipValue.Asset);
+            Assert.StartsWith("weapons/custom_rifle/fire_", clipValue.Asset!.Name);
+        }
+    }
+
+    [Fact]
     public void ParseAll_DuplicateInFile_IsError()
     {
         var dir = SetupKdl("dup.kdl", """
