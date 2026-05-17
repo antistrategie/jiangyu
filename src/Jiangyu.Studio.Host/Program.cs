@@ -48,9 +48,14 @@ public static class Program
             .SetIconFile(Path.Combine(AppContext.BaseDirectory, "icon.png"))
             .Center()
             .SetStartUrl(startUrl)
-            .RegisterWebMessageReceivedHandler(
-                (window, message) =>
-                    RpcDispatcher.HandleMessage(window, message, window.SendWebMessage));
+            // InfiniFrame 0.13 routes JS→host posts through a keyed dispatcher
+            // by the envelope's message id. Our JS bridge tags every RPC with
+            // id="rpc"; register the keyed handler so payloads land in our
+            // dispatcher. Without this every RPC is parser-routed to a missing
+            // handler and dropped with a warn.
+            .RegisterWebMessagePostHandler(RpcDispatcher.RpcMessageId,
+                (window, payload) =>
+                    RpcDispatcher.HandleMessage(window, payload ?? string.Empty, window.SendWebMessage));
 
         var app = builder.Build();
 

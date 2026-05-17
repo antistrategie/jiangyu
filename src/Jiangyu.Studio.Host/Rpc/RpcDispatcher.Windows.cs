@@ -89,9 +89,9 @@ public static partial class RpcDispatcher
                 .SetSize(new Size(1200, 800))
                 .SetStartUrl(paneUrl)
                 .Center()
-                .RegisterWebMessageReceivedHandler(
-                    (window, message) =>
-                        HandleMessage(window, message, window.SendWebMessage))
+                .RegisterWebMessagePostHandler(RpcMessageId,
+                    (window, payload) =>
+                        HandleMessage(window, payload ?? string.Empty, window.SendWebMessage))
                 .Build();
 
             lock (Secondaries) Secondaries.Add(secondary);

@@ -18,6 +18,13 @@ public static partial class RpcDispatcher
 
     private static readonly JsonElement NullElement = JsonSerializer.SerializeToElement<object?>(null);
 
+    /// <summary>
+    /// Envelope message id every JS→host RPC post is tagged with. The keyed
+    /// dispatcher InfiniFrame 0.13 introduced routes by this id; both the
+    /// primary and pane-window builders register a Post-handler on it.
+    /// </summary>
+    public const string RpcMessageId = "rpc";
+
     static RpcDispatcher()
     {
         // Window-bound, Host-only handlers (file dialogs, project lifecycle,
@@ -113,11 +120,9 @@ public static partial class RpcDispatcher
 
     public static void HandleMessage(IInfiniFrameWindow window, string message, Action<string> sendResponse)
     {
-        // InfiniFrame 0.11.0 wraps every incoming JS→host post in an envelope:
-        // {"id":"…","command":"Post","data":"<payload>","version":2}.
-        // Unwrap here so every handler registration path (primary + every
-        // pane-window secondary) is one line and behaves the same way.
-        message = UnwrapEnvelope(message);
+        // Callers register us as a keyed Post-handler on the envelope's id, so
+        // InfiniFrame already unwraps the envelope and hands us the raw `data`
+        // payload (our RPC request JSON).
 
         // Two-stage parse: (a) pull `id` best-effort so we can still respond to a
         // malformed request with its id, otherwise the frontend's promise hangs;
@@ -170,27 +175,6 @@ public static partial class RpcDispatcher
         };
 
         sendResponse(JsonSerializer.Serialize(response, RpcJsonContext.Default.RpcResponse));
-    }
-
-    internal static string UnwrapEnvelope(string message)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(message);
-            var root = doc.RootElement;
-            if (root.ValueKind == JsonValueKind.Object &&
-                root.TryGetProperty("data", out var data) &&
-                data.ValueKind == JsonValueKind.String)
-            {
-                return data.GetString() ?? message;
-            }
-        }
-        catch
-        {
-            // Not valid JSON; pass through as-is.
-        }
-
-        return message;
     }
 
     private static int? TryExtractId(string message)
