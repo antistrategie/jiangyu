@@ -2,7 +2,7 @@
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
-  z-index: 30;
+  z-index: var(--z-dropdown);
   min-width: 280px;
   max-width: 360px;
 }

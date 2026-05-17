@@ -1,7 +1,7 @@
 .backdrop {
   position: fixed;
   inset: 0;
-  z-index: 1100;
+  z-index: var(--z-modal);
   background: var(--scrim);
   display: flex;
   align-items: center;
@@ -9,10 +9,22 @@
   animation: fade 120ms ease-out;
 }
 
-/* Transparent passthrough so the inner dialog wrapper (which carries the
-   role + aria-modal) doesn't change the centred-flex layout. */
-.dialogContent {
-  display: contents;
+/* Dialog chrome: background, hairline, drop shadow. The width comes from
+   the `--modal-width` custom property set by the Modal component via inline
+   style; `--modal-height`, when set, caps the dialog height with the same
+   `min(value, vh)` pattern so tall modals don't blow past the viewport. */
+.dialog {
+  background: var(--bg-raised);
+  border: 1px solid var(--ink-0);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  color: var(--fg);
+  width: min(var(--modal-width, 440px), 92vw);
+}
+
+.dialogTall {
+  height: min(var(--modal-height, 760px), 88vh);
 }
 
 @keyframes fade {

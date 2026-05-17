@@ -1,6 +1,6 @@
 .segmented {
   display: inline-flex;
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   background: var(--bg-raised);
 }
 
@@ -20,7 +20,7 @@
 }
 
 .segment + .segment {
-  border-left: 1px solid var(--rule);
+  border-left: var(--border-rule);
 }
 
 .segment:hover:not(.segmentActive) {

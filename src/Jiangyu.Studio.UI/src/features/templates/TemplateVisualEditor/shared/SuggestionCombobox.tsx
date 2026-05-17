@@ -155,7 +155,7 @@ export function SuggestionCombobox({
               left: position.left,
               right: "auto",
               width: position.width,
-              zIndex: 9999,
+              zIndex: "var(--z-portal)",
             }}
             role="presentation"
             onMouseDown={(e) => e.stopPropagation()}
@@ -205,7 +205,7 @@ export function SuggestionCombobox({
               left: position.left,
               right: "auto",
               width: position.width,
-              zIndex: 9999,
+              zIndex: "var(--z-portal)",
             }}
           >
             <div className={styles.fieldAdderHint}>No matches</div>

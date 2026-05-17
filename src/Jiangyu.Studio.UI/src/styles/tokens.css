@@ -156,4 +156,18 @@
 
   /* Track colour behind the spinner when it sits on an accent surface. */
   --track-on-accent: rgba(255, 255, 255, 0.3);
+
+  /* Z-index ladder. Layers higher in this list paint over layers below. Pure
+     in-flow stacking-context normalisation inside a single component (e.g.
+     keeping a pane's content above its decorative background) stays as a
+     literal `z-index: 1` and shouldn't cross-reference these tokens. */
+  --z-pane-overlay: 10; /* sticky rows, in-pane local dropdowns */
+  --z-popover: 20; /* popovers anchored to a button (e.g. flag) */
+  --z-dropdown: 30; /* menus floated from a trigger (agent menu) */
+  --z-fullscreen: 500; /* pane fullscreen overlay */
+  --z-floating: 1000; /* context menu, command palette */
+  --z-modal: 1100; /* modal dialog */
+  --z-toast: 9000; /* transient feedback */
+  --z-portal: 9999; /* portaled dropdowns that must sit above modals */
+  --z-drag-chip: 2147483647; /* cross-window drag image */
 }

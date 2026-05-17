@@ -100,8 +100,8 @@
   height: var(--space-2);
   margin: 0;
   background: var(--bg-sunken);
-  border-top: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
+  border-top: var(--border-rule);
+  border-bottom: var(--border-rule);
 }
 
 /* Accent footer for "add new" / "open registry" actions. Sunken bg + ink
@@ -114,7 +114,7 @@
   padding: var(--space-2) var(--space-3);
   background: var(--bg-sunken);
   border: none;
-  border-top: 1px solid var(--rule);
+  border-top: var(--border-rule);
   color: var(--fg-muted);
   font-family: var(--font-label);
   font-size: var(--fs-xs);

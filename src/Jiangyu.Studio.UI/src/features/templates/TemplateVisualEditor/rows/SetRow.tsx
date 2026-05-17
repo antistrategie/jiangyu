@@ -221,7 +221,7 @@ export function SetRow({
                     position: "fixed",
                     top: opMenuPosition.top,
                     left: opMenuPosition.left,
-                    zIndex: 9999,
+                    zIndex: "var(--z-portal)",
                   }}
                 >
                   {ops.map((op) => (

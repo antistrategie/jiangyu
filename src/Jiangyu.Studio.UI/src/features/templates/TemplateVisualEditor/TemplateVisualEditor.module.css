@@ -44,7 +44,7 @@
 /* --- Node card --- */
 
 .card {
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   display: flex;
   flex-direction: column;
   /* Compositor-promote each card so the cascade of hover-driven paints
@@ -61,7 +61,7 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: var(--border-rule);
   background: var(--bg-sunken);
   cursor: pointer;
   user-select: none;
@@ -73,7 +73,7 @@
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   padding: 1px var(--space-2);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   color: var(--fg-muted);
   flex-shrink: 0;
 }
@@ -84,8 +84,8 @@
 }
 
 .cardBadgeClone {
-  color: var(--jade-1, var(--fg-muted));
-  border-color: var(--jade-1, var(--rule));
+  color: var(--jade-1);
+  border-color: var(--jade-1);
 }
 
 .cardType {
@@ -250,7 +250,7 @@
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   color: var(--fg-muted);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   padding: 1px var(--space-1);
   flex-shrink: 0;
 }
@@ -339,7 +339,7 @@
   height: 1.6em;
   padding: 0;
   background: var(--bg-raised);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   color: var(--fg-muted);
   user-select: none;
   cursor: pointer;
@@ -390,14 +390,14 @@
   position: absolute;
   top: calc(100% + 2px);
   left: 0;
-  z-index: 10;
+  z-index: var(--z-pane-overlay);
   min-width: 14em;
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: var(--space-2);
   background: var(--bg-raised);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   box-shadow: 0 4px 12px rgba(26, 23, 19, 0.18);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -508,7 +508,7 @@
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   color: var(--fg-muted);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   vertical-align: middle;
 }
 
@@ -524,7 +524,7 @@
   padding: 2px var(--space-2);
   background: var(--bg);
   color: var(--fg);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   outline: none;
   min-width: 0;
 }
@@ -575,7 +575,7 @@
   padding: 2px var(--space-2);
   background: var(--bg);
   color: var(--fg);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   outline: none;
 }
 
@@ -671,11 +671,11 @@
   position: absolute;
   top: 100%;
   left: 0;
-  z-index: 10;
+  z-index: var(--z-pane-overlay);
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   min-width: 80px;
 }
 
@@ -709,7 +709,7 @@
   padding: 2px var(--space-1);
   background: var(--bg);
   color: var(--fg);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   border-radius: 0;
   outline: none;
   flex-shrink: 0;
@@ -809,11 +809,11 @@
   top: 100%;
   left: 0;
   right: 0;
-  z-index: 20;
+  z-index: var(--z-popover);
   max-height: 240px;
   overflow-y: auto;
   background: var(--bg);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   display: flex;
   flex-direction: column;
 }
@@ -871,8 +871,8 @@
   font-size: 9px;
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
-  color: var(--jade-1, var(--fg-muted));
-  border: 1px solid var(--jade-1, var(--rule));
+  color: var(--jade-1);
+  border: 1px solid var(--jade-1);
   padding: 0 var(--space-1);
   flex-shrink: 0;
 }
@@ -948,7 +948,7 @@
   pointer-events: none;
   margin: -1px 0;
   position: relative;
-  z-index: 10;
+  z-index: var(--z-pane-overlay);
 }
 
 /* --- Add node area --- */
@@ -996,7 +996,7 @@
   text-transform: uppercase;
   color: var(--fg-muted);
   background: none;
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   cursor: pointer;
   transition:
     color var(--ease-fast),
@@ -1135,11 +1135,11 @@
   top: 100%;
   left: 0;
   right: 0;
-  z-index: 20;
+  z-index: var(--z-popover);
   max-height: 200px;
   overflow-y: auto;
   background: var(--bg);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   /* No flex layout — the virtualised content is absolute-positioned inside a
      fixed-height spacer, so flex would just confuse the scrollbar math. */
 }
@@ -1164,7 +1164,7 @@
   font-size: 8px;
   letter-spacing: var(--tracking-wider);
   text-transform: uppercase;
-  color: var(--jade-1, var(--fg-muted));
+  color: var(--jade-1);
   margin-left: auto;
   flex-shrink: 0;
 }
@@ -1222,7 +1222,7 @@
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   color: var(--fg-muted);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   padding: 1px var(--space-1);
 }
 
@@ -1236,7 +1236,7 @@
   text-transform: uppercase;
   color: var(--fg-strong);
   background: none;
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   padding: 1px var(--space-1);
   cursor: pointer;
 }

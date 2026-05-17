@@ -1,10 +1,10 @@
 .menu {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--z-floating);
   min-width: 180px;
   padding: var(--space-1) 0;
   background: var(--paper-1);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   box-shadow: var(--shadow-sm);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);

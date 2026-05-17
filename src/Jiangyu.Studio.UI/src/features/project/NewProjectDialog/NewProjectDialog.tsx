@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Modal } from "@shared/ui/Modal/Modal";
+import { ModalHeader } from "@shared/ui/Modal/ModalHeader";
+import { Button } from "@shared/ui/Button/Button";
 import { rpcCall } from "@shared/rpc";
 import styles from "./NewProjectDialog.module.css";
 
@@ -49,43 +51,34 @@ export function NewProjectDialog({ onCreated, onCancel }: NewProjectDialogProps)
 
   return (
     <Modal onClose={onCancel} ariaLabelledBy="new-project-title">
-      <div className={styles.dialog}>
-        <div id="new-project-title" className={styles.header}>
-          New Project · 新项目
-        </div>
-        <div className={styles.body}>
-          <label className={styles.label} htmlFor="new-project-name">
-            Project Name
-          </label>
-          <input
-            ref={inputRef}
-            id="new-project-name"
-            className={styles.input}
-            type="text"
-            value={name}
-            placeholder="MyMod"
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={busy}
-          />
-          {error !== null && <div className={styles.error}>{error}</div>}
-          <p className={styles.hint}>
-            Choose a location in the next step. A folder with this name will be created.
-          </p>
-        </div>
-        <div className={styles.footer}>
-          <button type="button" className={styles.btn} onClick={onCancel} disabled={busy}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className={`${styles.btn} ${styles.btnPrimary}`}
-            onClick={() => void handleCreate()}
-            disabled={!valid || busy}
-          >
-            {busy ? "Creating…" : "Create"}
-          </button>
-        </div>
+      <ModalHeader id="new-project-title" title="New Project · 新项目" />
+      <div className={styles.body}>
+        <label className={styles.label} htmlFor="new-project-name">
+          Project Name
+        </label>
+        <input
+          ref={inputRef}
+          id="new-project-name"
+          className={styles.input}
+          type="text"
+          value={name}
+          placeholder="MyMod"
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={handleKeyDown}
+          disabled={busy}
+        />
+        {error !== null && <div className={styles.error}>{error}</div>}
+        <p className={styles.hint}>
+          Choose a location in the next step. A folder with this name will be created.
+        </p>
+      </div>
+      <div className={styles.footer}>
+        <Button variant="ghost" onClick={onCancel} disabled={busy}>
+          Cancel
+        </Button>
+        <Button variant="primary" onClick={() => void handleCreate()} disabled={!valid || busy}>
+          {busy ? "Creating…" : "Create"}
+        </Button>
       </div>
     </Modal>
   );

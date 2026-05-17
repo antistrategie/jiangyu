@@ -20,7 +20,7 @@
   align-items: center;
   gap: var(--space-2);
   padding: 6px 10px;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: var(--border-rule);
   flex-shrink: 0;
 }
 
@@ -41,7 +41,7 @@
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   padding: 2px 6px;
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   color: var(--ink-3);
   flex-shrink: 0;
 }
@@ -183,7 +183,7 @@
 .slashSuggestions {
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--rule);
+  border-top: var(--border-rule);
   background: var(--paper-1);
   max-height: 180px;
   overflow-y: auto;
@@ -197,7 +197,7 @@
   padding: var(--space-1) var(--space-2);
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: var(--border-rule);
   cursor: pointer;
   color: var(--ink-0);
 }
@@ -383,7 +383,7 @@
 
 .markdown th,
 .markdown td {
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   padding: 2px var(--space-2);
   text-align: left;
 }
@@ -395,7 +395,7 @@
 
 .markdown hr {
   border: 0;
-  border-top: 1px solid var(--rule);
+  border-top: var(--border-rule);
   margin: var(--space-2) 0;
 }
 
@@ -529,11 +529,11 @@
 }
 
 .diffStatAdded {
-  color: var(--jade-1, #6ed28a);
+  color: var(--jade-1);
 }
 
 .diffStatRemoved {
-  color: var(--cinnabar-1, #e25c4f);
+  color: var(--cinnabar-1);
 }
 
 .diffBody {
@@ -587,7 +587,7 @@
 .planBlock {
   margin: 0 10px;
   padding: 6px var(--space-2);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
 }
 
 .planTitle {
@@ -657,7 +657,7 @@
   text-transform: uppercase;
   letter-spacing: var(--tracking-wider);
   padding: 3px 10px;
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   background: var(--paper-0);
   color: var(--ink-0);
   cursor: pointer;
@@ -867,7 +867,7 @@
   left: 0;
   min-width: 220px;
   max-width: 360px;
-  z-index: 10;
+  z-index: var(--z-pane-overlay);
 }
 
 /* Free-form input fallback (when an enum/select option declares no

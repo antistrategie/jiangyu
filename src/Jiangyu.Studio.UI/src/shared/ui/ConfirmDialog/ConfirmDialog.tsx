@@ -1,15 +1,14 @@
 import { useEffect, useRef } from "react";
 import { Modal } from "@shared/ui/Modal/Modal";
+import { ModalHeader } from "@shared/ui/Modal/ModalHeader";
+import { Button } from "@shared/ui/Button/Button";
 import styles from "./ConfirmDialog.module.css";
-
-export type ConfirmVariant = "default" | "danger";
 
 export interface ConfirmDialogProps {
   readonly title: string;
   readonly message: string;
   readonly confirmLabel?: string;
   readonly cancelLabel?: string;
-  readonly variant?: ConfirmVariant;
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
 }
@@ -19,7 +18,6 @@ export function ConfirmDialog({
   message,
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
-  variant = "default",
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -44,24 +42,15 @@ export function ConfirmDialog({
 
   return (
     <Modal onClose={onCancel} ariaLabelledBy="confirm-title">
-      <div className={styles.dialog}>
-        <div id="confirm-title" className={styles.header}>
-          {title}
-        </div>
-        <div className={styles.body}>{message}</div>
-        <div className={styles.footer}>
-          <button type="button" className={styles.btn} onClick={onCancel}>
-            {cancelLabel}
-          </button>
-          <button
-            ref={confirmRef}
-            type="button"
-            className={`${styles.btn} ${variant === "danger" ? styles.btnDanger : styles.btnPrimary}`}
-            onClick={onConfirm}
-          >
-            {confirmLabel}
-          </button>
-        </div>
+      <ModalHeader id="confirm-title" title={title} />
+      <div className={styles.body}>{message}</div>
+      <div className={styles.footer}>
+        <Button variant="ghost" onClick={onCancel}>
+          {cancelLabel}
+        </Button>
+        <Button ref={confirmRef} variant="primary" onClick={onConfirm}>
+          {confirmLabel}
+        </Button>
       </div>
     </Modal>
   );

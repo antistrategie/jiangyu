@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef } from "react";
-import { FolderOpen, Play, X } from "lucide-react";
+import { FolderOpen, Play } from "lucide-react";
 import { Modal } from "@shared/ui/Modal/Modal";
+import { ModalHeader } from "@shared/ui/Modal/ModalHeader";
+import { Button } from "@shared/ui/Button/Button";
 import { rpcCall } from "@shared/rpc";
 import {
   useCompileSummary,
@@ -20,26 +22,13 @@ interface CompileModalProps {
 export function CompileModal({ state, onClose, onStart }: CompileModalProps) {
   const summary = useCompileSummary(true);
   return (
-    <Modal onClose={onClose} ariaLabelledBy="compile-title">
-      <div className={styles.dialog}>
-        <Header onClose={onClose} />
-        <div className={styles.body}>
-          <LogPanel state={state} />
-          <InfoPanel state={state} summary={summary} onStart={onStart} onClose={onClose} />
-        </div>
+    <Modal onClose={onClose} ariaLabelledBy="compile-title" width={1100} height={760}>
+      <ModalHeader id="compile-title" title="Compile · 编译" onClose={onClose} />
+      <div className={styles.body}>
+        <LogPanel state={state} />
+        <InfoPanel state={state} summary={summary} onStart={onStart} onClose={onClose} />
       </div>
     </Modal>
-  );
-}
-
-function Header({ onClose }: { onClose: () => void }) {
-  return (
-    <div className={styles.header}>
-      <span id="compile-title">Compile · 编译</span>
-      <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>
-        <X size={14} />
-      </button>
-    </div>
   );
 }
 
@@ -244,12 +233,7 @@ function InfoPanel({
         </p>
       )}
       <div className={styles.actions}>
-        <button
-          type="button"
-          className={styles.primaryButton}
-          onClick={onStart}
-          disabled={isRunning}
-        >
+        <Button variant="primary" size="md" onClick={onStart} disabled={isRunning}>
           {isRunning ? (
             <>Compiling…</>
           ) : isDone ? (
@@ -261,15 +245,15 @@ function InfoPanel({
               <Play size={12} /> Run compile
             </>
           )}
-        </button>
+        </Button>
         {state.status === "success" && state.bundlePath !== null && (
-          <button type="button" className={styles.ghostButton} onClick={() => revealBundle(state)}>
+          <Button variant="ghost" onClick={() => revealBundle(state)}>
             <FolderOpen size={12} /> Reveal bundle
-          </button>
+          </Button>
         )}
-        <button type="button" className={styles.ghostButton} onClick={onClose}>
+        <Button variant="ghost" onClick={onClose}>
           {isRunning ? "Hide" : "Close"}
-        </button>
+        </Button>
       </div>
     </div>
   );

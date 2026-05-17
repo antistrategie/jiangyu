@@ -105,7 +105,6 @@ interface PendingConfirm {
   readonly title: string;
   readonly message: string;
   readonly confirmLabel: string;
-  readonly variant: "default" | "danger";
   readonly resolve: (confirmed: boolean) => void;
 }
 
@@ -151,7 +150,6 @@ export function Sidebar({
         title: `Delete ${kind}`,
         message: `Delete ${kind} "${entry.name}"?${entry.isDirectory ? " All contents will be removed." : ""}`,
         confirmLabel: "Delete",
-        variant: "danger",
         resolve,
       });
     });
@@ -303,7 +301,6 @@ export function Sidebar({
             title={pendingConfirm.title}
             message={pendingConfirm.message}
             confirmLabel={pendingConfirm.confirmLabel}
-            variant={pendingConfirm.variant}
             onConfirm={() => {
               pendingConfirm.resolve(true);
               setPendingConfirm(null);

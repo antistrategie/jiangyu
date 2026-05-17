@@ -11,7 +11,7 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: var(--border-rule);
   flex-shrink: 0;
   flex-wrap: wrap;
 }
@@ -19,7 +19,7 @@
 .search {
   flex: 1;
   min-width: 160px;
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   background: var(--bg);
   padding: var(--space-1) var(--space-2);
   font-family: var(--font-mono);
@@ -43,7 +43,7 @@
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   background: transparent;
   color: var(--fg-muted);
   cursor: pointer;
@@ -66,7 +66,7 @@
 }
 
 .collectionSelect {
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   background: var(--bg);
   padding: var(--space-1) 6px;
   font-family: var(--font-mono);
@@ -110,7 +110,7 @@
   grid-template-columns: 24px minmax(0, 1fr) 80px;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-3);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: var(--border-rule);
   font-family: var(--font-label);
   font-size: var(--fs-xs);
   letter-spacing: var(--tracking-wide);
@@ -135,7 +135,7 @@
 .listFooter {
   flex-shrink: 0;
   padding: var(--space-1) var(--space-3);
-  border-top: 1px solid var(--rule);
+  border-top: var(--border-rule);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--fg-muted);
@@ -238,7 +238,7 @@
 }
 
 .preview {
-  border-bottom: 1px solid var(--rule);
+  border-bottom: var(--border-rule);
   padding: var(--space-2);
   display: flex;
   align-items: center;
@@ -297,7 +297,7 @@
   color: var(--fg-muted);
   background: var(--bg);
   padding: 1px var(--space-1);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   pointer-events: none;
 }
 
@@ -349,7 +349,7 @@
   max-width: 320px;
   padding: var(--space-2) var(--space-3);
   background: var(--bg);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
 }
 
 .audioPlayBtn {
@@ -359,7 +359,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   background: transparent;
   color: var(--fg-strong);
   cursor: pointer;
@@ -385,7 +385,7 @@
   flex: 1;
   height: 6px;
   background: var(--bg-sunken);
-  border: 1px solid var(--rule);
+  border: var(--border-rule);
   cursor: pointer;
   position: relative;
 }
@@ -433,34 +433,6 @@
   flex-shrink: 0;
 }
 
-.exportButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--space-3);
-  font-family: var(--font-label);
-  font-size: var(--fs-sm);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-  background: var(--cinnabar-1);
-  color: var(--paper-0);
-  border: 1px solid var(--cinnabar-1);
-  cursor: pointer;
-  transition: filter var(--ease-fast);
-}
-
-.exportButton:not(:disabled):hover {
-  filter: brightness(1.1);
-}
-
-.exportButton:disabled {
-  background: var(--paper-2);
-  border-color: var(--rule);
-  color: var(--fg-muted);
-  cursor: not-allowed;
-}
-
 .exportButtonChevron {
   display: inline-flex;
   align-items: center;
@@ -476,7 +448,7 @@
   position: absolute;
   bottom: 100%;
   right: 0;
-  z-index: 10;
+  z-index: var(--z-pane-overlay);
   min-width: 260px;
   margin-bottom: 2px;
 }
@@ -496,54 +468,4 @@
   left: 0;
   background: var(--cinnabar-1);
   transition: width var(--ease-fast-linear);
-}
-
-.gate {
-  margin: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  max-width: 400px;
-  text-align: center;
-}
-
-.gateTitle {
-  font-family: var(--font-editorial);
-  font-style: italic;
-  font-size: var(--fs-md);
-  color: var(--fg);
-  margin: 0;
-}
-
-.gateReason {
-  font-family: var(--font-ui);
-  font-size: var(--fs-base);
-  color: var(--fg-muted);
-  margin: 0;
-}
-
-.gateButton {
-  font-family: var(--font-label);
-  font-size: var(--fs-sm);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-  padding: var(--space-2) var(--space-3);
-  background: var(--cinnabar-1);
-  color: var(--paper-0);
-  border: none;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.gateButton:disabled {
-  background: var(--rule);
-  cursor: not-allowed;
-}
-
-.gateButton:not(:disabled):hover {
-  filter: brightness(1.1);
 }

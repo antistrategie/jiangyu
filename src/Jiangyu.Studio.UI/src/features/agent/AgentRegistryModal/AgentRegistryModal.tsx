@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Modal } from "@shared/ui/Modal/Modal";
+import { ModalHeader } from "@shared/ui/Modal/ModalHeader";
+import { Button } from "@shared/ui/Button/Button";
 import {
   fetchRegistry,
   toInstalledAgent,
@@ -56,58 +58,47 @@ export function AgentRegistryModal({ onClose }: AgentRegistryModalProps) {
   }, [registry, query]);
 
   return (
-    <Modal onClose={onClose} ariaLabelledBy="agent-registry-title">
-      <div className={styles.dialog}>
-        <header className={styles.header}>
-          <h2 id="agent-registry-title" className={styles.title}>
-            Agent Registry · 代理库
-          </h2>
-          <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>
-            ×
-          </button>
-        </header>
+    <Modal onClose={onClose} ariaLabelledBy="agent-registry-title" width={720} height={640}>
+      <ModalHeader id="agent-registry-title" title="Agent Registry · 代理库" onClose={onClose} />
 
-        <div className={styles.searchRow}>
-          <input
-            ref={focusOnMount}
-            type="text"
-            className={styles.searchInput}
-            aria-label="Filter agents"
-            placeholder="Filter agents…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
+      <div className={styles.searchRow}>
+        <input
+          ref={focusOnMount}
+          type="text"
+          className={styles.searchInput}
+          aria-label="Filter agents"
+          placeholder="Filter agents…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
 
-        <div className={styles.body}>
-          {error !== null && (
-            <div className={styles.errorState}>Failed to load registry: {error}</div>
-          )}
-          {error === null && registry === null && (
-            <div className={styles.loadingState}>Loading…</div>
-          )}
-          {registry !== null && filtered.length === 0 && (
-            <div className={styles.emptyState}>No agents match.</div>
-          )}
-          {registry !== null && filtered.length > 0 && (
-            <ul className={styles.list}>
-              {filtered.map((agent) => (
-                <AgentRow
-                  key={agent.id}
-                  agent={agent}
-                  installed={installed.some((a) => a.id === agent.id)}
-                  onInstall={() => {
-                    const record = toInstalledAgent(agent);
-                    if (record !== null) void install(record);
-                  }}
-                  onUninstall={() => {
-                    void uninstall(agent.id);
-                  }}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
+      <div className={styles.body}>
+        {error !== null && (
+          <div className={styles.errorState}>Failed to load registry: {error}</div>
+        )}
+        {error === null && registry === null && <div className={styles.loadingState}>Loading…</div>}
+        {registry !== null && filtered.length === 0 && (
+          <div className={styles.emptyState}>No agents match.</div>
+        )}
+        {registry !== null && filtered.length > 0 && (
+          <ul className={styles.list}>
+            {filtered.map((agent) => (
+              <AgentRow
+                key={agent.id}
+                agent={agent}
+                installed={installed.some((a) => a.id === agent.id)}
+                onInstall={() => {
+                  const record = toInstalledAgent(agent);
+                  if (record !== null) void install(record);
+                }}
+                onUninstall={() => {
+                  void uninstall(agent.id);
+                }}
+              />
+            ))}
+          </ul>
+        )}
       </div>
     </Modal>
   );
@@ -155,9 +146,9 @@ function AgentRow({ agent, installed, onInstall, onUninstall }: AgentRowProps) {
             Remove
           </button>
         ) : supported !== null ? (
-          <button type="button" className={styles.installBtn} onClick={onInstall}>
+          <Button variant="primary" size="xs" onClick={onInstall}>
             Install
-          </button>
+          </Button>
         ) : (
           <span className={styles.unsupportedNote}>Unsupported</span>
         )}

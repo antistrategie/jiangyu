@@ -36,6 +36,9 @@ import { AudioPlayer } from "./AudioPlayer";
 import { ImageViewer } from "./ImageViewer";
 import { ModelViewer } from "./ModelViewer";
 import { Spinner } from "@shared/ui/Spinner/Spinner";
+import { LoadingBanner } from "@shared/ui/LoadingBanner/LoadingBanner";
+import { EmptyState } from "@shared/ui/EmptyState/EmptyState";
+import { Button } from "@shared/ui/Button/Button";
 import { DetailTitle, MetaBlock, MetaRow } from "@shared/ui/DetailPanel/DetailPanel";
 import {
   MenuList,
@@ -617,9 +620,7 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
   if (status === null) {
     return (
       <div className={styles.root}>
-        <div className={styles.gate}>
-          <Spinner />
-        </div>
+        <LoadingBanner label="Checking asset index…" />
       </div>
     );
   }
@@ -628,36 +629,32 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
     const missing = status.state === "missing";
     const stale = status.state === "stale";
     const noGame = status.state === "noGame";
+    const title = noGame
+      ? "Game path not configured"
+      : missing
+        ? "No asset index yet"
+        : "Asset index is out of date";
+    const reasons = [status.reason, indexError].filter((r): r is string => Boolean(r));
     return (
       <div className={styles.root}>
-        <div className={styles.gate}>
-          <p className={styles.gateTitle}>
-            {noGame
-              ? "Game path not configured"
-              : missing
-                ? "No asset index yet"
-                : "Asset index is out of date"}
-          </p>
-          {status.reason && <p className={styles.gateReason}>{status.reason}</p>}
-          {indexError && <p className={styles.gateReason}>{indexError}</p>}
-          {!noGame && (
-            <button
-              type="button"
-              className={styles.gateButton}
-              disabled={indexing}
-              onClick={() => void handleIndex()}
-            >
-              {indexing && (
-                <Spinner
-                  size={12}
-                  trackColor="var(--track-on-accent)"
-                  accentColor="var(--paper-0)"
-                />
-              )}
-              {indexing ? "Indexing…" : stale ? "Re-index" : "Index assets"}
-            </button>
-          )}
-        </div>
+        <EmptyState
+          title={title}
+          reason={reasons}
+          action={
+            !noGame && (
+              <Button variant="primary" disabled={indexing} onClick={() => void handleIndex()}>
+                {indexing && (
+                  <Spinner
+                    size={12}
+                    trackColor="var(--track-on-accent)"
+                    accentColor="var(--paper-0)"
+                  />
+                )}
+                {indexing ? "Indexing…" : stale ? "Re-index" : "Index assets"}
+              </Button>
+            )
+          }
+        />
       </div>
     );
   }
@@ -876,9 +873,8 @@ function AssetDetails({
         <div className={styles.detailTitleRow}>
           <DetailTitle>{focused.name ?? "(unnamed)"}</DetailTitle>
           <div className={styles.exportDropdown} ref={exportMenuRef}>
-            <button
-              type="button"
-              className={styles.exportButton}
+            <Button
+              variant="primary"
               disabled={selectedCount === 0 || exporting}
               onClick={onToggleExportMenu}
             >
@@ -889,7 +885,7 @@ function AssetDetails({
                   ▾
                 </span>
               )}
-            </button>
+            </Button>
             {exportMenuOpen && (
               <MenuList className={styles.exportMenuPos}>
                 <MenuListBody>

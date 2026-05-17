@@ -30,7 +30,7 @@ export function attachDragChip(event: React.DragEvent | DragEvent, label: string
     "white-space: nowrap",
     "pointer-events: none",
     "user-select: none",
-    "z-index: 2147483647",
+    "z-index: var(--z-drag-chip)",
   ].join(";");
   document.body.appendChild(chip);
 

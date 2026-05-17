@@ -216,7 +216,7 @@ export function FieldAdder({
               left: position.left,
               right: "auto",
               width: position.width,
-              zIndex: 9999,
+              zIndex: "var(--z-portal)",
             }}
           >
             {!membersLoaded && <div className={styles.fieldAdderHint}>Loading fields…</div>}

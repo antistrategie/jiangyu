@@ -4,6 +4,7 @@ import { rpcCall } from "@shared/rpc";
 import { pickProjectFolder } from "@features/project/commands";
 import { loadRecentProjects, removeRecentProject } from "@features/project/recent";
 import { Spinner } from "@shared/ui/Spinner/Spinner";
+import { Button } from "@shared/ui/Button/Button";
 import { NewProjectDialog } from "@features/project/NewProjectDialog/NewProjectDialog";
 import type { ConfigStatus } from "@features/compile/configStatus";
 import styles from "./WelcomeScreen.module.css";
@@ -175,16 +176,12 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
           {config.gamePath !== null && (
             <div className={styles.actions}>
               <div className={styles.actionRow}>
-                <button className={styles.action} type="button" onClick={() => void handleOpen()}>
+                <Button variant="primary" size="md" onClick={() => void handleOpen()}>
                   Open Project
-                </button>
-                <button
-                  className={styles.actionGhost}
-                  type="button"
-                  onClick={() => setShowNewDialog(true)}
-                >
+                </Button>
+                <Button variant="ghost" size="md" onClick={() => setShowNewDialog(true)}>
                   New Project
-                </button>
+                </Button>
               </div>
               {recentProjects.length > 0 && (
                 <ul className={styles.recentList}>

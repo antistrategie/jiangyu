@@ -1,0 +1,33 @@
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border-rule);
+  font-family: var(--font-label);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: var(--tracking-section);
+  text-transform: uppercase;
+  color: var(--cinnabar-1);
+  flex-shrink: 0;
+}
+
+.title {
+  margin: 0;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--fg-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: color var(--ease-fast);
+}
+
+.closeBtn:hover {
+  color: var(--cinnabar-1);
+}

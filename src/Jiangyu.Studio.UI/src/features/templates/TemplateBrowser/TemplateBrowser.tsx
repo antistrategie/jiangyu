@@ -44,6 +44,9 @@ import {
 import { useDebouncedScrollTop } from "@shared/utils/useDebouncedScrollTop";
 import { onKeyActivate } from "@shared/utils/a11y";
 import { Spinner } from "@shared/ui/Spinner/Spinner";
+import { LoadingBanner } from "@shared/ui/LoadingBanner/LoadingBanner";
+import { EmptyState } from "@shared/ui/EmptyState/EmptyState";
+import { Button } from "@shared/ui/Button/Button";
 import {
   TemplateFilePicker,
   type PickerResult,
@@ -599,10 +602,7 @@ export function TemplateBrowser({
   if (status === null) {
     return (
       <div className={styles.root}>
-        <div className={styles.statusBanner}>
-          <Spinner size={14} />
-          <span>Checking template index…</span>
-        </div>
+        <LoadingBanner label="Checking template index…" />
       </div>
     );
   }
@@ -611,36 +611,32 @@ export function TemplateBrowser({
     const missing = status.state === "missing";
     const stale = status.state === "stale";
     const noGame = status.state === "noGame";
+    const title = noGame
+      ? "Game path not configured"
+      : missing
+        ? "No template index yet"
+        : "Template index is out of date";
+    const reasons = [status.reason, indexError].filter((r): r is string => Boolean(r));
     return (
       <div className={styles.root}>
-        <div className={styles.gate}>
-          <p className={styles.gateTitle}>
-            {noGame
-              ? "Game path not configured"
-              : missing
-                ? "No template index yet"
-                : "Template index is out of date"}
-          </p>
-          {status.reason && <p className={styles.gateReason}>{status.reason}</p>}
-          {indexError !== null && <p className={styles.gateReason}>{indexError}</p>}
-          {!noGame && (
-            <button
-              type="button"
-              className={styles.gateButton}
-              disabled={indexing}
-              onClick={() => void handleBuildIndex()}
-            >
-              {indexing && (
-                <Spinner
-                  size={12}
-                  trackColor="var(--track-on-accent)"
-                  accentColor="var(--paper-0)"
-                />
-              )}
-              {indexing ? "Indexing…" : stale ? "Re-index" : "Index templates"}
-            </button>
-          )}
-        </div>
+        <EmptyState
+          title={title}
+          reason={reasons}
+          action={
+            !noGame && (
+              <Button variant="primary" disabled={indexing} onClick={() => void handleBuildIndex()}>
+                {indexing && (
+                  <Spinner
+                    size={12}
+                    trackColor="var(--track-on-accent)"
+                    accentColor="var(--paper-0)"
+                  />
+                )}
+                {indexing ? "Indexing…" : stale ? "Re-index" : "Index templates"}
+              </Button>
+            )
+          }
+        />
       </div>
     );
   }
@@ -667,10 +663,7 @@ export function TemplateBrowser({
       </div>
 
       {loadingData ? (
-        <div className={styles.statusBanner}>
-          <Spinner size={14} />
-          <span>Loading templates…</span>
-        </div>
+        <LoadingBanner label="Loading templates…" />
       ) : (
         <div ref={bodyRef} className={styles.body}>
           {/* --- List panel --- */}

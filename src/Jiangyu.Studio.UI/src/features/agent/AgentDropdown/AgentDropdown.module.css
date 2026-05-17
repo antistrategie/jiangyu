@@ -10,7 +10,7 @@
 .popover_right {
   position: absolute;
   top: calc(100% + 4px);
-  z-index: 30;
+  z-index: var(--z-dropdown);
   min-width: 220px;
   max-width: 320px;
 }

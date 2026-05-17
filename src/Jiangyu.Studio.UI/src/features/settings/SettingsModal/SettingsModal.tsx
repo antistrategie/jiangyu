@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { CircleX, Minus, Plus, RotateCcw, TriangleAlert, X } from "lucide-react";
+import { CircleX, Minus, Plus, RotateCcw, TriangleAlert } from "lucide-react";
 import { Modal } from "@shared/ui/Modal/Modal";
+import { ModalHeader } from "@shared/ui/Modal/ModalHeader";
 import { SegmentedControl } from "@shared/ui/SegmentedControl/SegmentedControl";
 import { rpcCall } from "@shared/rpc";
 import type { ConfigStatus } from "@features/compile/configStatus";
@@ -84,45 +85,38 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   };
 
   return (
-    <Modal onClose={onClose} ariaLabelledBy="settings-title">
-      <div className={styles.dialog}>
-        <div className={styles.header}>
-          <span id="settings-title">Settings · 设置</span>
-          <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>
-            <X size={14} />
-          </button>
-        </div>
-        <div className={styles.body}>
-          <nav className={styles.nav}>
-            {NAV_SECTIONS.map(({ id, label }) => (
-              <NavItem
-                key={id}
-                id={id}
-                active={active === id}
-                onSelect={handleNavClick}
-                label={label}
-              />
-            ))}
-          </nav>
-          <div className={styles.content} ref={contentRef}>
-            <div id="setting-appearance">
-              <AppearanceSection />
-            </div>
-            <div id="setting-session">
-              <SessionSection />
-            </div>
-            <div id="setting-editor">
-              <EditorSection />
-            </div>
-            <div id="setting-ai">
-              <AiSection />
-            </div>
-            <div id="setting-paths">
-              <PathsSection />
-            </div>
-            <div id="setting-about">
-              <AboutSection />
-            </div>
+    <Modal onClose={onClose} ariaLabelledBy="settings-title" width={1100} height={760}>
+      <ModalHeader id="settings-title" title="Settings · 设置" onClose={onClose} />
+      <div className={styles.body}>
+        <nav className={styles.nav}>
+          {NAV_SECTIONS.map(({ id, label }) => (
+            <NavItem
+              key={id}
+              id={id}
+              active={active === id}
+              onSelect={handleNavClick}
+              label={label}
+            />
+          ))}
+        </nav>
+        <div className={styles.content} ref={contentRef}>
+          <div id="setting-appearance">
+            <AppearanceSection />
+          </div>
+          <div id="setting-session">
+            <SessionSection />
+          </div>
+          <div id="setting-editor">
+            <EditorSection />
+          </div>
+          <div id="setting-ai">
+            <AiSection />
+          </div>
+          <div id="setting-paths">
+            <PathsSection />
+          </div>
+          <div id="setting-about">
+            <AboutSection />
           </div>
         </div>
       </div>
