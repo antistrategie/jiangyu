@@ -11,7 +11,6 @@ function setupHost(): HostHandle {
   const posted: string[] = [];
   let listener: ((msg: string) => void) | null = null;
 
-  // InfiniFrame 0.11.0 bridge shape: window.__infiniframe.host
   const bridge = {
     postData: (envelope: { data?: string }) => {
       if (envelope.data != null) posted.push(envelope.data);
@@ -21,7 +20,7 @@ function setupHost(): HostHandle {
     },
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).window = { __infiniframe: { host: bridge } };
+  (globalThis as any).window = { infiniframe: { host: bridge } };
   return {
     posted,
     emit: (m) => {

@@ -53,21 +53,22 @@ let nextId = 1;
 const pending = new Map<number, PendingRequest>();
 const subscribers = new Map<string, Set<NotificationCallback>>();
 
-// InfiniFrame 0.11.0 envelope bridge. The native layer injects
-// window.__infiniframe with postData/receiveCallback; messages are
-// wrapped in {id, command, data, version: 2} envelopes.
+// The native layer injects `window.infiniframe` with a host bridge exposing
+// postData / receiveCallback. Every JS→host post is wrapped in an
+// {id, command, data, version: 2} envelope which the host's keyed-message
+// dispatcher routes by `id`.
 interface InfiniFrameBridge {
   postData: (envelope: unknown) => void;
   receiveCallback: (cb: (raw: string) => void) => void;
 }
 
 interface BridgedWindow {
-  __infiniframe?: { host?: InfiniFrameBridge };
+  infiniframe?: { host?: InfiniFrameBridge };
 }
 
 function getHost(): InfiniFrameHost | undefined {
   const win = window as Window & BridgedWindow;
-  const bridge = win.__infiniframe?.host;
+  const bridge = win.infiniframe?.host;
   if (!bridge) return undefined;
 
   return {

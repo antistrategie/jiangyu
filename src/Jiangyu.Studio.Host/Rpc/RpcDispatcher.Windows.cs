@@ -92,6 +92,7 @@ public static partial class RpcDispatcher
                 .RegisterWebMessagePostHandler(RpcMessageId,
                     (window, payload) =>
                         HandleMessage(window, payload ?? string.Empty, window.SendWebMessage))
+                .RegisterWebMessagePostHandler(ReadyMessageId, (_, _) => { })
                 .Build();
 
             lock (Secondaries) Secondaries.Add(secondary);

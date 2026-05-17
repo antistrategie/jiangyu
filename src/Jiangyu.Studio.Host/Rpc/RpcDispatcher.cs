@@ -19,11 +19,19 @@ public static partial class RpcDispatcher
     private static readonly JsonElement NullElement = JsonSerializer.SerializeToElement<object?>(null);
 
     /// <summary>
-    /// Envelope message id every JS→host RPC post is tagged with. The keyed
-    /// dispatcher InfiniFrame 0.13 introduced routes by this id; both the
-    /// primary and pane-window builders register a Post-handler on it.
+    /// Envelope message id every JS→host RPC post is tagged with. The host's
+    /// keyed-message dispatcher routes by this id; both the primary and
+    /// pane-window builders register a Post-handler on it.
     /// </summary>
     public const string RpcMessageId = "rpc";
+
+    /// <summary>
+    /// JS bridge's ready handshake id. We don't use the InfiniFrame.Js
+    /// features that depend on the ready/ack handshake, but the keyed-message
+    /// dispatcher still warns for any unhandled post id, so register a no-op
+    /// here just to drain it.
+    /// </summary>
+    public const string ReadyMessageId = "__infiniframe:ready";
 
     static RpcDispatcher()
     {
