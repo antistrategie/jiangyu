@@ -4,6 +4,14 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Skip versions younger than the cooldown so freshly-published
+    # compromised packages get caught by the community before we pull them
+    # in. Flat 7 days across all bump types because compromise-driven
+    # patches are the dominant supply-chain vector, not majors. Security
+    # updates (GHSA-driven) bypass this gate, so CVE patches still land
+    # promptly.
+    cooldown:
+      default-days: 7
     exclude-paths:
       - "vendor/**"
     ignore:
@@ -45,6 +53,8 @@ updates:
     directory: src/Jiangyu.Studio.UI
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       bun:
         patterns:
@@ -57,6 +67,8 @@ updates:
     directory: site
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       bun:
         patterns:
@@ -69,6 +81,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns:
