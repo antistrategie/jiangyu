@@ -98,32 +98,29 @@ public static partial class RpcDispatcher
             ProjectWatcher.Subscribe(secondary);
             createdWindowId = secondary.Id.ToString();
 
-            // NetClosingDelegate returns bool: false = proceed with close.
+            // Closing handler returns WindowClosingResult.Close to proceed.
             // Unsubscribe from the watcher so notifications stop fanning out
             // to a dying window and release our strong reference so GC can
             // reclaim it. User-initiated closes also emit paneWindowClosed so
             // the primary can drop the descriptor from its restore list;
             // bulk project closes suppress that so the list is preserved.
-            secondary.Events.WindowClosing.Add((sender, _) =>
+            secondary.EventsStore.Closing.Add((w, _) =>
             {
-                if (sender is IInfiniFrameWindow w)
+                ProjectWatcher.Unsubscribe(w);
+                lock (Secondaries) Secondaries.Remove(w);
+                if (!_silentClose && _primary is { } primaryWindow)
                 {
-                    ProjectWatcher.Unsubscribe(w);
-                    lock (Secondaries) Secondaries.Remove(w);
-                    if (!_silentClose && _primary is { } primaryWindow)
+                    try
                     {
-                        try
-                        {
-                            SendNotification(primaryWindow, "paneWindowClosed",
-                                new { windowId = w.Id.ToString() });
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.Error.WriteLine($"[openPaneWindow] close emit failed: {ex.Message}");
-                        }
+                        SendNotification(primaryWindow, "paneWindowClosed",
+                            new { windowId = w.Id.ToString() });
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"[openPaneWindow] close emit failed: {ex.Message}");
                     }
                 }
-                return false;
+                return WindowClosingResult.Close;
             });
         });
 
