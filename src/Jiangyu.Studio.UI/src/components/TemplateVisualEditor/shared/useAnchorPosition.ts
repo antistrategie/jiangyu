@@ -23,11 +23,25 @@ export function useAnchorPosition(
     const el = anchorRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
+    // Bail when nothing changed. The capture-phase scroll listener fires for
+    // every scroll in the document, including unrelated panes; without this
+    // check React re-renders the consumer on every one of those, repainting
+    // the anchor's siblings (ref labels, op chips) for no visible reason.
     // Measuring the anchor IS the external system this hook synchronises with;
     // setState in the effect is intentional. The lint rule's general advice
     // about cascading renders doesn't apply to a one-shot DOM read.
     // eslint-disable-next-line @eslint-react/set-state-in-effect
-    setPosition({ top: rect.bottom, left: rect.left, width: rect.width });
+    setPosition((prev) => {
+      if (
+        prev !== null &&
+        prev.top === rect.bottom &&
+        prev.left === rect.left &&
+        prev.width === rect.width
+      ) {
+        return prev;
+      }
+      return { top: rect.bottom, left: rect.left, width: rect.width };
+    });
   }, [anchorRef]);
 
   useLayoutEffect(() => {

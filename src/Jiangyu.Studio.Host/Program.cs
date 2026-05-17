@@ -2,7 +2,6 @@ using System.Drawing;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
-using System.Text.Json;
 using InfiniFrame;
 using InfiniFrame.WebServer;
 using Jiangyu.Studio.Host.Acp;
@@ -51,14 +50,7 @@ public static class Program
             .SetStartUrl(startUrl)
             .RegisterWebMessageReceivedHandler(
                 (window, message) =>
-                {
-                    // InfiniFrame 0.11.0 wraps messages in an envelope:
-                    // {"id":"…","command":"Post","data":"<payload>","version":2}
-                    // Unwrap the data field to get the raw RPC JSON.
-                    var payload = UnwrapEnvelope(message);
-                    if (payload is not null)
-                        RpcDispatcher.HandleMessage(window, payload, window.SendWebMessage);
-                });
+                    RpcDispatcher.HandleMessage(window, message, window.SendWebMessage));
 
         var app = builder.Build();
 
@@ -150,29 +142,4 @@ public static class Program
         }
     }
 
-    /// <summary>
-    /// InfiniFrame 0.11.0 wraps web messages in an envelope:
-    /// <c>{"id":"…","command":"Post","data":"&lt;payload&gt;","version":2}</c>.
-    /// Extract the <c>data</c> field so the RPC dispatcher sees raw JSON.
-    /// </summary>
-    internal static string? UnwrapEnvelope(string message)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(message);
-            var root = doc.RootElement;
-            if (root.ValueKind == JsonValueKind.Object &&
-                root.TryGetProperty("data", out var data) &&
-                data.ValueKind == JsonValueKind.String)
-            {
-                return data.GetString();
-            }
-        }
-        catch
-        {
-            // Not valid JSON; pass through as-is.
-        }
-
-        return message;
-    }
 }

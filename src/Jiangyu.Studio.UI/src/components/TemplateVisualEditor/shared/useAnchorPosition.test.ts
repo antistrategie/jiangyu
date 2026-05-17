@@ -84,6 +84,19 @@ describe("useAnchorPosition", () => {
     expect(result.current.position).toEqual({ top: 90, left: 80, width: 300 });
   });
 
+  it("keeps the same position object across no-op scrolls so consumers don't re-render", () => {
+    stubBoundingRect(50, 80, 200, 40);
+    const { result } = renderHook((props: HookProps) => useProbe(props), {
+      initialProps: { open: true },
+    });
+    const initial = result.current.position;
+    act(() => {
+      window.dispatchEvent(new Event("scroll"));
+      window.dispatchEvent(new Event("scroll"));
+    });
+    expect(result.current.position).toBe(initial);
+  });
+
   it("returns null when transitioning from open to closed", () => {
     stubBoundingRect(50, 80, 200, 40);
     const { result, rerender } = renderHook((props: HookProps) => useProbe(props), {

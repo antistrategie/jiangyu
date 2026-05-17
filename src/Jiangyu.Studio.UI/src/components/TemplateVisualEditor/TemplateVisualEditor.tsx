@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import type { EditorError } from "./types";
 import { parseCrossMemberPayload } from "@lib/drag/crossMember";
@@ -19,6 +19,12 @@ import {
   invalidateProjectClonesCache,
 } from "./shared/rpcHelpers";
 import { NodeCard } from "./cards/NodeCard";
+import {
+  computeNodeKeyByUiId,
+  loadCollapsed,
+  pruneCollapsed,
+  saveCollapsed,
+} from "./collapseStorage";
 
 // --- Main component ---
 
@@ -28,9 +34,6 @@ interface TemplateVisualEditorProps {
   readonly onChange: (content: string) => void;
   readonly onRequestSourceMode?: (() => void) | undefined;
 }
-
-// Persist collapsed state across remounts (tab switches) — keyed by node uiId
-const collapsedCache = new Map<string, Set<string>>();
 
 export function TemplateVisualEditor({
   content,
@@ -42,9 +45,12 @@ export function TemplateVisualEditor({
   const [parseErrors, setParseErrors] = useState<EditorError[]>([]);
   const [rpcError, setRpcError] = useState<string | null>(null);
   const cacheKey = filePath ?? "";
-  const [collapsed, setCollapsed] = useState<Set<string>>(
-    () => collapsedCache.get(cacheKey) ?? new Set(),
-  );
+  // Collapse state holds stable structural keys (kind+templateType+id, with
+  // an occurrence index for duplicates) — never `_uiId`, which regenerates
+  // on every parse. Loaded from localStorage on file change; persisted on
+  // every mutation so state survives tab switches, file reopens, and app
+  // restarts.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsed(cacheKey));
   const lastSerialisedRef = useRef<string>("");
   const serialiseVersionRef = useRef(0);
 
@@ -105,12 +111,17 @@ export function TemplateVisualEditor({
     [scheduleSerialise],
   );
 
-  // Parse via RPC when content changes externally
+  // Parse via RPC when content changes externally.
+  // The bail-out compares against the last parsed-or-serialised content so a
+  // parent re-render (which can rebuild `dispatch`'s identity and re-fire the
+  // effect) doesn't trigger a redundant re-parse + load dispatch — which
+  // would mint fresh `_uiId`s and remount every node card under the editor.
   useEffect(() => {
     if (content === lastSerialisedRef.current) return;
 
     void templatesParse(content)
       .then((doc) => {
+        lastSerialisedRef.current = content;
         dispatch({ type: "load", nodes: stampNodes(doc.nodes) });
         setParseErrors(doc.errors);
         setRpcError(null);
@@ -155,18 +166,52 @@ export function TemplateVisualEditor({
     return () => document.removeEventListener("keydown", handler, true);
   }, [dispatch, scheduleSerialise]);
 
+  // Stable structural key per node, recomputed each render. Toggle handlers
+  // and per-card lookups translate uiId -> stableKey via this map.
+  const keyByUiId = useMemo(() => computeNodeKeyByUiId(nodes), [nodes]);
+
+  // When the active file changes (tab switch, file open), reload collapse
+  // state from localStorage. React's recommended pattern for adjusting state
+  // on prop change: track the previous prop in state and reset during render
+  // so the same render uses the new value (no cascading effect).
+  const [prevCacheKey, setPrevCacheKey] = useState(cacheKey);
+  if (prevCacheKey !== cacheKey) {
+    setPrevCacheKey(cacheKey);
+    setCollapsed(loadCollapsed(cacheKey));
+  }
+
+  // Intersect a candidate set with the current nodes' stable keys before
+  // persisting, so stale entries (from renamed nodes) silently drop out the
+  // next time the user toggles/expands/collapses. Keeps the persisted state
+  // clean without a separate prune pass.
+  const persistCollapsed = useCallback(
+    (next: Set<string>) => {
+      const cleaned = pruneCollapsed(next, keyByUiId.values());
+      saveCollapsed(cacheKey, cleaned);
+      setCollapsed(cleaned);
+    },
+    [cacheKey, keyByUiId],
+  );
+
   const handleToggleCollapse = useCallback(
     (nodeUiId: string) => {
-      setCollapsed((prev) => {
-        const next = new Set(prev);
-        if (next.has(nodeUiId)) next.delete(nodeUiId);
-        else next.add(nodeUiId);
-        collapsedCache.set(cacheKey, next);
-        return next;
-      });
+      const stableKey = keyByUiId.get(nodeUiId);
+      if (stableKey === undefined) return;
+      const next = new Set(collapsed);
+      if (next.has(stableKey)) next.delete(stableKey);
+      else next.add(stableKey);
+      persistCollapsed(next);
     },
-    [cacheKey],
+    [collapsed, keyByUiId, persistCollapsed],
   );
+
+  const handleExpandAll = useCallback(() => {
+    persistCollapsed(new Set());
+  }, [persistCollapsed]);
+
+  const handleCollapseAll = useCallback(() => {
+    persistCollapsed(new Set(keyByUiId.values()));
+  }, [keyByUiId, persistCollapsed]);
 
   const handleAddNode = useCallback(
     (kind: "Patch" | "Clone") => {
@@ -259,6 +304,27 @@ export function TemplateVisualEditor({
           </div>
         )}
 
+        {nodes.length > 1 && (
+          <div className={styles.editorToolbar}>
+            <button
+              type="button"
+              className={styles.toolbarBtn}
+              onClick={handleExpandAll}
+              disabled={nodes.every((n) => !collapsed.has(keyByUiId.get(n._uiId) ?? ""))}
+            >
+              Reverse collapse
+            </button>
+            <button
+              type="button"
+              className={styles.toolbarBtn}
+              onClick={handleCollapseAll}
+              disabled={nodes.every((n) => collapsed.has(keyByUiId.get(n._uiId) ?? ""))}
+            >
+              Collapse all
+            </button>
+          </div>
+        )}
+
         {nodes.map((node, ni) => {
           const handlers = cardReorder.buildHandlers(node._uiId, ni, ni + 1);
           return (
@@ -268,7 +334,7 @@ export function TemplateVisualEditor({
               )}
               <NodeCard
                 node={node}
-                collapsed={collapsed.has(node._uiId)}
+                collapsed={collapsed.has(keyByUiId.get(node._uiId) ?? "")}
                 onToggleCollapse={handleToggleCollapse}
                 isDragging={handlers.isDragging}
                 onDragStart={handlers.onDragStart}

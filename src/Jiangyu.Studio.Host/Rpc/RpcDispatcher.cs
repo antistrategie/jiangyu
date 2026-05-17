@@ -113,6 +113,12 @@ public static partial class RpcDispatcher
 
     public static void HandleMessage(IInfiniFrameWindow window, string message, Action<string> sendResponse)
     {
+        // InfiniFrame 0.11.0 wraps every incoming JS→host post in an envelope:
+        // {"id":"…","command":"Post","data":"<payload>","version":2}.
+        // Unwrap here so every handler registration path (primary + every
+        // pane-window secondary) is one line and behaves the same way.
+        message = UnwrapEnvelope(message);
+
         // Two-stage parse: (a) pull `id` best-effort so we can still respond to a
         // malformed request with its id, otherwise the frontend's promise hangs;
         // (b) parse the full request. Silent returns would leave promises dangling.
@@ -164,6 +170,27 @@ public static partial class RpcDispatcher
         };
 
         sendResponse(JsonSerializer.Serialize(response, RpcJsonContext.Default.RpcResponse));
+    }
+
+    internal static string UnwrapEnvelope(string message)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(message);
+            var root = doc.RootElement;
+            if (root.ValueKind == JsonValueKind.Object &&
+                root.TryGetProperty("data", out var data) &&
+                data.ValueKind == JsonValueKind.String)
+            {
+                return data.GetString() ?? message;
+            }
+        }
+        catch
+        {
+            // Not valid JSON; pass through as-is.
+        }
+
+        return message;
     }
 
     private static int? TryExtractId(string message)

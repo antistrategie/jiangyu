@@ -8,6 +8,39 @@
   gap: var(--space-3);
 }
 
+/* --- Editor toolbar (expand/collapse all) --- */
+
+.editorToolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
+.toolbarBtn {
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  background: none;
+  border: 1px solid transparent;
+  padding: 1px var(--space-2);
+  cursor: pointer;
+  transition:
+    color var(--ease-fast),
+    border-color var(--ease-fast);
+}
+
+.toolbarBtn:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--rule);
+}
+
+.toolbarBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* --- Node card --- */
 
 .card {

@@ -7,7 +7,7 @@ public class EnvelopeUnwrapTests
     {
         var envelope = """{"id":"rpc","command":"Post","data":"{\"method\":\"ping\",\"id\":1}","version":2}""";
 
-        var result = Program.UnwrapEnvelope(envelope);
+        var result = Rpc.RpcDispatcher.UnwrapEnvelope(envelope);
 
         Assert.Equal("""{"method":"ping","id":1}""", result);
     }
@@ -17,7 +17,7 @@ public class EnvelopeUnwrapTests
     {
         var envelope = """{"id":"rpc","command":"Post","data":null,"version":2}""";
 
-        var result = Program.UnwrapEnvelope(envelope);
+        var result = Rpc.RpcDispatcher.UnwrapEnvelope(envelope);
 
         Assert.Equal(envelope, result);
     }
@@ -27,7 +27,7 @@ public class EnvelopeUnwrapTests
     {
         var raw = """{"method":"ping","id":1}""";
 
-        var result = Program.UnwrapEnvelope(raw);
+        var result = Rpc.RpcDispatcher.UnwrapEnvelope(raw);
 
         Assert.Equal(raw, result);
     }
@@ -37,7 +37,7 @@ public class EnvelopeUnwrapTests
     {
         var garbage = "not json at all";
 
-        var result = Program.UnwrapEnvelope(garbage);
+        var result = Rpc.RpcDispatcher.UnwrapEnvelope(garbage);
 
         Assert.Equal(garbage, result);
     }
@@ -47,7 +47,7 @@ public class EnvelopeUnwrapTests
     {
         var envelope = """{"id":"rpc","command":"Post","data":"","version":2}""";
 
-        var result = Program.UnwrapEnvelope(envelope);
+        var result = Rpc.RpcDispatcher.UnwrapEnvelope(envelope);
 
         Assert.Equal("", result);
     }
