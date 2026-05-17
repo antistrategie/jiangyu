@@ -296,3 +296,18 @@ export interface TemplateValueResult {
   fields: InspectedFieldNode[];
 }
 
+export interface UnityInitResult {
+  createdCount: number;
+  updatedCount: number;
+  preservedCount: number;
+}
+
+export interface UnityOpenResult {
+  editorPath: string;
+  pid: number;
+}
+
+export interface UnityImportPrefabResult {
+  destDir: string;
+}
+

@@ -99,7 +99,7 @@
 }
 
 .rowLabel {
-  flex: 1;
+  flex: 1 1 auto;
   font-family: var(--font-mono);
   font-size: var(--fs-base);
   color: var(--fg-strong);
@@ -109,11 +109,20 @@
   white-space: nowrap;
 }
 
+/* Editorial serif upright (no italic; italic at fs-sm was unscannable).
+   --fg-muted reads cleanly against the editorial face without competing
+   with the label. Capped at 50% of the row width so a long desc can never
+   starve the label; ellipses past. */
 .rowDesc {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 50%;
   font-family: var(--font-editorial);
-  font-style: italic;
   font-size: var(--fs-sm);
   color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rowKbd {

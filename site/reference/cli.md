@@ -18,7 +18,7 @@ Compiles the project's replacements and templates into a shippable mod under `co
 
 Equivalent to Studio's Compile dossier. Returns non-zero on any compile error.
 
-### `jiangyu unity init`
+### `jiangyu unity sync`
 
 Scaffolds the per-mod Unity Editor project at `unity/` for [prefab addition](/assets/additions/prefabs) authoring. Idempotent: re-running refreshes Jiangyu-managed files under `unity/Assets/Jiangyu/` and `.gitignore`, and modder content elsewhere is preserved.
 

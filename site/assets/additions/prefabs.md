@@ -11,7 +11,7 @@ Two ways to produce the bundle. Pick one per prefab.
 Jiangyu scaffolds a per-mod Unity project at `<mod>/unity/`. You author prefabs in Unity Editor; `jiangyu compile` invokes Unity in batchmode to build them into AssetBundles automatically.
 
 ```sh
-jiangyu unity init
+jiangyu unity sync
 ```
 
 This creates:
@@ -19,7 +19,7 @@ This creates:
 ```text
 <mod>/unity/
 ├── Assets/
-│   ├── Jiangyu/              jiangyu-managed (re-init refreshes)
+│   ├── Jiangyu/              jiangyu-managed (re-sync refreshes)
 │   │   ├── Editor/BuildBundles.cs
 │   │   ├── Editor/ImportedPrefabPostProcessor.cs
 │   │   ├── Editor/BakeHumanoid.cs
@@ -37,7 +37,7 @@ Subfolders are supported. `Assets/Prefabs/dir/test_cube.prefab` becomes a bundle
 
 `jiangyu compile` invokes Unity batchmode against the project, builds one AssetBundle per prefab, and stages them into `compiled/`.
 
-Re-running `jiangyu unity init` is idempotent. It refreshes `Assets/Jiangyu/` and `.gitignore` (Jiangyu owns those) and leaves your prefabs, custom packages, and `ProjectSettings/` untouched.
+Re-running `jiangyu unity sync` is idempotent. It refreshes `Assets/Jiangyu/` and `.gitignore` (Jiangyu owns those) and leaves your prefabs, custom packages, and `ProjectSettings/` untouched.
 
 #### Importing a vanilla prefab to start from
 

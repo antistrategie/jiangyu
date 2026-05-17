@@ -7,6 +7,7 @@ import {
   countAssetInstances,
   isAssetNameUnique,
   isAudioClip,
+  isPrefab,
   isSprite,
   passesKindFilter,
   type AssetEntry,
@@ -79,6 +80,26 @@ describe("isSprite", () => {
       expect(s.spriteTextureRectY).toBe(20);
       expect(s.spritePackingRotation).toBe(0);
     }
+  });
+});
+
+describe("isPrefab", () => {
+  it.each([
+    ["GameObject", true],
+    ["PrefabHierarchyObject", true],
+    ["AudioClip", false],
+    ["Texture2D", false],
+    ["Sprite", false],
+    ["Mesh", false],
+    ["MonoBehaviour", false],
+  ])("is %s -> %s", (className, expected) => {
+    const entry: AssetEntry = { ...BASE, className };
+    expect(isPrefab(entry)).toBe(expected);
+  });
+
+  it("is false when className is null", () => {
+    const entry: AssetEntry = { ...BASE, className: null };
+    expect(isPrefab(entry)).toBe(false);
   });
 });
 

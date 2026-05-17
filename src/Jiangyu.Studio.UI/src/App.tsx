@@ -25,6 +25,10 @@ import {
   type PaletteAction,
 } from "@shared/palette/actions";
 import { buildProjectActions } from "@features/project/paletteActions";
+import { buildUnityActions } from "@features/unity/paletteActions";
+import { unityInit, unityOpen } from "@features/unity/unity";
+import { revealInExplorer } from "@features/assets/assets";
+import { useToastStore } from "@shared/toast";
 import { usePaneActions } from "@features/panes/paneActions";
 import { useFileEntries } from "@features/project/useFileEntries";
 import { useGitBranch } from "@features/project/gitBranch";
@@ -204,6 +208,53 @@ export function App() {
         desc: "Build the mod.",
         run: () => setCompileOpen(true),
       });
+      result.push(
+        ...buildUnityActions(projectPath, {
+          initUnity: () => {
+            const root = projectPath;
+            const push = useToastStore.getState().push;
+            void (async () => {
+              try {
+                const r = await unityInit();
+                push({
+                  variant: "success",
+                  message: "Unity project synced",
+                  detail: `Created ${r.createdCount.toString()} · Updated ${r.updatedCount.toString()}`,
+                  actions: [
+                    {
+                      label: "Reveal",
+                      run: () => void revealInExplorer(join(root, "unity")),
+                    },
+                  ],
+                });
+              } catch (err) {
+                push({
+                  variant: "error",
+                  message: `Unity init failed: ${(err as Error).message}`,
+                });
+              }
+            })();
+          },
+          openUnity: () => {
+            const push = useToastStore.getState().push;
+            void (async () => {
+              try {
+                const r = await unityOpen();
+                push({
+                  variant: "success",
+                  message: "Launched Unity Editor",
+                  detail: `${r.editorPath} (pid ${r.pid.toString()})`,
+                });
+              } catch (err) {
+                push({
+                  variant: "error",
+                  message: `Open Unity failed: ${(err as Error).message}`,
+                });
+              }
+            })();
+          },
+        }),
+      );
       const root = projectPath;
       for (const rel of fileEntries) {
         result.push({

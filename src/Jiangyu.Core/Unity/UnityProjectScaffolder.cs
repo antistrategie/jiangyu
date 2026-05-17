@@ -145,11 +145,22 @@ public sealed class UnityProjectScaffolder
     {
         Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
         var existed = File.Exists(destPath);
+        if (existed)
+        {
+            // Avoid re-counting a no-op write as "updated"; the modder cares
+            // when a template's bytes actually drift, not when sync confirms
+            // the file is still in place.
+            var existing = File.ReadAllText(destPath);
+            if (string.Equals(existing, content, StringComparison.Ordinal)) return;
+            if (overwrite)
+            {
+                File.WriteAllText(destPath, content);
+                result.OverwrittenFiles.Add(destPath);
+            }
+            return;
+        }
         File.WriteAllText(destPath, content);
-        if (existed && overwrite)
-            result.OverwrittenFiles.Add(destPath);
-        else
-            result.CreatedFiles.Add(destPath);
+        result.CreatedFiles.Add(destPath);
     }
 
     private static string LoadEmbeddedTemplate(string logicalPath)

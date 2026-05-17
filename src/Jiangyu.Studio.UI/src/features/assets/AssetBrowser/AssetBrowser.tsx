@@ -13,6 +13,7 @@ import {
   countAssetInstances,
   isAssetNameUnique,
   isAudioClip,
+  isPrefab,
   isSprite,
   passesKindFilter,
   pickDirectory,
@@ -23,6 +24,7 @@ import {
   type AssetIndexStatus,
   type AssetKindGroup,
 } from "@features/assets/assets";
+import { unityImportPrefab } from "@features/unity/unity";
 import {
   getProjectConfig,
   setProjectAssetExportPath,
@@ -48,6 +50,7 @@ import {
   MenuItemLabel,
   MenuItemSubtext,
   MenuFooter,
+  MenuSeparator,
 } from "@shared/ui/MenuList/MenuList";
 import styles from "./AssetBrowser.module.css";
 
@@ -99,8 +102,12 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
   const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(
     null,
   );
-  const [exportMenuOpen, setExportMenuOpen] = useState(false);
-  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
 
   // Resizable split between list and details panels
   const [listFraction, setListFraction] = useState(
@@ -586,17 +593,68 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
     [selectedRows, exporting, resolveBaseDir, pushToast],
   );
 
-  // Close export menu on outside click
+  // Close action menu on outside click
   useEffect(() => {
-    if (!exportMenuOpen) return;
+    if (!actionMenuOpen) return;
     const handler = (e: MouseEvent) => {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
-        setExportMenuOpen(false);
+      if (actionMenuRef.current && !actionMenuRef.current.contains(e.target as Node)) {
+        setActionMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [exportMenuOpen]);
+  }, [actionMenuOpen]);
+
+  const allSelectedArePrefabs = useMemo(
+    () => selectedRows.length > 0 && selectedRows.every(isPrefab),
+    [selectedRows],
+  );
+
+  const handleImport = useCallback(() => {
+    if (selectedRows.length === 0 || importing) return;
+    if (!selectedRows.every(isPrefab)) return;
+    setImporting(true);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const run = async () => {
+          setImportProgress({ done: 0, total: selectedRows.length });
+          const destDirs: string[] = [];
+          try {
+            for (const [i, row] of selectedRows.entries()) {
+              const params: {
+                assetName: string;
+                pathId?: number;
+                collection?: string;
+              } = { assetName: row.name ?? "unnamed", pathId: row.pathId };
+              if (row.collection) params.collection = row.collection;
+              const result = await unityImportPrefab(params);
+              destDirs.push(result.destDir);
+              setImportProgress({ done: i + 1, total: selectedRows.length });
+            }
+            const first = destDirs[0];
+            pushToast({
+              variant: "success",
+              message: `Imported ${destDirs.length.toString()} prefab${destDirs.length === 1 ? "" : "s"} to Unity`,
+              ...(first != null ? { detail: first } : {}),
+              ...(first != null
+                ? { actions: [{ label: "Reveal", run: () => void revealInExplorer(first) }] }
+                : {}),
+            });
+          } catch (err) {
+            pushToast({
+              variant: "error",
+              message: `Import failed: ${(err as Error).message}`,
+            });
+          } finally {
+            setImporting(false);
+            setImportProgress(null);
+          }
+        };
+        void run();
+      });
+    });
+  }, [selectedRows, importing, pushToast]);
 
   const handleConfigureProjectPath = useCallback(async () => {
     const picked = await pickDirectory({
@@ -785,16 +843,20 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
             previewData={previewData}
             previewLoading={previewLoading}
             nameUniqueness={nameUniqueness}
-            exportMenuRef={exportMenuRef}
-            exportMenuOpen={exportMenuOpen}
-            onToggleExportMenu={() => setExportMenuOpen((v) => !v)}
-            onCloseExportMenu={() => setExportMenuOpen(false)}
+            actionMenuRef={actionMenuRef}
+            actionMenuOpen={actionMenuOpen}
+            onToggleActionMenu={() => setActionMenuOpen((v) => !v)}
+            onCloseActionMenu={() => setActionMenuOpen(false)}
             onExport={handleExport}
+            onImport={handleImport}
             onConfigureProjectPath={() => void handleConfigureProjectPath()}
             projectExportPath={projectExportPath}
             selectedCount={selectedRows.length}
             exporting={exporting}
             exportProgress={exportProgress}
+            importing={importing}
+            importProgress={importProgress}
+            allSelectedArePrefabs={allSelectedArePrefabs}
           />
         </div>
       </div>
@@ -808,16 +870,20 @@ interface AssetDetailsProps {
   readonly previewData: { dataUrl: string; mimeType: string } | null;
   readonly previewLoading: boolean;
   readonly nameUniqueness: ReadonlyMap<string, number>;
-  readonly exportMenuRef: React.RefObject<HTMLDivElement | null>;
-  readonly exportMenuOpen: boolean;
-  readonly onToggleExportMenu: () => void;
-  readonly onCloseExportMenu: () => void;
+  readonly actionMenuRef: React.RefObject<HTMLDivElement | null>;
+  readonly actionMenuOpen: boolean;
+  readonly onToggleActionMenu: () => void;
+  readonly onCloseActionMenu: () => void;
   readonly onExport: (dest: Destination) => void;
+  readonly onImport: () => void;
   readonly onConfigureProjectPath: () => void;
   readonly projectExportPath: string | null;
   readonly selectedCount: number;
   readonly exporting: boolean;
   readonly exportProgress: { done: number; total: number } | null;
+  readonly importing: boolean;
+  readonly importProgress: { done: number; total: number } | null;
+  readonly allSelectedArePrefabs: boolean;
 }
 
 function AssetDetails({
@@ -826,16 +892,20 @@ function AssetDetails({
   previewData,
   previewLoading,
   nameUniqueness,
-  exportMenuRef,
-  exportMenuOpen,
-  onToggleExportMenu,
-  onCloseExportMenu,
+  actionMenuRef,
+  actionMenuOpen,
+  onToggleActionMenu,
+  onCloseActionMenu,
   onExport,
+  onImport,
   onConfigureProjectPath,
   projectExportPath,
   selectedCount,
   exporting,
   exportProgress,
+  importing,
+  importProgress,
+  allSelectedArePrefabs,
 }: AssetDetailsProps) {
   if (focusedKey === null) {
     return <div className={styles.detailsEmpty}>Select an asset to see details</div>;
@@ -872,58 +942,80 @@ function AssetDetails({
       <div className={styles.detailHeader}>
         <div className={styles.detailTitleRow}>
           <DetailTitle>{focused.name ?? "(unnamed)"}</DetailTitle>
-          <div className={styles.exportDropdown} ref={exportMenuRef}>
+          <div className={styles.exportDropdown} ref={actionMenuRef}>
             <Button
               variant="primary"
-              disabled={selectedCount === 0 || exporting}
-              onClick={onToggleExportMenu}
+              disabled={selectedCount === 0 || exporting || importing}
+              onClick={onToggleActionMenu}
             >
-              {exporting && <Spinner size={12} />}
-              <span>{exporting ? "Exporting…" : `Export ${selectedCount || "0"} selected`}</span>
-              {!exporting && (
+              {(exporting || importing) && <Spinner size={12} />}
+              <span>
+                {exporting
+                  ? "Exporting…"
+                  : importing
+                    ? "Importing…"
+                    : `Actions on ${selectedCount || "0"} selected`}
+              </span>
+              {!exporting && !importing && (
                 <span className={styles.exportButtonChevron} aria-hidden>
                   ▾
                 </span>
               )}
             </Button>
-            {exportMenuOpen && (
+            {actionMenuOpen && (
               <MenuList className={styles.exportMenuPos}>
                 <MenuListBody>
                   <MenuItem
                     onClick={() => {
-                      onCloseExportMenu();
+                      onCloseActionMenu();
                       onExport("default");
                     }}
                   >
                     <MenuItemContent>
-                      <MenuItemLabel>Default</MenuItemLabel>
+                      <MenuItemLabel>Export to default</MenuItemLabel>
                       <MenuItemSubtext>.jiangyu/exports</MenuItemSubtext>
                     </MenuItemContent>
                   </MenuItem>
                   <MenuItem
                     disabled={projectExportPath === null}
                     onClick={() => {
-                      onCloseExportMenu();
+                      onCloseActionMenu();
                       onExport("project");
                     }}
                   >
                     <MenuItemContent>
-                      <MenuItemLabel>Project</MenuItemLabel>
+                      <MenuItemLabel>Export to project</MenuItemLabel>
                       <MenuItemSubtext>{projectExportPath ?? "not configured"}</MenuItemSubtext>
                     </MenuItemContent>
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
-                      onCloseExportMenu();
+                      onCloseActionMenu();
                       onExport("custom");
                     }}
                   >
-                    <MenuItemLabel>Custom…</MenuItemLabel>
+                    <MenuItemLabel>Export to custom…</MenuItemLabel>
                   </MenuItem>
+                  {allSelectedArePrefabs && (
+                    <>
+                      <MenuSeparator />
+                      <MenuItem
+                        onClick={() => {
+                          onCloseActionMenu();
+                          onImport();
+                        }}
+                      >
+                        <MenuItemContent>
+                          <MenuItemLabel>Import to Unity</MenuItemLabel>
+                          <MenuItemSubtext>unity/Assets/Imported/</MenuItemSubtext>
+                        </MenuItemContent>
+                      </MenuItem>
+                    </>
+                  )}
                 </MenuListBody>
                 <MenuFooter
                   onClick={() => {
-                    onCloseExportMenu();
+                    onCloseActionMenu();
                     onConfigureProjectPath();
                   }}
                 >
@@ -962,6 +1054,14 @@ function AssetDetails({
             <div
               className={styles.exportProgressFill}
               style={{ width: `${(exportProgress.done / exportProgress.total) * 100}%` }}
+            />
+          </div>
+        )}
+        {importProgress && importing && importProgress.total > 1 && (
+          <div className={styles.exportProgress}>
+            <div
+              className={styles.exportProgressFill}
+              style={{ width: `${(importProgress.done / importProgress.total) * 100}%` }}
             />
           </div>
         )}

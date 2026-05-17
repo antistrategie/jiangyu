@@ -47,11 +47,47 @@ public sealed class UnityProjectScaffolderTests : IDisposable
         var buildBundlesPath = Path.Combine(_tempRoot, "unity", "Assets", "Jiangyu", "Editor", "BuildBundles.cs");
         File.WriteAllText(buildBundlesPath, "// modder hacked this");
 
-        scaffolder.Init(_tempRoot);
+        var result = scaffolder.Init(_tempRoot);
 
         var content = File.ReadAllText(buildBundlesPath);
         Assert.Contains("Jiangyu.Mod", content);
         Assert.DoesNotContain("modder hacked this", content);
+        Assert.Equal(new[] { buildBundlesPath }, result.OverwrittenFiles);
+    }
+
+    [Fact]
+    public void Rerun_OnUntouchedTree_ReportsNoChanges()
+    {
+        // The signal modders care about is "did anything change?". A no-op
+        // re-sync (templates match disk exactly) must report 0 created and
+        // 0 overwritten, otherwise the count is just measuring file count
+        // rather than drift.
+        var scaffolder = new UnityProjectScaffolder(new NullLog());
+        scaffolder.Init(_tempRoot);
+
+        var result = scaffolder.Init(_tempRoot);
+
+        Assert.Empty(result.CreatedFiles);
+        Assert.Empty(result.OverwrittenFiles);
+    }
+
+    [Fact]
+    public void Rerun_AfterPartialDrift_ReportsOnlyChangedFiles()
+    {
+        var scaffolder = new UnityProjectScaffolder(new NullLog());
+        scaffolder.Init(_tempRoot);
+
+        var readmePath = Path.Combine(_tempRoot, "unity", "Assets", "Jiangyu", "README.md");
+        var gitignorePath = Path.Combine(_tempRoot, "unity", ".gitignore");
+        File.WriteAllText(readmePath, "stale");
+        File.WriteAllText(gitignorePath, "stale");
+
+        var result = scaffolder.Init(_tempRoot);
+
+        Assert.Empty(result.CreatedFiles);
+        Assert.Equal(2, result.OverwrittenFiles.Count);
+        Assert.Contains(readmePath, result.OverwrittenFiles);
+        Assert.Contains(gitignorePath, result.OverwrittenFiles);
     }
 
     [Fact]

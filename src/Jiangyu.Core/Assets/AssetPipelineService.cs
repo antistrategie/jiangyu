@@ -385,118 +385,160 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
             RunProcessors(gameData);
             _progress.Finish();
 
-            // Locate the target asset. If the caller passed an explicit
-            // (collection, pathId), use that; otherwise scan by name.
-            IUnityObjectBase? target = null;
-            if (!string.IsNullOrEmpty(collection) && pathId >= 0)
-            {
-                foreach (var col in gameData.GameBundle.FetchAssetCollections())
-                {
-                    if (col.Name != collection) continue;
-                    target = col.FirstOrDefault(a => a.PathID == pathId);
-                    break;
-                }
-            }
-            else
-            {
-                foreach (var col in gameData.GameBundle.FetchAssetCollections())
-                {
-                    foreach (var asset in col)
-                    {
-                        if (asset is IGameObject go && string.Equals(go.Name, assetName, StringComparison.Ordinal))
-                        {
-                            target = go;
-                            break;
-                        }
-                    }
-                    if (target is not null) break;
-                }
-            }
-
-            if (target is null)
-            {
-                _log.Error($"No asset named '{assetName}' found. Confirm with `jiangyu assets search`.");
-                return;
-            }
-
-            // PrefabHierarchyObject is AssetRipper's wrapper for an extracted
-            // prefab hierarchy; if the modder named it directly that's fine,
-            // but we want to export the wrapped root + the wrapper itself.
-            if (target is PrefabHierarchyObject pho)
-            {
-                _log.Info($"Resolved target to PrefabHierarchyObject ({pho.Name}); using its hierarchy.");
-            }
-            else if (target is IGameObject go)
-            {
-                _log.Info($"Resolved target to GameObject ({go.Name}).");
-            }
-            else
-            {
-                _log.Error($"'{assetName}' resolved to {target.GetType().Name}, not a prefab/GameObject. Try `assets export model` for non-prefab assets.");
-                return;
-            }
-
-            // Walk the dependency closure breadth-first. Each step pulls
-            // PPtrs out of the asset via FetchDependencies; we resolve each
-            // PPtr to its concrete asset and queue it.
-            _progress.SetPhase("Walking dependencies");
-            var keep = WalkDependencyClosure(gameData, target);
-            _log.Info($"Dependency closure: {keep.Count} asset(s).");
-            _progress.Finish();
-
-            var componentScripts = new SortedDictionary<string, int>(StringComparer.Ordinal);
-            foreach (var asset in keep)
-            {
-                if (asset is not IMonoBehaviour mb) continue;
-                if (!mb.IsComponentOnGameObject()) continue;
-                if (!mb.TryGetScript(out IMonoScript? script)) continue;
-                var ns = script.Namespace.String;
-                var cls = script.ClassName_R.String;
-                var key = string.IsNullOrEmpty(ns) ? cls : $"{ns}.{cls}";
-                componentScripts.TryGetValue(key, out var n);
-                componentScripts[key] = n + 1;
-            }
-            if (componentScripts.Count > 0)
-            {
-                var summary = string.Join(", ", componentScripts.Select(kv => $"{kv.Value}x {kv.Key}"));
-                _log.Info($"MonoBehaviour components on imported prefab graph: {summary}");
-            }
-
-            // Export just the kept assets via the Jiangyu-patched
-            // ExportHandler.ExportSubset path. AssetRipper builds collections
-            // for every asset in the bundle (so cross-references resolve) and
-            // only writes the ones intersecting our dependency closure.
-            // AssetRipper's native layout writes everything under
-            // <destDir>/ExportedProject/Assets/. We flatten that one level
-            // down so the modder sees unity/Assets/Imported/<name>/{GameObject,
-            // Mesh, Material, ...}/ directly.
-            _progress.SetPhase("Exporting");
-            Directory.CreateDirectory(destDir);
-            var handler = new AssetRipper.Export.UnityProjects.ExportHandler(settings);
-            handler.ExportSubset(gameData, destDir, LocalFileSystem.Instance, keep);
-
-            var exportedAssetsDir = Path.Combine(destDir, "ExportedProject", "Assets");
-            if (Directory.Exists(exportedAssetsDir))
-            {
-                foreach (var entry in Directory.EnumerateFileSystemEntries(exportedAssetsDir))
-                {
-                    var entryName = Path.GetFileName(entry);
-                    var moveTo = Path.Combine(destDir, entryName);
-                    if (Directory.Exists(moveTo)) Directory.Delete(moveTo, recursive: true);
-                    else if (File.Exists(moveTo)) File.Delete(moveTo);
-                    Directory.Move(entry, moveTo);
-                }
-                Directory.Delete(Path.Combine(destDir, "ExportedProject"), recursive: true);
-            }
-            _progress.Finish();
-
-            _log.Info($"Imported prefab '{assetName}' into {destDir}");
-            _log.Info("Open unity/ in Unity Editor; the prefab appears under Assets/Imported/" + assetName + "/.");
+            ImportPrefabSubsetFromGameData(gameData, settings, assetName, destDir, collection, pathId);
         }
         finally
         {
             Logger.Remove(adapter);
         }
+    }
+
+    /// <summary>
+    /// Overload that reuses an already-loaded <see cref="GameData"/>. Callers
+    /// that hold a session-cached instance (Studio's <c>_cachedGameData</c>)
+    /// take this path to skip the multi-second <c>GameStructure.Load</c> +
+    /// <c>RunProcessors</c> cold start. The passed game data must have been
+    /// loaded with <c>ScriptContentLevel.Level2</c> import settings and run
+    /// through <see cref="RunProcessors"/> (which <see cref="LoadAndProcessGameData"/>
+    /// does); otherwise dependency walk and prefab resolution may misbehave.
+    /// </summary>
+    public void ImportPrefabAsUnityAssets(GameData gameData, string assetName, string destDir, string? collection, long pathId)
+    {
+        if (string.IsNullOrWhiteSpace(assetName))
+            throw new ArgumentException("assetName is required.", nameof(assetName));
+        if (string.IsNullOrWhiteSpace(destDir))
+            throw new ArgumentException("destDir is required.", nameof(destDir));
+
+        var settings = new AssetRipper.Export.Configuration.FullConfiguration();
+        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level2;
+
+        var adapter = new AssetRipperProgressAdapter(_progress);
+        Logger.Add(adapter);
+        try
+        {
+            ImportPrefabSubsetFromGameData(gameData, settings, assetName, destDir, collection, pathId);
+        }
+        finally
+        {
+            Logger.Remove(adapter);
+        }
+    }
+
+    private void ImportPrefabSubsetFromGameData(
+        GameData gameData,
+        AssetRipper.Export.Configuration.FullConfiguration settings,
+        string assetName,
+        string destDir,
+        string? collection,
+        long pathId)
+    {
+        // Locate the target asset. If the caller passed an explicit
+        // (collection, pathId), use that; otherwise scan by name.
+        IUnityObjectBase? target = null;
+        if (!string.IsNullOrEmpty(collection) && pathId >= 0)
+        {
+            foreach (var col in gameData.GameBundle.FetchAssetCollections())
+            {
+                if (col.Name != collection) continue;
+                target = col.FirstOrDefault(a => a.PathID == pathId);
+                break;
+            }
+        }
+        else
+        {
+            foreach (var col in gameData.GameBundle.FetchAssetCollections())
+            {
+                foreach (var asset in col)
+                {
+                    if (asset is IGameObject go && string.Equals(go.Name, assetName, StringComparison.Ordinal))
+                    {
+                        target = go;
+                        break;
+                    }
+                }
+                if (target is not null) break;
+            }
+        }
+
+        if (target is null)
+        {
+            _log.Error($"No asset named '{assetName}' found. Confirm with `jiangyu assets search`.");
+            return;
+        }
+
+        // PrefabHierarchyObject is AssetRipper's wrapper for an extracted
+        // prefab hierarchy; if the modder named it directly that's fine,
+        // but we want to export the wrapped root + the wrapper itself.
+        if (target is PrefabHierarchyObject pho)
+        {
+            _log.Info($"Resolved target to PrefabHierarchyObject ({pho.Name}); using its hierarchy.");
+        }
+        else if (target is IGameObject go)
+        {
+            _log.Info($"Resolved target to GameObject ({go.Name}).");
+        }
+        else
+        {
+            _log.Error($"'{assetName}' resolved to {target.GetType().Name}, not a prefab/GameObject. Try `assets export model` for non-prefab assets.");
+            return;
+        }
+
+        // Walk the dependency closure breadth-first. Each step pulls
+        // PPtrs out of the asset via FetchDependencies; we resolve each
+        // PPtr to its concrete asset and queue it.
+        _progress.SetPhase("Walking dependencies");
+        var keep = WalkDependencyClosure(gameData, target);
+        _log.Info($"Dependency closure: {keep.Count} asset(s).");
+        _progress.Finish();
+
+        var componentScripts = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        foreach (var asset in keep)
+        {
+            if (asset is not IMonoBehaviour mb) continue;
+            if (!mb.IsComponentOnGameObject()) continue;
+            if (!mb.TryGetScript(out IMonoScript? script)) continue;
+            var ns = script.Namespace.String;
+            var cls = script.ClassName_R.String;
+            var key = string.IsNullOrEmpty(ns) ? cls : $"{ns}.{cls}";
+            componentScripts.TryGetValue(key, out var n);
+            componentScripts[key] = n + 1;
+        }
+        if (componentScripts.Count > 0)
+        {
+            var summary = string.Join(", ", componentScripts.Select(kv => $"{kv.Value}x {kv.Key}"));
+            _log.Info($"MonoBehaviour components on imported prefab graph: {summary}");
+        }
+
+        // Export just the kept assets via the Jiangyu-patched
+        // ExportHandler.ExportSubset path. AssetRipper builds collections
+        // for every asset in the bundle (so cross-references resolve) and
+        // only writes the ones intersecting our dependency closure.
+        // AssetRipper's native layout writes everything under
+        // <destDir>/ExportedProject/Assets/. We flatten that one level
+        // down so the modder sees unity/Assets/Imported/<name>/{GameObject,
+        // Mesh, Material, ...}/ directly.
+        _progress.SetPhase("Exporting");
+        Directory.CreateDirectory(destDir);
+        var handler = new AssetRipper.Export.UnityProjects.ExportHandler(settings);
+        handler.ExportSubset(gameData, destDir, LocalFileSystem.Instance, keep);
+
+        var exportedAssetsDir = Path.Combine(destDir, "ExportedProject", "Assets");
+        if (Directory.Exists(exportedAssetsDir))
+        {
+            foreach (var entry in Directory.EnumerateFileSystemEntries(exportedAssetsDir))
+            {
+                var entryName = Path.GetFileName(entry);
+                var moveTo = Path.Combine(destDir, entryName);
+                if (Directory.Exists(moveTo)) Directory.Delete(moveTo, recursive: true);
+                else if (File.Exists(moveTo)) File.Delete(moveTo);
+                Directory.Move(entry, moveTo);
+            }
+            Directory.Delete(Path.Combine(destDir, "ExportedProject"), recursive: true);
+        }
+        _progress.Finish();
+
+        _log.Info($"Imported prefab '{assetName}' into {destDir}");
+        _log.Info("Open unity/ in Unity Editor; the prefab appears under Assets/Imported/" + assetName + "/.");
     }
 
     private static HashSet<IUnityObjectBase> WalkDependencyClosure(GameData gameData, IUnityObjectBase root)

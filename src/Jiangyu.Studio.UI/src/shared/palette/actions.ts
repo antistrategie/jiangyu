@@ -5,6 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 export const PALETTE_SCOPE = {
   App: "APP · 应用",
   Project: "PROJECT · 项目",
+  Unity: "UNITY · 引擎",
   View: "VIEW · 视图",
   File: "FILE · 文件",
   Editor: "EDITOR · 编辑",

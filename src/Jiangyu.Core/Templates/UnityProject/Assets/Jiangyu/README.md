@@ -1,8 +1,8 @@
 # Jiangyu-managed scripts
 
-This directory is owned by Jiangyu. Re-running `jiangyu unity init` overwrites
+This directory is owned by Jiangyu. Re-running `jiangyu unity sync` overwrites
 its contents. Do not edit files here directly; changes will be lost on the
-next init.
+next sync.
 
 Modder-authored assets (prefabs, materials, textures, custom editor scripts)
 belong outside this directory, e.g. `Assets/Prefabs/`, `Assets/Materials/`.

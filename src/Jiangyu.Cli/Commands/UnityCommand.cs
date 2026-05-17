@@ -11,15 +11,15 @@ public static class UnityCommand
     public static Command Create()
     {
         var command = new Command("unity", "Manage the per-mod Unity Editor project (unity/)");
-        command.Add(CreateInit());
+        command.Add(CreateSync());
         command.Add(CreateOpen());
         command.Add(CreateImportPrefab());
         return command;
     }
 
-    private static Command CreateInit()
+    private static Command CreateSync()
     {
-        var command = new Command("init", "Scaffold unity/ for prefab authoring. Idempotent: re-running refreshes Jiangyu-managed files and preserves modder content.");
+        var command = new Command("sync", "Scaffold or refresh unity/ for prefab authoring. Idempotent: creates the project on first run, refreshes Jiangyu-managed files on re-run, preserves modder content.");
         command.SetAction((parseResult) =>
         {
             var projectDir = Directory.GetCurrentDirectory();
@@ -43,7 +43,7 @@ public static class UnityCommand
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Error: unity init failed: {ex.Message}");
+                Console.Error.WriteLine($"Error: unity sync failed: {ex.Message}");
                 return 1;
             }
         });
@@ -60,7 +60,7 @@ public static class UnityCommand
 
             if (!Directory.Exists(unityDir))
             {
-                Console.Error.WriteLine($"error: no unity/ project at {unityDir}. Run 'jiangyu unity init' first.");
+                Console.Error.WriteLine($"error: no unity/ project at {unityDir}. Run 'jiangyu unity sync' first.");
                 return 1;
             }
 

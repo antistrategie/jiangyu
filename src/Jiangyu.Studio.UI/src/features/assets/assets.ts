@@ -54,6 +54,14 @@ export function isSprite(a: AssetEntry): a is SpriteAsset {
   return a.className === "Sprite";
 }
 
+/**
+ * True for the two prefab-shaped classes the AssetRipper-backed import flow
+ * supports. Drives whether "Import to Unity" is offered in the actions menu.
+ */
+export function isPrefab(a: AssetEntry): boolean {
+  return a.className === "GameObject" || a.className === "PrefabHierarchyObject";
+}
+
 export type AssetIndexState = "current" | "stale" | "missing" | "noGame";
 
 export interface AssetIndexStatus {

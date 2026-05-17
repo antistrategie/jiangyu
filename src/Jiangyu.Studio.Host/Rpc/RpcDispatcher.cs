@@ -89,6 +89,9 @@ public static partial class RpcDispatcher
         Register("getProjectConfig", (_, p) => RpcHandlers.GetProjectConfig(p));
         Register("compileBlocking", (_, p) => RpcHandlers.CompileBlocking(p));
         Register("getCompileSummary", (_, p) => RpcHandlers.GetCompileSummary(p));
+        Register("unityInit", (_, p) => RpcHandlers.UnityInit(p));
+        Register("unityOpen", (_, p) => RpcHandlers.UnityOpen(p));
+        Register("unityImportPrefab", (_, p) => RpcHandlers.UnityImportPrefab(p));
         Register("templatesIndexStatus", (_, p) => RpcHandlers.TemplatesIndexStatus(p));
         Register("templatesIndex", (_, p) => RpcHandlers.TemplatesIndex(p));
         Register("templatesSearch", (_, p) => RpcHandlers.TemplatesSearch(p));
