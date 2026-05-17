@@ -9,11 +9,16 @@
   <body>
     <div id="root">
       <style>
+        body {
+          margin: 0;
+        }
+
         @keyframes jy-splash-spin {
           to {
             transform: rotate(360deg);
           }
         }
+
         .jy-splash {
           display: flex;
           flex-direction: column;
@@ -22,11 +27,13 @@
           height: 100dvh;
           background: #ebe4d6;
         }
+
         .jy-splash-image {
           width: 128px;
           height: 128px;
           object-fit: contain;
         }
+
         .jy-splash-loader {
           margin-top: 20px;
           display: flex;
@@ -37,6 +44,7 @@
           letter-spacing: 0.04em;
           text-transform: uppercase;
         }
+
         .jy-splash-spinner {
           width: 14px;
           height: 14px;

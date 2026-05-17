@@ -11,12 +11,12 @@ C# for the core stack: CLI compiler, MelonLoader loader, shared libraries. TypeS
 - Use British English in repo-authored prose, code, comments, logs, and user-facing text.
 - If you touch existing repo-authored wording that uses non-British spelling, normalise it while you are there.
 - Do not rename or rewrite library/framework/API identifiers just to force British spelling.
-- Do not use em dashes in repo prose. Reach for a period, semicolon, comma, or colon instead.
+- Do not use em dashes in repo prose.
 
 ## Project documents
 
 - `AGENTS.md`: this file. Architecture, constraints, conventions. Read by AI agents at session start.
-- `src/Jiangyu.Studio.UI/AGENTS.md`: Studio UI internals (lib organisation, lint, state management). Read when working in that subtree.
+- `src/Jiangyu.Studio.UI/AGENTS.md`: Studio UI internals (feature folders, shared primitives, lint, state management). Read when working in that subtree.
 - `docs/DESIGN_SYSTEM.md`: Jiangyu Design System; palette, typography, modal patterns, design rules.
 - `site/`: public-facing modder documentation (VitePress, deployed to GitHub Pages via `.github/workflows/pages.yml`). Run `bun run docs:dev` from `site/` to author. This is the canonical modder-facing surface.
 - `docs/research/VALIDATION.md`: how Jiangyu turns reverse-engineering work into verified knowledge.
@@ -72,7 +72,7 @@ If logic must compile in both the real IL2CPP/game-reference loader context and 
 
 ### RPC type generation
 
-Response types that reach the frontend are annotated with `[RpcType]` (attribute lives in `Jiangyu.Shared`). The `Jiangyu.Studio.Rpc.Generators` Roslyn incremental source generator (project-referenced from `Jiangyu.Studio.Host.csproj`) walks every `[RpcType]` class/struct in the Host and its referenced assemblies, maps C# property types to TypeScript, and emits `src/lib/rpc/types.ts` at build time. Most DTOs now live in `Jiangyu.Studio.Rpc` next to the handlers that produce them; the generator picks them up via `CollectFromReferences`. `src/lib/rpc/index.ts` re-exports them so the whole RPC surface (`rpcCall` and all response shapes) comes from one `@lib/rpc` import.
+Response types that reach the frontend are annotated with `[RpcType]` (attribute lives in `Jiangyu.Shared`). The `Jiangyu.Studio.Rpc.Generators` Roslyn incremental source generator (project-referenced from `Jiangyu.Studio.Host.csproj`) walks every `[RpcType]` class/struct in the Host and its referenced assemblies, maps C# property types to TypeScript, and emits the file named by the `RpcTypesOutputPath` MSBuild property on `Jiangyu.Studio.Host.csproj` (`src/Jiangyu.Studio.UI/src/shared/rpc/types.ts`) at build time. DTOs live in `Jiangyu.Studio.Rpc` next to the handlers that produce them; the generator picks them up via `CollectFromReferences`. `src/shared/rpc/index.ts` re-exports them so the whole RPC surface (`rpcCall` and all response shapes) comes from one `@shared/rpc` import.
 
 ### MCP transport split
 

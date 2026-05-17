@@ -13,7 +13,7 @@
     <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
     <DebugType>embedded</DebugType>
     <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
-    <RpcTypesOutputPath>$(MSBuildThisFileDirectory)..\Jiangyu.Studio.UI\src\lib\rpc\types.ts</RpcTypesOutputPath>
+    <RpcTypesOutputPath>$(MSBuildThisFileDirectory)..\Jiangyu.Studio.UI\src\shared\rpc\types.ts</RpcTypesOutputPath>
   </PropertyGroup>
 
   <ItemGroup>

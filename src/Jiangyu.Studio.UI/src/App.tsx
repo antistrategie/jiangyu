@@ -1,40 +1,40 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Topbar } from "@components/Topbar/Topbar";
-import { Sidebar } from "@components/Sidebar/Sidebar";
-import { WorkspaceGrid } from "@components/Workspace/WorkspaceGrid";
-import { WelcomeScreen } from "@components/WelcomeScreen/WelcomeScreen";
-import { Palette } from "@components/Palette/Palette";
-import { SettingsModal } from "@components/SettingsModal/SettingsModal";
-import { CompileModal } from "@components/CompileModal/CompileModal";
-import { AgentRegistryModal } from "@components/AgentRegistryModal/AgentRegistryModal";
-import { StatusBar } from "@components/StatusBar/StatusBar";
-import { useCompile } from "@lib/compile";
-import { rpcCall } from "@lib/rpc";
+import { Topbar } from "@features/panes/Topbar/Topbar";
+import { Sidebar } from "@features/panes/Sidebar/Sidebar";
+import { WorkspaceGrid } from "@features/panes/Workspace/WorkspaceGrid";
+import { WelcomeScreen } from "@features/project/WelcomeScreen/WelcomeScreen";
+import { Palette } from "@shared/ui/Palette/Palette";
+import { SettingsModal } from "@features/settings/SettingsModal/SettingsModal";
+import { CompileModal } from "@features/compile/CompileModal/CompileModal";
+import { AgentRegistryModal } from "@features/agent/AgentRegistryModal/AgentRegistryModal";
+import { StatusBar } from "@features/panes/StatusBar/StatusBar";
+import { useCompile } from "@features/compile";
+import { rpcCall } from "@shared/rpc";
 import {
   loadSessionRestoreProject,
   useAiEnabled,
   useApplyUiFontScale,
   useSidebarHidden,
-} from "@lib/settings";
-import { useRegistryModalStore } from "@lib/agent/registryModal";
-import { basename, join, remapPath } from "@lib/path";
+} from "@features/settings/settings";
+import { useRegistryModalStore } from "@features/agent/registryModal";
+import { basename, join, remapPath } from "@shared/path";
 import {
   PALETTE_SCOPE,
   useRegisterActions,
   useRegisteredActions,
   type PaletteAction,
-} from "@lib/palette/actions";
-import { buildProjectActions } from "@lib/palette/appActions";
-import { usePaneActions } from "@lib/palette/paneActions";
-import { useFileEntries } from "@lib/project/useFileEntries";
-import { useGitBranch } from "@lib/project/gitBranch";
-import { useProjectStore } from "@lib/project/store";
-import { useEditorContent, useEditorContentSync } from "@lib/editor/content";
-import { usePaneWindowStore, useSyncPaneWindowProject } from "@lib/panes/paneWindowStore";
-import { useLayoutStore } from "@lib/panes/layoutStore";
-import { useCrossWindowTabDrag } from "@lib/drag/useCrossWindowTabDrag";
-import { useAppShortcuts } from "@lib/ui/useAppShortcuts";
-import { findPane } from "@lib/layout";
+} from "@shared/palette/actions";
+import { buildProjectActions } from "@features/project/paletteActions";
+import { usePaneActions } from "@features/panes/paneActions";
+import { useFileEntries } from "@features/project/useFileEntries";
+import { useGitBranch } from "@features/project/gitBranch";
+import { useProjectStore } from "@features/project/store";
+import { useEditorContent, useEditorContentSync } from "@features/editor/content";
+import { usePaneWindowStore, useSyncPaneWindowProject } from "@features/panes/paneWindowStore";
+import { useLayoutStore } from "@features/panes/layoutStore";
+import { useCrossWindowTabDrag } from "@features/panes/useCrossWindowTabDrag";
+import { useAppShortcuts } from "@shared/utils/useAppShortcuts";
+import { findPane } from "@features/panes/layout";
 import styles from "./App.module.css";
 
 export function App() {
