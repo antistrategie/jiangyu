@@ -1,5 +1,9 @@
 # Troubleshooting
 
+::: tip Need help?
+If this page doesn't cover your issue, the [Antistratégie Discord](https://discord.com/invite/XcfYGmxvde) is the fastest place to ask as it's where we (the devs) are the most active. You can also find us in the "Jiangyu Modding Platform" thread in the MENACE Modding Discord.
+:::
+
 When things go sideways, two places to check first:
 
 - **`<MENACE>/MelonLoader/Latest.log`** has everything the loader did this session: which mods it discovered, which bundles it loaded, which replacements it applied, which template patches succeeded or failed.

@@ -126,6 +126,7 @@ export default defineConfig({
 
     socialLinks: [
       { icon: "github", link: "https://github.com/antistrategie/jiangyu" },
+      { icon: "discord", link: "https://discord.com/invite/XcfYGmxvde" },
     ],
 
     editLink: {
