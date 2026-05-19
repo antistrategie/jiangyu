@@ -419,6 +419,7 @@
   font-family: var(--jy-font-display);
   font-weight: 500;
   color: var(--jy-ink-2);
+  max-width: none;
 }
 
 .VPHero .tagline {

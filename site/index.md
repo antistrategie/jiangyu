@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Jiangyu
   text: Modding platform for MENACE
-  tagline: "A general-purpose modding platform: bundled assets, template patches, visual editor."
+  tagline: "Reskin units, tune stats, clone weapons, author new characters."
   actions:
     - theme: brand
       text: What is Jiangyu?
@@ -18,9 +18,11 @@ hero:
 
 features:
   - title: Drop-in replacements
-    details: Replace textures, sprites, models, and audio by name. Drop your file at the path Studio shows you and the loader applies it at runtime.
-  - title: Template patching with KDL
-    details: Tweak any DataTemplate field with a small declarative language. Edit as text or visually in Studio. Both modes round-trip.
-  - title: Studio UI
-    details: Visual project workspace with a command palette, live previews, and one-click compile.
+    details: Want a different texture, sprite, or audio clip? Drop the file where Studio tells you and the loader picks it up at runtime. No code, no config.
+  - title: Patch and clone
+    details: Change anything from a single stat to a whole new weapon variant. Patch in place to tweak, or clone to fork freely. Write KDL by hand or edit it visually.
+  - title: Add new characters and gear
+    details: Import custom characters, prefabs, and gear using Unity. The compiler bundles them and clones wire them in by name.
+  - title: Studio and CLI
+    details: A visual workspace with previews and one-click compile, plus a matching CLI for scripts and CI. An opt-in AI agent is available if you want one.
 ---
