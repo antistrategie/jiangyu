@@ -15,8 +15,10 @@ You need:
 - **Unity Editor** (optional). Required for bundled assets (textures, sprites, models, audio). Template-only mods don't need it. Install via [Unity Hub](https://unity.com/download), download `6000.0.72f1` from the [Unity archive](https://unity.com/releases/editor/archive), and add it to Hub.
 - **An image editor** (anything that exports PNG: GIMP, Photoshop, Krita).
 
-::: tip Unity version
-Studio shows the exact version Jiangyu expects once its path is set, and you should trust Studio over the docs if they differ. The expected version tracks MENACE's Unity build, so an editor update may be needed when MENACE updates.
+::: tip Do you need Unity?
+Replacements, template patches, and other simple tasks typically don't need Unity. But anything genuinely new generally does, and most mods past the skin-and-stat-tweak stage end up there. If there's any chance you'll cross that line, install Unity up front so you don't have to break flow halfway through.
+
+Studio shows the exact Unity Editor version Jiangyu expects, and you should trust Studio over these docs if they differ. The expected version tracks MENACE's Unity build, so an editor update may be needed when MENACE updates.
 :::
 
 ## Install the Jiangyu Loader
