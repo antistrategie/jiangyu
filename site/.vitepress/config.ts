@@ -3,7 +3,7 @@ import kdlGrammar from "./grammars/kdl.tmLanguage.json" with { type: "json" };
 
 export default defineConfig({
   title: "绛雨 Jiangyu",
-  description: "Modkit for MENACE",
+  description: "Modding platform for MENACE",
   lang: "en-GB",
   base: "/jiangyu/",
   cleanUrls: true,

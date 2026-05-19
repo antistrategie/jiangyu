@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: Jiangyu
-  text: Modkit for MENACE
-  tagline: "A general-purpose modkit: bundled assets, template patches, visual editor."
+  text: Modding platform for MENACE
+  tagline: "A general-purpose modding platform: bundled assets, template patches, visual editor."
   actions:
     - theme: brand
       text: What is Jiangyu?

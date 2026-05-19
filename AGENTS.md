@@ -1,6 +1,6 @@
 # Jiangyu
 
-General-purpose modkit for MENACE (Unity 6, IL2CPP).
+General-purpose modding platform for MENACE (Unity 6, IL2CPP).
 
 ## Language
 

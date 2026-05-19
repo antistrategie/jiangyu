@@ -1,6 +1,6 @@
 # Jiangyu
 
-General-purpose modkit for MENACE (Unity 6, IL2CPP). Mods are files: drop replacement assets by name, patch DataTemplates with KDL if you need to, compile in Studio.
+General-purpose modding platform for MENACE (Unity 6, IL2CPP).
 
 ## For modders
 

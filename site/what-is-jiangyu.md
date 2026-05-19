@@ -1,6 +1,6 @@
 # What is Jiangyu?
 
-Jiangyu is a modkit for MENACE (Unity 6, IL2CPP). It lets you replace assets (textures, sprites, models, audio) and patch the data MENACE ships with (unit stats, weapon damage, perk trees, and so on).
+Jiangyu is a modding platform for MENACE (Unity 6, IL2CPP). It lets you replace assets (textures, sprites, models, audio) and patch the data MENACE ships with (unit stats, weapon damage, perk trees, and so on).
 
 The toolkit has three pieces:
 
@@ -10,7 +10,7 @@ The toolkit has three pieces:
 
 ## Compared to MenaceAssetPacker
 
-[MenaceAssetPacker](https://github.com/p0ss/MenaceAssetPacker) is the other, older modkit for MENACE. Jiangyu takes a different approach.
+[MenaceAssetPacker](https://github.com/p0ss/MenaceAssetPacker) is the existing modkit for MENACE. Jiangyu takes a different approach.
 
 ### Workflow
 
