@@ -11,16 +11,17 @@ namespace Jiangyu.Mod
     /// Editor utility for baking a humanoid addition prefab from a glTF
     /// source plus a vanilla MENACE soldier reference prefab.
     ///
-    /// The glTF brings the new character's bones, mesh, and baked atlas
-    /// texture. The reference prefab donates the Menace/* shader (which the
-    /// Unity Editor renders magenta because it's an AssetRipper stub, but
-    /// the loader rebinds at runtime) and the runtime AnimatorController.
+    /// The glTF brings the new character's bones, mesh, and source textures
+    /// (one per glTF material). The reference prefab donates the Menace/*
+    /// shader (which the Unity Editor renders magenta because it's an
+    /// AssetRipper stub, but the loader rebinds at runtime) and the runtime
+    /// AnimatorController.
     ///
     /// Output layout (for output name <c>MyCharacter</c>):
     /// <code>
     /// Assets/Prefabs/MyCharacter/
     /// ├── main.prefab
-    /// ├── baked.mat
+    /// ├── baked_&lt;source-material&gt;.mat   (one per unique BaseColor texture)
     /// └── avatar.asset
     /// </code>
     /// KDL reference: <c>asset="MyCharacter/main"</c>. The output name names
@@ -140,7 +141,7 @@ namespace Jiangyu.Mod
 
             _sourceFolder = (DefaultAsset)EditorGUILayout.ObjectField(
                 new GUIContent("Source glTF folder",
-                    "The folder containing model.gltf and the baked atlas texture (model_BaseColor.png)."),
+                    "The folder containing model.gltf and its source textures (one per glTF material)."),
                 _sourceFolder, typeof(DefaultAsset), false);
 
             _referencePrefab = (GameObject)EditorGUILayout.ObjectField(
@@ -182,8 +183,16 @@ namespace Jiangyu.Mod
         {
             var sourceFolderPath = AssetDatabase.GetAssetPath(_sourceFolder);
             var gltfPath = Path.Combine(sourceFolderPath, "model.gltf").Replace('\\', '/');
-            var atlasPath = Path.Combine(sourceFolderPath, "model_BaseColor.png").Replace('\\', '/');
 
+            // Force a fresh synchronous reimport of the glTF. ForceUpdate
+            // ensures Unity actually re-runs the importer (mtime check can
+            // miss; LoadAssetAtPath may otherwise return null when the
+            // cached import has not finished). ForceSynchronousImport runs
+            // the import on the main thread, dodging glTFast's Jobs-system
+            // race that surfaces in batchmode (SortAndNormalizeBoneWeightsJob
+            // raced reading bones it was still writing).
+            AssetDatabase.ImportAsset(gltfPath,
+                ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
             var gltfPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(gltfPath);
             if (gltfPrefab == null)
             {
@@ -193,14 +202,6 @@ namespace Jiangyu.Mod
                 return;
             }
 
-            var atlas = AssetDatabase.LoadAssetAtPath<Texture2D>(atlasPath);
-            if (atlas == null)
-            {
-                EditorUtility.DisplayDialog("Bake failed",
-                    "Could not load atlas at " + atlasPath + ".",
-                    "OK");
-                return;
-            }
 
             // Per-character subdir holds prefab + supporting artefacts.
             var characterDir = (_outputDir.TrimEnd('/') + "/" + _outputName).Replace('\\', '/');
@@ -230,10 +231,6 @@ namespace Jiangyu.Mod
                 }
 
                 var referenceAnimator = referenceInstance.GetComponentInChildren<Animator>(includeInactive: true);
-
-                var bakedMaterial = BuildBakedMaterial(referenceMaterial, atlas);
-                var materialPath = characterDir + "/baked.mat";
-                AssetDatabase.CreateAsset(bakedMaterial, materialPath);
 
                 var instance = (GameObject)PrefabUtility.InstantiatePrefab(gltfPrefab);
                 // Unpack the prefab linkage so AddComponent on the root attaches
@@ -270,7 +267,7 @@ namespace Jiangyu.Mod
                     var avatarPath = characterDir + "/avatar.asset";
                     AssetDatabase.CreateAsset(avatar, avatarPath);
 
-                    AssignMaterialToAllSmrs(instance, bakedMaterial);
+                    BakeMaterialsForSmrs(instance, referenceMaterial, characterDir);
                     ConfigureAnimator(instance, avatar, referenceAnimator);
                     ConfigureLodGroup(instance);
 
@@ -286,7 +283,7 @@ namespace Jiangyu.Mod
                     AssetDatabase.Refresh();
 
                     Debug.Log("Jiangyu BakeHumanoid: wrote " + prefabPath
-                        + " (material: " + materialPath + ", avatar: " + avatarPath + ").");
+                        + " (avatar: " + avatarPath + ").");
                     EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath));
                 }
                 finally
@@ -300,7 +297,7 @@ namespace Jiangyu.Mod
             }
         }
 
-        private static Material BuildBakedMaterial(Material reference, Texture2D atlas)
+        private static Material BuildBakedMaterial(Material reference, Texture2D baseColor)
         {
             var shader = reference.shader;
             var mat = new Material(shader)
@@ -347,13 +344,17 @@ namespace Jiangyu.Mod
                 }
             }
 
-            // Assign the bake atlas to the most common base-map property names.
-            foreach (var prop in BaseColorPropertyNames)
+            // Assign the source texture to the most common base-map property
+            // names. Null is fine: leaves the shader's default white texture.
+            if (baseColor != null)
             {
-                if (mat.HasProperty(prop))
+                foreach (var prop in BaseColorPropertyNames)
                 {
-                    mat.SetTexture(prop, atlas);
-                    break;
+                    if (mat.HasProperty(prop))
+                    {
+                        mat.SetTexture(prop, baseColor);
+                        break;
+                    }
                 }
             }
 
@@ -557,16 +558,67 @@ namespace Jiangyu.Mod
             "_AlbedoMap",
         };
 
-        private static void AssignMaterialToAllSmrs(GameObject root, Material mat)
+        // For each submesh on every SkinnedMeshRenderer, build a baked
+        // material that uses the reference soldier's shader (so the runtime
+        // resolves to MENACE's vanilla shader at the same GUID) with the
+        // per-submesh BaseColor texture taken from the gltf's auto-imported
+        // material. Materials with the same BaseColor texture share one
+        // baked asset (dedupe by texture). Works for both single-texture
+        // glTFs (one baked material out) and multi-texture glTFs (one per
+        // unique source texture).
+        private static void BakeMaterialsForSmrs(GameObject root, Material referenceMaterial, string characterDir)
         {
+            var bakedByTexture = new Dictionary<Texture, Material>();
             var smrs = root.GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: true);
             foreach (var smr in smrs)
             {
-                var slots = smr.sharedMaterials.Length;
-                var arr = new Material[slots > 0 ? slots : 1];
-                for (int i = 0; i < arr.Length; i++) arr[i] = mat;
-                smr.sharedMaterials = arr;
+                var source = smr.sharedMaterials;
+                if (source == null || source.Length == 0)
+                    continue;
+
+                var baked = new Material[source.Length];
+                for (int i = 0; i < source.Length; i++)
+                {
+                    var srcMat = source[i];
+                    var srcTexture = ExtractBaseColorTexture(srcMat);
+                    var key = srcTexture != null ? (Texture)srcTexture : (Texture)Texture2D.whiteTexture;
+                    if (!bakedByTexture.TryGetValue(key, out var bakedMat))
+                    {
+                        bakedMat = BuildBakedMaterial(referenceMaterial, srcTexture);
+                        var matName = (srcMat != null && !string.IsNullOrEmpty(srcMat.name))
+                            ? "baked_" + SanitiseAssetName(srcMat.name)
+                            : "baked";
+                        bakedMat.name = matName;
+                        AssetDatabase.CreateAsset(bakedMat, characterDir + "/" + matName + ".mat");
+                        bakedByTexture[key] = bakedMat;
+                    }
+                    baked[i] = bakedMat;
+                }
+                smr.sharedMaterials = baked;
             }
+        }
+
+        private static Texture2D ExtractBaseColorTexture(Material mat)
+        {
+            if (mat == null) return null;
+            foreach (var prop in BaseColorPropertyNames)
+            {
+                if (mat.HasProperty(prop))
+                {
+                    var tex = mat.GetTexture(prop) as Texture2D;
+                    if (tex != null) return tex;
+                }
+            }
+            return mat.mainTexture as Texture2D;
+        }
+
+        private static string SanitiseAssetName(string raw)
+        {
+            var invalid = Path.GetInvalidFileNameChars();
+            var sb = new System.Text.StringBuilder(raw.Length);
+            foreach (var c in raw)
+                sb.Append(System.Array.IndexOf(invalid, c) >= 0 ? '_' : c);
+            return sb.ToString();
         }
 
         private static void ConfigureAnimator(GameObject root, Avatar avatar, Animator referenceAnimator)

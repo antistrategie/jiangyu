@@ -5,13 +5,22 @@ Logs/
 UserSettings/
 obj/
 
+# Loose log files (Jiangyu writes assemble.log / bake.log / build.log / dump.log
+# to the unity/ root during compile).
+*.log
+
 # Build outputs
 *.csproj
 *.sln
+[Bb]uild/
+[Bb]uilds/
+*.unitypackage
 
 # Editor IDE state
 .vs/
 .idea/
+*.csproj.user
+*.user
 
 # OS noise
 .DS_Store

@@ -166,8 +166,9 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         // currently-staged addition bundles are re-written below.
         foreach (var stale in Directory.EnumerateFiles(outputDir, "*.bundle"))
             File.Delete(stale);
-        var unityProjectDir = Path.Combine(projectDir, ".jiangyu", "unity_project");
-        var builtBundle = Path.Combine(unityProjectDir, "AssetBundles", bundleName);
+        var userUnityDir = Path.Combine(projectDir, "unity");
+        var unityBuildDir = Path.Combine(projectDir, ".jiangyu", "unity_build");
+        var builtBundle = Path.Combine(unityBuildDir, bundleName);
 
         var useRawGlbPipeline = replacementAssetCount > 0;
 
@@ -252,11 +253,10 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         compiledManifest.TemplateClones = templateCloneResult.Clones;
         compiledManifest.TemplateBindings = bindingSource;
 
-        var unityBuildOutputDir = Path.Combine(projectDir, ".jiangyu", "unity-build");
-        await BuildUnityAdditionPrefabs(projectDir, unityBuildOutputDir, unityEditorPath);
+        await BuildUnityAdditionPrefabs(projectDir, unityBuildDir, unityEditorPath);
 
         AdditionPrefabStaging.Stage(
-            sourceDirs: [Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Prefabs), unityBuildOutputDir],
+            sourceDirs: [Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Prefabs), unityBuildDir],
             outputDir,
             compiledManifest,
             _log);
@@ -274,8 +274,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         {
             _log.Info("  Using direct mesh replacement pipeline...");
             phaseSw.Restart();
-            var bundleOutputPath = Path.Combine(unityProjectDir, "AssetBundles", bundleName);
-            Directory.CreateDirectory(Path.GetDirectoryName(bundleOutputPath)!);
+            Directory.CreateDirectory(unityBuildDir);
             var targetMeshNamesByBundleMesh = replacementEntries
                 .Where(entry => !entry.SuppressMeshContract)
                 .ToDictionary(entry => entry.BundleMeshName, entry => entry.TargetMeshName, StringComparer.Ordinal);
@@ -284,9 +283,9 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             {
                 var buildResult = await GlbMeshBundleCompiler.BuildAsync(
                     unityEditorPath,
-                    unityProjectDir,
+                    userUnityDir,
                     bundleName,
-                    bundleOutputPath,
+                    builtBundle,
                     replacementEntries,
                     replacementTextures,
                     replacementSprites,
@@ -324,9 +323,9 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         }
         else
         {
-            await SetupUnityProject(unityProjectDir, modelFiles);
+            await StageRawModelFiles(userUnityDir, modelFiles);
 
-            var success = await InvokeUnityBuild(unityEditorPath, unityProjectDir, bundleName);
+            var success = await InvokeUnityBuildForModels(unityEditorPath, userUnityDir, bundleName);
             if (!success)
                 return Fail("Unity build failed. Check logs for details.");
         }
@@ -337,14 +336,6 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         var destBundle = Path.Combine(outputDir, $"{bundleName}.bundle");
         File.Copy(builtBundle, destBundle, overwrite: true);
-
-        var sourceDiagnostics = builtBundle + ".source-diagnostics.json";
-        if (File.Exists(sourceDiagnostics))
-            File.Copy(sourceDiagnostics, destBundle + ".source-diagnostics.json", overwrite: true);
-
-        var unityDiagnostics = builtBundle + ".unity-diagnostics.json";
-        if (File.Exists(unityDiagnostics))
-            File.Copy(unityDiagnostics, destBundle + ".unity-diagnostics.json", overwrite: true);
 
         // Copy manifest alongside the bundle
         await File.WriteAllTextAsync(Path.Combine(outputDir, ModManifest.FileName), compiledManifest.ToJson());
@@ -362,28 +353,21 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
     /// <summary>
     /// Invokes Unity batchmode against the modder's <c>unity/</c> project to
     /// build each prefab under <c>Assets/Prefabs/</c> into its own AssetBundle.
-    /// Bundles land in <c>&lt;projectDir&gt;/.jiangyu/unity-build/</c> where
+    /// Bundles land in <c>&lt;projectDir&gt;/.jiangyu/unity_build/</c> where
     /// <see cref="AdditionPrefabStaging.Stage"/> picks them up. No-op when
     /// <see cref="AdditionPrefabStaging.ShouldInvokeUnityForPrefabs"/> returns
     /// false.
     /// </summary>
     private async Task BuildUnityAdditionPrefabs(string projectDir, string unityBuildOutputDir, string unityEditorPath)
     {
+        AdditionPrefabStaging.ClearStaleBuildOutput(unityBuildOutputDir);
+
         if (!AdditionPrefabStaging.ShouldInvokeUnityForPrefabs(projectDir))
             return;
 
         var unityProjectDir = Path.Combine(projectDir, "unity");
         var prefabsDir = Path.Combine(unityProjectDir, "Assets", "Prefabs");
         var prefabFiles = Directory.EnumerateFiles(prefabsDir, "*.prefab", SearchOption.AllDirectories).ToArray();
-
-        Directory.CreateDirectory(unityBuildOutputDir);
-        // Clear unity-build/ entirely. Just deleting *.bundle leaves stale
-        // .manifest files that make Unity's incremental build think the
-        // bundles are still current, so it skips rebuild and produces no
-        // output. Full wipe forces Unity to rebuild from scratch each time,
-        // which is fast for the few-prefabs case Layer 1 targets.
-        foreach (var stale in Directory.EnumerateFiles(unityBuildOutputDir))
-            File.Delete(stale);
 
         _log.Info($"  Building {prefabFiles.Length} prefab(s) from unity/Assets/Prefabs/...");
 
@@ -392,19 +376,18 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             "-batchmode",
             "-nographics",
             "-quit",
+            "-buildTarget StandaloneWindows64",
             $"-projectPath \"{unityProjectDir}\"",
             "-executeMethod Jiangyu.Mod.BuildBundles.BuildAll",
             $"-logFile \"{logFile}\"");
 
-        var process = new System.Diagnostics.Process
+        using var process = new System.Diagnostics.Process
         {
             StartInfo = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = unityEditorPath,
                 Arguments = arguments,
                 UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
             }
         };
 
@@ -1855,56 +1838,49 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         return !string.IsNullOrWhiteSpace(baseName);
     }
 
-    private async Task SetupUnityProject(string unityProjectDir, IEnumerable<string> modelFiles)
+    private Task StageRawModelFiles(string userUnityDir, IEnumerable<string> modelFiles)
     {
-        var assetsDir = Path.Combine(unityProjectDir, "Assets");
-        var editorDir = Path.Combine(assetsDir, "Editor");
-        var modelsImportDir = Path.Combine(assetsDir, "Models");
+        var stagingDir = Path.Combine(userUnityDir, "Assets", "Jiangyu", "Staging", "Models");
+        if (Directory.Exists(stagingDir))
+            Directory.Delete(stagingDir, recursive: true);
+        Directory.CreateDirectory(stagingDir);
 
-        Directory.CreateDirectory(editorDir);
-        Directory.CreateDirectory(modelsImportDir);
-
-        var buildScript = GlbMeshBundleCompiler.LoadEmbeddedResource("Jiangyu.Core.Unity.BundleBuilder.template");
-        await File.WriteAllTextAsync(Path.Combine(editorDir, "BundleBuilder.cs"), buildScript);
-
-        // Copy model files into the Unity project
+        var count = 0;
         foreach (var modelFile in modelFiles)
         {
-            var destFile = Path.Combine(modelsImportDir, Path.GetFileName(modelFile));
+            var destFile = Path.Combine(stagingDir, Path.GetFileName(modelFile));
             File.Copy(modelFile, destFile, overwrite: true);
+            count++;
         }
 
-        _log.Info($"  Unity project prepared at {unityProjectDir}");
+        _log.Info($"  Staged {count} model file(s) at {stagingDir}");
+        return Task.CompletedTask;
     }
 
-    private async Task<bool> InvokeUnityBuild(string unityEditor, string unityProjectDir, string bundleName)
+    private async Task<bool> InvokeUnityBuildForModels(string unityEditor, string userUnityDir, string bundleName)
     {
-        var logFile = Path.Combine(unityProjectDir, "build.log");
-        var bundleOutputDir = Path.Combine(unityProjectDir, "AssetBundles");
-        Directory.CreateDirectory(bundleOutputDir);
+        var modRoot = Path.GetFullPath(Path.Combine(userUnityDir, ".."));
+        var logFile = Path.Combine(modRoot, ".jiangyu", "unity_build_models.log");
 
         var arguments = string.Join(" ",
             "-batchmode",
             "-nographics",
             "-quit",
-            $"-projectPath \"{unityProjectDir}\"",
-            "-executeMethod BundleBuilder.Build",
+            "-buildTarget StandaloneWindows64",
+            $"-projectPath \"{userUnityDir}\"",
+            "-executeMethod Jiangyu.Mod.BuildModelBundles.BuildAll",
             $"-logFile \"{logFile}\"",
-            $"-bundleName {bundleName}",
-            $"-bundleOutputPath \"{bundleOutputDir}\"");
+            $"-bundleName {bundleName}");
 
-        _log.Info("  Invoking Unity to build bundle...");
-        _log.Info("  (First run can take several minutes while Unity imports the staging project. Subsequent runs are incremental.)");
+        _log.Info("  Invoking Unity to build model bundle...");
 
-        var process = new Process
+        using var process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
                 FileName = unityEditor,
                 Arguments = arguments,
                 UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
             }
         };
 

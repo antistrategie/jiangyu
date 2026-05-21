@@ -1,14 +1,3 @@
-// TODO: Two Unity 6 + MelonLoader 0.7.2 bugs affect this loader. Both are fixed in
-// MelonLoader alpha-development — remove workarounds once stable ships.
-//
-// 1. ICall signature changes: _Injected suffixes, ManagedSpanWrapper params, GC handle
-//    returns. Worked around in BundleLoader.cs. (LavaGang/MelonLoader#1122)
-//
-// 2. GetPinnableReference crash: game assembly methods that take string params internally
-//    call ReadOnlySpan<char>.GetPinnableReference() which throws MissingMethodException
-//    in Il2CppInterop. Avoid calling game assembly methods with string params directly.
-//    (MelonLoader alpha commit 96c78935)
-
 using System.Collections;
 using Jiangyu.Loader.Diagnostics;
 using MelonLoader;

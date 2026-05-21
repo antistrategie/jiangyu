@@ -12,7 +12,7 @@ namespace Jiangyu.Core.Compile;
 /// Two source dirs feed this today: pre-built bundles dropped by the modder
 /// in <c>assets/additions/prefabs/</c> (the escape hatch), and freshly-built
 /// bundles produced by Unity batchmode against the modder's <c>unity/</c>
-/// project (output to <c>.jiangyu/unity-build/</c>). Both flow through the
+/// project (output to <c>.jiangyu/unity_build/</c>). Both flow through the
 /// same staging step. Later-listed sources override earlier ones on name
 /// collision so a Unity-built bundle takes precedence over a stale
 /// hand-shipped one of the same name.
@@ -78,5 +78,22 @@ internal static class AdditionPrefabStaging
         if (!Directory.Exists(prefabsDir))
             return false;
         return Directory.EnumerateFiles(prefabsDir, "*.prefab", SearchOption.AllDirectories).Any();
+    }
+
+    /// <summary>
+    /// Clears the Unity batchmode output staging dir before a compile. Run
+    /// unconditionally each compile, not just when Unity is about to be
+    /// invoked. Two reasons. (1) Deleting only <c>*.bundle</c> would leave
+    /// stale <c>.manifest</c> files that make Unity's incremental build
+    /// think the bundles are still current, so it skips rebuild and produces
+    /// no output. (2) If the modder has just deleted their last prefab,
+    /// skipping the wipe would leave the previous compile's bundles sitting
+    /// here for <see cref="Stage"/> to re-ship.
+    /// </summary>
+    public static void ClearStaleBuildOutput(string unityBuildOutputDir)
+    {
+        Directory.CreateDirectory(unityBuildOutputDir);
+        foreach (var stale in Directory.EnumerateFiles(unityBuildOutputDir))
+            File.Delete(stale);
     }
 }

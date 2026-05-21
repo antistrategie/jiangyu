@@ -12,14 +12,14 @@ namespace Jiangyu.Studio.Host.Acp;
 /// <c>session_info_update</c>), timestamps, and a one-line preview of the
 /// first user message.
 ///
-/// Stored at <c>{projectRoot}/.jiangyu/agent-sessions.json</c>. Atomic
+/// Stored at <c>{projectRoot}/.jiangyu/agent_sessions.json</c>. Atomic
 /// writes via a sibling .tmp file. JSON (not JSONL) because we update
 /// fields in place — title, updatedAt — rather than only appending.
 /// </summary>
 internal static class AgentSessionsStore
 {
     private const string DirectoryName = ".jiangyu";
-    private const string FileName = "agent-sessions.json";
+    private const string FileName = "agent_sessions.json";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

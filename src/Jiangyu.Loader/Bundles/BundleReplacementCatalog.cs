@@ -103,10 +103,23 @@ internal sealed class BundleReplacementCatalog
         var ownerLabel = $"{mod.Name}/{Path.GetFileName(bundlePath)}";
         log.Msg($"Loading bundle: {Path.GetFileName(bundlePath)}");
 
-        var manifestPath = mod.ManifestPath;
-        var meshMappings = LoadMeshMappings(manifestPath, log);
-        var meshMetadata = LoadCompiledMeshMetadata(manifestPath, log);
-        var additionPrefabNames = LoadAdditionPrefabNames(manifestPath, log);
+        // Parse the mod's jiangyu.json once and reuse the JsonElement across
+        // the three readers. LoadBundle runs per bundle, but the manifest is
+        // one file per mod, so the previous parse-three-times-per-bundle shape
+        // was O(bundles × 3) reads of the same file at startup.
+        Dictionary<string, string> meshMappings = null;
+        Dictionary<string, CompiledMeshMetadataRecord> meshMetadata = null;
+        HashSet<string> additionPrefabNames = new(StringComparer.Ordinal);
+        using (var manifestDoc = OpenManifest(mod.ManifestPath, log))
+        {
+            if (manifestDoc != null)
+            {
+                var root = manifestDoc.RootElement;
+                meshMappings = LoadMeshMappings(root, log);
+                meshMetadata = LoadCompiledMeshMetadata(root, log);
+                additionPrefabNames = LoadAdditionPrefabNames(root, log);
+            }
+        }
 
         // An addition bundle's filename stem is its identity (matches the
         // manifest's additionPrefabs entry, matches the KDL asset= name after
@@ -116,8 +129,16 @@ internal sealed class BundleReplacementCatalog
         var bundleStem = Path.GetFileNameWithoutExtension(bundlePath);
         var isAdditionBundle = additionPrefabNames.Contains(bundleStem);
 
-        var bundle = BundleLoader.LoadFromFile(bundlePath);
-        if (bundle == IntPtr.Zero)
+        // Il2CppAssetBundleManager is MelonLoader's hand-resolved AssetBundle
+        // wrapper (LavaGang/MelonLoader#1122, shipped in 0.7.3). It bypasses
+        // Il2CppInterop's broken byte[]/string marshalling for the AssetBundle
+        // ICalls by building a ManagedSpanWrapper from a fixed char* directly,
+        // sidestepping ReadOnlySpan<char>.GetPinnableReference (missing on
+        // Il2CppInterop 1.5.1). Unlike UnityEngine.AssetBundle (the
+        // Il2CppInterop-generated wrapper), this class is safe to call on
+        // Unity 6 + Il2CppInterop 1.5.1.
+        var bundle = Il2CppAssetBundleManager.LoadFromFile(bundlePath);
+        if (bundle == null)
         {
             log.Error($"  LoadFromFile returned null for {Path.GetFileName(bundlePath)}");
             return;
@@ -131,17 +152,12 @@ internal sealed class BundleReplacementCatalog
                 bundleToGame[bundleName] = gameName;
         }
 
-        var gameObjectType = Il2CppType.Of<GameObject>();
-        var goTypePtr = IL2CPP.Il2CppObjectBaseToPtr(gameObjectType);
-        var meshType = Il2CppType.Of<Mesh>();
-        var meshTypePtr = IL2CPP.Il2CppObjectBaseToPtr(meshType);
-        var textureType = Il2CppType.Of<Texture2D>();
-        var textureTypePtr = IL2CPP.Il2CppObjectBaseToPtr(textureType);
-        var spriteType = Il2CppType.Of<Sprite>();
-        var spriteTypePtr = IL2CPP.Il2CppObjectBaseToPtr(spriteType);
-        var audioClipType = Il2CppType.Of<AudioClip>();
-        var audioClipTypePtr = IL2CPP.Il2CppObjectBaseToPtr(audioClipType);
-        var assetNames = BundleLoader.GetAllAssetNames(bundle);
+        var goTypePtr = IL2CPP.Il2CppObjectBaseToPtr(Il2CppType.Of<GameObject>());
+        var meshTypePtr = IL2CPP.Il2CppObjectBaseToPtr(Il2CppType.Of<Mesh>());
+        var textureTypePtr = IL2CPP.Il2CppObjectBaseToPtr(Il2CppType.Of<Texture2D>());
+        var spriteTypePtr = IL2CPP.Il2CppObjectBaseToPtr(Il2CppType.Of<Sprite>());
+        var audioClipTypePtr = IL2CPP.Il2CppObjectBaseToPtr(Il2CppType.Of<AudioClip>());
+        var assetNames = bundle.GetAllAssetNames();
 
         if (assetNames == null || assetNames.Length == 0)
         {
@@ -151,7 +167,7 @@ internal sealed class BundleReplacementCatalog
 
         foreach (var assetName in assetNames)
         {
-            var assetPtr = BundleLoader.LoadAsset(bundle, assetName, goTypePtr);
+            var assetPtr = bundle.LoadAsset(assetName, goTypePtr);
             if (assetPtr != IntPtr.Zero)
             {
                 var prefab = new GameObject(assetPtr);
@@ -173,21 +189,21 @@ internal sealed class BundleReplacementCatalog
             // the sprite from the catalog and break KDL asset= references
             // typed against Sprite. Pure texture replacements (no sprite
             // sub-asset) return null here and fall through cleanly.
-            var spritePtr = BundleLoader.LoadAsset(bundle, assetName, spriteTypePtr);
+            var spritePtr = bundle.LoadAsset(assetName, spriteTypePtr);
             if (spritePtr != IntPtr.Zero)
             {
                 RegisterSpriteAsset(ownerLabel, spritePtr, log);
                 continue;
             }
 
-            var texturePtr = BundleLoader.LoadAsset(bundle, assetName, textureTypePtr);
+            var texturePtr = bundle.LoadAsset(assetName, textureTypePtr);
             if (texturePtr != IntPtr.Zero)
             {
                 RegisterTextureAsset(ownerLabel, texturePtr, log);
                 continue;
             }
 
-            var audioClipPtr = BundleLoader.LoadAsset(bundle, assetName, audioClipTypePtr);
+            var audioClipPtr = bundle.LoadAsset(assetName, audioClipTypePtr);
             if (audioClipPtr != IntPtr.Zero)
             {
                 RegisterAudioAsset(ownerLabel, audioClipPtr, log);
@@ -197,7 +213,7 @@ internal sealed class BundleReplacementCatalog
             if (meshMetadata == null || meshMetadata.Count == 0)
                 continue;
 
-            var meshPtr = BundleLoader.LoadAsset(bundle, assetName, meshTypePtr);
+            var meshPtr = bundle.LoadAsset(assetName, meshTypePtr);
             if (meshPtr != IntPtr.Zero)
                 RegisterMeshAsset(ownerLabel, meshPtr, bundleToGame, meshMetadata, log);
         }
@@ -580,17 +596,26 @@ internal sealed class BundleReplacementCatalog
         return names.OrderBy(x => x, StringComparer.Ordinal).ToArray();
     }
 
-    private static Dictionary<string, CompiledMeshMetadataRecord> LoadCompiledMeshMetadata(string manifestPath, MelonLogger.Instance log)
+    private static System.Text.Json.JsonDocument OpenManifest(string manifestPath, MelonLogger.Instance log)
     {
         if (!File.Exists(manifestPath))
             return null;
-
         try
         {
-            var json = File.ReadAllText(manifestPath);
-            var doc = System.Text.Json.JsonDocument.Parse(json);
+            return System.Text.Json.JsonDocument.Parse(File.ReadAllText(manifestPath));
+        }
+        catch (Exception ex)
+        {
+            log.Error($"  Failed to read jiangyu.json: {ex.Message}");
+            return null;
+        }
+    }
 
-            if (!doc.RootElement.TryGetProperty("meshes", out var meshesElement) ||
+    private static Dictionary<string, CompiledMeshMetadataRecord> LoadCompiledMeshMetadata(System.Text.Json.JsonElement root, MelonLogger.Instance log)
+    {
+        try
+        {
+            if (!root.TryGetProperty("meshes", out var meshesElement) ||
                 meshesElement.ValueKind != System.Text.Json.JsonValueKind.Object)
             {
                 return null;
@@ -729,18 +754,12 @@ internal sealed class BundleReplacementCatalog
         return result.OrderBy(binding => binding.Slot).ToArray();
     }
 
-    private static HashSet<string> LoadAdditionPrefabNames(string manifestPath, MelonLogger.Instance log)
+    private static HashSet<string> LoadAdditionPrefabNames(System.Text.Json.JsonElement root, MelonLogger.Instance log)
     {
         var set = new HashSet<string>(StringComparer.Ordinal);
-        if (!File.Exists(manifestPath))
-            return set;
-
         try
         {
-            var json = File.ReadAllText(manifestPath);
-            var doc = System.Text.Json.JsonDocument.Parse(json);
-
-            if (doc.RootElement.TryGetProperty("additionPrefabs", out var element) &&
+            if (root.TryGetProperty("additionPrefabs", out var element) &&
                 element.ValueKind == System.Text.Json.JsonValueKind.Array)
             {
                 foreach (var item in element.EnumerateArray())
@@ -761,17 +780,11 @@ internal sealed class BundleReplacementCatalog
         return set;
     }
 
-    private static Dictionary<string, string> LoadMeshMappings(string manifestPath, MelonLogger.Instance log)
+    private static Dictionary<string, string> LoadMeshMappings(System.Text.Json.JsonElement root, MelonLogger.Instance log)
     {
-        if (!File.Exists(manifestPath))
-            return null;
-
         try
         {
-            var json = File.ReadAllText(manifestPath);
-            var doc = System.Text.Json.JsonDocument.Parse(json);
-
-            if (!doc.RootElement.TryGetProperty("meshes", out var meshesElement))
+            if (!root.TryGetProperty("meshes", out var meshesElement))
                 return null;
 
             var result = new Dictionary<string, string>(StringComparer.Ordinal);

@@ -28,11 +28,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Unity\BundleBuilder.template" />
-    <EmbeddedResource Include="Unity\MeshBundleBuilder.template" />
-  </ItemGroup>
-
-  <ItemGroup>
     <!-- Templates/UnityProject/ contains files copied verbatim into the
          modder's scaffolded unity/ project. The .cs files here are Unity
          Editor scripts the modder's Unity Editor compiles, not Jiangyu.Core
@@ -42,6 +37,10 @@
     <None Remove="Templates\UnityProject\**\*" />
     <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\Editor\BuildBundles.cs"
                       LogicalName="UnityProject/Assets/Jiangyu/Editor/BuildBundles.cs" />
+    <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\Editor\BuildModelBundles.cs"
+                      LogicalName="UnityProject/Assets/Jiangyu/Editor/BuildModelBundles.cs" />
+    <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\Editor\BuildMeshReplacementBundle.cs"
+                      LogicalName="UnityProject/Assets/Jiangyu/Editor/BuildMeshReplacementBundle.cs" />
     <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\Editor\ImportedPrefabPostProcessor.cs"
                       LogicalName="UnityProject/Assets/Jiangyu/Editor/ImportedPrefabPostProcessor.cs" />
     <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\Editor\BakeHumanoid.cs"

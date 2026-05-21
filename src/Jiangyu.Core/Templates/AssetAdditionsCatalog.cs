@@ -88,7 +88,7 @@ public sealed class FileSystemAssetAdditionsCatalog : IAssetAdditionsCatalog
 
         // The Unity authoring project's prefabs are addition sources too:
         // mise compile invokes Unity batchmode against unity/ to turn them
-        // into bundles in .jiangyu/unity-build/ before StageAdditionPrefabBundles
+        // into bundles in .jiangyu/unity_build/ before StageAdditionPrefabBundles
         // runs. Index them here so validator-time existence checks against
         // KDL asset= references succeed.
         if (!string.IsNullOrEmpty(unityPrefabsDir) && Directory.Exists(unityPrefabsDir))

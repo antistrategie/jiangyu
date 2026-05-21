@@ -60,6 +60,18 @@ public sealed class UnityProjectScaffolder
 
         WriteFromTemplate(
             unityDir,
+            templateLogicalPath: "UnityProject/Assets/Jiangyu/Editor/BuildModelBundles.cs",
+            destRelative: Path.Combine("Assets", "Jiangyu", "Editor", "BuildModelBundles.cs"),
+            result);
+
+        WriteFromTemplate(
+            unityDir,
+            templateLogicalPath: "UnityProject/Assets/Jiangyu/Editor/BuildMeshReplacementBundle.cs",
+            destRelative: Path.Combine("Assets", "Jiangyu", "Editor", "BuildMeshReplacementBundle.cs"),
+            result);
+
+        WriteFromTemplate(
+            unityDir,
             templateLogicalPath: "UnityProject/Assets/Jiangyu/Editor/ImportedPrefabPostProcessor.cs",
             destRelative: Path.Combine("Assets", "Jiangyu", "Editor", "ImportedPrefabPostProcessor.cs"),
             result);

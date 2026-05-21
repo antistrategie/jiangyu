@@ -147,14 +147,14 @@ Confirmed by Jiangyu against the live game, 2026-05-01.
 
 ### Descent
 
-`WoMENACE/templates/perk-darby_high_value_targets-handler-smoke.kdl`
+`WOMENACE/templates/perk-darby_high_value_targets-handler-smoke.kdl`
 patched `PerkTemplate:perk.unique_darby_high_value_targets`'s
 `EventHandlers[0].ShowHUDText` from `false` to `true`, declaring the
 element's concrete type as `AddSkill`. Loader log:
 
 ```
 Template patch 'PerkTemplate:perk.unique_darby_high_value_targets.EventHandlers[0].ShowHUDText'
-    (mod 'WoMENACE'): set to True, readback matches.
+    (mod 'WOMENACE'): set to True, readback matches.
 ```
 
 Generalising to other handler subtypes is mechanical because the applier
@@ -170,7 +170,7 @@ Loader log:
 
 ```
 Template patch 'PerkTemplate:perk.unique_darby_high_value_targets.EventHandlers'
-    (mod 'WoMENACE'): appended AddSkill, readback matches.
+    (mod 'WOMENACE'): appended AddSkill, readback matches.
 Applied 2 PerkTemplate patch op(s).
     [skipped: missingTemplate=0 missingMember=0 conversion=0]
 ```
@@ -189,9 +189,9 @@ polymorphic-reference array on a cloned skill. Loader log:
 
 ```
 Template patch 'SkillTemplate:effect.bleeding_remove_smoke.EventHandlers'
-    (mod 'WoMENACE'): removed element at 0 from List`1.
+    (mod 'WOMENACE'): removed element at 0 from List`1.
 Template patch 'SkillTemplate:effect.bleeding_clear_smoke.EventHandlers'
-    (mod 'WoMENACE'): cleared List`1.
+    (mod 'WOMENACE'): cleared List`1.
 ```
 
 Live state confirmed: source kept its 4 handlers, the remove-smoke clone

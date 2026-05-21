@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Numerics;
-using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using Jiangyu.Core.Abstractions;
@@ -192,18 +191,23 @@ public static class GlbMeshBundleCompiler
             if (meshes.Count == 0 && textures.Count == 0 && directSprites.Count == 0 && directAudioAssets.Count == 0)
                 throw new InvalidOperationException("No replacement assets were extracted.");
 
-            var sourceDiagnosticsPath = outputBundlePath + ".source-diagnostics.json";
+            var modRoot = Path.GetFullPath(Path.Combine(unityProjectDir, ".."));
+            var bundleFileName = Path.GetFileName(outputBundlePath);
+            var diagnosticsDir = Path.Combine(modRoot, ".jiangyu", "diagnostics");
+            var sourceDiagnosticsPath = Path.Combine(diagnosticsDir, bundleFileName + ".source-diagnostics.json");
             WriteSourceDiagnostics(sourceDiagnosticsPath, meshes);
 
             sw.Restart();
-            var meshDataPath = Path.Combine(unityProjectDir, "meshdata.bin");
-            var textureDataPath = Path.Combine(unityProjectDir, "texturedata.bin");
+            var glbStagingDir = Path.Combine(modRoot, ".jiangyu", "glb_staging");
+            Directory.CreateDirectory(glbStagingDir);
+            var meshDataPath = Path.Combine(glbStagingDir, "meshdata.bin");
+            var textureDataPath = Path.Combine(glbStagingDir, "texturedata.bin");
             WriteMeshData(meshDataPath, meshes);
             WriteTextureData(textureDataPath, [.. textures.Values.OrderBy(texture => texture.Name, StringComparer.Ordinal)]);
-            await SetupUnityProjectAsync(unityProjectDir, directSprites, directAudioAssets);
+            await StageMeshReplacementAssetsAsync(unityProjectDir, directSprites, directAudioAssets);
             log?.Info($"  [timing]   Write staging data: {sw.Elapsed.TotalSeconds:F1}s");
-            var diagnosticsPath = outputBundlePath + ".unity-diagnostics.json";
-            var contractPath = Path.Combine(unityProjectDir, "meshcontract.bin");
+            var diagnosticsPath = Path.Combine(diagnosticsDir, bundleFileName + ".unity-diagnostics.json");
+            var contractPath = Path.Combine(glbStagingDir, "meshcontract.bin");
             var firstPassOutputPath = outputBundlePath;
 
             var allTargetMeshNames = entries
@@ -1659,8 +1663,13 @@ public static class GlbMeshBundleCompiler
             writer.Write(value);
     }
 
-    private static void WriteSourceDiagnostics(string path, IReadOnlyList<CompiledMesh> meshes)
+    internal static void WriteSourceDiagnostics(string path, IReadOnlyList<CompiledMesh> meshes)
     {
+        if (meshes.Count == 0)
+            return;
+        var dir = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
         var payload = meshes.Select(mesh =>
         {
             var vertexCount = mesh.Vertices.Length / 3;
@@ -1712,31 +1721,26 @@ public static class GlbMeshBundleCompiler
         File.WriteAllText(path, json);
     }
 
-    private static async Task SetupUnityProjectAsync(
-        string unityProjectDir,
+    private static Task StageMeshReplacementAssetsAsync(
+        string userUnityDir,
         IReadOnlyList<ImportedSpriteAsset> directSprites,
         IReadOnlyList<ImportedAudioAsset> directAudioAssets)
     {
-        var assetsDir = Path.Combine(unityProjectDir, "Assets");
-        var editorDir = Path.Combine(assetsDir, "Editor");
-        Directory.CreateDirectory(editorDir);
+        var stagingRoot = Path.Combine(userUnityDir, "Assets", "Jiangyu", "Staging", "MeshReplacement");
 
-        var buildScript = LoadEmbeddedResource("Jiangyu.Core.Unity.MeshBundleBuilder.template");
-        await File.WriteAllTextAsync(Path.Combine(editorDir, "MeshBundleBuilder.cs"), buildScript);
-
-        var audioDir = Path.Combine(assetsDir, "Audio");
+        var audioDir = Path.Combine(stagingRoot, "Audio");
         if (Directory.Exists(audioDir))
             Directory.Delete(audioDir, recursive: true);
 
-        var spriteSourceDir = Path.Combine(assetsDir, "SpriteSources");
+        var spriteSourceDir = Path.Combine(stagingRoot, "SpriteSources");
         if (Directory.Exists(spriteSourceDir))
             Directory.Delete(spriteSourceDir, recursive: true);
-        var spriteAdditionDir = Path.Combine(assetsDir, "SpriteAdditions");
+        var spriteAdditionDir = Path.Combine(stagingRoot, "SpriteAdditions");
         if (Directory.Exists(spriteAdditionDir))
             Directory.Delete(spriteAdditionDir, recursive: true);
 
         if (directAudioAssets.Count == 0 && directSprites.Count == 0)
-            return;
+            return Task.CompletedTask;
 
         if (directAudioAssets.Count > 0)
             Directory.CreateDirectory(audioDir);
@@ -1778,11 +1782,13 @@ public static class GlbMeshBundleCompiler
             var destinationPath = Path.Combine(targetDir, $"{destinationName}{extension}");
             File.Copy(asset.SourceFilePath, destinationPath, overwrite: true);
         }
+
+        return Task.CompletedTask;
     }
 
     private static async Task InvokeUnityBuildAsync(
         string unityEditor,
-        string unityProjectDir,
+        string userUnityDir,
         string outputBundlePath,
         string bundleName,
         string meshDataPath,
@@ -1790,13 +1796,15 @@ public static class GlbMeshBundleCompiler
         string diagnosticsPath,
         string? meshContractPath)
     {
-        var logFile = Path.Combine(unityProjectDir, "build.log");
+        var modRoot = Path.GetFullPath(Path.Combine(userUnityDir, ".."));
+        var logFile = Path.Combine(modRoot, ".jiangyu", "unity_build_mesh.log");
         var arguments = string.Join(" ",
             "-batchmode",
             "-nographics",
             "-quit",
-            $"-projectPath \"{unityProjectDir}\"",
-            "-executeMethod MeshBundleBuilder.Build",
+            "-buildTarget StandaloneWindows64",
+            $"-projectPath \"{userUnityDir}\"",
+            "-executeMethod Jiangyu.Mod.BuildMeshReplacementBundle.BuildAll",
             $"-meshDataPath \"{meshDataPath}\"",
             $"-textureDataPath \"{textureDataPath}\"",
             $"-outputPath \"{outputBundlePath}\"",
@@ -1812,8 +1820,6 @@ public static class GlbMeshBundleCompiler
                 FileName = unityEditor,
                 Arguments = arguments,
                 UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
             }
         };
 
@@ -1823,7 +1829,6 @@ public static class GlbMeshBundleCompiler
         if (process.ExitCode == 0)
             return;
 
-        var errorOutput = await process.StandardError.ReadToEndAsync();
         var logTail = string.Empty;
         if (File.Exists(logFile))
         {
@@ -1832,7 +1837,7 @@ public static class GlbMeshBundleCompiler
         }
 
         throw new InvalidOperationException(
-            $"Unity mesh build failed (exit code {process.ExitCode}). Log: {logFile}{Environment.NewLine}{errorOutput}{Environment.NewLine}{logTail}".Trim());
+            $"Unity mesh build failed (exit code {process.ExitCode}). Log: {logFile}{Environment.NewLine}{logTail}".Trim());
     }
 
     private static void WriteMeshContracts(string path, IReadOnlyList<MeshBuildContract> contracts)
@@ -1863,14 +1868,5 @@ public static class GlbMeshBundleCompiler
                     writer.Write(value);
             }
         }
-    }
-
-    internal static string LoadEmbeddedResource(string name)
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        using var stream = assembly.GetManifestResourceStream(name)
-            ?? throw new InvalidOperationException($"Embedded resource '{name}' not found.");
-        using var reader = new StreamReader(stream);
-        return reader.ReadToEnd();
     }
 }

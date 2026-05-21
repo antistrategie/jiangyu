@@ -15,7 +15,7 @@ namespace Jiangyu.Mod
     /// <c>asset="dir/test_cube"</c> resolves at runtime against
     /// <c>BundleReplacementCatalog.AdditionPrefabs</c>.
     ///
-    /// Output goes to <c>&lt;modRoot&gt;/.jiangyu/unity-build/</c> (sibling of
+    /// Output goes to <c>&lt;modRoot&gt;/.jiangyu/unity_build/</c> (sibling of
     /// <c>unity/</c>) where the Jiangyu compile pipeline picks them up.
     ///
     /// Invoked as:
@@ -67,7 +67,7 @@ namespace Jiangyu.Mod
             // unity/ is <modRoot>/unity, so its parent is the mod root.
             var projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             var modRoot = Path.GetFullPath(Path.Combine(projectRoot, ".."));
-            var outputDir = Path.Combine(modRoot, ".jiangyu", "unity-build");
+            var outputDir = Path.Combine(modRoot, ".jiangyu", "unity_build");
             Directory.CreateDirectory(outputDir);
 
             var manifest = BuildPipeline.BuildAssetBundles(

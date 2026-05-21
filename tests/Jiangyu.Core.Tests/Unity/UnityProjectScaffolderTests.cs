@@ -30,6 +30,8 @@ public sealed class UnityProjectScaffolderTests : IDisposable
         var unityDir = Path.Combine(_tempRoot, "unity");
         Assert.True(Directory.Exists(unityDir));
         Assert.True(File.Exists(Path.Combine(unityDir, "Assets", "Jiangyu", "Editor", "BuildBundles.cs")));
+        Assert.True(File.Exists(Path.Combine(unityDir, "Assets", "Jiangyu", "Editor", "BuildModelBundles.cs")));
+        Assert.True(File.Exists(Path.Combine(unityDir, "Assets", "Jiangyu", "Editor", "BuildMeshReplacementBundle.cs")));
         Assert.True(File.Exists(Path.Combine(unityDir, "Assets", "Jiangyu", "Editor", "ImportedPrefabPostProcessor.cs")));
         Assert.True(File.Exists(Path.Combine(unityDir, "Assets", "Jiangyu", "Editor", "BakeHumanoid.cs")));
         Assert.True(File.Exists(Path.Combine(unityDir, "Assets", "Jiangyu", "README.md")));
@@ -180,6 +182,34 @@ public sealed class UnityProjectScaffolderTests : IDisposable
         Assert.Contains("Hips", content);
         Assert.Contains("UpperArm_L", content);
         Assert.Contains("Foot_R", content);
+    }
+
+    [Fact]
+    public void BuildModelBundles_TemplateContractsAreStable()
+    {
+        // BuildModelBundles ships into modder unity/ projects and is invoked
+        // by CompilationService via batchmode. Lock the entry-point name and
+        // the soldier-rig guard so a future edit can't silently remove the
+        // guard, which would cause non-soldier props to be 100x-scaled.
+        var scaffolder = new UnityProjectScaffolder(new NullLog());
+        scaffolder.Init(_tempRoot);
+
+        var content = File.ReadAllText(
+            Path.Combine(_tempRoot, "unity", "Assets", "Jiangyu", "Editor", "BuildModelBundles.cs"));
+
+        Assert.Contains("namespace Jiangyu.Mod", content);
+        Assert.Contains("class BuildModelBundles", content);
+        Assert.Contains("public static void BuildAll()", content);
+
+        // Batchmode CLI flag consumed by CompilationService.InvokeUnityBuildForModels.
+        Assert.Contains("\"-bundleName\"", content);
+
+        // Soldier-rig guard: NormalizeCharacterPrefab must early-return when
+        // Root/Hips is absent, so prop models pass through untouched. The
+        // guard's existence is asserted by both the Find("Root/Hips") lookup
+        // and the early-return shape.
+        Assert.Contains("Root/Hips", content);
+        Assert.Matches(@"hips\s*==\s*null[\s\S]{0,80}return", content);
     }
 
     [Fact]

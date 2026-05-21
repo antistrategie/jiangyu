@@ -10,7 +10,7 @@
 
 ## Why substitution rather than sample mutation
 
-The "mutate the game `AudioClip` in place" approach used for textures cannot be applied to audio on this stack. `AudioClip.GetData(float[], int)` and `AudioClip.SetData(float[], int)` both throw `ObjectCollectedException: Object was garbage collected in IL2CPP domain` in MelonLoader 0.7.2 + Il2CppInterop 1.5.1 on Unity 6, regardless of whether the clip was bundle-loaded or game-native. A direct-ICall probe confirmed Il2CppInterop does not surface the real native `AudioClip::GetData` function either — resolution yields a managed stub rather than the native method, so the usual wrapper pattern (used for `Il2CppAssetBundleManager` in `BundleLoader.cs`) is not viable.
+The "mutate the game `AudioClip` in place" approach used for textures cannot be applied to audio on this stack. `AudioClip.GetData(float[], int)` and `AudioClip.SetData(float[], int)` both throw `ObjectCollectedException: Object was garbage collected in IL2CPP domain` on Il2CppInterop 1.5.1 + Unity 6, regardless of whether the clip was bundle-loaded or game-native. A direct-ICall probe confirmed Il2CppInterop does not surface the real native `AudioClip::GetData` function either. Resolution yields a managed stub rather than the native method, so a manual native-ICall wrapper is not viable.
 
 Playback-time substitution sidesteps the broken primitive entirely. Every audio playback on this stack routes through one of the hooked entry points, so substituting the clip at prefix time reaches every consumer — audio manager singletons, cached `PlayOneShot(clip)` argument paths, and direct `AudioSource.clip` playback — without needing to read or write sample data.
 

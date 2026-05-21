@@ -167,7 +167,7 @@ referenced by a save survive a cold restart because the loader restores the
 Ancestor visibility was confirmed end-to-end against the live game,
 2026-04-30:
 
-1. WoMENACE LRM5 directive
+1. WOMENACE LRM5 directive
    (`templateType: ModularVehicleWeaponTemplate`,
    `sourceId: mod_weapon.medium.rocket_launcher`,
    `cloneId: mod_weapon.medium.lrm5`) reaches the BlackMarket pool, which
@@ -190,7 +190,7 @@ Ancestor visibility was confirmed end-to-end against the live game,
 `OwnedItems` save-reload was confirmed end-to-end against the live game,
 2026-05-04:
 
-1. WoMENACE clones four `ModularVehicleWeaponTemplate` variants (lrm5,
+1. WOMENACE clones four `ModularVehicleWeaponTemplate` variants (lrm5,
    lrm10, lrm15, lrm20) from `mod_weapon.medium.rocket_launcher`. A campaign
    acquired all three smaller variants and saved.
 2. Cold restart: the save loaded cleanly through `OwnedItems.ProcessSaveState`

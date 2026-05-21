@@ -2,7 +2,7 @@
 
 ## Purpose
 
-First in-game end-to-end smoke test of the convention-first **texture**, **sprite**, and **audio** replacement paths, driven by a minimal test mod rather than WoMENACE.
+First in-game end-to-end smoke test of the convention-first **texture**, **sprite**, and **audio** replacement paths, driven by a minimal test mod rather than WOMENACE.
 
 The compile-time and bundle-loading sides of all three categories had passing unit tests and worked in isolation; what was missing was a live datapoint on the loader's runtime-apply logic against real MENACE assets.
 
@@ -12,7 +12,7 @@ The compile-time and bundle-loading sides of all three categories had passing un
   - three red 512×512 PNG replacements for the three `local_forces_basic_soldier*_BaseMap` `Texture2D` assets (pathIds 1473, 1511, 1610)
   - one red 144×144 PNG replacement for the `icon_hitpoints` `Sprite` (pathId 4151)
   - one 0.25-second 880 Hz sine wave replacement for the `button_click_01` `AudioClip` (pathId 15854)
-- WoMENACE temporarily moved out of `Mods/` so the test mod was the only `jiangyu.json`-driven content.
+- WOMENACE temporarily moved out of `Mods/` so the test mod was the only `jiangyu.json`-driven content.
 - Loader built with `Jiangyu.Shared` + `System.Text.Json` + `System.Text.Encodings.Web` merged into a single DLL via ILRepack.
 - Game launched; tactical scene entered with a basic-soldier squad visible; UI buttons exercised.
 
@@ -157,11 +157,11 @@ In-place mutation is therefore not merely equivalent to consumer-walk for textur
 
 ### Audio — blocked by Il2CppInterop `GetData`/`SetData` marshalling bug
 
-An analogous experiment for `AudioClip` in-place mutation failed at the `GetData` call with `Object was garbage collected in IL2CPP domain`. The diagnostic pass confirmed the failure is not specific to our bundle-loaded replacement clip: probing both the game clip (`button_click_01`, pathId 220258) and our replacement clip (instance 289298) with a tiny 64-sample buffer triggered the same exception on both. The bug is in Il2CppInterop's `float[]` marshalling for this MelonLoader 0.7.2 + Unity 6 + Il2CppInterop combination. It is not MENACE-specific and not bundle-specific.
+An analogous experiment for `AudioClip` in-place mutation failed at the `GetData` call with `Object was garbage collected in IL2CPP domain`. The diagnostic pass confirmed the failure is not specific to our bundle-loaded replacement clip: probing both the game clip (`button_click_01`, pathId 220258) and our replacement clip (instance 289298) with a tiny 64-sample buffer triggered the same exception on both. The bug is in Il2CppInterop's `float[]` marshalling for the Unity 6 + Il2CppInterop 1.5.1 combination. It is not MENACE-specific and not bundle-specific.
 
 Report: `<UserData>/jiangyu-experiment-copytexture/<timestamp>-Tactical.json`, `AudioTargets[].Candidates[].Note` carries the per-probe outcome. Confirmed across `Splash`, `Title`, and `Tactical`.
 
-This is the same bug class the codebase already works around in `BundleLoader.cs` (two Unity 6 IL2CPP ICall issues documented in the TODO comment at the top of `JiangyuMod.cs`). The fix pattern is a manual ICall wrapper that bypasses Il2CppInterop's broken array marshalling and calls Unity's underlying native method directly.
+This is the same bug class that blocks `UnityEngine.AssetBundle.LoadFromMemory(byte[])` on the same stack. The bundle-loading path sidesteps it by using MelonLoader's hand-resolved `UnityEngine.Il2CppAssetBundleManager` (shipped in 0.7.3 via `LavaGang/MelonLoader#1122`), which builds `ManagedSpanWrapper` from a fixed `char*` and calls Unity's `_Injected` ICalls directly. Audio cannot use the same pattern because Il2CppInterop's lookup for `AudioClip::GetData` resolves to a managed stub rather than the underlying native function.
 
 ### Atlas concerns confirmed, unaddressed
 
@@ -203,5 +203,5 @@ Extend the inspector rather than writing one-off scripts as new identity surface
 
 - Jiangyu commit at time of test: `d5101ade3` + uncommitted loader/CLI changes from this session (ILRepack merge, `--path-id` on `assets export model`, `ResolveGameObjectBacking`, compile heads-up).
 - MENACE Unity version: `6000.0.63f1`.
-- MelonLoader: `0.7.2`.
+- MelonLoader: `0.7.2`. (Investigation was originally performed against 0.7.2. The `AudioClip` marshalling bug still reproduces on the current 0.7.3 + Il2CppInterop 1.5.1 stack.)
 - Platform: Linux (Steam Proton). MelonLoader ran under Proton; log captured from `MelonLoader/Latest.log`.

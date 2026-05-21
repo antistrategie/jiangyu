@@ -22,8 +22,8 @@ most likely cause and determine whether Blender settings alone could fix it.
 
 | Label | Path |
 |-------|------|
-| Clean Jiangyu export | `WoMENACE/exported/el.local_forces_conscript_soldier/model.gltf` |
-| Blender round-trip | `WoMENACE/assets/replacements/models/el.local_forces_basic_soldier--519/model.gltf` |
+| Clean Jiangyu export | `WOMENACE/exported/el.local_forces_conscript_soldier/model.gltf` |
+| Blender round-trip | `WOMENACE/assets/replacements/models/el.local_forces_basic_soldier--519/model.gltf` |
 
 Both files describe the same source mesh (conscript soldier, 4 LODs, 21 joints, single
 material). The Blender file has entity/node names rewritten to the basic_soldier target

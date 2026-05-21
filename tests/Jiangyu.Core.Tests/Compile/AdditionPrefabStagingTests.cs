@@ -67,7 +67,7 @@ public sealed class AdditionPrefabStagingTests : IDisposable
     {
         var manifest = NewManifest();
         var escapeHatch = MakeSourceDir("escape", ("widget", "stale hand-shipped"));
-        var unityBuild = MakeSourceDir("unity-build", ("widget", "fresh unity-built"));
+        var unityBuild = MakeSourceDir("unity_build", ("widget", "fresh unity-built"));
 
         AdditionPrefabStaging.Stage([escapeHatch, unityBuild], _outputDir, manifest, _log);
 
@@ -81,7 +81,7 @@ public sealed class AdditionPrefabStagingTests : IDisposable
     {
         var manifest = NewManifest();
         var escapeHatch = MakeSourceDir("escape", ("alpha", "alpha contents"));
-        var unityBuild = MakeSourceDir("unity-build", ("beta", "beta contents"));
+        var unityBuild = MakeSourceDir("unity_build", ("beta", "beta contents"));
 
         AdditionPrefabStaging.Stage([escapeHatch, unityBuild], _outputDir, manifest, _log);
 
@@ -137,6 +137,56 @@ public sealed class AdditionPrefabStagingTests : IDisposable
         File.WriteAllText(Path.Combine(prefabsDir, "README.md"), "");
 
         Assert.False(AdditionPrefabStaging.ShouldInvokeUnityForPrefabs(_tempRoot));
+    }
+
+    [Fact]
+    public void ClearStaleBuildOutput_RemovesPriorBundles()
+    {
+        // The regression this guards: a previous compile produced widget.bundle,
+        // then the modder deleted their last prefab. Without the wipe the stale
+        // bundle would be re-shipped on the next compile because Stage walks
+        // whatever sits in unity_build/.
+        var buildDir = Path.Combine(_tempRoot, ".jiangyu", "unity_build");
+        Directory.CreateDirectory(buildDir);
+        File.WriteAllText(Path.Combine(buildDir, "widget.bundle"), "stale");
+        File.WriteAllText(Path.Combine(buildDir, "widget.bundle.manifest"), "stale manifest");
+
+        AdditionPrefabStaging.ClearStaleBuildOutput(buildDir);
+
+        Assert.Empty(Directory.GetFiles(buildDir));
+        Assert.True(Directory.Exists(buildDir));
+    }
+
+    [Fact]
+    public void ClearStaleBuildOutput_CreatesDirIfMissing()
+    {
+        var buildDir = Path.Combine(_tempRoot, ".jiangyu", "unity_build");
+        Assert.False(Directory.Exists(buildDir));
+
+        AdditionPrefabStaging.ClearStaleBuildOutput(buildDir);
+
+        Assert.True(Directory.Exists(buildDir));
+        Assert.Empty(Directory.GetFiles(buildDir));
+    }
+
+    [Fact]
+    public void Stage_AfterClearWithNoSources_LeavesCompiledEmpty()
+    {
+        // End-to-end of the regression scenario: stale bundle in unity_build/,
+        // modder has no prefabs left, Stage is called with the unity_build/
+        // source dir. With ClearStaleBuildOutput run first, the stale bundle
+        // doesn't reach compiled/.
+        var buildDir = Path.Combine(_tempRoot, ".jiangyu", "unity_build");
+        Directory.CreateDirectory(buildDir);
+        File.WriteAllText(Path.Combine(buildDir, "widget.bundle"), "stale");
+
+        AdditionPrefabStaging.ClearStaleBuildOutput(buildDir);
+
+        var manifest = NewManifest();
+        AdditionPrefabStaging.Stage([buildDir], _outputDir, manifest, _log);
+
+        Assert.Null(manifest.AdditionPrefabs);
+        Assert.Empty(Directory.GetFiles(_outputDir));
     }
 
     private string MakeSourceDir(string name, params (string stem, string contents)[] bundles)

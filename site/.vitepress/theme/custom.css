@@ -159,7 +159,10 @@
    mixed-case doc headings where the first letter appears oversized) */
 .vp-doc h1,
 .vp-doc h2,
-.vp-doc h3 {
+.vp-doc h3,
+.vp-doc h4,
+.vp-doc h5,
+.vp-doc h6 {
   font-family: var(--jy-font-editorial);
   letter-spacing: 0.02em;
 }

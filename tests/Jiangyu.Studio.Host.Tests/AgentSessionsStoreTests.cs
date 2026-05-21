@@ -116,7 +116,7 @@ public class AgentSessionsStoreTests : IDisposable
     {
         var dir = Path.Combine(_projectDir, ".jiangyu");
         Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, "agent-sessions.json");
+        var path = Path.Combine(dir, "agent_sessions.json");
         File.WriteAllText(path, "{ this is not valid json");
 
         var file = AgentSessionsStore.Load(_projectDir);
