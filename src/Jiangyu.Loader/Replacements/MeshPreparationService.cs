@@ -52,9 +52,8 @@ internal sealed class MeshPreparationService
             }
         }
 
-        if (prepared.Mesh == null)
-        {
-            if (MeshPreparationUtilities.TryPrepareReplacementMeshForLiveBones(
+        if (prepared.Mesh == null &&
+            MeshPreparationUtilities.TryPrepareReplacementMeshForLiveBones(
                 log,
                 smr,
                 originalMesh,
@@ -64,19 +63,14 @@ internal sealed class MeshPreparationService
                 targetBones,
                 newBones,
                 out var preparedReplacementMesh))
-            {
-                _pinned.Add(preparedReplacementMesh);
-                prepared.Mesh = preparedReplacementMesh;
-                prepared.Bounds = preparedReplacementMesh.bounds;
-            }
-            else
-            {
-                prepared.Mesh = effectiveReplacementMesh;
-                prepared.Bounds = effectiveReplacementMesh.bounds;
-            }
+        {
+            _pinned.Add(preparedReplacementMesh);
+            prepared.Mesh = preparedReplacementMesh;
+            prepared.Bounds = preparedReplacementMesh.bounds;
         }
 
-        _preparedAssignments[key] = prepared;
+        if (prepared.Mesh != null)
+            _preparedAssignments[key] = prepared;
         return prepared;
     }
 

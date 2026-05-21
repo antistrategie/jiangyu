@@ -79,6 +79,11 @@ internal sealed class DirectMeshReplacementApplier
                 ? smr.rootBone
                 : ResolveRootBone(smr.rootBone, replacementBoneNames, stripLeadingRoot, gameBoneMap);
             var prepared = _meshPreparation.GetOrPrepare(log, smr, replacement, targetBoneNames, effectiveBoneNames, gameBones, newBones);
+            if (prepared.Mesh == null)
+            {
+                log.Warning($"  [DIAG] skipping swap for '{replacement.Mesh?.name ?? "<null>"}' on '{smr.name}': mesh preparation produced no usable mesh.");
+                return false;
+            }
             var safeBounds = MergeBounds(smr.localBounds, prepared.Bounds);
 
             smr.sharedMesh = prepared.Mesh;

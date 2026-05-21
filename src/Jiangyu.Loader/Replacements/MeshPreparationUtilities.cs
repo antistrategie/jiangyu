@@ -45,7 +45,6 @@ internal static class MeshPreparationUtilities
             targetMesh.triangles = triangles;
             targetMesh.RecalculateBounds();
 
-            log.Msg($"  [DIAG] in-place geometry copy ok verts={vertices.Length} tris={triangles.Length}");
             return true;
         }
         catch (Exception ex)
@@ -236,29 +235,6 @@ internal static class MeshPreparationUtilities
         return aligned;
     }
 
-    public static bool TryUseReplacementMeshDirectly(MelonLogger.Instance log, Mesh targetMesh, Mesh replacementMesh, string[] targetBoneNames, string[] replacementBoneNames)
-    {
-        if (targetMesh == null || replacementMesh == null)
-            return false;
-        if (targetBoneNames == null || replacementBoneNames == null)
-            return false;
-        if (targetBoneNames.Length != replacementBoneNames.Length)
-            return false;
-
-        for (int i = 0; i < targetBoneNames.Length; i++)
-        {
-            if (!string.Equals(targetBoneNames[i], replacementBoneNames[i], StringComparison.Ordinal))
-                return false;
-        }
-
-        if (!TryReadNativeBindPoses(log, targetMesh, out var targetBindPoses) || targetBindPoses == null)
-            return false;
-        if (!TryReadNativeBindPoses(log, replacementMesh, out var replacementBindPoses) || replacementBindPoses == null)
-            return false;
-
-        return BindPosesMatch(targetBindPoses, replacementBindPoses);
-    }
-
     private static Matrix4x4[] BuildBindPosesFromLiveBones(Transform rendererTransform, Transform[] bones)
     {
         var bindPoses = new Matrix4x4[bones.Length];
@@ -301,27 +277,6 @@ internal static class MeshPreparationUtilities
             log.Warning($"Failed to read native bindposes from '{sourceMesh.name}': {ex.GetType().Name}: {ex.Message}");
             return false;
         }
-    }
-
-    private static bool BindPosesMatch(Matrix4x4[] a, Matrix4x4[] b, float epsilon = 1e-4f)
-    {
-        if (a == null || b == null || a.Length != b.Length)
-            return false;
-
-        for (int i = 0; i < a.Length; i++)
-        {
-            var ma = a[i];
-            var mb = b[i];
-            if (Math.Abs(ma.m00 - mb.m00) > epsilon || Math.Abs(ma.m01 - mb.m01) > epsilon || Math.Abs(ma.m02 - mb.m02) > epsilon || Math.Abs(ma.m03 - mb.m03) > epsilon ||
-                Math.Abs(ma.m10 - mb.m10) > epsilon || Math.Abs(ma.m11 - mb.m11) > epsilon || Math.Abs(ma.m12 - mb.m12) > epsilon || Math.Abs(ma.m13 - mb.m13) > epsilon ||
-                Math.Abs(ma.m20 - mb.m20) > epsilon || Math.Abs(ma.m21 - mb.m21) > epsilon || Math.Abs(ma.m22 - mb.m22) > epsilon || Math.Abs(ma.m23 - mb.m23) > epsilon ||
-                Math.Abs(ma.m30 - mb.m30) > epsilon || Math.Abs(ma.m31 - mb.m31) > epsilon || Math.Abs(ma.m32 - mb.m32) > epsilon || Math.Abs(ma.m33 - mb.m33) > epsilon)
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     private static string FormatNameListPreview(IEnumerable<string> names, int maxItems)

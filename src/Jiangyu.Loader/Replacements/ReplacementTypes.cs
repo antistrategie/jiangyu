@@ -11,6 +11,10 @@ internal sealed class ReplacementMesh
     public string TargetEntityName;
     public long TargetEntityPathId;
     public bool HasTargetEntityPathId;
+    // Set once PrefabMeshRebindApplier has rebound the SMR on the source
+    // prefab. Persists across scene loads because the prefab template (and
+    // its now-[jiangyu]-marked sharedMesh) survives scene unload.
+    public bool AppliedToPrefab;
 
     public ReplacementMesh(
         Mesh mesh,

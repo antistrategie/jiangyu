@@ -17,6 +17,7 @@ internal class ReplacementCoordinator
     private readonly TextureMutationService _textureMutation;
     private readonly MeshPreparationService _meshPreparation;
     private readonly DirectMeshReplacementApplier _directReplacements;
+    private readonly PrefabMeshRebindApplier _prefabRebindApplier;
     private readonly DrivenPrefabReplacementManager _drivenReplacements;
     private readonly TemplatePatchCatalog _templatePatches;
     private readonly TemplatePatchApplier _templatePatchApplier;
@@ -24,12 +25,11 @@ internal class ReplacementCoordinator
     private readonly TemplateBindingCatalog _templateBindings;
     private readonly TemplateCloneApplier _templateCloneApplier;
     private readonly LoaderHarmonyPatchInstaller _harmonyPatchInstaller;
-    // Tracks SMRs we've already processed in this session. The mesh-name-based
-    // IsAlreadyProcessedMesh check isn't sufficient because the "direct use"
-    // swap path assigns the bundle's mesh verbatim (no " [jiangyu]" suffix
-    // added), so subsequent sweeps can't tell the SMR apart from an un-swapped
-    // one. Without this, the continuous spawn monitor re-swaps every already-
-    // handled SMR every tick, which scales badly with unit count.
+    // Per-instance dedupe for the driven-prefab branch. DrivenPrefabReplacementManager
+    // does not leave a "[jiangyu]" marker on smr.sharedMesh, so the IsAlreadyProcessedMesh
+    // check below cannot tell a driven-handled SMR apart from an un-handled one. The
+    // mesh-rebind branches mark sharedMesh and dedupe via that suffix, but this set is
+    // still cheap insurance against the spawn monitor re-firing driven creation every tick.
     private readonly HashSet<int> _processedSmrInstanceIds = new();
 
     public ReplacementCoordinator()
@@ -39,6 +39,7 @@ internal class ReplacementCoordinator
         _textureMutation = new TextureMutationService(_catalog.ReplacementTextures);
         _meshPreparation = new MeshPreparationService(_pinned);
         _directReplacements = new DirectMeshReplacementApplier(_materialReplacements, _meshPreparation);
+        _prefabRebindApplier = new PrefabMeshRebindApplier(_catalog, _directReplacements);
         _drivenReplacements = new DrivenPrefabReplacementManager(_pinned);
         _templatePatches = new TemplatePatchCatalog();
         _templatePatchApplier = new TemplatePatchApplier(_templatePatches, new ModAssetResolver(_catalog));
@@ -96,7 +97,13 @@ internal class ReplacementCoordinator
             !_templateCloneApplier.HasPendingClones)
             return;
 
-        var visualReplacements = 0;
+        // Prefab-time rebind propagates by sharedMesh reference to every
+        // Instantiate'd copy, so future spawns of the carrier (loadout
+        // rebuilds, SaveSystem.Load reinstantiation) come out pre-swapped.
+        // The per-instance sweep below catches replacements without a
+        // TargetEntityName and any prefab not yet in Resources.
+        var visualReplacements = _prefabRebindApplier.Apply(log);
+
         var skinnedRenderers = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<SkinnedMeshRenderer>(), true);
 
         foreach (var obj in skinnedRenderers)
