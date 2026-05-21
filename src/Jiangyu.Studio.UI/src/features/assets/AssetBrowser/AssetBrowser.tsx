@@ -30,6 +30,7 @@ import {
   setProjectAssetExportPath,
   type ProjectConfig,
 } from "@features/project/config";
+import type { AssetPreviewResult } from "@shared/rpc";
 import { isAbsolute, join, normalise } from "@shared/path";
 import { useToast } from "@shared/toast";
 import { DEFAULT_ASSET_BROWSER_STATE, type AssetBrowserState } from "@features/panes/browserState";
@@ -152,11 +153,10 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
   }, []);
 
   // Asset preview state — guarded by a token so stale responses from a
-  // previously focused asset don't overwrite the current preview.
-  const [previewData, setPreviewData] = useState<{
-    dataUrl: string;
-    mimeType: string;
-  } | null>(null);
+  // previously focused asset don't overwrite the current preview. Stored as
+  // raw base64 (not a data: URL) because ModelViewer can't fetch() large
+  // data: URLs under WebKitGTK.
+  const [previewData, setPreviewData] = useState<AssetPreviewResult | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const previewTokenRef = useRef(0);
 
@@ -225,12 +225,7 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
     void assetsPreview({ collection: focused.collection, pathId: focused.pathId, className })
       .then((result) => {
         if (previewTokenRef.current !== token) return;
-        if (result) {
-          setPreviewData({
-            dataUrl: `data:${result.mimeType};base64,${result.data}`,
-            mimeType: result.mimeType,
-          });
-        }
+        if (result) setPreviewData(result);
       })
       .catch((err: unknown) => {
         console.warn("[AssetBrowser] preview failed:", err);
@@ -524,7 +519,7 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
       : join(projectPath, projectConfig.assetExportPath)
     : null;
 
-  const defaultBaseDir = useMemo(() => join(projectPath, ".jiangyu", "exports"), [projectPath]);
+  const defaultBaseDir = useMemo(() => join(projectPath, "exported"), [projectPath]);
 
   const resolveBaseDir = useCallback(
     async (dest: Destination): Promise<string | null> => {
@@ -867,7 +862,7 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
 interface AssetDetailsProps {
   readonly focusedKey: string | null;
   readonly results: readonly AssetEntry[];
-  readonly previewData: { dataUrl: string; mimeType: string } | null;
+  readonly previewData: AssetPreviewResult | null;
   readonly previewLoading: boolean;
   readonly nameUniqueness: ReadonlyMap<string, number>;
   readonly actionMenuRef: React.RefObject<HTMLDivElement | null>;
@@ -907,6 +902,15 @@ function AssetDetails({
   importProgress,
   allSelectedArePrefabs,
 }: AssetDetailsProps) {
+  // Memoise so the megabyte-class base64 isn't re-concatenated each render
+  // (AssetDetails re-renders on every parent state change). The image/audio
+  // src reset logic in those viewers compares by string value, so identity
+  // doesn't matter for correctness — only for avoiding wasted work.
+  const previewDataUrl = useMemo(
+    () => (previewData ? `data:${previewData.mimeType};base64,${previewData.data}` : ""),
+    [previewData],
+  );
+
   if (focusedKey === null) {
     return <div className={styles.detailsEmpty}>Select an asset to see details</div>;
   }
@@ -915,11 +919,11 @@ function AssetDetails({
 
   let preview: React.ReactNode;
   if (previewData?.mimeType === "image/png") {
-    preview = <ImageViewer src={previewData.dataUrl} alt={focused.name ?? "Asset preview"} />;
+    preview = <ImageViewer src={previewDataUrl} alt={focused.name ?? "Asset preview"} />;
   } else if (previewData?.mimeType.startsWith("audio/")) {
-    preview = <AudioPlayer src={previewData.dataUrl} />;
+    preview = <AudioPlayer src={previewDataUrl} />;
   } else if (previewData?.mimeType === "model/gltf-binary") {
-    preview = <ModelViewer dataUrl={previewData.dataUrl} />;
+    preview = <ModelViewer base64={previewData.data} />;
   } else if (previewLoading) {
     preview = <Spinner />;
   } else {
@@ -973,7 +977,7 @@ function AssetDetails({
                   >
                     <MenuItemContent>
                       <MenuItemLabel>Export to default</MenuItemLabel>
-                      <MenuItemSubtext>.jiangyu/exports</MenuItemSubtext>
+                      <MenuItemSubtext>exported/</MenuItemSubtext>
                     </MenuItemContent>
                   </MenuItem>
                   <MenuItem
@@ -984,7 +988,7 @@ function AssetDetails({
                     }}
                   >
                     <MenuItemContent>
-                      <MenuItemLabel>Export to project</MenuItemLabel>
+                      <MenuItemLabel>Export to project defined</MenuItemLabel>
                       <MenuItemSubtext>{projectExportPath ?? "not configured"}</MenuItemSubtext>
                     </MenuItemContent>
                   </MenuItem>

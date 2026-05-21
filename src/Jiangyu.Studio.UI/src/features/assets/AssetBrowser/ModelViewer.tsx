@@ -7,19 +7,21 @@ import { Spinner } from "@shared/ui/Spinner/Spinner";
 import styles from "./AssetBrowser.module.css";
 
 interface ModelViewerProps {
-  dataUrl: string;
+  // base64 GLB bytes, not a data: URL — WebKitGTK blocks fetch() on large
+  // data: URLs, so the viewer decodes the bytes itself.
+  base64: string;
 }
 
-export function ModelViewer({ dataUrl }: ModelViewerProps) {
+export function ModelViewer({ base64 }: ModelViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Flip loading on each dataUrl change synchronously off prop identity so the
+  // Flip loading on each base64 change synchronously off prop identity so the
   // spinner shows immediately instead of one render after the effect fires.
-  const [prevDataUrl, setPrevDataUrl] = useState(dataUrl);
-  if (prevDataUrl !== dataUrl) {
-    setPrevDataUrl(dataUrl);
+  const [prevBase64, setPrevBase64] = useState(base64);
+  if (prevBase64 !== base64) {
+    setPrevBase64(base64);
     setLoading(true);
   }
 
@@ -132,8 +134,12 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
 
       void (async () => {
         try {
-          const resp = await fetch(dataUrl);
-          const buffer = await resp.arrayBuffer();
+          const binary = atob(base64);
+          const buffer = new ArrayBuffer(binary.length);
+          const bytes = new Uint8Array(buffer);
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
           if (isCancelled()) return;
 
           const loader = new GLTFLoader();
@@ -175,7 +181,7 @@ export function ModelViewer({ dataUrl }: ModelViewerProps) {
     };
     cleanupRef.current = cleanup;
     return cleanup;
-  }, [dataUrl]);
+  }, [base64]);
 
   return (
     <div ref={containerRef} className={styles.modelViewer}>
