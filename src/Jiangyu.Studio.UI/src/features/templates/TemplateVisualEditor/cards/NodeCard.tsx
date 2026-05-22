@@ -8,6 +8,7 @@ import { useTemplateMembers } from "../hooks";
 import { useEditorDispatch, useNodeIndex } from "../store";
 import { CommitInput } from "../shared/CommitInput";
 import { SuggestionCombobox, type SuggestionItem } from "../shared/SuggestionCombobox";
+import { rpcCall, type TemplateCloneSource, type TemplateCloneSourcesResult } from "@shared/rpc";
 import {
   getCachedTemplateTypes,
   getCachedProjectClones,
@@ -152,11 +153,27 @@ function NodeCardImpl({
 
   const fetchInstances = useCallback(async (): Promise<readonly SuggestionItem[]> => {
     if (!node.templateType) return [];
-    const [searchResult, projectClones] = await Promise.all([
-      templatesSearch(node.templateType),
+    // Non-DataTemplate clone sources (SoundBank, ConversationTemplate)
+    // aren't in the template index. They're surfaced through the asset
+    // index via templatesCloneSources, which returns Path-qualified
+    // IDs for ConversationTemplate so the modder can disambiguate
+    // among the 14+ click_bark assets.
+    const nonDataTemplate =
+      node.templateType === "SoundBank" || node.templateType === "ConversationTemplate";
+    const [searchResult, projectClones, cloneSources] = await Promise.all([
+      nonDataTemplate
+        ? Promise.resolve({ instances: [] as readonly { name: string }[] })
+        : templatesSearch(node.templateType),
       getCachedProjectClones(),
+      nonDataTemplate
+        ? rpcCall<TemplateCloneSourcesResult>("templatesCloneSources", {
+            templateType: node.templateType,
+          })
+        : Promise.resolve({ sources: [] as TemplateCloneSource[] }),
     ]);
-    const gameItems: SuggestionItem[] = searchResult.instances.map((i) => ({ label: i.name }));
+    const gameItems: SuggestionItem[] = nonDataTemplate
+      ? cloneSources.sources.map((s) => ({ label: s.id }))
+      : searchResult.instances.map((i) => ({ label: i.name }));
     const gameLabels = new Set(gameItems.map((i) => i.label));
     const cloneItems: SuggestionItem[] = projectClones
       .filter((c) => c.templateType === node.templateType && !gameLabels.has(c.id))

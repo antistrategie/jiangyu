@@ -116,3 +116,17 @@ export function useNodeIndex(): number {
   if (ni < 0) throw new Error("useNodeIndex must be used inside a NodeIndexContext");
   return ni;
 }
+
+/**
+ * The owning NodeCard's conversation source identifier — the templateId
+ * for a ConversationTemplate patch, or the sourceId for a clone. Lets
+ * deeply-nested rows (SAY/CHOICE composites within m_SerializedNodes)
+ * look up the source conversation's Roles for the RoleGuid combobox
+ * without threading the id through every wrapper. Null for non-
+ * ConversationTemplate cards.
+ */
+export const ConversationSourceContext = createContext<string | null>(null);
+
+export function useConversationSource(): string | null {
+  return use(ConversationSourceContext);
+}

@@ -2,8 +2,22 @@ using Jiangyu.Core.Templates;
 
 namespace Jiangyu.Core.Tests.Templates;
 
-public class HashableIdFieldRegistryTests
+public class HashableIdFieldRegistryTests : IDisposable
 {
+    public HashableIdFieldRegistryTests()
+    {
+        // Each test installs its own resolver as needed; default is an
+        // empty one so unrelated tests aren't entangled with state from
+        // the production install path.
+        HashableIdFieldRegistry.InstallBankIdResolver(
+            new InMemoryBankIdResolver(Array.Empty<KeyValuePair<string, int>>()));
+    }
+
+    public void Dispose()
+    {
+        HashableIdFieldRegistry.InstallBankIdResolver(null);
+    }
+
     [Fact]
     public void Fnv1a32_IsDeterministic()
     {
@@ -57,6 +71,11 @@ public class HashableIdFieldRegistryTests
     [Fact]
     public void TryResolve_BankNamePath_KnownBank()
     {
+        HashableIdFieldRegistry.InstallBankIdResolver(new InMemoryBankIdResolver(new[]
+        {
+            new KeyValuePair<string, int>("weapons_soundbank", 7),
+        }));
+
         var ok = HashableIdFieldRegistry.TryResolve(
             "Stem.ID", "bankId", "weapons_soundbank",
             out var resolved, out var error);
@@ -69,6 +88,11 @@ public class HashableIdFieldRegistryTests
     [Fact]
     public void TryResolve_BankNamePath_UnknownBank()
     {
+        HashableIdFieldRegistry.InstallBankIdResolver(new InMemoryBankIdResolver(new[]
+        {
+            new KeyValuePair<string, int>("weapons_soundbank", 7),
+        }));
+
         var ok = HashableIdFieldRegistry.TryResolve(
             "Stem.ID", "bankId", "not_a_real_bank",
             out var _, out var error);
@@ -78,6 +102,38 @@ public class HashableIdFieldRegistryTests
         Assert.Contains("not_a_real_bank", error);
         // Error should list known banks so the modder can correct.
         Assert.Contains("weapons_soundbank", error);
+    }
+
+    [Fact]
+    public void TryResolve_BankNamePath_NoResolverInstalled_Errors()
+    {
+        HashableIdFieldRegistry.InstallBankIdResolver(null);
+
+        var ok = HashableIdFieldRegistry.TryResolve(
+            "Stem.ID", "bankId", "weapons_soundbank",
+            out _, out var error);
+
+        Assert.False(ok);
+        Assert.NotNull(error);
+        Assert.Contains("no SoundBank resolver installed", error);
+    }
+
+    [Fact]
+    public void TryResolve_SoundBankBankIdField_HashesNameToFnv()
+    {
+        // A SoundBank's own bankId field is FNV-1a hashed from its name.
+        // Modders cloning a vanilla bank pick a new name and set bankId
+        // to that name; the bank registers itself in Stem under the
+        // hashed value. Cross-references via Stem.ID.bankId resolve
+        // through the asset-index-backed resolver (which the asset
+        // indexer populates with the same FNV during indexing).
+        var ok = HashableIdFieldRegistry.TryResolve(
+            "Stem.SoundBank", "bankId", "tactical_barks_voymastina_va",
+            out var resolved, out var error);
+
+        Assert.True(ok);
+        Assert.Null(error);
+        Assert.Equal(HashableIdFieldRegistry.Fnv1a32("tactical_barks_voymastina_va"), resolved);
     }
 
     [Fact]

@@ -38,6 +38,7 @@ internal sealed class TemplateCloneApplier
     // Tracks types whose apply pass has run this tick-cycle. Per-directive
     // idempotency lives in TryApplyType's innerMap.TryGetValue check, not here.
     private readonly HashSet<string> _appliedTypes = new(StringComparer.Ordinal);
+    private readonly List<(UnityEngine.Object Clone, Type ResolvedType, string CloneId)> _pendingSoundBankRegistrations = new();
 
     public TemplateCloneApplier(TemplateCloneCatalog catalog)
     {
@@ -64,6 +65,22 @@ internal sealed class TemplateCloneApplier
     public bool HasConfiguredClones => _catalog.HasClones;
 
     public void ResetApplyState() => _appliedTypes.Clear();
+
+    /// <summary>Runs the post-patch registration steps for type-specific
+    /// runtime indexes that the clone applier itself can't populate at
+    /// clone time. Called from <see cref="Runtime.ReplacementCoordinator"/>
+    /// after <c>_templatePatchApplier.TryApply</c> finishes, so any patches
+    /// the modder applied (in particular SoundBank.bankId rewrites) have
+    /// already landed.</summary>
+    public void RunPostPatchHooks(MelonLogger.Instance log)
+    {
+        if (_pendingSoundBankRegistrations.Count == 0) return;
+        foreach (var pending in _pendingSoundBankRegistrations)
+        {
+            TryRegisterSoundBankWithStem(pending.Clone, pending.ResolvedType, log);
+        }
+        _pendingSoundBankRegistrations.Clear();
+    }
 
     public int TryApply(MelonLogger.Instance log)
     {
@@ -183,20 +200,25 @@ internal sealed class TemplateCloneApplier
         Dictionary<string, LoadedCloneDirective> directives,
         MelonLogger.Instance log)
     {
+        var identityField = NonDataTemplateIdentityRegistry.GetIdentityField(templateTypeName, resolvedType);
+
         var applied = 0;
         foreach (var directive in directives.Values)
         {
-            // Idempotency: skip if a clone with this name already exists
+            // Idempotency: skip if a clone with this id already exists
             // (e.g. session re-registration after a save reload).
-            if (FindByObjectName(liveTemplates, directive.CloneId) != null)
+            if (FindBySourceId(liveTemplates, directive.CloneId, identityField, resolvedType) != null)
                 continue;
 
-            var source = FindByObjectName(liveTemplates, directive.SourceId);
+            var source = FindBySourceId(liveTemplates, directive.SourceId, identityField, resolvedType);
             if (source == null)
             {
+                var lookupNote = identityField != null
+                    ? $"source ScriptableObject not found by name or by {identityField}."
+                    : "source ScriptableObject not found by name.";
                 log.Warning(
                     $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
-                    + "source ScriptableObject not found by name.");
+                    + lookupNote);
                 continue;
             }
 
@@ -217,28 +239,217 @@ internal sealed class TemplateCloneApplier
             cloneObj.hideFlags = UnityEngine.HideFlags.DontUnloadUnusedAsset;
             UnityEngine.Object.DontDestroyOnLoad(cloneObj);
 
+            // Types with an override identity field (e.g. ConversationTemplate.Path)
+            // need that field set to the new CloneId too, so the matcher can
+            // distinguish this clone from its source and from sibling clones.
+            // Modder-side `set` patches against the same field will overwrite
+            // with the same value harmlessly.
+            if (identityField != null)
+            {
+                if (!TrySetIdentityField(cloneObj, resolvedType, identityField, directive.CloneId, out var assignError))
+                {
+                    log.Warning(
+                        $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
+                        + $"could not set identity field '{identityField}': {assignError}.");
+                }
+            }
+
             log.Msg(
                 $"Template clone registered: {templateTypeName}:{directive.SourceId} -> {directive.CloneId} "
                 + $"(mod '{directive.OwnerLabel}').");
             applied++;
+
+            // For ConversationTemplate, hand the clone to the registry so it
+            // gets injected into every live conversation manager's per-trigger
+            // bucket dictionary. Cache invalidation alone isn't enough because
+            // each BaseConversationManager subclass builds its trigger buckets
+            // once in its constructor from a snapshot; clones added later are
+            // invisible without explicit injection.
+            if (templateTypeName == "ConversationTemplate"
+                || resolvedType?.FullName == "Il2CppMenace.Conversations.ConversationTemplate")
+            {
+                ConversationManagerRegistry.RegisterConversationClone(cloneObj, resolvedType);
+            }
+
+            // For SoundBank, defer Stem registration to a post-patch pass.
+            // The clone is a shallow copy that still carries the source's
+            // bankId, and patches haven't run yet to set the real bankId.
+            // Registering here would index the bank in Stem under the wrong
+            // id, leaving lookups broken even after patches mutate the
+            // serialised bankId field.
+            if (templateTypeName == "SoundBank"
+                || resolvedType?.FullName == "Il2CppStem.SoundBank")
+            {
+                _pendingSoundBankRegistrations.Add((cloneObj, resolvedType, directive.CloneId));
+            }
+        }
+
+        // ConversationTemplate carries a static cache (s_AllConversationTemplates)
+        // that some callers consult. Null it so the next GetAll() rebuilds and
+        // any code path that uses the cache picks up our clone too.
+        if (applied > 0
+            && (templateTypeName == "ConversationTemplate"
+                || resolvedType?.FullName == "Il2CppMenace.Conversations.ConversationTemplate"))
+        {
+            InvalidateConversationTemplateCache(resolvedType, log);
         }
 
         _appliedTypes.Add(templateTypeName);
         return applied;
     }
 
-    private static Il2CppObjectBase FindByObjectName(
-        IReadOnlyList<Il2CppObjectBase> candidates, string name)
+    private static void TryRegisterSoundBankWithStem(
+        UnityEngine.Object cloneObj, Type resolvedType, MelonLogger.Instance log)
     {
+        if (cloneObj == null || resolvedType == null) return;
+
+        // Il2CppStem.SoundManager.RegisterBank(SoundBank) lives in
+        // Assembly-CSharp-firstpass. Jiangyu.Loader doesn't reference that
+        // assembly statically, so we resolve via reflection.
+        Type soundManagerType = null;
+        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            soundManagerType = asm.GetType("Il2CppStem.SoundManager", throwOnError: false);
+            if (soundManagerType != null) break;
+        }
+        if (soundManagerType == null)
+        {
+            log.Warning("  SoundBank registration: Il2CppStem.SoundManager type not found.");
+            return;
+        }
+
+        var register = soundManagerType.GetMethod(
+            "RegisterBank",
+            BindingFlags.Public | BindingFlags.Static,
+            binder: null,
+            types: new[] { resolvedType },
+            modifiers: null);
+        if (register == null)
+        {
+            log.Warning("  SoundBank registration: SoundManager.RegisterBank(SoundBank) method not found.");
+            return;
+        }
+
+        // Cast the clone wrapper to SoundBank so the method signature matches.
+        var typedBank = Il2CppReflectiveCast.CastOrNull(cloneObj, resolvedType);
+        if (typedBank == null)
+        {
+            log.Warning("  SoundBank registration: failed to cast clone to SoundBank.");
+            return;
+        }
+
+        try
+        {
+            var ok = (bool)register.Invoke(null, new[] { typedBank });
+            log.Msg($"  SoundBank registration: Stem.SoundManager.RegisterBank returned {ok}.");
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"  SoundBank registration: RegisterBank threw: {ex.InnerException?.Message ?? ex.Message}");
+        }
+    }
+
+    private static void InvalidateConversationTemplateCache(Type resolvedType, MelonLogger.Instance log)
+    {
+        if (resolvedType == null) return;
+        // Il2CppInterop wraps native static fields as PUBLIC static properties
+        // on the wrapper, routed through il2cpp_field_static_set_value. The
+        // managed C# `private static` modifier from the original source is
+        // dropped in the wrapper.
+        var prop = resolvedType.GetProperty(
+            "s_AllConversationTemplates",
+            BindingFlags.Public | BindingFlags.Static);
+        if (prop == null || !prop.CanWrite)
+        {
+            log.Warning("  Conversation cache invalidation: s_AllConversationTemplates property not found or not writable.");
+            return;
+        }
+        try
+        {
+            prop.SetValue(null, null);
+            log.Msg("  Conversation cache invalidated: next GetAll() will rebuild from live objects.");
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"  Conversation cache invalidation failed: {ex.InnerException?.Message ?? ex.Message}");
+        }
+    }
+
+    private static Il2CppObjectBase FindBySourceId(
+        IReadOnlyList<Il2CppObjectBase> candidates,
+        string id,
+        string identityField,
+        Type resolvedType)
+    {
+        // Try Object.name first (the default identity), which is fastest
+        // and covers most non-DataTemplate types unchanged.
         foreach (var candidate in candidates)
         {
             if (candidate == null) continue;
             var unityObj = candidate.TryCast<UnityEngine.Object>();
             if (unityObj == null) continue;
-            if (string.Equals(unityObj.name, name, StringComparison.Ordinal))
+            if (string.Equals(unityObj.name, id, StringComparison.Ordinal))
+                return candidate;
+        }
+
+        // Fall back to the registered identity field (e.g. ConversationTemplate.Path)
+        // for types whose Object.name is non-unique.
+        if (identityField == null || resolvedType == null) return null;
+
+        var prop = resolvedType.GetProperty(identityField, BindingFlags.Public | BindingFlags.Instance);
+        if (prop == null || !prop.CanRead) return null;
+
+        foreach (var candidate in candidates)
+        {
+            if (candidate == null) continue;
+            string value;
+            try { value = prop.GetValue(candidate) as string; }
+            catch { continue; }
+            if (string.Equals(value, id, StringComparison.Ordinal))
                 return candidate;
         }
         return null;
+    }
+
+    private static bool TrySetIdentityField(
+        UnityEngine.Object target, Type resolvedType, string fieldName, string value, out string error)
+    {
+        error = null;
+        var prop = resolvedType.GetProperty(fieldName, BindingFlags.Public | BindingFlags.Instance);
+        if (prop == null)
+        {
+            error = $"property not found on {resolvedType.Name}";
+            return false;
+        }
+        if (!prop.CanWrite)
+        {
+            error = $"property is read-only on {resolvedType.Name}";
+            return false;
+        }
+
+        // Object.Instantiate returns a UnityEngine.Object wrapper, but the
+        // typed property lives on the concrete Il2Cpp wrapper (e.g.
+        // ConversationTemplate). .NET reflection's SetValue rejects the
+        // base-class wrapper as "Object does not match target type". The
+        // Il2CppInterop convention is to call the generic Cast<T>() on the
+        // wrapper to obtain a wrapper of the requested type, which shares
+        // the same native pointer.
+        if (!Il2CppReflectiveCast.TryCast(target, resolvedType, out var typedTarget, out var castError))
+        {
+            error = castError;
+            return false;
+        }
+
+        try
+        {
+            prop.SetValue(typedTarget, value);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+            return false;
+        }
     }
 
     // Inserts <clone> at <cloneId> into the type slot's m_TemplateMaps inner

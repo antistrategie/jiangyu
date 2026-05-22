@@ -78,6 +78,109 @@ public static partial class RpcHandlers
         });
     }
 
+    [McpTool("jiangyu_templates_clone_sources",
+        "Return the available source identifiers for cloning a template of the given type. Covers both DataTemplate-derived types (via the template index) and non-DataTemplate types like SoundBank and ConversationTemplate (via the asset index).")]
+    [McpParam("templateType", "string", "Template type short name (e.g. \"SoundBank\", \"ConversationTemplate\", \"EntityTemplate\").", Required = true)]
+    internal static JsonElement TemplatesCloneSources(JsonElement? parameters)
+    {
+        var templateType = RequireString(parameters, "templateType");
+        var items = new List<TemplateCloneSource>();
+
+        var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+        if (resolution.Success)
+        {
+            // SoundBank and ConversationTemplate are not DataTemplate
+            // subclasses, so the template-index path
+            // (templates_index/list) misses them. Surface them through
+            // the asset index instead. For ConversationTemplate the
+            // unique identifier is the Path field (asset names are
+            // non-unique); for SoundBank the asset name itself is
+            // unique.
+            if (string.Equals(templateType, "SoundBank", StringComparison.Ordinal)
+                || string.Equals(templateType, "ConversationTemplate", StringComparison.Ordinal))
+            {
+                var pipeline = resolution.Context!.CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
+                var assetIndex = pipeline.LoadIndex();
+                if (assetIndex?.Assets is { } assets)
+                {
+                    foreach (var asset in assets)
+                    {
+                        if (templateType == "SoundBank")
+                        {
+                            if (asset.BankId is null || string.IsNullOrEmpty(asset.Name)) continue;
+                            items.Add(new TemplateCloneSource { Id = asset.Name, Label = asset.Name });
+                        }
+                        else
+                        {
+                            // ConversationTemplate: prefer the Path field
+                            // for uniqueness; fall back to bare asset
+                            // name when Path isn't indexed (older
+                            // indexes built pre-v8).
+                            if (asset.Roles is null) continue;
+                            var id = !string.IsNullOrEmpty(asset.Path) ? asset.Path : asset.Name;
+                            if (string.IsNullOrEmpty(id)) continue;
+                            items.Add(new TemplateCloneSource { Id = id, Label = id });
+                        }
+                    }
+                }
+            }
+        }
+
+        return JsonSerializer.SerializeToElement(new TemplateCloneSourcesResult { Sources = items });
+    }
+
+    [McpTool("jiangyu_templates_conversation_roles",
+        "Return the Roles (name + Guid) of a ConversationTemplate. Used by Studio's role combobox when authoring SAY/CHOICE nodes. For a cloned conversation, pass the source's templateId.")]
+    [McpParam("templateId", "string", "The ConversationTemplate's identifier (asset name, e.g. \"click_bark\").")]
+    internal static JsonElement TemplatesConversationRoles(JsonElement? parameters)
+    {
+        var templateId = RequireString(parameters, "templateId");
+
+        var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+        if (!resolution.Success)
+            throw new InvalidOperationException(resolution.Error ?? "Could not resolve game data path.");
+
+        var pipeline = resolution.Context!.CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
+        var index = pipeline.LoadIndex();
+        var roles = new List<TemplateConversationRole>();
+        if (index?.Assets is { } assets)
+        {
+            // Match on Path FIRST. ConversationTemplate asset names
+            // are non-unique (every speaker has a click_bark, a
+            // response_death, ...); the unique identifier is Path
+            // ("JeanSy/click_bark"). Fall back to bare-name match
+            // only when Path isn't indexed.
+            var slash = templateId.LastIndexOf('/');
+            var bareName = slash >= 0 && slash < templateId.Length - 1
+                ? templateId[(slash + 1)..]
+                : templateId;
+            Jiangyu.Core.Models.AssetEntry? pathMatch = null;
+            Jiangyu.Core.Models.AssetEntry? nameMatch = null;
+
+            foreach (var asset in assets)
+            {
+                if (asset.Roles is null || asset.Roles.Count == 0) continue;
+                if (pathMatch is null && !string.IsNullOrEmpty(asset.Path)
+                    && string.Equals(asset.Path, templateId, StringComparison.Ordinal))
+                {
+                    pathMatch = asset;
+                    break;
+                }
+                if (nameMatch is null && string.Equals(asset.Name, bareName, StringComparison.Ordinal))
+                    nameMatch = asset;
+            }
+
+            var picked = pathMatch ?? nameMatch;
+            if (picked?.Roles is { } pickedRoles)
+            {
+                foreach (var role in pickedRoles)
+                    roles.Add(new TemplateConversationRole { Name = role.Name, Guid = role.Guid });
+            }
+        }
+
+        return JsonSerializer.SerializeToElement(new TemplateConversationRolesResult { Roles = roles });
+    }
+
     [McpTool("jiangyu_templates_search",
         "Search MENACE game templates by name or type substring. Returns {types, instances, referencedBy}.")]
     [McpParam("query", "string", "Search substring to match against template names. Empty returns the full index.")]
@@ -136,6 +239,14 @@ public static partial class RpcHandlers
         var fieldPath = TryGetString(parameters, "fieldPath");
         var namespaceName = TryGetString(parameters, "namespaceName");
         var elementType = TryGetString(parameters, "elementType");
+        // Discriminator-aware lookup: when the editor renders a
+        // tagged-string composite, it knows the polymorphic base from the
+        // parent member's TaggedPolymorphicBase and the modder-picked
+        // discriminator from value.compositeType. Pass both via
+        // discriminatorBase + typeName-as-discriminator and the handler
+        // resolves to the concrete CLR type before running the standard
+        // member walk. Null for non-tagged composite queries.
+        var discriminatorBase = TryGetString(parameters, "discriminatorBase");
 
         var resolution = EnvironmentContext.ResolveFromGlobalConfig();
         if (!resolution.Success)
@@ -155,6 +266,31 @@ public static partial class RpcHandlers
 
         var supplement = Il2CppMetadataCache.LoadIfPresent(resolution.Context!.CachePath);
         using var catalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirs, supplement);
+
+        // Make sure the discriminator allowlist is installed BEFORE
+        // ResolveTaggedDiscriminator runs (otherwise the validator's
+        // catalog-side gate falls back to heuristic and we'd accept any
+        // candidate).
+        EnsureTaggedDiscriminatorsInstalled(resolution.Context!);
+
+        // Discriminator-aware resolution. The frontend passes the
+        // polymorphic base (FQN) and the modder's picked discriminator
+        // (as typeName). Translate to the concrete CLR type so the rest
+        // of the query walks its members normally.
+        if (!string.IsNullOrWhiteSpace(discriminatorBase))
+        {
+            var baseType = catalog.ResolveType(discriminatorBase, out _, out var baseError);
+            if (baseType is null)
+                throw new InvalidOperationException(baseError ?? $"Unknown discriminator base '{discriminatorBase}'.");
+            var resolved = catalog.ResolveTaggedDiscriminator(baseType, typeName, out var amb);
+            if (resolved is null)
+            {
+                var note = amb.Count > 0 ? " known: " + string.Join(", ", amb) : string.Empty;
+                throw new InvalidOperationException(
+                    $"Discriminator '{typeName}' is not valid under {discriminatorBase}.{note}");
+            }
+            typeName = resolved.FullName ?? resolved.Name;
+        }
 
         var queryPath = string.IsNullOrWhiteSpace(fieldPath)
             ? typeName
@@ -240,7 +376,51 @@ public static partial class RpcHandlers
         // (no game configured, bad path), we just return parse errors only.
         var catalog = TryGetCachedCatalog();
         if (catalog != null)
-            TemplateCatalogValidator.ValidateEditorDocument(document, catalog);
+        {
+            // Editor-side validation needs the same BankId resolver and
+            // tagged-discriminator allowlist that the compile path
+            // installs, otherwise cross-references like
+            // `Stem.ID.bankId` strings and `RoleGuid "Entity"` strings
+            // fail with cryptic errors. Resolve the env once and install
+            // both before the per-directive walk.
+            var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+            IReadOnlyList<Jiangyu.Core.Models.AssetEntry>? indexedAssets = null;
+            if (resolution.Success)
+            {
+                EnsureTaggedDiscriminatorsInstalled(resolution.Context!);
+                var pipeline = resolution.Context!.CreateAssetPipelineService(
+                    NullProgressSink.Instance, NullLogSink.Instance);
+                var assetIndex = pipeline.LoadIndex();
+                if (assetIndex?.Assets is { } assets)
+                {
+                    indexedAssets = assets;
+                    var bankPairs = new List<KeyValuePair<string, int>>();
+                    foreach (var a in assets)
+                    {
+                        if (a.Name != null && a.BankId.HasValue)
+                            bankPairs.Add(new KeyValuePair<string, int>(a.Name, a.BankId.Value));
+                    }
+                    // Mod-defined SoundBank clones declared in this same
+                    // KDL file: surface their cloneId → FNV(cloneId) so
+                    // cross-references inside the same document (a SAY's
+                    // Sound.bankId pointing at a SoundBank cloned a few
+                    // lines up) resolve at editor-parse time. Mirrors
+                    // CompilationService's pre-validation install.
+                    foreach (var node in document.Nodes)
+                    {
+                        if (node.Kind != KdlEditorNodeKind.Clone) continue;
+                        if (!string.Equals(node.TemplateType, "SoundBank", StringComparison.Ordinal)) continue;
+                        if (string.IsNullOrEmpty(node.CloneId)) continue;
+                        bankPairs.Add(new KeyValuePair<string, int>(
+                            node.CloneId,
+                            HashableIdFieldRegistry.Fnv1a32(node.CloneId)));
+                    }
+                    HashableIdFieldRegistry.InstallBankIdResolver(new InMemoryBankIdResolver(bankPairs));
+                }
+            }
+
+            TemplateCatalogValidator.ValidateEditorDocument(document, catalog, indexedAssets);
+        }
 
         return JsonSerializer.SerializeToElement(document);
     }
@@ -446,6 +626,40 @@ public static partial class RpcHandlers
     }
 
     [RpcType]
+    internal sealed class TemplateCloneSourcesResult
+    {
+        [JsonPropertyName("sources")]
+        public required List<TemplateCloneSource> Sources { get; set; }
+    }
+
+    [RpcType]
+    internal sealed class TemplateCloneSource
+    {
+        [JsonPropertyName("id")]
+        public required string Id { get; set; }
+
+        [JsonPropertyName("label")]
+        public required string Label { get; set; }
+    }
+
+    [RpcType]
+    internal sealed class TemplateConversationRolesResult
+    {
+        [JsonPropertyName("roles")]
+        public required List<TemplateConversationRole> Roles { get; set; }
+    }
+
+    [RpcType]
+    internal sealed class TemplateConversationRole
+    {
+        [JsonPropertyName("name")]
+        public required string Name { get; set; }
+
+        [JsonPropertyName("guid")]
+        public required int Guid { get; set; }
+    }
+
+    [RpcType]
     internal sealed class EnumMemberEntry
     {
         [JsonPropertyName("name")]
@@ -616,6 +830,21 @@ public static partial class RpcHandlers
     }
 
     /// <summary>
+    /// Discriminator strings the visual editor's combobox shows for a
+    /// tagged-string field. Drawn from the indexed allowlist
+    /// (<see cref="TaggedDiscriminatorIndex"/>) so the picker only
+    /// surfaces forms vanilla's runtime accepts.
+    /// </summary>
+    private static List<string>? ComputeTaggedDiscriminators(MemberShape m)
+    {
+        if (m.TaggedPolymorphicBase is not { } baseType) return null;
+        var fqn = baseType.FullName ?? baseType.Name;
+        var allowed = TaggedDiscriminatorIndex.GetAllowed(fqn);
+        if (allowed is null || allowed.Count == 0) return null;
+        return [.. allowed.OrderBy(s => s, StringComparer.Ordinal)];
+    }
+
+    /// <summary>
     /// Concrete subtypes the modder can pick when appending to a polymorphic
     /// owned-element collection (e.g. EventHandlers). Populated only for
     /// collections whose element type is a non-DataTemplate ScriptableObject
@@ -759,6 +988,10 @@ public static partial class RpcHandlers
                     IsReferenceTypePolymorphic = ComputeReferenceTypeIsPolymorphic(catalog, m, instantiatedClassNames),
                     ElementSubtypes = ComputeElementSubtypes(catalog, m),
                     ScalarSubtypes = ComputeScalarSubtypes(catalog, m),
+                    TaggedPolymorphicBase = m.TaggedPolymorphicBase is { } baseType
+                        ? catalog.FriendlyName(baseType)
+                        : null,
+                    TaggedDiscriminators = ComputeTaggedDiscriminators(m),
                     NamedArrayEnumTypeName = m.NamedArrayEnumTypeName,
                     EnumMembers = ComputeEnumMembers(catalog, m),
                     NumericMin = m.NumericMin,
@@ -932,6 +1165,28 @@ public static partial class RpcHandlers
         /// destination is the field itself rather than an element slot.</summary>
         [JsonPropertyName("scalarSubtypes")]
         public List<string>? ScalarSubtypes { get; set; }
+
+        /// <summary>Friendly name of the polymorphic base type backing a
+        /// tagged-string serialisation field (e.g.
+        /// <c>BaseConversationNode</c> for
+        /// <c>ConversationNodeContainer.m_SerializedNodes</c>). Non-null
+        /// signals to the visual editor that the field stores
+        /// <c>"DISCRIMINATOR|{json}"</c> entries authored via
+        /// <c>composite="X"</c>; the editor renders a discriminator picker
+        /// from <see cref="TaggedDiscriminators"/> instead of a free-form
+        /// composite type field. Null on non-tagged members.</summary>
+        [JsonPropertyName("taggedPolymorphicBase")]
+        public string? TaggedPolymorphicBase { get; set; }
+
+        /// <summary>Discriminator strings the modder can pick when
+        /// authoring a tagged-string composite (e.g.
+        /// <c>["ACTION", "SAY", "VARIATION", ...]</c> for
+        /// <c>BaseConversationNode</c>). Drawn from the catalog's
+        /// per-subtype heuristic candidate set; the visual editor uses
+        /// these directly to populate the discriminator dropdown. Null
+        /// when <see cref="TaggedPolymorphicBase"/> is null.</summary>
+        [JsonPropertyName("taggedDiscriminators")]
+        public List<string>? TaggedDiscriminators { get; set; }
 
         /// <summary>Short name of the enum paired with a
         /// <c>[NamedArray(typeof(T))]</c> array member; null otherwise.</summary>
@@ -1196,6 +1451,30 @@ public static partial class RpcHandlers
         }
         RebuildOdinMatrixRegistry();
         return _cachedIndex;
+    }
+
+    private static DateTime _cachedDiscriminatorIndexMtime;
+    private static string? _cachedDiscriminatorIndexPath;
+
+    private static void EnsureTaggedDiscriminatorsInstalled(EnvironmentContext ctx)
+    {
+        var service = ctx.CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
+        var indexPath = Path.Combine(ctx.CachePath, "asset-index.json");
+        DateTime indexMtime;
+        try { indexMtime = File.GetLastWriteTimeUtc(indexPath); }
+        catch { return; }
+
+        if (_cachedDiscriminatorIndexPath == indexPath
+            && _cachedDiscriminatorIndexMtime == indexMtime
+            && TaggedDiscriminatorIndex.IsInstalled)
+        {
+            return;
+        }
+
+        var assetIndex = service.LoadIndex();
+        TaggedDiscriminatorIndex.Install(assetIndex?.TaggedDiscriminators);
+        _cachedDiscriminatorIndexPath = indexPath;
+        _cachedDiscriminatorIndexMtime = indexMtime;
     }
 
     // Reloads <see cref="_cachedValues"/> from disk when the file's mtime

@@ -561,6 +561,208 @@ public sealed class TemplateTypeCatalog : IDisposable
         return null;
     }
 
+    /// <summary>
+    /// Resolve a tagged-string discriminator (the <c>"TYPE"</c> prefix of a
+    /// <c>"TYPE|{json}"</c> entry) to the concrete subtype of
+    /// <paramref name="baseType"/> it identifies.
+    ///
+    /// Falls back to <see cref="ResolveSubtypeHint"/> when the discriminator
+    /// happens to match a subtype's short name directly. Otherwise generates
+    /// candidate discriminators per subtype using the
+    /// <c>strip-suffix-of-base</c> + <c>upper</c> + <c>screaming-snake</c>
+    /// rules that match MENACE's hand-rolled
+    /// <c>ISerializationCallbackReceiver</c> conventions
+    /// (<c>BaseConversationNode</c> uses UPPER, <c>BaseRoleRequirement</c>
+    /// uses PascalCase, <c>BaseConversationNodeAction</c> uses PascalCase).
+    ///
+    /// Returns null on no match or ambiguity (caller logs and prompts the
+    /// modder to qualify).
+    /// </summary>
+    public Type? ResolveTaggedDiscriminator(
+        Type baseType,
+        string discriminator,
+        out IReadOnlyList<string> ambiguousFullNames)
+    {
+        ambiguousFullNames = [];
+        if (string.IsNullOrEmpty(discriminator))
+            return null;
+
+        // Direct short-name / FQN match comes first — preserves the existing
+        // path for modders who write the full class name in composite=.
+        var direct = ResolveSubtypeHint(baseType, discriminator, out ambiguousFullNames);
+        if (direct != null) return direct;
+        if (ambiguousFullNames.Count > 0) return null;
+
+        // Tagged-string subtypes can be non-leaf — a concrete class that
+        // itself has further-derived classes (e.g. SayConversationNode is
+        // the parent of ChoiceConversationNode but is still concrete and
+        // appears as a SAY entry in vanilla data).
+        // EnumerateConcreteSubtypes filters out non-leaves, so use the
+        // wider non-abstract enumeration here.
+        var subtypes = EnumerateNonAbstractSubtypes(baseType);
+        if (subtypes.Count == 0) return null;
+
+        // Sampled-discriminator gate: if the asset index recorded vanilla
+        // discriminators for this base, reject any candidate not in that
+        // set. Otherwise the heuristic accepts forms vanilla's runtime
+        // OnAfterDeserialize can't read (e.g. "Action" against
+        // ConversationNodeType.ACTION). When no index is installed,
+        // fall back to the heuristic so fixture tests without sampling
+        // still work.
+        var baseFqn = baseType.FullName ?? baseType.Name;
+        var allowed = TaggedDiscriminatorIndex.GetAllowed(baseFqn);
+        if (allowed is not null && !allowed.Contains(discriminator))
+        {
+            ambiguousFullNames = allowed.OrderBy(s => s, StringComparer.Ordinal).ToArray();
+            return null;
+        }
+
+        var matches = new List<Type>();
+        foreach (var subtype in subtypes)
+        {
+            foreach (var candidate in EnumerateDiscriminatorCandidates(baseType, subtype))
+            {
+                if (string.Equals(candidate, discriminator, StringComparison.Ordinal))
+                {
+                    matches.Add(subtype);
+                    break;
+                }
+            }
+        }
+
+        if (matches.Count == 1) return matches[0];
+        if (matches.Count > 1)
+            ambiguousFullNames = matches.Select(t => t.FullName ?? t.Name).ToArray();
+        return null;
+    }
+
+    /// <summary>
+    /// All non-abstract subtypes of <paramref name="baseType"/>, including
+    /// those that themselves have descendants. Distinct from
+    /// <see cref="EnumerateConcreteSubtypes"/>, which keeps only leaves —
+    /// the leaves-only filter is the right choice for polymorphic-
+    /// reference-array authoring (where the modder picks a final concrete
+    /// type), but the wrong choice for tagged-string discriminators where
+    /// a concrete intermediate type is still a valid pick.
+    /// </summary>
+    private IReadOnlyList<Type> EnumerateNonAbstractSubtypes(Type baseType)
+    {
+        var subtypes = new List<Type>();
+        foreach (var candidate in _allTypes)
+        {
+            if (candidate == baseType) continue;
+            if (candidate.IsAbstract) continue;
+            if (!baseType.IsAssignableFrom(candidate)) continue;
+            subtypes.Add(candidate);
+        }
+        return subtypes;
+    }
+
+    /// <summary>
+    /// Enumerate the candidate discriminator strings for <paramref name="subtype"/>
+    /// under the family rooted at <paramref name="baseType"/>. The set covers
+    /// the conventions observed in vanilla MENACE:
+    /// <list type="bullet">
+    /// <item><c>BaseConversationNode</c> → <c>ActionConversationNode</c> →
+    /// discriminators <c>"Action"</c> and <c>"ACTION"</c></item>
+    /// <item><c>BaseRoleRequirement</c> → <c>HasOneTagRoleRequirement</c> →
+    /// discriminator <c>"HasOneTag"</c></item>
+    /// <item><c>BaseConversationNodeAction</c> → <c>SetFlagAction</c> →
+    /// discriminator <c>"SetFlag"</c> (the family suffix is <c>"Action"</c>,
+    /// not the full <c>"ConversationNodeAction"</c> residue)</item>
+    /// </list>
+    /// The family suffix is computed per subtype as the longest common
+    /// suffix between the subtype short name and the base's de-Base'd
+    /// residue. This handles the mixed convention where the base residue
+    /// names a wider hierarchy than the concrete subtype suffix.
+    /// </summary>
+    private static IEnumerable<string> EnumerateDiscriminatorCandidates(Type baseType, Type subtype)
+    {
+        var subtypeShort = subtype.Name;
+        yield return subtypeShort;
+
+        // De-Base the base name once. Residue is the candidate "ceiling" of
+        // the family suffix; the actual suffix may be shorter per subtype.
+        var baseResidue = DeriveBaseResidue(baseType.Name);
+        if (string.IsNullOrEmpty(baseResidue)) yield break;
+
+        // Longest common suffix of subtypeShort and baseResidue at PascalCase
+        // boundaries — anchor to an uppercase boundary so we don't strip
+        // mid-word (e.g. "SeFooAction" vs "ConversationNodeAction" should
+        // strip "Action", not "ooAction").
+        var commonSuffix = LongestPascalSuffix(subtypeShort, baseResidue);
+        if (string.IsNullOrEmpty(commonSuffix)) yield break;
+        if (subtypeShort.Length <= commonSuffix.Length) yield break;
+
+        var pascal = subtypeShort[..^commonSuffix.Length];
+        yield return pascal;
+        yield return pascal.ToUpperInvariant();
+        yield return PascalToScreamingSnake(pascal);
+    }
+
+    /// <summary>
+    /// Strip a leading or trailing <c>Base</c> affix from a base class short
+    /// name. Returns the residue used as the ceiling for per-subtype
+    /// family-suffix derivation. Empty result means the base name carried
+    /// no recognisable affix.
+    /// </summary>
+    private static string DeriveBaseResidue(string baseShortName)
+    {
+        const string baseAffix = "Base";
+        if (baseShortName.StartsWith(baseAffix, StringComparison.Ordinal)
+            && baseShortName.Length > baseAffix.Length)
+            return baseShortName[baseAffix.Length..];
+        if (baseShortName.EndsWith(baseAffix, StringComparison.Ordinal)
+            && baseShortName.Length > baseAffix.Length)
+            return baseShortName[..^baseAffix.Length];
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Longest common suffix between <paramref name="a"/> and
+    /// <paramref name="b"/> that begins at a PascalCase boundary inside
+    /// <paramref name="a"/>. The boundary anchor keeps the heuristic from
+    /// splitting at an arbitrary character index — only at the start of an
+    /// upper-case word in the subtype short name.
+    /// </summary>
+    private static string LongestPascalSuffix(string a, string b)
+    {
+        if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return string.Empty;
+
+        var limit = Math.Min(a.Length, b.Length);
+        var matchLen = 0;
+        for (var i = 1; i <= limit; i++)
+        {
+            if (a[a.Length - i] != b[b.Length - i]) break;
+            matchLen = i;
+        }
+        if (matchLen == 0) return string.Empty;
+
+        // Walk the match back to the nearest PascalCase boundary so we don't
+        // strip mid-word. "SetFlagAction" vs "ConversationNodeAction": raw
+        // matchLen is "deAction" (7) but only "Action" (6) starts at an
+        // upper-case letter; cap at 6.
+        var startIndex = a.Length - matchLen;
+        while (startIndex < a.Length && !char.IsUpper(a[startIndex]))
+            startIndex++;
+        if (startIndex >= a.Length) return string.Empty;
+        return a[startIndex..];
+    }
+
+    private static string PascalToScreamingSnake(string pascal)
+    {
+        if (string.IsNullOrEmpty(pascal)) return pascal;
+        var sb = new System.Text.StringBuilder(pascal.Length + 4);
+        for (var i = 0; i < pascal.Length; i++)
+        {
+            var c = pascal[i];
+            if (i > 0 && char.IsUpper(c) && !char.IsUpper(pascal[i - 1]))
+                sb.Append('_');
+            sb.Append(char.ToUpperInvariant(c));
+        }
+        return sb.ToString();
+    }
+
     private bool HasStrictDescendant(Type type)
     {
         foreach (var candidate in _allTypes)
@@ -658,8 +860,20 @@ public sealed class TemplateTypeCatalog : IDisposable
     /// </summary>
     public IReadOnlyList<MemberShape> EnrichMembers(Type declaringType, IReadOnlyList<MemberShape> members)
     {
-        if (_supplement is null) return members;
-        if (_supplement.NamedArrays.Count == 0 && _supplement.Fields.Count == 0) return members;
+        // Tagged-string detection runs unconditionally — it doesn't depend
+        // on the IL2CPP supplement, only on the member list itself. The
+        // supplement enrichment below is layered on top.
+        var taggedBases = DetectTaggedStringBases(members);
+
+        if (_supplement is null)
+            return taggedBases.Count == 0
+                ? members
+                : ApplyTaggedBases(members, taggedBases);
+
+        if (_supplement.NamedArrays.Count == 0 && _supplement.Fields.Count == 0)
+            return taggedBases.Count == 0
+                ? members
+                : ApplyTaggedBases(members, taggedBases);
 
         var rootShortName = declaringType.Name;
         var enriched = new List<MemberShape>(members.Count);
@@ -698,9 +912,144 @@ public sealed class TemplateTypeCatalog : IDisposable
                 };
             }
 
+            if (taggedBases.TryGetValue(current.Name, out var taggedBase))
+                current = current with { TaggedPolymorphicBase = taggedBase };
+
             enriched.Add(current);
         }
         return enriched;
+    }
+
+    /// <summary>
+    /// Scan a member list for the tagged-string serialisation convention and
+    /// return a map from each tagged-string field's name to its polymorphic
+    /// base type. Detects two pair shapes that appear consistently across
+    /// MENACE's hand-rolled <c>ISerializationCallbackReceiver</c> sites:
+    ///
+    /// <list type="bullet">
+    /// <item><b>List form:</b> <c>m_SerializedX : List&lt;string&gt;</c>
+    /// paired with <c>m_X : List&lt;TBase&gt;</c> or
+    /// <c>X : List&lt;TBase&gt;</c>. Each stored string is
+    /// <c>"DISCRIMINATOR|{json}"</c>. Example:
+    /// <c>ConversationNodeContainer.m_SerializedNodes</c> ↔
+    /// <c>m_Nodes : List&lt;BaseConversationNode&gt;</c>.</item>
+    /// <item><b>Scalar form:</b> <c>m_SerX : string</c> paired with
+    /// <c>m_X : TBase</c>. Example:
+    /// <c>ActionConversationNode.m_SerAction</c> ↔
+    /// <c>m_Action : BaseConversationNodeAction</c>.</item>
+    /// </list>
+    ///
+    /// Detection is structural: the tagged-string sibling must be string-
+    /// typed, the typed sibling must hold the corresponding polymorphic
+    /// base (list element type or scalar type), and the names must align
+    /// via the <c>Ser*</c> / <c>Serialized*</c> prefix-stripping rule.
+    /// </summary>
+    private static Dictionary<string, Type> DetectTaggedStringBases(IReadOnlyList<MemberShape> members)
+    {
+        var result = new Dictionary<string, Type>(StringComparer.Ordinal);
+        if (members.Count == 0) return result;
+
+        // Index by name for sibling lookup.
+        var byName = new Dictionary<string, MemberShape>(StringComparer.Ordinal);
+        foreach (var member in members)
+            byName[member.Name] = member;
+
+        foreach (var member in members)
+        {
+            var name = member.Name;
+            string? typedSiblingName = null;
+
+            // Recognise the two name shapes:
+            //   m_SerializedX → m_X or X
+            //   m_SerX        → m_X or X
+            // and the unprefixed variants SerializedX → X, SerX → X
+            // (the unprefixed forms are uncommon but covered for safety).
+            if (name.StartsWith("m_Serialized", StringComparison.Ordinal) && name.Length > "m_Serialized".Length)
+                typedSiblingName = name["m_Serialized".Length..];
+            else if (name.StartsWith("m_Ser", StringComparison.Ordinal)
+                     && name.Length > "m_Ser".Length
+                     && char.IsUpper(name["m_Ser".Length]))
+                typedSiblingName = name["m_Ser".Length..];
+            else if (name.StartsWith("Serialized", StringComparison.Ordinal) && name.Length > "Serialized".Length)
+                typedSiblingName = name["Serialized".Length..];
+            else if (name.StartsWith("Ser", StringComparison.Ordinal)
+                     && name.Length > "Ser".Length
+                     && char.IsUpper(name["Ser".Length]))
+                typedSiblingName = name["Ser".Length..];
+
+            if (typedSiblingName is null) continue;
+
+            // The tagged-string member itself must be string or List<string>.
+            var isListShape = IsStringListShape(member.MemberType);
+            var isScalarShape = member.MemberType.FullName == "System.String";
+            if (!isListShape && !isScalarShape) continue;
+
+            // Find the typed sibling (try m_-prefixed first, then bare).
+            if (!byName.TryGetValue("m_" + typedSiblingName, out var typedSibling)
+                && !byName.TryGetValue(typedSiblingName, out typedSibling))
+                continue;
+
+            // Extract the polymorphic base type from the typed sibling.
+            Type? baseType;
+            if (isListShape)
+            {
+                if (!IsListShape(typedSibling.MemberType)) continue;
+                baseType = GetElementType(typedSibling.MemberType);
+            }
+            else
+            {
+                // Scalar pair: typed sibling holds the polymorphic value
+                // directly. Reject if it's also string-shaped (would be a
+                // duplicate marker, not a typed pair).
+                if (typedSibling.MemberType.FullName == "System.String") continue;
+                baseType = typedSibling.MemberType;
+            }
+
+            if (baseType is null || IsScalar(baseType)) continue;
+
+            result[name] = baseType;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Overlay tagged-base detection results on a member list when the
+    /// supplement-driven enrichment is otherwise a no-op. Keeps allocation
+    /// to the cases that actually need rewriting.
+    /// </summary>
+    private static IReadOnlyList<MemberShape> ApplyTaggedBases(
+        IReadOnlyList<MemberShape> members,
+        IReadOnlyDictionary<string, Type> taggedBases)
+    {
+        var result = new List<MemberShape>(members.Count);
+        foreach (var member in members)
+        {
+            if (taggedBases.TryGetValue(member.Name, out var baseType))
+                result.Add(member with { TaggedPolymorphicBase = baseType });
+            else
+                result.Add(member);
+        }
+        return result;
+    }
+
+    private static bool IsListShape(Type type)
+    {
+        for (var current = type; current != null; current = current.BaseType)
+        {
+            if (!current.IsGenericType) continue;
+            var definitionName = current.GetGenericTypeDefinition().FullName;
+            if (definitionName == Il2CppSystemListFullName || definitionName == BclListFullName)
+                return true;
+        }
+        return false;
+    }
+
+    private static bool IsStringListShape(Type type)
+    {
+        if (!IsListShape(type)) return false;
+        var element = GetElementType(type);
+        return element?.FullName == "System.String";
     }
 
     /// <summary>
@@ -963,4 +1312,18 @@ public sealed record MemberShape(
     /// are rejected because HashSet has no order. Always paired with
     /// <see cref="IsLikelyOdinOnly"/> = true since Unity can't natively
     /// serialise HashSet.</summary>
-    bool IsOdinHashSet = false);
+    bool IsOdinHashSet = false,
+    /// <summary>
+    /// Non-null when this field is a tagged-string serialisation of
+    /// polymorphic typed values. The declared <see cref="MemberType"/> is
+    /// <c>System.String</c> (scalar form) or <c>List&lt;string&gt;</c>
+    /// (list form), while each stored string follows the format
+    /// <c>"DISCRIMINATOR|{json}"</c>. This field carries the polymorphic
+    /// base whose concrete subtypes form the discriminator namespace
+    /// (e.g. <c>BaseConversationNode</c> for
+    /// <c>ConversationNodeContainer.m_SerializedNodes</c>). Detected via
+    /// the <c>m_Ser*</c> ↔ typed-sibling convention at catalogue build.
+    /// Authoring uses the existing <c>composite="X"</c> op against the
+    /// tagged-string field; emitter packs to the storage shape.
+    /// </summary>
+    Type? TaggedPolymorphicBase = null);

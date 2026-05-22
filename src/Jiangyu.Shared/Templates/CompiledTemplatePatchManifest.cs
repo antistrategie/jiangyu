@@ -245,6 +245,19 @@ public sealed class CompiledTemplateComposite
     /// </summary>
     [JsonPropertyName("from")]
     public string? From { get; set; }
+
+    /// <summary>
+    /// Set by the validator when the composite targets a tagged-string
+    /// destination — a <c>string</c> or <c>List&lt;string&gt;</c> field whose
+    /// stored entries follow the <c>"DISCRIMINATOR|{json}"</c> convention
+    /// (see MemberShape.TaggedPolymorphicBase in Jiangyu.Core). The applier
+    /// constructs the typed value via the normal <see cref="Operations"/>
+    /// path, then JSON-serialises it and emits
+    /// <c>"<see cref="TaggedDiscriminator"/>|{json}"</c> as the string
+    /// payload written to the destination. Null on non-tagged composites.
+    /// </summary>
+    [JsonPropertyName("taggedDiscriminator")]
+    public string? TaggedDiscriminator { get; set; }
 }
 
 /// <summary>

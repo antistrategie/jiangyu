@@ -6,6 +6,22 @@ public sealed class AssetIndex
 {
     [JsonPropertyName("assets")]
     public List<AssetEntry>? Assets { get; set; }
+
+    /// <summary>
+    /// Polymorphic-base FQN → set of discriminator strings observed in
+    /// vanilla tagged-string fields. The asset indexer samples
+    /// <c>m_SerializedNodes</c> / <c>m_SerializedRequirements</c> /
+    /// <c>m_SerAction</c> entries during the ConversationTemplate walk
+    /// and records each entry's <c>"TYPE|..."</c> prefix here.
+    /// Compile-time validation rejects discriminators not in this set
+    /// (otherwise the modder picks a form vanilla doesn't accept and
+    /// the conversation silently misbehaves at runtime). The visual
+    /// editor's discriminator picker draws from the same set so modders
+    /// only see forms the game accepts. Null on indexes built before
+    /// the field was introduced.
+    /// </summary>
+    [JsonPropertyName("taggedDiscriminators")]
+    public Dictionary<string, List<string>>? TaggedDiscriminators { get; set; }
 }
 
 public sealed class AssetEntry
@@ -88,6 +104,55 @@ public sealed class AssetEntry
     /// </summary>
     [JsonPropertyName("namedChildren")]
     public List<string>? NamedChildren { get; set; }
+
+    /// <summary>
+    /// For <c>Stem.SoundBank</c> entries, the serialised <c>bankId</c> from
+    /// the asset's <c>m_Structure.bankId</c> field. Lets the compile-time
+    /// validator resolve string-keyed <c>Stem.ID.bankId</c> references to
+    /// the right int without shipping a hardcoded name→id table that
+    /// would drift on every MENACE update. Null on non-SoundBank entries
+    /// and on indexes built before this field was introduced.
+    /// </summary>
+    [JsonPropertyName("bankId")]
+    public int? BankId { get; set; }
+
+    /// <summary>
+    /// For <c>ConversationTemplate</c> entries, the conversation's
+    /// <c>Roles</c> list flattened to <c>(RoleName, Guid)</c> pairs.
+    /// Lets the compile-time validator resolve string-keyed
+    /// <c>RoleGuid</c> references on SAY/CHOICE nodes to the int Guid
+    /// of the matching role within the same (possibly cloned)
+    /// conversation. Also surfaces role names to the Studio visual
+    /// editor for combobox population. Null on non-ConversationTemplate
+    /// entries and on indexes built before this field was introduced.
+    /// </summary>
+    [JsonPropertyName("roles")]
+    public List<AssetEntryRole>? Roles { get; set; }
+
+    /// <summary>
+    /// For <c>ConversationTemplate</c> entries, the asset's
+    /// <c>m_Structure.Path</c> value (e.g. <c>"JeanSy/click_bark"</c>).
+    /// Path is the unique identifier — asset names alone aren't
+    /// (every speaker has its own <c>click_bark</c>). Powers Studio's
+    /// from= clone-source dropdown and the loader's path-keyed lookup.
+    /// Null on non-ConversationTemplate entries and on indexes built
+    /// before this field was introduced.
+    /// </summary>
+    [JsonPropertyName("path")]
+    public string? Path { get; set; }
+}
+
+/// <summary>
+/// One <c>Role</c> from a <c>ConversationTemplate</c>'s <c>Roles</c> list.
+/// See <see cref="AssetEntry.Roles"/>.
+/// </summary>
+public sealed class AssetEntryRole
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("guid")]
+    public int Guid { get; set; }
 }
 
 public sealed class IndexManifest

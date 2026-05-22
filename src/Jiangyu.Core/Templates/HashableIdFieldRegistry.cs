@@ -38,30 +38,44 @@ public static class HashableIdFieldRegistry
         { ("Stem.ID", "itemId"), HashableKind.Fnv1a32 },
         { ("Il2CppStem.ID", "bankId"), HashableKind.BankName },
         { ("Stem.ID", "bankId"), HashableKind.BankName },
+        // A SoundBank's own bankId is the FNV-1a hash of the bank's chosen
+        // name. Modders cloning a vanilla bank pick a new name and set this
+        // field to it; both the bank's bankId and any Stem.ID.bankId
+        // reference to it resolve to the same int through the same hash.
+        // Top-level patches use the short template name; composite-inner
+        // ops use the FQN. Register all three forms.
+        { ("SoundBank", "bankId"), HashableKind.Fnv1a32 },
+        { ("Il2CppStem.SoundBank", "bankId"), HashableKind.Fnv1a32 },
+        { ("Stem.SoundBank", "bankId"), HashableKind.Fnv1a32 },
     };
 
-    // Vanilla MENACE soundbank names -> their serialised bankId. Read from
-    // each asset's m_Structure.bankId in build 34.0.1. The IDs are a mix of
-    // small counters (1..7) and FNV-style hashes; ship the table rather
-    // than recomputing because some entries are baked, not derivable.
-    private static readonly Dictionary<string, int> BankIds = new(StringComparer.Ordinal)
-    {
-        { "constructs_soundbank", 2 },
-        { "environment_soundbank", 3 },
-        { "explosions_soundbank", 4 },
-        { "human_soundbank", 5 },
-        { "vehicles_soundbank", 6 },
-        { "weapons_soundbank", 7 },
-        { "ui_soundbank", 631059796 },
-        { "events_soundbank", 2106065257 },
-        { "ambience_soundbank", -1906935000 },
-        { "impacts_soundbank", -389963078 },
-        { "aliens_soundbank", -1210270996 },
-        { "accessories_soundbank", -1583282670 },
-        { "construct_soldier_soundbank", -242829509 },
-        { "music_soundbank", -1906925000 },
-        { "tactical_ui_soundbank", -1602990657 },
-    };
+    // Bank-name → bankId resolution is supplied externally so the lookup
+    // table doesn't have to ship as hardcoded data that goes stale on every
+    // MENACE update. The compile path injects an asset-index-backed
+    // resolver here at startup; tests inject an in-memory dictionary.
+    // Until an explicit resolver is installed every BankName lookup errors
+    // cleanly with a "no bank resolver installed" message.
+    private static IBankIdResolver? _bankIdResolver;
+
+    /// <summary>
+    /// Compile-time wiring: the host (CompilationService, StudioServer, or
+    /// a test harness) builds an <see cref="IBankIdResolver"/> from the
+    /// loaded asset index and installs it before any TryResolve call hits
+    /// a BankName field. Pass null to clear (e.g. between tests).
+    ///
+    /// <para><b>Contract:</b> the installed resolver is process-static
+    /// and persists across calls until the next install or an explicit
+    /// null-install. Every entry point into the validator
+    /// (<see cref="TemplateCatalogValidator.Validate"/> and
+    /// <see cref="TemplateCatalogValidator.ValidateEditorDocument"/>)
+    /// MUST install a fresh resolver for the document or compile unit
+    /// currently being validated. Otherwise BankName lookups will see
+    /// the previous caller's data. Current callers (CompilationService,
+    /// RpcHandlers.templatesParse) follow this rule; new entry points
+    /// must do the same.</para>
+    /// </summary>
+    public static void InstallBankIdResolver(IBankIdResolver? resolver)
+        => _bankIdResolver = resolver;
 
     public static bool TryResolve(string typeFqn, string fieldName, string? value, out int result, out string? error)
     {
@@ -89,12 +103,18 @@ public static class HashableIdFieldRegistry
                 result = Fnv1a32(value);
                 return true;
             case HashableKind.BankName:
-                if (BankIds.TryGetValue(value, out var bankId))
+                if (_bankIdResolver == null)
+                {
+                    error = "no SoundBank resolver installed. The compile host must call "
+                            + "HashableIdFieldRegistry.InstallBankIdResolver(...) once the asset index is loaded.";
+                    return false;
+                }
+                if (_bankIdResolver.TryResolve(value, out var bankId))
                 {
                     result = bankId;
                     return true;
                 }
-                error = $"no SoundBank named '{value}'. Known: {string.Join(", ", BankIds.Keys.OrderBy(k => k))}.";
+                error = $"no SoundBank named '{value}'. Known: {string.Join(", ", _bankIdResolver.KnownBankNames.OrderBy(k => k))}.";
                 return false;
             default:
                 error = $"unknown hashable kind {kind}.";

@@ -281,7 +281,16 @@ internal sealed partial class TemplatePatchApplier
             return false;
         }
 
-        if (!IsAssignableFromIl2Cpp(targetType, resolvedType))
+        // Tagged-string pack: the composite is destined for a string-typed
+        // field (or List<string> element) that stores "DISCRIMINATOR|{json}"
+        // entries. The typed instance is intermediate — we build it, run
+        // inner ops, then JSON-serialise and prefix the discriminator to
+        // produce the actual string the destination expects. Assignability
+        // against targetType (string) is bypassed because the final
+        // converted value will be a string.
+        var isTaggedPack = !string.IsNullOrWhiteSpace(composite.TaggedDiscriminator);
+
+        if (!isTaggedPack && !IsAssignableFromIl2Cpp(targetType, resolvedType))
         {
             error = $"Composite typeName '{composite.TypeName}' ({resolvedType.FullName}) is not assignable to member type {targetType.FullName}.";
             return false;
@@ -394,9 +403,64 @@ internal sealed partial class TemplatePatchApplier
             }
         }
 
+        // Tagged-string finalise: serialise the constructed typed instance
+        // via Unity's JsonUtility (the same path
+        // ISerializationCallbackReceiver subscribers expect) and prefix
+        // the discriminator. The destination receives the plain string.
+        if (isTaggedPack)
+        {
+            if (!TryPackTaggedString(instance, composite.TaggedDiscriminator!, log, out var packed, out var packError))
+            {
+                error = packError;
+                return false;
+            }
+            converted = packed;
+            error = null;
+            return true;
+        }
+
         converted = instance;
         error = null;
         return true;
+    }
+
+    /// <summary>
+    /// Serialise <paramref name="instance"/> to JSON via Unity's
+    /// <c>JsonUtility.ToJson</c> and return the <c>"DISCRIMINATOR|{json}"</c>
+    /// form expected by MENACE's hand-rolled
+    /// <c>ISerializationCallbackReceiver</c>s. JsonUtility only emits public
+    /// fields plus <c>[SerializeField]</c> private fields, matching the
+    /// vanilla writer that produced the entries we're appending to.
+    /// </summary>
+    private static bool TryPackTaggedString(
+        object instance, string discriminator,
+        MelonLogger.Instance log,
+        out string packed, out string error)
+    {
+        packed = null;
+        try
+        {
+            if (instance is not Il2CppObjectBase il2cppInstance)
+            {
+                error = $"tagged-string pack: instance is not Il2CppObjectBase (got {instance?.GetType().FullName ?? "null"}); JsonUtility requires an IL2CPP-side object.";
+                return false;
+            }
+
+            // JsonUtility.ToJson takes Il2CppSystem.Object. Il2CppObjectBase
+            // wraps an IL2CPP-side object; Cast<Il2CppSystem.Object> hands
+            // back the right wrapper for the interop method bridge.
+            var asIl2CppObject = il2cppInstance.Cast<Il2CppSystem.Object>();
+            string json = UnityEngine.JsonUtility.ToJson(asIl2CppObject);
+
+            packed = discriminator + "|" + json;
+            error = null;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"tagged-string pack threw: {ex.GetType().Name}: {ex.Message}";
+            return false;
+        }
     }
 
     // Apply per-type default field values from TypeDefaultsRegistry to a

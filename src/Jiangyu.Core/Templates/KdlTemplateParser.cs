@@ -554,7 +554,15 @@ public static class KdlTemplateParser
             CompiledTemplateValueKind.Composite => new KdlEditorValue
             {
                 Kind = KdlEditorValueKind.Composite,
-                CompositeType = v.Composite?.TypeName,
+                // For tagged-string composites the validator rewrote TypeName
+                // to the resolved CLR full name and stashed the modder's
+                // original discriminator on TaggedDiscriminator. Round-trip
+                // emits the discriminator (what the modder wrote) so the
+                // round-tripped KDL matches the input. Non-tagged composites
+                // fall back to TypeName as before.
+                CompositeType = v.Composite is { TaggedDiscriminator: { Length: > 0 } d }
+                    ? d
+                    : v.Composite?.TypeName,
                 CompositeFrom = v.Composite?.From,
                 CompositeDirectives = v.Composite?.Operations
                     .Select(CompiledOpToEditor).ToList(),

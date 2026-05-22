@@ -598,4 +598,64 @@ public class TemplateTypeCatalogTests
 
         Assert.False(catalog.HasPolymorphicSubtype(leaf));
     }
+
+    [Fact]
+    public void EnrichMembers_DetectsListFormTaggedString()
+    {
+        using var catalog = Load();
+        var type = catalog.ResolveType("FixtureTaggedListContainer", out _, out _)!;
+        var raw = TemplateTypeCatalog.GetMembers(type);
+        var enriched = catalog.EnrichMembers(type, raw);
+
+        var serialised = enriched.Single(m => m.Name == "m_SerializedItems");
+        Assert.NotNull(serialised.TaggedPolymorphicBase);
+        Assert.Equal("FixtureTaggedBase", serialised.TaggedPolymorphicBase!.Name);
+
+        var typedSibling = enriched.Single(m => m.Name == "m_Items");
+        Assert.Null(typedSibling.TaggedPolymorphicBase);
+    }
+
+    [Fact]
+    public void EnrichMembers_DetectsScalarFormTaggedString()
+    {
+        using var catalog = Load();
+        var type = catalog.ResolveType("FixtureTaggedScalarHolder", out _, out _)!;
+        var raw = TemplateTypeCatalog.GetMembers(type);
+        var enriched = catalog.EnrichMembers(type, raw);
+
+        var serialised = enriched.Single(m => m.Name == "m_SerAction");
+        Assert.NotNull(serialised.TaggedPolymorphicBase);
+        Assert.Equal("FixtureTaggedBase", serialised.TaggedPolymorphicBase!.Name);
+
+        var typedSibling = enriched.Single(m => m.Name == "m_Action");
+        Assert.Null(typedSibling.TaggedPolymorphicBase);
+    }
+
+    [Fact]
+    public void EnrichMembers_IgnoresDanglingMarker()
+    {
+        using var catalog = Load();
+        var type = catalog.ResolveType("FixtureTaggedDanglingMarker", out _, out _)!;
+        var raw = TemplateTypeCatalog.GetMembers(type);
+        var enriched = catalog.EnrichMembers(type, raw);
+
+        var orphan = enriched.Single(m => m.Name == "m_SerOrphan");
+        Assert.Null(orphan.TaggedPolymorphicBase);
+    }
+
+    [Fact]
+    public void EnrichMembers_IgnoresPrimitiveSibling()
+    {
+        // m_SerializedCounts looks like a tagged-string list (List<string> with
+        // sibling m_Counts), but the sibling is List<int> — a primitive
+        // element. Auto-detect rejects so we don't propose composite= against
+        // a non-polymorphic destination.
+        using var catalog = Load();
+        var type = catalog.ResolveType("FixtureTaggedPrimitiveSibling", out _, out _)!;
+        var raw = TemplateTypeCatalog.GetMembers(type);
+        var enriched = catalog.EnrichMembers(type, raw);
+
+        var serialised = enriched.Single(m => m.Name == "m_SerializedCounts");
+        Assert.Null(serialised.TaggedPolymorphicBase);
+    }
 }

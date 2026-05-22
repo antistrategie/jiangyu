@@ -1533,6 +1533,36 @@ public class KdlTemplateParserTests
         Assert.Contains(_log.Errors, e => e.Contains("'leader' must be a non-empty string"));
     }
 
+    [Fact]
+    public void ParseAll_TaggedStringCompositeAppend_ProducesComposite()
+    {
+        // Parser should accept composite="X" against a tagged-string field
+        // identically to any other composite. The Jiangyu.Core.Tests catalog
+        // doesn't run through the parser-attached catalog validator here, so
+        // this test only confirms the structural model — composite shape,
+        // TypeName the modder wrote, inner ops.
+        var dir = SetupKdl("tagged.kdl", """
+            patch "FixtureTaggedListContainer" "x" {
+                append "m_SerializedItems" composite="FixtureTaggedAlpha" {
+                    set "AlphaText" "hello"
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        Assert.Single(result.Patches);
+        var op = result.Patches[0].Set[0];
+        Assert.Equal(CompiledTemplateOp.Append, op.Op);
+        Assert.Equal("m_SerializedItems", op.FieldPath);
+        Assert.Equal(CompiledTemplateValueKind.Composite, op.Value!.Kind);
+        Assert.Equal("FixtureTaggedAlpha", op.Value.Composite!.TypeName);
+        Assert.Null(op.Value.Composite.TaggedDiscriminator); // parser doesn't fill — validator does
+        Assert.Single(op.Value.Composite.Operations);
+        Assert.Equal("AlphaText", op.Value.Composite.Operations[0].FieldPath);
+    }
+
     // --- Helpers ---
 
     private static string SetupKdl(string fileName, string content)

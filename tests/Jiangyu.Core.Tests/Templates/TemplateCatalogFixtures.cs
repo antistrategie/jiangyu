@@ -205,6 +205,96 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
         // Should NOT be flagged — abstract but descends from ScriptableObject:
         public FixtureScriptableAbstract? ScriptableRef { get; set; }
     }
+
+    // Tagged-string fixtures. Mirror MENACE's
+    // ConversationNodeContainer / Role / ActionConversationNode shape:
+    // a string-typed field carries "DISCRIMINATOR|{json}" entries, and a
+    // sibling typed field holds the live polymorphic value(s) rebuilt by
+    // OnAfterDeserialize.
+
+    public abstract class FixtureTaggedBase
+    {
+        public int Guid { get; set; }
+    }
+
+    public class FixtureTaggedAlpha : FixtureTaggedBase
+    {
+        public string? AlphaText { get; set; }
+    }
+
+    public class FixtureTaggedBeta : FixtureTaggedBase
+    {
+        public int BetaCount { get; set; }
+    }
+
+    // List-form tagged pair: m_SerializedItems (string list) ↔ m_Items (typed list).
+    public class FixtureTaggedListContainer
+    {
+        public int Guid { get; set; }
+        public List<FixtureTaggedBase> m_Items { get; set; } = new();
+        public List<string> m_SerializedItems { get; set; } = new();
+    }
+
+    // Scalar-form tagged pair: m_SerAction (string) ↔ m_Action (typed scalar).
+    public class FixtureTaggedScalarHolder
+    {
+        public int Guid { get; set; }
+        public FixtureTaggedBase? m_Action { get; set; }
+        public string? m_SerAction { get; set; }
+    }
+
+    // Negative case: bare m_Ser-named field with no typed sibling at all.
+    // Detection should not falsely populate TaggedPolymorphicBase.
+    public class FixtureTaggedDanglingMarker
+    {
+        public string? m_SerOrphan { get; set; }
+    }
+
+    // Negative case: m_Serialized-named field with a sibling, but the typed
+    // sibling is a primitive list (not a polymorphic base). Detection should
+    // reject because the element type fails the IsScalar gate.
+    public class FixtureTaggedPrimitiveSibling
+    {
+        public List<int> m_Counts { get; set; } = new();
+        public List<string> m_SerializedCounts { get; set; } = new();
+    }
+
+    // Mirrors MENACE's BaseConversationNode shape: a polymorphic base whose
+    // concrete subtypes share a common suffix and are discriminated in the
+    // tagged-string serialisation by the suffix-stripped UPPER form
+    // (e.g. ActionConversationNode → "ACTION"). The heuristic discriminator
+    // resolver must cover this case without falling back to the literal
+    // short name.
+    public abstract class BaseSampleNode
+    {
+        public int Guid { get; set; }
+    }
+
+    public class ChatSampleNode : BaseSampleNode
+    {
+        public string? Text { get; set; }
+    }
+
+    public class JumpSampleNode : BaseSampleNode
+    {
+        public int Target { get; set; }
+    }
+
+    public class SampleNodeContainer
+    {
+        public List<BaseSampleNode> m_Nodes { get; set; } = new();
+        public List<string> m_SerializedNodes { get; set; } = new();
+    }
+
+    // Mirrors VariationConversationNode.Variations:
+    // List<ConversationNodeContainer> — a polymorphic subtype's typed field
+    // holds a list of nested containers, each with its own tagged-string
+    // serialised nodes. Used to exercise the validator's nested-recursion
+    // tagged-string resolution.
+    public class WrapperSampleNode : BaseSampleNode
+    {
+        public List<SampleNodeContainer> NestedContainers { get; set; } = new();
+    }
 }
 
 namespace Jiangyu.Core.Tests.Templates.Fixtures.Other

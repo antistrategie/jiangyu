@@ -246,6 +246,59 @@ The leading whitespace on the closing `"""` defines the common indent stripped f
 
 The compiler infers numeric width (Byte, Int32, Single) from the destination field's type. For polymorphic destinations (an abstract base type with multiple concrete subclasses), specify the type explicitly via `ref=`, `composite=`, `handler=`, or `type=` as appropriate.
 
+## Tagged-string composites
+
+Some MENACE fields store polymorphic typed values as strings of the form `"DISCRIMINATOR|{json}"`, paired with a sibling typed field that the game rebuilds on load. `ConversationTemplate`'s node tree and role-requirement list, and `ActionConversationNode`'s sub-action, all use this convention.
+
+Author them with the same `composite="X"` op. The `X` is the discriminator (`ACTION`, `SAY`, `HasOneTag`, `SetFlag`, ...), which Jiangyu maps to the concrete CLR subtype via the polymorphic family's naming convention. The compiler builds the typed instance, JSON-serialises it, and prefixes the discriminator before storing the result.
+
+```kdl
+clone "ConversationTemplate" from="JeanSy/click_bark" id="Voymastina/click_bark" {
+    set "Roles" index=0 {
+        set "m_SerializedRequirements" index=2 composite="HasOneTag" {
+            set "Tags" "voymastina"
+        }
+    }
+    set "Nodes" {
+        append "m_SerializedNodes" composite="ACTION" {
+            set "m_SerAction" composite="SetFlag" {
+                set "FlagName" "click_bark_voymastina_test"
+                set "FlagValue" #true
+            }
+        }
+        append "m_SerializedNodes" composite="SAY" {
+            set "Sound" {
+                set "bankId" "tactical_barks_voymastina_va"
+                set "itemId" "voymastina_click_bark_test"
+            }
+            set "RoleGuid" "Entity"
+            set "Text" "Roger."
+        }
+        append "m_SerializedNodes" composite="EMPTY" {}
+    }
+}
+```
+
+Recursion is automatic. The inner `composite="SetFlag"` packs first to `"SetFlag|{...}"`, assigns to the typed `ActionConversationNode.m_SerAction`, then the outer composite packs to `"ACTION|{"Guid":...,"m_SerAction":"SetFlag|{...}"}"`. The raw string form (`set "F" "TYPE|{\"...\":\"...\"}"`) still works as an escape hatch when a discriminator isn't recognised yet or a modder pastes from a decompiled asset.
+
+### Ergonomic auto-fills
+
+Four common omissions are filled automatically:
+
+- **Node Guids.** Every `BaseConversationNode` subtype and `ConversationNodeContainer` carries an `int Guid`. When omitted, the compiler emits `FNV-1a("{patchId}#node_{counter}")` — stable across rebuilds, distinct from the source's Guids. Modders can still write `set "Guid" N` to force a value.
+- **Clone identity.** `clone "SoundBank" id="X"` implies `set "bankId" "X"`. `clone "ConversationTemplate" id="X"` implies `set "Path" "X"`. Skipped when the modder set the field explicitly.
+- **`Stem.Sound.id` from `name`.** A `Stem.Sound` composite with `set "name" "X"` and no `set "id"` defaults `id` to FNV-1a(`X`). Within-bank uniqueness only requires distinct names.
+- **`VariationCopyCount` sync.** `VariationConversationNode`'s parallel `VariationCopyCount` array is padded with `1`s to match the number of `append "Variations"` ops. Branches without a matching copy-count entry play silently in MENACE's engine.
+
+### Symbolic role references
+
+`SAY.RoleGuid` accepts a role name string instead of the int. The compiler resolves it against the source conversation's `Roles[].RoleName` via the asset index (rebuild with `jiangyu assets index` after a MENACE update so the latest Guids are recorded). For a clone, lookup follows the clone-to-source chain.
+
+```kdl
+set "RoleGuid" "Entity"   // resolves against source.Roles[].RoleName
+set "RoleGuid" 1248015120 // literal int still works
+```
+
 ## Discovering templates
 
 Studio's Template Browser is the fastest way to find a template id and inspect its current values, but the same flow exists on the CLI:

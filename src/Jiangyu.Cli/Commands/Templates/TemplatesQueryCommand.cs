@@ -221,6 +221,7 @@ public static class TemplatesQueryCommand
                 isInherited = m.IsInherited,
                 isWritable = m.IsWritable,
                 isLikelyOdinOnly = m.IsLikelyOdinOnly,
+                taggedPolymorphicBase = m.TaggedPolymorphicBase?.FullName,
             }),
             patchValueKind = result.PatchScalarKind?.ToString(),
             referenceTargetTypeName = result.ReferenceTargetTypeName,

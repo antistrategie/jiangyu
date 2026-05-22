@@ -235,6 +235,67 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 IGameAssetIndex? gameAssetIndex = loadedAssetIndex != null
                     ? new GameAssetIndex(loadedAssetIndex)
                     : null;
+
+                // The HashableIdFieldRegistry needs a SoundBank-name→bankId
+                // resolver to handle string-keyed Stem.ID.bankId fields. The
+                // names and ids come from the asset index's per-SoundBank
+                // BankId metadata, populated by the indexer's pre-pass. If
+                // the index is unavailable we leave the resolver
+                // uninstalled; modders writing string-keyed bankIds get a
+                // clean error instead of a stale hardcoded answer.
+                //
+                // Mod-defined SoundBank clones are added too: their bankId
+                // is FNV-1a(cloneId), the same hash the loader will apply
+                // when patching the clone. Lets cross-references inside the
+                // same compile unit (a SAY node's Sound.bankId pointing at
+                // a freshly-cloned SoundBank) resolve at validate time.
+                {
+                    var bankPairs = new List<KeyValuePair<string, int>>();
+                    if (loadedAssetIndex?.Assets is { } indexedAssets)
+                    {
+                        bankPairs.AddRange(indexedAssets
+                            .Where(a => a.Name != null && a.BankId.HasValue)
+                            .Select(a => new KeyValuePair<string, int>(a.Name!, a.BankId!.Value)));
+                    }
+                    if (templateCloneResult.Clones is { } clones)
+                    {
+                        foreach (var clone in clones)
+                        {
+                            if (string.Equals(clone.TemplateType, "SoundBank", StringComparison.Ordinal)
+                                && !string.IsNullOrEmpty(clone.CloneId))
+                            {
+                                bankPairs.Add(new KeyValuePair<string, int>(
+                                    clone.CloneId,
+                                    HashableIdFieldRegistry.Fnv1a32(clone.CloneId)));
+                            }
+                        }
+                    }
+                    HashableIdFieldRegistry.InstallBankIdResolver(new InMemoryBankIdResolver(bankPairs));
+                }
+
+                // Install the indexed tagged-discriminator allowlist so
+                // ResolveTaggedDiscriminator only accepts vanilla forms.
+                TaggedDiscriminatorIndex.Install(loadedAssetIndex?.TaggedDiscriminators);
+
+                // Resolve modder-authored RoleGuid strings (e.g.
+                // `set "RoleGuid" "Entity"` in a SAY composite) against
+                // the source conversation's Roles list before the catalog
+                // validator's numeric-coercion pass sees them. The pass
+                // mutates compiled values in place: String → Int32.
+                var roleResolveErrors = RoleGuidResolver.Apply(
+                    templatePatchResult.Patches,
+                    templateCloneResult.Clones,
+                    loadedAssetIndex?.Assets,
+                    _log);
+                if (roleResolveErrors > 0)
+                    return Fail($"Template validation failed with {roleResolveErrors} error(s). See errors above.");
+
+                // Pre-validation auto-fills: clone-identity (bankId/Path)
+                // injection. Patch-level — TemplateType + TemplateId are
+                // already known from parse, no validator-side inference
+                // needed.
+                CompositeAutoFillers.ApplyPreValidation(templatePatchResult.Patches);
+
                 var catalogErrors = TemplateCatalogValidator.Validate(
                     templatePatchResult.Patches,
                     templateCloneResult.Clones,
@@ -244,6 +305,18 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                     gameAssetIndex);
                 if (catalogErrors > 0 || additionsCatalog.ConflictingNames.Count > 0)
                     return Fail($"Template validation failed with {catalogErrors + additionsCatalog.ConflictingNames.Count} error(s). See errors above.");
+
+                // Inject deterministic Guids on ConversationNode/Container
+                // composites that the modder didn't number. Vanilla data
+                // carries arbitrary editor-allocated ints; clones need
+                // distinct values to avoid colliding with the source.
+                NodeGuidAutoFiller.Apply(templatePatchResult.Patches, catalog);
+
+                // Post-validation auto-fills that key off composite TypeName
+                // (Stem.Sound.id from name; VariationCopyCount parallel-
+                // array sync). Inferred composites only get a TypeName
+                // after the validator's pass, so these fillers run last.
+                CompositeAutoFillers.ApplyPostValidation(templatePatchResult.Patches);
             }
         }
         _log.Info($"  [timing] Template compilation: {phaseSw.Elapsed.TotalSeconds:F1}s");

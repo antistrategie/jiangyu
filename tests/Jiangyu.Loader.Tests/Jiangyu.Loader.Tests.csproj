@@ -39,6 +39,17 @@
     production calls it with the real typeof(), tests pass synthetic
     bases. MelonLoader is referenced because Jiangyu.Loader transitively
     depends on it for [MelonInfo] etc.
+
+    RUN IN DEBUG ONLY. The Release build of Jiangyu.Loader runs ILRepack
+    (see Jiangyu.Loader/ILRepack.targets) which merges Jiangyu.Shared's
+    types into Jiangyu.Loader.dll under the Loader assembly identity.
+    Tests still reference Jiangyu.Shared.dll separately, so the merged
+    Loader's ctor signatures (e.g. LoadedPatchOperation taking
+    IReadOnlyList<TemplateDescentStep>) no longer match the test
+    project's view of those types, and the CLR throws
+    MissingMethodException at test runtime. CI runs `dotnet test ...`
+    with the default Debug configuration; `dotnet test ... -c Release`
+    will fail by design. The tests themselves are configuration-agnostic.
   -->
   <ItemGroup>
     <Reference Include="MelonLoader">

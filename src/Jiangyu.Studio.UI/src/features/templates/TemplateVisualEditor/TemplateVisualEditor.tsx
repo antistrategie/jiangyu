@@ -11,7 +11,13 @@ import { useToastStore } from "@shared/toast";
 import styles from "./TemplateVisualEditor.module.css";
 import { stripUiIds, type StampedNode } from "./helpers";
 import { useDragReorder } from "./hooks";
-import { EditorDispatchContext, NodeIndexContext, editorReducer, type EditorAction } from "./store";
+import {
+  ConversationSourceContext,
+  EditorDispatchContext,
+  NodeIndexContext,
+  editorReducer,
+  type EditorAction,
+} from "./store";
 import { uiId, stampNodes } from "./shared/uiId";
 import {
   templatesParse,
@@ -328,32 +334,45 @@ export function TemplateVisualEditor({
 
         {nodes.map((node, ni) => {
           const handlers = cardReorder.buildHandlers(node._uiId, ni, ni + 1);
+          // ConversationTemplate source for the role combobox: clones
+          // carry the from= source; patches operate on the live
+          // template, so the template id IS the source. Null for any
+          // non-conversation card so RoleGuid editors fall back to
+          // free text.
+          const conversationSource: string | null =
+            node.kind !== "Bind" && node.templateType === "ConversationTemplate"
+              ? node.kind === "Clone"
+                ? (node.sourceId ?? null)
+                : (node.templateId ?? null)
+              : null;
           return (
             <NodeIndexContext key={node._uiId} value={ni}>
-              {cardReorder.showIndicatorAt(ni, node._uiId) && (
-                <div className={styles.dropIndicator} />
-              )}
-              {node.kind === "Bind" ? (
-                <BindingCard
-                  node={node}
-                  isDragging={handlers.isDragging}
-                  onDragStart={handlers.onDragStart}
-                  onDragEnd={handlers.onDragEnd}
-                  onDragOverCard={handlers.onDragOver}
-                  onDropCard={handlers.onDrop}
-                />
-              ) : (
-                <NodeCard
-                  node={node}
-                  collapsed={collapsed.has(keyByUiId.get(node._uiId) ?? "")}
-                  onToggleCollapse={handleToggleCollapse}
-                  isDragging={handlers.isDragging}
-                  onDragStart={handlers.onDragStart}
-                  onDragEnd={handlers.onDragEnd}
-                  onDragOverCard={handlers.onDragOver}
-                  onDropCard={handlers.onDrop}
-                />
-              )}
+              <ConversationSourceContext value={conversationSource}>
+                {cardReorder.showIndicatorAt(ni, node._uiId) && (
+                  <div className={styles.dropIndicator} />
+                )}
+                {node.kind === "Bind" ? (
+                  <BindingCard
+                    node={node}
+                    isDragging={handlers.isDragging}
+                    onDragStart={handlers.onDragStart}
+                    onDragEnd={handlers.onDragEnd}
+                    onDragOverCard={handlers.onDragOver}
+                    onDropCard={handlers.onDrop}
+                  />
+                ) : (
+                  <NodeCard
+                    node={node}
+                    collapsed={collapsed.has(keyByUiId.get(node._uiId) ?? "")}
+                    onToggleCollapse={handleToggleCollapse}
+                    isDragging={handlers.isDragging}
+                    onDragStart={handlers.onDragStart}
+                    onDragEnd={handlers.onDragEnd}
+                    onDragOverCard={handlers.onDragOver}
+                    onDropCard={handlers.onDrop}
+                  />
+                )}
+              </ConversationSourceContext>
             </NodeIndexContext>
           );
         })}

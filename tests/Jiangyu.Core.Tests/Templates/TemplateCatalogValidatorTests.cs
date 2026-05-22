@@ -2182,6 +2182,308 @@ public class TemplateCatalogValidatorTests
         Assert.Empty(log.Errors);
     }
 
+    [Fact]
+    public void TaggedStringList_ResolvesDiscriminatorAndPreservesDiscriminator()
+    {
+        // Modder writes append "m_SerializedItems" composite="FixtureTaggedAlpha" { set "AlphaText" "..." }.
+        // Validator must:
+        //   - substitute destinationType to TaggedPolymorphicBase
+        //     (FixtureTaggedBase) for the composite dispatch
+        //   - resolve "FixtureTaggedAlpha" to the CLR type
+        //   - preserve the modder's discriminator on the composite for the
+        //     applier to use when packing to "TYPE|{json}"
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var composite = new CompiledTemplateComposite
+        {
+            TypeName = "FixtureTaggedAlpha",
+            Operations =
+            [
+                new()
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "AlphaText",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.String,
+                        String = "hello",
+                    },
+                },
+            ],
+        };
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureTaggedListContainer",
+                TemplateId = "x",
+                Set =
+                [
+                    new()
+                    {
+                        Op = CompiledTemplateOp.Append,
+                        FieldPath = "m_SerializedItems",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.Composite,
+                            Composite = composite,
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+        Assert.Equal("FixtureTaggedAlpha", composite.TaggedDiscriminator);
+        Assert.EndsWith("FixtureTaggedAlpha", composite.TypeName);
+    }
+
+    [Fact]
+    public void TaggedString_ScalarFieldAlsoResolvesDiscriminator()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var composite = new CompiledTemplateComposite
+        {
+            TypeName = "FixtureTaggedBeta",
+            Operations =
+            [
+                new()
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "BetaCount",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.Int32,
+                        Int32 = 7,
+                    },
+                },
+            ],
+        };
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureTaggedScalarHolder",
+                TemplateId = "x",
+                Set =
+                [
+                    new()
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "m_SerAction",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.Composite,
+                            Composite = composite,
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+        Assert.Equal("FixtureTaggedBeta", composite.TaggedDiscriminator);
+        Assert.EndsWith("FixtureTaggedBeta", composite.TypeName);
+    }
+
+    [Fact]
+    public void TaggedString_DiscriminatorHeuristic_StripsSuffixAndUppercases()
+    {
+        // BaseSampleNode + ChatSampleNode/JumpSampleNode mirror the
+        // BaseConversationNode + ActionConversationNode shape. Modder
+        // writes the upper-cased family-suffix-stripped discriminator
+        // ("CHAT" for ChatSampleNode); validator resolves through the
+        // candidate set, not by class short name.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var composite = new CompiledTemplateComposite
+        {
+            TypeName = "CHAT",
+            Operations =
+            [
+                new()
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "Text",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.String,
+                        String = "hi",
+                    },
+                },
+            ],
+        };
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "SampleNodeContainer",
+                TemplateId = "x",
+                Set =
+                [
+                    new()
+                    {
+                        Op = CompiledTemplateOp.Append,
+                        FieldPath = "m_SerializedNodes",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.Composite,
+                            Composite = composite,
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+        Assert.Equal("CHAT", composite.TaggedDiscriminator);
+        Assert.EndsWith("ChatSampleNode", composite.TypeName);
+    }
+
+    [Fact]
+    public void TaggedString_NestedRecursion_ResolvesAtEveryLevel()
+    {
+        // Mirrors VARIATION-inside-m_SerializedNodes:
+        //   append "m_SerializedNodes" composite="Wrapper" {
+        //       append "NestedContainers" {           // inferred composite
+        //           append "m_SerializedNodes" composite="CHAT" { ... }
+        //       }
+        //   }
+        // The inner composite="CHAT" must resolve through the inner
+        // SampleNodeContainer.m_SerializedNodes' TaggedPolymorphicBase
+        // metadata, recursively.
+        using var catalog = Load();
+        var log = new RecordingLog();
+
+        var innerSay = new CompiledTemplateComposite
+        {
+            TypeName = "CHAT",
+            Operations =
+            [
+                new()
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "Text",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.String,
+                        String = "test",
+                    },
+                },
+            ],
+        };
+        var innerContainer = new CompiledTemplateComposite
+        {
+            // Inferred (TypeName=""); validator fills SampleNodeContainer.
+            TypeName = string.Empty,
+            Operations =
+            [
+                new()
+                {
+                    Op = CompiledTemplateOp.Append,
+                    FieldPath = "m_SerializedNodes",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.Composite,
+                        Composite = innerSay,
+                    },
+                },
+            ],
+        };
+        var outerWrapper = new CompiledTemplateComposite
+        {
+            TypeName = "WRAPPER",
+            Operations =
+            [
+                new()
+                {
+                    Op = CompiledTemplateOp.Append,
+                    FieldPath = "NestedContainers",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.Composite,
+                        Composite = innerContainer,
+                    },
+                },
+            ],
+        };
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "SampleNodeContainer",
+                TemplateId = "x",
+                Set =
+                [
+                    new()
+                    {
+                        Op = CompiledTemplateOp.Append,
+                        FieldPath = "m_SerializedNodes",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.Composite,
+                            Composite = outerWrapper,
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.True(errors == 0, "errors: " + string.Join("\n", log.Errors));
+        Assert.Equal("WRAPPER", outerWrapper.TaggedDiscriminator);
+        Assert.Equal("CHAT", innerSay.TaggedDiscriminator);
+    }
+
+    [Fact]
+    public void TaggedString_UnknownDiscriminator_Errors()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var composite = new CompiledTemplateComposite
+        {
+            TypeName = "NotASubtype",
+            Operations = [],
+        };
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureTaggedListContainer",
+                TemplateId = "x",
+                Set =
+                [
+                    new()
+                    {
+                        Op = CompiledTemplateOp.Append,
+                        FieldPath = "m_SerializedItems",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.Composite,
+                            Composite = composite,
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.True(errors > 0);
+        Assert.NotEmpty(log.Errors);
+    }
+
     private static CompiledTemplateSetOperation PrefabAssetSet(string assetName) => new()
     {
         Op = CompiledTemplateOp.Set,

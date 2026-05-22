@@ -104,6 +104,8 @@ public static partial class RpcDispatcher
         Register("templatesValue", (_, p) => RpcHandlers.TemplatesValue(p));
         Register("templatesPrototypeCandidates", (_, p) => RpcHandlers.TemplatesPrototypeCandidates(p));
         Register("templatesPrototypeSupportedTypes", (_, p) => RpcHandlers.TemplatesPrototypeSupportedTypes(p));
+        Register("templatesConversationRoles", (_, p) => RpcHandlers.TemplatesConversationRoles(p));
+        Register("templatesCloneSources", (_, p) => RpcHandlers.TemplatesCloneSources(p));
 
         RegisterAgentHandlers();
     }

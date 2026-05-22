@@ -170,6 +170,7 @@ public static class TemplateMemberQuery
         bool lastOdinOnly = false;
         bool lastSegmentHadIndexer = false;
         string? lastNamedArrayEnum = null;
+        Type? lastTaggedPolymorphicBase = null;
 
         for (var i = 0; i < fieldSegments.Length; i++)
         {
@@ -198,6 +199,12 @@ public static class TemplateMemberQuery
             // is no longer the NamedArray itself.
             lastNamedArrayEnum = (i == fieldSegments.Length - 1 && !hasIndexer)
                 ? member.NamedArrayEnumTypeName
+                : null;
+            // TaggedPolymorphicBase only meaningful when the modder is
+            // operating on the tagged-string member itself (terminal step),
+            // not when descending through it.
+            lastTaggedPolymorphicBase = (i == fieldSegments.Length - 1)
+                ? member.TaggedPolymorphicBase
                 : null;
             unwrappedFrom = null;
 
@@ -324,6 +331,7 @@ public static class TemplateMemberQuery
                 IsLikelyOdinOnly = lastOdinOnly,
                 UnwrappedFrom = unwrappedFrom,
                 NamedArrayEnumTypeName = lastNamedArrayEnum,
+                TaggedPolymorphicBase = lastTaggedPolymorphicBase,
             };
         }
 
@@ -428,6 +436,17 @@ public sealed class QueryResult
     /// invalid on these fields.
     /// </summary>
     public string? NamedArrayEnumTypeName { get; init; }
+
+    /// <summary>
+    /// Non-null when the terminal member is a tagged-string serialisation of
+    /// polymorphic typed values (see
+    /// <see cref="MemberShape.TaggedPolymorphicBase"/>). Validators substitute
+    /// this for <see cref="CurrentType"/> when dispatching composite-value
+    /// checks so <c>composite="X"</c> resolves against the polymorphic
+    /// subtype family rather than the literal <c>System.String</c> storage
+    /// type.
+    /// </summary>
+    public Type? TaggedPolymorphicBase { get; init; }
 
     public static QueryResult FromError(string message) => new()
     {

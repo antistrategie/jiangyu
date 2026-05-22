@@ -24,5 +24,11 @@ just the local index for promoted findings.
 - [Sprite replacement](sprite-replacement.md) — convention-first `Sprite` replacement for unique-texture-backed sprites; atlas-backed sprites rejected at compile time
 - [AudioClip replacement](audio-replacement.md) — convention-first `AudioClip` replacement via playback-time substitution hooked on `AudioSource` play entry points
 - [Event handler field patching](event-handler-field-patching.md) — descent-block authoring + polymorphic-cast applier for editing scalar fields on existing `SkillEventHandlerTemplate` / `PerkEventHandlerTemplate` instances
+- [Conversation cloning](conversation-cloning.md) — runtime injection of cloned `ConversationTemplate`s into live `BaseConversationManager` indexes, including Path-keyed lookup, typed-state refresh, and per-trigger bucket mutation
+- [SoundBank runtime registration](soundbank-runtime-registration.md) — `Stem.SoundManager.RegisterBank` for cloned banks, ordered after patches so `bankId` is final; resolver populated from the asset index, no hardcoded data
+
+## Authoring shapes
+
+- [Tagged-string authoring](tagged-string-authoring.md) — `composite="X" { ... }` against `m_Ser*` fields that store polymorphic typed values as `"TYPE|{json}"`; discriminator heuristic resolution, JsonUtility pack at apply, ergonomic auto-fills (node Guids, clone identity, Sound.id, VariationCopyCount)
 
 Each doc lists the investigation notes it draws from.

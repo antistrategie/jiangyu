@@ -274,8 +274,16 @@ public static class TemplatePatchPathValidator
         if (composite == null) return false;
         if (requireTypeName && string.IsNullOrWhiteSpace(composite.TypeName))
             return false;
-        if (composite.Operations == null || composite.Operations.Count == 0)
+        // Operations may be empty when the modder is constructing a typed
+        // composite with default field values (e.g. EMPTY conversation
+        // nodes that just need a Guid which NodeGuidAutoFiller injects
+        // post-validation). Inferred composites (empty TypeName) still
+        // need a body to disambiguate them from a bare value.
+        if (string.IsNullOrWhiteSpace(composite.TypeName)
+            && (composite.Operations == null || composite.Operations.Count == 0))
             return false;
+        if (composite.Operations == null)
+            return true;
 
         foreach (var op in composite.Operations)
         {

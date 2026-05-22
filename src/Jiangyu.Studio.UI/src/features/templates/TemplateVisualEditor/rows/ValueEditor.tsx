@@ -1,5 +1,11 @@
-import { useCallback } from "react";
-import type { EnumMemberEntry, TemplateMember } from "@shared/rpc";
+import { useCallback, useEffect, useState } from "react";
+import {
+  rpcCall,
+  type EnumMemberEntry,
+  type TemplateConversationRolesResult,
+  type TemplateMember,
+} from "@shared/rpc";
+import { useConversationSource } from "../store";
 import type { EditorValue } from "../types";
 import {
   resolveEnumCommitType,
@@ -91,6 +97,13 @@ export interface ValueEditorProps {
 }
 
 export function ValueEditor({ value, onChange, member }: ValueEditorProps) {
+  // RoleGuid: surface the source conversation's role names as a
+  // combobox. Field is HashableId Int32 but the modder authors the
+  // role-name string; the validator (RoleGuidResolver) maps name → int
+  // at compile.
+  if (member?.name === "RoleGuid" && (value.kind === "String" || value.kind === "Int32")) {
+    return <RoleGuidValueEditor value={value} onChange={onChange} />;
+  }
   switch (value.kind) {
     case "Boolean":
       return (
@@ -358,5 +371,76 @@ function RefValueEditor({ value, onChange, member }: ValueEditorProps) {
         onChange={(id) => onChange({ ...value, referenceId: id })}
       />
     </div>
+  );
+}
+
+// --- RoleGuidValueEditor ---
+//
+// SAY/CHOICE nodes carry RoleGuid as an Int32 field referencing a
+// Role.Guid in the enclosing ConversationTemplate's Roles list. The
+// modder authors the role NAME as a string; RoleGuidResolver compiles
+// it to the int. This editor surfaces the source conversation's role
+// names (looked up via ConversationSourceContext + templatesConversationRoles)
+// as a combobox so the modder never has to remember a Guid.
+//
+// Falls back to free text when the editor isn't inside a
+// ConversationTemplate card or the lookup hasn't returned (e.g. the
+// asset index hasn't been built yet). Free-text values still validate
+// at compile time.
+interface RoleGuidValueEditorProps {
+  readonly value: EditorValue;
+  readonly onChange: (value: EditorValue) => void;
+}
+
+function RoleGuidValueEditor({ value, onChange }: RoleGuidValueEditorProps) {
+  const sourceId = useConversationSource();
+  const [roles, setRoles] = useState<readonly { name: string; guid: number }[]>([]);
+
+  useEffect(() => {
+    if (!sourceId) return;
+    let cancelled = false;
+    void rpcCall<TemplateConversationRolesResult>("templatesConversationRoles", {
+      templateId: sourceId,
+    })
+      .then((r) => {
+        if (cancelled) return;
+        setRoles(r.roles);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRoles([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sourceId]);
+
+  const display = value.kind === "String" ? (value.string ?? "") : String(value.int32 ?? 0);
+
+  // Map the current int Guid back to a known role name so re-opening a
+  // post-compile KDL (where RoleGuid is already Int32) shows a name in
+  // the combobox instead of a raw number.
+  const intDisplay =
+    value.kind === "Int32" ? (roles.find((r) => r.guid === value.int32)?.name ?? display) : display;
+
+  const fetchSuggestions = useCallback(
+    (): Promise<readonly SuggestionItem[]> =>
+      Promise.resolve(
+        roles.map((r) => ({
+          value: r.name,
+          label: r.name,
+          detail: String(r.guid),
+        })),
+      ),
+    [roles],
+  );
+
+  return (
+    <SuggestionCombobox
+      value={intDisplay}
+      placeholder={sourceId ? "Role name" : "Role name (int Guid)"}
+      fetchSuggestions={fetchSuggestions}
+      onChange={(name) => onChange({ kind: "String", string: name })}
+    />
   );
 }

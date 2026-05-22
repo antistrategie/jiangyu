@@ -11,18 +11,26 @@ const templateMembersCache = new Map<string, Promise<TemplateQueryResult>>();
 function cachedTemplatesQuery(
   typeName: string,
   elementType: string | undefined,
+  discriminatorBase?: string,
 ): Promise<TemplateQueryResult> {
   // Cache key includes elementType because the resolver picks different
   // candidates when an element-type context narrows an ambiguous short
   // name. Without this, an "Attack" lookup with no context would
   // permanently shadow the SkillEventHandler context that needs a
-  // different result.
-  const key = elementType ? `${typeName}|${elementType}` : typeName;
+  // different result. discriminatorBase enters the key for the same
+  // reason: "SAY" against BaseConversationNode is a different lookup
+  // from a hypothetical CLR class named "SAY" (which wouldn't exist
+  // anyway, but the cache must distinguish discriminator-resolved
+  // queries from raw type-name queries).
+  let key = typeName;
+  if (elementType) key += `|el:${elementType}`;
+  if (discriminatorBase) key += `|db:${discriminatorBase}`;
   let cached = templateMembersCache.get(key);
   if (!cached) {
     cached = rpcCall<TemplateQueryResult>("templatesQuery", {
       typeName,
       elementType,
+      discriminatorBase,
     });
     templateMembersCache.set(key, cached);
   }
@@ -52,6 +60,11 @@ export function useTemplateMembers(
   typeName: string | undefined,
   enabled = true,
   elementType?: string,
+  /** When set, typeName is treated as a tagged-string discriminator
+   *  (e.g. "SAY") and the server resolves it against this polymorphic
+   *  base FQN before walking members. Matches the discriminatorBase
+   *  parameter on templatesQuery. */
+  discriminatorBase?: string,
 ): {
   readonly members: readonly TemplateMember[];
   readonly loaded: boolean;
@@ -59,28 +72,37 @@ export function useTemplateMembers(
   const [resolved, setResolved] = useState<{
     readonly type: string;
     readonly elementType: string | undefined;
+    readonly discriminatorBase: string | undefined;
     readonly members: readonly TemplateMember[];
-  }>({ type: "", elementType: undefined, members: [] });
+  }>({ type: "", elementType: undefined, discriminatorBase: undefined, members: [] });
 
   useEffect(() => {
     if (!enabled || !typeName) return;
     let cancelled = false;
-    void cachedTemplatesQuery(typeName, elementType)
+    void cachedTemplatesQuery(typeName, elementType, discriminatorBase)
       .then((result) => {
         if (cancelled) return;
-        setResolved({ type: typeName, elementType, members: result.members ?? [] });
+        setResolved({
+          type: typeName,
+          elementType,
+          discriminatorBase,
+          members: result.members ?? [],
+        });
       })
       .catch(() => {
         if (cancelled) return;
-        setResolved({ type: typeName, elementType, members: [] });
+        setResolved({ type: typeName, elementType, discriminatorBase, members: [] });
       });
     return () => {
       cancelled = true;
     };
-  }, [typeName, enabled, elementType]);
+  }, [typeName, enabled, elementType, discriminatorBase]);
 
   if (!typeName) return { members: [], loaded: true };
-  const matched = resolved.type === typeName && resolved.elementType === elementType;
+  const matched =
+    resolved.type === typeName &&
+    resolved.elementType === elementType &&
+    resolved.discriminatorBase === discriminatorBase;
   return {
     members: matched ? resolved.members : [],
     loaded: matched,

@@ -218,6 +218,24 @@ export interface EnumMembersResult {
   members: EnumMemberEntry[];
 }
 
+export interface TemplateCloneSourcesResult {
+  sources: TemplateCloneSource[];
+}
+
+export interface TemplateCloneSource {
+  id: string;
+  label: string;
+}
+
+export interface TemplateConversationRolesResult {
+  roles: TemplateConversationRole[];
+}
+
+export interface TemplateConversationRole {
+  name: string;
+  guid: number;
+}
+
 export interface EnumMemberEntry {
   name: string;
   value: number;
@@ -270,6 +288,8 @@ export interface TemplateMember {
   isReferenceTypePolymorphic?: boolean | null;
   elementSubtypes?: string[] | null;
   scalarSubtypes?: string[] | null;
+  taggedPolymorphicBase?: string | null;
+  taggedDiscriminators?: string[] | null;
   namedArrayEnumTypeName?: string | null;
   enumMembers?: EnumMemberEntry[] | null;
   numericMin?: number | null;

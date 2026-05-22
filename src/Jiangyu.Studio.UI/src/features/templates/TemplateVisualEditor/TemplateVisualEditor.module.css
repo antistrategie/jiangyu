@@ -1262,6 +1262,24 @@
   width: 160px;
 }
 
+/* Collapsed "+ from" affordance: small, muted, low visual weight so it
+   doesn't compete with the live composite content. Mirrors the
+   FieldAdder's expand button styling for consistency. */
+.compositeFromAdd {
+  background: transparent;
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-1);
+  color: var(--fg-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 6px;
+}
+.compositeFromAdd:hover {
+  border-color: var(--border-strong);
+  color: var(--fg-default);
+}
+
 .compositeRow {
   display: flex;
   align-items: center;

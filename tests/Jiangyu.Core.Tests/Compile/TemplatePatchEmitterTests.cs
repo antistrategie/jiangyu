@@ -603,8 +603,14 @@ public class TemplatePatchEmitterTests
     }
 
     [Fact]
-    public void CompositeValue_EmptyFields_Errors()
+    public void CompositeValue_EmptyFieldsWithTypeName_AllowsDefaultConstruct()
     {
+        // composite="X" {} is the modder constructing X with default field
+        // values. The catalog validator + auto-filler (e.g.
+        // NodeGuidAutoFiller for conversation-node types) handle any
+        // downstream completion. Path validation only rejects the
+        // pathological case of inferred + empty (TypeName="" and
+        // Operations=[]) where there's no signal at all.
         var log = new RecordingLogSink();
         var patches = SinglePatch("UnitLeaderTemplate", "hero.elena",
             new CompiledTemplateSetOperation
@@ -615,6 +621,29 @@ public class TemplatePatchEmitterTests
                 {
                     Kind = CompiledTemplateValueKind.Composite,
                     Composite = new CompiledTemplateComposite { TypeName = "Perk", Operations = [] },
+                },
+            });
+
+        var result = TemplatePatchEmitter.Emit(patches, log);
+
+        Assert.True(result.Success);
+    }
+
+    [Fact]
+    public void CompositeValue_InferredAndEmpty_Errors()
+    {
+        // Inferred composite (TypeName="") + empty Operations = no signal
+        // at all. Reject so the modder doesn't accidentally emit a stub.
+        var log = new RecordingLogSink();
+        var patches = SinglePatch("UnitLeaderTemplate", "hero.elena",
+            new CompiledTemplateSetOperation
+            {
+                Op = CompiledTemplateOp.Append,
+                FieldPath = "PerkTrees[0].Perks",
+                Value = new CompiledTemplateValue
+                {
+                    Kind = CompiledTemplateValueKind.Composite,
+                    Composite = new CompiledTemplateComposite { TypeName = "", Operations = [] },
                 },
             });
 

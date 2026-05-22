@@ -52,6 +52,7 @@ internal class ReplacementCoordinator
                 new TemplateCloneEarlyInjectionPatch(_templateCloneApplier),
                 new AudioReplacementPatch(_catalog.ReplacementAudioClips),
                 new RuntimeActorVisualRefreshPatch(_templateBindings),
+                new ConversationManagerTrackingPatch(),
             });
     }
 
@@ -153,6 +154,13 @@ internal class ReplacementCoordinator
         // Clones first: patches may target the newly registered cloneIds.
         _templateCloneApplier.TryApply(log);
         _templatePatchApplier.TryApply(log);
+
+        // Type-specific post-patch registration. SoundBank clones need to
+        // be registered with Stem's runtime SoundManager only after the
+        // bankId patch lands, otherwise Stem indexes them under the source
+        // bank's bankId and SAY/skill audio lookups by the modder's chosen
+        // bankId resolve to nothing.
+        _templateCloneApplier.RunPostPatchHooks(log);
 
         // Humanoid-addition prefab script-config mirrors deferred from
         // addition-prefab loading. Resources is populated by this pass

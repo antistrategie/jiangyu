@@ -239,6 +239,14 @@ export function FieldAdder({
                   <span className={styles.fieldAdderItemName}>{m.name}</span>
                   <span className={styles.fieldAdderItemType}>{m.typeName}</span>
                   {m.isCollection && <span className={styles.fieldAdderItemBadge}>collection</span>}
+                  {isAutoFilledField(targetTemplateType, m.name) && (
+                    <span
+                      className={styles.fieldAdderItemBadge}
+                      title="Auto-filled at compile if you leave it out"
+                    >
+                      auto
+                    </span>
+                  )}
                 </button>
                 {onStartDescent && m.isCollection === true && (
                   <button
@@ -276,4 +284,31 @@ export function FieldAdder({
         )}
     </div>
   );
+}
+
+// Fields the compiler auto-fills when omitted. Each entry mirrors a
+// CompositeAutoFillers helper in Jiangyu.Core (see
+// docs/research/verified/tagged-string-authoring.md for the contract).
+// The badge is informational only — modders can still set these
+// explicitly to override the auto-derived value.
+const AUTO_FILLED_FIELDS: ReadonlyMap<string, ReadonlySet<string>> = new Map<
+  string,
+  ReadonlySet<string>
+>([
+  ["SoundBank", new Set(["bankId"])],
+  ["ConversationTemplate", new Set(["Path"])],
+  // Per-composite fillers (Stem.Sound.id from name;
+  // VariationConversationNode.VariationCopyCount from Variations) fire
+  // inside composite construction, not at the top-level patch. Their
+  // hints surface from the composite's own member list when CompositeEditor
+  // calls FieldAdder with targetTemplateType set to "Sound" /
+  // "VariationConversationNode".
+  ["Sound", new Set(["id"])],
+  ["Il2CppStem.Sound", new Set(["id"])],
+  ["Stem.Sound", new Set(["id"])],
+  ["VariationConversationNode", new Set(["VariationCopyCount"])],
+]);
+
+function isAutoFilledField(templateType: string, memberName: string): boolean {
+  return AUTO_FILLED_FIELDS.get(templateType)?.has(memberName) === true;
 }

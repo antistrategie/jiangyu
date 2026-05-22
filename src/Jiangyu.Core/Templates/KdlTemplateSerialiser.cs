@@ -308,13 +308,22 @@ public static class KdlTemplateSerialiser
         if (hasFrom)
             sb.Append((hasType ? " " : "") + $"from=\"{Esc(v.CompositeFrom!)}\"");
 
+        // Spacing before `{`: the caller (WriteFlatDirective) already
+        // emitted a single space before WriteValue. When type or from
+        // attributes preceded `{` here, the AppendLine(" {") below adds
+        // the separating space between attribute and brace. When the
+        // inferred-composite path emitted nothing, the caller's space is
+        // the only one — adding another would produce `set "F"  {` with
+        // a double space.
+        var leadingSpace = hasType || hasFrom ? " " : string.Empty;
+
         if (v.CompositeDirectives == null || v.CompositeDirectives.Count == 0)
         {
-            sb.Append(" {}");
+            sb.Append($"{leadingSpace}{{}}");
             return;
         }
 
-        sb.AppendLine(" {");
+        sb.AppendLine($"{leadingSpace}{{");
         WriteDirectiveBlock(sb, v.CompositeDirectives, parentIndent + 1);
         WriteIndent(sb, parentIndent);
         sb.Append('}');

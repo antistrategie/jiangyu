@@ -96,7 +96,8 @@ public static class TemplateCatalogValidator
 
     public static void ValidateEditorDocument(
         KdlEditorDocument document,
-        TemplateTypeCatalog catalog)
+        TemplateTypeCatalog catalog,
+        IReadOnlyList<Jiangyu.Core.Models.AssetEntry>? indexedAssets = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(catalog);
@@ -117,12 +118,46 @@ public static class TemplateCatalogValidator
                 continue;
             }
 
+            // For ConversationTemplate nodes, pre-build the role-name →
+            // Guid map from the source asset's Roles so the per-directive
+            // pass can resolve `set "RoleGuid" "Entity"` strings before
+            // the catalog validator's String-on-Int32 check rejects them.
+            // Falls back to null when no asset index is available or the
+            // source isn't indexed; the catalog validator will then surface
+            // the same coercion error it would have without us, which is
+            // the right signal.
+            IReadOnlyList<Jiangyu.Core.Models.AssetEntryRole>? nodeRoles =
+                string.Equals(node.TemplateType, "ConversationTemplate", StringComparison.Ordinal)
+                    ? ResolveEditorNodeRoles(node, indexedAssets)
+                    : null;
+
             foreach (var directive in node.Directives)
             {
                 if (string.IsNullOrWhiteSpace(directive.FieldPath))
                     continue;
 
                 var op = KdlTemplateParser.EditorDirectiveToCompiled(directive);
+
+                // Apply RoleGuid resolution before per-directive validation.
+                // The compile path's RoleGuidResolver runs as a pre-pass; the
+                // editor path doesn't have access to compiled patches, so
+                // mutate the in-flight CompiledTemplateSetOperation here.
+                // Resolution is recursive: SAY composites nest inside
+                // VARIATION composites, etc. Failures append to the
+                // document's error list with the directive's line number.
+                if (nodeRoles is not null)
+                {
+                    var roleErrors = new List<string>();
+                    ApplyRoleGuidResolutionEditor(op, nodeRoles, roleErrors);
+                    if (roleErrors.Count > 0)
+                    {
+                        var line = directive.Line ?? node.Line;
+                        foreach (var msg in roleErrors)
+                            document.Errors.Add(new KdlEditorError { Message = msg, Line = line });
+                        continue;
+                    }
+                }
+
                 var localErrors = new List<string>();
                 var errorCount = ValidateOperation(
                     op,
@@ -156,6 +191,72 @@ public static class TemplateCatalogValidator
                 directive.Value = normalised.Value;
             }
         }
+    }
+
+    /// <summary>
+    /// Resolve the source ConversationTemplate's Roles list for an
+    /// editor node. For clones, the source is <c>sourceId</c>. For
+    /// patches, the source is <c>templateId</c> itself. Lookup rule is
+    /// shared with the compile path via
+    /// <see cref="ConversationRoleLookup.FindRoles"/>: Path-first,
+    /// bare-name-fallback.
+    /// </summary>
+    private static IReadOnlyList<Jiangyu.Core.Models.AssetEntryRole>? ResolveEditorNodeRoles(
+        KdlEditorNode node,
+        IReadOnlyList<Jiangyu.Core.Models.AssetEntry>? indexedAssets)
+    {
+        var lookupKey = node.Kind == KdlEditorNodeKind.Clone ? node.SourceId : node.TemplateId;
+        return ConversationRoleLookup.FindRoles(lookupKey, indexedAssets);
+    }
+
+    /// <summary>
+    /// Pre-mutate <c>RoleGuid "Name"</c> ops to their resolved Int32 form
+    /// so the editor's per-op validation doesn't trip on the
+    /// String-on-Int32 coercion check. Recurses through composite and
+    /// handler-construction bodies so nested SAY/CHOICE composites
+    /// inside <c>m_SerializedNodes</c> are covered. Reports an editor-
+    /// friendly error when the role name doesn't match the source's
+    /// known names.
+    /// </summary>
+    private static void ApplyRoleGuidResolutionEditor(
+        CompiledTemplateSetOperation op,
+        IReadOnlyList<Jiangyu.Core.Models.AssetEntryRole> roles,
+        List<string> errors)
+    {
+        TryResolveOpValue(op, roles, errors);
+        if (op.Value is { Kind: CompiledTemplateValueKind.Composite, Composite: { } composite })
+        {
+            foreach (var inner in composite.Operations)
+                ApplyRoleGuidResolutionEditor(inner, roles, errors);
+        }
+        else if (op.Value is { Kind: CompiledTemplateValueKind.HandlerConstruction, HandlerConstruction: { } handler })
+        {
+            foreach (var inner in handler.Operations)
+                ApplyRoleGuidResolutionEditor(inner, roles, errors);
+        }
+    }
+
+    private static void TryResolveOpValue(
+        CompiledTemplateSetOperation op,
+        IReadOnlyList<Jiangyu.Core.Models.AssetEntryRole> roles,
+        List<string> errors)
+    {
+        if (op.Value is not { Kind: CompiledTemplateValueKind.String, String: { } literal })
+            return;
+        if (!string.Equals(op.FieldPath, "RoleGuid", StringComparison.Ordinal))
+            return;
+        foreach (var role in roles)
+        {
+            if (!string.Equals(role.Name, literal, StringComparison.Ordinal)) continue;
+            op.Value = new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.Int32,
+                Int32 = role.Guid,
+            };
+            return;
+        }
+        var known = string.Join(", ", roles.Select(r => r.Name));
+        errors.Add($"RoleGuid \"{literal}\" does not match any role. Known: {known}.");
     }
 
     private static int ValidatePatch(
@@ -503,16 +604,27 @@ public static class TemplateCatalogValidator
         }
 
         if (op.Value?.Kind == CompiledTemplateValueKind.Composite && op.Value.Composite != null)
+        {
+            // Tagged-string field: the storage type is System.String (or
+            // List<string> auto-unwrapped to String) but the modder is
+            // composing a typed value within the
+            // TaggedPolymorphicBase subtype family. Substitute so
+            // composite= resolves against the family and inner fields
+            // validate against the concrete subtype.
+            var isTaggedTarget = result.TaggedPolymorphicBase is not null;
+            var compositeDestination = result.TaggedPolymorphicBase ?? result.CurrentType;
             return ValidateCompositeValue(
                 op.Value.Composite,
                 FormatFullPath(op),
-                result.CurrentType,
+                compositeDestination,
                 catalog,
                 additions,
                 reportError,
                 gameAssets,
                 mutateHashableIds,
-                clearRedundantTypes);
+                clearRedundantTypes,
+                isTaggedStringTarget: isTaggedTarget);
+        }
 
         if (op.Value?.Kind == CompiledTemplateValueKind.HandlerConstruction && op.Value.HandlerConstruction != null)
             return ValidateHandlerConstruction(
@@ -834,7 +946,8 @@ public static class TemplateCatalogValidator
         Action<string> reportError,
         IGameAssetIndex? gameAssets = null,
         bool mutateHashableIds = true,
-        bool clearRedundantTypes = false)
+        bool clearRedundantTypes = false,
+        bool isTaggedStringTarget = false)
     {
         // Inferred composite: the parser emits TypeName="" for child blocks
         // without an explicit composite=/handler= property. Resolve from the
@@ -875,6 +988,42 @@ public static class TemplateCatalogValidator
             composite.TypeName = destinationType.FullName ?? destinationType.Name;
         }
 
+        // Tagged-string composites: the modder's composite="X" string is the
+        // discriminator (e.g. "ACTION") that the destination's
+        // ISerializationCallbackReceiver consumes. Resolve via the
+        // discriminator candidate set first so the standard subtype path
+        // below sees the concrete CLR type. Preserve the modder's
+        // discriminator on the composite so the applier knows what string to
+        // emit when packing.
+        if (isTaggedStringTarget
+            && destinationType != null
+            && string.IsNullOrEmpty(composite.TaggedDiscriminator)
+            && !string.IsNullOrEmpty(composite.TypeName))
+        {
+            var discriminatorMatch = catalog.ResolveTaggedDiscriminator(
+                destinationType,
+                composite.TypeName,
+                out var discriminatorAmbiguous);
+            if (discriminatorMatch != null)
+            {
+                composite.TaggedDiscriminator = composite.TypeName;
+                composite.TypeName = discriminatorMatch.FullName ?? discriminatorMatch.Name;
+            }
+            else if (discriminatorAmbiguous.Count > 0)
+            {
+                reportError(
+                    $"tagged-string discriminator \"{composite.TypeName}\" at '{contextPath}' "
+                    + $"is ambiguous within {catalog.FriendlyName(destinationType)}; "
+                    + "candidates: " + string.Join(", ", discriminatorAmbiguous));
+                return 1;
+            }
+            // No discriminator-match — fall through to the normal subtype
+            // resolver. Modder may have written a CLR short name (e.g.
+            // composite="ActionConversationNode") which the standard path
+            // still accepts; in that case the applier derives the
+            // discriminator from the class name itself at pack time.
+        }
+
         // Restrict to subtypes of the destination type when one is known and
         // is itself polymorphic. This filters out short-name twins outside
         // the subtype family (the production case is Effects.Attack vs
@@ -894,6 +1043,23 @@ public static class TemplateCatalogValidator
                     + $"{catalog.FriendlyName(destinationType)} required by composite '{contextPath}'.{note}");
                 return 1;
             }
+        }
+        else if (destinationType != null
+            && (string.Equals(composite.TypeName, destinationType.Name, StringComparison.Ordinal)
+                || string.Equals(composite.TypeName, destinationType.FullName, StringComparison.Ordinal)))
+        {
+            // Monomorphic destination + explicit composite= matching it.
+            // Use the destination type directly; bypass the assembly-wide
+            // ResolveType which can collide with same-short-name twins in
+            // unrelated namespaces (Stem.ID vs Menace.Tactical.AI.ID).
+            // Compile path rewrites TypeName to the FQN so the loader's
+            // own type resolution sidesteps the same ambiguity at apply
+            // time. Editor-doc validation preserves the modder's input
+            // for round-trip emit (mutateHashableIds doubles as the
+            // compile-vs-editor flag).
+            type = destinationType;
+            if (mutateHashableIds)
+                composite.TypeName = destinationType.FullName ?? destinationType.Name;
         }
         else
         {

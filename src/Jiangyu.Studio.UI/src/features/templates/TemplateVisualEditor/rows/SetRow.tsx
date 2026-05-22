@@ -395,12 +395,18 @@ export function SetRow({
           value={directive.value}
           onChange={(v) => onChange({ ...directive, value: v })}
           vanillaNode={vanillaNode}
-          // Both shapes of polymorphic destination route through the same
-          // picker UX: collection-element subtypes (elementSubtypes) and
-          // scalar-polymorphic subtypes (scalarSubtypes, the Phase 2b
-          // Odin-construction case).
+          // Three shapes of polymorphic destination route through the same
+          // picker UX:
+          //  - collection-element subtypes (elementSubtypes, handler= flow)
+          //  - scalar-polymorphic subtypes (scalarSubtypes, Odin construction)
+          //  - tagged-string discriminators (taggedDiscriminators, e.g. SAY
+          //    against m_SerializedNodes). For tagged-string, the picker
+          //    surfaces vanilla-sampled discriminators and the resolved
+          //    inner type is fetched via templatesQuery with the base hint.
           elementSubtypes={member?.elementSubtypes ?? member?.scalarSubtypes ?? null}
           elementType={member?.elementTypeName ?? member?.typeName ?? undefined}
+          taggedDiscriminators={member?.taggedDiscriminators ?? null}
+          taggedPolymorphicBase={member?.taggedPolymorphicBase ?? undefined}
         />
       )}
     </div>
@@ -467,6 +473,14 @@ export interface CompositeEditorProps {
    *  can disambiguate value.compositeType when its short name collides
    *  with an unrelated class outside the subtype family. */
   elementType?: string | undefined;
+  /** Tagged-string discriminator candidates from the parent member's
+   *  TaggedDiscriminators (vanilla-sampled). Surfaces the same picker UX as
+   *  elementSubtypes for the m_Ser*-field authoring shape. */
+  taggedDiscriminators?: readonly string[] | null;
+  /** Polymorphic base FQN (matches MemberShape.TaggedPolymorphicBase).
+   *  Passed to templatesQuery as discriminatorBase so the resolved inner
+   *  type's members come back for body rendering. */
+  taggedPolymorphicBase?: string | undefined;
 }
 
 export function CompositeEditor({
@@ -475,6 +489,8 @@ export function CompositeEditor({
   vanillaNode,
   elementSubtypes,
   elementType,
+  taggedDiscriminators,
+  taggedPolymorphicBase,
 }: CompositeEditorProps) {
   // Directives flow in from two places: parse (stampNodes recurses through
   // composites and assigns _uiId per directive) and FieldAdder (always builds
@@ -486,10 +502,16 @@ export function CompositeEditor({
     () => (value.compositeDirectives ?? []) as StampedDirective[],
     [value.compositeDirectives],
   );
+  const isTaggedString = taggedPolymorphicBase != null && taggedPolymorphicBase !== "";
   const { members, loaded: membersLoaded } = useTemplateMembers(
     value.compositeType,
     true,
     elementType,
+    // Tagged-string composites: the modder's compositeType is a
+    // discriminator (e.g. "SAY"), not a CLR type name. Pass the
+    // polymorphic base so the server-side query resolves it to the
+    // concrete CLR type before walking members.
+    isTaggedString ? taggedPolymorphicBase : undefined,
   );
 
   // Whether this composite type has a working `from=` prototype lookup
@@ -510,6 +532,13 @@ export function CompositeEditor({
   const prototypesSupported =
     fromLookupType !== "" &&
     supportedSet?.has(normaliseCompositeTypeShortName(fromLookupType)) === true;
+
+  // Track whether the modder has manually opened the from= picker. Open
+  // implicitly when compositeFrom is already set (parsed from KDL), so
+  // an existing from= clause stays visible without an extra click.
+  const [fromInputOpen, setFromInputOpen] = useState(false);
+  const fromInputVisible =
+    fromInputOpen || (value.compositeFrom != null && value.compositeFrom !== "");
 
   const handleDirectiveChange = (index: number, updated: StampedDirective) => {
     const next = directives.map((d, i) => (i === index ? updated : d));
@@ -591,9 +620,17 @@ export function CompositeEditor({
   const memberMap = new Map(members.map((m) => [m.name, m]));
 
   const isHandler = value.kind === "HandlerConstruction";
-  const subtypeChoices = elementSubtypes ?? null;
+  // Tagged-string composites surface their discriminators through the
+  // same picker UX as handler subtypes. Modder picks once; the chip
+  // round-trips and clearing re-opens the picker.
+  const subtypeChoices = isTaggedString
+    ? (taggedDiscriminators ?? null)
+    : (elementSubtypes ?? null);
   const needsSubtypePick =
-    isHandler && subtypeChoices !== null && subtypeChoices.length > 0 && !value.compositeType;
+    (isHandler || isTaggedString) &&
+    subtypeChoices !== null &&
+    subtypeChoices.length > 0 &&
+    !value.compositeType;
 
   if (needsSubtypePick) {
     return (
@@ -609,7 +646,10 @@ export function CompositeEditor({
   };
 
   const canClearSubtype =
-    isHandler && subtypeChoices !== null && subtypeChoices.length > 0 && !!value.compositeType;
+    (isHandler || isTaggedString) &&
+    subtypeChoices !== null &&
+    subtypeChoices.length > 0 &&
+    !!value.compositeType;
 
   return (
     <div className={styles.compositeBody}>
@@ -633,24 +673,51 @@ export function CompositeEditor({
             {value.compositeType ?? (isHandler ? "handler" : "composite")}
           </span>
         )}
-        {!isHandler && prototypesSupported && (
-          <div className={styles.setValue}>
-            <div className={styles.setInsertRow}>
-              <span className={styles.setInsertAt}>From</span>
-              <div className={styles.compositeFromCombo}>
-                <SuggestionCombobox
-                  value={value.compositeFrom ?? ""}
-                  placeholder=""
-                  fetchSuggestions={() => templatesPrototypeCandidates(fromLookupType)}
-                  onChange={(next) => {
+        {!isHandler &&
+          prototypesSupported &&
+          (fromInputVisible ? (
+            <div className={styles.setValue}>
+              <div className={styles.setInsertRow}>
+                <span className={styles.setInsertAt}>From</span>
+                <div className={styles.compositeFromCombo}>
+                  <SuggestionCombobox
+                    value={value.compositeFrom ?? ""}
+                    placeholder=""
+                    fetchSuggestions={() => templatesPrototypeCandidates(fromLookupType)}
+                    onChange={(next) => {
+                      const { compositeFrom: _drop, ...rest } = value;
+                      onChange(next === "" ? rest : { ...rest, compositeFrom: next });
+                    }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className={styles.compositeFromAdd}
+                  onClick={() => {
                     const { compositeFrom: _drop, ...rest } = value;
-                    onChange(next === "" ? rest : { ...rest, compositeFrom: next });
+                    onChange(rest);
+                    setFromInputOpen(false);
                   }}
-                />
+                  title="Remove from= (this composite will construct fresh defaults)"
+                >
+                  ×
+                </button>
               </div>
             </div>
-          </div>
-        )}
+          ) : (
+            // Collapsed affordance: avoids the visual noise of an
+            // always-present empty input on every composite whose type
+            // happens to support prototype-source lookup. Clicking
+            // expands the picker without committing a value.
+            <button
+              type="button"
+              className={styles.compositeFromAdd}
+              onClick={() => setFromInputOpen(true)}
+              title="Inherit Inspector-baked defaults from an existing element"
+            >
+              + from
+            </button>
+          ))}
       </div>
       {directives.map((d, di) => (
         <DirectiveRow
