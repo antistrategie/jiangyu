@@ -208,7 +208,7 @@ A value at the end of a `set`, `append`, or `insert` line is one of:
 | ------------------- | -------------------------------------------------------- | -------------------------------------------------------- |
 | Scalar number       | bare number                                              | `set "HudYOffsetScale" 2.0`                              |
 | Boolean             | `#true` or `#false`                                      | `set "AvoidOpponents" #true`                             |
-| String              | quoted string                                            | `set "InitialPerk" "perk.assassin"`                      |
+| String              | quoted string, or triple-quoted multi-line               | `set "InitialPerk" "perk.assassin"`                      |
 | Template reference  | `ref="<TemplateType>" "<templateId>"`                    | `append "PerkTrees" ref="PerkTreeTemplate" "perk_tree.tech"` |
 | Enum                | `enum="<EnumType>" "<value>"`                            | `set "Tier" enum="PerkTier" "Advanced"`                  |
 | Composite           | `composite="<TypeName>" { ...nested set ops... }`        | inline value-type composite (e.g. `RoleData`)            |
@@ -217,7 +217,32 @@ A value at the end of a `set`, `append`, or `insert` line is one of:
 
 `composite=` builds an inline value embedded in the parent. `handler=` constructs a separate element that the parent references. Pick `composite=` for inline value-type fields (`RoleData`, `LocalizedLine`) and `handler=` for adding elements to polymorphic-reference lists (event handlers on skills and perks).
 
+When the destination type is unambiguous (a value-type composite like `LocalizedLine`, or a monomorphic list element), the `composite="X"` declaration can be omitted. Studio's visual editor emits the omitted form for these cases:
+
+```kdl
+patch "UnitLeaderTemplate" "squad_leader.darby_clone" {
+    set "UnitTitle" {
+        set "m_DefaultTranslation" "Tactical Doll"
+    }
+}
+```
+
+The compiler infers the concrete type from the destination field. Polymorphic destinations (an abstract base with multiple concrete subclasses) still require explicit `composite=` or `handler=` so the chosen subtype is unambiguous; the validator lists the candidates when the hint is missing.
+
 `#null` clears a reference-typed scalar field (GameObject, ScriptableObject, MonoBehaviour, etc.) so the runtime falls back to its default-when-null behaviour. Useful on cloned templates where the source's field holds an overlay you don't want; e.g. dropping a soldier clone's `CustomHead` so the body mesh's own head shows through. Value-typed fields (numbers, enums, structs) reject `#null` at compile time.
+
+Strings containing newlines emit as KDL v2 triple-quoted multi-line literals. The visual editor flips to a textarea when a value has any newline in it, and Studio's source view round-trips both forms without rewriting:
+
+```kdl
+set "Description" """
+    A first line.
+    A second line.
+
+    A fourth, after a blank line.
+    """
+```
+
+The leading whitespace on the closing `"""` defines the common indent stripped from every line on re-parse. Single-line strings stay on the standard `"text"` form, so most patches still diff compactly.
 
 The compiler infers numeric width (Byte, Int32, Single) from the destination field's type. For polymorphic destinations (an abstract base type with multiple concrete subclasses), specify the type explicitly via `ref=`, `composite=`, `handler=`, or `type=` as appropriate.
 

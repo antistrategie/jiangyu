@@ -277,6 +277,37 @@ Template clone 'perk.unique_darby_high_value_targets_clone_leak_smoke':
     clone-side patches don't leak into the source.
 ```
 
+## Non-`DataTemplate` ScriptableObject clones
+
+A subset of MENACE's authored data lives on `ScriptableObject`s that don't
+descend from `DataTemplate` (`PerkTreeTemplate` is the worked case;
+`SpeakerTemplate` ancestors land in the same bucket on builds where they
+don't inherit `DataTemplate`). These are still cloneable, with the same
+authoring shape and modder-facing contract — `clone "PerkTreeTemplate"
+from="..." id="..."`, addressable by `ref="..."` from subsequent patches —
+but a smaller runtime registration step:
+
+1. `Object.Instantiate(source)` against the loaded source ScriptableObject.
+2. `cloneObj.name = cloneId`.
+3. `hideFlags = DontUnloadUnusedAsset` + `DontDestroyOnLoad` so scene
+   changes don't sweep the clone.
+
+No `m_TemplateMaps` insertion, no `m_ID` rewrite, no ancestor mirroring:
+non-`DataTemplate` SOs aren't registered with `DataTemplateLoader`. Runtime
+resolution for them goes through
+`TemplateRuntimeAccess.TryGetTemplateById`'s by-name branch
+(`Resources.FindObjectsOfTypeAll<T>` + `Object.name` match), which finds
+the clone the moment `Instantiate` returns.
+
+The applier routes between the two tracks structurally:
+`typeof(DataTemplate).IsAssignableFrom(resolvedType)` selects the
+`DataTemplateLoader` path; everything else flows through
+`TryApplyScriptableObjectType`. Studio's RPC layer mirrors the same
+distinction: any concrete non-`DataTemplate` ScriptableObject with no
+polymorphic ref-subtypes surfaces as a `TemplateReference` destination
+(modder picks an existing instance or a clone id from the ref combobox),
+so both tracks share the authoring UX.
+
 ## Scope limits
 
 - **Non-serialised fields beyond `m_ID` stay at their pre-clone values.**
@@ -317,3 +348,5 @@ Template clone 'perk.unique_darby_high_value_targets_clone_leak_smoke':
 - Owned-reference deep-copy:
   `src/Jiangyu.Loader/Templates/TemplateCloneApplier.cs:DeepCopyOwnedReferences`
   and `IsOwnedElementType`.
+- Non-`DataTemplate` ScriptableObject clone path:
+  `src/Jiangyu.Loader/Templates/TemplateCloneApplier.cs:TryApplyScriptableObjectType`.
