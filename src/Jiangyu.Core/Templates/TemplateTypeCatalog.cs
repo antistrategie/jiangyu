@@ -88,13 +88,12 @@ public sealed class TemplateTypeCatalog : IDisposable
         var primaryDir = Path.GetDirectoryName(assemblyPath);
         if (!string.IsNullOrEmpty(primaryDir) && Directory.Exists(primaryDir))
         {
-            var primaryFull = Path.GetFullPath(assemblyPath);
             foreach (var siblingName in new[] { "Assembly-CSharp.dll", "Assembly-CSharp-firstpass.dll" })
             {
                 var dll = Path.Combine(primaryDir, siblingName);
                 if (!File.Exists(dll))
                     continue;
-                if (string.Equals(Path.GetFullPath(dll), primaryFull, StringComparison.OrdinalIgnoreCase))
+                if (IsSameFilePath(dll, assemblyPath))
                     continue;
                 try
                 {
@@ -720,6 +719,20 @@ public sealed class TemplateTypeCatalog : IDisposable
     }
 
     public void Dispose() => _context.Dispose();
+
+    /// <summary>
+    /// Whether two file-path strings point at the same on-disk file. Both
+    /// sides are run through <see cref="Path.GetFullPath(string)"/> so
+    /// separator-mix (<c>D:\foo\bar/Assembly-CSharp.dll</c> on Windows, from
+    /// <see cref="Path.Combine(string, string)"/> stitching a backslash base
+    /// to a forward-slash relative path) collapses to the same canonical form,
+    /// and compared with <see cref="StringComparison.OrdinalIgnoreCase"/>
+    /// because Windows filesystems are case-insensitive. Without this, the
+    /// sibling-assembly loader could re-load the primary as if it were a
+    /// distinct assembly, duplicating every type in the catalogue.
+    /// </summary>
+    internal static bool IsSameFilePath(string a, string b)
+        => string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
 
     private static bool IsStopBase(Type type)
     {
