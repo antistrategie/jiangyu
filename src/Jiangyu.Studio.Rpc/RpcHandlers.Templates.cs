@@ -13,8 +13,10 @@ namespace Jiangyu.Studio.Rpc;
 
 public static partial class RpcHandlers
 {
-    private const string DefaultAssemblyRelativePath = "MelonLoader/Il2CppAssemblies/Assembly-CSharp.dll";
-    private const string MelonLoaderNet6RelativePath = "MelonLoader/net6";
+    private static readonly string DefaultAssemblyRelativePath =
+        Path.Combine("MelonLoader", "Il2CppAssemblies", "Assembly-CSharp.dll");
+    private static readonly string MelonLoaderNet6RelativePath =
+        Path.Combine("MelonLoader", "net6");
 
     [McpTool("jiangyu_templates_index_status",
         "Check whether the MENACE template index exists and is current. Returns state (\"current\", \"noGame\", \"stale\", etc.), instance/type counts, and indexed-at timestamp.")]
