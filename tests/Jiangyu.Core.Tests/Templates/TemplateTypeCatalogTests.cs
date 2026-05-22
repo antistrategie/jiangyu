@@ -658,4 +658,65 @@ public class TemplateTypeCatalogTests
         var serialised = enriched.Single(m => m.Name == "m_SerializedCounts");
         Assert.Null(serialised.TaggedPolymorphicBase);
     }
+
+    [Fact]
+    public void IsSameFilePath_TreatsNonCanonicalPathsAsEqual()
+    {
+        // Regression for the Windows-only sibling-load double-counting bug:
+        // Path.Combine on Windows stitches a backslash base to a forward-slash
+        // relative path without normalising, so assemblyPath arrives as
+        //   D:\Steam\...\Menace\MelonLoader/Il2CppAssemblies/Assembly-CSharp.dll
+        // while Directory.EnumerateFiles in the same directory returns
+        //   D:\Steam\...\Menace\MelonLoader\Il2CppAssemblies\Assembly-CSharp.dll
+        // An ordinal compare misses the match, the loader treats the primary
+        // as a sibling, and MetadataLoadContext yields two Assembly instances
+        // whose GetTypes() unions produce ambiguous-by-FullName duplicates.
+        // The fix collapses both sides through Path.GetFullPath.
+        var tempDir = Path.Combine(Path.GetTempPath(), $"jiangyu-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(tempDir, "sub"));
+        try
+        {
+            var realFile = Path.Combine(tempDir, "Assembly-CSharp.dll");
+            File.WriteAllBytes(realFile, []);
+
+            // Path.Combine preserves the "sub/.." segment rather than collapsing
+            // it, so the resulting string is ordinal-unequal to the canonical
+            // form even though both resolve to the same file.
+            var nonCanonical = Path.Combine(tempDir, "sub", "..", "Assembly-CSharp.dll");
+
+            Assert.NotEqual(realFile, nonCanonical);
+            Assert.True(TemplateTypeCatalog.IsSameFilePath(realFile, nonCanonical));
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void IsSameFilePath_TreatsMixedSeparatorWindowsPathsAsEqual()
+    {
+        // Cross-platform check of the exact failure mode from the modder's
+        // install: the absolute prefix uses one separator and the relative
+        // segment another. Path.GetFullPath canonicalises on the host OS, so
+        // we only assert the specific shape that matters per platform.
+        if (OperatingSystem.IsWindows())
+        {
+            var mixed = @"C:\game\MelonLoader/Il2CppAssemblies/Assembly-CSharp.dll";
+            var pure = @"C:\game\MelonLoader\Il2CppAssemblies\Assembly-CSharp.dll";
+            Assert.NotEqual(mixed, pure);
+            Assert.True(TemplateTypeCatalog.IsSameFilePath(mixed, pure));
+        }
+        else
+        {
+            // Linux/macOS: GetFullPath does not rewrite backslashes into
+            // forward slashes (they're valid filename characters), so a path
+            // with a literal backslash stays distinct. The Windows-form
+            // failure can't manifest here; we just sanity-check that two
+            // canonical-equal forms collapse.
+            var a = "/game/MelonLoader/Il2CppAssemblies/Assembly-CSharp.dll";
+            var b = "/game/MelonLoader/sub/../Il2CppAssemblies/Assembly-CSharp.dll";
+            Assert.True(TemplateTypeCatalog.IsSameFilePath(a, b));
+        }
+    }
 }
