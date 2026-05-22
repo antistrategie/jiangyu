@@ -131,4 +131,96 @@ public class TemplatePatchCatalogDedupTests
         Assert.False(TemplatePatchCatalog.IndexPathEquals(
             new List<int> { 0, 0 }, new List<int> { 0, 0, 0 }));
     }
+
+    [Fact]
+    public void SetOpsCollide_DifferentIndex_DoNotCollide()
+    {
+        // The InitialAttributes case: two Set ops on the same field with
+        // different collection indexes target different slots and must
+        // NOT dedup. The regression that prompted this test had
+        // `InitialAttributes` index=0 and index=6 collapsing to a single
+        // write — Voymastina ended up with Positioning set but Agility,
+        // WeaponSkill, etc. left at the source clone's values.
+        var existing = new LoadedPatchOperation(
+            CompiledTemplateOp.Set,
+            "InitialAttributes",
+            index: 0,
+            indexPath: null,
+            descent: null,
+            value: null,
+            ownerLabel: "mod-a");
+
+        Assert.False(TemplatePatchCatalog.SetOpsCollide(
+            existing,
+            newFieldPath: "InitialAttributes",
+            newIndex: 6,
+            newDescent: null,
+            newIndexPath: null));
+    }
+
+    [Fact]
+    public void SetOpsCollide_SameIndex_DoCollide()
+    {
+        // Genuine same-slot collision: two Sets on InitialAttributes[0]
+        // are the case the dedup is designed to resolve — later wins
+        // with a warning.
+        var existing = new LoadedPatchOperation(
+            CompiledTemplateOp.Set,
+            "InitialAttributes",
+            index: 0,
+            indexPath: null,
+            descent: null,
+            value: null,
+            ownerLabel: "mod-a");
+
+        Assert.True(TemplatePatchCatalog.SetOpsCollide(
+            existing,
+            newFieldPath: "InitialAttributes",
+            newIndex: 0,
+            newDescent: null,
+            newIndexPath: null));
+    }
+
+    [Fact]
+    public void SetOpsCollide_DifferentFieldPath_DoNotCollide()
+    {
+        var existing = new LoadedPatchOperation(
+            CompiledTemplateOp.Set,
+            "QualityLevel",
+            index: null,
+            indexPath: null,
+            descent: null,
+            value: null,
+            ownerLabel: "mod-a");
+
+        Assert.False(TemplatePatchCatalog.SetOpsCollide(
+            existing,
+            newFieldPath: "GrowthPotential",
+            newIndex: null,
+            newDescent: null,
+            newIndexPath: null));
+    }
+
+    [Fact]
+    public void SetOpsCollide_AppendVsSet_DoNotCollide()
+    {
+        // Only Set ops dedup. An Append targeting the same field path
+        // adds a new element; later Set targeting the same field is a
+        // separate operation, not an override.
+        var existing = new LoadedPatchOperation(
+            CompiledTemplateOp.Append,
+            "Perks",
+            index: null,
+            indexPath: null,
+            descent: null,
+            value: null,
+            ownerLabel: "mod-a");
+
+        Assert.False(TemplatePatchCatalog.SetOpsCollide(
+            existing,
+            newFieldPath: "Perks",
+            newIndex: null,
+            newDescent: null,
+            newIndexPath: null));
+    }
 }

@@ -3,8 +3,6 @@ using Jiangyu.Shared.Bundles;
 using MelonLoader;
 using UnityEngine;
 using Jiangyu.Loader.Replacements;
-using MenaceFootprints = Il2CppMenace.Tactical.Footprints;
-using MenaceRagdoll = Il2CppMenace.Tactical.Ragdoll;
 
 namespace Jiangyu.Loader.Bundles;
 
@@ -22,6 +20,19 @@ internal sealed class BundleReplacementCatalog
     // stays consistent when a later mod ships the same prefab under a
     // different-cased name.
     private readonly Dictionary<string, string> _additionPrefabOwners = new(StringComparer.OrdinalIgnoreCase);
+
+    // Humanoid addition prefabs need their MonoBehaviour config
+    // mirrored from a canonical reference vanilla soldier prefab —
+    // AssetRipper strips Ragdoll / Footprints field values on extract,
+    // so the addition reaches the loader with the components attached
+    // by bake but no field data. (Hierarchy children like dust spawn
+    // markers are mirrored at bake time inside BakeHumanoid, where
+    // Editor APIs can mutate the prefab on disk.) The reference lookup
+    // needs MENACE's asset registry to be populated, which isn't true
+    // during early-boot mod load, so we queue prefabs here and drain
+    // via MirrorPendingHumanoidPrefabs once the loader's
+    // ApplyReplacements pass starts running.
+    private readonly List<GameObject> _pendingHumanoidMirrors = new();
 
     public Dictionary<string, ReplacementMesh> Meshes { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, ReplacementPrefab> Prefabs { get; } = new(StringComparer.Ordinal);
@@ -436,7 +447,7 @@ internal sealed class BundleReplacementCatalog
             renderer.sharedMaterials = mats;
         }
 
-        var soldierScripts = AttachSoldierScriptsIfHumanoid(prefab, log);
+        var soldierScripts = QueueHumanoidMirrorIfApplicable(prefab, log);
 
         if (_additionPrefabOwners.TryGetValue(key, out var previousOwner))
             log.Warning($"  Override addition prefab '{key}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
@@ -449,33 +460,54 @@ internal sealed class BundleReplacementCatalog
         log.Msg($"  Registered addition prefab: {key} (object name: {prefab.name}{shaderSuffix}{soldierScripts})");
     }
 
-    // Soldier-shape addition prefabs require MENACE's Footprints and Ragdoll
-    // MonoBehaviours to spawn without freezing the actor pipeline. AssetRipper
-    // strips MonoBehaviours from imported prefabs, so a clone-and-rebundle of a
-    // vanilla soldier loses them. We re-attach them at load time with default
-    // (empty) configuration; fields like m_Template / m_Parts can be populated
-    // later if MENACE's spawn pipeline requires them.
-    private static string AttachSoldierScriptsIfHumanoid(GameObject prefab, MelonLogger.Instance log)
+    /// <summary>
+    /// Try to mirror a humanoid addition prefab's script-config from
+    /// the named reference soldier immediately at registration time;
+    /// queue it for the next ApplyReplacements pass if the reference
+    /// isn't loaded yet. Mirroring at registration time is preferred
+    /// because MENACE can pre-instantiate the prefab between bundle
+    /// load and the loader's first ApplyReplacements tick (e.g. for
+    /// leader portrait warmup), and any pre-mirror clones would miss
+    /// the dust markers and other supplementary children. Returns a
+    /// short log suffix describing the outcome for the caller's
+    /// register line.
+    /// </summary>
+    private string QueueHumanoidMirrorIfApplicable(GameObject prefab, MelonLogger.Instance log)
     {
-        var animator = prefab.GetComponent<Animator>();
-        if (animator == null || animator.avatar == null || !animator.avatar.isHuman)
+        if (!HumanoidPrefabMirror.IsHumanoid(prefab))
             return string.Empty;
+        if (HumanoidPrefabMirror.Mirror(prefab, log))
+            return "; humanoid-mirrored";
+        _pendingHumanoidMirrors.Add(prefab);
+        return "; queued for humanoid mirror";
+    }
 
-        var added = new List<string>(2);
-        if (prefab.GetComponent<MenaceFootprints>() == null)
-        {
-            prefab.AddComponent<MenaceFootprints>();
-            added.Add("Footprints");
-        }
-        if (prefab.GetComponent<MenaceRagdoll>() == null)
-        {
-            prefab.AddComponent<MenaceRagdoll>();
-            added.Add("Ragdoll");
-        }
-        if (added.Count == 0)
-            return string.Empty;
+    /// <summary>
+    /// Drain the humanoid-mirror queue and patch any live instances
+    /// that beat the mirror to the punch. Called from the loader's
+    /// ApplyReplacements pass; by that point the game's
+    /// ScriptableObjects and reference prefabs are reachable through
+    /// Resources. The instance scan covers <c>main(Clone)</c>-style
+    /// objects that MENACE pre-instantiated before the reference
+    /// lookup could succeed (leader portrait warmup etc.) — they
+    /// inherit the un-mirrored sentinel from their prefab, and the
+    /// mirror picks them up by walking the GameObject registry.
+    /// </summary>
+    public void MirrorPendingHumanoidPrefabs(MelonLogger.Instance log)
+    {
+        if (_pendingHumanoidMirrors.Count == 0) return;
 
-        return $"; attached {string.Join(", ", added)}";
+        var mirrored = 0;
+        _pendingHumanoidMirrors.RemoveAll(prefab =>
+        {
+            if (prefab == null) return true;
+            if (!HumanoidPrefabMirror.Mirror(prefab, log)) return false;
+            mirrored++;
+            return true;
+        });
+
+        if (mirrored > 0)
+            log.Msg($"Humanoid mirror: {mirrored} addition prefab(s) configured from vanilla reference.");
     }
 
     private void RegisterMeshAsset(

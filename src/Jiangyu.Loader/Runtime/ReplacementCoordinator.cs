@@ -153,6 +153,14 @@ internal class ReplacementCoordinator
         // Clones first: patches may target the newly registered cloneIds.
         _templateCloneApplier.TryApply(log);
         _templatePatchApplier.TryApply(log);
+
+        // Humanoid-addition prefab script-config mirrors deferred from
+        // addition-prefab loading. Resources is populated by this pass
+        // (clone applier had access to per-type ScriptableObject
+        // inventories above), so the vanilla reference soldier lookup
+        // that missed during early boot will now resolve. Drains the
+        // queue on success.
+        _catalog.MirrorPendingHumanoidPrefabs(log);
     }
 
     public bool HasReplacementTargets()

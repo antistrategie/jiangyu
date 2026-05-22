@@ -237,8 +237,8 @@ public static partial class RpcHandlers
     }
 
     [McpTool("jiangyu_assets_project_additions",
-        "List asset additions shipped by the current project under assets/additions/<category>/. Filtered by Unity type so the caller (typically the asset-reference picker) only sees additions whose category matches the destination field. Returns {\"additions\": [{\"name\", \"file\"}, ...]} where name is the modder-facing logical name (slashes preserved, extension stripped).")]
-    [McpParam("unityType", "string", "Unity Object class name of the destination field (\"Sprite\", \"Texture2D\", \"AudioClip\", \"Material\"). Drives which assets/additions/<category>/ subtree is scanned.", Required = true)]
+        "List asset additions shipped by the current project under assets/additions/<category>/. Filtered by Unity type so the caller (typically the asset-reference picker) only sees additions whose category matches the destination field. Returns {\"additions\": [{\"name\", \"file\"}, ...]} where name is the modder-facing logical name (slashes preserved, extension stripped). For GameObject fields, also surfaces source prefabs under unity/Assets/Prefabs/ that the compile pipeline will batch-build into bundles.")]
+    [McpParam("unityType", "string", "Unity Object class name of the destination field (\"Sprite\", \"Texture2D\", \"AudioClip\", \"Material\", \"GameObject\"). Drives which assets/additions/<category>/ subtree is scanned.", Required = true)]
     internal static JsonElement AssetsProjectAdditions(JsonElement? parameters)
     {
         var unityType = RequireString(parameters, "unityType");
@@ -254,32 +254,54 @@ public static partial class RpcHandlers
         }
         catch (NotSupportedException)
         {
-            // Mesh/GameObject etc. throw — they're recognised but deferred to
-            // the prefab-construction layer. The picker has nothing to offer
-            // for those fields today, so respond with an empty list rather
-            // than surfacing the exception.
+            // Mesh / PrefabHierarchyObject throw — recognised but not
+            // satisfiable via the addition path. Picker has nothing to
+            // offer; respond with an empty list rather than the exception.
             return JsonSerializer.SerializeToElement(new { additions = Array.Empty<ProjectAdditionEntry>() });
         }
         if (category is null)
             return JsonSerializer.SerializeToElement(new { additions = Array.Empty<ProjectAdditionEntry>() });
 
-        var categoryRoot = Path.Combine(root, "assets", "additions", category);
-        if (!Directory.Exists(categoryRoot))
-            return JsonSerializer.SerializeToElement(new { additions = Array.Empty<ProjectAdditionEntry>() });
-
-        var extensions = Jiangyu.Shared.Replacements.AssetCategory.AdditionExtensionsForCategory(category);
-        if (extensions.Count == 0)
-            return JsonSerializer.SerializeToElement(new { additions = Array.Empty<ProjectAdditionEntry>() });
-
         var results = new List<ProjectAdditionEntry>();
-        foreach (var file in Directory.EnumerateFiles(categoryRoot, "*", SearchOption.AllDirectories))
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        // Pre-built bundles dropped under assets/additions/<category>/ (the
+        // escape hatch shipped by hand). For non-prefab categories this is
+        // the only source.
+        var categoryRoot = Path.Combine(root, "assets", "additions", category);
+        var extensions = Jiangyu.Shared.Replacements.AssetCategory.AdditionExtensionsForCategory(category);
+        if (Directory.Exists(categoryRoot) && extensions.Count > 0)
         {
-            var ext = Path.GetExtension(file);
-            if (!extensions.Contains(ext, StringComparer.OrdinalIgnoreCase))
-                continue;
-            var name = Jiangyu.Shared.Replacements.AssetCategory.LogicalAdditionName(categoryRoot, file);
-            var relativeFile = Path.GetRelativePath(root, file).Replace('\\', '/');
-            results.Add(new ProjectAdditionEntry { Name = name, File = relativeFile });
+            foreach (var file in Directory.EnumerateFiles(categoryRoot, "*", SearchOption.AllDirectories))
+            {
+                var ext = Path.GetExtension(file);
+                if (!extensions.Contains(ext, StringComparer.OrdinalIgnoreCase))
+                    continue;
+                var name = Jiangyu.Shared.Replacements.AssetCategory.LogicalAdditionName(categoryRoot, file);
+                if (!seen.Add(name)) continue;
+                var relativeFile = Path.GetRelativePath(root, file).Replace('\\', '/');
+                results.Add(new ProjectAdditionEntry { Name = name, File = relativeFile });
+            }
+        }
+
+        // Source prefabs under unity/Assets/Prefabs/ — the Unity batchmode
+        // pipeline builds these into bundles at compile time, so the picker
+        // should treat them as available additions even before compile has
+        // run. Same logical-name scheme as the bundles (<subdir>/<stem>),
+        // so KDL `asset="Voymastina/main"` matches both views.
+        if (category == Jiangyu.Shared.Replacements.AssetCategory.Prefabs)
+        {
+            var unityPrefabsRoot = Path.Combine(root, "unity", "Assets", "Prefabs");
+            if (Directory.Exists(unityPrefabsRoot))
+            {
+                foreach (var file in Directory.EnumerateFiles(unityPrefabsRoot, "*.prefab", SearchOption.AllDirectories))
+                {
+                    var name = Jiangyu.Shared.Replacements.AssetCategory.LogicalAdditionName(unityPrefabsRoot, file);
+                    if (!seen.Add(name)) continue;
+                    var relativeFile = Path.GetRelativePath(root, file).Replace('\\', '/');
+                    results.Add(new ProjectAdditionEntry { Name = name, File = relativeFile });
+                }
+            }
         }
 
         results.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));

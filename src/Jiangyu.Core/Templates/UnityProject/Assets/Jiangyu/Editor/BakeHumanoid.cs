@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
+using StringComparer = System.StringComparer;
 
 namespace Jiangyu.Mod
 {
@@ -271,6 +272,32 @@ namespace Jiangyu.Mod
                     ConfigureAnimator(instance, avatar, referenceAnimator);
                     ConfigureLodGroup(instance);
 
+                    // Copy the reference soldier's supplementary
+                    // non-skeleton, non-LOD top-level children onto the
+                    // baked prefab. The canonical case is the footstep
+                    // dust spawn container (named `transform` on vanilla
+                    // marines) holding `dust01` / `dust02` markers that
+                    // MENACE's DustEffectsAnimatorComp walks for. Runtime
+                    // can't add hierarchy children to a bundle asset
+                    // after load (Unity treats asset prefabs as
+                    // structurally immutable for live SetParent ops), so
+                    // this has to happen at bake time, before the prefab
+                    // is saved.
+                    CopySupplementaryChildrenFromReference(instance, referenceInstance);
+
+                    // Record the reference vanilla prefab's runtime Object.name
+                    // on a sentinel child of the output prefab. The loader's
+                    // humanoid mirror reads this at addition-load time to know
+                    // which vanilla soldier to copy MonoBehaviour config from.
+                    // Encoding via a child GameObject keeps the metadata
+                    // script-free — Unity's bundle serialiser handles plain
+                    // GameObject names natively, so no per-mod runtime
+                    // assembly is needed to surface it.
+                    var referenceName = _referencePrefab.name;
+                    var sentinel = new GameObject("__jiangyu_ref:" + referenceName);
+                    sentinel.transform.SetParent(instance.transform, worldPositionStays: false);
+                    sentinel.SetActive(false);
+
                     // The prefab inside the per-character subdir is always
                     // named main.prefab. The subdir name carries the
                     // character identity (also Object.name on the prefab
@@ -295,6 +322,83 @@ namespace Jiangyu.Mod
             {
                 DestroyImmediate(referenceInstance);
             }
+        }
+
+        // Bring over the reference soldier's top-level non-skeleton,
+        // non-LOD children onto the baked prefab. Skeleton bones come
+        // from the baked character's own avatar (humanoid retargeting
+        // gives equivalent bones with the new character's proportions),
+        // and LOD mesh containers are character-specific by definition.
+        // What's left at the top level is supplementary scaffolding
+        // MENACE's runtime walks for — footstep dust spawn containers
+        // (`transform` holding `dust01` / `dust02`), audio source
+        // markers, any other reference-shipped helpers. Filtered by
+        // "contains a SkinnedMeshRenderer in its subtree" (LOD meshes)
+        // and "is a humanoid bone or ancestor" (rig); everything else
+        // gets DeepCopied wholesale onto the baked instance's root.
+        // Names matching an existing child on the baked output are
+        // skipped — the baked side already produced something
+        // structurally equivalent (e.g. its own LODs).
+        private static void CopySupplementaryChildrenFromReference(GameObject baked, GameObject reference)
+        {
+            var bakedTransform = baked.transform;
+            var referenceTransform = reference.transform;
+            var bones = CollectHumanoidBones(reference);
+
+            var existing = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < bakedTransform.childCount; i++)
+                existing.Add(bakedTransform.GetChild(i).name);
+
+            int copied = 0;
+            for (int i = 0; i < referenceTransform.childCount; i++)
+            {
+                var child = referenceTransform.GetChild(i);
+                if (child == null) continue;
+                if (bones.Contains(child)) continue;
+                if (existing.Contains(child.name)) continue;
+                if (SubtreeContainsSkinnedMesh(child)) continue;
+
+                // Editor-side Instantiate-with-parent works on assets
+                // because the baked GameObject lives in the editor
+                // scene at this point in the bake (it was instantiated
+                // off the glTF prefab earlier in this method). After
+                // PrefabUtility.SaveAsPrefabAsset persists the
+                // hierarchy, the saved prefab on disk includes the
+                // copied subtree.
+                var clone = (GameObject)UnityEngine.Object.Instantiate(child.gameObject, bakedTransform, worldPositionStays: false);
+                clone.name = child.name;
+                copied++;
+            }
+
+            if (copied > 0)
+                Debug.Log(
+                    $"Jiangyu BakeHumanoid: copied {copied} supplementary child subtree(s) from "
+                    + $"'{reference.name}' onto baked prefab.");
+        }
+
+        private static HashSet<Transform> CollectHumanoidBones(GameObject root)
+        {
+            var bones = new HashSet<Transform>();
+            var animator = root.GetComponent<Animator>();
+            if (animator == null || animator.avatar == null || !animator.avatar.isHuman)
+                return bones;
+            for (int i = 0; i < (int)HumanBodyBones.LastBone; i++)
+            {
+                var bone = animator.GetBoneTransform((HumanBodyBones)i);
+                if (bone == null) continue;
+                var current = bone;
+                while (current != null && current != root.transform)
+                {
+                    bones.Add(current);
+                    current = current.parent;
+                }
+            }
+            return bones;
+        }
+
+        private static bool SubtreeContainsSkinnedMesh(Transform node)
+        {
+            return node.GetComponentInChildren<SkinnedMeshRenderer>(includeInactive: true) != null;
         }
 
         private static Material BuildBakedMaterial(Material reference, Texture2D baseColor)

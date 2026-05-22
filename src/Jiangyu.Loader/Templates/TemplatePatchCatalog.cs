@@ -153,21 +153,19 @@ internal sealed class TemplatePatchCatalog
 
         // Set ops dedup by destination — later replaces earlier, whether
         // from the same mod or a later-loaded mod. The destination is
-        // the descent prefix + fieldPath + indexPath: two writes that
-        // target the same exact slot collide; writes to different
-        // descent indexes (e.g. Conditions[0] vs Conditions[1]) and
-        // different cell coordinates do not. Append ops never dedup, so
-        // two appends on the same collection apply as two additions in
-        // order.
+        // the descent prefix + fieldPath + index + indexPath: two writes
+        // that target the same exact slot collide; writes to different
+        // collection indexes (e.g. InitialAttributes[0] vs
+        // InitialAttributes[6]), different descent indexes
+        // (Conditions[0] vs Conditions[1]) and different N-dim cell
+        // coordinates do not. Append ops never dedup, so two appends on
+        // the same collection apply as two additions in order.
         if (op.Op == CompiledTemplateOp.Set)
         {
             for (var i = 0; i < operationsForTemplate.Count; i++)
             {
                 var existing = operationsForTemplate[i];
-                if (existing.Op == CompiledTemplateOp.Set
-                    && string.Equals(existing.FieldPath, effectivePath, StringComparison.Ordinal)
-                    && DescentEquals(existing.Descent, op.Descent)
-                    && IndexPathEquals(existing.IndexPath, op.IndexPath))
+                if (SetOpsCollide(existing, effectivePath, op.Index, op.Descent, op.IndexPath))
                 {
                     log.Warning(
                         $"Override template patch '{templateType}:{templateId}.{effectivePath}': "
@@ -181,6 +179,29 @@ internal sealed class TemplatePatchCatalog
 
         operationsForTemplate.Add(new LoadedPatchOperation(op.Op, effectivePath, op.Index, op.IndexPath, op.Descent, op.Value, mod.Name));
         PatchCount++;
+    }
+
+    /// <summary>
+    /// True when two Set ops target the exact same slot and the later
+    /// should override the earlier. The dedup key is (fieldPath, index,
+    /// descent prefix, multi-dim cell). Indexed collection writes (e.g.
+    /// <c>set "InitialAttributes" index=0</c> vs <c>index=6</c>) target
+    /// different slots and must not collide; descent and cell coordinates
+    /// behave the same way. Append/Insert/Remove never dedup — only Set.
+    /// Internal so the test project can lock the dedup invariants directly.
+    /// </summary>
+    internal static bool SetOpsCollide(
+        LoadedPatchOperation existing,
+        string newFieldPath,
+        int? newIndex,
+        IReadOnlyList<TemplateDescentStep> newDescent,
+        IReadOnlyList<int> newIndexPath)
+    {
+        return existing.Op == CompiledTemplateOp.Set
+            && string.Equals(existing.FieldPath, newFieldPath, StringComparison.Ordinal)
+            && existing.Index == newIndex
+            && DescentEquals(existing.Descent, newDescent)
+            && IndexPathEquals(existing.IndexPath, newIndexPath);
     }
 
     // Two descent prefixes match when each step's field, index, and

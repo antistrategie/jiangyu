@@ -732,25 +732,39 @@ public class KdlTemplateParserTests
     }
 
     [Fact]
-    public void DescentBlock_RequiresIndexOrTypeProperty()
+    public void BareChildBlock_OnSet_RoutesToInferredComposite()
     {
-        // A descent block needs either index= (collection element descent)
-        // or type= (Phase 2a scalar polymorphic descent into an
-        // Odin-routed interface field). A bare set "X" { ... } with
-        // neither is meaningless — the parser rejects to surface the
-        // typo rather than treat the block as a value or silently no-op.
-        var dir = SetupKdl("bad.kdl", """
-            patch "PerkTemplate" "perk.x" {
-                set "EventHandlers" {
-                    set "ShowHUDText" #true
+        // A bare set "Field" { ... } (no index=, type=, composite=, or
+        // handler=) parses as an inferred-composite construction, the
+        // same shape append/insert get when the destination is a
+        // monomorphic composite-typed scalar. The element type is
+        // recovered from the destination at validation time; the parser
+        // emits a Composite value with empty TypeName so the validator
+        // knows to infer. Descent block routing only kicks in when the
+        // outer set carries index= (collection descent) or type=
+        // (scalar polymorphic descent).
+        var dir = SetupKdl("inferred.kdl", """
+            patch "UnitLeaderTemplate" "squad_leader.darby" {
+                set "UnitTitle" {
+                    set "m_DefaultTranslation" "Tactical Doll"
                 }
             }
             """);
 
         var result = KdlTemplateParser.ParseAll(dir, _log);
 
-        Assert.Equal(1, result.ErrorCount);
-        Assert.Contains(_log.Errors, e => e.Contains("index=", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(0, result.ErrorCount);
+        var op = Assert.Single(result.Patches[0].Set);
+        Assert.Equal(CompiledTemplateOp.Set, op.Op);
+        Assert.Equal("UnitTitle", op.FieldPath);
+        Assert.NotNull(op.Value);
+        Assert.Equal(CompiledTemplateValueKind.Composite, op.Value!.Kind);
+        Assert.NotNull(op.Value.Composite);
+        // Empty TypeName is the inference sentinel — validator picks the
+        // concrete type from the destination field's declared shape.
+        Assert.Equal(string.Empty, op.Value.Composite!.TypeName);
+        var inner = Assert.Single(op.Value.Composite.Operations);
+        Assert.Equal("m_DefaultTranslation", inner.FieldPath);
     }
 
     [Fact]

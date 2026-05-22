@@ -207,9 +207,65 @@ public class RpcAssetsProjectAdditionsTests : IDisposable
         Assert.ThrowsAny<Exception>(() => RpcHandlers.AssetsProjectAdditions(parameters));
     }
 
+    [Fact]
+    public void GameObject_EnumeratesUnitySourcePrefabs()
+    {
+        // Source prefabs under unity/Assets/Prefabs/ are what the modder
+        // authors and what the compile pipeline batch-builds into bundles.
+        // The picker must surface them BEFORE compile has run, otherwise
+        // the dropdown is empty until the modder has already typed the
+        // asset reference correctly and re-compiled — defeating the point
+        // of a picker. Logical name preserves source case (matches what the
+        // modder will write as `asset="..."`).
+        WriteUnityPrefab(Path.Combine("Voymastina", "main.prefab"));
+
+        var response = Invoke("GameObject");
+        var entries = ReadAdditions(response);
+
+        Assert.Single(entries);
+        Assert.Equal("Voymastina/main", entries[0].name);
+        Assert.Equal("unity/Assets/Prefabs/Voymastina/main.prefab", entries[0].file);
+    }
+
+    [Fact]
+    public void GameObject_NoSources_ReturnsEmpty()
+    {
+        // Sanity: a brand-new project with neither assets/additions/prefabs/
+        // nor unity/Assets/Prefabs/ returns an empty list rather than throw.
+        var response = Invoke("GameObject");
+        Assert.Empty(ReadAdditions(response));
+    }
+
+    [Fact]
+    public void GameObject_PrebuiltBundleAndUnitySource_BothListed()
+    {
+        // Two source dirs feed the prefab picker: pre-built bundles dropped
+        // by the modder in assets/additions/prefabs/ (escape hatch) and the
+        // Unity batchmode source tree. Both should surface so the modder
+        // can pick either. Logical names share a namespace, deduped on
+        // collision.
+        WriteAddition("prefabs", "shipped.bundle");
+        WriteUnityPrefab(Path.Combine("Voymastina", "main.prefab"));
+
+        var response = Invoke("GameObject");
+        var entries = ReadAdditions(response);
+
+        Assert.Equal(2, entries.Count);
+        var names = entries.Select(e => e.name).ToList();
+        Assert.Contains("shipped", names);
+        Assert.Contains("Voymastina/main", names);
+    }
+
     private void WriteAddition(string category, string relativePath)
     {
         var full = Path.Combine(_projectDir, "assets", "additions", category, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        File.WriteAllBytes(full, [0x00]);
+    }
+
+    private void WriteUnityPrefab(string relativePath)
+    {
+        var full = Path.Combine(_projectDir, "unity", "Assets", "Prefabs", relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         File.WriteAllBytes(full, [0x00]);
     }

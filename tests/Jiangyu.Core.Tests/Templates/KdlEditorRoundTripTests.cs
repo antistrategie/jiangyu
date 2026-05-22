@@ -1071,4 +1071,207 @@ public class KdlEditorRoundTripTests
         Assert.Contains("set \"Properties\" index=0 {", text);
         Assert.DoesNotContain("type=", text);
     }
+
+    [Fact]
+    public void MultiLineString_Serialises_AsTripleQuoted_AndRoundTrips()
+    {
+        // Values containing a newline emit as KDL v2 triple-quoted multi-
+        // line literals so paragraph-length descriptions stay readable on
+        // disk and round-trip through the visual editor without
+        // collapsing into a single-line "\n"-escaped form. The closing
+        // `"""` indent sets the common prefix stripped from every line.
+        const string original = "line one\nline two\n\nline four";
+        var doc = new KdlEditorDocument
+        {
+            Nodes =
+            {
+                new KdlEditorNode
+                {
+                    Kind = KdlEditorNodeKind.Patch,
+                    TemplateType = "EntityTemplate",
+                    TemplateId = "x",
+                    Directives =
+                    {
+                        new KdlEditorDirective
+                        {
+                            Op = KdlEditorOp.Set,
+                            FieldPath = "Description",
+                            Value = new KdlEditorValue
+                            {
+                                Kind = KdlEditorValueKind.String,
+                                String = original,
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        Assert.Contains("\"\"\"", text);
+        // No escaped \n in the emitted form — the newlines are literal.
+        Assert.DoesNotContain("line one\\n", text);
+
+        var reparsed = KdlTemplateParser.ParseText(text);
+        Assert.Empty(reparsed.Errors);
+        var value = reparsed.Nodes[0].Directives[0].Value;
+        Assert.NotNull(value);
+        Assert.Equal(KdlEditorValueKind.String, value!.Kind);
+        Assert.Equal(original, value.String);
+    }
+
+    [Fact]
+    public void BindNode_RoundTrips_PreservingKindAndAttributes()
+    {
+        // Bind directives survive parse → serialise → re-parse with kind
+        // and attribute order intact, so saving from the visual editor
+        // doesn't strip leader_armor (or any future kind) the way the
+        // older parse-only path did.
+        const string kdl =
+            "bind \"leader_armor\" leader=\"squad_leader.voymastina\" armor=\"armor.voymastina\"\n";
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+        var node = Assert.Single(doc.Nodes);
+        Assert.Equal(KdlEditorNodeKind.Bind, node.Kind);
+        Assert.Equal("leader_armor", node.BindKind);
+        Assert.NotNull(node.BindAttributes);
+        Assert.Equal(2, node.BindAttributes!.Count);
+        Assert.Equal("leader", node.BindAttributes[0].Name);
+        Assert.Equal("squad_leader.voymastina", node.BindAttributes[0].Value);
+        Assert.Equal("armor", node.BindAttributes[1].Name);
+        Assert.Equal("armor.voymastina", node.BindAttributes[1].Value);
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        Assert.Contains("bind \"leader_armor\"", text);
+        Assert.Contains("leader=\"squad_leader.voymastina\"", text);
+        Assert.Contains("armor=\"armor.voymastina\"", text);
+
+        var reparsed = KdlTemplateParser.ParseText(text);
+        Assert.Empty(reparsed.Errors);
+        var reNode = Assert.Single(reparsed.Nodes);
+        Assert.Equal(KdlEditorNodeKind.Bind, reNode.Kind);
+        Assert.Equal("leader_armor", reNode.BindKind);
+        Assert.Equal(2, reNode.BindAttributes!.Count);
+    }
+
+    [Fact]
+    public void BindNode_UnknownKind_LoadsForRoundTripDespiteCompilerNotKnowingIt()
+    {
+        // The editor accepts any non-empty kind so newer compiler kinds
+        // can still load through Studio without losing data on save.
+        // Validation of unknown kinds happens at compile time, not at
+        // edit time.
+        const string kdl =
+            "bind \"future_kind\" some_field=\"value_one\" other=\"value_two\"\n";
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+        var node = Assert.Single(doc.Nodes);
+        Assert.Equal(KdlEditorNodeKind.Bind, node.Kind);
+        Assert.Equal("future_kind", node.BindKind);
+        Assert.Equal(2, node.BindAttributes!.Count);
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        Assert.Contains("bind \"future_kind\"", text);
+        Assert.Contains("some_field=\"value_one\"", text);
+    }
+
+    [Fact]
+    public void SingleLineString_StaysQuoted_NotTripleQuoted()
+    {
+        // Strings without newlines stay on the standard single-line form
+        // so the diff between most patches remains compact. Only the
+        // newline-containing case promotes to multi-line.
+        var doc = new KdlEditorDocument
+        {
+            Nodes =
+            {
+                new KdlEditorNode
+                {
+                    Kind = KdlEditorNodeKind.Patch,
+                    TemplateType = "EntityTemplate",
+                    TemplateId = "x",
+                    Directives =
+                    {
+                        new KdlEditorDirective
+                        {
+                            Op = KdlEditorOp.Set,
+                            FieldPath = "Description",
+                            Value = new KdlEditorValue
+                            {
+                                Kind = KdlEditorValueKind.String,
+                                String = "Tactical Doll",
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        Assert.Contains("\"Tactical Doll\"", text);
+        Assert.DoesNotContain("\"\"\"", text);
+    }
+
+    [Fact]
+    public void MultiLineString_ContainingTripleQuote_FallsBackToSingleLineEscape()
+    {
+        // A body containing a literal triple-quote run can't be emitted
+        // inside a KDL v2 multi-line literal, so the serialiser falls back
+        // to the single-line escape form. Newlines must still survive the
+        // round-trip via \n escapes — the fallback is the only case where
+        // \n appears literally in the emitted KDL.
+        const string original = "line one\nsays \"\"\"hi\"\"\"\nline three";
+        var doc = new KdlEditorDocument
+        {
+            Nodes =
+            {
+                new KdlEditorNode
+                {
+                    Kind = KdlEditorNodeKind.Patch,
+                    TemplateType = "EntityTemplate",
+                    TemplateId = "x",
+                    Directives =
+                    {
+                        new KdlEditorDirective
+                        {
+                            Op = KdlEditorOp.Set,
+                            FieldPath = "Description",
+                            Value = new KdlEditorValue
+                            {
+                                Kind = KdlEditorValueKind.String,
+                                String = original,
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        // No multi-line literal block, since the body contains `"""`.
+        Assert.DoesNotContain("\"\"\"\n", text);
+        Assert.Contains("\\n", text);
+
+        var reparsed = KdlTemplateParser.ParseText(text);
+        Assert.Empty(reparsed.Errors);
+        var value = reparsed.Nodes[0].Directives[0].Value;
+        Assert.NotNull(value);
+        Assert.Equal(original, value!.String);
+    }
+
+    [Fact]
+    public void BindNode_MissingKindArgument_Errors()
+    {
+        // The editor-document bind parser still requires the kind
+        // argument. Without it the node is rejected so the modder sees
+        // the typo rather than getting a silently-empty bind in Studio.
+        const string kdl = "bind\n";
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+
+        Assert.NotEmpty(doc.Errors);
+        Assert.Empty(doc.Nodes);
+    }
 }

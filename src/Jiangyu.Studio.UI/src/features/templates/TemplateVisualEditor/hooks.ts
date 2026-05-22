@@ -115,6 +115,49 @@ export interface DragReorderState {
   showIndicatorAt: (slot: number, ownerId: string | null) => boolean;
 }
 
+// Document-level drop fallback. WebKitGTK (the Linux WebView Studio runs
+// under) does not deliver React synthetic drop events to the dragged-over
+// element even when dragover preventDefaults — the React tree never sees
+// the drop and dragend fires straight after dragover. A native drop
+// listener at the document level still receives the event, so we route
+// the reorder commit through there for the row mime we care about.
+// Chromium-based embeds also deliver the per-element React drop normally
+// in addition to the document drop; either path clears drag state, so
+// the duplicate is a no-op (the second path sees dragIdRef === null).
+function useDocumentDropFallback(
+  dragIdRef: React.RefObject<string | null>,
+  dragSlotRef: React.RefObject<number | null>,
+  onReorderRef: React.RefObject<(fromId: string, toSlot: number) => void>,
+  cleanup: () => void,
+) {
+  useEffect(() => {
+    const onDocDrop = (e: DragEvent) => {
+      if (!e.dataTransfer?.types.includes("application/x-jiangyu-card-reorder")) return;
+      e.preventDefault();
+      const fromId = dragIdRef.current;
+      const toSlot = dragSlotRef.current;
+      if (fromId && toSlot !== null) {
+        onReorderRef.current(fromId, toSlot);
+      }
+      cleanup();
+    };
+    const onDocDragOver = (e: DragEvent) => {
+      // WebKitGTK only delivers the document-level drop when the
+      // document itself marks the gesture as accepted via a dragover
+      // preventDefault. Per-card preventDefaults aren't enough.
+      if (e.dataTransfer?.types.includes("application/x-jiangyu-card-reorder")) {
+        e.preventDefault();
+      }
+    };
+    document.addEventListener("drop", onDocDrop);
+    document.addEventListener("dragover", onDocDragOver);
+    return () => {
+      document.removeEventListener("drop", onDocDrop);
+      document.removeEventListener("dragover", onDocDragOver);
+    };
+  }, [dragIdRef, dragSlotRef, onReorderRef, cleanup]);
+}
+
 export function useDragReorder(
   onReorder: (fromId: string, toSlot: number) => void,
 ): DragReorderState {
@@ -171,10 +214,20 @@ export function useDragReorder(
     ) {
       return cached.handlers;
     }
+    // Refs are written synchronously alongside setState so subsequent
+    // native drag events in the same gesture see up-to-date drag state.
+    // Without this, the useEffect-driven ref sync lags by a render and
+    // `onDragOver` returns early before calling preventDefault(), which
+    // causes the browser to silently reject every drop target.
     const handlers = {
       isDragging,
-      onDragStart: () => setDragId(ownerId),
+      onDragStart: () => {
+        dragIdRef.current = ownerId;
+        setDragId(ownerId);
+      },
       onDragEnd: () => {
+        dragIdRef.current = null;
+        dragSlotRef.current = null;
         setDragId(null);
         setDragSlot(null);
       },
@@ -185,7 +238,9 @@ export function useDragReorder(
         e.dataTransfer.dropEffect = "move";
         const rect = e.currentTarget.getBoundingClientRect();
         const y = e.clientY - rect.top;
-        setDragSlot(y < rect.height / 2 ? topSlot : bottomSlot);
+        const nextSlot = y < rect.height / 2 ? topSlot : bottomSlot;
+        dragSlotRef.current = nextSlot;
+        setDragSlot(nextSlot);
       },
       onDrop: () => {
         const currentDragId = dragIdRef.current;
@@ -193,6 +248,8 @@ export function useDragReorder(
         if (currentDragId && currentDragSlot !== null) {
           onReorderRef.current(currentDragId, currentDragSlot);
         }
+        dragIdRef.current = null;
+        dragSlotRef.current = null;
         setDragId(null);
         setDragSlot(null);
       },
@@ -206,6 +263,17 @@ export function useDragReorder(
       dragSlot === slot && (ownerId === null || dragId !== ownerId),
     [dragId, dragSlot],
   );
+
+  // Cleanup helper closes over the same setState pair as the per-card
+  // handlers so the document-level fallback can reset state without
+  // duplicating the clear logic.
+  const clearDragState = useCallback(() => {
+    dragIdRef.current = null;
+    dragSlotRef.current = null;
+    setDragId(null);
+    setDragSlot(null);
+  }, []);
+  useDocumentDropFallback(dragIdRef, dragSlotRef, onReorderRef, clearDragState);
 
   return { dragId, dragSlot, buildHandlers, showIndicatorAt };
 }

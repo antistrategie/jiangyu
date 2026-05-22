@@ -167,15 +167,33 @@ export function ValueEditor({ value, onChange, member }: ValueEditorProps) {
       );
     }
 
-    case "String":
+    case "String": {
+      // Single-line input by default; promote to an auto-growing textarea
+      // when the value already contains newlines so multi-line strings
+      // round-trip without collapsing. Source-view authoring with
+      // `"""..."""` flips the visual editor onto the textarea path on
+      // next load.
+      const stringVal = value.string ?? "";
+      const multiline = stringVal.includes("\n");
+      if (multiline) {
+        return (
+          <CommitInput
+            multiline
+            className={styles.setValueInput}
+            value={stringVal}
+            onCommit={(v) => onChange({ kind: "String", string: v })}
+          />
+        );
+      }
       return (
         <CommitInput
           type="text"
           className={styles.setValueInput}
-          value={value.string ?? ""}
+          value={stringVal}
           onCommit={(v) => onChange({ kind: "String", string: v })}
         />
       );
+    }
 
     case "Enum":
       return <EnumValueEditor value={value} onChange={onChange} member={member} />;

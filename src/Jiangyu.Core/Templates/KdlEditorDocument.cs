@@ -22,6 +22,7 @@ public enum KdlEditorNodeKind
 {
     Patch,
     Clone,
+    Bind,
 }
 
 public sealed class KdlEditorNode
@@ -29,6 +30,7 @@ public sealed class KdlEditorNode
     [JsonPropertyName("kind")]
     public KdlEditorNodeKind Kind { get; set; }
 
+    /// <summary>Patch/Clone: the targeted template type. Unused on Bind.</summary>
     [JsonPropertyName("templateType")]
     public string TemplateType { get; set; } = string.Empty;
 
@@ -44,12 +46,44 @@ public sealed class KdlEditorNode
     [JsonPropertyName("cloneId")]
     public string? CloneId { get; set; }
 
+    /// <summary>
+    /// Bind only: the binding kind, e.g. <c>leader_armor</c>. The set of
+    /// recognised kinds and their required attributes is owned by the
+    /// compiler — the editor accepts any non-empty kind to keep new kinds
+    /// loadable in Studio ahead of compiler updates.
+    /// </summary>
+    [JsonPropertyName("bindKind")]
+    public string? BindKind { get; set; }
+
+    /// <summary>
+    /// Bind only: kind-specific attribute map (e.g. <c>leader</c> /
+    /// <c>armor</c> for <c>leader_armor</c>). Ordering is preserved on
+    /// round-trip to keep diffs minimal.
+    /// </summary>
+    [JsonPropertyName("bindAttributes")]
+    public List<KdlEditorBindAttribute>? BindAttributes { get; set; }
+
     /// <summary>1-based source line of the node. Set by the parser for diagnostic output.</summary>
     [JsonPropertyName("line")]
     public int? Line { get; set; }
 
     [JsonPropertyName("directives")]
     public List<KdlEditorDirective> Directives { get; set; } = [];
+}
+
+/// <summary>
+/// One (name, value) pair on a Bind node. Modelled as an ordered list
+/// rather than a dictionary so the visual editor can render fields in a
+/// stable order (matching the source) and the serialiser emits the
+/// same attribute order it parsed.
+/// </summary>
+public sealed class KdlEditorBindAttribute
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("value")]
+    public string Value { get; set; } = string.Empty;
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

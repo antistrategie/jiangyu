@@ -455,7 +455,7 @@ public static partial class RpcHandlers
         public required int Value { get; set; }
     }
 
-    private static string? ComputeMemberPatchScalarKind(MemberShape m)
+    private static string? ComputeMemberPatchScalarKind(TemplateTypeCatalog catalog, MemberShape m)
     {
         // Single source of truth: TemplateMemberQuery.MapScalarKind
         var memberType = m.MemberType;
@@ -465,14 +465,18 @@ public static partial class RpcHandlers
         if (TemplateTypeCatalog.IsScalar(leafType))
             return TemplateMemberQuery.MapScalarKind(leafType)?.ToString();
 
-        // ScriptableObject leaves split two ways: DataTemplate descendants are
-        // patched via a TemplateReference (loader looks them up by name in
-        // m_TemplateMaps); non-DataTemplate ScriptableObjects (e.g. owned
-        // EventHandler list elements) are constructed inline as
-        // HandlerConstruction. Returning null for the latter routes the visual
-        // editor to the composite/handler default-value path instead.
+        // ScriptableObject leaves split two ways:
+        //  - Resolvable by name (DataTemplate descendants via DataTemplateLoader
+        //    + m_ID; concrete non-DataTemplate ScriptableObjects with no
+        //    subtypes via Resources.FindObjectsOfTypeAll + Object.name like
+        //    PerkTreeTemplate). Both surface as TemplateReference for the
+        //    modder — same authoring shape, different runtime lookup path.
+        //  - Constructed inline as HandlerConstruction when the leaf is an
+        //    abstract base with concrete subtypes (the owned-element shape
+        //    of EventHandlers, surfaced via ElementSubtypes). Returning null
+        //    here routes the visual editor to the composite/handler picker.
         if (TemplateTypeCatalog.IsTemplateReferenceTarget(leafType)
-            && TemplateTypeCatalog.IsDataTemplateType(leafType))
+            && IsByNameResolvableReference(catalog, leafType))
         {
             return "TemplateReference";
         }
@@ -486,6 +490,25 @@ public static partial class RpcHandlers
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// True when <paramref name="leafType"/> can be patched as a
+    /// TemplateReference value: either a DataTemplate descendant (looked up
+    /// by m_ID through DataTemplateLoader) or a non-abstract ScriptableObject
+    /// with no concrete polymorphic descendants in the catalog (looked up by
+    /// Object.name through Resources.FindObjectsOfTypeAll, e.g.
+    /// PerkTreeTemplate or SpeakerTemplate). Excludes abstract bases like
+    /// SkillEventHandlerTemplate whose authoring shape is construction-style
+    /// (handler="X" { ... }), not by-name reference.
+    /// </summary>
+    private static bool IsByNameResolvableReference(TemplateTypeCatalog catalog, Type leafType)
+    {
+        if (TemplateTypeCatalog.IsDataTemplateType(leafType)) return true;
+        // Construction-style polymorphic destinations have descendants and
+        // ride the ElementSubtypes / handler= path instead — keep them out
+        // of the ref-combobox UX so the two pickers don't both fire.
+        return !catalog.HasReferenceSubtype(leafType);
     }
 
     private static string? ComputeElementTypeName(TemplateTypeCatalog catalog, MemberShape m)
@@ -541,11 +564,13 @@ public static partial class RpcHandlers
         var memberType = m.MemberType;
         var elementType = TemplateTypeCatalog.GetElementType(memberType);
         var leafType = elementType ?? memberType;
-        // Mirror ComputeMemberPatchScalarKind: ReferenceTypeName drives the
-        // ref-combobox UX, which only makes sense for DataTemplate-backed
-        // refs. Owned ScriptableObjects use ElementSubtypes instead.
+        // Mirror ComputeMemberPatchScalarKind. Both DataTemplate-backed and
+        // concrete non-DataTemplate ScriptableObject refs get a name so the
+        // visual editor can hide the redundant Type combobox on monomorphic
+        // destinations. Owned ScriptableObject collections (EventHandlers)
+        // route through ElementSubtypes instead, surfaced separately.
         return TemplateTypeCatalog.IsTemplateReferenceTarget(leafType)
-            && TemplateTypeCatalog.IsDataTemplateType(leafType)
+            && IsByNameResolvableReference(catalog, leafType)
             ? catalog.FriendlyName(leafType) : null;
     }
 
@@ -727,7 +752,7 @@ public static partial class RpcHandlers
                     IsScalar = TemplateTypeCatalog.IsScalar(m.MemberType) ? true : null,
                     IsTemplateReference = TemplateTypeCatalog.IsTemplateReferenceTarget(m.MemberType) ? true : null,
                     IsAssetReference = Jiangyu.Shared.Replacements.AssetCategory.IsSupported(m.MemberType.Name) ? true : null,
-                    PatchScalarKind = ComputeMemberPatchScalarKind(m),
+                    PatchScalarKind = ComputeMemberPatchScalarKind(catalog, m),
                     ElementTypeName = ComputeElementTypeName(catalog, m),
                     EnumTypeName = ComputeEnumTypeName(catalog, m),
                     ReferenceTypeName = ComputeReferenceTypeName(catalog, m),

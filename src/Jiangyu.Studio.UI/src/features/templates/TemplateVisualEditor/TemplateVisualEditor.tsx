@@ -19,6 +19,7 @@ import {
   invalidateProjectClonesCache,
 } from "./shared/rpcHelpers";
 import { NodeCard } from "./cards/NodeCard";
+import { BindingCard } from "./cards/BindingCard";
 import {
   computeNodeKeyByUiId,
   loadCollapsed,
@@ -214,7 +215,7 @@ export function TemplateVisualEditor({
   }, [keyByUiId, persistCollapsed]);
 
   const handleAddNode = useCallback(
-    (kind: "Patch" | "Clone") => {
+    (kind: "Patch" | "Clone" | "Bind") => {
       dispatch({
         type: "addNode",
         node: { kind, templateType: "", directives: [], _uiId: uiId() },
@@ -332,16 +333,27 @@ export function TemplateVisualEditor({
               {cardReorder.showIndicatorAt(ni, node._uiId) && (
                 <div className={styles.dropIndicator} />
               )}
-              <NodeCard
-                node={node}
-                collapsed={collapsed.has(keyByUiId.get(node._uiId) ?? "")}
-                onToggleCollapse={handleToggleCollapse}
-                isDragging={handlers.isDragging}
-                onDragStart={handlers.onDragStart}
-                onDragEnd={handlers.onDragEnd}
-                onDragOverCard={handlers.onDragOver}
-                onDropCard={handlers.onDrop}
-              />
+              {node.kind === "Bind" ? (
+                <BindingCard
+                  node={node}
+                  isDragging={handlers.isDragging}
+                  onDragStart={handlers.onDragStart}
+                  onDragEnd={handlers.onDragEnd}
+                  onDragOverCard={handlers.onDragOver}
+                  onDropCard={handlers.onDrop}
+                />
+              ) : (
+                <NodeCard
+                  node={node}
+                  collapsed={collapsed.has(keyByUiId.get(node._uiId) ?? "")}
+                  onToggleCollapse={handleToggleCollapse}
+                  isDragging={handlers.isDragging}
+                  onDragStart={handlers.onDragStart}
+                  onDragEnd={handlers.onDragEnd}
+                  onDragOverCard={handlers.onDragOver}
+                  onDropCard={handlers.onDrop}
+                />
+              )}
             </NodeIndexContext>
           );
         })}
@@ -388,6 +400,16 @@ export function TemplateVisualEditor({
               </button>
             </div>
           ))}
+          <div className={styles.addNodeZone}>
+            <button
+              type="button"
+              className={styles.addNodeBtn}
+              onClick={() => handleAddNode("Bind")}
+            >
+              <Plus size={12} />
+              Add Bind
+            </button>
+          </div>
         </div>
       </div>
     </EditorDispatchContext>

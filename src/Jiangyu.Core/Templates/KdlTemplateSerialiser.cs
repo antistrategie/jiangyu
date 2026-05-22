@@ -28,6 +28,9 @@ public static class KdlTemplateSerialiser
                 case KdlEditorNodeKind.Clone:
                     WriteClone(sb, node);
                     break;
+                case KdlEditorNodeKind.Bind:
+                    WriteBind(sb, node);
+                    break;
             }
         }
 
@@ -66,6 +69,20 @@ public static class KdlTemplateSerialiser
         sb.AppendLine(" {");
         WriteDirectiveBlock(sb, node.Directives, indent: 1);
         sb.AppendLine("}");
+    }
+
+    private static void WriteBind(StringBuilder sb, KdlEditorNode node)
+    {
+        sb.Append($"bind \"{Esc(node.BindKind ?? "")}\"");
+        if (node.BindAttributes != null)
+        {
+            foreach (var attr in node.BindAttributes)
+            {
+                if (string.IsNullOrEmpty(attr.Name)) continue;
+                sb.Append($" {attr.Name}=\"{Esc(attr.Value)}\"");
+            }
+        }
+        sb.AppendLine();
     }
 
     /// <summary>
@@ -234,7 +251,7 @@ public static class KdlTemplateSerialiser
                 break;
 
             case KdlEditorValueKind.String:
-                sb.Append($"\"{Esc(v.String ?? "")}\"");
+                WriteStringValue(sb, v.String ?? "", indent);
                 break;
 
             case KdlEditorValueKind.Enum:
@@ -304,5 +321,53 @@ public static class KdlTemplateSerialiser
     }
 
     private static string Esc(string s)
-        => s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        => s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+
+    /// <summary>
+    /// Emit a string value. Single-line strings use the standard
+    /// <c>"text"</c> form with escapes; strings containing newlines are
+    /// emitted as KDL v2 triple-quoted multi-line literals so the
+    /// newlines survive a round-trip without being escaped into
+    /// <c>\n</c> sequences (which KDL accepts but is unreadable for
+    /// paragraph-length descriptions). The closing <c>"""</c>'s
+    /// whitespace prefix sets the common indent stripped from every line
+    /// on re-parse; we use <c>parentIndent + 1</c> levels of four-space
+    /// indent so the literal lines up with the surrounding directive
+    /// block.
+    /// </summary>
+    private static void WriteStringValue(StringBuilder sb, string value, int parentIndent)
+    {
+        // KDL v2 triple-quoted bodies cannot themselves contain a literal
+        // run of three double-quotes. The fallback for that edge case is
+        // the single-line escape form, which preserves newlines as \n.
+        var hasNewline = value.Contains('\n') || value.Contains('\r');
+        if (!hasNewline || value.Contains("\"\"\""))
+        {
+            sb.Append('"').Append(Esc(value)).Append('"');
+            return;
+        }
+
+        var bodyIndent = new string(' ', (parentIndent + 1) * 4);
+        sb.Append("\"\"\"");
+        // Normalise line endings so the emitted file is LF-only; the
+        // parser accepts both but mixed endings inside a literal are
+        // brittle to round-trip.
+        var normalised = value.Replace("\r\n", "\n").Replace("\r", "\n");
+        var lines = normalised.Split('\n');
+        foreach (var line in lines)
+        {
+            sb.AppendLine();
+            // Empty lines emit just the prefix (or nothing — KDL accepts
+            // either, and a bare empty line is less visually noisy).
+            if (line.Length == 0)
+                continue;
+            // KDL v2 triple-quoted strings still interpret backslash
+            // escapes, so a literal backslash in the body would round-
+            // trip as its escape interpretation. Escape it to keep the
+            // body verbatim.
+            sb.Append(bodyIndent).Append(line.Replace("\\", "\\\\"));
+        }
+        sb.AppendLine();
+        sb.Append(bodyIndent).Append("\"\"\"");
+    }
 }

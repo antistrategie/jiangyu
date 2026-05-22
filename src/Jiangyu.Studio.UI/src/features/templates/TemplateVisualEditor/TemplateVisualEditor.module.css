@@ -44,7 +44,6 @@
 /* --- Node card --- */
 
 .card {
-  border: var(--border-rule);
   display: flex;
   flex-direction: column;
   /* Compositor-promote each card so the cascade of hover-driven paints
@@ -61,7 +60,6 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  border-bottom: var(--border-rule);
   background: var(--bg-sunken);
   cursor: pointer;
   user-select: none;
@@ -86,6 +84,11 @@
 .cardBadgeClone {
   color: var(--jade-1);
   border-color: var(--jade-1);
+}
+
+.cardBadgeBind {
+  color: var(--gold-1, var(--fg-muted));
+  border-color: var(--gold-1, var(--fg-muted));
 }
 
 .cardType {
@@ -489,8 +492,6 @@
   font-size: var(--fs-sm);
   color: var(--fg-strong);
   flex-shrink: 1;
-  min-width: 60px;
-  max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

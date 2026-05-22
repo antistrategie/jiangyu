@@ -208,9 +208,15 @@ public static class KdlTemplateParser
                     break;
 
                 case "bind":
-                    // Editor support for `bind` is currently parse-only; the
-                    // directive doesn't show up in the Studio visual editor.
-                    // We accept the node so unknown-node errors don't appear.
+                    if (TryParseBindEditorNode(node, pos, log, out var bindNode))
+                    {
+                        bindNode.Line = line;
+                        doc.Nodes.Add(bindNode);
+                    }
+                    else
+                    {
+                        FlushErrors(doc, errors, line);
+                    }
                     break;
 
                 default:
@@ -676,6 +682,50 @@ public static class KdlTemplateParser
         return new FileResult(patches, clones, bindings, errorCount);
     }
 
+    /// <summary>
+    /// Editor-document variant of bind parsing. Accepts any non-empty kind
+    /// and preserves all string-valued attributes verbatim so Studio can
+    /// load files authored against newer compiler kinds without losing
+    /// data on save. The compile path (<see cref="TryParseBindNode"/>)
+    /// still validates kind/attribute completeness and surfaces errors.
+    /// </summary>
+    private static bool TryParseBindEditorNode(
+        KdlNode node, string pos, ILogSink log,
+        out KdlEditorNode editorNode)
+    {
+        editorNode = null!;
+
+        if (node.Arguments.Count < 1)
+        {
+            log.Error(
+                $"{pos}: 'bind' requires a kind argument, "
+                + "e.g. bind \"leader_armor\" leader=\"...\" armor=\"...\"");
+            return false;
+        }
+        var kind = node.Arguments[0].AsString();
+        if (string.IsNullOrWhiteSpace(kind))
+        {
+            log.Error($"{pos}: 'bind' kind must be a non-empty string.");
+            return false;
+        }
+
+        var attrs = new List<KdlEditorBindAttribute>();
+        foreach (var prop in node.Properties)
+        {
+            var value = prop.Value.AsString();
+            if (value is null) continue;
+            attrs.Add(new KdlEditorBindAttribute { Name = prop.Key, Value = value });
+        }
+
+        editorNode = new KdlEditorNode
+        {
+            Kind = KdlEditorNodeKind.Bind,
+            BindKind = kind,
+            BindAttributes = attrs,
+        };
+        return true;
+    }
+
     // bind "<kind>" <kind-specific attrs>
     //   leader_armor: leader="<unitLeaderTemplateCloneId>" armor="<armorTemplateCloneId>"
     private static bool TryParseBindNode(
@@ -1035,7 +1085,16 @@ public static class KdlTemplateParser
             // handler construction (set "Field" handler="X" { ... }) also use
             // a child block but produce a value rather than navigate. Fall
             // through to TryParseValue.
+            //
+            // Bare child block with no hint (set "Field" { ... }) is the
+            // inferred-composite case: the destination is a monomorphic
+            // composite-typed scalar (e.g. LocalizedLine UnitTitle) and the
+            // type is recovered at validation time. Mirrors the same
+            // inference append/insert already get via TryParseValue line
+            // 1278. Only route to descent when index= or type= is present,
+            // since those are the two genuine descent signals.
             if (node.HasChildren
+                && (parsedIndex != null || GetProperty(node, "type") != null)
                 && GetProperty(node, "composite") == null
                 && GetProperty(node, "handler") == null)
             {

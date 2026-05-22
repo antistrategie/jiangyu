@@ -107,6 +107,20 @@ internal sealed class TemplateCloneApplier
         if (liveTemplates.Count == 0)
             return 0;
 
+        // Non-DataTemplate ScriptableObjects (e.g. PerkTreeTemplate,
+        // SpeakerTemplate ancestors that don't inherit DataTemplate) aren't
+        // registered with DataTemplateLoader. Their by-name lookup resolver
+        // (TemplateRuntimeAccess.TryGetTemplateById → FindObjectsOfTypeAll
+        // + Object.name match) finds anything Unity has loaded, so cloning
+        // them is just "Instantiate + rename + DontDestroyOnLoad" with no
+        // m_TemplateMaps insertion. The clone becomes discoverable by name
+        // the moment Instantiate returns.
+        if (!typeof(DataTemplate).IsAssignableFrom(resolvedType))
+        {
+            return TryApplyScriptableObjectType(
+                templateTypeName, resolvedType, liveTemplates, directives, log);
+        }
+
         if (!TryGetTemplateMap(resolvedType, out var innerMap))
             return 0;
 
@@ -150,6 +164,81 @@ internal sealed class TemplateCloneApplier
 
         _appliedTypes.Add(templateTypeName);
         return applied;
+    }
+
+    /// <summary>
+    /// Clone path for non-<c>DataTemplate</c> <c>ScriptableObject</c> types
+    /// (e.g. <c>PerkTreeTemplate</c>, <c>SpeakerTemplate</c> on builds where
+    /// it doesn't inherit DataTemplate). Identity is the asset's
+    /// <c>Object.name</c>; resolution at apply time walks
+    /// <c>Resources.FindObjectsOfTypeAll&lt;T&gt;</c>. The clone is just
+    /// <c>Object.Instantiate</c> + renamed + <c>DontDestroyOnLoad</c>; no
+    /// <c>DataTemplateLoader</c> insertion is needed and there are no
+    /// ancestor m_TemplateMaps slots to mirror to.
+    /// </summary>
+    private int TryApplyScriptableObjectType(
+        string templateTypeName,
+        Type resolvedType,
+        IReadOnlyList<Il2CppObjectBase> liveTemplates,
+        Dictionary<string, LoadedCloneDirective> directives,
+        MelonLogger.Instance log)
+    {
+        var applied = 0;
+        foreach (var directive in directives.Values)
+        {
+            // Idempotency: skip if a clone with this name already exists
+            // (e.g. session re-registration after a save reload).
+            if (FindByObjectName(liveTemplates, directive.CloneId) != null)
+                continue;
+
+            var source = FindByObjectName(liveTemplates, directive.SourceId);
+            if (source == null)
+            {
+                log.Warning(
+                    $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
+                    + "source ScriptableObject not found by name.");
+                continue;
+            }
+
+            UnityEngine.Object cloneObj;
+            try
+            {
+                cloneObj = UnityEngine.Object.Instantiate(source.Cast<UnityEngine.Object>());
+            }
+            catch (Exception ex)
+            {
+                log.Warning(
+                    $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
+                    + $"Object.Instantiate threw: {ex.Message}.");
+                continue;
+            }
+
+            cloneObj.name = directive.CloneId;
+            cloneObj.hideFlags = UnityEngine.HideFlags.DontUnloadUnusedAsset;
+            UnityEngine.Object.DontDestroyOnLoad(cloneObj);
+
+            log.Msg(
+                $"Template clone registered: {templateTypeName}:{directive.SourceId} -> {directive.CloneId} "
+                + $"(mod '{directive.OwnerLabel}').");
+            applied++;
+        }
+
+        _appliedTypes.Add(templateTypeName);
+        return applied;
+    }
+
+    private static Il2CppObjectBase FindByObjectName(
+        IReadOnlyList<Il2CppObjectBase> candidates, string name)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (candidate == null) continue;
+            var unityObj = candidate.TryCast<UnityEngine.Object>();
+            if (unityObj == null) continue;
+            if (string.Equals(unityObj.name, name, StringComparison.Ordinal))
+                return candidate;
+        }
+        return null;
     }
 
     // Inserts <clone> at <cloneId> into the type slot's m_TemplateMaps inner

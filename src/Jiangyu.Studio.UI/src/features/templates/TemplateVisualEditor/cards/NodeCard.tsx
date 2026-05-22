@@ -168,6 +168,15 @@ function NodeCardImpl({
     <div
       className={`${styles.card} ${isDragging ? styles.cardDragging : ""}`}
       role="presentation"
+      onDragEnter={(e) => {
+        // Some embeds require dragenter preventDefault in addition to
+        // dragover before they will deliver the drop event to React.
+        // Harmless on the embeds that don't need it — the dataTransfer
+        // mime guard scopes the accept to card-reorder gestures.
+        if (e.dataTransfer.types.includes("application/x-jiangyu-card-reorder")) {
+          e.preventDefault();
+        }
+      }}
       onDragOver={onDragOverCard}
       onDrop={(e) => {
         e.preventDefault();
