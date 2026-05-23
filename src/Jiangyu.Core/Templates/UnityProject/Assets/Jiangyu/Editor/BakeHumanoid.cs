@@ -620,7 +620,7 @@ namespace Jiangyu.Mod
             return avatar;
         }
 
-        private static Texture2D EnsureDefaultTexture(string assetPath, Color32 color, bool isNormalMap)
+        private static Texture2D EnsureDefaultTexture(string assetPath, Color32 colour, bool isNormalMap)
         {
             var existing = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
             if (existing != null) return existing;
@@ -630,7 +630,7 @@ namespace Jiangyu.Mod
                 Directory.CreateDirectory(dir);
 
             var tex = new Texture2D(1, 1, TextureFormat.RGBA32, mipChain: false, linear: isNormalMap);
-            tex.SetPixel(0, 0, new Color(color.r / 255f, color.g / 255f, color.b / 255f, color.a / 255f));
+            tex.SetPixel(0, 0, new Color(colour.r / 255f, colour.g / 255f, colour.b / 255f, colour.a / 255f));
             tex.Apply(updateMipmaps: false);
             File.WriteAllBytes(assetPath, tex.EncodeToPNG());
             Object.DestroyImmediate(tex);
