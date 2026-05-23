@@ -1,10 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { EditorNode } from "./types";
+import type { EditorDirective, EditorNode, EditorValue } from "./types";
 import {
+  computeCompositeKeyByUiId,
   computeNodeKeyByUiId,
   loadCollapsed,
+  loadCompositeCollapse,
   pruneCollapsed,
+  pruneCompositeCollapse,
   saveCollapsed,
+  saveCompositeCollapse,
 } from "./collapseStorage";
 
 function patch(uiId: string, templateType: string, templateId: string): EditorNode {
@@ -135,5 +139,197 @@ describe("pruneCollapsed", () => {
     const stored = new Set(["Patch:Old:1#0"]);
     const current = ["Patch:New:2#0"];
     expect(pruneCollapsed(stored, current)).toEqual(new Set());
+  });
+});
+
+function composite(compositeType: string, inner: EditorDirective[] = []): EditorValue {
+  return { kind: "Composite", compositeType, compositeDirectives: inner };
+}
+
+function set(uiId: string, fieldPath: string, value: EditorValue): EditorDirective {
+  return { op: "Set", fieldPath, value, _uiId: uiId };
+}
+
+function appendDir(uiId: string, fieldPath: string, value: EditorValue): EditorDirective {
+  return { op: "Append", fieldPath, value, _uiId: uiId };
+}
+
+describe("computeCompositeKeyByUiId", () => {
+  it("returns an empty map when no directives carry composite values", () => {
+    const nodes: EditorNode[] = [
+      {
+        kind: "Patch",
+        templateType: "Attack",
+        templateId: "x",
+        _uiId: "n1",
+        directives: [
+          { op: "Set", fieldPath: "Damage", value: { kind: "Int32", int32: 5 }, _uiId: "d1" },
+        ],
+      },
+    ];
+    const nodeKeys = computeNodeKeyByUiId(nodes);
+    expect(computeCompositeKeyByUiId(nodes, nodeKeys).size).toBe(0);
+  });
+
+  it("assigns positional path keys for top-level composites", () => {
+    const nodes: EditorNode[] = [
+      {
+        kind: "Clone",
+        templateType: "SoundBank",
+        sourceId: "src",
+        cloneId: "voymastina_va",
+        _uiId: "n1",
+        directives: [
+          appendDir("d0", "sounds", composite("Sound")),
+          appendDir("d1", "sounds", composite("Sound")),
+        ],
+      },
+    ];
+    const nodeKeys = computeNodeKeyByUiId(nodes);
+    const compositeKeys = computeCompositeKeyByUiId(nodes, nodeKeys);
+    const nodeKey = nodeKeys.get("n1");
+    expect(compositeKeys.get("d0")).toBe(`${nodeKey}/dir[0]`);
+    expect(compositeKeys.get("d1")).toBe(`${nodeKey}/dir[1]`);
+  });
+
+  it("recurses into nested composite directives", () => {
+    const innerComposite = composite("SoundVariation", [
+      set("inner1", "clip", { kind: "AssetReference", assetName: "clip.wav" }),
+    ]);
+    const outerComposite = composite("Sound", [
+      appendDir("variations0", "variations", innerComposite),
+    ]);
+    const nodes: EditorNode[] = [
+      {
+        kind: "Clone",
+        templateType: "SoundBank",
+        sourceId: "src",
+        cloneId: "voymastina_va",
+        _uiId: "n1",
+        directives: [appendDir("sounds0", "sounds", outerComposite)],
+      },
+    ];
+    const nodeKeys = computeNodeKeyByUiId(nodes);
+    const compositeKeys = computeCompositeKeyByUiId(nodes, nodeKeys);
+    const nodeKey = nodeKeys.get("n1");
+    expect(compositeKeys.get("sounds0")).toBe(`${nodeKey}/dir[0]`);
+    expect(compositeKeys.get("variations0")).toBe(`${nodeKey}/dir[0]/dir[0]`);
+    // Scalar inner directive isn't a composite — no entry.
+    expect(compositeKeys.has("inner1")).toBe(false);
+  });
+
+  it("regenerated _uiIds map to the same key on the next parse", () => {
+    const first: EditorNode[] = [
+      {
+        kind: "Clone",
+        templateType: "SoundBank",
+        sourceId: "src",
+        cloneId: "vox",
+        _uiId: "a1",
+        directives: [appendDir("a-d0", "sounds", composite("Sound"))],
+      },
+    ];
+    const second: EditorNode[] = [
+      {
+        kind: "Clone",
+        templateType: "SoundBank",
+        sourceId: "src",
+        cloneId: "vox",
+        _uiId: "b1",
+        directives: [appendDir("b-d0", "sounds", composite("Sound"))],
+      },
+    ];
+    const c1 = computeCompositeKeyByUiId(first, computeNodeKeyByUiId(first));
+    const c2 = computeCompositeKeyByUiId(second, computeNodeKeyByUiId(second));
+    expect(c1.get("a-d0")).toBe(c2.get("b-d0"));
+  });
+});
+
+describe("loadCompositeCollapse / saveCompositeCollapse", () => {
+  it("round-trips a Map keyed by file path", () => {
+    stubLocalStorage();
+    const map = new Map<string, boolean>([
+      ["Clone:SoundBank:vox#0/dir[0]", true],
+      ["Clone:SoundBank:vox#0/dir[1]", false],
+    ]);
+    saveCompositeCollapse("/proj/templates/a.kdl", map);
+    expect(loadCompositeCollapse("/proj/templates/a.kdl")).toEqual(map);
+  });
+
+  it("isolates files by path and avoids the node-collapse namespace", () => {
+    const store = stubLocalStorage();
+    saveCollapsed("/proj/a.kdl", new Set(["Patch:A:1#0"]));
+    saveCompositeCollapse("/proj/a.kdl", new Map([["Patch:A:1#0/dir[0]", true]]));
+    expect(loadCollapsed("/proj/a.kdl")).toEqual(new Set(["Patch:A:1#0"]));
+    expect(loadCompositeCollapse("/proj/a.kdl")).toEqual(new Map([["Patch:A:1#0/dir[0]", true]]));
+    // Two distinct storage keys so the namespaces don't collide.
+    const keys = [...store.keys()].sort();
+    expect(keys).toEqual([
+      "jiangyu:visualEditor:collapsed:/proj/a.kdl",
+      "jiangyu:visualEditor:compositeCollapsed:/proj/a.kdl",
+    ]);
+  });
+
+  it("returns an empty map for an unknown file", () => {
+    stubLocalStorage();
+    expect(loadCompositeCollapse("/never/written.kdl")).toEqual(new Map());
+  });
+
+  it("removes the entry when saving an empty map", () => {
+    const store = stubLocalStorage();
+    saveCompositeCollapse("/proj/a.kdl", new Map([["k", true]]));
+    saveCompositeCollapse("/proj/a.kdl", new Map());
+    expect([...store.keys()]).toEqual([]);
+  });
+
+  it("ignores empty file paths", () => {
+    const store = stubLocalStorage();
+    saveCompositeCollapse("", new Map([["k", true]]));
+    expect([...store.keys()]).toEqual([]);
+    expect(loadCompositeCollapse("")).toEqual(new Map());
+  });
+
+  it("falls back to an empty map when the stored value is malformed", () => {
+    const store = stubLocalStorage();
+    store.set("jiangyu:visualEditor:compositeCollapsed:/proj/a.kdl", "{not json");
+    expect(loadCompositeCollapse("/proj/a.kdl")).toEqual(new Map());
+  });
+
+  it("filters out non-pair entries from a corrupted array", () => {
+    const store = stubLocalStorage();
+    store.set(
+      "jiangyu:visualEditor:compositeCollapsed:/proj/a.kdl",
+      JSON.stringify([
+        ["good", true],
+        ["bad-shape"],
+        ["wrong-type", "string-not-bool"],
+        ["also-good", false],
+      ]),
+    );
+    expect(loadCompositeCollapse("/proj/a.kdl")).toEqual(
+      new Map([
+        ["good", true],
+        ["also-good", false],
+      ]),
+    );
+  });
+});
+
+describe("pruneCompositeCollapse", () => {
+  it("drops entries whose keys don't appear in the current set", () => {
+    const stored = new Map<string, boolean>([
+      ["live#0/dir[0]", true],
+      ["stale#0/dir[7]", false],
+    ]);
+    const pruned = pruneCompositeCollapse(stored, ["live#0/dir[0]", "live#0/dir[1]"]);
+    expect(pruned).toEqual(new Map([["live#0/dir[0]", true]]));
+  });
+
+  it("preserves the explicit state of surviving entries", () => {
+    const stored = new Map<string, boolean>([
+      ["k1", true],
+      ["k2", false],
+    ]);
+    expect(pruneCompositeCollapse(stored, ["k1", "k2"])).toEqual(stored);
   });
 });

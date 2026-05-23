@@ -1215,6 +1215,13 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.compositeHeader:focus-visible {
+  outline: 1px dashed var(--rule);
+  outline-offset: -1px;
 }
 
 .compositeType {
@@ -1251,6 +1258,42 @@
    the left of the type chip. Visually identical to .compositeType minus
    the border, so both labels still read as part of one header strip. */
 .compositeKind {
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+/* Chevron toggle that gates the composite body. Default state is
+   collapsed for parse-time composites so huge clones don't mount
+   hundreds of FieldAdders on load; chevron points right when
+   collapsed, down when expanded. */
+.compositeExpander {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--fg-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  transition: transform var(--ease-fast);
+  transform: rotate(-90deg);
+}
+
+.compositeExpanderOpen {
+  transform: rotate(0deg);
+}
+
+.compositeExpander:hover {
+  color: var(--fg);
+}
+
+/* Field-count hint shown next to the type chip when the composite is
+   collapsed and has content. Lets the modder see "this isn't empty"
+   without expanding. */
+.compositeCount {
   font-family: var(--font-label);
   font-size: 9px;
   letter-spacing: var(--tracking-wide);

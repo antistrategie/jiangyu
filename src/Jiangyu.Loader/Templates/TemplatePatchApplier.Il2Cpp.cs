@@ -239,6 +239,12 @@ internal sealed partial class TemplatePatchApplier
     //     overwritten next, and unauthored fields keep their zero defaults.
     //  3. Wrap with the generated managed (IntPtr) ctor so the result is a
     //     usable Il2CppObjectBase wrapper.
+    /// <summary>External entry point for callers in the same assembly that
+    /// need a fresh IL2CPP wrapper without going through the full composite
+    /// construction path.</summary>
+    internal static object TryAllocateIl2CppInstanceForExternal(Type wrapperType)
+        => TryAllocateIl2CppInstance(wrapperType, out var instance, out _) ? instance : null;
+
     private static bool TryAllocateIl2CppInstance(Type wrapperType, out object instance, out string error)
     {
         instance = null;

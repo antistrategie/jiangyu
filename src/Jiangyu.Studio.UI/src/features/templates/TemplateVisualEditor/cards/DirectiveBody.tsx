@@ -1,5 +1,6 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, X } from "lucide-react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type { InspectedFieldNode, TemplateMember } from "@shared/rpc";
 import {
   buildDescentMemberDirective,
@@ -12,12 +13,20 @@ import {
   type StampedNode,
 } from "../helpers";
 import { useDragReorder, useTemplateMembers } from "../hooks";
-import { useEditorDispatch, useNodeIndex } from "../store";
+import { useEditorDispatch, useEditorScrollContainer, useNodeIndex } from "../store";
 import { CommitInput } from "../shared/CommitInput";
 import { SuggestionCombobox } from "../shared/SuggestionCombobox";
 import { DirectiveRow } from "../rows/SetRow";
 import { FieldAdder } from "./FieldAdder";
 import styles from "../TemplateVisualEditor.module.css";
+
+// Virtualisation kicks in when a node has at least this many directive
+// groups. Below that, the cost of measureElement + absolute positioning
+// outweighs the saving on mounting full rows. Threshold picked to keep
+// typical hand-authored patches (a handful of fields) on the simple
+// flow-layout path while auto-generated clones (voicelines.kdl: 374
+// directives) use the windowed path.
+const VIRTUALISE_THRESHOLD = 50;
 
 // --- DirectiveBody ---
 //
@@ -199,82 +208,183 @@ export function DirectiveBody({
   const pendingAfterFlatIndex =
     pending?.anchor.kind === "afterIndex" ? pending.anchor.flatIndex : null;
 
+  // Render one group (loose row or descent group) by index. Used by both
+  // the flow-layout path and the virtualised path so the per-group
+  // rendering stays in one place. `embedPendingAfter` lets the flow-
+  // layout caller inline `renderPending()` directly after a group when
+  // its anchor points at that group; the virtualised path ignores it
+  // (it bails out entirely when pending is non-null).
+  const renderGroupAt = (gi: number, embedPendingAfter: boolean): React.ReactNode => {
+    const g = groups[gi];
+    if (!g) return null;
+    const startIndex = groupStartIndices[gi] ?? 0;
+    const endIndex = startIndex + (g.kind === "loose" ? 1 : g.members.length);
+    if (g.kind === "loose") {
+      const d = g.directive;
+      const isMatrixCellRow = isCellAddressedSet(d) && matrixFieldNames.has(d.fieldPath);
+      if (isMatrixCellRow) {
+        return embedPendingAfter ? (
+          <React.Fragment key={g.directive._uiId}>{renderPending()}</React.Fragment>
+        ) : null;
+      }
+      return (
+        <React.Fragment key={g.directive._uiId}>
+          {looseRow(g.directive, startIndex)}
+          {embedPendingAfter && renderPending()}
+        </React.Fragment>
+      );
+    }
+    const memberRows = g.members.map((m, mi) => looseRow(m.directive, startIndex + mi, m.suffix));
+    const firstMemberId = g.members[0]?.directive._uiId ?? "";
+    const groupKey = firstMemberId || `group-${g.field}-${g.index}`;
+    const groupHandlers = reorder.buildHandlers(firstMemberId, startIndex, endIndex);
+    return (
+      <React.Fragment key={groupKey}>
+        {reorder.showIndicatorAt(startIndex, firstMemberId) && (
+          <div className={styles.dropIndicator} />
+        )}
+        <DescentGroup
+          field={g.field}
+          slotIndex={g.index}
+          subtype={g.subtype}
+          startIndex={startIndex}
+          endIndex={endIndex}
+          outerMember={memberMap.get(g.field)}
+          directives={node.directives}
+          onSetDirectives={onSetDirectives}
+          onConvertToPending={handleConvertGroupToPending}
+          members={g.members}
+          memberRows={memberRows}
+          isDragging={groupHandlers.isDragging}
+          onDragStart={groupHandlers.onDragStart}
+          onDragEnd={groupHandlers.onDragEnd}
+          onDragOverRow={groupHandlers.onDragOver}
+          onDropRow={groupHandlers.onDrop}
+        />
+        {embedPendingAfter && renderPending()}
+      </React.Fragment>
+    );
+  };
+
+  const fieldAdder = (
+    <FieldAdder
+      members={members}
+      membersLoaded={membersLoaded}
+      existingFields={node.directives.map((d) => d.fieldPath)}
+      existingMatrixFields={matrixFieldNames}
+      targetTemplateType={node.templateType}
+      onAdd={onAddDirective}
+      onAddMatrix={onAddMatrix}
+      onDrop={handleNodeDrop}
+      vanillaFields={vanillaFields}
+      onStartDescent={handleStartPending}
+    />
+  );
+
+  // --- Virtualised path ---
+  //
+  // For huge clones (auto-generated voicelines.kdl: 374 directives), the
+  // simple flow render mounts every SetRow + FieldAdder + useTemplateMembers
+  // hook synchronously and freezes WebKitGTK on initial parse. Windowing
+  // the group list keeps the per-render cost bounded to the visible region
+  // plus overscan. The path bails out when pending is non-null because the
+  // "pending-after-flat-index" placement can land between virtual rows that
+  // aren't even mounted; the pending lifecycle is short and uncommon, so
+  // taking the flow path during it is fine. The path also bails when the
+  // scroll container ref isn't available (e.g. tests, no editor wrapping).
+  const scrollContainerRef = useEditorScrollContainer();
+  const listRef = useRef<HTMLDivElement>(null);
+  const [scrollMargin, setScrollMargin] = useState(0);
+  const useVirtualised =
+    pending === null && scrollContainerRef !== null && groups.length >= VIRTUALISE_THRESHOLD;
+
+  // Re-measure the offset between the scroll container's top and our
+  // virtual list's top on every render. Cards above us can expand /
+  // collapse / be added / removed without firing a ResizeObserver entry
+  // on either the scroll container or our own list, but each of those
+  // mutations originates from a state update in this editor's reducer,
+  // which re-renders every node card including this one. Per-render
+  // remeasure is the conservative thing. One getBoundingClientRect call
+  // is cheap relative to the cost we save by virtualising. The
+  // setScrollMargin call is no-op (returns prev) when the position
+  // hasn't shifted, so this doesn't drive an infinite render loop.
+  // eslint-disable-next-line react-hooks/exhaustive-deps, @eslint-react/exhaustive-deps -- intentional per-render remeasure; see comment above.
+  useLayoutEffect(() => {
+    if (!useVirtualised) return;
+    // useVirtualised already includes scrollContainerRef !== null, so TS
+    // narrows it to RefObject<...> in this branch.
+    const scrollEl = scrollContainerRef.current;
+    const listEl = listRef.current;
+    if (!scrollEl || !listEl) return;
+    const next = Math.max(
+      0,
+      listEl.getBoundingClientRect().top -
+        scrollEl.getBoundingClientRect().top +
+        scrollEl.scrollTop,
+    );
+    setScrollMargin((prev) => (Math.abs(prev - next) < 0.5 ? prev : next));
+  });
+
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual returns non-memoisable functions; the only API the library exposes.
+  const virtualizer = useVirtualizer({
+    count: groups.length,
+    getScrollElement: () => scrollContainerRef?.current ?? null,
+    estimateSize: () => 40,
+    overscan: 10,
+    scrollMargin,
+  });
+
+  if (useVirtualised) {
+    const virtualItems = virtualizer.getVirtualItems();
+    return (
+      <>
+        <div
+          ref={listRef}
+          style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}
+        >
+          {virtualItems.map((vRow) => {
+            const g = groups[vRow.index];
+            if (!g) return null;
+            const key = g.kind === "loose" ? g.directive._uiId : `group-${g.field}-${g.index}`;
+            return (
+              <div
+                key={key}
+                ref={virtualizer.measureElement}
+                data-index={vRow.index}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  transform: `translateY(${vRow.start - scrollMargin}px)`,
+                }}
+              >
+                {renderGroupAt(vRow.index, false)}
+              </div>
+            );
+          })}
+        </div>
+        {reorder.showIndicatorAt(node.directives.length, null) && (
+          <div className={styles.dropIndicator} />
+        )}
+        {fieldAdder}
+      </>
+    );
+  }
+
   return (
     <>
       {pendingAtStart && renderPending()}
       {groups.map((g, gi) => {
-        const startIndex = groupStartIndices[gi] ?? 0;
-        const endIndex = startIndex + (g.kind === "loose" ? 1 : g.members.length);
-        const renderPendingAfter = pendingAfterFlatIndex === endIndex - 1;
-        if (g.kind === "loose") {
-          // Cell-addressed Sets are owned by the matrix grid for fields
-          // listed in matrixFieldNames; skip them here. The directive
-          // stays in node.directives — index arithmetic for groups,
-          // pending insertion, and reorder all key off node.directives,
-          // so swallowing the row at render time is safe.
-          const d = g.directive;
-          const isMatrixCellRow = isCellAddressedSet(d) && matrixFieldNames.has(d.fieldPath);
-          if (isMatrixCellRow) {
-            return renderPendingAfter ? (
-              <React.Fragment key={g.directive._uiId}>{renderPending()}</React.Fragment>
-            ) : null;
-          }
-          return (
-            <React.Fragment key={g.directive._uiId}>
-              {looseRow(g.directive, startIndex)}
-              {renderPendingAfter && renderPending()}
-            </React.Fragment>
-          );
-        }
-        const memberRows = g.members.map((m, mi) =>
-          looseRow(m.directive, startIndex + mi, m.suffix),
-        );
-        const firstMemberId = g.members[0]?.directive._uiId ?? "";
-        const groupKey = firstMemberId || `group-${g.field}-${g.index}`;
-        const groupHandlers = reorder.buildHandlers(firstMemberId, startIndex, endIndex);
-        return (
-          <React.Fragment key={groupKey}>
-            {reorder.showIndicatorAt(startIndex, firstMemberId) && (
-              <div className={styles.dropIndicator} />
-            )}
-            <DescentGroup
-              field={g.field}
-              slotIndex={g.index}
-              subtype={g.subtype}
-              startIndex={startIndex}
-              endIndex={endIndex}
-              outerMember={memberMap.get(g.field)}
-              directives={node.directives}
-              onSetDirectives={onSetDirectives}
-              onConvertToPending={handleConvertGroupToPending}
-              members={g.members}
-              memberRows={memberRows}
-              isDragging={groupHandlers.isDragging}
-              onDragStart={groupHandlers.onDragStart}
-              onDragEnd={groupHandlers.onDragEnd}
-              onDragOverRow={groupHandlers.onDragOver}
-              onDropRow={groupHandlers.onDrop}
-            />
-            {renderPendingAfter && renderPending()}
-          </React.Fragment>
-        );
+        const start = groupStartIndices[gi] ?? 0;
+        const end = start + (g.kind === "loose" ? 1 : g.members.length);
+        return renderGroupAt(gi, pendingAfterFlatIndex === end - 1);
       })}
       {reorder.showIndicatorAt(node.directives.length, null) && (
         <div className={styles.dropIndicator} />
       )}
       {pendingAtEnd && renderPending()}
-      <FieldAdder
-        members={members}
-        membersLoaded={membersLoaded}
-        existingFields={node.directives.map((d) => d.fieldPath)}
-        existingMatrixFields={matrixFieldNames}
-        targetTemplateType={node.templateType}
-        onAdd={onAddDirective}
-        onAddMatrix={onAddMatrix}
-        onDrop={handleNodeDrop}
-        vanillaFields={vanillaFields}
-        onStartDescent={handleStartPending}
-      />
+      {fieldAdder}
     </>
   );
 }

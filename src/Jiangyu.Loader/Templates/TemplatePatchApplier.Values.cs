@@ -366,7 +366,22 @@ internal sealed partial class TemplatePatchApplier
         // fields don't start at zero. Skipped on the from= path because
         // the deep-copy already inherited the prototype's values.
         if (string.IsNullOrEmpty(composite.From))
+        {
             ApplyTypeDefaults(instance, resolvedType, log);
+
+            // IL2CPP ScriptableObject.CreateInstance and Activator.CreateInstance
+            // do not always give the new instance a fresh List<T>/T[] for each
+            // collection-typed field. In Stem.Sound's case every freshly-created
+            // Sound observed in the field shares the same variations list, so
+            // appending one SoundVariation per Sound stacks them all into one
+            // shared list and every Sound ends up holding all the clips. Playback
+            // then picks a random variation from the shared list, which is
+            // indistinguishable from "audio is random across all sounds in the
+            // bank". Reseat every collection-typed instance field to a fresh
+            // empty container so each composite construction owns its own
+            // collections from the start.
+            ResetCollectionContainersToFresh(instance, resolvedType, composite.TypeName, log);
+        }
 
         // Apply each authored operation against the freshly-constructed
         // instance using the same path-walk-and-apply machinery the outer
@@ -468,6 +483,117 @@ internal sealed partial class TemplatePatchApplier
     // class definition (where field initialisers don't exist for plain
     // Il2CppSystem.Object subclasses) and Inspector-baked vanilla values.
     // Modder ops in the composite body still override these defaults.
+    /// <summary>
+    /// Reseat every List&lt;T&gt; / T[] / Il2CppStructArray&lt;T&gt; /
+    /// Il2CppReferenceArray&lt;T&gt; instance field on a freshly-constructed
+    /// composite to a fresh empty container. Without this, multiple
+    /// CreateInstance calls of the same type can hand out instances whose
+    /// collection fields point to a shared default container (observed on
+    /// Stem.Sound.variations: every fresh Sound shared one variations list,
+    /// so 47 appends produced 47 Sounds all referencing 47 variations, and
+    /// playback picked a random clip from the pooled list).
+    /// </summary>
+    private static void ResetCollectionContainersToFresh(
+        object instance, Type resolvedType, string compositeTypeName, MelonLogger.Instance log)
+    {
+        if (instance == null || resolvedType == null) return;
+
+        const System.Reflection.BindingFlags flags =
+            System.Reflection.BindingFlags.Instance
+            | System.Reflection.BindingFlags.Public
+            | System.Reflection.BindingFlags.NonPublic;
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var prop in resolvedType.GetProperties(flags))
+        {
+            if (prop.GetIndexParameters().Length != 0) continue;
+            if (!prop.CanRead || !prop.CanWrite) continue;
+            if (!seen.Add("P:" + prop.Name)) continue;
+            TryResetCollectionMember(
+                instance,
+                prop.PropertyType,
+                () => prop.GetValue(instance),
+                v => prop.SetValue(instance, v),
+                prop.Name,
+                compositeTypeName,
+                log);
+        }
+
+        foreach (var field in resolvedType.GetFields(flags))
+        {
+            if (field.IsInitOnly) continue;
+            if (!seen.Add("F:" + field.Name)) continue;
+            TryResetCollectionMember(
+                instance,
+                field.FieldType,
+                () => field.GetValue(instance),
+                v => field.SetValue(instance, v),
+                field.Name,
+                compositeTypeName,
+                log);
+        }
+    }
+
+    private static bool TryResetCollectionMember(
+        object instance,
+        Type memberType,
+        Func<object> reader,
+        Action<object> writer,
+        string memberName,
+        string compositeTypeName,
+        MelonLogger.Instance log)
+    {
+        // Lists and arrays: always reseat with a fresh empty container,
+        // regardless of whether the field currently reads null or non-null.
+        // Il2Cpp wrappers can return null from the getter on a fresh
+        // CreateInstance while subsequent reads lazily allocate a shared
+        // default container; proactively replacing the slot ensures every
+        // composite instance owns its own collection.
+        if (Il2CppCollectionReflection.GetListElementType(memberType) != null)
+            return TryWriteFresh(
+                () => Il2CppCollectionReflection.TryCreateEmptyList(memberType, out var f, out var e)
+                    ? (f, (string)null) : ((object)null, e),
+                writer, "list", memberType, memberName, compositeTypeName, log);
+
+        var arrayElement = Il2CppCollectionReflection.GetArrayElementType(memberType);
+        if (arrayElement != null)
+            return TryWriteFresh(
+                () => Il2CppCollectionReflection.TryCreateEmptyArray(memberType, arrayElement, out var f, out var e)
+                    ? (f, (string)null) : ((object)null, e),
+                writer, "array", memberType, memberName, compositeTypeName, log);
+
+        return false;
+    }
+
+    private static bool TryWriteFresh(
+        Func<(object fresh, string error)> build,
+        Action<object> writer,
+        string kind,
+        Type memberType,
+        string memberName,
+        string compositeTypeName,
+        MelonLogger.Instance log)
+    {
+        var (fresh, error) = build();
+        if (fresh == null)
+        {
+            if (error != null)
+                log.Warning(
+                    $"Composite {compositeTypeName}: building fresh {kind} {memberType.FullName} for "
+                    + $"'{memberName}' failed: {error}.");
+            return false;
+        }
+        try { writer(fresh); return true; }
+        catch (Exception ex)
+        {
+            log.Warning(
+                $"Composite {compositeTypeName}: writing fresh {kind} back to '{memberName}' "
+                + $"threw: {ex.Message}.");
+            return false;
+        }
+    }
+
     private static void ApplyTypeDefaults(object instance, Type resolvedType, MelonLogger.Instance log)
     {
         if (instance == null || resolvedType == null) return;

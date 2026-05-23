@@ -66,3 +66,23 @@ public class TestConcreteWrapper : TestScriptableObjectBase
 public class TestDataTemplateLike : TestDataTemplateBase
 {
 }
+
+/// <summary>
+/// Mirrors <c>Role</c>: a value-object element with primitive fields, a
+/// reference to another value object, and a <c>List&lt;string&gt;</c>
+/// field that the patch system mutates in place via index replacement
+/// (analogue of <c>m_SerializedRequirements</c>). Used to round-trip
+/// <c>CloneValueObjectByFieldReflection</c>.
+/// </summary>
+public class TestRoleLike
+{
+    public int Tag { get; set; }
+    public string? Name { get; set; }
+    public List<string>? SerialisedRequirements { get; set; }
+    public TestRoleNestedValue? NestedShared { get; set; }
+}
+
+public class TestRoleNestedValue
+{
+    public int Marker { get; set; }
+}

@@ -157,15 +157,23 @@ internal sealed class TemplateCloneApplier
                 if (!TryCloneTemplate(source, directive.CloneId, log, out clone))
                     continue;
 
-                // Object.Instantiate shallow-copies PPtr lists, so the clone's
-                // owned-element collections (EventHandlers and any future
-                // abstract-polymorphic ScriptableObject-element list) point to
-                // the same handler assets as the source. Patches through the
-                // clone would mutate the source's handlers. Deep-copy each
-                // owned element so the clone has its own. resolvedType is the
-                // concrete managed wrapper type (e.g. PerkTemplate); the
-                // clone variable is DataTemplate-typed, so reflection on it
-                // sees only base-class members. We re-cast inside the helper.
+                // Object.Instantiate shallow-copies the clone's collection
+                // containers: clone.List<T> / clone.T[] field instances are
+                // the SAME object as the source's. Any clear/append/index-set
+                // on the clone leaks straight into the source. Reallocate
+                // each container with the same element refs so the clone
+                // mutates its own data.
+                DeepCopyCollectionContainers(clone, resolvedType, directive.CloneId, log);
+
+                // Object.Instantiate also shallow-copies PPtr element refs,
+                // so abstract-polymorphic ScriptableObject elements
+                // (EventHandlers and similar) are still shared. Patches
+                // through the clone would mutate the source's handlers.
+                // Deep-copy each owned element so the clone has its own.
+                // resolvedType is the concrete managed wrapper type (e.g.
+                // PerkTemplate); the clone variable is DataTemplate-typed,
+                // so reflection on it sees only base-class members. We
+                // re-cast inside the helper.
                 DeepCopyOwnedReferences(clone, resolvedType, directive.CloneId, log);
 
                 RegisterCloneIntoSlot(resolvedType, innerMap, resolvedType, directive.CloneId, clone, log);
@@ -238,6 +246,14 @@ internal sealed class TemplateCloneApplier
             cloneObj.name = directive.CloneId;
             cloneObj.hideFlags = UnityEngine.HideFlags.DontUnloadUnusedAsset;
             UnityEngine.Object.DontDestroyOnLoad(cloneObj);
+
+            // Reallocate every collection container so the clone owns its
+            // own List<T>/T[] instances. Without this, Object.Instantiate
+            // leaves the clone sharing the source's container references,
+            // and SoundBank.sounds.clear() / .append() on the clone wipes
+            // the source's vanilla sound list. See DeepCopyCollectionContainers
+            // for the full rationale.
+            DeepCopyCollectionContainers(cloneObj, resolvedType, directive.CloneId, log);
 
             // Types with an override identity field (e.g. ConversationTemplate.Path)
             // need that field set to the new CloneId too, so the matcher can
@@ -544,6 +560,156 @@ internal sealed class TemplateCloneApplier
 
     /// <summary>
     /// After <see cref="UnityEngine.Object.Instantiate"/> creates the clone,
+    /// re-allocate every collection-typed field on the clone so the clone
+    /// holds an independent container with the source's element references
+    /// copied in. Without this, <c>Object.Instantiate</c> on an IL2CPP
+    /// ScriptableObject keeps the source's <c>List&lt;T&gt;</c> / array
+    /// instance shared with the clone, and any <c>clear</c> / <c>append</c>
+    /// / element <c>set</c> on the clone leaks straight into the source's
+    /// live data. Element references stay shared (intentional registry
+    /// semantics for DataTemplate/PPtr lists); only the container instance
+    /// is reallocated. Pairs with <see cref="DeepCopyOwnedReferences"/>
+    /// which then replaces the abstract-polymorphic owned elements inside
+    /// the new container with fresh Instantiated copies.
+    /// </summary>
+    private static void DeepCopyCollectionContainers(
+        Il2CppObjectBase clone, Type concreteType, string cloneId, MelonLogger.Instance log)
+    {
+        if (clone == null) return;
+
+        var reflectionTarget = ReflectionTargetForConcreteType(clone, concreteType, cloneId, log);
+        if (reflectionTarget == null) return;
+
+        var type = reflectionTarget.GetType();
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var containers = 0;
+
+        foreach (var prop in type.GetProperties(flags))
+        {
+            if (prop.GetIndexParameters().Length != 0) continue;
+            if (!prop.CanRead || !prop.CanWrite) continue;
+            if (!seen.Add("P:" + prop.Name)) continue;
+            if (TryReallocCollectionContainer(
+                    () => prop.GetValue(reflectionTarget),
+                    v => prop.SetValue(reflectionTarget, v),
+                    prop.PropertyType,
+                    prop.Name,
+                    cloneId,
+                    log))
+                containers++;
+        }
+
+        foreach (var field in type.GetFields(flags))
+        {
+            if (!seen.Add("F:" + field.Name)) continue;
+            if (field.IsInitOnly) continue;
+            if (TryReallocCollectionContainer(
+                    () => field.GetValue(reflectionTarget),
+                    v => field.SetValue(reflectionTarget, v),
+                    field.FieldType,
+                    field.Name,
+                    cloneId,
+                    log))
+                containers++;
+        }
+
+        if (containers > 0)
+            log.Msg(
+                $"Template clone '{cloneId}': reallocated {containers} collection container(s) "
+                + "so clone-side clear/append/index-set don't leak into the source.");
+    }
+
+    private static bool TryReallocCollectionContainer(
+        Func<object> reader,
+        Action<object> writer,
+        Type memberType,
+        string memberName,
+        string cloneId,
+        MelonLogger.Instance log)
+    {
+        var listElement = Il2CppCollectionReflection.GetListElementType(memberType);
+        if (listElement != null)
+            return TryRebuildAndWrite(
+                reader, writer,
+                src => Il2CppCollectionReflection.TryRebuildList(src, memberType, listElement, out var f, out var e)
+                    ? (f, (string)null) : ((object)null, e),
+                "list", memberName, cloneId, log);
+
+        var arrayElement = Il2CppCollectionReflection.GetArrayElementType(memberType);
+        if (arrayElement != null)
+            return TryRebuildAndWrite(
+                reader, writer,
+                src => Il2CppCollectionReflection.TryRebuildReferenceArray(
+                        src, memberType, arrayElement, appendedElement: null, out var f, out var e)
+                    ? (f, (string)null) : ((object)null, e),
+                "array", memberName, cloneId, log);
+
+        return false;
+    }
+
+    // Common read-rebuild-write skeleton with logging. The rebuild step is
+    // injected so this skeleton serves both list and array variants without
+    // either of them re-implementing reader/writer plumbing.
+    private static bool TryRebuildAndWrite(
+        Func<object> reader,
+        Action<object> writer,
+        Func<object, (object fresh, string error)> rebuild,
+        string kind,
+        string memberName,
+        string cloneId,
+        MelonLogger.Instance log)
+    {
+        object source;
+        try { source = reader(); }
+        catch { return false; }
+        if (source == null) return false;
+
+        var (fresh, error) = rebuild(source);
+        if (fresh == null)
+        {
+            if (error != null)
+                log.Warning($"Template clone '{cloneId}': rebuilding {kind} for '{memberName}' failed: {error}");
+            return false;
+        }
+
+        try { writer(fresh); return true; }
+        catch (Exception ex)
+        {
+            log.Warning(
+                $"Template clone '{cloneId}': writing fresh {kind} back to '{memberName}' "
+                + $"threw: {ex.Message}.");
+            return false;
+        }
+    }
+
+    private static object ReflectionTargetForConcreteType(
+        Il2CppObjectBase clone, Type concreteType, string cloneId, MelonLogger.Instance log)
+    {
+        object target = clone;
+        if (concreteType == null || concreteType == clone.GetType()) return target;
+        try
+        {
+            var tryCast = typeof(Il2CppObjectBase)
+                .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+                .FirstOrDefault(m => m.Name == "TryCast"
+                    && m.IsGenericMethodDefinition
+                    && m.GetParameters().Length == 0)
+                ?.MakeGenericMethod(concreteType);
+            if (tryCast == null) return target;
+            var cast = tryCast.Invoke(clone, null);
+            if (cast != null) target = cast;
+        }
+        catch (Exception ex)
+        {
+            log.Warning(
+                $"Template clone '{cloneId}': TryCast<{concreteType.FullName}> threw: {ex.Message}");
+        }
+        return target;
+    }
+
+    /// <summary>
+    /// After <see cref="UnityEngine.Object.Instantiate"/> creates the clone,
     /// walk every collection-typed member and deep-copy each element of any
     /// list whose element type is an abstract-polymorphic non-DataTemplate
     /// ScriptableObject. This is the &quot;owned&quot; pattern: the parent
@@ -607,7 +773,7 @@ internal sealed class TemplateCloneApplier
             if (!prop.CanRead) continue;
             if (!seen.Add("P:" + prop.Name)) continue;
 
-            var elementType = GetIl2CppListElementType(prop.PropertyType);
+            var elementType = Il2CppCollectionReflection.GetListElementType(prop.PropertyType);
             if (elementType == null) continue;
             if (!IsOwnedElementType(elementType)) continue;
 
@@ -623,7 +789,7 @@ internal sealed class TemplateCloneApplier
         {
             if (!seen.Add("F:" + field.Name)) continue;
 
-            var elementType = GetIl2CppListElementType(field.FieldType);
+            var elementType = Il2CppCollectionReflection.GetListElementType(field.FieldType);
             if (elementType == null) continue;
             if (!IsOwnedElementType(elementType)) continue;
 
@@ -816,15 +982,78 @@ internal sealed class TemplateCloneApplier
         return false;
     }
 
-    internal static Type GetIl2CppListElementType(Type collectionType)
+    /// <summary>
+    /// Build a fresh instance of <paramref name="type"/> and copy each
+    /// property and field from <paramref name="source"/> onto it.
+    /// Reference-type collection fields that the patch system might
+    /// mutate in place (today: <c>List&lt;string&gt;</c>) are
+    /// reallocated so per-index modder edits on the clone don't leak
+    /// into the source. Other reference fields keep their refs shared
+    /// (the elements are themselves either immutable strings or
+    /// external assets we don't own here).
+    ///
+    /// Used by clone-pipeline passes that need to break sharing on
+    /// non-<see cref="UnityEngine.Object"/> value objects, where
+    /// <see cref="UnityEngine.Object.Instantiate"/> isn't available.
+    /// Today that's <c>ConversationTemplate.Roles[i]</c> (each Role
+    /// holds <c>m_SerializedRequirements: List&lt;string&gt;</c>); other
+    /// list-element types with the same shape can opt in by calling
+    /// this from a structurally appropriate pass.
+    /// </summary>
+    internal static object CloneValueObjectByFieldReflection(
+        object source, Type type, string contextLabel, MelonLogger.Instance log)
     {
-        if (collectionType == null) return null;
-        if (!collectionType.IsGenericType) return null;
-        var def = collectionType.GetGenericTypeDefinition().FullName ?? string.Empty;
-        if (def != "Il2CppSystem.Collections.Generic.List`1"
-            && def != "System.Collections.Generic.List`1")
+        if (source == null || type == null) return null;
+
+        object fresh;
+        try
+        {
+            if (typeof(Il2CppObjectBase).IsAssignableFrom(type))
+                fresh = TemplatePatchApplier.TryAllocateIl2CppInstanceForExternal(type);
+            else
+                fresh = Activator.CreateInstance(type);
+        }
+        catch (Exception ex)
+        {
+            log?.Warning($"  {contextLabel}: could not allocate fresh {type.FullName}: {ex.Message}");
             return null;
-        return collectionType.GenericTypeArguments.FirstOrDefault();
+        }
+        if (fresh == null) return null;
+
+        const BindingFlags flags =
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+        foreach (var prop in type.GetProperties(flags))
+        {
+            if (prop.GetIndexParameters().Length != 0) continue;
+            if (!prop.CanRead || !prop.CanWrite) continue;
+            try { prop.SetValue(fresh, ReseatStringListIfPresent(prop.GetValue(source))); }
+            catch (Exception ex) { log?.Warning($"  {contextLabel}.{prop.Name}: {ex.Message}"); }
+        }
+        foreach (var field in type.GetFields(flags))
+        {
+            if (field.IsInitOnly) continue;
+            try { field.SetValue(fresh, ReseatStringListIfPresent(field.GetValue(source))); }
+            catch (Exception ex) { log?.Warning($"  {contextLabel}.{field.Name}: {ex.Message}"); }
+        }
+        return fresh;
+    }
+
+    // Auto-reallocate List<string> values during value-object cloning so the
+    // clone owns its own string list (patch-system mutates these in place
+    // via index replacement). Non-string lists stay shared because deep
+    // copying them risks breaking intentional sharing on unrelated types.
+    private static object ReseatStringListIfPresent(object value)
+    {
+        if (value == null) return null;
+        var listType = value.GetType();
+        var elementType = Il2CppCollectionReflection.GetListElementType(listType);
+        if (elementType == null) return value;
+        if (elementType.FullName != "System.String"
+            && elementType.FullName != "Il2CppSystem.String")
+            return value;
+        return Il2CppCollectionReflection.TryRebuildList(value, listType, elementType, out var fresh, out _)
+            ? fresh
+            : value;
     }
 
     private static bool TryCloneTemplate(

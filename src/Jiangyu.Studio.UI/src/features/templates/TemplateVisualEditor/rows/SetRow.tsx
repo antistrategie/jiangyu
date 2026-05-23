@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { ChevronDown, GripVertical, X } from "lucide-react";
 import { parseCrossMemberPayload } from "@features/templates/crossMember";
 import { useToastStore } from "@shared/toast";
+import { onKeyActivate } from "@shared/utils/a11y";
 import type { InspectedFieldNode, TemplateMember } from "@shared/rpc";
 import type { EditorValue } from "../types";
 import { useAnchorPosition } from "../shared/useAnchorPosition";
@@ -22,6 +23,7 @@ import {
 } from "../helpers";
 import { useDragReorder } from "../hooks";
 import { useTemplateMembers } from "../hooks";
+import { useCompositeCollapse } from "../store";
 import { CommitInput } from "../shared/CommitInput";
 import { SuggestionCombobox } from "../shared/SuggestionCombobox";
 import { ValueEditor, NamedArrayIndexPicker } from "./ValueEditor";
@@ -395,6 +397,12 @@ export function SetRow({
           value={directive.value}
           onChange={(v) => onChange({ ...directive, value: v })}
           vanillaNode={vanillaNode}
+          // _uiId identifies this composite's directive across renders.
+          // CompositeEditor passes it to the CompositeCollapseContext so
+          // its persisted collapse state survives parses (`_uiId` itself
+          // regenerates every parse; the context maps it to a stable
+          // positional key).
+          directiveUiId={directive._uiId}
           // Three shapes of polymorphic destination route through the same
           // picker UX:
           //  - collection-element subtypes (elementSubtypes, handler= flow)
@@ -456,6 +464,12 @@ export function HandlerSubtypePicker({ subtypeChoices, onPick }: HandlerSubtypeP
 export interface CompositeEditorProps {
   value: EditorValue;
   onChange: (value: EditorValue) => void;
+  /** UI identifier of the directive whose value this composite is. Used
+   *  to resolve and toggle persisted collapse state via the editor's
+   *  CompositeCollapseContext. Omit (e.g. in tests that mount
+   *  CompositeEditor directly) and the component falls back to local
+   *  React state with no persistence. */
+  directiveUiId?: string;
   /** Vanilla composite node from the parent template, when available. Its
    *  `fields` (sub-field nodes) drive vanilla pre-fill for newly-added
    *  sub-fields. Sub-fields nested deeper than one composite level fall back
@@ -486,6 +500,7 @@ export interface CompositeEditorProps {
 export function CompositeEditor({
   value,
   onChange,
+  directiveUiId,
   vanillaNode,
   elementSubtypes,
   elementType,
@@ -502,10 +517,37 @@ export function CompositeEditor({
     () => (value.compositeDirectives ?? []) as StampedDirective[],
     [value.compositeDirectives],
   );
+  // Lazy-mount the body: parse-time composites with content default
+  // collapsed so a 200-sound SoundBank clone doesn't mount 200
+  // FieldAdders + useTemplateMembers hooks + prototype-types effects
+  // on initial render. Freshly-added composites (from FieldAdder /
+  // HandlerSubtypePicker) start with zero directives and default to
+  // expanded so the modder can fill them in without a click.
+  //
+  // Collapse state comes from the editor's CompositeCollapseContext when
+  // available so it persists across parses + tab switches; fallback to
+  // local state lets CompositeEditor render outside the editor (tests,
+  // stand-alone usage) without persistence.
+  const compositeCollapse = useCompositeCollapse();
+  const defaultCollapsed = directives.length > 0;
+  const [localCollapsed, setLocalCollapsed] = useState(() => defaultCollapsed);
+  const persisted =
+    compositeCollapse !== null && directiveUiId !== undefined
+      ? compositeCollapse.resolveState(directiveUiId)
+      : undefined;
+  const collapsed = persisted ?? (compositeCollapse !== null ? defaultCollapsed : localCollapsed);
+  const setCollapsed = (next: boolean | ((prev: boolean) => boolean)): void => {
+    const resolved = typeof next === "function" ? next(collapsed) : next;
+    if (compositeCollapse !== null && directiveUiId !== undefined) {
+      compositeCollapse.toggle(directiveUiId, resolved);
+    } else {
+      setLocalCollapsed(resolved);
+    }
+  };
   const isTaggedString = taggedPolymorphicBase != null && taggedPolymorphicBase !== "";
   const { members, loaded: membersLoaded } = useTemplateMembers(
     value.compositeType,
-    true,
+    !collapsed,
     elementType,
     // Tagged-string composites: the modder's compositeType is a
     // discriminator (e.g. "SAY"), not a CLR type name. Pass the
@@ -517,9 +559,13 @@ export function CompositeEditor({
   // Whether this composite type has a working `from=` prototype lookup
   // on the server. Server-driven: types absent from the registry get no
   // from= input. The set is fetched once and cached for the editor session.
+  // Gated on !collapsed because the from= affordance only renders inside
+  // the expanded body, and the cached promise still wakes one setState
+  // per CompositeEditor instance otherwise.
   const fromLookupType = value.compositeType ?? elementType ?? "";
   const [supportedSet, setSupportedSet] = useState<ReadonlySet<string> | null>(null);
   useEffect(() => {
+    if (collapsed) return;
     if (!fromLookupType) return;
     let cancelled = false;
     void templatesPrototypeSupportedTypes().then((s) => {
@@ -528,7 +574,7 @@ export function CompositeEditor({
     return () => {
       cancelled = true;
     };
-  }, [fromLookupType]);
+  }, [collapsed, fromLookupType]);
   const prototypesSupported =
     fromLookupType !== "" &&
     supportedSet?.has(normaliseCompositeTypeShortName(fromLookupType)) === true;
@@ -651,19 +697,40 @@ export function CompositeEditor({
     subtypeChoices.length > 0 &&
     !!value.compositeType;
 
+  const toggleCollapsed = () => setCollapsed((c) => !c);
+
   return (
     <div className={styles.compositeBody}>
-      <div className={styles.compositeHeader}>
+      <div
+        className={styles.compositeHeader}
+        role="button"
+        tabIndex={0}
+        aria-expanded={!collapsed}
+        onClick={toggleCollapsed}
+        onKeyDown={onKeyActivate(toggleCollapsed)}
+        title={collapsed ? "Expand composite" : "Collapse composite"}
+      >
+        <span
+          className={`${styles.compositeExpander} ${collapsed ? "" : styles.compositeExpanderOpen}`}
+          aria-hidden
+        >
+          <ChevronDown size={10} />
+        </span>
         <span className={styles.compositeKind}>{isHandler ? "handler" : "composite"}</span>
         {canClearSubtype ? (
           // Clickable subtype chip — clicking clears compositeType + fields
           // and re-shows the picker. Hover restyles to telegraph the action;
           // a separate X button next to it tested poorly (small target, easy
           // to miss; modders kept clearing the input by accident instead).
+          // stopPropagation so the parent header's collapse-toggle handler
+          // doesn't fire on the same click.
           <button
             type="button"
             className={styles.compositeTypeClickable}
-            onClick={handleClearSubtype}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleClearSubtype();
+            }}
             title="Clear handler type (resets fields)"
           >
             {value.compositeType}
@@ -673,10 +740,24 @@ export function CompositeEditor({
             {value.compositeType ?? (isHandler ? "handler" : "composite")}
           </span>
         )}
-        {!isHandler &&
+        {collapsed && directives.length > 0 && (
+          <span className={styles.compositeCount}>
+            {directives.length} field{directives.length === 1 ? "" : "s"}
+          </span>
+        )}
+        {!collapsed &&
+          !isHandler &&
           prototypesSupported &&
           (fromInputVisible ? (
-            <div className={styles.setValue}>
+            // stopPropagation on the wrapping div so picker interactions
+            // (typing, clicking suggestions, the × clear button) don't
+            // bubble up to the compositeHeader's collapse toggle.
+            <div
+              className={styles.setValue}
+              role="presentation"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+            >
               <div className={styles.setInsertRow}>
                 <span className={styles.setInsertAt}>From</span>
                 <div className={styles.compositeFromCombo}>
@@ -693,7 +774,8 @@ export function CompositeEditor({
                 <button
                   type="button"
                   className={styles.compositeFromAdd}
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     const { compositeFrom: _drop, ...rest } = value;
                     onChange(rest);
                     setFromInputOpen(false);
@@ -712,35 +794,44 @@ export function CompositeEditor({
             <button
               type="button"
               className={styles.compositeFromAdd}
-              onClick={() => setFromInputOpen(true)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setFromInputOpen(true);
+              }}
               title="Inherit Inspector-baked defaults from an existing element"
             >
               + from
             </button>
           ))}
       </div>
-      {directives.map((d, di) => (
-        <DirectiveRow
-          key={d._uiId}
-          directive={d}
-          flatIndex={di}
-          memberMap={memberMap}
-          vanillaFields={vanillaSubFields}
-          reorder={reorder}
-          onChange={handleDirectiveChange}
-          onDelete={handleDirectiveDelete}
-        />
-      ))}
-      {reorder.showIndicatorAt(directives.length, null) && <div className={styles.dropIndicator} />}
-      <FieldAdder
-        members={members}
-        membersLoaded={membersLoaded}
-        existingFields={existingFieldNames}
-        targetTemplateType={compositeType}
-        onAdd={handleAddDirective}
-        onDrop={handleFieldDrop}
-        vanillaFields={vanillaSubFields}
-      />
+      {!collapsed && (
+        <>
+          {directives.map((d, di) => (
+            <DirectiveRow
+              key={d._uiId}
+              directive={d}
+              flatIndex={di}
+              memberMap={memberMap}
+              vanillaFields={vanillaSubFields}
+              reorder={reorder}
+              onChange={handleDirectiveChange}
+              onDelete={handleDirectiveDelete}
+            />
+          ))}
+          {reorder.showIndicatorAt(directives.length, null) && (
+            <div className={styles.dropIndicator} />
+          )}
+          <FieldAdder
+            members={members}
+            membersLoaded={membersLoaded}
+            existingFields={existingFieldNames}
+            targetTemplateType={compositeType}
+            onAdd={handleAddDirective}
+            onDrop={handleFieldDrop}
+            vanillaFields={vanillaSubFields}
+          />
+        </>
+      )}
     </div>
   );
 }

@@ -130,3 +130,39 @@ export const ConversationSourceContext = createContext<string | null>(null);
 export function useConversationSource(): string | null {
   return use(ConversationSourceContext);
 }
+
+/**
+ * Ref to the editor's outer scroll container. Provided by
+ * `TemplateVisualEditor` on its root `.root` div; consumed by row
+ * virtualisers (DirectiveBody) so they can wire up TanStack Virtual to
+ * the real scroll element without each level having to thread a
+ * scrollContainerRef prop through every wrapper. Null outside the
+ * editor (the consumer falls back to no virtualisation in that case).
+ */
+export const EditorScrollContainerContext =
+  createContext<React.RefObject<HTMLDivElement | null> | null>(null);
+
+export function useEditorScrollContainer(): React.RefObject<HTMLDivElement | null> | null {
+  return use(EditorScrollContainerContext);
+}
+
+/**
+ * Provided by the editor so deeply-nested CompositeEditors can read and
+ * mutate their persisted collapse state without threading callbacks down
+ * the tree. `resolveState(directiveUiId)` returns the explicit persisted
+ * state (true=collapsed, false=expanded) or undefined when the modder
+ * hasn't toggled this composite — the caller then falls back to the
+ * content-based default (collapsed when populated). `toggle` flips the
+ * stored state, optimistically lifting it into the editor's persisted
+ * map. Null outside the editor; callers fall back to local React state.
+ */
+export interface CompositeCollapseControl {
+  readonly resolveState: (directiveUiId: string) => boolean | undefined;
+  readonly toggle: (directiveUiId: string, nextState: boolean) => void;
+}
+
+export const CompositeCollapseContext = createContext<CompositeCollapseControl | null>(null);
+
+export function useCompositeCollapse(): CompositeCollapseControl | null {
+  return use(CompositeCollapseContext);
+}

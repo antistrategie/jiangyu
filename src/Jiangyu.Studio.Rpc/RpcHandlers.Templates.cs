@@ -402,20 +402,34 @@ public static partial class RpcHandlers
                         if (a.Name != null && a.BankId.HasValue)
                             bankPairs.Add(new KeyValuePair<string, int>(a.Name, a.BankId.Value));
                     }
-                    // Mod-defined SoundBank clones declared in this same
-                    // KDL file: surface their cloneId → FNV(cloneId) so
-                    // cross-references inside the same document (a SAY's
-                    // Sound.bankId pointing at a SoundBank cloned a few
-                    // lines up) resolve at editor-parse time. Mirrors
-                    // CompilationService's pre-validation install.
+                    // Mod-defined SoundBank clones: surface their
+                    // cloneId → FNV(cloneId) so cross-references resolve
+                    // at editor-parse time. Mirrors CompilationService's
+                    // pre-validation install, which aggregates every
+                    // templates/*.kdl in one pass. Editor-parse has to
+                    // walk those files itself because the RPC sees only
+                    // the document being edited; without the project
+                    // scan, a squad_leader patch referencing a
+                    // voicelines.kdl SoundBank clone gets a spurious
+                    // "no SoundBank named …" error every keystroke.
+                    var seenBankNames = new HashSet<string>(StringComparer.Ordinal);
+                    void AddBankClone(string name)
+                    {
+                        if (string.IsNullOrEmpty(name)) return;
+                        if (!seenBankNames.Add(name)) return;
+                        bankPairs.Add(new KeyValuePair<string, int>(
+                            name, HashableIdFieldRegistry.Fnv1a32(name)));
+                    }
                     foreach (var node in document.Nodes)
                     {
                         if (node.Kind != KdlEditorNodeKind.Clone) continue;
                         if (!string.Equals(node.TemplateType, "SoundBank", StringComparison.Ordinal)) continue;
-                        if (string.IsNullOrEmpty(node.CloneId)) continue;
-                        bankPairs.Add(new KeyValuePair<string, int>(
-                            node.CloneId,
-                            HashableIdFieldRegistry.Fnv1a32(node.CloneId)));
+                        AddBankClone(node.CloneId ?? string.Empty);
+                    }
+                    foreach (var clone in EnumerateProjectClones())
+                    {
+                        if (!string.Equals(clone.TemplateType, "SoundBank", StringComparison.Ordinal)) continue;
+                        AddBankClone(clone.Id);
                     }
                     HashableIdFieldRegistry.InstallBankIdResolver(new InMemoryBankIdResolver(bankPairs));
                 }
@@ -454,42 +468,113 @@ public static partial class RpcHandlers
         "List template clones already defined in the current project's templates/*.kdl files. Returns {\"clones\": [{\"templateType\", \"id\", \"file\"}, ...]}.")]
     internal static JsonElement TemplatesProjectClones(JsonElement? __)
     {
+        return JsonSerializer.SerializeToElement(new { clones = EnumerateProjectClones() });
+    }
+
+    // Per-file clone cache for EnumerateProjectClones. Keyed by absolute
+    // path → (mtime, parsed clones from that file). Each call stats every
+    // KDL file under templates/ and only re-parses the files whose mtime
+    // has shifted. Cuts the per-RPC cost from "parse every .kdl on every
+    // keystroke" down to "stat every .kdl, parse only what changed".
+    //
+    // Concurrency: single lock around dict ops + parses. The dispatch
+    // path is already single-threaded per WebView, and parses are short
+    // relative to the editor's debounce, so contention is low. If
+    // multiple Mcp clients ever hammer this in parallel, split the lock
+    // (identify stale paths under lock, parse outside, reinsert under
+    // lock with a TOCTOU re-check).
+    private static readonly Dictionary<string, (DateTime MTime, List<ProjectCloneEntry> Entries)>
+        _projectCloneCache = new(StringComparer.Ordinal);
+    private static readonly object _projectCloneCacheLock = new();
+    private static string? _projectCloneCacheRoot;
+
+    /// <summary>
+    /// Scan the active project's <c>templates/*.kdl</c> tree and surface every
+    /// clone declaration as a <see cref="ProjectCloneEntry"/>. Returns an empty
+    /// list when no project is open or no templates directory exists. Used by
+    /// <see cref="TemplatesProjectClones"/> to feed the FieldAdder's clone
+    /// dropdown and by <see cref="TemplatesParse"/> to broaden the BankId
+    /// resolver beyond the document being edited so cross-file references like
+    /// a squad_leader patch's <c>Stem.ID.bankId="tactical_barks_voymastina_va"</c>
+    /// resolve against the voicelines.kdl clone that defines that bank.
+    ///
+    /// Caches per-file by mtime; opening a different project clears the
+    /// cache entirely, deletions evict stale entries each scan.
+    /// </summary>
+    private static List<ProjectCloneEntry> EnumerateProjectClones()
+    {
         var root = RpcContext.ProjectRoot;
-        if (root is null)
-            return JsonSerializer.SerializeToElement(new { clones = Array.Empty<object>() });
+        if (root is null) return new List<ProjectCloneEntry>();
 
         var templatesDir = Path.Combine(root, "templates");
-        if (!Directory.Exists(templatesDir))
-            return JsonSerializer.SerializeToElement(new { clones = Array.Empty<object>() });
+        if (!Directory.Exists(templatesDir)) return new List<ProjectCloneEntry>();
 
         var results = new List<ProjectCloneEntry>();
-        foreach (var file in Directory.EnumerateFiles(templatesDir, "*.kdl", SearchOption.AllDirectories))
+        var seenPaths = new HashSet<string>(StringComparer.Ordinal);
+
+        lock (_projectCloneCacheLock)
         {
-            try
+            // Project switched: drop all cached parses. Paths from the
+            // previous project would never match the new templates/
+            // scan but would still occupy memory if we kept them.
+            if (!string.Equals(_projectCloneCacheRoot, root, StringComparison.Ordinal))
             {
-                var text = File.ReadAllText(file);
-                var doc = KdlTemplateParser.ParseText(text);
-                var relativePath = Path.GetRelativePath(root, file).Replace('\\', '/');
-                foreach (var node in doc.Nodes)
+                _projectCloneCache.Clear();
+                _projectCloneCacheRoot = root;
+            }
+
+            foreach (var file in Directory.EnumerateFiles(templatesDir, "*.kdl", SearchOption.AllDirectories))
+            {
+                seenPaths.Add(file);
+                DateTime mtime;
+                try { mtime = File.GetLastWriteTimeUtc(file); }
+                catch { continue; }
+
+                if (_projectCloneCache.TryGetValue(file, out var cached) && cached.MTime == mtime)
                 {
-                    if (node.Kind == KdlEditorNodeKind.Clone && !string.IsNullOrEmpty(node.CloneId))
+                    results.AddRange(cached.Entries);
+                    continue;
+                }
+
+                var entries = new List<ProjectCloneEntry>();
+                try
+                {
+                    var text = File.ReadAllText(file);
+                    var doc = KdlTemplateParser.ParseText(text);
+                    var relativePath = Path.GetRelativePath(root, file).Replace('\\', '/');
+                    foreach (var node in doc.Nodes)
                     {
-                        results.Add(new ProjectCloneEntry
+                        if (node.Kind == KdlEditorNodeKind.Clone && !string.IsNullOrEmpty(node.CloneId))
                         {
-                            TemplateType = node.TemplateType,
-                            Id = node.CloneId,
-                            File = relativePath,
-                        });
+                            entries.Add(new ProjectCloneEntry
+                            {
+                                TemplateType = node.TemplateType,
+                                Id = node.CloneId,
+                                File = relativePath,
+                            });
+                        }
                     }
                 }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"EnumerateProjectClones: failed to parse '{file}': {ex.Message}");
+                }
+
+                _projectCloneCache[file] = (mtime, entries);
+                results.AddRange(entries);
             }
-            catch (Exception ex)
+
+            // Evict cache entries for files that no longer exist in the
+            // scan (deleted, renamed). Keeps the dict bounded by the
+            // actual templates/ tree rather than monotonically growing.
+            if (_projectCloneCache.Count > seenPaths.Count)
             {
-                Console.Error.WriteLine($"templatesProjectClones: failed to parse '{file}': {ex.Message}");
+                var stale = _projectCloneCache.Keys.Where(k => !seenPaths.Contains(k)).ToList();
+                foreach (var path in stale) _projectCloneCache.Remove(path);
             }
         }
 
-        return JsonSerializer.SerializeToElement(new { clones = results });
+        return results;
     }
 
     [McpTool("jiangyu_templates_enum_members",

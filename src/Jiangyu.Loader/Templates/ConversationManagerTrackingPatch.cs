@@ -1,6 +1,5 @@
 using System.Reflection;
 using HarmonyLib;
-using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using Jiangyu.Loader.Runtime.Patching;
 using MelonLoader;
@@ -61,9 +60,11 @@ internal sealed class ConversationManagerTrackingPatch : IHarmonyPatchModule
 
         try
         {
-            harmony.Patch(target, prefix: new HarmonyMethod(
-                typeof(ConversationManagerTrackingPatch),
-                nameof(ManagerMethodPrefix)));
+            harmony.Patch(
+                target,
+                prefix: new HarmonyMethod(
+                    typeof(ConversationManagerTrackingPatch),
+                    nameof(ManagerMethodPrefix)));
             _log.Msg($"Conversation manager tracking: prefix installed on {BaseManagerTypeName}.{GetAvailableMethodName}.");
         }
         catch (Exception ex)

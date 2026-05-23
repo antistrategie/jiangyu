@@ -115,6 +115,20 @@ internal static class ConversationManagerRegistry
                 return;
             }
 
+            // UnityEngine.Object.Instantiate on a ConversationTemplate
+            // shallow-copies the Roles List<Role>. Even after the loader's
+            // container-deep-copy gives the clone its own list instance, each
+            // Role element inside is still the same object as the source
+            // template's Role. Modder-side patches that descend into a Role
+            // (`set "Roles" index=N { ... }`) and replace its
+            // m_SerializedRequirements entries mutate the source's Role in
+            // place. After patches, both clone and source point at the same
+            // mutated Role with the new tag — vanilla sy's click_bark now
+            // requires "voymastina" tag and stops firing for sy. Replace
+            // each Role on the clone with a fresh Role carrying field-level
+            // copies so subsequent patches stay on the clone.
+            DeepCopyRoles(typedClone, cloneType);
+
             // KDL patches mutate m_SerializedRequirements on Roles and
             // m_SerializedNodes on Nodes. Each of those serialised string
             // lists has a typed counterpart (Requirements / m_Nodes) that the
@@ -125,17 +139,26 @@ internal static class ConversationManagerRegistry
             // OnAfterDeserialize on the relevant sub-objects to rebuild.
             RefreshConversationTemplateTypedState(typedClone, cloneType);
 
-            // We only update the per-trigger bucket dictionary, not the
-            // m_ConversationTemplates master array. The matcher's hot path
-            // (GetAvailableConversationTemplates) iterates the bucket dict;
-            // the master array is a construction-time snapshot used to
-            // build the dict, not consulted at trigger time. Replacing it
-            // post-construction risks subtle type/state mismatches in the
-            // Il2CppReferenceArray that break unrelated matcher reads.
-            //
-            // Walk the clone's Triggers list, adding it to the per-trigger
-            // bucket for each. Managers index by trigger so the matcher's
-            // GetAvailableConversationTemplates(trigger) finds us.
+            // Vanilla MENACE only places Active=True conversations into the
+            // per-trigger bucket. Inherit that behaviour: if the clone's
+            // Active flag is false (inherited from a vanilla template that
+            // was disabled at game-design time), keep it out of the bucket
+            // so the bark dispatcher's random-tie pick doesn't include it.
+            var activeProp = cloneType.GetProperty("Active", BindingFlags.Public | BindingFlags.Instance);
+            if (activeProp != null)
+            {
+                var raw = activeProp.GetValue(typedClone);
+                var isActive = raw is bool b && b;
+                if (!isActive)
+                {
+                    _log?.Msg(
+                        $"  Conversation clone injection: clone is Active=False; skipped (matches vanilla bucket population).");
+                    return;
+                }
+            }
+
+            // Add to the per-trigger bucket dictionary so the matcher's hot
+            // path (GetAvailableConversationTemplates) finds the clone.
             var triggers = ReadEnumIntListOnType(clone, cloneType, "Triggers");
             if (triggers == null || triggers.Count == 0)
             {
@@ -151,12 +174,69 @@ internal static class ConversationManagerRegistry
                     bucketsAdded++;
             }
 
+            // Also append to m_ConversationTemplates master array. MENACE's
+            // dispatch picks click_bark deterministically for vanilla sy but
+            // cycles through all eligibles when only the per-trigger bucket
+            // is updated. The master array is the canonical "all known
+            // conversations" list. Bucket-only entries get a different
+            // selection treatment; only entries present in the master array
+            // participate in the deterministic pick.
+            var masterAdded = TryAppendToMasterArray(manager, managerType, typedClone);
+
             _log?.Msg(
-                $"  Conversation clone injection: into {managerType.FullName} (ConversationType={cloneConversationType}, {bucketsAdded}/{triggers.Count} bucket(s) updated).");
+                $"  Conversation clone injection: into {managerType.FullName} (ConversationType={cloneConversationType}, "
+                + $"{bucketsAdded}/{triggers.Count} bucket(s) updated, masterArrayAdded={masterAdded}).");
         }
         catch (Exception ex)
         {
             _log?.Warning($"  Conversation clone injection failed for {manager?.GetType().FullName}: {ex.InnerException?.Message ?? ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Append a clone to the manager's <c>m_ConversationTemplates</c> master
+    /// array. Il2CppReferenceArray&lt;T&gt; is fixed-size, so we rebuild it
+    /// length+1 with the new element at the end and write it back.
+    /// </summary>
+    private static bool TryAppendToMasterArray(
+        Il2CppObjectBase manager, Type managerType, object clone)
+    {
+        var prop = managerType.GetProperty("m_ConversationTemplates",
+            BindingFlags.Public | BindingFlags.Instance);
+        if (prop == null || !prop.CanRead || !prop.CanWrite)
+        {
+            _log?.Warning("  Conversation clone injection: m_ConversationTemplates not readable/writable.");
+            return false;
+        }
+
+        var array = prop.GetValue(manager);
+        if (array == null)
+        {
+            _log?.Warning("  Conversation clone injection: m_ConversationTemplates is null.");
+            return false;
+        }
+
+        var arrayType = array.GetType();
+        var elementType = Il2CppCollectionReflection.GetArrayElementType(arrayType);
+        if (elementType == null)
+        {
+            _log?.Warning(
+                $"  Conversation clone injection: m_ConversationTemplates is {arrayType.FullName}, expected Il2CppReferenceArray.");
+            return false;
+        }
+
+        if (!Il2CppCollectionReflection.TryRebuildReferenceArray(
+                array, arrayType, elementType, appendedElement: clone, out var newArray, out var error))
+        {
+            _log?.Warning($"  Conversation clone injection: master-array rebuild failed: {error}");
+            return false;
+        }
+
+        try { prop.SetValue(manager, newArray); return true; }
+        catch (Exception ex)
+        {
+            _log?.Warning($"  Conversation clone injection: writing master array threw: {ex.Message}");
+            return false;
         }
     }
 
@@ -285,6 +365,58 @@ internal static class ConversationManagerRegistry
             result.Add(Convert.ToInt32(indexer.GetValue(list, args)));
         }
         return result;
+    }
+
+    /// <summary>
+    /// Replace each Role in the clone's Roles list with a fresh Role that
+    /// carries field-level copies of the source Role's values. After this,
+    /// modder-side patches that descend into Roles[i] mutate the clone's
+    /// Role, not the source's. The m_SerializedRequirements list is also
+    /// reallocated to a fresh List&lt;string&gt; with the same string entries
+    /// so per-index replacements stay on the clone.
+    /// </summary>
+    private static void DeepCopyRoles(object typedClone, Type cloneType)
+    {
+        try
+        {
+            var rolesProp = cloneType.GetProperty("Roles", BindingFlags.Public | BindingFlags.Instance);
+            if (rolesProp == null || !rolesProp.CanRead) return;
+            var roles = rolesProp.GetValue(typedClone);
+            if (roles == null) return;
+
+            var rolesType = roles.GetType();
+            var countProp = rolesType.GetProperty("Count", BindingFlags.Public | BindingFlags.Instance);
+            var indexer = rolesType.GetProperty("Item", BindingFlags.Public | BindingFlags.Instance);
+            var setItem = indexer != null
+                ? indexer.GetSetMethod()
+                : null;
+            if (countProp == null || indexer == null || setItem == null) return;
+
+            var count = (int)countProp.GetValue(roles);
+            if (count == 0) return;
+
+            // Element type via the list's generic arg.
+            var elementType = rolesType.IsGenericType
+                ? rolesType.GenericTypeArguments[0]
+                : null;
+            if (elementType == null) return;
+
+            var readArgs = new object[1];
+            for (var i = 0; i < count; i++)
+            {
+                readArgs[0] = i;
+                var sourceRole = indexer.GetValue(roles, readArgs);
+                if (sourceRole == null) continue;
+                var freshRole = TemplateCloneApplier.CloneValueObjectByFieldReflection(
+                    sourceRole, elementType, "Conversation clone Role copy", _log);
+                if (freshRole == null) continue;
+                setItem.Invoke(roles, new[] { i, freshRole });
+            }
+        }
+        catch (Exception ex)
+        {
+            _log?.Warning($"  Conversation clone DeepCopyRoles threw: {ex.InnerException?.Message ?? ex.Message}");
+        }
     }
 
     private static void RefreshConversationTemplateTypedState(object typedClone, Type cloneType)

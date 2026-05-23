@@ -12,10 +12,13 @@ import styles from "./TemplateVisualEditor.module.css";
 import { stripUiIds, type StampedNode } from "./helpers";
 import { useDragReorder } from "./hooks";
 import {
+  CompositeCollapseContext,
   ConversationSourceContext,
   EditorDispatchContext,
+  EditorScrollContainerContext,
   NodeIndexContext,
   editorReducer,
+  type CompositeCollapseControl,
   type EditorAction,
 } from "./store";
 import { uiId, stampNodes } from "./shared/uiId";
@@ -27,10 +30,14 @@ import {
 import { NodeCard } from "./cards/NodeCard";
 import { BindingCard } from "./cards/BindingCard";
 import {
+  computeCompositeKeyByUiId,
   computeNodeKeyByUiId,
   loadCollapsed,
+  loadCompositeCollapse,
   pruneCollapsed,
+  pruneCompositeCollapse,
   saveCollapsed,
+  saveCompositeCollapse,
 } from "./collapseStorage";
 
 // --- Main component ---
@@ -176,6 +183,22 @@ export function TemplateVisualEditor({
   // Stable structural key per node, recomputed each render. Toggle handlers
   // and per-card lookups translate uiId -> stableKey via this map.
   const keyByUiId = useMemo(() => computeNodeKeyByUiId(nodes), [nodes]);
+  // Stable composite key map: walks every composite-bearing directive in
+  // the tree and assigns a positional path key. Lifted here so the entire
+  // editor shares one map; CompositeEditor reads from context via
+  // directive._uiId rather than recomputing keys per render.
+  const compositeKeyByUiId = useMemo(
+    () => computeCompositeKeyByUiId(nodes, keyByUiId),
+    [nodes, keyByUiId],
+  );
+
+  // Persisted composite collapse map. Map<stableKey, explicitState>
+  // because the default state depends on content (collapsed when
+  // populated, expanded when empty); a presence-only set would conflate
+  // "default" with "explicitly expanded".
+  const [compositeCollapse, setCompositeCollapse] = useState<Map<string, boolean>>(() =>
+    loadCompositeCollapse(cacheKey),
+  );
 
   // When the active file changes (tab switch, file open), reload collapse
   // state from localStorage. React's recommended pattern for adjusting state
@@ -185,6 +208,7 @@ export function TemplateVisualEditor({
   if (prevCacheKey !== cacheKey) {
     setPrevCacheKey(cacheKey);
     setCollapsed(loadCollapsed(cacheKey));
+    setCompositeCollapse(loadCompositeCollapse(cacheKey));
   }
 
   // Intersect a candidate set with the current nodes' stable keys before
@@ -198,6 +222,32 @@ export function TemplateVisualEditor({
       setCollapsed(cleaned);
     },
     [cacheKey, keyByUiId],
+  );
+
+  // Composite-collapse control surface, threaded to CompositeEditor via
+  // context. Toggle materialises the explicit state into the persisted
+  // map (true=collapsed, false=expanded) so subsequent renders read the
+  // user's choice rather than recomputing from content. Same prune-on-
+  // persist pattern as node collapse to drop keys whose composite no
+  // longer exists.
+  const compositeCollapseControl = useMemo<CompositeCollapseControl>(
+    () => ({
+      resolveState: (uiId) => {
+        const key = compositeKeyByUiId.get(uiId);
+        if (key === undefined) return undefined;
+        return compositeCollapse.get(key);
+      },
+      toggle: (uiId, nextState) => {
+        const key = compositeKeyByUiId.get(uiId);
+        if (key === undefined) return;
+        const next = new Map(compositeCollapse);
+        next.set(key, nextState);
+        const cleaned = pruneCompositeCollapse(next, compositeKeyByUiId.values());
+        saveCompositeCollapse(cacheKey, cleaned);
+        setCompositeCollapse(cleaned);
+      },
+    }),
+    [compositeKeyByUiId, compositeCollapse, cacheKey],
   );
 
   const handleToggleCollapse = useCallback(
@@ -274,163 +324,183 @@ export function TemplateVisualEditor({
     [dispatch],
   );
 
+  // Scroll-container ref handed to descendant virtualisers via
+  // EditorScrollContainerContext. DirectiveBody uses it as TanStack
+  // Virtual's getScrollElement so the outer .root's scroll position
+  // drives row mounting for huge clones (voicelines.kdl: 374 directives).
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
   return (
     <EditorDispatchContext value={dispatch}>
-      <div className={styles.root}>
-        {rpcError && (
-          <div className={styles.parseError}>
-            <span className={styles.errorSummary}>RPC error: {rpcError}</span>
-            {onRequestSourceMode && (
-              <button type="button" className={styles.fallbackBtn} onClick={onRequestSourceMode}>
-                Switch to Source
-              </button>
+      <EditorScrollContainerContext value={scrollContainerRef}>
+        <CompositeCollapseContext value={compositeCollapseControl}>
+          <div className={styles.root} ref={scrollContainerRef}>
+            {rpcError && (
+              <div className={styles.parseError}>
+                <span className={styles.errorSummary}>RPC error: {rpcError}</span>
+                {onRequestSourceMode && (
+                  <button
+                    type="button"
+                    className={styles.fallbackBtn}
+                    onClick={onRequestSourceMode}
+                  >
+                    Switch to Source
+                  </button>
+                )}
+              </div>
             )}
-          </div>
-        )}
 
-        {parseErrors.length > 0 && (
-          <div className={styles.errorPanel}>
-            <div className={styles.parseError}>
-              <span className={styles.errorSummary}>
-                {parseErrors.length} parse error{parseErrors.length > 1 ? "s" : ""}
-              </span>
-              {onRequestSourceMode && (
-                <button type="button" className={styles.fallbackBtn} onClick={onRequestSourceMode}>
-                  Switch to Source
+            {parseErrors.length > 0 && (
+              <div className={styles.errorPanel}>
+                <div className={styles.parseError}>
+                  <span className={styles.errorSummary}>
+                    {parseErrors.length} parse error{parseErrors.length > 1 ? "s" : ""}
+                  </span>
+                  {onRequestSourceMode && (
+                    <button
+                      type="button"
+                      className={styles.fallbackBtn}
+                      onClick={onRequestSourceMode}
+                    >
+                      Switch to Source
+                    </button>
+                  )}
+                </div>
+                <div className={styles.errorList}>
+                  {parseErrors.map((err) => (
+                    <div key={`${err.line ?? "?"}:${err.message}`} className={styles.errorItem}>
+                      {err.line != null && (
+                        <span className={styles.errorLine}>line {err.line}</span>
+                      )}
+                      <span className={styles.errorMessage}>{err.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {nodes.length > 1 && (
+              <div className={styles.editorToolbar}>
+                <button
+                  type="button"
+                  className={styles.toolbarBtn}
+                  onClick={handleExpandAll}
+                  disabled={nodes.every((n) => !collapsed.has(keyByUiId.get(n._uiId) ?? ""))}
+                >
+                  Reverse collapse
                 </button>
-              )}
-            </div>
-            <div className={styles.errorList}>
-              {parseErrors.map((err) => (
-                <div key={`${err.line ?? "?"}:${err.message}`} className={styles.errorItem}>
-                  {err.line != null && <span className={styles.errorLine}>line {err.line}</span>}
-                  <span className={styles.errorMessage}>{err.message}</span>
+                <button
+                  type="button"
+                  className={styles.toolbarBtn}
+                  onClick={handleCollapseAll}
+                  disabled={nodes.every((n) => collapsed.has(keyByUiId.get(n._uiId) ?? ""))}
+                >
+                  Collapse all
+                </button>
+              </div>
+            )}
+
+            {nodes.map((node, ni) => {
+              const handlers = cardReorder.buildHandlers(node._uiId, ni, ni + 1);
+              // ConversationTemplate source for the role combobox: clones
+              // carry the from= source; patches operate on the live
+              // template, so the template id IS the source. Null for any
+              // non-conversation card so RoleGuid editors fall back to
+              // free text.
+              const conversationSource: string | null =
+                node.kind !== "Bind" && node.templateType === "ConversationTemplate"
+                  ? node.kind === "Clone"
+                    ? (node.sourceId ?? null)
+                    : (node.templateId ?? null)
+                  : null;
+              return (
+                <NodeIndexContext key={node._uiId} value={ni}>
+                  <ConversationSourceContext value={conversationSource}>
+                    {cardReorder.showIndicatorAt(ni, node._uiId) && (
+                      <div className={styles.dropIndicator} />
+                    )}
+                    {node.kind === "Bind" ? (
+                      <BindingCard
+                        node={node}
+                        isDragging={handlers.isDragging}
+                        onDragStart={handlers.onDragStart}
+                        onDragEnd={handlers.onDragEnd}
+                        onDragOverCard={handlers.onDragOver}
+                        onDropCard={handlers.onDrop}
+                      />
+                    ) : (
+                      <NodeCard
+                        node={node}
+                        collapsed={collapsed.has(keyByUiId.get(node._uiId) ?? "")}
+                        onToggleCollapse={handleToggleCollapse}
+                        isDragging={handlers.isDragging}
+                        onDragStart={handlers.onDragStart}
+                        onDragEnd={handlers.onDragEnd}
+                        onDragOverCard={handlers.onDragOver}
+                        onDropCard={handlers.onDrop}
+                      />
+                    )}
+                  </ConversationSourceContext>
+                </NodeIndexContext>
+              );
+            })}
+            {cardReorder.showIndicatorAt(nodes.length, null) && (
+              <div className={styles.dropIndicator} />
+            )}
+
+            {nodes.length === 0 && parseErrors.length === 0 && (
+              <div className={styles.empty}>
+                <span>No template nodes</span>
+                <span>Use the buttons below or drag a template from the browser</span>
+              </div>
+            )}
+
+            <div className={styles.addNodeArea}>
+              {(["Patch", "Clone"] as const).map((kind) => (
+                <div
+                  key={kind}
+                  className={`${styles.addNodeZone} ${bottomDragOver === kind ? styles.addNodeZoneDragOver : ""} ${bottomDragOver === "reject" ? styles.addNodeZoneDragReject : ""}`}
+                  onDragOver={(e) => {
+                    const types = e.dataTransfer.types;
+                    if (types.includes(INSTANCE_DRAG_TAG)) {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "copy";
+                      setBottomDragOver(kind);
+                    } else if (types.includes(MEMBER_DRAG_TAG)) {
+                      setBottomDragOver("reject");
+                    } else if (types.includes("text/plain")) {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "copy";
+                      setBottomDragOver(kind);
+                    }
+                  }}
+                  onDragLeave={() => setBottomDragOver(false)}
+                  onDrop={(e) => handleBottomDrop(kind, e)}
+                >
+                  <button
+                    type="button"
+                    className={styles.addNodeBtn}
+                    onClick={() => handleAddNode(kind)}
+                  >
+                    <Plus size={12} />
+                    Add {kind}
+                  </button>
                 </div>
               ))}
+              <div className={styles.addNodeZone}>
+                <button
+                  type="button"
+                  className={styles.addNodeBtn}
+                  onClick={() => handleAddNode("Bind")}
+                >
+                  <Plus size={12} />
+                  Add Bind
+                </button>
+              </div>
             </div>
           </div>
-        )}
-
-        {nodes.length > 1 && (
-          <div className={styles.editorToolbar}>
-            <button
-              type="button"
-              className={styles.toolbarBtn}
-              onClick={handleExpandAll}
-              disabled={nodes.every((n) => !collapsed.has(keyByUiId.get(n._uiId) ?? ""))}
-            >
-              Reverse collapse
-            </button>
-            <button
-              type="button"
-              className={styles.toolbarBtn}
-              onClick={handleCollapseAll}
-              disabled={nodes.every((n) => collapsed.has(keyByUiId.get(n._uiId) ?? ""))}
-            >
-              Collapse all
-            </button>
-          </div>
-        )}
-
-        {nodes.map((node, ni) => {
-          const handlers = cardReorder.buildHandlers(node._uiId, ni, ni + 1);
-          // ConversationTemplate source for the role combobox: clones
-          // carry the from= source; patches operate on the live
-          // template, so the template id IS the source. Null for any
-          // non-conversation card so RoleGuid editors fall back to
-          // free text.
-          const conversationSource: string | null =
-            node.kind !== "Bind" && node.templateType === "ConversationTemplate"
-              ? node.kind === "Clone"
-                ? (node.sourceId ?? null)
-                : (node.templateId ?? null)
-              : null;
-          return (
-            <NodeIndexContext key={node._uiId} value={ni}>
-              <ConversationSourceContext value={conversationSource}>
-                {cardReorder.showIndicatorAt(ni, node._uiId) && (
-                  <div className={styles.dropIndicator} />
-                )}
-                {node.kind === "Bind" ? (
-                  <BindingCard
-                    node={node}
-                    isDragging={handlers.isDragging}
-                    onDragStart={handlers.onDragStart}
-                    onDragEnd={handlers.onDragEnd}
-                    onDragOverCard={handlers.onDragOver}
-                    onDropCard={handlers.onDrop}
-                  />
-                ) : (
-                  <NodeCard
-                    node={node}
-                    collapsed={collapsed.has(keyByUiId.get(node._uiId) ?? "")}
-                    onToggleCollapse={handleToggleCollapse}
-                    isDragging={handlers.isDragging}
-                    onDragStart={handlers.onDragStart}
-                    onDragEnd={handlers.onDragEnd}
-                    onDragOverCard={handlers.onDragOver}
-                    onDropCard={handlers.onDrop}
-                  />
-                )}
-              </ConversationSourceContext>
-            </NodeIndexContext>
-          );
-        })}
-        {cardReorder.showIndicatorAt(nodes.length, null) && (
-          <div className={styles.dropIndicator} />
-        )}
-
-        {nodes.length === 0 && parseErrors.length === 0 && (
-          <div className={styles.empty}>
-            <span>No template nodes</span>
-            <span>Use the buttons below or drag a template from the browser</span>
-          </div>
-        )}
-
-        <div className={styles.addNodeArea}>
-          {(["Patch", "Clone"] as const).map((kind) => (
-            <div
-              key={kind}
-              className={`${styles.addNodeZone} ${bottomDragOver === kind ? styles.addNodeZoneDragOver : ""} ${bottomDragOver === "reject" ? styles.addNodeZoneDragReject : ""}`}
-              onDragOver={(e) => {
-                const types = e.dataTransfer.types;
-                if (types.includes(INSTANCE_DRAG_TAG)) {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "copy";
-                  setBottomDragOver(kind);
-                } else if (types.includes(MEMBER_DRAG_TAG)) {
-                  setBottomDragOver("reject");
-                } else if (types.includes("text/plain")) {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "copy";
-                  setBottomDragOver(kind);
-                }
-              }}
-              onDragLeave={() => setBottomDragOver(false)}
-              onDrop={(e) => handleBottomDrop(kind, e)}
-            >
-              <button
-                type="button"
-                className={styles.addNodeBtn}
-                onClick={() => handleAddNode(kind)}
-              >
-                <Plus size={12} />
-                Add {kind}
-              </button>
-            </div>
-          ))}
-          <div className={styles.addNodeZone}>
-            <button
-              type="button"
-              className={styles.addNodeBtn}
-              onClick={() => handleAddNode("Bind")}
-            >
-              <Plus size={12} />
-              Add Bind
-            </button>
-          </div>
-        </div>
-      </div>
+        </CompositeCollapseContext>
+      </EditorScrollContainerContext>
     </EditorDispatchContext>
   );
 }
