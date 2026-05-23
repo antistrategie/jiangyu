@@ -53,15 +53,6 @@ public sealed class ModManifest
     public List<CompiledTemplateClone>? TemplateClones { get; set; }
 
     /// <summary>
-    /// Modder-declared Jiangyu bindings (<c>bind "&lt;kind&gt;" ...</c>). Pure
-    /// metadata; the loader consumes them to wire cross-template runtime
-    /// behaviour without touching MENACE's template fields. Each entry has a
-    /// kind discriminator plus an attribute bag.
-    /// </summary>
-    [JsonPropertyName("templateBindings")]
-    public List<CompiledTemplateBinding>? TemplateBindings { get; set; }
-
-    /// <summary>
     /// Logical names (Unity Object.name) of GameObjects shipped as addition
     /// prefabs under <c>assets/additions/prefabs/&lt;name&gt;.bundle</c>. The
     /// loader uses this list to differentiate "bundled GameObject that should

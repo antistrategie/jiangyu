@@ -86,15 +86,7 @@ export interface EditorDirective {
   _uiId?: string;
 }
 
-export type EditorNodeKind = "Patch" | "Clone" | "Bind";
-
-/** One attribute on a Bind node, e.g. `leader="squad_leader.foo"`.
- *  Modelled as an ordered list rather than a dict so the visual editor
- *  can render fields in a stable source-matching order. */
-export interface EditorBindAttribute {
-  name: string;
-  value: string;
-}
+export type EditorNodeKind = "Patch" | "Clone";
 
 export interface EditorNode {
   kind: EditorNodeKind;
@@ -102,10 +94,6 @@ export interface EditorNode {
   templateId?: string;
   sourceId?: string;
   cloneId?: string;
-  /** Bind only: the binding kind, e.g. `leader_armor`. */
-  bindKind?: string;
-  /** Bind only: kind-specific attribute name/value pairs, source order. */
-  bindAttributes?: EditorBindAttribute[];
   directives: EditorDirective[];
   /** UI-only stable identity for drag/reorder. Not serialised. */
   _uiId?: string;

@@ -22,7 +22,6 @@ internal class ReplacementCoordinator
     private readonly TemplatePatchCatalog _templatePatches;
     private readonly TemplatePatchApplier _templatePatchApplier;
     private readonly TemplateCloneCatalog _templateClones;
-    private readonly TemplateBindingCatalog _templateBindings;
     private readonly TemplateCloneApplier _templateCloneApplier;
     private readonly LoaderHarmonyPatchInstaller _harmonyPatchInstaller;
     // Per-instance dedupe for the driven-prefab branch. DrivenPrefabReplacementManager
@@ -45,13 +44,11 @@ internal class ReplacementCoordinator
         _templatePatchApplier = new TemplatePatchApplier(_templatePatches, new ModAssetResolver(_catalog));
         _templateClones = new TemplateCloneCatalog();
         _templateCloneApplier = new TemplateCloneApplier(_templateClones);
-        _templateBindings = new TemplateBindingCatalog();
         _harmonyPatchInstaller = new LoaderHarmonyPatchInstaller(
             new IHarmonyPatchModule[]
             {
                 new TemplateCloneEarlyInjectionPatch(_templateCloneApplier),
                 new AudioReplacementPatch(_catalog.ReplacementAudioClips),
-                new RuntimeActorVisualRefreshPatch(_templateBindings),
                 new ConversationManagerTrackingPatch(),
             });
     }
@@ -65,7 +62,6 @@ internal class ReplacementCoordinator
         var summary = _catalog.LoadBundles(plan, log);
         _templateClones.Load(plan.LoadableMods, log);
         _templatePatches.Load(plan.LoadableMods, log);
-        _templateBindings.Load(plan.LoadableMods, log);
         return summary;
     }
 

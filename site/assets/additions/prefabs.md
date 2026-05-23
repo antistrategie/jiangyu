@@ -102,25 +102,30 @@ The category is **inferred** from the destination field's declared Unity type. `
 
 ### Soldier visual overrides on a specific cloned unit
 
-Patching an ArmorTemplate directly affects every unit wearing that armor. To swap visuals for a **specific cloned unit leader** without touching other units, declare a `bind "leader_armor"` directive linking the cloned `UnitLeaderTemplate` to a cloned `ArmorTemplate`:
+Patching an ArmorTemplate directly affects every unit wearing that armor. To give one cloned squad leader its own appearance, clone the armor with the new models, then point the cloned `EntityTemplate.Items[]` at the cloned armor so the unit equips it. `ArmorTemplate.SquadLeaderMode` controls whether the leader model comes from `SquadLeaderModel{Gender}{SkinColor}` (`Custom`), `SquadLeaderModelFixed` (`Fixed`), or `MaleModels[0]` / `FemaleModels[0]` (`SameAsOthers`).
 
 ```kdl
-clone "UnitLeaderTemplate" from="squad_leader.darby" id="squad_leader.darby_clone" {
-    set "InitialAttributes" index=4 20
-}
-
 clone "ArmorTemplate" from="armor.player_fatigues" id="armor.darby_clone" {
-    set "SquadLeaderModelFemaleBlack" asset="my_squad_leader_clone"
     clear "MaleModels"
     append "MaleModels" asset="my_squad_leader_clone"
     clear "FemaleModels"
     append "FemaleModels" asset="my_squad_leader_clone"
+    set "SquadLeaderMode" enum="SquadLeaderModelMode" "SameAsOthers"
 }
 
-bind "leader_armor" leader="squad_leader.darby_clone" armor="armor.darby_clone"
+clone "EntityTemplate" from="player_squad.darby" id="player_squad.darby_clone" {
+    clear "Items"
+    append "Items" ref="ItemTemplate" "armor.darby_clone"
+    append "Items" ref="ItemTemplate" "weapon.generic_carbine_tier1_spc"
+}
+
+clone "UnitLeaderTemplate" from="squad_leader.darby" id="squad_leader.darby_clone" {
+    set "InfantryUnitTemplate" "player_squad.darby_clone"
+    set "InitialAttributes" index=4 20
+}
 ```
 
-See [Bindings](/templates#bindings) for the full directive reference.
+To keep the cloned armor reserved for this unit, add an `OnlyEquipableBy` tag gate paired with a matching tag on `EntityTemplate.Tags`.
 
 ### Referencing vanilla game assets
 

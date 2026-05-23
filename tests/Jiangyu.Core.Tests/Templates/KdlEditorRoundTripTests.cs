@@ -1121,63 +1121,6 @@ public class KdlEditorRoundTripTests
     }
 
     [Fact]
-    public void BindNode_RoundTrips_PreservingKindAndAttributes()
-    {
-        // Bind directives survive parse → serialise → re-parse with kind
-        // and attribute order intact, so saving from the visual editor
-        // doesn't strip leader_armor (or any future kind) the way the
-        // older parse-only path did.
-        const string kdl =
-            "bind \"leader_armor\" leader=\"squad_leader.voymastina\" armor=\"armor.voymastina\"\n";
-
-        var doc = KdlTemplateParser.ParseText(kdl);
-        Assert.Empty(doc.Errors);
-        var node = Assert.Single(doc.Nodes);
-        Assert.Equal(KdlEditorNodeKind.Bind, node.Kind);
-        Assert.Equal("leader_armor", node.BindKind);
-        Assert.NotNull(node.BindAttributes);
-        Assert.Equal(2, node.BindAttributes!.Count);
-        Assert.Equal("leader", node.BindAttributes[0].Name);
-        Assert.Equal("squad_leader.voymastina", node.BindAttributes[0].Value);
-        Assert.Equal("armor", node.BindAttributes[1].Name);
-        Assert.Equal("armor.voymastina", node.BindAttributes[1].Value);
-
-        var text = KdlTemplateSerialiser.Serialise(doc);
-        Assert.Contains("bind \"leader_armor\"", text);
-        Assert.Contains("leader=\"squad_leader.voymastina\"", text);
-        Assert.Contains("armor=\"armor.voymastina\"", text);
-
-        var reparsed = KdlTemplateParser.ParseText(text);
-        Assert.Empty(reparsed.Errors);
-        var reNode = Assert.Single(reparsed.Nodes);
-        Assert.Equal(KdlEditorNodeKind.Bind, reNode.Kind);
-        Assert.Equal("leader_armor", reNode.BindKind);
-        Assert.Equal(2, reNode.BindAttributes!.Count);
-    }
-
-    [Fact]
-    public void BindNode_UnknownKind_LoadsForRoundTripDespiteCompilerNotKnowingIt()
-    {
-        // The editor accepts any non-empty kind so newer compiler kinds
-        // can still load through Studio without losing data on save.
-        // Validation of unknown kinds happens at compile time, not at
-        // edit time.
-        const string kdl =
-            "bind \"future_kind\" some_field=\"value_one\" other=\"value_two\"\n";
-
-        var doc = KdlTemplateParser.ParseText(kdl);
-        Assert.Empty(doc.Errors);
-        var node = Assert.Single(doc.Nodes);
-        Assert.Equal(KdlEditorNodeKind.Bind, node.Kind);
-        Assert.Equal("future_kind", node.BindKind);
-        Assert.Equal(2, node.BindAttributes!.Count);
-
-        var text = KdlTemplateSerialiser.Serialise(doc);
-        Assert.Contains("bind \"future_kind\"", text);
-        Assert.Contains("some_field=\"value_one\"", text);
-    }
-
-    [Fact]
     public void SingleLineString_StaysQuoted_NotTripleQuoted()
     {
         // Strings without newlines stay on the standard single-line form
@@ -1261,17 +1204,4 @@ public class KdlEditorRoundTripTests
         Assert.Equal(original, value!.String);
     }
 
-    [Fact]
-    public void BindNode_MissingKindArgument_Errors()
-    {
-        // The editor-document bind parser still requires the kind
-        // argument. Without it the node is rejected so the modder sees
-        // the typo rather than getting a silently-empty bind in Studio.
-        const string kdl = "bind\n";
-
-        var doc = KdlTemplateParser.ParseText(kdl);
-
-        Assert.NotEmpty(doc.Errors);
-        Assert.Empty(doc.Nodes);
-    }
 }

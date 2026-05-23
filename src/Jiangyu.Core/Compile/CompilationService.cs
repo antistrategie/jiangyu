@@ -178,7 +178,6 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         // after a slow build succeeded.
         List<CompiledTemplatePatch>? patchSource = null;
         List<CompiledTemplateClone>? cloneSource = null;
-        List<CompiledTemplateBinding>? bindingSource = null;
 
         phaseSw.Restart();
         if (hasKdlTemplates)
@@ -186,13 +185,9 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             var kdlResult = KdlTemplateParser.ParseAll(templatesDir, _log);
             if (kdlResult.ErrorCount > 0)
                 return Fail($"KDL template parsing failed with {kdlResult.ErrorCount} error(s). See errors above.");
-            var bindingsNote = kdlResult.Bindings.Count > 0
-                ? $", {kdlResult.Bindings.Count} binding(s)"
-                : string.Empty;
-            _log.Info($"  Parsed {kdlResult.Patches.Count} template patch(es) and {kdlResult.Clones.Count} clone(s){bindingsNote} from KDL.");
+            _log.Info($"  Parsed {kdlResult.Patches.Count} template patch(es) and {kdlResult.Clones.Count} clone(s) from KDL.");
             patchSource = kdlResult.Patches;
             cloneSource = kdlResult.Clones;
-            bindingSource = kdlResult.Bindings;
         }
 
         var templatePatchResult = TemplatePatchEmitter.Emit(patchSource, _log);
@@ -324,7 +319,6 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var compiledManifest = ModManifest.FromJson(manifest.ToJson());
         compiledManifest.TemplatePatches = templatePatchResult.Patches;
         compiledManifest.TemplateClones = templateCloneResult.Clones;
-        compiledManifest.TemplateBindings = bindingSource;
 
         await BuildUnityAdditionPrefabs(projectDir, unityBuildDir, unityEditorPath);
 

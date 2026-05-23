@@ -85,20 +85,6 @@ Collection-style edits compose without per-mod compatibility patches. Genuine sc
 
 Within a single project, `(templateType, templateId)` collisions remain a hard error at compile time (see [File layout](#file-layout)).
 
-## Bindings
-
-A `bind` block declares a runtime relationship between two existing templates that doesn't fit into a `set` on a template field.
-
-```kdl
-bind "leader_armor" leader="squad_leader.darby_clone" armor="armor.darby_clone"
-```
-
-The first positional argument is the binding **kind**. Each kind has its own required attribute set.
-
-| Kind            | Required attrs    | What it does                                                                                                                                                                                                                                       |
-| --------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `leader_armor`  | `leader`, `armor` | The named cloned `UnitLeaderTemplate` renders its elements using the named cloned `ArmorTemplate`'s `SquadLeaderModel{Gender}{SkinColor}` (the leader) or `MaleModels[0]` / `FemaleModels[0]` (the grunts). Swaps the visual for one specific cloned unit without affecting any other unit using the same vanilla armor. |
-
 ## Field paths
 
 Field paths navigate into nested members:

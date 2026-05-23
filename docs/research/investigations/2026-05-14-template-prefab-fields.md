@@ -329,84 +329,36 @@ Unity's 20-bone schema) in Unity Editor. Animations retarget automatically.
 Vehicles and turrets do not get this property and would need either an
 exact-skeleton match or a custom AnimatorController plus clips.
 
-## Visual override via `bind` directive
+## Soldier visual overrides
 
-### Why direct template patching doesn't work
+### Approach comparison
 
-Three approaches were tried before settling on the runtime override:
+Three approaches for swapping the visual on one specific cloned squad:
 
 1. **Patch the vanilla armor's models directly.** Setting
-   `armor.player_fatigues.SquadLeaderModelFemaleBlack = <X>` does change
+   `armor.player_fatigues.SquadLeaderModelFemaleBlack = <X>` changes
    the visual every female-black squad leader wearing fatigues renders
-   with. But it affects every such unit (vanilla Darby plus any cloned
-   Darby), so isolation to a specific unit clone is impossible.
-2. **Clone the armor and set its fields.** Cloning
-   `armor.player_fatigues_darby_jiangyu` and setting its models has no
-   runtime effect: the dispatch reads from the armor instance equipped
-   on the unit's `ItemContainer`, which the runtime sets to the shared
-   vanilla armor at spawn regardless of what the squad's
-   `EntityTemplate.Items[0]` points at.
-3. **Clone the EntityTemplate and redirect `UnitLeaderTemplate.InfantryUnitTemplate`.**
-   Each unit's `BaseUnitLeader.GetTemplate()` returns the
-   EntityTemplate, and the runtime does honour the redirect for
-   tactical-element spawning. But the strategy squad UI's leader-list
-   rendering walks `leader.GetTemplate() → Items[0]` for previews. When
-   that walk hits a cloned EntityTemplate whose Items[0] points at a
-   cloned armor with a non-soldier-shape model substituted, downstream
-   rendering code throws and the entire squad-slot list collapses to
-   empty squares. Even with a soldier-shape substitute the redirect
-   stays risky because any UI code consuming the cloned chain can fail
-   on subtle component differences.
-
-### The override mechanism
-
-The loader hooks `EntityVisuals.DetermineArmorPrefab` (the function
-MENACE's runtime calls to pick an element's visual prefab) and runs as
-a Harmony postfix. When the call's `_leaderTemplate` parameter is a
-modder-cloned `UnitLeaderTemplate` with an associated cloned
-`ArmorTemplate`, the postfix:
-
-1. Reads the model from the cloned armor's
-   `SquadLeaderModel{Gender}{SkinColor}` for element index 0 (the
-   leader), or `MaleModels[0]` / `FemaleModels[0]` for non-leader
-   indices (grunts).
-2. Replaces `__result` with the cloned armor's value.
-
-Everything else stays untouched. The cloned leader still uses the
-vanilla `InfantryUnitTemplate`, the vanilla `Items[]`, and the vanilla
-default armor. Only the visual dispatch is re-routed for that one
-leader template.
-
-### Binding declaration
-
-The association between a cloned `UnitLeaderTemplate` and the cloned
-`ArmorTemplate` is declared explicitly in KDL:
-
-```kdl
-bind "leader_armor" leader="squad_leader.darby_jiangyu_clone" armor="armor.player_fatigues_darby_jiangyu"
-```
-
-The `bind` directive is pure Jiangyu metadata. The compiler emits it
-into `jiangyu.json` under `templateBindings`; at runtime
-`TemplateBindingCatalog` loads it and
-`RuntimeActorVisualRefreshPatch.EnsureOverrideMap` builds the
-leader-name → cloned-armor map on first dispatch.
-
-### Strategy UI compatibility
-
-Because the vanilla template chain stays intact, the strategy squad UI
-walks structurally vanilla data for every leader (including the
-cloned one — its `InfantryUnitTemplate` is still vanilla
-`player_squad.darby`). The squad-slot list renders normally. The
-runtime override fires only at `EntityVisuals.DetermineArmorPrefab`,
-which the strategy UI invokes for the leader portrait but not for any
-slot-position-affecting computation. Substituting a soldier-shape
-prefab works for both tactical and strategy views; substituting a
-non-soldier-shape prefab (e.g. a static prop like
-`my_antenna`) still breaks the strategy UI's downstream consumers,
-which is why the recommended substitute is another vanilla soldier
-prefab (e.g. `el.local_forces_basic_soldier` or
-`civilian_worker_a_3`) or a modder-shipped soldier-shaped bundle.
+   with. Cannot isolate to a single unit clone.
+2. **Clone the armor and set its fields, leaving `EntityTemplate.Items[]`
+   untouched.** No runtime effect on its own: the dispatch reads from
+   the armor instance equipped on the unit's `ItemContainer`, which the
+   runtime sets to the shared vanilla armor at spawn regardless of what
+   the squad's `EntityTemplate.Items[0]` points at.
+3. **Clone the EntityTemplate too, point its `Items[]` at the cloned
+   armor, and point the cloned `UnitLeaderTemplate.InfantryUnitTemplate`
+   at the cloned EntityTemplate.** Each unit's
+   `BaseUnitLeader.GetTemplate()` returns the EntityTemplate, and the
+   runtime honours the redirect for tactical-element spawning and for
+   the visual dispatch via `EntityVisuals.DetermineArmorPrefab`. The
+   strategy squad UI walks `leader.GetTemplate() → Items[0]` for
+   previews; substituting a soldier-shape prefab is safe, but a
+   non-soldier-shape prefab (e.g. a static prop like `my_antenna`) can
+   break downstream consumers of the cloned chain. Recommended
+   substitute is another vanilla soldier prefab
+   (e.g. `el.local_forces_basic_soldier` or `civilian_worker_a_3`) or a
+   modder-shipped soldier-shaped bundle. Pair the cloned armor with an
+   `OnlyEquipableBy` tag gate and a matching tag on
+   `EntityTemplate.Tags` to keep it reserved for this unit.
 
 ### Vanilla asset references
 

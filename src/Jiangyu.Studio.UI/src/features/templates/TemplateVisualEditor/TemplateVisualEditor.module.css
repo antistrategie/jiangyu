@@ -86,11 +86,6 @@
   border-color: var(--jade-1);
 }
 
-.cardBadgeBind {
-  color: var(--gold-1, var(--fg-muted));
-  border-color: var(--gold-1, var(--fg-muted));
-}
-
 .cardType {
   font-family: var(--font-mono);
   font-size: var(--fs-sm);

@@ -28,9 +28,6 @@ public static class KdlTemplateSerialiser
                 case KdlEditorNodeKind.Clone:
                     WriteClone(sb, node);
                     break;
-                case KdlEditorNodeKind.Bind:
-                    WriteBind(sb, node);
-                    break;
             }
         }
 
@@ -69,20 +66,6 @@ public static class KdlTemplateSerialiser
         sb.AppendLine(" {");
         WriteDirectiveBlock(sb, node.Directives, indent: 1);
         sb.AppendLine("}");
-    }
-
-    private static void WriteBind(StringBuilder sb, KdlEditorNode node)
-    {
-        sb.Append($"bind \"{Esc(node.BindKind ?? "")}\"");
-        if (node.BindAttributes != null)
-        {
-            foreach (var attr in node.BindAttributes)
-            {
-                if (string.IsNullOrEmpty(attr.Name)) continue;
-                sb.Append($" {attr.Name}=\"{Esc(attr.Value)}\"");
-            }
-        }
-        sb.AppendLine();
     }
 
     /// <summary>

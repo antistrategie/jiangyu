@@ -28,7 +28,6 @@ import {
   invalidateProjectClonesCache,
 } from "./shared/rpcHelpers";
 import { NodeCard } from "./cards/NodeCard";
-import { BindingCard } from "./cards/BindingCard";
 import {
   computeCompositeKeyByUiId,
   computeNodeKeyByUiId,
@@ -271,7 +270,7 @@ export function TemplateVisualEditor({
   }, [keyByUiId, persistCollapsed]);
 
   const handleAddNode = useCallback(
-    (kind: "Patch" | "Clone" | "Bind") => {
+    (kind: "Patch" | "Clone") => {
       dispatch({
         type: "addNode",
         node: { kind, templateType: "", directives: [], _uiId: uiId() },
@@ -408,7 +407,7 @@ export function TemplateVisualEditor({
               // non-conversation card so RoleGuid editors fall back to
               // free text.
               const conversationSource: string | null =
-                node.kind !== "Bind" && node.templateType === "ConversationTemplate"
+                node.templateType === "ConversationTemplate"
                   ? node.kind === "Clone"
                     ? (node.sourceId ?? null)
                     : (node.templateId ?? null)
@@ -419,27 +418,16 @@ export function TemplateVisualEditor({
                     {cardReorder.showIndicatorAt(ni, node._uiId) && (
                       <div className={styles.dropIndicator} />
                     )}
-                    {node.kind === "Bind" ? (
-                      <BindingCard
-                        node={node}
-                        isDragging={handlers.isDragging}
-                        onDragStart={handlers.onDragStart}
-                        onDragEnd={handlers.onDragEnd}
-                        onDragOverCard={handlers.onDragOver}
-                        onDropCard={handlers.onDrop}
-                      />
-                    ) : (
-                      <NodeCard
-                        node={node}
-                        collapsed={collapsed.has(keyByUiId.get(node._uiId) ?? "")}
-                        onToggleCollapse={handleToggleCollapse}
-                        isDragging={handlers.isDragging}
-                        onDragStart={handlers.onDragStart}
-                        onDragEnd={handlers.onDragEnd}
-                        onDragOverCard={handlers.onDragOver}
-                        onDropCard={handlers.onDrop}
-                      />
-                    )}
+                    <NodeCard
+                      node={node}
+                      collapsed={collapsed.has(keyByUiId.get(node._uiId) ?? "")}
+                      onToggleCollapse={handleToggleCollapse}
+                      isDragging={handlers.isDragging}
+                      onDragStart={handlers.onDragStart}
+                      onDragEnd={handlers.onDragEnd}
+                      onDragOverCard={handlers.onDragOver}
+                      onDropCard={handlers.onDrop}
+                    />
                   </ConversationSourceContext>
                 </NodeIndexContext>
               );
@@ -487,16 +475,6 @@ export function TemplateVisualEditor({
                   </button>
                 </div>
               ))}
-              <div className={styles.addNodeZone}>
-                <button
-                  type="button"
-                  className={styles.addNodeBtn}
-                  onClick={() => handleAddNode("Bind")}
-                >
-                  <Plus size={12} />
-                  Add Bind
-                </button>
-              </div>
             </div>
           </div>
         </CompositeCollapseContext>
