@@ -188,6 +188,21 @@ namespace Jiangyu.Mod
                 if (importer == null)
                     continue;
 
+                // Force PCM + DecompressOnLoad: Vorbis transcoding smears
+                // transients on percussive content (gunshots, impacts).
+                if (importer is AudioImporter audioImporter)
+                {
+                    var settings = audioImporter.defaultSampleSettings;
+                    if (settings.compressionFormat != AudioCompressionFormat.PCM
+                        || settings.loadType != AudioClipLoadType.DecompressOnLoad)
+                    {
+                        settings.compressionFormat = AudioCompressionFormat.PCM;
+                        settings.loadType = AudioClipLoadType.DecompressOnLoad;
+                        audioImporter.defaultSampleSettings = settings;
+                        audioImporter.SaveAndReimport();
+                    }
+                }
+
                 importer.assetBundleName = bundleName;
                 assetPaths.Add(assetPath);
                 audioAssetCount++;

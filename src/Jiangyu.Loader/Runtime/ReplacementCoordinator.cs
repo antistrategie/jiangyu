@@ -50,6 +50,7 @@ internal class ReplacementCoordinator
                 new TemplateCloneEarlyInjectionPatch(_templateCloneApplier),
                 new AudioReplacementPatch(_catalog.ReplacementAudioClips),
                 new ConversationManagerTrackingPatch(),
+                new InventoryFilterPatch(),
             });
     }
 
