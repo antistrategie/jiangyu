@@ -34,6 +34,21 @@ namespace Jiangyu.Mod
             var outputPath = GetArg(args, "-outputPath");
             var diagnosticsPath = GetArg(args, "-diagnosticsPath");
             var bundleName = GetArg(args, "-bundleName") ?? "meshes";
+            var runPrefabs = string.Equals(GetArg(args, "-runPrefabs"), "true", StringComparison.OrdinalIgnoreCase);
+
+            // Co-locating the prefab pass with the mesh-replacement pass in
+            // one Unity batchmode session saves the second cold start (~5-8s
+            // on a Linux Editor) when a mod has both. The compile pipeline
+            // sets -runPrefabs true when both passes have work; the standalone
+            // BuildBundles entry still exists for prefab-only builds.
+            if (runPrefabs)
+            {
+                if (!BuildBundles.RunCore())
+                {
+                    EditorApplication.Exit(1);
+                    return;
+                }
+            }
 
             if (string.IsNullOrEmpty(meshDataPath) || string.IsNullOrEmpty(outputPath))
             {

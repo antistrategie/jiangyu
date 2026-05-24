@@ -82,7 +82,8 @@ internal static class MeshBundleUnityBuild
         string meshDataPath,
         string textureDataPath,
         string diagnosticsPath,
-        string? meshContractPath)
+        string? meshContractPath,
+        bool runPrefabs = false)
     {
         var modRoot = Path.GetFullPath(Path.Combine(userUnityDir, ".."));
         var logFile = Path.Combine(modRoot, ".jiangyu", "unity_build_mesh.log");
@@ -97,6 +98,12 @@ internal static class MeshBundleUnityBuild
         };
         if (!string.IsNullOrEmpty(meshContractPath))
             extra.Add(new("meshContractPath", meshContractPath));
+        // When set, BuildMeshReplacementBundle runs BuildBundles.RunCore()
+        // first in the same Unity batchmode session. CompilationService
+        // turns this on when a mod has both addition-prefab work and
+        // replacement-asset work, saving one Unity cold start.
+        if (runPrefabs)
+            extra.Add(new("runPrefabs", "true"));
 
         var result = await UnityBundleInvoker.InvokeAsync(new UnityBundleInvocation
         {

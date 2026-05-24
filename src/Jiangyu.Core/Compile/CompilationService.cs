@@ -368,13 +368,28 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         compiledManifest.TemplatePatches = templatePatchResult.Patches;
         compiledManifest.TemplateClones = templateCloneResult.Clones;
 
-        await BuildUnityAdditionPrefabs(projectDir, unityBuildDir, unityEditorPath);
+        // Detect the combined-Unity-pass case: a mod with both addition
+        // prefabs AND mesh-replacement work pays two cold starts today. When
+        // both have work we fold the prefab pass into the first Unity call
+        // of GlbMeshBundleCompiler.BuildAsync below (one launch instead of
+        // two); Stage runs after that returns. Otherwise the standalone
+        // BuildUnityAdditionPrefabs runs here as before.
+        var hasPrefabWork = AdditionPrefabStaging.ShouldInvokeUnityForPrefabs(projectDir);
+        var combinedUnityPass = hasPrefabWork && useRawGlbPipeline;
 
-        AdditionPrefabStaging.Stage(
-            sourceDirs: [Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Prefabs), unityBuildDir],
-            outputDir,
-            compiledManifest,
-            _log);
+        if (!combinedUnityPass)
+        {
+            await BuildUnityAdditionPrefabs(projectDir, unityBuildDir, unityEditorPath);
+            AdditionPrefabStaging.Stage(
+                sourceDirs: [Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Prefabs), unityBuildDir],
+                outputDir,
+                compiledManifest,
+                _log);
+        }
+        else
+        {
+            AdditionPrefabStaging.ClearStaleBuildOutput(unityBuildDir);
+        }
 
         // Template-only compile: no asset replacements, just emit the compiled manifest.
         if (totalCompileInputCount == 0)
@@ -407,7 +422,8 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                     replacementAudio,
                     gameDataPath,
                     targetMeshNamesByBundleMesh,
-                    _log);
+                    runPrefabs: combinedUnityPass,
+                    log: _log);
                 compiledManifest.Meshes = new Dictionary<string, MeshManifestEntry>(StringComparer.Ordinal);
                 foreach (var entry in replacementEntries)
                 {
@@ -434,6 +450,15 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 return Fail($"Direct mesh replacement pipeline failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
             }
             _log.Info($"  [timing] Asset bundle build: {phaseSw.Elapsed.TotalSeconds:F1}s");
+
+            if (combinedUnityPass)
+            {
+                AdditionPrefabStaging.Stage(
+                    sourceDirs: [Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Prefabs), unityBuildDir],
+                    outputDir,
+                    compiledManifest,
+                    _log);
+            }
         }
         else
         {

@@ -31,22 +31,32 @@ namespace Jiangyu.Mod
 
         public static void BuildAll()
         {
+            EditorApplication.Exit(RunCore() ? 0 : 1);
+        }
+
+        /// <summary>
+        /// Builds every prefab under Assets/Prefabs/ into its own AssetBundle.
+        /// Returns true on success (including the "no prefabs to build" case)
+        /// and false on a build error. Does not call EditorApplication.Exit so
+        /// the caller may chain additional passes in the same Unity batchmode
+        /// session.
+        /// </summary>
+        public static bool RunCore()
+        {
             if (Application.unityVersion != ExpectedUnityVersion)
             {
                 Debug.LogError(
                     "Jiangyu BuildBundles: Unity version mismatch. " +
                     "Expected " + ExpectedUnityVersion + ", got " + Application.unityVersion + ". " +
                     "Open this project in the matching Unity Editor before building.");
-                EditorApplication.Exit(1);
-                return;
+                return false;
             }
 
             var prefabGuids = AssetDatabase.FindAssets("t:Prefab", new[] { "Assets/Prefabs" });
             if (prefabGuids.Length == 0)
             {
                 Debug.LogWarning("Jiangyu BuildBundles: no prefabs found under Assets/Prefabs/. Nothing to build.");
-                EditorApplication.Exit(0);
-                return;
+                return true;
             }
 
             foreach (var guid in prefabGuids)
@@ -78,13 +88,12 @@ namespace Jiangyu.Mod
             if (manifest == null)
             {
                 Debug.LogError("Jiangyu BuildBundles: BuildAssetBundles returned null.");
-                EditorApplication.Exit(1);
-                return;
+                return false;
             }
 
             var built = manifest.GetAllAssetBundles();
             Debug.Log("Jiangyu BuildBundles: built " + built.Length + " bundle(s) into " + outputDir);
-            EditorApplication.Exit(0);
+            return true;
         }
     }
 }

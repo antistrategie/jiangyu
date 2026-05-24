@@ -117,6 +117,7 @@ public static class GlbMeshBundleCompiler
         IReadOnlyList<ImportedAudioAsset> directAudioAssets,
         string? gameDataPath,
         IReadOnlyDictionary<string, string> targetMeshNamesByBundleMesh,
+        bool runPrefabs = false,
         ILogSink? log = null)
     {
         try
@@ -171,8 +172,8 @@ public static class GlbMeshBundleCompiler
                 firstPassOutputPath = outputBundlePath + ".pass1";
 
             sw.Restart();
-            await MeshBundleUnityBuild.InvokeUnityBuildAsync(unityEditor, unityProjectDir, firstPassOutputPath, bundleName, meshDataPath, textureDataPath, diagnosticsPath, meshContractPath: null);
-            log?.Info($"  [timing] Unity pass 1: {sw.Elapsed.TotalSeconds:F1}s");
+            await MeshBundleUnityBuild.InvokeUnityBuildAsync(unityEditor, unityProjectDir, firstPassOutputPath, bundleName, meshDataPath, textureDataPath, diagnosticsPath, meshContractPath: null, runPrefabs: runPrefabs);
+            log?.Info($"  [timing] Unity pass 1: {sw.Elapsed.TotalSeconds:F1}s{(runPrefabs ? " (with prefab pass)" : "")}");
 
             if (needsSecondPass)
             {
