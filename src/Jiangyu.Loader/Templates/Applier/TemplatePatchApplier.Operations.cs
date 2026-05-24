@@ -127,22 +127,22 @@ internal sealed partial class TemplatePatchApplier
     // is 4 bytes. Reads back the cell after writing to verify the write
     // landed.
     private static ApplyOutcome TryApplyMdCellWrite(
-        object current, PathSegment terminal,
+        object current, string terminalName,
         string templateTypeName, string templateId, LoadedPatchOperation op,
         MelonLogger.Instance log)
     {
         if (op.Value is null)
         {
             log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                + $"multi-dim Set on '{terminal.Name}' has no value; the compiled patch is malformed.");
+                + $"multi-dim Set on '{terminalName}' has no value; the compiled patch is malformed.");
             return ApplyOutcome.ConversionFailed;
         }
 
         if (!Il2CppMdArrayAccessor.TryGetFieldArrayPointer(
-                current, terminal.Name, out var arrayPtr, out var lookupError))
+                current, terminalName, out var arrayPtr, out var lookupError))
         {
             log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                + $"native MD-array lookup for '{terminal.Name}' failed: {lookupError}");
+                + $"native MD-array lookup for '{terminalName}' failed: {lookupError}");
             return ApplyOutcome.MemberMissing;
         }
 
@@ -151,7 +151,7 @@ internal sealed partial class TemplatePatchApplier
                 arrayPtr, rank, out var dims, out var dimError))
         {
             log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                + $"native MD-array bounds read for '{terminal.Name}' failed: {dimError}");
+                + $"native MD-array bounds read for '{terminalName}' failed: {dimError}");
             return ApplyOutcome.MemberMissing;
         }
 
@@ -159,7 +159,7 @@ internal sealed partial class TemplatePatchApplier
                 op.IndexPath, dims, out var flatIndex, out var indexError))
         {
             log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                + $"cell {string.Join(",", op.IndexPath)} on '{terminal.Name}': {indexError}");
+                + $"cell {string.Join(",", op.IndexPath)} on '{terminalName}': {indexError}");
             return ApplyOutcome.MemberMissing;
         }
 
@@ -182,12 +182,12 @@ internal sealed partial class TemplatePatchApplier
                     {
                         log.Warning(FormatPrefix(templateTypeName, templateId, op)
                             + $"wrote {newByte} to cell {string.Join(",", op.IndexPath)} of "
-                            + $"'{terminal.Name}', read back {readback}: element size may be wrong.");
+                            + $"'{terminalName}', read back {readback}: element size may be wrong.");
                         return ApplyOutcome.Applied;
                     }
                     log.Msg(FormatPrefix(templateTypeName, templateId, op)
                         + $"set {string.Join(",", op.IndexPath)}={value.Boolean == true} on "
-                        + $"'{terminal.Name}' (native MD-array, dims={string.Join("x", dims)}).");
+                        + $"'{terminalName}' (native MD-array, dims={string.Join("x", dims)}).");
                     return ApplyOutcome.Applied;
                 }
 
@@ -200,11 +200,11 @@ internal sealed partial class TemplatePatchApplier
                     {
                         log.Warning(FormatPrefix(templateTypeName, templateId, op)
                             + $"wrote {newByte} to cell {string.Join(",", op.IndexPath)} of "
-                            + $"'{terminal.Name}', read back {readback}.");
+                            + $"'{terminalName}', read back {readback}.");
                         return ApplyOutcome.Applied;
                     }
                     log.Msg(FormatPrefix(templateTypeName, templateId, op)
-                        + $"set {string.Join(",", op.IndexPath)}=0x{newByte:X2} on '{terminal.Name}' "
+                        + $"set {string.Join(",", op.IndexPath)}=0x{newByte:X2} on '{terminalName}' "
                         + $"(native MD-array, dims={string.Join("x", dims)}).");
                     return ApplyOutcome.Applied;
                 }
@@ -218,12 +218,12 @@ internal sealed partial class TemplatePatchApplier
                     {
                         log.Warning(FormatPrefix(templateTypeName, templateId, op)
                             + $"wrote {newInt} to cell {string.Join(",", op.IndexPath)} of "
-                            + $"'{terminal.Name}', read back {readback}: element size may be wrong "
+                            + $"'{terminalName}', read back {readback}: element size may be wrong "
                             + "(byte-backed enum stored in 1 byte? Use kind=Byte instead).");
                         return ApplyOutcome.Applied;
                     }
                     log.Msg(FormatPrefix(templateTypeName, templateId, op)
-                        + $"set {string.Join(",", op.IndexPath)}={newInt} on '{terminal.Name}' "
+                        + $"set {string.Join(",", op.IndexPath)}={newInt} on '{terminalName}' "
                         + $"(native MD-array, dims={string.Join("x", dims)}).");
                     return ApplyOutcome.Applied;
                 }
@@ -231,7 +231,7 @@ internal sealed partial class TemplatePatchApplier
             default:
                 log.Warning(FormatPrefix(templateTypeName, templateId, op)
                     + $"native MD-array write doesn't yet handle value kind {value.Kind}; "
-                    + $"on '{terminal.Name}', cell {string.Join(",", op.IndexPath)} not applied.");
+                    + $"on '{terminalName}', cell {string.Join(",", op.IndexPath)} not applied.");
                 return ApplyOutcome.ConversionFailed;
         }
     }
@@ -244,7 +244,7 @@ internal sealed partial class TemplatePatchApplier
     // indexer, so the standard "readback last element" check doesn't
     // apply.
     private static ApplyOutcome TryApplyHashSetAdd(
-        object current, PathSegment terminal, object collection, Type collectionType,
+        object current, string terminalName, object collection, Type collectionType,
         string templateTypeName, string templateId, LoadedPatchOperation op,
         ModAssetResolver assetResolver, MelonLogger.Instance log)
     {
@@ -253,7 +253,7 @@ internal sealed partial class TemplatePatchApplier
         if (op.Value == null)
         {
             log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                + $"Append on HashSet '{terminal.Name}' has no value; the compiled patch is malformed.");
+                + $"Append on HashSet '{terminalName}' has no value; the compiled patch is malformed.");
             return ApplyOutcome.ConversionFailed;
         }
 
@@ -263,10 +263,10 @@ internal sealed partial class TemplatePatchApplier
             return ApplyOutcome.ConversionFailed;
         }
 
-        if (!TryGetWritableMember(current, terminal.Name, out _, out var fieldSetter, out _))
+        if (!TryGetWritableMember(current, terminalName, out _, out var fieldSetter, out _))
         {
             log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                + $"parent {current.GetType().FullName} has no writable '{terminal.Name}' for Append.");
+                + $"parent {current.GetType().FullName} has no writable '{terminalName}' for Append.");
             return ApplyOutcome.MemberMissing;
         }
 
@@ -317,11 +317,11 @@ internal sealed partial class TemplatePatchApplier
     // against; HashSet uses the type's own bool-returning Remove(T) and
     // logs whether the entry was actually present.
     private static ApplyOutcome TryApplyRemove(
-        object current, PathSegment terminal, string templateTypeName, string templateId,
+        object current, string terminalName, string templateTypeName, string templateId,
         LoadedPatchOperation op, ModAssetResolver assetResolver, MelonLogger.Instance log)
     {
         if (!TryResolveTerminalCollectionForMutation(
-                current, terminal, templateTypeName, templateId, op, "remove", log,
+                current, terminalName, templateTypeName, templateId, op, "remove", log,
                 out var collection, out var collectionType,
                 out var shape, out var elementType, out var fieldSetter,
                 out var outcome))
@@ -335,7 +335,7 @@ internal sealed partial class TemplatePatchApplier
             if (op.Value == null)
             {
                 log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                    + $"Remove on HashSet '{terminal.Name}' has no value; the compiled patch is malformed.");
+                    + $"Remove on HashSet '{terminalName}' has no value; the compiled patch is malformed.");
                 return ApplyOutcome.ConversionFailed;
             }
 
@@ -378,7 +378,7 @@ internal sealed partial class TemplatePatchApplier
 
         var removeIndex = op.Index
             ?? throw new InvalidOperationException(
-                $"Remove operation on '{terminal.Name}' has no Index; the compiled patch is malformed.");
+                $"Remove operation on '{terminalName}' has no Index; the compiled patch is malformed.");
 
         try
         {
@@ -415,11 +415,11 @@ internal sealed partial class TemplatePatchApplier
     // warns the modder rather than silently materialising an empty
     // collection.
     private static ApplyOutcome TryApplyClear(
-        object current, PathSegment terminal, string templateTypeName, string templateId,
+        object current, string terminalName, string templateTypeName, string templateId,
         LoadedPatchOperation op, MelonLogger.Instance log)
     {
         if (!TryResolveTerminalCollectionForMutation(
-                current, terminal, templateTypeName, templateId, op, "clear", log,
+                current, terminalName, templateTypeName, templateId, op, "clear", log,
                 out var collection, out var collectionType,
                 out var shape, out var elementType, out var fieldSetter,
                 out var outcome))

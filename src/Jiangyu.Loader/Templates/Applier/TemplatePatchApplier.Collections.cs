@@ -22,7 +22,7 @@ internal sealed partial class TemplatePatchApplier
     // populates all five outs. Removes ~50 lines of identical opener
     // boilerplate from the two op handlers that carry it.
     private static bool TryResolveTerminalCollectionForMutation(
-        object current, PathSegment terminal,
+        object current, string terminalName,
         string templateTypeName, string templateId, LoadedPatchOperation op,
         string opLabel, MelonLogger.Instance log,
         out object collection, out Type collectionType,
@@ -37,17 +37,17 @@ internal sealed partial class TemplatePatchApplier
         fieldSetter = null;
         outcome = ApplyOutcome.MemberMissing;
 
-        if (!TryReadMember(current, terminal.Name, out collection, out collectionType, out var readError))
+        if (!TryReadMember(current, terminalName, out collection, out collectionType, out var readError))
         {
             log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                + $"cannot read terminal collection '{terminal.Name}': {readError}");
+                + $"cannot read terminal collection '{terminalName}': {readError}");
             return false;
         }
 
         if (collection == null)
         {
             log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                + $"terminal collection '{terminal.Name}' ({collectionType.FullName}) is null; nothing to {opLabel}.");
+                + $"terminal collection '{terminalName}' ({collectionType.FullName}) is null; nothing to {opLabel}.");
             return false;
         }
 
@@ -58,10 +58,10 @@ internal sealed partial class TemplatePatchApplier
             return false;
         }
 
-        if (!TryGetWritableMember(current, terminal.Name, out _, out fieldSetter, out _))
+        if (!TryGetWritableMember(current, terminalName, out _, out fieldSetter, out _))
         {
             log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                + $"parent {current.GetType().FullName} has no writable '{terminal.Name}' for {opLabel}.");
+                + $"parent {current.GetType().FullName} has no writable '{terminalName}' for {opLabel}.");
             return false;
         }
 

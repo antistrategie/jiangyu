@@ -217,10 +217,7 @@ internal sealed partial class TemplatePatchApplier
             // bypasses the wrapper layer and writes the IL2CPP array memory
             // directly. Bouncing through the helper keeps the comment trail
             // (rationale, BepInEx tracker link) where it already lives.
-            var terminal = new PathSegment(fieldName, null);
-            var synthetic = new LoadedPatchOperation(
-                _op.Op, _op.FieldPath, _op.Index, _op.IndexPath, _op.Descent, _op.Value, _op.OwnerLabel);
-            var outcome = TryApplyMdCellWrite(parent, terminal, _templateTypeName, _templateId, synthetic, _log);
+            var outcome = TryApplyMdCellWrite(parent, fieldName, _templateTypeName, _templateId, _op, _log);
             error = null;
             return outcome switch
             {
@@ -245,8 +242,7 @@ internal sealed partial class TemplatePatchApplier
             // positional indexer so the readback contract doesn't apply.
             if (collection != null && IsHashSetType(collectionType))
             {
-                var terminal = new PathSegment(fieldName, null);
-                var outcome = TryApplyHashSetAdd(parent, terminal, collection, collectionType,
+                var outcome = TryApplyHashSetAdd(parent, fieldName, collection, collectionType,
                     _templateTypeName, _templateId, _op, _assetResolver, _log);
                 error = null;
                 return TranslateOutcome(outcome);
@@ -294,8 +290,7 @@ internal sealed partial class TemplatePatchApplier
         public OperationResult TryRemove(object parent, string fieldName, int? index, CompiledTemplateValue value, out string error)
         {
             _latestCurrent = parent;
-            var terminal = new PathSegment(fieldName, null);
-            var outcome = TryApplyRemove(parent, terminal, _templateTypeName, _templateId, _op, _assetResolver, _log);
+            var outcome = TryApplyRemove(parent, fieldName, _templateTypeName, _templateId, _op, _assetResolver, _log);
             error = null;
             return TranslateOutcome(outcome);
         }
@@ -303,8 +298,7 @@ internal sealed partial class TemplatePatchApplier
         public OperationResult TryClear(object parent, string fieldName, out string error)
         {
             _latestCurrent = parent;
-            var terminal = new PathSegment(fieldName, null);
-            var outcome = TryApplyClear(parent, terminal, _templateTypeName, _templateId, _op, _log);
+            var outcome = TryApplyClear(parent, fieldName, _templateTypeName, _templateId, _op, _log);
             error = null;
             return TranslateOutcome(outcome);
         }

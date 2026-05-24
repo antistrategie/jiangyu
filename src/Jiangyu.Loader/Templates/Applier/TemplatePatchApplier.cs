@@ -393,22 +393,6 @@ internal sealed partial class TemplatePatchApplier
         return string.IsNullOrWhiteSpace(id) ? typeName : $"{typeName} '{id}'";
     }
 
-    // One segment of a parsed dotted field path. Index is non-null when
-    // the segment carried a bracketed [N] indexer; the operations partial
-    // dispatches on it to either bind the array element or fall through
-    // to a plain member set.
-    private readonly struct PathSegment
-    {
-        public PathSegment(string name, int? index)
-        {
-            Name = name;
-            Index = index;
-        }
-
-        public string Name { get; }
-        public int? Index { get; }
-    }
-
     private enum ApplyOutcome
     {
         Applied,

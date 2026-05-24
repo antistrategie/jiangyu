@@ -17,37 +17,6 @@ internal sealed partial class TemplatePatchApplier
         public bool ValueIsStruct { get; set; }
     }
 
-    // The inner FieldPath is a dotted member path with no bracket indexers
-    // (descent and per-op element index live on Descent / Index fields, not
-    // in the path string). Empty segments would mean the path was malformed
-    // by something upstream; surface as an error rather than a silent skip.
-    private static bool TryParseInnerSegments(string fieldPath, out PathSegment[] segments, out string error)
-    {
-        var raw = fieldPath.Split('.');
-        segments = new PathSegment[raw.Length];
-        error = null;
-
-        for (var i = 0; i < raw.Length; i++)
-        {
-            var segment = raw[i];
-            if (string.IsNullOrEmpty(segment))
-            {
-                segments = null;
-                error = $"empty segment in fieldPath '{fieldPath}'.";
-                return false;
-            }
-            if (segment.Contains('['))
-            {
-                segments = null;
-                error = $"unexpected bracket indexer in inner fieldPath '{segment}'; descent uses Descent steps, element index uses op.Index.";
-                return false;
-            }
-            segments[i] = new PathSegment(segment, null);
-        }
-
-        return true;
-    }
-
     private static bool TryReadMember(
         object instance, string name, out object value, out Type memberType, out string error)
     {
