@@ -16,23 +16,23 @@ public class AgentProcessManagerTests : IDisposable
 
     public AgentProcessManagerTests()
     {
-        _savedUrl = AgentProcessManager.HttpMcpUrl;
-        _savedToken = AgentProcessManager.HttpMcpToken;
+        _savedUrl = McpServerConfigBuilder.HttpMcpUrl;
+        _savedToken = McpServerConfigBuilder.HttpMcpToken;
     }
 
     public void Dispose()
     {
-        AgentProcessManager.HttpMcpUrl = _savedUrl;
-        AgentProcessManager.HttpMcpToken = _savedToken;
+        McpServerConfigBuilder.HttpMcpUrl = _savedUrl;
+        McpServerConfigBuilder.HttpMcpToken = _savedToken;
     }
 
     [Fact]
     public void BuildMcpServerConfig_WithBothEndpoints_EmitsStdioAndHttpEntries()
     {
-        AgentProcessManager.HttpMcpUrl = "http://127.0.0.1:41697/mcp";
-        AgentProcessManager.HttpMcpToken = "abc123";
+        McpServerConfigBuilder.HttpMcpUrl = "http://127.0.0.1:41697/mcp";
+        McpServerConfigBuilder.HttpMcpToken = "abc123";
 
-        var configs = AgentProcessManager.BuildMcpServerConfig();
+        var configs = McpServerConfigBuilder.Build();
 
         var stdio = configs.SingleOrDefault(c => c.Type is null);
         Assert.NotNull(stdio);
@@ -56,10 +56,10 @@ public class AgentProcessManagerTests : IDisposable
     [Fact]
     public void BuildMcpServerConfig_AuthorizationHeaderCarriesBearerToken()
     {
-        AgentProcessManager.HttpMcpUrl = "http://127.0.0.1:41697/mcp";
-        AgentProcessManager.HttpMcpToken = "secret-token-xyz";
+        McpServerConfigBuilder.HttpMcpUrl = "http://127.0.0.1:41697/mcp";
+        McpServerConfigBuilder.HttpMcpToken = "secret-token-xyz";
 
-        var http = AgentProcessManager.BuildMcpServerConfig()
+        var http = McpServerConfigBuilder.Build()
             .Single(c => c.Type == "http");
 
         Assert.NotNull(http.Headers);
@@ -70,10 +70,10 @@ public class AgentProcessManagerTests : IDisposable
     [Fact]
     public void BuildMcpServerConfig_WithoutHttpEndpoint_OmitsHttpEntry()
     {
-        AgentProcessManager.HttpMcpUrl = null;
-        AgentProcessManager.HttpMcpToken = null;
+        McpServerConfigBuilder.HttpMcpUrl = null;
+        McpServerConfigBuilder.HttpMcpToken = null;
 
-        var configs = AgentProcessManager.BuildMcpServerConfig();
+        var configs = McpServerConfigBuilder.Build();
 
         Assert.DoesNotContain(configs, c => c.Type == "http");
         // stdio entry still emitted as long as the binary exists in the test
@@ -83,11 +83,11 @@ public class AgentProcessManagerTests : IDisposable
     [Fact]
     public void DescribeMcpServers_RedactsBearerToken()
     {
-        AgentProcessManager.HttpMcpUrl = "http://127.0.0.1:41697/mcp";
-        AgentProcessManager.HttpMcpToken = "should-not-appear-in-logs";
+        McpServerConfigBuilder.HttpMcpUrl = "http://127.0.0.1:41697/mcp";
+        McpServerConfigBuilder.HttpMcpToken = "should-not-appear-in-logs";
 
-        var configs = AgentProcessManager.BuildMcpServerConfig();
-        var rendered = AgentProcessManager.DescribeMcpServers(configs);
+        var configs = McpServerConfigBuilder.Build();
+        var rendered = McpServerConfigBuilder.Describe(configs);
 
         Assert.DoesNotContain("should-not-appear-in-logs", rendered);
         Assert.Contains("name=jiangyu", rendered);
@@ -106,9 +106,9 @@ public class AgentProcessManagerTests : IDisposable
     {
         // Precondition: no bundled bun in the test bin (we ship jiangyu-mcp
         // there but not bun; CI is the only place that bundles bun).
-        Assert.Null(AgentProcessManager.ResolveBundledBun());
+        Assert.Null(McpServerConfigBuilder.ResolveBundledBun());
 
-        var (command, args) = AgentProcessManager.ResolveLauncher("bunx", ["@anthropic/claude-acp", "--flag"]);
+        var (command, args) = McpServerConfigBuilder.ResolveLauncher("bunx", ["@anthropic/claude-acp", "--flag"]);
         Assert.Equal("bunx", command);
         Assert.Equal(["@anthropic/claude-acp", "--flag"], args);
     }
@@ -118,7 +118,7 @@ public class AgentProcessManagerTests : IDisposable
     {
         // Absolute paths to binary agents must never be rewritten,
         // regardless of whether a bundled bun exists.
-        var (command, args) = AgentProcessManager.ResolveLauncher("/usr/local/bin/some-agent", ["--port", "1234"]);
+        var (command, args) = McpServerConfigBuilder.ResolveLauncher("/usr/local/bin/some-agent", ["--port", "1234"]);
         Assert.Equal("/usr/local/bin/some-agent", command);
         Assert.Equal(["--port", "1234"], args);
     }
@@ -136,7 +136,7 @@ public class AgentProcessManagerTests : IDisposable
     [Fact]
     public void SiblingBinaryCandidates_ChecksProcessPathDirAndBaseDirectory()
     {
-        var paths = AgentProcessManager.SiblingBinaryCandidates("bun").ToList();
+        var paths = McpServerConfigBuilder.SiblingBinaryCandidates("bun").ToList();
 
         // AppContext.BaseDirectory is always a candidate (covers dev/test).
         Assert.Contains(Path.Combine(AppContext.BaseDirectory, "bin", "bun"), paths);

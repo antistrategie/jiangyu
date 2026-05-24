@@ -165,7 +165,7 @@ public static partial class RpcDispatcher
         // bun (when present) so modders without Node installed still get
         // a working agent. Falls through unchanged for binary agents and
         // for dev builds without the bundled binary.
-        var (resolvedCommand, resolvedArgs) = AgentProcessManager.ResolveLauncher(command, args);
+        var (resolvedCommand, resolvedArgs) = McpServerConfigBuilder.ResolveLauncher(command, args);
 
         // Run async so we don't block the InfiniFrame message loop while the
         // agent subprocess starts (bunx can take several seconds to resolve).

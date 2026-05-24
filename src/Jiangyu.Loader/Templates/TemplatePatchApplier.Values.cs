@@ -14,7 +14,8 @@ internal sealed partial class TemplatePatchApplier
 {
     private static bool TryConvertScalar(
         CompiledTemplateValue value, Type targetType, ModAssetResolver assetResolver, MelonLogger.Instance log,
-        out object converted, out string error)
+        out object converted, out string error,
+        object appendDestination = null)
     {
         if (value == null)
         {
@@ -158,10 +159,10 @@ internal sealed partial class TemplatePatchApplier
                 return true;
 
             case CompiledTemplateValueKind.Composite:
-                return TryConstructComposite(value.Composite, targetType, assetResolver, log, out converted, out error);
+                return TryConstructComposite(value.Composite, targetType, assetResolver, log, out converted, out error, appendDestination);
 
             case CompiledTemplateValueKind.HandlerConstruction:
-                return TryConstructHandler(value.HandlerConstruction, targetType, assetResolver, log, out converted, out error);
+                return TryConstructHandler(value.HandlerConstruction, targetType, assetResolver, log, out converted, out error, appendDestination);
 
             default:
                 error = $"unknown value kind {value.Kind}.";
@@ -180,7 +181,8 @@ internal sealed partial class TemplatePatchApplier
     /// </summary>
     private static bool TryConstructHandler(
         CompiledTemplateComposite handler, Type targetType, ModAssetResolver assetResolver, MelonLogger.Instance log,
-        out object converted, out string error)
+        out object converted, out string error,
+        object appendDestination = null)
     {
         converted = null;
 
@@ -204,7 +206,7 @@ internal sealed partial class TemplatePatchApplier
             };
         }
 
-        if (!TryConstructComposite(effectivePayload, targetType, assetResolver, log, out converted, out error))
+        if (!TryConstructComposite(effectivePayload, targetType, assetResolver, log, out converted, out error, appendDestination))
             return false;
 
         if (converted is UnityEngine.Object asUnity)
@@ -224,29 +226,6 @@ internal sealed partial class TemplatePatchApplier
         return true;
     }
 
-    // Thread-static context: the destination collection currently being
-    // appended/inserted into. Set by the Append/InsertAt handler before
-    // dispatching value conversion; read by TryConstructComposite when
-    // composite.From is non-null to find a prototype element. ThreadStatic
-    // because Unity's main thread is the only writer, but keeps the
-    // pattern explicit. Cleared via try/finally at the call site.
-    [ThreadStatic]
-    private static object _currentAppendDestination;
-
-    internal static IDisposable WithAppendDestination(object destination)
-    {
-        var previous = _currentAppendDestination;
-        _currentAppendDestination = destination;
-        return new AppendDestinationScope(previous);
-    }
-
-    private sealed class AppendDestinationScope : IDisposable
-    {
-        private readonly object _previous;
-        public AppendDestinationScope(object previous) { _previous = previous; }
-        public void Dispose() { _currentAppendDestination = _previous; }
-    }
-
     // Constructs a fresh instance of the composite's typeName and recursively
     // writes each authored field via the same TryConvertScalar conversion.
     // Dispatches construction by base class:
@@ -264,7 +243,8 @@ internal sealed partial class TemplatePatchApplier
     // fresh blank one. Lets modders inherit Inspector-baked defaults.
     private static bool TryConstructComposite(
         CompiledTemplateComposite composite, Type targetType, ModAssetResolver assetResolver, MelonLogger.Instance log,
-        out object converted, out string error)
+        out object converted, out string error,
+        object appendDestination = null)
     {
         converted = null;
 
@@ -299,12 +279,12 @@ internal sealed partial class TemplatePatchApplier
         object instance;
         if (!string.IsNullOrEmpty(composite.From))
         {
-            if (_currentAppendDestination == null)
+            if (appendDestination == null)
             {
                 error = $"Composite from=\"{composite.From}\": no destination collection in scope (from= is valid on append/insert into a collection that contains a matching element).";
                 return false;
             }
-            if (!TryFindPrototypeByName(_currentAppendDestination, composite.From, out var prototype, out var protoError))
+            if (!TryFindPrototypeByName(appendDestination, composite.From, out var prototype, out var protoError))
             {
                 error = $"Composite from=\"{composite.From}\": {protoError}";
                 return false;

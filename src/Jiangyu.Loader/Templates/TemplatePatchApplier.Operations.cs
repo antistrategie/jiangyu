@@ -277,16 +277,7 @@ internal sealed partial class TemplatePatchApplier
             }
         }
 
-        ApplyOutcome outcome;
-        if (appendDestination != null)
-        {
-            using (WithAppendDestination(appendDestination))
-                outcome = ApplyAndVerify(templateTypeName, templateId, op, terminalType, setter, getter, assetResolver, log);
-        }
-        else
-        {
-            outcome = ApplyAndVerify(templateTypeName, templateId, op, terminalType, setter, getter, assetResolver, log);
-        }
+        var outcome = ApplyAndVerify(templateTypeName, templateId, op, terminalType, setter, getter, assetResolver, log, appendDestination);
         if (outcome != ApplyOutcome.Applied)
             return outcome;
 
@@ -325,9 +316,10 @@ internal sealed partial class TemplatePatchApplier
 
     private static ApplyOutcome ApplyAndVerify(
         string templateTypeName, string templateId, LoadedPatchOperation op, Type memberType,
-        Action<object> setter, Func<object> getter, ModAssetResolver assetResolver, MelonLogger.Instance log)
+        Action<object> setter, Func<object> getter, ModAssetResolver assetResolver, MelonLogger.Instance log,
+        object appendDestination = null)
     {
-        if (!TryConvertScalar(op.Value, memberType, assetResolver, log, out var converted, out var conversionError))
+        if (!TryConvertScalar(op.Value, memberType, assetResolver, log, out var converted, out var conversionError, appendDestination))
         {
             log.Warning(FormatPrefix(templateTypeName, templateId, op) + conversionError);
             return ApplyOutcome.ConversionFailed;

@@ -1,222 +1,36 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using Jiangyu.Loader.Templates;
+using MelonLoader;
 using DataTemplateLoader = Il2CppMenace.Tools.DataTemplateLoader;
 using DataTemplate = Il2CppMenace.Tools.DataTemplate;
 using Il2CppDictionary = Il2CppSystem.Collections.Generic.Dictionary<string, Il2CppMenace.Tools.DataTemplate>;
-using MelonLoader;
-using MelonLoader.Utils;
-using UnityEngine;
-using UnityEngine.UI;
 
 namespace Jiangyu.Loader.Diagnostics;
 
 /// <summary>
-/// Opt-in runtime inspection that dumps live scene identity plus selected
-/// template snapshots to disk for investigation of why a replacement or future
-/// template patch is or isn't landing.
-///
-/// Enabled by a flag file in <c>&lt;UserData&gt;</c>:
-/// <list type="bullet">
-///   <item><c>jiangyu-inspect.flag</c> — unlimited retention (dumps accumulate forever).</item>
-///   <item><c>jiangyu-inspect.&lt;N&gt;.flag</c> — rolling retention, keep at most N files
-///     in <c>&lt;UserData&gt;/jiangyu-inspect/</c>; oldest are deleted after each write.</item>
-/// </list>
-/// File contents are ignored. Remove the flag to disable. Numbered flag wins if both exist.
-///
-/// Not a replacement mechanism - observation only. Dumps both scene-scoped
-/// components and Resources.FindObjectsOfTypeAll asset lists, so atlas-packed
-/// sprites and off-scene-cached assets are visible even though the main
-/// replacement sweeps can't see the latter.
+/// Opt-in dump of every DataTemplate subtype registered in
+/// <c>DataTemplateLoader.m_TemplateMaps</c>. Captures identity (m_ID, map
+/// key, Unity name, hideFlags, native pointer), flags likely Jiangyu clones
+/// via <c>hideFlags</c>, and snapshots each serialised member as a
+/// classified summary (scalar / bytes / reference / collection / odinBlob /
+/// null / unreadable). One JSON file per call, named
+/// <c>&lt;timestamp&gt;-&lt;scene&gt;-templates-&lt;seq&gt;.json</c>.
+/// Returns <c>false</c> when the loader's <c>m_TemplateMaps</c> singleton or
+/// entries aren't ready yet (caller can retry later in-scene).
 /// </summary>
-internal static class RuntimeInspector
+internal static class TemplateStateInspector
 {
-    private const string PlainFlagFileName = "jiangyu-inspect.flag";
-    private const string NumberedFlagPattern = "jiangyu-inspect.*.flag";
-    private const string OutputDirectoryName = "jiangyu-inspect";
     private const int MaxByteArrayElements = 64;
     private const int MaxCollectionElementSummaries = 16;
     private static int _templatesDumpSequence;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
-
-    // The flag is set before launch and rarely toggles during a session, so we
-    // cache its resolution and only re-check on scene loads. OnUpdate would
-    // otherwise call Directory.GetFiles every frame.
-    private static FlagState? _cachedFlag;
-
-    public static bool IsEnabled() => GetCachedFlag().Enabled;
-
-    public static void RefreshFlagCache() => _cachedFlag = ResolveFlag();
-
-    private static FlagState GetCachedFlag() => _cachedFlag ??= ResolveFlag();
-
-    // Numbered flag wins when both are present. A non-positive or unparseable
-    // N is silently ignored so a stray `jiangyu-inspect.ignored.flag` does not
-    // disable the plain flag.
-    private static FlagState ResolveFlag()
-    {
-        try
-        {
-            var userData = MelonEnvironment.UserDataDirectory;
-            var numbered = Directory.GetFiles(userData, NumberedFlagPattern);
-            foreach (var path in numbered)
-            {
-                var name = Path.GetFileName(path);
-                if (string.Equals(name, PlainFlagFileName, StringComparison.Ordinal))
-                    continue;
-                if (TryParseRetention(name, out var cap))
-                    return new FlagState(true, cap);
-            }
-
-            if (File.Exists(Path.Combine(userData, PlainFlagFileName)))
-                return new FlagState(true, null);
-
-            return new FlagState(false, null);
-        }
-        catch
-        {
-            return new FlagState(false, null);
-        }
-    }
-
-    private static bool TryParseRetention(string fileName, out int cap)
-    {
-        cap = 0;
-        const string prefix = "jiangyu-inspect.";
-        const string suffix = ".flag";
-        if (!fileName.StartsWith(prefix, StringComparison.Ordinal)
-            || !fileName.EndsWith(suffix, StringComparison.Ordinal))
-            return false;
-        var middle = fileName.Substring(prefix.Length, fileName.Length - prefix.Length - suffix.Length);
-        return int.TryParse(middle, out cap) && cap > 0;
-    }
-
-    private readonly struct FlagState
-    {
-        public FlagState(bool enabled, int? retentionCap)
-        {
-            Enabled = enabled;
-            RetentionCap = retentionCap;
-        }
-
-        public bool Enabled { get; }
-        public int? RetentionCap { get; }
-    }
-
-    // Per-kind LRU-by-name sweep. Files are bucketed by filename suffix so a
-    // frequent kind (the periodic runtime sweep fires every 300 frames after
-    // t=600) cannot evict a rare kind (templates dump, once per scene load).
-    // Filenames are UTC timestamp-prefixed, so alphanumeric ordering within a
-    // bucket equals chronological ordering. Called once per write, after the
-    // new file lands, so cap=N means "at most N files per kind survive".
-    private static void EnforceRetention(int? cap, MelonLogger.Instance log)
-    {
-        if (!cap.HasValue)
-            return;
-
-        try
-        {
-            var outDir = GetOutputDirectory();
-            var files = new DirectoryInfo(outDir).GetFiles();
-            if (files.Length == 0)
-                return;
-
-            var buckets = new Dictionary<string, List<FileInfo>>(StringComparer.Ordinal);
-            foreach (var file in files)
-            {
-                var kind = ClassifyDumpKind(file.Name);
-                if (!buckets.TryGetValue(kind, out var bucket))
-                {
-                    bucket = new List<FileInfo>();
-                    buckets[kind] = bucket;
-                }
-                bucket.Add(file);
-            }
-
-            foreach (var bucket in buckets.Values)
-            {
-                if (bucket.Count <= cap.Value)
-                    continue;
-
-                bucket.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
-                var toDelete = bucket.Count - cap.Value;
-                for (var i = 0; i < toDelete; i++)
-                {
-                    try { bucket[i].Delete(); }
-                    catch (Exception ex)
-                    {
-                        log.Warning($"[inspect] rotation: could not delete {bucket[i].Name}: {ex.Message}");
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            log.Warning($"[inspect] rotation sweep failed: {ex.Message}");
-        }
-    }
-
-    private static string ClassifyDumpKind(string fileName)
-    {
-        if (fileName.Contains("-templates-", StringComparison.Ordinal))
-            return "templates";
-        return "runtime";
-    }
-
-    public static void Dump(string sceneName, int buildIndex, MelonLogger.Instance log)
-    {
-        var flag = GetCachedFlag();
-        if (!flag.Enabled)
-            return;
-
-        try
-        {
-            var timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd-HH-mm-ss");
-            var safeSceneName = SanitiseForFileName(sceneName);
-            var filePath = Path.Combine(GetOutputDirectory(), $"{timestamp}-{safeSceneName}.json");
-
-            var dump = BuildDump(sceneName, buildIndex);
-            File.WriteAllText(filePath, JsonSerializer.Serialize(dump, JsonOptions));
-
-            log.Msg(
-                $"[inspect] Wrote runtime dump: {filePath}  " +
-                $"(sprite renderers={dump.SpriteRenderers.Count}  " +
-                $"ui images={dump.UiImages.Count}  " +
-                $"sprite assets={dump.SpriteAssets.Count}  " +
-                $"audio sources={dump.AudioSources.Count}  " +
-                $"audio clips={dump.AudioClipAssets.Count})");
-
-            EnforceRetention(flag.RetentionCap, log);
-        }
-        catch (Exception ex)
-        {
-            log.Error($"[inspect] dump failed: {ex}");
-        }
-    }
-
-    /// <summary>
-    /// Dumps the full state of every DataTemplate subtype registered in
-    /// <c>DataTemplateLoader.m_TemplateMaps</c>. Captures identity (m_ID, map
-    /// key, Unity name, hideFlags, native pointer), flags likely Jiangyu clones
-    /// via <c>hideFlags</c>, and snapshots each serialised member as a
-    /// classified summary (scalar / bytes / reference / collection / odinBlob /
-    /// null / unreadable). One JSON file per call, named
-    /// <c>&lt;timestamp&gt;-&lt;scene&gt;-templates-&lt;seq&gt;.json</c>.
-    /// Returns <c>false</c> when the loader's <c>m_TemplateMaps</c> singleton or
-    /// entries aren't ready yet (caller can retry later in-scene).
-    /// </summary>
     public static bool TryDumpTemplatesFromLoader(string sceneName, MelonLogger.Instance log)
     {
-        var flag = GetCachedFlag();
+        var flag = InspectionSink.GetCachedFlag();
         if (!flag.Enabled)
             return false;
 
@@ -245,17 +59,17 @@ internal static class RuntimeInspector
 
             var sequence = Interlocked.Increment(ref _templatesDumpSequence);
             var timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd-HH-mm-ss-fff");
-            var safeSceneName = SanitiseForFileName(sceneName);
-            var filePath = Path.Combine(GetOutputDirectory(), $"{timestamp}-{safeSceneName}-templates-{sequence:D2}.json");
+            var safeSceneName = InspectionSink.SanitiseForFileName(sceneName);
+            var filePath = Path.Combine(InspectionSink.GetOutputDirectory(), $"{timestamp}-{safeSceneName}-templates-{sequence:D2}.json");
 
-            File.WriteAllText(filePath, JsonSerializer.Serialize(dump, JsonOptions));
+            File.WriteAllText(filePath, JsonSerializer.Serialize(dump, InspectionSink.JsonOptions));
 
             log.Msg(
                 $"[inspect] Wrote templates dump: {filePath}  " +
                 $"(types={dump.TypeCount}  templates={dump.TemplateCount}  " +
                 $"likelyClones={dump.LikelyCloneCount}  odinFields={dump.OdinFieldCount})");
 
-            EnforceRetention(flag.RetentionCap, log);
+            InspectionSink.EnforceRetention(flag.RetentionCap, log);
             return true;
         }
         catch (Exception ex)
@@ -801,245 +615,12 @@ internal static class RuntimeInspector
         return name;
     }
 
-    private static RuntimeDump BuildDump(string sceneName, int buildIndex)
-    {
-        var dump = new RuntimeDump
-        {
-            Timestamp = DateTimeOffset.UtcNow,
-            SceneName = sceneName,
-            SceneBuildIndex = buildIndex,
-        };
-
-        foreach (var obj in UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<SpriteRenderer>(), true))
-        {
-            var renderer = obj.Cast<SpriteRenderer>();
-            dump.SpriteRenderers.Add(new SpriteRendererInfo
-            {
-                GameObjectPath = GameObjectPath(renderer?.gameObject),
-                SpriteName = renderer?.sprite?.name,
-                Enabled = renderer?.enabled ?? false,
-            });
-        }
-
-        foreach (var obj in UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<Image>(), true))
-        {
-            var image = obj.Cast<Image>();
-            dump.UiImages.Add(new UiImageInfo
-            {
-                GameObjectPath = GameObjectPath(image?.gameObject),
-                SpriteName = image?.sprite?.name,
-                Enabled = image?.enabled ?? false,
-            });
-        }
-
-        // Diagnostic counts for why UiImages / SpriteRenderers may come back empty.
-        // If Canvas > 0 but Graphic == 0, UI roots exist but Graphic components
-        // haven't awoken at scene-load (timing). If Canvas == 0, UI isn't loaded
-        // into the scene yet. If Graphic > 0 but Image == 0, Image type resolution
-        // is broken.
-        dump.Counts.Canvases = CountOfType(Il2CppType.Of<Canvas>());
-        dump.Counts.Graphics = CountOfType(Il2CppType.Of<Graphic>());
-        dump.Counts.RawImages = CountOfType(Il2CppType.Of<RawImage>());
-        dump.Counts.UiDocuments = CountOfType(Il2CppType.Of<UnityEngine.UIElements.UIDocument>());
-        dump.Counts.TotalGameObjects = CountOfType(Il2CppType.Of<GameObject>());
-
-        foreach (var obj in Resources.FindObjectsOfTypeAll(Il2CppType.Of<Sprite>()))
-        {
-            var sprite = obj.Cast<Sprite>();
-            if (sprite == null)
-                continue;
-            dump.SpriteAssets.Add(new SpriteAssetInfo
-            {
-                Name = sprite.name,
-                TextureName = sprite.texture?.name,
-            });
-        }
-
-        foreach (var obj in Resources.FindObjectsOfTypeAll(Il2CppType.Of<Texture2D>()))
-        {
-            var texture = obj?.TryCast<Texture2D>();
-            if (texture == null)
-                continue;
-            dump.TextureAssets.Add(new TextureAssetInfo
-            {
-                Name = texture.name,
-                Width = texture.width,
-                Height = texture.height,
-                Format = texture.format.ToString(),
-                HideFlags = texture.hideFlags.ToString(),
-            });
-        }
-
-        foreach (var obj in UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<SkinnedMeshRenderer>(), true))
-        {
-            var smr = obj?.TryCast<SkinnedMeshRenderer>();
-            if (smr == null)
-                continue;
-            dump.SkinnedMeshRenderers.Add(new SkinnedMeshRendererInfo
-            {
-                GameObjectPath = GameObjectPath(smr.gameObject),
-                MeshName = smr.sharedMesh?.name,
-                BoneCount = smr.bones?.Length ?? 0,
-                RootBoneName = smr.rootBone?.name,
-                HideFlags = smr.hideFlags.ToString(),
-                SceneLoaded = smr.gameObject != null && smr.gameObject.scene.isLoaded,
-            });
-        }
-
-        foreach (var obj in UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<AudioSource>(), true))
-        {
-            var source = obj.Cast<AudioSource>();
-            dump.AudioSources.Add(new AudioSourceInfo
-            {
-                GameObjectPath = GameObjectPath(source?.gameObject),
-                ClipName = source?.clip?.name,
-                PlayOnAwake = source?.playOnAwake ?? false,
-            });
-        }
-
-        foreach (var obj in Resources.FindObjectsOfTypeAll(Il2CppType.Of<AudioClip>()))
-        {
-            var clip = obj.Cast<AudioClip>();
-            if (clip == null)
-                continue;
-            dump.AudioClipAssets.Add(new AudioClipAssetInfo
-            {
-                Name = clip.name,
-                LengthSeconds = clip.length,
-            });
-        }
-
-        return dump;
-    }
-
     private static IntPtr GetNativePointer(object instance)
     {
         if (instance is not Il2CppObjectBase il2CppObject)
             return IntPtr.Zero;
 
         return IL2CPP.Il2CppObjectBaseToPtr(il2CppObject);
-    }
-
-    private static int CountOfType(Il2CppSystem.Type type)
-    {
-        var count = 0;
-        foreach (var _ in UnityEngine.Object.FindObjectsOfType(type, true))
-        {
-            count++;
-        }
-        return count;
-    }
-
-    private static string GameObjectPath(GameObject gameObject)
-    {
-        if (gameObject == null)
-            return null;
-
-        var parts = new List<string>();
-        var transform = gameObject.transform;
-        while (transform != null)
-        {
-            parts.Add(transform.name);
-            transform = transform.parent;
-        }
-        parts.Reverse();
-        return "/" + string.Join("/", parts);
-    }
-
-    private static string SanitiseForFileName(string name)
-    {
-        if (string.IsNullOrEmpty(name))
-            return "unknown";
-        var invalid = Path.GetInvalidFileNameChars();
-        var builder = new System.Text.StringBuilder(name.Length);
-        foreach (var c in name)
-        {
-            builder.Append(Array.IndexOf(invalid, c) >= 0 || char.IsWhiteSpace(c) ? '_' : c);
-        }
-        return builder.ToString();
-    }
-
-    private static string GetOutputDirectory()
-    {
-        var outDir = Path.Combine(MelonEnvironment.UserDataDirectory, OutputDirectoryName);
-        Directory.CreateDirectory(outDir);
-        return outDir;
-    }
-
-    private sealed class RuntimeDump
-    {
-        public DateTimeOffset Timestamp { get; set; }
-        public string SceneName { get; set; }
-        public int SceneBuildIndex { get; set; }
-        public DiagnosticCounts Counts { get; } = new();
-        public List<SpriteRendererInfo> SpriteRenderers { get; } = new();
-        public List<UiImageInfo> UiImages { get; } = new();
-        public List<SpriteAssetInfo> SpriteAssets { get; } = new();
-        public List<TextureAssetInfo> TextureAssets { get; } = new();
-        public List<SkinnedMeshRendererInfo> SkinnedMeshRenderers { get; } = new();
-        public List<AudioSourceInfo> AudioSources { get; } = new();
-        public List<AudioClipAssetInfo> AudioClipAssets { get; } = new();
-    }
-
-    private sealed class SkinnedMeshRendererInfo
-    {
-        public string GameObjectPath { get; set; }
-        public string MeshName { get; set; }
-        public int BoneCount { get; set; }
-        public string RootBoneName { get; set; }
-        public string HideFlags { get; set; }
-        public bool SceneLoaded { get; set; }
-    }
-
-    private sealed class TextureAssetInfo
-    {
-        public string Name { get; set; }
-        public int Width { get; set; }
-        public int Height { get; set; }
-        public string Format { get; set; }
-        public string HideFlags { get; set; }
-    }
-
-    private sealed class DiagnosticCounts
-    {
-        public int Canvases { get; set; }
-        public int Graphics { get; set; }
-        public int RawImages { get; set; }
-        public int UiDocuments { get; set; }
-        public int TotalGameObjects { get; set; }
-    }
-
-    private sealed class SpriteRendererInfo
-    {
-        public string GameObjectPath { get; set; }
-        public string SpriteName { get; set; }
-        public bool Enabled { get; set; }
-    }
-
-    private sealed class UiImageInfo
-    {
-        public string GameObjectPath { get; set; }
-        public string SpriteName { get; set; }
-        public bool Enabled { get; set; }
-    }
-
-    private sealed class SpriteAssetInfo
-    {
-        public string Name { get; set; }
-        public string TextureName { get; set; }
-    }
-
-    private sealed class AudioSourceInfo
-    {
-        public string GameObjectPath { get; set; }
-        public string ClipName { get; set; }
-        public bool PlayOnAwake { get; set; }
-    }
-
-    private sealed class AudioClipAssetInfo
-    {
-        public string Name { get; set; }
-        public float LengthSeconds { get; set; }
     }
 
     private sealed class TemplatesDump

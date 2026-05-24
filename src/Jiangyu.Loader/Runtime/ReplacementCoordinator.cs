@@ -165,7 +165,7 @@ internal class ReplacementCoordinator
         // inventories above), so the vanilla reference soldier lookup
         // that missed during early boot will now resolve. Drains the
         // queue on success.
-        _catalog.MirrorPendingHumanoidPrefabs(log);
+        _catalog.HumanoidMirror.DrainPending(log);
     }
 
     public bool HasReplacementTargets()

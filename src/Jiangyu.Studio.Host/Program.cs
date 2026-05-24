@@ -77,8 +77,8 @@ public static class Program
         // We send both entries in session/new mcpServers; each agent picks the
         // one it accepts and drops the other.
         var mcpToken = GenerateMcpToken();
-        AgentProcessManager.HttpMcpUrl = $"{hostUrl}/mcp";
-        AgentProcessManager.HttpMcpToken = mcpToken;
+        McpServerConfigBuilder.HttpMcpUrl = $"{hostUrl}/mcp";
+        McpServerConfigBuilder.HttpMcpToken = mcpToken;
         var mcpServer = new McpServer();
         mcpServer.DiscoverTools();
         McpEndpoint.Map(app.WebApp, mcpServer, mcpToken);

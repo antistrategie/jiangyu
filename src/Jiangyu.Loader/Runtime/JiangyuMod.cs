@@ -75,13 +75,13 @@ public class JiangyuMod : MelonMod
         _templatesInspectAttempts.Clear();
         _templatesDumpSucceededThisScene = false;
         _replacementCoordinator.OnSceneUnloaded();
-        RuntimeInspector.RefreshFlagCache();
+        InspectionSink.RefreshFlagCache();
 
         LoggerInstance.Msg($"Scene loaded: {sceneName} ({buildIndex})");
 
-        if (RuntimeInspector.IsEnabled())
+        if (InspectionSink.IsEnabled())
         {
-            RuntimeInspector.Dump(sceneName + "-t0", buildIndex, LoggerInstance);
+            SceneIdentityInspector.Dump(sceneName + "-t0", buildIndex, LoggerInstance);
         }
 
         TryApply();
@@ -92,13 +92,13 @@ public class JiangyuMod : MelonMod
     {
         _frameInScene++;
 
-        if (RuntimeInspector.IsEnabled() && !string.IsNullOrEmpty(_currentScene))
+        if (InspectionSink.IsEnabled() && !string.IsNullOrEmpty(_currentScene))
         {
             foreach (var markFrame in DelayedInspectFrames)
             {
                 if (_frameInScene == markFrame && _inspectedFrames.Add(markFrame))
                 {
-                    RuntimeInspector.Dump($"{_currentScene}-t{markFrame}f", 0, LoggerInstance);
+                    SceneIdentityInspector.Dump($"{_currentScene}-t{markFrame}f", 0, LoggerInstance);
                 }
             }
 
@@ -110,7 +110,7 @@ public class JiangyuMod : MelonMod
                     if (_frameInScene == markFrame && _templatesInspectAttempts.Add(markFrame))
                     {
                         _templatesDumpSucceededThisScene =
-                            RuntimeInspector.TryDumpTemplatesFromLoader($"{_currentScene}-t{markFrame}f", LoggerInstance);
+                            TemplateStateInspector.TryDumpTemplatesFromLoader($"{_currentScene}-t{markFrame}f", LoggerInstance);
                     }
                 }
             }
@@ -119,7 +119,7 @@ public class JiangyuMod : MelonMod
                 _frameInScene - _frameOfLastPeriodicDump >= PeriodicInspectIntervalFrames)
             {
                 _frameOfLastPeriodicDump = _frameInScene;
-                RuntimeInspector.Dump($"{_currentScene}-t{_frameInScene}f", 0, LoggerInstance);
+                SceneIdentityInspector.Dump($"{_currentScene}-t{_frameInScene}f", 0, LoggerInstance);
             }
         }
 

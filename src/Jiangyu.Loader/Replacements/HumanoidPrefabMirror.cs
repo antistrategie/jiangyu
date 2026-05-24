@@ -5,7 +5,7 @@ using Il2CppMenace.Tactical;
 using MenaceFootprints = Il2CppMenace.Tactical.Footprints;
 using MenaceRagdoll = Il2CppMenace.Tactical.Ragdoll;
 
-namespace Jiangyu.Loader.Bundles;
+namespace Jiangyu.Loader.Replacements;
 
 /// <summary>
 /// Brings a humanoid addition prefab's MonoBehaviour configuration up
