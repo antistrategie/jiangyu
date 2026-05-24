@@ -342,17 +342,7 @@ public sealed class TemplateTypeCatalog : IDisposable
     /// member flag and by the validator / applier to switch behaviour.
     /// </summary>
     public static bool IsHashSetCollection(Type type)
-    {
-        for (var current = type; current != null; current = current.BaseType)
-        {
-            if (!current.IsGenericType) continue;
-            var definitionName = current.GetGenericTypeDefinition().FullName;
-            if (definitionName == Il2CppSystemHashSetFullName
-                || definitionName == BclHashSetFullName)
-                return true;
-        }
-        return false;
-    }
+        => Jiangyu.Shared.Templates.TemplateTypeRules.IsHashSetCollection(type);
 
     /// <summary>
     /// Scalar means: primitive, string, or enum. These are leaf nodes in the

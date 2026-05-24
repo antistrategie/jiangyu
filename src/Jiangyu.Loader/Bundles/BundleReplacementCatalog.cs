@@ -119,17 +119,14 @@ internal sealed class BundleReplacementCatalog
         // one file per mod, so the previous parse-three-times-per-bundle shape
         // was O(bundles × 3) reads of the same file at startup.
         Dictionary<string, string> meshMappings = null;
-        Dictionary<string, CompiledMeshMetadataRecord> meshMetadata = null;
+        Dictionary<string, CompiledMeshMetadata> meshMetadata = null;
         HashSet<string> additionPrefabNames = new(StringComparer.Ordinal);
-        using (var manifestDoc = OpenManifest(mod.ManifestPath, log))
+        var loaderManifest = OpenManifest(mod.ManifestPath, log);
+        if (loaderManifest != null)
         {
-            if (manifestDoc != null)
-            {
-                var root = manifestDoc.RootElement;
-                meshMappings = LoadMeshMappings(root, log);
-                meshMetadata = LoadCompiledMeshMetadata(root, log);
-                additionPrefabNames = LoadAdditionPrefabNames(root, log);
-            }
+            meshMappings = LoadMeshMappings(loaderManifest, log);
+            meshMetadata = LoadCompiledMeshMetadata(loaderManifest, log);
+            additionPrefabNames = LoadAdditionPrefabNames(loaderManifest);
         }
 
         // An addition bundle's filename stem is its identity (matches the
@@ -235,7 +232,7 @@ internal sealed class BundleReplacementCatalog
         string assetName,
         GameObject prefab,
         Dictionary<string, string> bundleToGame,
-        Dictionary<string, CompiledMeshMetadataRecord> meshMetadata,
+        Dictionary<string, CompiledMeshMetadata> meshMetadata,
         MelonLogger.Instance log)
     {
         _pinned.Add(prefab);
@@ -254,7 +251,7 @@ internal sealed class BundleReplacementCatalog
             }
 
             var mappedTargetKeys = new HashSet<string>(StringComparer.Ordinal);
-            var metadataByTargetKey = new Dictionary<string, CompiledMeshMetadataRecord>(StringComparer.Ordinal);
+            var metadataByTargetKey = new Dictionary<string, CompiledMeshMetadata>(StringComparer.Ordinal);
             foreach (var smr in renderers)
             {
                 if (smr.sharedMesh == null)
@@ -269,30 +266,26 @@ internal sealed class BundleReplacementCatalog
                 if (targetKey == null)
                     continue;
 
-                var materialBindings = Array.Empty<CompiledMaterialBindingRecord>();
+                IReadOnlyList<CompiledMaterialBinding> materialBindings = Array.Empty<CompiledMaterialBinding>();
                 var targetRendererPath = targetKey;
                 string targetEntityName = null;
-                long targetEntityPathId = 0;
-                var hasTargetEntityPathId = false;
                 if (meshMetadata != null && meshMetadata.TryGetValue(bundleMeshName, out var prefabMetadata))
                 {
-                    materialBindings = prefabMetadata.MaterialBindings ?? Array.Empty<CompiledMaterialBindingRecord>();
+                    materialBindings = (IReadOnlyList<CompiledMaterialBinding>)prefabMetadata.Materials ?? Array.Empty<CompiledMaterialBinding>();
                     targetRendererPath = string.IsNullOrWhiteSpace(prefabMetadata.TargetRendererPath)
                         ? targetKey
                         : prefabMetadata.TargetRendererPath;
                     targetEntityName = prefabMetadata.TargetEntityName;
-                    targetEntityPathId = prefabMetadata.TargetEntityPathId;
-                    hasTargetEntityPathId = prefabMetadata.HasTargetEntityPathId;
                     metadataByTargetKey[targetKey] = prefabMetadata;
                 }
 
                 RegisterMeshOverride(
                     targetKey,
-                    new ReplacementMesh(mesh, GetBoneNames(smr.bones), materialBindings, targetRendererPath, targetEntityName, targetEntityPathId, hasTargetEntityPathId),
+                    new ReplacementMesh(mesh, GetBoneNames(smr.bones), materialBindings, targetRendererPath, targetEntityName),
                     ownerLabel,
                     log);
                 mappedTargetKeys.Add(targetKey);
-                log.Msg($"  Registered: {bundleMeshName} -> {targetKey} ({smr.bones.Length} bones, materialBindings={materialBindings.Length})");
+                log.Msg($"  Registered: {bundleMeshName} -> {targetKey} ({smr.bones.Length} bones, materialBindings={materialBindings.Count})");
             }
 
             if (mappedTargetKeys.Count == 0)
@@ -303,21 +296,17 @@ internal sealed class BundleReplacementCatalog
             {
                 var targetRendererPath = targetKey;
                 string targetEntityName = null;
-                long targetEntityPathId = 0;
-                var hasTargetEntityPathId = false;
                 if (metadataByTargetKey.TryGetValue(targetKey, out var prefabMetadata))
                 {
                     targetRendererPath = string.IsNullOrWhiteSpace(prefabMetadata.TargetRendererPath)
                         ? targetKey
                         : prefabMetadata.TargetRendererPath;
                     targetEntityName = prefabMetadata.TargetEntityName;
-                    targetEntityPathId = prefabMetadata.TargetEntityPathId;
-                    hasTargetEntityPathId = prefabMetadata.HasTargetEntityPathId;
                 }
 
                 RegisterPrefabOverride(
                     targetKey,
-                    new ReplacementPrefab(instance, prefab.name, prefabBoneNames, targetRendererPath, targetEntityName, targetEntityPathId, hasTargetEntityPathId),
+                    new ReplacementPrefab(instance, prefab.name, prefabBoneNames, targetRendererPath, targetEntityName),
                     ownerLabel,
                     log);
             }
@@ -514,7 +503,7 @@ internal sealed class BundleReplacementCatalog
         string ownerLabel,
         IntPtr meshPtr,
         Dictionary<string, string> bundleToGame,
-        Dictionary<string, CompiledMeshMetadataRecord> meshMetadata,
+        Dictionary<string, CompiledMeshMetadata> meshMetadata,
         MelonLogger.Instance log)
     {
         var loadedMesh = new Mesh(meshPtr);
@@ -536,14 +525,12 @@ internal sealed class BundleReplacementCatalog
             new ReplacementMesh(
                 loadedMesh,
                 metadataForMesh.BoneNames,
-                metadataForMesh.MaterialBindings ?? Array.Empty<CompiledMaterialBindingRecord>(),
+                (IReadOnlyList<CompiledMaterialBinding>)metadataForMesh.Materials ?? Array.Empty<CompiledMaterialBinding>(),
                 targetRendererPath,
-                metadataForMesh.TargetEntityName,
-                metadataForMesh.TargetEntityPathId,
-                metadataForMesh.HasTargetEntityPathId),
+                metadataForMesh.TargetEntityName),
             ownerLabel,
             log);
-        log.Msg($"  Registered mesh asset: {loadedMesh.name} -> {targetKey} ({metadataForMesh.BoneNames.Length} bones, materialBindings={metadataForMesh.MaterialBindings?.Length ?? 0})");
+        log.Msg($"  Registered mesh asset: {loadedMesh.name} -> {targetKey} ({metadataForMesh.BoneNames.Length} bones, materialBindings={metadataForMesh.Materials?.Count ?? 0})");
     }
 
     private void RegisterMeshOverride(string targetName, ReplacementMesh mesh, string ownerLabel, MelonLogger.Instance log)
@@ -628,13 +615,13 @@ internal sealed class BundleReplacementCatalog
         return names.OrderBy(x => x, StringComparer.Ordinal).ToArray();
     }
 
-    private static System.Text.Json.JsonDocument OpenManifest(string manifestPath, MelonLogger.Instance log)
+    private static LoaderManifest OpenManifest(string manifestPath, MelonLogger.Instance log)
     {
         if (!File.Exists(manifestPath))
             return null;
         try
         {
-            return System.Text.Json.JsonDocument.Parse(File.ReadAllText(manifestPath));
+            return LoaderManifest.FromJson(File.ReadAllText(manifestPath));
         }
         catch (Exception ex)
         {
@@ -643,206 +630,70 @@ internal sealed class BundleReplacementCatalog
         }
     }
 
-    private static Dictionary<string, CompiledMeshMetadataRecord> LoadCompiledMeshMetadata(System.Text.Json.JsonElement root, MelonLogger.Instance log)
+    private static Dictionary<string, CompiledMeshMetadata> LoadCompiledMeshMetadata(LoaderManifest manifest, MelonLogger.Instance log)
     {
-        try
-        {
-            if (!root.TryGetProperty("meshes", out var meshesElement) ||
-                meshesElement.ValueKind != System.Text.Json.JsonValueKind.Object)
-            {
-                return null;
-            }
-
-            var result = new Dictionary<string, CompiledMeshMetadataRecord>(StringComparer.Ordinal);
-            foreach (var prop in meshesElement.EnumerateObject())
-            {
-                var sourceRef = prop.Value.ValueKind switch
-                {
-                    System.Text.Json.JsonValueKind.String => prop.Value.GetString(),
-                    System.Text.Json.JsonValueKind.Object when prop.Value.TryGetProperty("source", out var sourceElement) && sourceElement.ValueKind == System.Text.Json.JsonValueKind.String => sourceElement.GetString(),
-                    _ => null,
-                };
-
-                if (string.IsNullOrWhiteSpace(sourceRef))
-                    continue;
-
-                var bundleMeshName = GetBundleMeshNameFromSourceRef(sourceRef);
-                if (string.IsNullOrWhiteSpace(bundleMeshName))
-                    continue;
-
-                if (prop.Value.ValueKind != System.Text.Json.JsonValueKind.Object ||
-                    !prop.Value.TryGetProperty("compiled", out var compiledElement) ||
-                    compiledElement.ValueKind != System.Text.Json.JsonValueKind.Object ||
-                    !compiledElement.TryGetProperty("boneNames", out var boneNamesElement) ||
-                    boneNamesElement.ValueKind != System.Text.Json.JsonValueKind.Array)
-                {
-                    continue;
-                }
-
-                var boneNames = boneNamesElement.EnumerateArray()
-                    .Select(e => e.GetString() ?? string.Empty)
-                    .ToArray();
-
-                string targetRendererPath = null;
-                string targetMeshName = null;
-                string targetEntityName = null;
-                long targetEntityPathId = 0;
-                var hasTargetEntityPathId = false;
-                if (compiledElement.TryGetProperty("targetRendererPath", out var targetRendererPathElement) &&
-                    targetRendererPathElement.ValueKind == System.Text.Json.JsonValueKind.String)
-                {
-                    targetRendererPath = targetRendererPathElement.GetString();
-                }
-                if (compiledElement.TryGetProperty("targetMeshName", out var targetMeshNameElement) &&
-                    targetMeshNameElement.ValueKind == System.Text.Json.JsonValueKind.String)
-                {
-                    targetMeshName = targetMeshNameElement.GetString();
-                }
-                if (compiledElement.TryGetProperty("targetEntityName", out var targetEntityNameElement) &&
-                    targetEntityNameElement.ValueKind == System.Text.Json.JsonValueKind.String)
-                {
-                    targetEntityName = targetEntityNameElement.GetString();
-                }
-                if (compiledElement.TryGetProperty("targetEntityPathId", out var targetEntityPathIdElement) &&
-                    targetEntityPathIdElement.ValueKind == System.Text.Json.JsonValueKind.Number &&
-                    targetEntityPathIdElement.TryGetInt64(out var parsedTargetEntityPathId))
-                {
-                    targetEntityPathId = parsedTargetEntityPathId;
-                    hasTargetEntityPathId = true;
-                }
-
-                result[bundleMeshName] = new CompiledMeshMetadataRecord
-                {
-                    BoneNames = boneNames,
-                    MaterialBindings = LoadCompiledMaterialBindings(compiledElement),
-                    TargetRendererPath = targetRendererPath,
-                    TargetMeshName = targetMeshName,
-                    TargetEntityName = targetEntityName,
-                    TargetEntityPathId = targetEntityPathId,
-                    HasTargetEntityPathId = hasTargetEntityPathId,
-                };
-            }
-
-            if (result.Count > 0)
-                log.Msg($"  Loaded compiled metadata for {result.Count} mesh asset(s)");
-
-            return result;
-        }
-        catch (Exception ex)
-        {
-            log.Error($"  Failed to read compiled mesh metadata: {ex.Message}");
+        if (manifest.Meshes == null || manifest.Meshes.Count == 0)
             return null;
-        }
-    }
 
-    private static CompiledMaterialBindingRecord[] LoadCompiledMaterialBindings(System.Text.Json.JsonElement compiledElement)
-    {
-        if (!compiledElement.TryGetProperty("materials", out var materialsElement) ||
-            materialsElement.ValueKind != System.Text.Json.JsonValueKind.Array)
+        var result = new Dictionary<string, CompiledMeshMetadata>(StringComparer.Ordinal);
+        foreach (var (_, entry) in manifest.Meshes)
         {
-            return Array.Empty<CompiledMaterialBindingRecord>();
-        }
-
-        var result = new List<CompiledMaterialBindingRecord>();
-        foreach (var materialElement in materialsElement.EnumerateArray())
-        {
-            if (materialElement.ValueKind != System.Text.Json.JsonValueKind.Object ||
-                !materialElement.TryGetProperty("slot", out var slotElement) ||
-                slotElement.ValueKind != System.Text.Json.JsonValueKind.Number ||
-                !slotElement.TryGetInt32(out var slot) ||
-                !materialElement.TryGetProperty("textures", out var texturesElement) ||
-                texturesElement.ValueKind != System.Text.Json.JsonValueKind.Object)
-            {
-                continue;
-            }
-
-            var textures = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var textureProperty in texturesElement.EnumerateObject())
-            {
-                if (textureProperty.Value.ValueKind != System.Text.Json.JsonValueKind.String)
-                    continue;
-
-                var textureName = textureProperty.Value.GetString();
-                if (string.IsNullOrWhiteSpace(textureName))
-                    continue;
-
-                textures[textureProperty.Name] = textureName;
-            }
-
-            if (textures.Count == 0)
+            if (entry?.Compiled == null)
                 continue;
 
-            result.Add(new CompiledMaterialBindingRecord
+            var bundleMeshName = GetBundleMeshNameFromSourceRef(entry.Source);
+            if (string.IsNullOrWhiteSpace(bundleMeshName))
+                continue;
+
+            // Defensive: filter invalid material entries and sort by slot so
+            // the apply loop sees a predictable order. Compile already emits
+            // them sorted, but a hand-edited compiled manifest could disagree.
+            if (entry.Compiled.Materials != null)
             {
-                Slot = slot,
-                Name = materialElement.TryGetProperty("name", out var nameElement) &&
-                       nameElement.ValueKind == System.Text.Json.JsonValueKind.String
-                    ? nameElement.GetString()
-                    : null,
-                Textures = textures,
-            });
+                entry.Compiled.Materials = entry.Compiled.Materials
+                    .Where(b => b?.Textures != null && b.Textures.Count > 0)
+                    .OrderBy(b => b.Slot)
+                    .ToList();
+            }
+
+            result[bundleMeshName] = entry.Compiled;
         }
 
-        return result.OrderBy(binding => binding.Slot).ToArray();
+        if (result.Count > 0)
+            log.Msg($"  Loaded compiled metadata for {result.Count} mesh asset(s)");
+
+        return result;
     }
 
-    private static HashSet<string> LoadAdditionPrefabNames(System.Text.Json.JsonElement root, MelonLogger.Instance log)
+    private static HashSet<string> LoadAdditionPrefabNames(LoaderManifest manifest)
     {
         var set = new HashSet<string>(StringComparer.Ordinal);
-        try
+        if (manifest.AdditionPrefabs == null)
+            return set;
+
+        foreach (var name in manifest.AdditionPrefabs)
         {
-            if (root.TryGetProperty("additionPrefabs", out var element) &&
-                element.ValueKind == System.Text.Json.JsonValueKind.Array)
-            {
-                foreach (var item in element.EnumerateArray())
-                {
-                    if (item.ValueKind == System.Text.Json.JsonValueKind.String)
-                    {
-                        var name = item.GetString();
-                        if (!string.IsNullOrWhiteSpace(name))
-                            set.Add(name!);
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            log.Error($"  Failed to read additionPrefabs from jiangyu.json: {ex.Message}");
+            if (!string.IsNullOrWhiteSpace(name))
+                set.Add(name);
         }
         return set;
     }
 
-    private static Dictionary<string, string> LoadMeshMappings(System.Text.Json.JsonElement root, MelonLogger.Instance log)
+    private static Dictionary<string, string> LoadMeshMappings(LoaderManifest manifest, MelonLogger.Instance log)
     {
-        try
-        {
-            if (!root.TryGetProperty("meshes", out var meshesElement))
-                return null;
-
-            var result = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var prop in meshesElement.EnumerateObject())
-            {
-                var sourceRef = prop.Value.ValueKind switch
-                {
-                    System.Text.Json.JsonValueKind.String => prop.Value.GetString(),
-                    System.Text.Json.JsonValueKind.Object when prop.Value.TryGetProperty("source", out var sourceElement) && sourceElement.ValueKind == System.Text.Json.JsonValueKind.String => sourceElement.GetString(),
-                    _ => null,
-                };
-
-                if (string.IsNullOrWhiteSpace(sourceRef))
-                    continue;
-
-                result[prop.Name] = GetBundleMeshNameFromSourceRef(sourceRef);
-            }
-
-            log.Msg($"  Loaded {result.Count} mesh mapping(s) from jiangyu.json");
-            return result;
-        }
-        catch (Exception ex)
-        {
-            log.Error($"  Failed to read jiangyu.json: {ex.Message}");
+        if (manifest.Meshes == null)
             return null;
+
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (path, entry) in manifest.Meshes)
+        {
+            if (entry == null || string.IsNullOrWhiteSpace(entry.Source))
+                continue;
+            result[path] = GetBundleMeshNameFromSourceRef(entry.Source);
         }
+
+        log.Msg($"  Loaded {result.Count} mesh mapping(s) from jiangyu.json");
+        return result;
     }
 
     private static string GetBundleMeshNameFromSourceRef(string sourceRef)

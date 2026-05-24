@@ -48,7 +48,16 @@ internal static class RuntimeInspector
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    public static bool IsEnabled() => ResolveFlag().Enabled;
+    // The flag is set before launch and rarely toggles during a session, so we
+    // cache its resolution and only re-check on scene loads. OnUpdate would
+    // otherwise call Directory.GetFiles every frame.
+    private static FlagState? _cachedFlag;
+
+    public static bool IsEnabled() => GetCachedFlag().Enabled;
+
+    public static void RefreshFlagCache() => _cachedFlag = ResolveFlag();
+
+    private static FlagState GetCachedFlag() => _cachedFlag ??= ResolveFlag();
 
     // Numbered flag wins when both are present. A non-positive or unparseable
     // N is silently ignored so a stray `jiangyu-inspect.ignored.flag` does not
@@ -165,7 +174,7 @@ internal static class RuntimeInspector
 
     public static void Dump(string sceneName, int buildIndex, MelonLogger.Instance log)
     {
-        var flag = ResolveFlag();
+        var flag = GetCachedFlag();
         if (!flag.Enabled)
             return;
 
@@ -207,7 +216,7 @@ internal static class RuntimeInspector
     /// </summary>
     public static bool TryDumpTemplatesFromLoader(string sceneName, MelonLogger.Instance log)
     {
-        var flag = ResolveFlag();
+        var flag = GetCachedFlag();
         if (!flag.Enabled)
             return false;
 
@@ -279,7 +288,7 @@ internal static class RuntimeInspector
             // and TryCast each value to it so GetType() returns the real type.
             var managedType = TemplateRuntimeAccess.ResolveTemplateType(il2CppType.Name, out _);
             var tryCastGeneric = managedType != null
-                ? BuildTryCastMethod(managedType)
+                ? Il2CppReflectiveCast.GetTryCastMethod(managedType, throwIfMissing: false)
                 : null;
 
             var typeDump = new TemplateTypeDump
@@ -310,23 +319,6 @@ internal static class RuntimeInspector
         dump.Types.Sort((a, b) => string.CompareOrdinal(a.TypeFullName, b.TypeFullName));
         dump.TypeCount = dump.Types.Count;
         return dump;
-    }
-
-    private static MethodInfo BuildTryCastMethod(Type concreteType)
-    {
-        try
-        {
-            var method = typeof(Il2CppObjectBase)
-                .GetMethods(BindingFlags.Instance | BindingFlags.Public)
-                .FirstOrDefault(m => m.Name == "TryCast"
-                    && m.IsGenericMethodDefinition
-                    && m.GetParameters().Length == 0);
-            return method?.MakeGenericMethod(concreteType);
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     private static DataTemplate CastToConcreteType(DataTemplate template, MethodInfo tryCastGeneric)

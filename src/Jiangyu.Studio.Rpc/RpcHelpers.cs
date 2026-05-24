@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Jiangyu.Core.Config;
 
 namespace Jiangyu.Studio.Rpc;
 
@@ -10,6 +11,20 @@ namespace Jiangyu.Studio.Rpc;
 /// </summary>
 public static class RpcHelpers
 {
+    /// <summary>
+    /// Resolve the global <see cref="EnvironmentContext"/> or throw with a
+    /// useful diagnostic. Replaces the 20+ copies of the
+    /// <c>ResolveFromGlobalConfig + throw</c> prelude that appeared at the
+    /// top of nearly every handler that needs a game-data path.
+    /// </summary>
+    public static EnvironmentContext RequireEnvironment()
+    {
+        var resolution = EnvironmentContext.ResolveFromGlobalConfig();
+        if (!resolution.Success)
+            throw new InvalidOperationException(resolution.Error ?? "Could not resolve game data path.");
+        return resolution.Context!;
+    }
+
     public static string RequireString(JsonElement? parameters, string name)
     {
         if (parameters is not { } p || !p.TryGetProperty(name, out var prop) || prop.GetString() is not { } value)

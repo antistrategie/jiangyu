@@ -121,53 +121,33 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
     {
         _log.Info($"Loading game data from: {GameDataPath}");
 
-        var settings = new CoreConfiguration();
-        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level2;
-
-        var adapter = new AssetRipperProgressAdapter(_progress);
-        Logger.Add(adapter);
-
         var swTotal = System.Diagnostics.Stopwatch.StartNew();
         long elapsedLoad = 0, elapsedProcess = 0, elapsedIndex = 0, elapsedValues = 0;
 
         TemplateIndex index;
         Dictionary<string, List<InspectedFieldNode>> values = [];
-        try
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        using (var session = new GameDataSession(GameDataPath, _progress))
         {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            _progress.SetPhase("Loading assets");
-            var gameStructure = GameStructure.Load([GameDataPath], LocalFileSystem.Instance, settings);
-            var gameData = GameData.FromGameStructure(gameStructure);
-
-            if (!gameData.GameBundle.HasAnyAssetCollections())
-            {
-                throw new InvalidOperationException("No asset collections found in game data.");
-            }
-
-            _progress.Finish();
             elapsedLoad = sw.ElapsedMilliseconds;
 
-            sw.Restart();
-            _progress.SetPhase("Processing");
-            RunProcessors(gameData);
-            _progress.Finish();
-            elapsedProcess = sw.ElapsedMilliseconds;
+            if (!session.HasAnyAssetCollections)
+                throw new InvalidOperationException("No asset collections found in game data.");
+
+            elapsedProcess = sw.ElapsedMilliseconds - elapsedLoad;
 
             sw.Restart();
             _progress.SetPhase("Building template index");
-            index = BuildTemplateIndex(gameData.GameBundle.FetchAssetCollections(), gameData.AssemblyManager);
+            index = BuildTemplateIndex(session.GameData.GameBundle.FetchAssetCollections(), session.GameData.AssemblyManager);
             _progress.Finish();
             elapsedIndex = sw.ElapsedMilliseconds;
 
             sw.Restart();
             _progress.SetPhase("Extracting template values");
-            values = ExtractTemplateValues(index, gameData);
+            values = ExtractTemplateValues(index, session.GameData);
             _progress.Finish();
             elapsedValues = sw.ElapsedMilliseconds;
-        }
-        finally
-        {
-            Logger.Remove(adapter);
         }
 
         Directory.CreateDirectory(CachePath);
@@ -395,44 +375,7 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
         };
     }
 
-    private static void RunProcessors(GameData gameData)
-    {
-        IAssetProcessor[] processors =
-        [
-            new SceneDefinitionProcessor(),
-            new MainAssetProcessor(),
-            new AnimatorControllerProcessor(),
-            new PrefabProcessor(),
-        ];
-
-        foreach (var processor in processors)
-        {
-            processor.Process(gameData);
-        }
-    }
-
-    private string? ComputeGameAssemblyHash()
-    {
-        var candidates = new[]
-        {
-            Path.Combine(Path.GetDirectoryName(GameDataPath)!, "GameAssembly.so"),
-            Path.Combine(Path.GetDirectoryName(GameDataPath)!, "GameAssembly.dll"),
-        };
-
-        foreach (string candidate in candidates)
-        {
-            if (!File.Exists(candidate))
-            {
-                continue;
-            }
-
-            using var stream = File.OpenRead(candidate);
-            byte[] hash = SHA256.HashData(stream);
-            return Convert.ToHexString(hash).ToLowerInvariant();
-        }
-
-        return null;
-    }
+    private string? ComputeGameAssemblyHash() => GameDataSession.ComputeGameAssemblyHash(GameDataPath);
 
     /// <summary>
     /// Lightweight <see cref="AssetWalker"/> that collects PPtr references

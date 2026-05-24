@@ -261,9 +261,4 @@ public static class ModLoadPlanBuilder
             : relativePath;
     }
 
-    private sealed class LoaderManifest
-    {
-        public string? Name { get; set; }
-        public List<string>? Depends { get; set; }
-    }
 }

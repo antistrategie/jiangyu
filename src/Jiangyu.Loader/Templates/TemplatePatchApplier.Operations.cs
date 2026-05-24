@@ -346,7 +346,7 @@ internal sealed partial class TemplatePatchApplier
             && !memberType.IsInstanceOfType(converted)
             && typeof(Il2CppObjectBase).IsAssignableFrom(memberType))
         {
-            if (!TryIl2CppCast(il2cppObj, memberType, out var cast, out var castError))
+            if (!Il2CppReflectiveCast.TryCast(il2cppObj, memberType, out var cast, out var castError))
             {
                 log.Warning(FormatPrefix(templateTypeName, templateId, op)
                     + $"could not cast value to member type {memberType.FullName}: {castError}");

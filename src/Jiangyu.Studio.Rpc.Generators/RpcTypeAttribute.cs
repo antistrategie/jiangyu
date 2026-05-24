@@ -1,4 +1,4 @@
-namespace Jiangyu.Shared;
+namespace Jiangyu.Core.Rpc;
 
 /// <summary>
 /// Compile-time copy of the <c>[RpcType]</c> marker.  Source generators

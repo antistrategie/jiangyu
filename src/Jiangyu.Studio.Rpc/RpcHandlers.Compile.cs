@@ -4,7 +4,7 @@ using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Compile;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
-using Jiangyu.Shared;
+using Jiangyu.Core.Rpc;
 
 namespace Jiangyu.Studio.Rpc;
 
@@ -188,53 +188,54 @@ public static partial class RpcHandlers
         return count;
     }
 
-    [RpcType]
-    internal sealed class CompileFinishedEvent
-    {
-        [JsonPropertyName("success")]
-        public required bool Success { get; set; }
+}
 
-        [JsonPropertyName("bundlePath")]
-        public string? BundlePath { get; set; }
+[RpcType]
+public sealed class CompileFinishedEvent
+{
+    [JsonPropertyName("success")]
+    public required bool Success { get; set; }
 
-        [JsonPropertyName("errorMessage")]
-        public string? ErrorMessage { get; set; }
-    }
+    [JsonPropertyName("bundlePath")]
+    public string? BundlePath { get; set; }
 
-    [RpcType]
-    internal sealed class CompileSummary
-    {
-        [JsonPropertyName("modName")]
-        public string? ModName { get; set; }
+    [JsonPropertyName("errorMessage")]
+    public string? ErrorMessage { get; set; }
+}
 
-        [JsonPropertyName("modVersion")]
-        public string? ModVersion { get; set; }
+[RpcType]
+public sealed class CompileSummary
+{
+    [JsonPropertyName("modName")]
+    public string? ModName { get; set; }
 
-        [JsonPropertyName("modAuthor")]
-        public string? ModAuthor { get; set; }
+    [JsonPropertyName("modVersion")]
+    public string? ModVersion { get; set; }
 
-        [JsonPropertyName("modelReplacements")]
-        public required int ModelReplacements { get; set; }
+    [JsonPropertyName("modAuthor")]
+    public string? ModAuthor { get; set; }
 
-        [JsonPropertyName("textureReplacements")]
-        public required int TextureReplacements { get; set; }
+    [JsonPropertyName("modelReplacements")]
+    public required int ModelReplacements { get; set; }
 
-        [JsonPropertyName("spriteReplacements")]
-        public required int SpriteReplacements { get; set; }
+    [JsonPropertyName("textureReplacements")]
+    public required int TextureReplacements { get; set; }
 
-        [JsonPropertyName("audioReplacements")]
-        public required int AudioReplacements { get; set; }
+    [JsonPropertyName("spriteReplacements")]
+    public required int SpriteReplacements { get; set; }
 
-        [JsonPropertyName("additionFiles")]
-        public required int AdditionFiles { get; set; }
+    [JsonPropertyName("audioReplacements")]
+    public required int AudioReplacements { get; set; }
 
-        [JsonPropertyName("templateFiles")]
-        public required int TemplateFiles { get; set; }
+    [JsonPropertyName("additionFiles")]
+    public required int AdditionFiles { get; set; }
 
-        [JsonPropertyName("templatePatches")]
-        public required int TemplatePatches { get; set; }
+    [JsonPropertyName("templateFiles")]
+    public required int TemplateFiles { get; set; }
 
-        [JsonPropertyName("templateClones")]
-        public required int TemplateClones { get; set; }
-    }
+    [JsonPropertyName("templatePatches")]
+    public required int TemplatePatches { get; set; }
+
+    [JsonPropertyName("templateClones")]
+    public required int TemplateClones { get; set; }
 }

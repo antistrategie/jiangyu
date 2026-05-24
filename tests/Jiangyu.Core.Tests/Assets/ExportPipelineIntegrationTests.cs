@@ -41,7 +41,7 @@ public sealed class ExportPipelineIntegrationTests : IDisposable
             ],
         };
 
-        var cleanScene = ModelCleanupService.BuildCleanScene(rawGlbPath, NullLogSink.Instance, materialTextures);
+        var cleanScene = ModelCleaner.BuildCleanScene(rawGlbPath, NullLogSink.Instance, materialTextures);
         var gltfPath = Path.Combine(_tempDir, "model.gltf");
         var nonStandardTextures = new List<AssetPipelineService.DiscoveredTexture>
         {

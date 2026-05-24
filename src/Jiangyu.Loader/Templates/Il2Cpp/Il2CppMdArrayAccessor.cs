@@ -97,7 +97,7 @@ internal static class Il2CppMdArrayAccessor
             return false;
         }
 
-        var fieldPtr = FindFieldInHierarchy(klass, fieldName);
+        var fieldPtr = Il2CppFieldLookup.FindFieldInHierarchy(klass, fieldName);
         if (fieldPtr == IntPtr.Zero)
         {
             error = $"field '{fieldName}' not found in IL2CPP class hierarchy.";
@@ -245,19 +245,5 @@ internal static class Il2CppMdArrayAccessor
         }
         flatIndex = (int)flat;
         return true;
-    }
-
-    private static IntPtr FindFieldInHierarchy(IntPtr klass, string fieldName)
-    {
-        var current = klass;
-        while (current != IntPtr.Zero)
-        {
-            var field = IL2CPP.il2cpp_class_get_field_from_name(current, fieldName);
-            if (field != IntPtr.Zero)
-                return field;
-
-            current = IL2CPP.il2cpp_class_get_parent(current);
-        }
-        return IntPtr.Zero;
     }
 }

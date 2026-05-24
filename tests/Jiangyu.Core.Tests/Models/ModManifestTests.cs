@@ -1,4 +1,5 @@
 using Jiangyu.Core.Models;
+using Jiangyu.Shared.Bundles;
 using Jiangyu.Shared.Templates;
 
 namespace Jiangyu.Core.Tests.Models;

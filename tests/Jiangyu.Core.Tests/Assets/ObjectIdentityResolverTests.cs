@@ -8,7 +8,7 @@ public sealed class ObjectIdentityResolverTests
     [Fact]
     public void Resolve_ReturnsAmbiguousCandidatesInDeterministicOrder()
     {
-        var resolver = new ObjectIdentityResolver(new AssetIndex
+        var index = new AssetIndex
         {
             Assets =
             [
@@ -16,9 +16,9 @@ public sealed class ObjectIdentityResolverTests
                 new AssetEntry { Name = "WeaponTemplate", ClassName = "MonoBehaviour", Collection = "resources.assets", PathId = 100 },
                 new AssetEntry { Name = "WeaponTemplate", ClassName = "MonoBehaviour", Collection = "resources.assets", PathId = 300 },
             ],
-        });
+        };
 
-        ObjectResolutionResult result = resolver.Resolve("WeaponTemplate", "MonoBehaviour");
+        ObjectResolutionResult result = ObjectIdentityResolver.Resolve(index, "WeaponTemplate", "MonoBehaviour");
 
         Assert.Equal(ObjectResolutionStatus.Ambiguous, result.Status);
         Assert.Equal(3, result.Candidates.Count);
@@ -44,9 +44,7 @@ public sealed class ObjectIdentityResolverTests
     [Fact]
     public void Resolve_ReturnsIndexUnavailableWhenNoIndexIsPresent()
     {
-        var resolver = new ObjectIdentityResolver(index: null);
-
-        ObjectResolutionResult result = resolver.Resolve("WeaponTemplate", null);
+        ObjectResolutionResult result = ObjectIdentityResolver.Resolve(null, "WeaponTemplate", null);
 
         Assert.Equal(ObjectResolutionStatus.IndexUnavailable, result.Status);
         Assert.Empty(result.Candidates);

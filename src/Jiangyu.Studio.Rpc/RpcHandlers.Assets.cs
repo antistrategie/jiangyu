@@ -5,7 +5,7 @@ using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Assets;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
-using Jiangyu.Shared;
+using Jiangyu.Core.Rpc;
 using static Jiangyu.Studio.Rpc.RpcHelpers;
 
 namespace Jiangyu.Studio.Rpc;
@@ -13,39 +13,42 @@ namespace Jiangyu.Studio.Rpc;
 public static partial class RpcHandlers
 {
     /// <summary>
-    /// Cached game data from the most recent index build or lazy preview load.
-    /// Kept in memory so that successive preview requests don't re-load the full
-    /// game data each time (~30-60 s cold start).
+    /// Cached game data session from the most recent index build or lazy
+    /// preview load. Kept in memory so successive preview requests don't
+    /// re-load the full game data each time (~30-60 s cold start). The
+    /// session owns the GameStructure; replacing it disposes the old one.
     /// </summary>
     private static readonly Lock _gameDataLock = new();
-    private static GameData? _cachedGameData;
+    private static GameDataSession? _cachedSession;
     private static string? _cachedGameDataPath;
 
     private static GameData EnsureGameData(AssetPipelineService service, string gameDataPath)
     {
         lock (_gameDataLock)
         {
-            if (_cachedGameData is not null &&
+            if (_cachedSession is not null &&
                 string.Equals(_cachedGameDataPath, gameDataPath, StringComparison.Ordinal))
             {
-                return _cachedGameData;
+                return _cachedSession.GameData;
             }
 
-            var gd = service.LoadAndProcessGameData();
-            _cachedGameData = gd;
+            _cachedSession?.Dispose();
+            _cachedSession = service.LoadAndProcessGameData();
             _cachedGameDataPath = gameDataPath;
-            return gd;
+            return _cachedSession.GameData;
         }
     }
 
     /// <summary>
-    /// Replaces the cached game data (e.g. after a fresh index build).
+    /// Replaces the cached session (e.g. after a fresh index build).
     /// </summary>
-    private static void SetCachedGameData(GameData gameData, string gameDataPath)
+    private static void SetCachedSession(GameDataSession session, string gameDataPath)
     {
         lock (_gameDataLock)
         {
-            _cachedGameData = gameData;
+            if (!ReferenceEquals(_cachedSession, session))
+                _cachedSession?.Dispose();
+            _cachedSession = session;
             _cachedGameDataPath = gameDataPath;
         }
     }
@@ -64,7 +67,7 @@ public static partial class RpcHandlers
             });
         }
 
-        var service = resolution.Context!.CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
+        var service = RpcHelpers.RequireEnvironment().CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
         var status = service.GetIndexStatus();
         var manifest = service.LoadManifest();
 
@@ -87,18 +90,14 @@ public static partial class RpcHandlers
         "Build or rebuild the MENACE asset index. Required before asset search/preview/export work. Long-running; waits until complete.")]
     internal static JsonElement AssetsIndex(JsonElement? __)
     {
-        var resolution = EnvironmentContext.ResolveFromGlobalConfig();
-        if (!resolution.Success)
-            throw new InvalidOperationException(resolution.Error ?? "Could not resolve game data path.");
-
-        var ctx = resolution.Context!;
+        var ctx = RpcHelpers.RequireEnvironment();
         var service = ctx.CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
 
-        // Load game data, build the index, and keep the loaded data in the
-        // static cache so subsequent preview requests can reuse it.
-        var gameData = service.LoadAndProcessGameData();
-        SetCachedGameData(gameData, ctx.GameDataPath);
-        service.BuildIndexFromGameData(gameData);
+        // Load game data, build the index, and keep the loaded session in
+        // the static cache so subsequent preview requests can reuse it.
+        var session = service.LoadAndProcessGameData();
+        SetCachedSession(session, ctx.GameDataPath);
+        service.BuildIndexFromGameData(session.GameData);
 
         var manifest = service.LoadManifest();
         return JsonSerializer.SerializeToElement(new AssetIndexStatus
@@ -122,11 +121,7 @@ public static partial class RpcHandlers
         var collection = TryGetString(parameters, "collection");
         var limit = TryGetInt(parameters, "limit") ?? 500;
 
-        var resolution = EnvironmentContext.ResolveFromGlobalConfig();
-        if (!resolution.Success)
-            throw new InvalidOperationException(resolution.Error ?? "Could not resolve game data path.");
-
-        var service = resolution.Context!.CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
+        var service = RpcHelpers.RequireEnvironment().CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
         var results = service.Search(query, kind, limit);
 
         if (!string.IsNullOrEmpty(collection))
@@ -152,11 +147,7 @@ public static partial class RpcHandlers
         var kind = RequireString(parameters, "kind");
         var baseDir = RequireString(parameters, "baseDir");
 
-        var resolution = EnvironmentContext.ResolveFromGlobalConfig();
-        if (!resolution.Success)
-            throw new InvalidOperationException(resolution.Error ?? "Could not resolve game data path.");
-
-        var service = resolution.Context!.CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
+        var service = RpcHelpers.RequireEnvironment().CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
 
         string outputPath;
         switch (kind)
@@ -221,7 +212,7 @@ public static partial class RpcHandlers
         if (!resolution.Success)
             return NullElement;
 
-        var ctx = resolution.Context!;
+        var ctx = RpcHelpers.RequireEnvironment();
         var service = ctx.CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
         var gameData = EnsureGameData(service, ctx.GameDataPath);
         var result = service.GeneratePreview(gameData, collection, pathId, className);

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Jiangyu.Acp.JsonRpc;
 using Jiangyu.Studio.Rpc;
 using Jiangyu.Studio.Rpc.Mcp;
 
@@ -49,8 +50,15 @@ public static class Program
             {
                 Console.Error.WriteLine($"[jiangyu-mcp] dispatch error: {ex}");
                 // Best-effort error response; we may not have the request id.
-                response = """{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":""" +
-                    JsonSerializer.Serialize(ex.Message) + "}}";
+                response = JsonSerializer.Serialize(new JsonRpcResponse
+                {
+                    Id = null,
+                    Error = new JsonRpcError
+                    {
+                        Code = JsonRpcErrorCodes.InternalError,
+                        Message = ex.Message,
+                    },
+                });
             }
 
             // Notifications produce no response body; just consume them silently.

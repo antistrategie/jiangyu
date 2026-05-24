@@ -67,8 +67,8 @@ internal sealed class DrivenPrefabReplacementManager
             replacementAnimator.enabled = false;
 
         var replacementSkeletonRoot = FindSkeletonRoot(replacementRoot);
-        var sourceMap = BuildTransformMap(sourceSkeletonRoot);
-        var replacementMap = BuildTransformMap(replacementSkeletonRoot);
+        var sourceMap = SkeletonTraversal.BuildTransformMap(sourceSkeletonRoot);
+        var replacementMap = SkeletonTraversal.BuildTransformMap(replacementSkeletonRoot);
 
         var pairs = new List<TransformPair>();
         var misses = new List<string>();
@@ -110,8 +110,8 @@ internal sealed class DrivenPrefabReplacementManager
         _drivenReplacements[entityRoot.GetInstanceID()] = driven;
 
         log.Msg($"  [DRIVE] attached prefab '{replacementPrefab.PrefabName}' to '{entityRoot.name}' hiddenRenderers={hiddenRenderers.Length} mappedBones={pairs.Count}/{replacementMap.Count}");
-        log.Msg($"  [DRIVE] source skeleton root='{sourceSkeletonRoot.name}' pos={FormatVector3(sourceSkeletonRoot.position)} scale={FormatVector3(sourceSkeletonRoot.lossyScale)}");
-        log.Msg($"  [DRIVE] replacement skeleton root='{replacementSkeletonRoot.name}' pos={FormatVector3(replacementSkeletonRoot.position)} scale={FormatVector3(replacementSkeletonRoot.lossyScale)}");
+        log.Msg($"  [DRIVE] source skeleton root='{sourceSkeletonRoot.name}' pos={SkeletonTraversal.FormatVector3(sourceSkeletonRoot.position)} scale={SkeletonTraversal.FormatVector3(sourceSkeletonRoot.lossyScale)}");
+        log.Msg($"  [DRIVE] replacement skeleton root='{replacementSkeletonRoot.name}' pos={SkeletonTraversal.FormatVector3(replacementSkeletonRoot.position)} scale={SkeletonTraversal.FormatVector3(replacementSkeletonRoot.lossyScale)}");
         if (misses.Count > 0)
             log.Warning($"  [DRIVE] first missing bones: {string.Join(", ", misses)}");
 
@@ -151,33 +151,13 @@ internal sealed class DrivenPrefabReplacementManager
                     if (sample.Source == null || sample.Target == null)
                         continue;
 
-                    log.Msg($"  [DRIVE] sample {sample.Name} sourcePos={FormatVector3(sample.Source.position)} targetPos={FormatVector3(sample.Target.position)}");
+                    log.Msg($"  [DRIVE] sample {sample.Name} sourcePos={SkeletonTraversal.FormatVector3(sample.Source.position)} targetPos={SkeletonTraversal.FormatVector3(sample.Target.position)}");
                 }
             }
         }
 
         foreach (var staleId in staleIds)
             _drivenReplacements.Remove(staleId);
-    }
-
-    private static string FormatVector3(Vector3 v)
-        => $"({v.x:F4}, {v.y:F4}, {v.z:F4})";
-
-    private static void CollectBonesRecursive(Transform parent, Dictionary<string, Transform> map)
-    {
-        if (parent == null)
-            return;
-
-        map.TryAdd(parent.name, parent);
-        for (int i = 0; i < parent.childCount; i++)
-            CollectBonesRecursive(parent.GetChild(i), map);
-    }
-
-    private static Dictionary<string, Transform> BuildTransformMap(Transform root)
-    {
-        var map = new Dictionary<string, Transform>(StringComparer.Ordinal);
-        CollectBonesRecursive(root, map);
-        return map;
     }
 
     private static Transform FindSkeletonRoot(GameObject rootObject)
@@ -223,7 +203,7 @@ internal sealed class DrivenPrefabReplacementManager
             if (sourceSmr?.sharedMaterials != null && sourceSmr.sharedMaterials.Length > 0)
                 smr.sharedMaterials = sourceSmr.sharedMaterials;
 
-            log.Msg($"  [DRIVE] replacement SMR '{smr.name}' mesh='{smr.sharedMesh?.name ?? "<null>"}' mats={smr.sharedMaterials?.Length ?? 0} rootBone='{smr.rootBone?.name ?? "<null>"}' enabled={smr.enabled} active={smr.gameObject.activeInHierarchy} boundsCenter={FormatVector3(smr.localBounds.center)} boundsSize={FormatVector3(smr.localBounds.size)}");
+            log.Msg($"  [DRIVE] replacement SMR '{smr.name}' mesh='{smr.sharedMesh?.name ?? "<null>"}' mats={smr.sharedMaterials?.Length ?? 0} rootBone='{smr.rootBone?.name ?? "<null>"}' enabled={smr.enabled} active={smr.gameObject.activeInHierarchy} boundsCenter={SkeletonTraversal.FormatVector3(smr.localBounds.center)} boundsSize={SkeletonTraversal.FormatVector3(smr.localBounds.size)}");
         }
 
         var renderers = replacementRoot.GetComponentsInChildren<Renderer>(true);

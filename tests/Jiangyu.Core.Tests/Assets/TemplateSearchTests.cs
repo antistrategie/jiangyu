@@ -3,7 +3,7 @@ using Jiangyu.Core.Models;
 
 namespace Jiangyu.Core.Tests.Assets;
 
-public class TemplateSearchServiceTests
+public class TemplateSearchTests
 {
     private static TemplateIndex CreateIndex() => new()
     {
@@ -39,7 +39,7 @@ public class TemplateSearchServiceTests
     [Fact]
     public void Search_ReturnsTypeAndInstanceMatches_CaseInsensitively()
     {
-        var result = new TemplateSearchService(CreateIndex()).Search("weapon");
+        var result = TemplateSearch.Search(CreateIndex(), "weapon");
 
         Assert.Equal(TemplateSearchStatus.Success, result.Status);
         Assert.Single(result.MatchingTypes);
@@ -51,7 +51,7 @@ public class TemplateSearchServiceTests
     [Fact]
     public void Search_MatchesCollectionSubstring()
     {
-        var result = new TemplateSearchService(CreateIndex()).Search("sharedassets2");
+        var result = TemplateSearch.Search(CreateIndex(), "sharedassets2");
 
         Assert.Equal(TemplateSearchStatus.Success, result.Status);
         Assert.Empty(result.MatchingTypes);
@@ -62,7 +62,7 @@ public class TemplateSearchServiceTests
     [Fact]
     public void Search_RestrictsInstancesToOneType()
     {
-        var result = new TemplateSearchService(CreateIndex()).Search("resources", "WeaponTemplate");
+        var result = TemplateSearch.Search(CreateIndex(), "resources", "WeaponTemplate");
 
         Assert.Equal(TemplateSearchStatus.Success, result.Status);
         Assert.Empty(result.MatchingTypes);
@@ -73,7 +73,7 @@ public class TemplateSearchServiceTests
     [Fact]
     public void Search_ReturnsNotFound_WhenNothingMatches()
     {
-        var result = new TemplateSearchService(CreateIndex()).Search("grenade");
+        var result = TemplateSearch.Search(CreateIndex(), "grenade");
 
         Assert.Equal(TemplateSearchStatus.NotFound, result.Status);
         Assert.Empty(result.MatchingTypes);
@@ -83,7 +83,7 @@ public class TemplateSearchServiceTests
     [Fact]
     public void Search_ReturnsIndexUnavailable_WhenIndexMissing()
     {
-        var result = new TemplateSearchService(null).Search("weapon");
+        var result = TemplateSearch.Search(null, "weapon");
 
         Assert.Equal(TemplateSearchStatus.IndexUnavailable, result.Status);
     }

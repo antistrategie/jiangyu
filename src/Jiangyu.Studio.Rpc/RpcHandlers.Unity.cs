@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Unity;
-using Jiangyu.Shared;
+using Jiangyu.Core.Rpc;
 using static Jiangyu.Studio.Rpc.RpcHelpers;
 
 namespace Jiangyu.Studio.Rpc;
@@ -102,11 +102,7 @@ public static partial class RpcHandlers
             new UnityProjectScaffolder(NullLogSink.Instance).Init(projectRoot);
         }
 
-        var resolution = EnvironmentContext.ResolveFromGlobalConfig();
-        if (!resolution.Success)
-            throw new InvalidOperationException(resolution.Error ?? "Could not resolve game data path.");
-
-        var ctx = resolution.Context!;
+        var ctx = RpcHelpers.RequireEnvironment();
         var service = ctx.CreateAssetPipelineService(NullProgressSink.Instance, NullLogSink.Instance);
 
         // Reuse session-cached GameData when available. The cache warms on

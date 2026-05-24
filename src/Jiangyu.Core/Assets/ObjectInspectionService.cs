@@ -46,8 +46,7 @@ public sealed class ObjectInspectionService(string gameDataPath, string cachePat
         }
 
         var pipeline = new AssetPipelineService(GameDataPath, CachePath, _progress, _log);
-        var resolver = new ObjectIdentityResolver(pipeline.LoadIndex());
-        return resolver.Resolve(request.Name, request.ClassName);
+        return ObjectIdentityResolver.Resolve(pipeline.LoadIndex(), request.Name, request.ClassName);
     }
 
     public ObjectInspectionResult Inspect(ObjectInspectionRequest request, ResolvedObjectCandidate? resolved = null)
@@ -62,61 +61,38 @@ public sealed class ObjectInspectionService(string gameDataPath, string cachePat
             ?? request.PathId
             ?? throw new InvalidOperationException("Inspection requires a resolved path ID.");
 
-        var settings = new CoreConfiguration();
-        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level2;
+        using var session = new GameDataSession(GameDataPath, _progress);
 
-        var adapter = new AssetRipperProgressAdapter(_progress);
-        Logger.Add(adapter);
+        if (!session.HasAnyAssetCollections)
+            throw new InvalidOperationException("No asset collections found in game data.");
 
-        try
+        IUnityObjectBase asset = FindAsset(session.GameData, collectionName, pathId)
+            ?? throw new InvalidOperationException($"No asset found in collection '{collectionName}' with pathId {pathId}.");
+
+        ObjectFieldInspection inspection = ObjectFieldInspector.Inspect(asset, request.MaxDepth, request.MaxArraySampleLength);
+        if (asset is IMonoBehaviour monoBehaviour)
         {
-            _progress.SetPhase("Loading assets");
-            var gameStructure = GameStructure.Load([GameDataPath], LocalFileSystem.Instance, settings);
-            var gameData = GameData.FromGameStructure(gameStructure);
-
-            if (!gameData.GameBundle.HasAnyAssetCollections())
-            {
-                throw new InvalidOperationException("No asset collections found in game data.");
-            }
-
-            _progress.Finish();
-
-            _progress.SetPhase("Processing");
-            RunProcessors(gameData);
-            _progress.Finish();
-
-            IUnityObjectBase asset = FindAsset(gameData, collectionName, pathId)
-                ?? throw new InvalidOperationException($"No asset found in collection '{collectionName}' with pathId {pathId}.");
-
-            ObjectFieldInspection inspection = ObjectFieldInspector.Inspect(asset, request.MaxDepth, request.MaxArraySampleLength);
-            if (asset is IMonoBehaviour monoBehaviour)
-            {
-                ManagedTypeInspectionEnricher.Enrich(monoBehaviour, gameData.AssemblyManager, inspection.Fields);
-                OdinPayloadEnricher.Enrich(inspection.Fields);
-            }
-
-            return new ObjectInspectionResult
-            {
-                Object = new InspectedObjectIdentity
-                {
-                    Name = asset.GetBestName(),
-                    ClassName = asset.ClassName,
-                    Collection = asset.Collection.Name,
-                    PathId = asset.PathID,
-                },
-                Options = new ObjectInspectionOptions
-                {
-                    MaxDepth = request.MaxDepth,
-                    MaxArraySampleLength = request.MaxArraySampleLength,
-                    Truncated = inspection.Truncated,
-                },
-                Fields = inspection.Fields,
-            };
+            ManagedTypeInspectionEnricher.Enrich(monoBehaviour, session.GameData.AssemblyManager, inspection.Fields);
+            OdinPayloadEnricher.Enrich(inspection.Fields);
         }
-        finally
+
+        return new ObjectInspectionResult
         {
-            Logger.Remove(adapter);
-        }
+            Object = new InspectedObjectIdentity
+            {
+                Name = asset.GetBestName(),
+                ClassName = asset.ClassName,
+                Collection = asset.Collection.Name,
+                PathId = asset.PathID,
+            },
+            Options = new ObjectInspectionOptions
+            {
+                MaxDepth = request.MaxDepth,
+                MaxArraySampleLength = request.MaxArraySampleLength,
+                Truncated = inspection.Truncated,
+            },
+            Fields = inspection.Fields,
+        };
     }
 
     private static IUnityObjectBase? FindAsset(GameData gameData, string collectionName, long pathId)
@@ -137,19 +113,4 @@ public sealed class ObjectInspectionService(string gameDataPath, string cachePat
         return null;
     }
 
-    private static void RunProcessors(GameData gameData)
-    {
-        IAssetProcessor[] processors =
-        [
-            new SceneDefinitionProcessor(),
-            new MainAssetProcessor(),
-            new AnimatorControllerProcessor(),
-            new PrefabProcessor(),
-        ];
-
-        foreach (var processor in processors)
-        {
-            processor.Process(gameData);
-        }
-    }
 }

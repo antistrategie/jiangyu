@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Jiangyu.Acp.JsonRpc;
 
-internal sealed class JsonRpcError
+public sealed class JsonRpcError
 {
     [JsonPropertyName("code")]
     public int Code { get; set; }
@@ -20,7 +20,7 @@ internal sealed class JsonRpcError
     public JsonElement? Data { get; set; }
 }
 
-internal static class JsonRpcErrorCodes
+public static class JsonRpcErrorCodes
 {
     public const int ParseError = -32700;
     public const int InvalidRequest = -32600;

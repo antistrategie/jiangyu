@@ -290,7 +290,7 @@ internal sealed partial class TemplatePatchApplier
         // converted value will be a string.
         var isTaggedPack = !string.IsNullOrWhiteSpace(composite.TaggedDiscriminator);
 
-        if (!isTaggedPack && !IsAssignableFromIl2Cpp(targetType, resolvedType))
+        if (!isTaggedPack && !Il2CppTypeAssignability.IsAssignableFromIl2Cpp(targetType, resolvedType))
         {
             error = $"Composite typeName '{composite.TypeName}' ({resolvedType.FullName}) is not assignable to member type {targetType.FullName}.";
             return false;
@@ -325,7 +325,7 @@ internal sealed partial class TemplatePatchApplier
                 }
                 else if (typeof(Il2CppObjectBase).IsAssignableFrom(resolvedType))
                 {
-                    if (!TryAllocateIl2CppInstance(resolvedType, out instance, out var il2cppError))
+                    if (!Il2CppInstanceAllocator.TryAllocate(resolvedType, out instance, out var il2cppError))
                     {
                         error = $"Composite: construction of {resolvedType.FullName} failed: {il2cppError}";
                         return false;
@@ -353,7 +353,7 @@ internal sealed partial class TemplatePatchApplier
         if (instance is Il2CppObjectBase il2cppInstance
             && instance.GetType() != resolvedType)
         {
-            if (!TryIl2CppCast(il2cppInstance, resolvedType, out var cast, out var castError))
+            if (!Il2CppReflectiveCast.TryCast(il2cppInstance, resolvedType, out var cast, out var castError))
             {
                 error = $"Composite: {castError}";
                 return false;
@@ -711,7 +711,7 @@ internal sealed partial class TemplatePatchApplier
                 instance = UnityEngine.ScriptableObject.CreateInstance(Il2CppType.From(resolvedType));
             else if (typeof(Il2CppObjectBase).IsAssignableFrom(resolvedType))
             {
-                if (!TryAllocateIl2CppInstance(resolvedType, out instance, out var allocError))
+                if (!Il2CppInstanceAllocator.TryAllocate(resolvedType, out instance, out var allocError))
                 {
                     error = $"allocation of {resolvedType.FullName} failed: {allocError}";
                     return false;
@@ -729,7 +729,7 @@ internal sealed partial class TemplatePatchApplier
         // Cast to concrete type so reflection sees subclass properties.
         if (instance is Il2CppObjectBase il2cpp && instance.GetType() != resolvedType)
         {
-            if (TryIl2CppCast(il2cpp, resolvedType, out var cast, out _) && cast != null)
+            if (Il2CppReflectiveCast.TryCast(il2cpp, resolvedType, out var cast, out _) && cast != null)
                 instance = cast;
         }
 

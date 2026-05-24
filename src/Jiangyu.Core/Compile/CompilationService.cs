@@ -8,6 +8,7 @@ using Jiangyu.Core.Il2Cpp;
 using Jiangyu.Core.Models;
 using Jiangyu.Core.Templates;
 using Jiangyu.Core.Unity;
+using Jiangyu.Shared.Bundles;
 using Jiangyu.Shared.Templates;
 using SharpGLTF.Schema2;
 
@@ -108,7 +109,7 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
             if (needsIndex) reasons.Add("asset index missing/stale");
             _log.Info($"Loading game data ({string.Join(", ", reasons)})...");
 
-            var gameData = assetPipeline.LoadAndProcessGameData();
+            using var session = assetPipeline.LoadAndProcessGameData();
 
             foreach (var name in missingImports)
             {
@@ -116,7 +117,7 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
                 try
                 {
                     assetPipeline.ImportPrefabAsUnityAssets(
-                        gameData,
+                        session.GameData,
                         assetName: name,
                         destDir: Path.Combine(importedRoot, name),
                         collection: null,
@@ -131,7 +132,7 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
             if (needsIndex)
             {
                 _log.Info("  building asset index...");
-                assetPipeline.BuildIndexFromGameData(gameData);
+                assetPipeline.BuildIndexFromGameData(session.GameData);
             }
         }
 
@@ -422,7 +423,6 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
                             TargetRendererPath = entry.TargetRendererPath,
                             TargetMeshName = entry.TargetMeshName,
                             TargetEntityName = entry.TargetEntityName,
-                            TargetEntityPathId = entry.TargetEntityPathId,
                         }
                     };
                 }
@@ -651,7 +651,7 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
             var file = modelFiles[0];
             var bindPoseReferencePath = EnsureBindPoseReferenceExport(projectDir, target, assetPipeline);
             var providedMeshCandidates = DiscoverReplacementMeshPathCandidates(file);
-            var expectedTargets = AssetInspectionService.GetSkinnedMeshTargetsForIndexedObject(gameDataPath, target.Collection, target.PathId);
+            var expectedTargets = AssetInspector.GetSkinnedMeshTargetsForIndexedObject(gameDataPath, target.Collection, target.PathId);
             if (expectedTargets.Count == 0)
                 throw new InvalidOperationException(
                     $"Replacement target '{targetAlias}' [{target.CanonicalPath ?? $"{target.Collection}:{target.PathId}"}] has no skinned mesh renderer targets to replace.");
@@ -702,7 +702,6 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
                     SourceReference = BuildSourceReference(projectDir, file, bundleMeshName),
                     BindPoseReferencePath = bindPoseReferencePath,
                     TargetEntityName = target.Name,
-                    TargetEntityPathId = target.PathId,
                     SuppressMeshContract = ambiguousRuntimeMeshNames.Contains(resolved.TargetMeshName),
                 });
             }
@@ -1765,7 +1764,7 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
     }
 
     // JIANGYU-CONTRACT: the bind-pose retargeting reference is the cleaned authoring
-    // export (ModelCleanupService-normalised, metre-space, no LOD containers). Retarget
+    // export (ModelCleaner-normalised, metre-space, no LOD containers). Retarget
     // correction is expressed relative to the modder's authoring space, and modders
     // start from the same cleaned export — so authored and reference bindposes live
     // in the same coordinate system. Using raw game-native bindposes as the reference

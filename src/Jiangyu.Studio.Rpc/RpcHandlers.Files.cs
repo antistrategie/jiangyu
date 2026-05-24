@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 using AssetRipper.Primitives;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Unity;
-using Jiangyu.Shared;
+using Jiangyu.Core.Rpc;
 using static Jiangyu.Studio.Rpc.RpcHelpers;
 
 namespace Jiangyu.Studio.Rpc;

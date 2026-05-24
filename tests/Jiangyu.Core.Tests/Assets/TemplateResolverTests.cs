@@ -8,7 +8,7 @@ public class TemplateResolverTests
     [Fact]
     public void Resolve_AmbiguousCandidates_AreSortedDeterministically()
     {
-        var resolver = new TemplateResolver(new TemplateIndex
+        var index = new TemplateIndex
         {
             Classification = TemplateClassifier.GetMetadata(),
             TemplateTypes =
@@ -36,9 +36,9 @@ public class TemplateResolverTests
                     Identity = new TemplateIdentity { Collection = "sharedassets1.assets", PathId = 10 },
                 },
             ],
-        });
+        };
 
-        TemplateResolutionResult result = resolver.Resolve("WeaponTemplate", "rifle");
+        TemplateResolutionResult result = TemplateResolver.Resolve(index, "WeaponTemplate", "rifle");
 
         Assert.Equal(TemplateResolutionStatus.Ambiguous, result.Status);
         Assert.Equal(3, result.Candidates.Count);
@@ -67,9 +67,7 @@ public class TemplateResolverTests
     [Fact]
     public void Resolve_ReturnsIndexUnavailable_WhenIndexMissing()
     {
-        var resolver = new TemplateResolver(null);
-
-        TemplateResolutionResult result = resolver.Resolve("EntityTemplate", "bunker");
+        TemplateResolutionResult result = TemplateResolver.Resolve(null, "EntityTemplate", "bunker");
 
         Assert.Equal(TemplateResolutionStatus.IndexUnavailable, result.Status);
     }

@@ -1,4 +1,4 @@
-namespace Jiangyu.Shared;
+namespace Jiangyu.Core.Rpc;
 
 /// <summary>
 /// Marks a class or struct whose shape is part of the RPC contract

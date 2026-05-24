@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Jiangyu.Shared;
+using Jiangyu.Core.Rpc;
 
 namespace Jiangyu.Studio.Rpc;
 

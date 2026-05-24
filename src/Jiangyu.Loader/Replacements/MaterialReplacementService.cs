@@ -1,3 +1,4 @@
+using Jiangyu.Shared.Bundles;
 using MelonLoader;
 using UnityEngine;
 
@@ -29,11 +30,11 @@ internal sealed class MaterialReplacementService
     public void ApplyBindings(
         MelonLogger.Instance log,
         Material[] sourceMaterials,
-        CompiledMaterialBindingRecord[] materialBindings)
+        IReadOnlyList<CompiledMaterialBinding> materialBindings)
     {
         if (sourceMaterials == null || sourceMaterials.Length == 0)
             return;
-        if (materialBindings == null || materialBindings.Length == 0)
+        if (materialBindings == null || materialBindings.Count == 0)
             return;
 
         foreach (var binding in materialBindings)

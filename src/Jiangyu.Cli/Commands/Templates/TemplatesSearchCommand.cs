@@ -45,7 +45,7 @@ public static class TemplatesSearchCommand
             }
 
             TemplateIndex? index = service.LoadIndex();
-            var search = new TemplateSearchService(index).Search(query, className);
+            var search = TemplateSearch.Search(index, query, className);
 
             if (search.Status == TemplateSearchStatus.IndexUnavailable)
             {

@@ -53,8 +53,7 @@ public static class InspectCommand
 
             try
             {
-                var service = new AssetInspectionService();
-                var report = AssetInspectionService.InspectBundles(bundlePath, gameDataPath, gameFilter, bundleFilter);
+                var report = AssetInspector.InspectBundles(bundlePath, gameDataPath, gameFilter, bundleFilter);
 
                 Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
                 File.WriteAllText(outputPath, JsonSerializer.Serialize(report, PrettyJsonOptions));

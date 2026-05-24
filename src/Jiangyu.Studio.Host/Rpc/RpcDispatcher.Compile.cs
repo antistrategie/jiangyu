@@ -5,7 +5,7 @@ using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Compile;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
-using Jiangyu.Shared;
+using Jiangyu.Core.Rpc;
 using Jiangyu.Studio.Rpc;
 
 namespace Jiangyu.Studio.Host.Rpc;
@@ -91,7 +91,7 @@ public static partial class RpcDispatcher
             var manifestPath = Path.Combine(projectRoot, ModManifest.FileName);
             if (!File.Exists(manifestPath))
             {
-                var notFound = new RpcHandlers.CompileFinishedEvent
+                var notFound = new CompileFinishedEvent
                 {
                     Success = false,
                     ErrorMessage = $"{ModManifest.FileName} not found. Run 'jiangyu init' first.",
@@ -114,7 +114,7 @@ public static partial class RpcDispatcher
                 ProjectDirectory = projectRoot,
             });
 
-            var finished = new RpcHandlers.CompileFinishedEvent
+            var finished = new CompileFinishedEvent
             {
                 Success = result.Success,
                 BundlePath = result.BundlePath,
@@ -125,7 +125,7 @@ public static partial class RpcDispatcher
         }
         catch (Exception ex)
         {
-            var failed = new RpcHandlers.CompileFinishedEvent
+            var failed = new CompileFinishedEvent
             {
                 Success = false,
                 ErrorMessage = $"{ex.GetType().Name}: {ex.Message}",

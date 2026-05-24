@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Jiangyu.Core.Config;
-using Jiangyu.Shared;
+using Jiangyu.Core.Rpc;
 using static Jiangyu.Studio.Rpc.RpcHelpers;
 
 namespace Jiangyu.Studio.Rpc;

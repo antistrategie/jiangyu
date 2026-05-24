@@ -2,20 +2,18 @@ using Jiangyu.Core.Models;
 
 namespace Jiangyu.Core.Assets;
 
-public sealed class TemplateResolver(TemplateIndex? index)
+public static class TemplateResolver
 {
-    private readonly TemplateIndex? _index = index;
-
-    public TemplateResolutionResult Resolve(string className, string? name)
+    public static TemplateResolutionResult Resolve(TemplateIndex? index, string className, string? name)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(className);
 
-        if (_index?.Instances is null)
+        if (index?.Instances is null)
         {
             return new TemplateResolutionResult { Status = TemplateResolutionStatus.IndexUnavailable };
         }
 
-        var candidates = _index.Instances
+        var candidates = index.Instances
             .Where(instance =>
                 string.Equals(instance.ClassName, className, StringComparison.OrdinalIgnoreCase)
                 && (name is null || string.Equals(instance.Name, name, StringComparison.OrdinalIgnoreCase)))

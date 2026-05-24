@@ -5,6 +5,7 @@ using System.Text.Json;
 using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Compile;
 using Jiangyu.Core.Models;
+using Jiangyu.Shared.Bundles;
 using SharpGLTF.Schema2;
 
 namespace Jiangyu.Core.Glb;
@@ -35,7 +36,6 @@ public static class GlbMeshBundleCompiler
         public string? SourceReference { get; init; }
         public string? BindPoseReferencePath { get; init; }
         public string? TargetEntityName { get; init; }
-        public long? TargetEntityPathId { get; init; }
         public bool SuppressMeshContract { get; init; }
         // Max half-extent of the vanilla game target mesh's local AABB. Used to derive
         // authored-vs-target scale ratio, which drives the vertex-space decision:
@@ -819,7 +819,7 @@ public static class GlbMeshBundleCompiler
                     $"Bind-pose retargeting for '{bundleMeshName}' could not load authored skin binding data.");
             }
 
-            var authoredContract = new BindPoseRetargetService.SkeletonContract
+            var authoredContract = new BindPoseRetargeter.SkeletonContract
             {
                 BoneNames = boneNames,
                 ParentNames = parentNames,
@@ -829,7 +829,7 @@ public static class GlbMeshBundleCompiler
                 ? bundleMeshName
                 : bindPoseReferenceSelector;
             var referenceSkin = LoadReferenceSkinBindingData(bindPoseReferencePath!, referenceMeshSelector);
-            var referenceContract = new BindPoseRetargetService.SkeletonContract
+            var referenceContract = new BindPoseRetargeter.SkeletonContract
             {
                 BoneNames = referenceSkin.BoneNames,
                 ParentNames = referenceSkin.ParentNames,
@@ -840,9 +840,9 @@ public static class GlbMeshBundleCompiler
                 .Select(name => referenceSkin.CompiledBindPoses[FindBoneIndex(referenceSkin.BoneNames, name)])
                 .ToArray();
 
-            if (BindPoseRetargetService.NeedsRetarget(authoredContract, referenceContract))
+            if (BindPoseRetargeter.NeedsRetarget(authoredContract, referenceContract))
             {
-                var retargeted = BindPoseRetargetService.Retarget(
+                var retargeted = BindPoseRetargeter.Retarget(
                     [.. sourceVertices],
                     [.. sourceNormals],
                     [.. sourceTangents],

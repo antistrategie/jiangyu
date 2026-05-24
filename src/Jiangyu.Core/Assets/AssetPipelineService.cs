@@ -9,6 +9,7 @@ using AssetRipper.Export.Modules.Models;
 using AssetRipper.Import.Configuration;
 using AssetRipper.Import.Logging;
 using AssetRipper.Import.Structure;
+using Jiangyu.Shared;
 using AssetRipper.IO.Files;
 using AssetRipper.Processing;
 using AssetRipper.Processing.AnimatorControllers;
@@ -67,11 +68,6 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
     //       identifier. Drives Studio's from= clone-source dropdown.
     internal const int CurrentFormatVersion = 8;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
 
     public string GameDataPath { get; } = gameDataPath;
     public string CachePath { get; } = cachePath;
@@ -101,7 +97,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         }
 
         var manifest = JsonSerializer.Deserialize<IndexManifest>(
-            File.ReadAllText(manifestPath), JsonOptions);
+            File.ReadAllText(manifestPath), JsonOptions.PrettyPascalIgnoreNull);
         if (manifest is null)
         {
             return new CachedIndexStatus
@@ -134,8 +130,8 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
     /// </summary>
     public void BuildIndex()
     {
-        var gameData = LoadAndProcessGameData();
-        BuildIndexFromGameData(gameData);
+        using var session = LoadAndProcessGameData();
+        BuildIndexFromGameData(session.GameData);
     }
 
     /// <summary>
@@ -159,7 +155,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         Directory.CreateDirectory(CachePath);
         File.WriteAllText(
             Path.Combine(CachePath, IndexFileName),
-            JsonSerializer.Serialize(index, JsonOptions));
+            JsonSerializer.Serialize(index, JsonOptions.PrettyPascalIgnoreNull));
 
         // Write manifest
         var manifest = new IndexManifest
@@ -172,7 +168,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         };
         File.WriteAllText(
             Path.Combine(CachePath, ManifestFileName),
-            JsonSerializer.Serialize(manifest, JsonOptions));
+            JsonSerializer.Serialize(manifest, JsonOptions.PrettyPascalIgnoreNull));
 
         _log.Info($"Indexed {index.Assets?.Count ?? 0} assets to: {CachePath}");
     }
@@ -182,48 +178,28 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
     /// fully-processed <see cref="GameData"/> ready for asset extraction.
     /// Callers may cache the result for repeated lookups.
     /// </summary>
-    public GameData LoadAndProcessGameData()
+    public GameDataSession LoadAndProcessGameData()
     {
         _log.Info($"Loading game data from: {GameDataPath}");
 
-        var settings = new CoreConfiguration();
         // Level2 inflates MonoBehaviour structures via the typed managed
-        // metadata (the same level ObjectInspectionService uses). Required
-        // for the asset-index build to walk Stem.SoundBank.sounds[] and
-        // populate AssetEntry.NamedChildren; lower levels leave
-        // m_Structure as an opaque node with no Fields list.
-        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level2;
+        // metadata. Required for the asset-index build to walk
+        // Stem.SoundBank.sounds[] and populate AssetEntry.NamedChildren;
+        // lower levels leave m_Structure as an opaque node with no Fields list.
+        // includeSpriteProcessor: the asset-index pipeline is the only caller
+        // that needs SpriteInformationObject results.
+        var session = new GameDataSession(GameDataPath, _progress, includeSpriteProcessor: true);
 
-        var adapter = new AssetRipperProgressAdapter(_progress);
-        Logger.Add(adapter);
-
-        try
+        if (!session.HasAnyAssetCollections)
         {
-            _progress.SetPhase("Loading assets");
-            var gameStructure = GameStructure.Load([GameDataPath], LocalFileSystem.Instance, settings);
-            var gameData = GameData.FromGameStructure(gameStructure);
-
-            if (!gameData.GameBundle.HasAnyAssetCollections())
-            {
-                _progress.Finish();
-                throw new InvalidOperationException("No asset collections found in game data.");
-            }
-
-            _progress.Finish();
-
-            int collectionCount = gameData.GameBundle.FetchAssetCollections().Count();
-            _log.Info($"Loaded {collectionCount} asset collections");
-
-            _progress.SetPhase("Processing");
-            RunProcessors(gameData);
-            _progress.Finish();
-
-            return gameData;
+            session.Dispose();
+            throw new InvalidOperationException("No asset collections found in game data.");
         }
-        finally
-        {
-            Logger.Remove(adapter);
-        }
+
+        int collectionCount = session.GameData.GameBundle.FetchAssetCollections().Count();
+        _log.Info($"Loaded {collectionCount} asset collections");
+
+        return session;
     }
 
     /// <summary>
@@ -237,7 +213,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
             return null;
         }
 
-        return JsonSerializer.Deserialize<AssetIndex>(File.ReadAllText(indexPath), JsonOptions);
+        return JsonSerializer.Deserialize<AssetIndex>(File.ReadAllText(indexPath), JsonOptions.PrettyPascalIgnoreNull);
     }
 
     public IndexManifest? LoadManifest()
@@ -248,7 +224,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
             return null;
         }
 
-        return JsonSerializer.Deserialize<IndexManifest>(File.ReadAllText(manifestPath), JsonOptions);
+        return JsonSerializer.Deserialize<IndexManifest>(File.ReadAllText(manifestPath), JsonOptions.PrettyPascalIgnoreNull);
     }
 
     /// <summary>
@@ -380,33 +356,14 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         if (string.IsNullOrWhiteSpace(destDir))
             throw new ArgumentException("destDir is required.", nameof(destDir));
 
-        var settings = new AssetRipper.Export.Configuration.FullConfiguration();
-        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level2;
+        var exportSettings = new AssetRipper.Export.Configuration.FullConfiguration();
+        exportSettings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level2;
 
-        var adapter = new AssetRipperProgressAdapter(_progress);
-        Logger.Add(adapter);
-        try
-        {
-            _progress.SetPhase("Loading game data");
-            var gameStructure = GameStructure.Load([GameDataPath], LocalFileSystem.Instance, settings);
-            var gameData = GameData.FromGameStructure(gameStructure);
-            if (!gameData.GameBundle.HasAnyAssetCollections())
-            {
-                _progress.Finish();
-                throw new InvalidOperationException("No asset collections found in game data.");
-            }
+        using var session = new GameDataSession(GameDataPath, _progress, includeSpriteProcessor: true);
+        if (!session.HasAnyAssetCollections)
+            throw new InvalidOperationException("No asset collections found in game data.");
 
-            _progress.Finish();
-            _progress.SetPhase("Processing");
-            RunProcessors(gameData);
-            _progress.Finish();
-
-            ImportPrefabSubsetFromGameData(gameData, settings, assetName, destDir, collection, pathId);
-        }
-        finally
-        {
-            Logger.Remove(adapter);
-        }
+        ImportPrefabSubsetFromGameData(session.GameData, exportSettings, assetName, destDir, collection, pathId);
     }
 
     /// <summary>
@@ -591,73 +548,49 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
     {
         _log.Info($"Loading game data from: {GameDataPath}");
 
-        var settings = new CoreConfiguration();
-        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level0;
+        using var session = new GameDataSession(GameDataPath, _progress, scriptContentLevel: ScriptContentLevel.Level0);
 
-        var adapter = new AssetRipperProgressAdapter(_progress);
-        Logger.Add(adapter);
-
-        try
+        if (!session.HasAnyAssetCollections)
         {
-            _progress.SetPhase("Loading assets");
-            var gameStructure = GameStructure.Load([GameDataPath], LocalFileSystem.Instance, settings);
-            var gameData = GameData.FromGameStructure(gameStructure);
-
-            if (!gameData.GameBundle.HasAnyAssetCollections())
-            {
-                _progress.Finish();
-                _log.Error("No asset collections found in game data.");
-                return;
-            }
-
-            _progress.Finish();
-
-            _progress.SetPhase("Processing");
-            RunProcessors(gameData);
-            _progress.Finish();
-
-            // Find the asset by stable indexed identity (collection + pathId)
-            IUnityObjectBase? found = null;
-            foreach (var col in gameData.GameBundle.FetchAssetCollections())
-            {
-                if (col.Name != collection)
-                {
-                    continue;
-                }
-
-                found = col.FirstOrDefault(a => a.PathID == pathId);
-                break;
-            }
-
-            if (found is IGameObject gameObject)
-            {
-                _log.Info($"Found GameObject: {gameObject.Name}");
-                ExportGameObjectPackage(gameObject, packageDir, clean);
-                return;
-            }
-
-            if (found is PrefabHierarchyObject prefabHierarchy)
-            {
-                _log.Info($"Found PrefabHierarchyObject: {prefabHierarchy.Name}");
-                ExportGameObjectPackage(prefabHierarchy.Root, packageDir, clean, prefabHierarchy.Assets);
-                return;
-            }
-
-            if (found is IMesh mesh)
-            {
-                _log.Info($"Found Mesh: {mesh.Name}");
-                Directory.CreateDirectory(packageDir);
-                var glbPath = Path.Combine(packageDir, "model.glb");
-                ExportMeshAsGlb(mesh, glbPath);
-                return;
-            }
-
-            _log.Error($"No GameObject or Mesh named '{assetName}' found.");
+            _log.Error("No asset collections found in game data.");
+            return;
         }
-        finally
+
+        // Find the asset by stable indexed identity (collection + pathId)
+        IUnityObjectBase? found = null;
+        foreach (var col in session.GameData.GameBundle.FetchAssetCollections())
         {
-            Logger.Remove(adapter);
+            if (col.Name != collection)
+                continue;
+
+            found = col.FirstOrDefault(a => a.PathID == pathId);
+            break;
         }
+
+        if (found is IGameObject gameObject)
+        {
+            _log.Info($"Found GameObject: {gameObject.Name}");
+            ExportGameObjectPackage(gameObject, packageDir, clean);
+            return;
+        }
+
+        if (found is PrefabHierarchyObject prefabHierarchy)
+        {
+            _log.Info($"Found PrefabHierarchyObject: {prefabHierarchy.Name}");
+            ExportGameObjectPackage(prefabHierarchy.Root, packageDir, clean, prefabHierarchy.Assets);
+            return;
+        }
+
+        if (found is IMesh mesh)
+        {
+            _log.Info($"Found Mesh: {mesh.Name}");
+            Directory.CreateDirectory(packageDir);
+            var glbPath = Path.Combine(packageDir, "model.glb");
+            ExportMeshAsGlb(mesh, glbPath);
+            return;
+        }
+
+        _log.Error($"No GameObject or Mesh named '{assetName}' found.");
     }
 
     /// <summary>
@@ -899,54 +832,33 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
     {
         _log.Info($"Loading game data from: {GameDataPath}");
 
-        var settings = new CoreConfiguration();
-        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level0;
+        using var session = new GameDataSession(GameDataPath, _progress, scriptContentLevel: ScriptContentLevel.Level0);
 
-        var adapter = new AssetRipperProgressAdapter(_progress);
-        Logger.Add(adapter);
-
-        try
+        if (!session.HasAnyAssetCollections)
         {
-            _progress.SetPhase("Loading assets");
-            var gameStructure = GameStructure.Load([GameDataPath], LocalFileSystem.Instance, settings);
-            var gameData = GameData.FromGameStructure(gameStructure);
-
-            if (!gameData.GameBundle.HasAnyAssetCollections())
-            {
-                _progress.Finish();
-                _log.Error("No asset collections found in game data.");
-                return false;
-            }
-
-            _progress.Finish();
-            _progress.SetPhase("Processing");
-            RunProcessors(gameData);
-            _progress.Finish();
-
-            IUnityObjectBase? found = null;
-            foreach (var col in gameData.GameBundle.FetchAssetCollections())
-            {
-                if (col.Name != collection)
-                    continue;
-
-                found = col.FirstOrDefault(a => a.PathID == pathId);
-                break;
-            }
-
-            if (found is not T typed)
-            {
-                _log.Error(
-                    $"No {expectedTypeLabel} named '{assetName}' found in collection '{collection}' at pathId={pathId} " +
-                    $"(found={found?.GetType().Name ?? "null"}).");
-                return false;
-            }
-
-            return exporter(typed);
+            _log.Error("No asset collections found in game data.");
+            return false;
         }
-        finally
+
+        IUnityObjectBase? found = null;
+        foreach (var col in session.GameData.GameBundle.FetchAssetCollections())
         {
-            Logger.Remove(adapter);
+            if (col.Name != collection)
+                continue;
+
+            found = col.FirstOrDefault(a => a.PathID == pathId);
+            break;
         }
+
+        if (found is not T typed)
+        {
+            _log.Error(
+                $"No {expectedTypeLabel} named '{assetName}' found in collection '{collection}' at pathId={pathId} " +
+                $"(found={found?.GetType().Name ?? "null"}).");
+            return false;
+        }
+
+        return exporter(typed);
     }
 
     /// <summary>
@@ -1021,7 +933,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
                 }
             }
 
-            var cleanScene = ModelCleanupService.BuildCleanScene(tempGlbPath, _log, materialTextures);
+            var cleanScene = ModelCleaner.BuildCleanScene(tempGlbPath, _log, materialTextures);
             File.Delete(tempGlbPath);
             _log.Info("  Cleaned: 1x authoring scale");
             var sourceSkinBindings = CollectSourceSkinBindings(root);
@@ -2177,43 +2089,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         }
     }
 
-    private static void RunProcessors(GameData gameData)
-    {
-        IAssetProcessor[] processors =
-        [
-            new SceneDefinitionProcessor(),
-            new MainAssetProcessor(),
-            new AnimatorControllerProcessor(),
-            new PrefabProcessor(),
-            new SpriteProcessor(),
-        ];
-
-        foreach (var processor in processors)
-        {
-            processor.Process(gameData);
-        }
-    }
-
-    private string? ComputeGameAssemblyHash()
-    {
-        var candidates = new[]
-        {
-            Path.Combine(Path.GetDirectoryName(GameDataPath)!, "GameAssembly.so"),
-            Path.Combine(Path.GetDirectoryName(GameDataPath)!, "GameAssembly.dll"),
-        };
-
-        foreach (var candidate in candidates)
-        {
-            if (File.Exists(candidate))
-            {
-                using var stream = File.OpenRead(candidate);
-                var hash = SHA256.HashData(stream);
-                return Convert.ToHexString(hash).ToLowerInvariant();
-            }
-        }
-
-        return null;
-    }
+    private string? ComputeGameAssemblyHash() => GameDataSession.ComputeGameAssemblyHash(GameDataPath);
 
     // ── Thumbnail generation ──────────────────────────────────────────────
 

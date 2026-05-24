@@ -36,7 +36,7 @@ public class ModelCleanupSceneTests : IDisposable
     {
         var glbPath = CreateStaticMeshWithLodContainer();
 
-        var cleanScene = ModelCleanupService.BuildCleanScene(glbPath);
+        var cleanScene = ModelCleaner.BuildCleanScene(glbPath);
         var cleanModel = cleanScene.ToGltf2();
 
         var nodeNames = cleanModel.LogicalNodes.Select(n => n.Name).ToHashSet();
@@ -54,7 +54,7 @@ public class ModelCleanupSceneTests : IDisposable
     {
         var glbPath = CreateStaticMeshUnderScaledContainer(containerScale: 0.01f);
 
-        var cleanScene = ModelCleanupService.BuildCleanScene(glbPath);
+        var cleanScene = ModelCleaner.BuildCleanScene(glbPath);
         var cleanModel = cleanScene.ToGltf2();
 
         // The mesh should exist in the output
@@ -79,7 +79,7 @@ public class ModelCleanupSceneTests : IDisposable
     {
         var glbPath = CreateSkinnedMeshModel();
 
-        var cleanScene = ModelCleanupService.BuildCleanScene(glbPath);
+        var cleanScene = ModelCleaner.BuildCleanScene(glbPath);
         var cleanModel = cleanScene.ToGltf2();
 
         var nodeNames = cleanModel.LogicalNodes.Select(n => n.Name).ToHashSet();
@@ -98,7 +98,7 @@ public class ModelCleanupSceneTests : IDisposable
     {
         var glbPath = CreateSkinnedMeshModel();
 
-        var cleanScene = ModelCleanupService.BuildCleanScene(glbPath);
+        var cleanScene = ModelCleaner.BuildCleanScene(glbPath);
         var cleanModel = cleanScene.ToGltf2();
 
         var nodeNames = cleanModel.LogicalNodes.Select(n => n.Name).ToHashSet();
@@ -114,7 +114,7 @@ public class ModelCleanupSceneTests : IDisposable
     {
         var glbPath = CreateSkinnedMeshModel();
 
-        var cleanScene = ModelCleanupService.BuildCleanScene(glbPath);
+        var cleanScene = ModelCleaner.BuildCleanScene(glbPath);
         var cleanModel = cleanScene.ToGltf2();
 
         // All skeleton nodes should have exactly (1,1,1) scale
@@ -136,7 +136,7 @@ public class ModelCleanupSceneTests : IDisposable
     {
         var glbPath = CreateWeightedMeshWithoutSkinModel();
 
-        var cleanScene = ModelCleanupService.BuildCleanScene(glbPath);
+        var cleanScene = ModelCleaner.BuildCleanScene(glbPath);
         var cleanModel = cleanScene.ToGltf2();
         Assert.Empty(cleanModel.LogicalSkins);
 
@@ -162,7 +162,7 @@ public class ModelCleanupSceneTests : IDisposable
     {
         var glbPath = CreateWeightedMeshWithoutSkinModel();
 
-        var cleanScene = ModelCleanupService.BuildCleanScene(glbPath);
+        var cleanScene = ModelCleaner.BuildCleanScene(glbPath);
         var cleanModel = cleanScene.ToGltf2();
         string RelativePath(Node node)
         {

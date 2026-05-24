@@ -23,7 +23,7 @@ namespace Jiangyu.Core.Glb;
 /// breaks the assumption, check FindSkinnedMeshContainerScale and
 /// FindAncestorContainerScale.
 /// </summary>
-internal static class ModelCleanupService
+internal static class ModelCleaner
 {
     private const float ContainerScaleThreshold = 0.02f;
 

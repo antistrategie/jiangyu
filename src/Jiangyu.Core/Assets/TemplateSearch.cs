@@ -2,15 +2,13 @@ using Jiangyu.Core.Models;
 
 namespace Jiangyu.Core.Assets;
 
-public sealed class TemplateSearchService(TemplateIndex? index)
+public static class TemplateSearch
 {
-    private readonly TemplateIndex? _index = index;
-
-    public TemplateSearchResult Search(string query, string? className = null)
+    public static TemplateSearchResult Search(TemplateIndex? index, string query, string? className = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(query);
 
-        if (_index is null)
+        if (index is null)
         {
             return new TemplateSearchResult
             {
@@ -26,7 +24,7 @@ public sealed class TemplateSearchService(TemplateIndex? index)
         List<TemplateTypeEntry> matchingTypes = trimmedClassName is null
             ?
             [
-                .. _index.TemplateTypes
+                .. index.TemplateTypes
                     .Where(entry => Contains(entry.ClassName, trimmedQuery))
                     .OrderBy(entry => entry.ClassName, StringComparer.OrdinalIgnoreCase),
             ]
@@ -34,7 +32,7 @@ public sealed class TemplateSearchService(TemplateIndex? index)
 
         List<TemplateInstanceEntry> matchingInstances =
         [
-            .. _index.Instances
+            .. index.Instances
                 .Where(instance =>
                     (trimmedClassName is null || string.Equals(instance.ClassName, trimmedClassName, StringComparison.OrdinalIgnoreCase))
                     && (Contains(instance.Name, trimmedQuery)

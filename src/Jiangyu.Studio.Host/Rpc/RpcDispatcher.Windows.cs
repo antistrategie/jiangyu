@@ -2,7 +2,7 @@ using System.Drawing;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using InfiniFrame;
-using Jiangyu.Shared;
+using Jiangyu.Core.Rpc;
 
 namespace Jiangyu.Studio.Host.Rpc;
 

@@ -23,7 +23,7 @@ public static class InspectPackageCommand
                 return 1;
             }
 
-            var result = PackageValidationService.Validate(packageDir);
+            var result = PackageValidator.Validate(packageDir);
 
             Console.WriteLine($"Package: {Path.GetFullPath(packageDir)}");
             Console.WriteLine();

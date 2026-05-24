@@ -88,66 +88,37 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
         TemplateIndexManifest manifest = indexService.LoadManifest()
             ?? throw new InvalidOperationException("Template index manifest could not be loaded.");
 
-        var resolver = new TemplateResolver(index);
-
         // Resolve all samples upfront — fail fast on any unresolvable.
-        var resolvedTemplates = ResolveTemplateSamples(sources.Templates, resolver);
+        var resolvedTemplates = ResolveTemplateSamples(sources.Templates, index);
         var resolvedSupportTypes = ResolveSupportTypeSamples(sources.SupportTypes, index);
 
         log.Info($"Loading game data from: {gameDataPath}");
-        var settings = new CoreConfiguration();
-        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level2;
+        using var session = new GameDataSession(gameDataPath, progress);
 
-        var adapter = new AssetRipperProgressAdapter(progress);
-        Logger.Add(adapter);
+        if (!session.HasAnyAssetCollections)
+            throw new InvalidOperationException("No asset collections found in game data.");
 
-        try
+        progress.SetPhase("Generating baseline");
+        var types = new List<BaselineTypeEntry>();
+
+        foreach (var (source, samples) in resolvedTemplates)
+            types.Add(BuildTemplateEntry(source, samples, session.GameData));
+
+        foreach (var (source, samples) in resolvedSupportTypes)
+            types.Add(BuildSupportTypeEntry(source, samples, session.GameData));
+
+        types = [.. types
+            .OrderBy(t => t.Category, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(t => t.TypeName, StringComparer.OrdinalIgnoreCase)];
+
+        progress.Finish();
+
+        return new StructuralBaseline
         {
-            progress.SetPhase("Loading assets");
-            var gameStructure = GameStructure.Load([gameDataPath], LocalFileSystem.Instance, settings);
-            var gameData = GameData.FromGameStructure(gameStructure);
-
-            if (!gameData.GameBundle.HasAnyAssetCollections())
-            {
-                throw new InvalidOperationException("No asset collections found in game data.");
-            }
-
-            progress.Finish();
-
-            progress.SetPhase("Processing");
-            RunProcessors(gameData);
-            progress.Finish();
-
-            progress.SetPhase("Generating baseline");
-            var types = new List<BaselineTypeEntry>();
-
-            foreach (var (source, samples) in resolvedTemplates)
-            {
-                types.Add(BuildTemplateEntry(source, samples, gameData));
-            }
-
-            foreach (var (source, samples) in resolvedSupportTypes)
-            {
-                types.Add(BuildSupportTypeEntry(source, samples, gameData));
-            }
-
-            types = [.. types
-                .OrderBy(t => t.Category, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(t => t.TypeName, StringComparer.OrdinalIgnoreCase)];
-
-            progress.Finish();
-
-            return new StructuralBaseline
-            {
-                GeneratedAt = DateTimeOffset.UtcNow,
-                GameAssemblyHash = manifest.GameAssemblyHash,
-                Types = types,
-            };
-        }
-        finally
-        {
-            Logger.Remove(adapter);
-        }
+            GeneratedAt = DateTimeOffset.UtcNow,
+            GameAssemblyHash = manifest.GameAssemblyHash,
+            Types = types,
+        };
     }
 
     public static BaselineSources? LoadSources(string path)
@@ -315,7 +286,7 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
 
     private static List<(BaselineSourceEntry Source, List<ResolvedTemplateCandidate> Samples)> ResolveTemplateSamples(
         List<BaselineSourceEntry> templates,
-        TemplateResolver resolver)
+        TemplateIndex index)
     {
         var result = new List<(BaselineSourceEntry, List<ResolvedTemplateCandidate>)>();
         var errors = new List<string>();
@@ -331,7 +302,7 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
             var samples = new List<ResolvedTemplateCandidate>();
             foreach (string sampleName in entry.SampleNames)
             {
-                TemplateResolutionResult resolution = resolver.Resolve(entry.TypeName, sampleName);
+                TemplateResolutionResult resolution = TemplateResolver.Resolve(index, entry.TypeName, sampleName);
                 switch (resolution.Status)
                 {
                     case TemplateResolutionStatus.Success:
@@ -954,19 +925,4 @@ public sealed class StructuralBaselineService(string gameDataPath, string cacheP
         };
     }
 
-    private static void RunProcessors(GameData gameData)
-    {
-        IAssetProcessor[] processors =
-        [
-            new SceneDefinitionProcessor(),
-            new MainAssetProcessor(),
-            new AnimatorControllerProcessor(),
-            new PrefabProcessor(),
-        ];
-
-        foreach (var processor in processors)
-        {
-            processor.Process(gameData);
-        }
-    }
 }

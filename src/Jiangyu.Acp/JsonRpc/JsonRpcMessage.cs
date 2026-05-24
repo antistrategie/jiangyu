@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Jiangyu.Acp.JsonRpc;
 
-internal sealed class JsonRpcRequest
+public sealed class JsonRpcRequest
 {
     [JsonPropertyName("jsonrpc")]
     public string JsonRpc { get; set; } = "2.0";
@@ -19,7 +19,7 @@ internal sealed class JsonRpcRequest
     public JsonElement? Params { get; set; }
 }
 
-internal sealed class JsonRpcResponse
+public sealed class JsonRpcResponse
 {
     [JsonPropertyName("jsonrpc")]
     public string JsonRpc { get; set; } = "2.0";
@@ -36,7 +36,7 @@ internal sealed class JsonRpcResponse
     public JsonRpcError? Error { get; set; }
 }
 
-internal sealed class JsonRpcNotification
+public sealed class JsonRpcNotification
 {
     [JsonPropertyName("jsonrpc")]
     public string JsonRpc { get; set; } = "2.0";

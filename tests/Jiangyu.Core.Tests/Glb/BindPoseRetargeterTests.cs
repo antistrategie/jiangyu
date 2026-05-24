@@ -3,14 +3,14 @@ using Jiangyu.Core.Glb;
 
 namespace Jiangyu.Core.Tests.Glb;
 
-public sealed class BindPoseRetargetServiceTests
+public sealed class BindPoseRetargeterTests
 {
     [Fact]
     public void IdentityContracts_DoNotNeedRetarget()
     {
         var contract = CreateTwoBoneContract(Matrix4x4.Identity, Matrix4x4.CreateTranslation(0f, -1f, 0f));
 
-        Assert.False(BindPoseRetargetService.NeedsRetarget(contract, contract));
+        Assert.False(BindPoseRetargeter.NeedsRetarget(contract, contract));
     }
 
     [Fact]
@@ -23,7 +23,7 @@ public sealed class BindPoseRetargetServiceTests
         var weights = new[] { 1f, 0f, 0f, 0f };
         var indices = new[] { 0, 0, 0, 0 };
 
-        var result = BindPoseRetargetService.Retarget(positions, normals, tangents, weights, indices, contract, contract);
+        var result = BindPoseRetargeter.Retarget(positions, normals, tangents, weights, indices, contract, contract);
 
         Assert.Equal(positions[0], result.Positions[0]);
         Assert.Equal(normals[0], result.Normals[0]);
@@ -48,7 +48,7 @@ public sealed class BindPoseRetargetServiceTests
         var weights = new[] { 0f, 1f, 0f, 0f };
         var indices = new[] { 0, 1, 0, 0 };
 
-        var result = BindPoseRetargetService.Retarget(positions, normals, tangents, weights, indices, authored, target);
+        var result = BindPoseRetargeter.Retarget(positions, normals, tangents, weights, indices, authored, target);
 
         Assert.True(Math.Abs(result.Positions[0].Y - 1.3f) < 1e-4f);
         Assert.Equal(target.BindPoses[1], result.BindPoses[1]);
@@ -67,7 +67,7 @@ public sealed class BindPoseRetargetServiceTests
         var indices = new[] { 0, 1, 0, 0 };
         var authoredVertex = ReposeVertex(targetVertex, targetWorld, target.BindPoses, authoredWorld, weights, indices);
 
-        var result = BindPoseRetargetService.Retarget([authoredVertex], [], [], weights, indices, authored, target);
+        var result = BindPoseRetargeter.Retarget([authoredVertex], [], [], weights, indices, authored, target);
         AssertNearlyEqual(targetVertex, result.Positions[0], 1e-4f);
 
         var animatedTargetWorld = CreateTwoBoneAnimatedPose(childRotationDegrees: 25f);
@@ -90,7 +90,7 @@ public sealed class BindPoseRetargetServiceTests
         var indices = new[] { 0, 1, 0, 0 };
         var authoredVertex = ReposeVertex(targetVertex, targetWorld, target.BindPoses, authoredWorld, weights, indices);
 
-        var result = BindPoseRetargetService.Retarget([authoredVertex], [], [], weights, indices, authored, target);
+        var result = BindPoseRetargeter.Retarget([authoredVertex], [], [], weights, indices, authored, target);
 
         // Mixed-weight recovery cannot be exact under LBS when authored and target joint rotations differ:
         // the service blends per-bone recoveries, so (0.5·I + 0.5·F⁻¹)·(0.5·I + 0.5·F) ≠ I for F ≠ I.
@@ -106,26 +106,26 @@ public sealed class BindPoseRetargetServiceTests
     [Fact]
     public void HierarchyMismatch_ThrowsClearError()
     {
-        var authored = new BindPoseRetargetService.SkeletonContract
+        var authored = new BindPoseRetargeter.SkeletonContract
         {
             BoneNames = ["Root", "Child"],
             ParentNames = [null, "Root"],
             BindPoses = [Matrix4x4.Identity, Matrix4x4.Identity],
         };
-        var target = new BindPoseRetargetService.SkeletonContract
+        var target = new BindPoseRetargeter.SkeletonContract
         {
             BoneNames = ["Root", "Child"],
             ParentNames = [null, null],
             BindPoses = [Matrix4x4.Identity, Matrix4x4.Identity],
         };
 
-        var ex = Assert.Throws<InvalidOperationException>(() => BindPoseRetargetService.NeedsRetarget(authored, target));
+        var ex = Assert.Throws<InvalidOperationException>(() => BindPoseRetargeter.NeedsRetarget(authored, target));
         Assert.Contains("same bone hierarchy", ex.Message);
     }
 
-    private static BindPoseRetargetService.SkeletonContract CreateTwoBoneContract(Matrix4x4 rootBindPose, Matrix4x4 childBindPose)
+    private static BindPoseRetargeter.SkeletonContract CreateTwoBoneContract(Matrix4x4 rootBindPose, Matrix4x4 childBindPose)
     {
-        return new BindPoseRetargetService.SkeletonContract
+        return new BindPoseRetargeter.SkeletonContract
         {
             BoneNames = ["Root", "Child"],
             ParentNames = [null, "Root"],
@@ -133,9 +133,9 @@ public sealed class BindPoseRetargetServiceTests
         };
     }
 
-    private static BindPoseRetargetService.SkeletonContract CreateContractFromWorldRest(IReadOnlyList<Matrix4x4> worldRest)
+    private static BindPoseRetargeter.SkeletonContract CreateContractFromWorldRest(IReadOnlyList<Matrix4x4> worldRest)
     {
-        return new BindPoseRetargetService.SkeletonContract
+        return new BindPoseRetargeter.SkeletonContract
         {
             BoneNames = ["Root", "Child"],
             ParentNames = [null, "Root"],

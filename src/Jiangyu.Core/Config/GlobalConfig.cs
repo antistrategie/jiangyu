@@ -1,17 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Jiangyu.Shared;
 
 namespace Jiangyu.Core.Config;
 
 public sealed class GlobalConfig
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
-
     [JsonPropertyName("game")]
     public string? Game { get; set; }
 
@@ -29,10 +23,10 @@ public sealed class GlobalConfig
     [JsonPropertyName("cache")]
     public string? Cache { get; set; }
 
-    public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
+    public string ToJson() => JsonSerializer.Serialize(this, JsonOptions.PrettyCamel);
 
     public static GlobalConfig FromJson(string json) =>
-        JsonSerializer.Deserialize<GlobalConfig>(json, JsonOptions)
+        JsonSerializer.Deserialize<GlobalConfig>(json, JsonOptions.PrettyCamel)
         ?? new GlobalConfig();
 
     /// <summary>

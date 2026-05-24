@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Jiangyu.Shared;
 
 namespace Jiangyu.Core.Il2Cpp;
 
@@ -102,16 +103,10 @@ public sealed class Il2CppMetadataSupplement
         return null;
     }
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
-
-    public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
+    public string ToJson() => JsonSerializer.Serialize(this, JsonOptions.PrettyPascalIgnoreNull);
 
     public static Il2CppMetadataSupplement? FromJson(string json)
-        => JsonSerializer.Deserialize<Il2CppMetadataSupplement>(json, JsonOptions);
+        => JsonSerializer.Deserialize<Il2CppMetadataSupplement>(json, JsonOptions.PrettyPascalIgnoreNull);
 }
 
 public sealed class FieldMetadata

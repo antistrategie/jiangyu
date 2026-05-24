@@ -108,17 +108,7 @@ internal sealed partial class TemplatePatchApplier
     }
 
     private static bool IsHashSetType(Type type)
-    {
-        for (var current = type; current != null; current = current.BaseType)
-        {
-            if (!current.IsGenericType) continue;
-            var def = current.GetGenericTypeDefinition().FullName;
-            if (def == "System.Collections.Generic.HashSet`1"
-                || def == "Il2CppSystem.Collections.Generic.HashSet`1")
-                return true;
-        }
-        return false;
-    }
+        => Jiangyu.Shared.Templates.TemplateTypeRules.IsHashSetCollection(type);
 
     private static MethodInfo FindInstanceAddMethod(Type collectionType)
     {
@@ -172,7 +162,7 @@ internal sealed partial class TemplatePatchApplier
         var collectionType = collection.GetType();
 
         // Fast path: Il2CppInterop's own array wrappers expose an int indexer.
-        var indexer = FindIndexer(collectionType);
+        var indexer = Il2CppIndexerLookup.FindIntIndexer(collectionType);
         if (indexer != null)
         {
             elementType = indexer.PropertyType;
@@ -341,7 +331,7 @@ internal sealed partial class TemplatePatchApplier
         var listCtor = collectionType.GetConstructor(Type.EmptyTypes);
         var countProperty = collectionType.GetProperty(
             "Count", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        var indexer = FindIndexer(collectionType);
+        var indexer = Il2CppIndexerLookup.FindIntIndexer(collectionType);
         var addArgs = new object[1];
         var insertArgs = insertIndex.HasValue ? new object[2] : null;
 
@@ -404,7 +394,7 @@ internal sealed partial class TemplatePatchApplier
 
         var lengthProperty = collectionType.GetProperty(
             "Length", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        var indexer = FindIndexer(collectionType);
+        var indexer = Il2CppIndexerLookup.FindIntIndexer(collectionType);
         var managedArrayType = elementType.MakeArrayType();
         var arrayCtor = collectionType.GetConstructor(new[] { managedArrayType });
         if (lengthProperty == null || indexer == null || arrayCtor == null)
@@ -509,7 +499,7 @@ internal sealed partial class TemplatePatchApplier
     {
         var lengthProperty = arrayType.GetProperty(
             "Length", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        var indexer = FindIndexer(arrayType);
+        var indexer = Il2CppIndexerLookup.FindIntIndexer(arrayType);
         var ctor = arrayType.GetConstructor(new[] { elementType.MakeArrayType() });
         if (lengthProperty == null || indexer == null || ctor == null)
             throw new InvalidOperationException(
@@ -585,19 +575,4 @@ internal sealed partial class TemplatePatchApplier
         return null;
     }
 
-    private static PropertyInfo FindIndexer(Type collectionType)
-    {
-        for (var current = collectionType; current != null; current = current.BaseType)
-        {
-            foreach (var property in current.GetProperties(
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
-            {
-                var parameters = property.GetIndexParameters();
-                if (parameters.Length == 1 && parameters[0].ParameterType == typeof(int) && property.CanRead)
-                    return property;
-            }
-        }
-
-        return null;
-    }
 }

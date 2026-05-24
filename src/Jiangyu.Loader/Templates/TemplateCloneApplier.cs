@@ -1017,7 +1017,7 @@ internal sealed class TemplateCloneApplier
         try
         {
             if (typeof(Il2CppObjectBase).IsAssignableFrom(type))
-                fresh = TemplatePatchApplier.TryAllocateIl2CppInstanceForExternal(type);
+                fresh = Il2CppInstanceAllocator.TryAllocateOrNull(type);
             else
                 fresh = Activator.CreateInstance(type);
         }
@@ -1113,7 +1113,7 @@ internal sealed class TemplateCloneApplier
             }
 
             var klass = IL2CPP.il2cpp_object_get_class(objectPointer);
-            var idField = FindFieldInHierarchy(klass, "m_ID");
+            var idField = Il2CppFieldLookup.FindFieldInHierarchy(klass, "m_ID");
             if (idField == IntPtr.Zero)
             {
                 log.Warning($"Template clone '{cloneId}': no m_ID field in class hierarchy.");
@@ -1136,21 +1136,6 @@ internal sealed class TemplateCloneApplier
             log.Warning($"Template clone '{cloneId}': m_ID write threw: {ex.Message}");
             return false;
         }
-    }
-
-    private static IntPtr FindFieldInHierarchy(IntPtr klass, string fieldName)
-    {
-        var current = klass;
-        while (current != IntPtr.Zero)
-        {
-            var field = IL2CPP.il2cpp_class_get_field_from_name(current, fieldName);
-            if (field != IntPtr.Zero)
-                return field;
-
-            current = IL2CPP.il2cpp_class_get_parent(current);
-        }
-
-        return IntPtr.Zero;
     }
 
     private static readonly Type[] IntPtrCtorSignature = { typeof(IntPtr) };
@@ -1293,7 +1278,7 @@ internal sealed class TemplateCloneApplier
             return false;
         }
 
-        var dictIndexer = FindIndexerWithKey(arraysType, il2CppType.GetType());
+        var dictIndexer = Il2CppIndexerLookup.FindIndexerByKeyType(arraysType, il2CppType.GetType());
         if (dictIndexer == null)
         {
             log.Warning($"Template clone array extend: no Il2CppType-keyed indexer on {arraysType.FullName}.");
@@ -1331,17 +1316,6 @@ internal sealed class TemplateCloneApplier
         {
             var parameters = property.GetIndexParameters();
             if (parameters.Length == 1 && parameters[0].ParameterType == typeof(int))
-                return property;
-        }
-        return null;
-    }
-
-    private static PropertyInfo FindIndexerWithKey(Type type, Type keyType)
-    {
-        foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-        {
-            var parameters = property.GetIndexParameters();
-            if (parameters.Length == 1 && parameters[0].ParameterType == keyType)
                 return property;
         }
         return null;

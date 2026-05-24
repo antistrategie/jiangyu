@@ -313,7 +313,7 @@ public class PolymorphicReferenceArrayHelperTests
     [Fact]
     public void ResolveIl2CppSubtype_SubtypeInSameAssembly_Resolves()
     {
-        var resolved = TemplatePatchApplier.ResolveIl2CppSubtype(
+        var resolved = Il2CppSubtypeResolver.Resolve(
             typeof(TestPolymorphicHandlerBase),
             "TestConcreteHandlerA");
 
@@ -330,7 +330,7 @@ public class PolymorphicReferenceArrayHelperTests
         // still check assignability; otherwise the caller sees a
         // misleading "type does not derive" error downstream rather
         // than a clean "no such subtype" error here.
-        var resolved = TemplatePatchApplier.ResolveIl2CppSubtype(
+        var resolved = Il2CppSubtypeResolver.Resolve(
             typeof(TestPolymorphicHandlerBase),
             "TestConcreteWrapper");
 
@@ -340,7 +340,7 @@ public class PolymorphicReferenceArrayHelperTests
     [Fact]
     public void ResolveIl2CppSubtype_UnknownName_ReturnsNull()
     {
-        var resolved = TemplatePatchApplier.ResolveIl2CppSubtype(
+        var resolved = Il2CppSubtypeResolver.Resolve(
             typeof(TestPolymorphicHandlerBase),
             "DefinitelyNotAType_xyzzy");
 
@@ -350,10 +350,10 @@ public class PolymorphicReferenceArrayHelperTests
     [Fact]
     public void ResolveIl2CppSubtype_CachesResults()
     {
-        var first = TemplatePatchApplier.ResolveIl2CppSubtype(
+        var first = Il2CppSubtypeResolver.Resolve(
             typeof(TestPolymorphicHandlerBase),
             "TestConcreteHandlerB");
-        var second = TemplatePatchApplier.ResolveIl2CppSubtype(
+        var second = Il2CppSubtypeResolver.Resolve(
             typeof(TestPolymorphicHandlerBase),
             "TestConcreteHandlerB");
 
@@ -363,10 +363,10 @@ public class PolymorphicReferenceArrayHelperTests
     [Fact]
     public void ResolveIl2CppSubtype_CachedNullStays_Null()
     {
-        var first = TemplatePatchApplier.ResolveIl2CppSubtype(
+        var first = Il2CppSubtypeResolver.Resolve(
             typeof(TestPolymorphicHandlerBase),
             "AnotherImpossibleName_xyzzy");
-        var second = TemplatePatchApplier.ResolveIl2CppSubtype(
+        var second = Il2CppSubtypeResolver.Resolve(
             typeof(TestPolymorphicHandlerBase),
             "AnotherImpossibleName_xyzzy");
 

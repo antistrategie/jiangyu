@@ -75,6 +75,7 @@ public class JiangyuMod : MelonMod
         _templatesInspectAttempts.Clear();
         _templatesDumpSucceededThisScene = false;
         _replacementCoordinator.OnSceneUnloaded();
+        RuntimeInspector.RefreshFlagCache();
 
         LoggerInstance.Msg($"Scene loaded: {sceneName} ({buildIndex})");
 

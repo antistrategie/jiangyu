@@ -331,7 +331,7 @@ internal static class ConversationManagerRegistry
         if (array == null) return null;
         var lengthProp = arrayType.GetProperty("Length",
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-        var indexer = FindIndexer(arrayType);
+        var indexer = Il2CppIndexerLookup.FindIntIndexer(arrayType);
         if (lengthProp == null || indexer == null) return null;
 
         var length = (int)lengthProp.GetValue(array);
@@ -353,15 +353,6 @@ internal static class ConversationManagerRegistry
         if (prop == null) return null;
         var raw = prop.GetValue(obj);
         return raw == null ? null : (int?)Convert.ToInt32(raw);
-    }
-
-    private static PropertyInfo FindIndexer(Type type)
-    {
-        foreach (var p in type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
-        {
-            if (p.GetIndexParameters().Length == 1) return p;
-        }
-        return null;
     }
 
     // -----------------------------------------------------------------

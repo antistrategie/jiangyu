@@ -163,26 +163,6 @@ export interface AssetPreviewResult {
   mimeType: string;
 }
 
-export interface CompileFinishedEvent {
-  success: boolean;
-  bundlePath?: string | null;
-  errorMessage?: string | null;
-}
-
-export interface CompileSummary {
-  modName?: string | null;
-  modVersion?: string | null;
-  modAuthor?: string | null;
-  modelReplacements: number;
-  textureReplacements: number;
-  spriteReplacements: number;
-  audioReplacements: number;
-  additionFiles: number;
-  templateFiles: number;
-  templatePatches: number;
-  templateClones: number;
-}
-
 export interface FileEntry {
   name: string;
   path: string;
@@ -329,5 +309,25 @@ export interface UnityOpenResult {
 
 export interface UnityImportPrefabResult {
   destDir: string;
+}
+
+export interface CompileFinishedEvent {
+  success: boolean;
+  bundlePath?: string | null;
+  errorMessage?: string | null;
+}
+
+export interface CompileSummary {
+  modName?: string | null;
+  modVersion?: string | null;
+  modAuthor?: string | null;
+  modelReplacements: number;
+  textureReplacements: number;
+  spriteReplacements: number;
+  audioReplacements: number;
+  additionFiles: number;
+  templateFiles: number;
+  templatePatches: number;
+  templateClones: number;
 }
 

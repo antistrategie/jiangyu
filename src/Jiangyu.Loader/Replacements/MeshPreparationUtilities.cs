@@ -82,7 +82,7 @@ internal static class MeshPreparationUtilities
 
             // The live target mesh's bindposes are the runtime-authoritative truth:
             // they are paired with the live bone transforms the scene actually has.
-            // The compiled bindposes in the replacement can drift from live (ModelCleanupService
+            // The compiled bindposes in the replacement can drift from live (ModelCleaner
             // snap-scaling joint transforms, cleaned-glTF re-derivation from joint world matrices),
             // and that drift amplifies into visible orbit as bones animate. Prefer aligned
             // live bindposes; fall back to compiled authored bindposes only if the target

@@ -9,7 +9,15 @@ namespace Jiangyu.Studio.Rpc.Generators;
 [Generator]
 public sealed class RpcTypeGenerator : IIncrementalGenerator
 {
-    private const string AttributeFullName = "Jiangyu.Shared.RpcTypeAttribute";
+    private const string AttributeFullName = "Jiangyu.Core.Rpc.RpcTypeAttribute";
+
+    private static readonly DiagnosticDescriptor WriteFailureDescriptor = new(
+        id: "JIANGYU001",
+        title: "RPC type generator could not write TypeScript output",
+        messageFormat: "Failed to write RPC TypeScript output at '{0}': {1}",
+        category: "Jiangyu.Studio.Rpc.Generators",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -20,7 +28,7 @@ public sealed class RpcTypeGenerator : IIncrementalGenerator
                 transform: static (ctx, ct) => TransformFromSource(ctx, ct))
             .Where(static t => t is not null);
 
-        // Collect types from referenced assemblies (e.g. Jiangyu.Core).
+        // Collect types from referenced Jiangyu assemblies (skip System/Microsoft).
         var refTypes = context.CompilationProvider
             .SelectMany(static (compilation, ct) => CollectFromReferences(compilation, ct));
 
@@ -63,9 +71,12 @@ public sealed class RpcTypeGenerator : IIncrementalGenerator
                     Directory.CreateDirectory(dir);
                 File.WriteAllText(path, ts, Encoding.UTF8);
             }
-            catch
+            catch (Exception ex)
             {
-                // Don't break the build on I/O errors.
+                // Emit a build-visible diagnostic instead of silently swallowing.
+                // CI sees this as a warning; the stale TS file would otherwise ship
+                // alongside new C# DTOs with no signal.
+                ctx.ReportDiagnostic(Diagnostic.Create(WriteFailureDescriptor, Location.None, path, ex.Message));
             }
         });
     }
@@ -81,12 +92,16 @@ public sealed class RpcTypeGenerator : IIncrementalGenerator
 
     private static IEnumerable<RpcTypeInfo> CollectFromReferences(Compilation compilation, CancellationToken ct)
     {
-        // Walk all referenced assemblies (not the compiling project itself —
-        // those are handled by the SyntaxProvider).
+        // Walk only Jiangyu assemblies. System.*/Microsoft.* would never carry
+        // [RpcType] but their namespace trees are enormous; restricting the
+        // walk keeps incremental compilation snappy.
         var results = new List<RpcTypeInfo>();
         foreach (var refAssembly in compilation.SourceModule.ReferencedAssemblySymbols)
         {
             ct.ThrowIfCancellationRequested();
+            var assemblyName = refAssembly.Identity.Name;
+            if (!assemblyName.StartsWith("Jiangyu.", StringComparison.Ordinal))
+                continue;
             WalkNamespaceForTypes(refAssembly.GlobalNamespace, results);
         }
         return results;

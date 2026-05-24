@@ -1,4 +1,4 @@
-namespace Jiangyu.Shared;
+namespace Jiangyu.Studio.Rpc;
 
 /// <summary>
 /// Marks an RPC handler method for exposure as an MCP tool. The in-process

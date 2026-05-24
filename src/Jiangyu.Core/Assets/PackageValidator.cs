@@ -2,7 +2,7 @@ using System.Text.Json.Nodes;
 
 namespace Jiangyu.Core.Assets;
 
-public static class PackageValidationService
+public static class PackageValidator
 {
     public sealed class ValidationResult
     {

@@ -236,8 +236,7 @@ public static class TemplatesInspectCommand
         TemplatePreviewKey targetKey = new(className, templateId);
         TemplatePreviewKey sourceKey = previewPlan?.ResolveUltimateSource(targetKey) ?? targetKey;
 
-        var resolver = new TemplateResolver(index);
-        TemplateResolutionResult templateResolution = resolver.Resolve(sourceKey.TemplateType, sourceKey.TemplateId);
+        TemplateResolutionResult templateResolution = TemplateResolver.Resolve(index, sourceKey.TemplateType, sourceKey.TemplateId);
 
         return templateResolution.Status switch
         {
@@ -289,7 +288,7 @@ public static class TemplatesInspectCommand
             return new ResolvedInspectTarget(targetKey, sourceKey, collection, pathId);
         }
 
-        TemplateResolutionResult sourceResolution = new TemplateResolver(index).Resolve(sourceKey.TemplateType, sourceKey.TemplateId);
+        TemplateResolutionResult sourceResolution = TemplateResolver.Resolve(index, sourceKey.TemplateType, sourceKey.TemplateId);
         if (sourceResolution.Status != TemplateResolutionStatus.Success)
         {
             throw new InvalidOperationException(
@@ -335,7 +334,7 @@ public static class TemplatesInspectCommand
             };
         }
 
-        TemplateResolutionResult resolution = new TemplateResolver(index).Resolve(templateType, reference.TemplateId);
+        TemplateResolutionResult resolution = TemplateResolver.Resolve(index, templateType, reference.TemplateId);
         if (resolution.Status != TemplateResolutionStatus.Success)
         {
             return null;

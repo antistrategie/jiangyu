@@ -2,18 +2,16 @@ using Jiangyu.Core.Models;
 
 namespace Jiangyu.Core.Assets;
 
-public sealed class ObjectIdentityResolver(AssetIndex? index)
+public static class ObjectIdentityResolver
 {
-    private readonly AssetIndex? _index = index;
-
-    public ObjectResolutionResult Resolve(string name, string? className)
+    public static ObjectResolutionResult Resolve(AssetIndex? index, string name, string? className)
     {
-        if (_index?.Assets is null)
+        if (index?.Assets is null)
         {
             return new ObjectResolutionResult { Status = ObjectResolutionStatus.IndexUnavailable };
         }
 
-        var candidates = _index.Assets
+        var candidates = index.Assets
             .Where(asset =>
                 string.Equals(asset.Name, name, StringComparison.OrdinalIgnoreCase)
                 && (className is null || string.Equals(asset.ClassName, className, StringComparison.OrdinalIgnoreCase)))

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Jiangyu.Core.Rpc;
 using Jiangyu.Shared;
 
 namespace Jiangyu.Studio.Host.Acp;
@@ -21,13 +22,6 @@ internal static class AgentSessionsStore
     private const string DirectoryName = ".jiangyu";
     private const string FileName = "agent_sessions.json";
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
-
     // Per-project file lock; concurrent writes from racing RPC handlers
     // on different paths are still possible (we only serialise within a
     // single project root), but we expect one project open at a time.
@@ -46,7 +40,7 @@ internal static class AgentSessionsStore
             try
             {
                 var json = File.ReadAllText(path);
-                return JsonSerializer.Deserialize<AgentSessionsFile>(json, JsonOptions)
+                return JsonSerializer.Deserialize<AgentSessionsFile>(json, JsonOptions.PrettyCamel)
                     ?? new AgentSessionsFile();
             }
             catch (Exception ex)
@@ -67,7 +61,7 @@ internal static class AgentSessionsStore
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var tmp = path + ".jiangyu.tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(file, JsonOptions));
+            File.WriteAllText(tmp, JsonSerializer.Serialize(file, JsonOptions.PrettyCamel));
             File.Move(tmp, path, overwrite: true);
         }
     }

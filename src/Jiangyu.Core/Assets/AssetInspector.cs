@@ -15,7 +15,7 @@ using AssetRipper.IO.Files;
 
 namespace Jiangyu.Core.Assets;
 
-public sealed class AssetInspectionService
+public static class AssetInspector
 {
     private const int ClassIdGameObject = 1;
     private const int ClassIdTransform = 4;
@@ -70,15 +70,10 @@ public sealed class AssetInspectionService
     /// </summary>
     public static IReadOnlyList<SkinnedMeshTarget> GetSkinnedMeshTargetsForIndexedObject(string gameDataPath, string collectionName, long pathId)
     {
-        var settings = new CoreConfiguration();
-        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level0;
-
-        var gameStructure = GameStructure.Load([gameDataPath], LocalFileSystem.Instance, settings);
-        var gameData = GameData.FromGameStructure(gameStructure);
-        RunProcessors(gameData);
+        using var session = new GameDataSession(gameDataPath, scriptContentLevel: ScriptContentLevel.Level0);
 
         IUnityObjectBase? found = null;
-        foreach (var collection in gameData.GameBundle.FetchAssetCollections())
+        foreach (var collection in session.GameData.GameBundle.FetchAssetCollections())
         {
             if (!string.Equals(collection.Name, collectionName, StringComparison.Ordinal))
                 continue;
@@ -131,15 +126,10 @@ public sealed class AssetInspectionService
     /// </summary>
     public static IReadOnlyList<string> GetSkinnedMeshNamesForIndexedObject(string gameDataPath, string collectionName, long pathId)
     {
-        var settings = new CoreConfiguration();
-        settings.ImportSettings.ScriptContentLevel = ScriptContentLevel.Level0;
-
-        var gameStructure = GameStructure.Load([gameDataPath], LocalFileSystem.Instance, settings);
-        var gameData = GameData.FromGameStructure(gameStructure);
-        RunProcessors(gameData);
+        using var session = new GameDataSession(gameDataPath, scriptContentLevel: ScriptContentLevel.Level0);
 
         IUnityObjectBase? found = null;
-        foreach (var collection in gameData.GameBundle.FetchAssetCollections())
+        foreach (var collection in session.GameData.GameBundle.FetchAssetCollections())
         {
             if (!string.Equals(collection.Name, collectionName, StringComparison.Ordinal))
                 continue;
@@ -333,22 +323,6 @@ public sealed class AssetInspectionService
             {
                 yield return path;
             }
-        }
-    }
-
-    private static void RunProcessors(GameData gameData)
-    {
-        IAssetProcessor[] processors =
-        [
-            new SceneDefinitionProcessor(),
-            new MainAssetProcessor(),
-            new AnimatorControllerProcessor(),
-            new PrefabProcessor(),
-        ];
-
-        foreach (var processor in processors)
-        {
-            processor.Process(gameData);
         }
     }
 

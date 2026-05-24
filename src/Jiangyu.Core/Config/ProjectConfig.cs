@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Jiangyu.Shared;
 
 namespace Jiangyu.Core.Config;
 
@@ -9,13 +10,6 @@ namespace Jiangyu.Core.Config;
 /// </summary>
 public sealed class ProjectConfig
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
-
     /// <summary>
     /// Project-relative (or absolute) directory where exported assets are written when
     /// the user picks the "project" destination in the asset browser. Null means no
@@ -24,10 +18,10 @@ public sealed class ProjectConfig
     [JsonPropertyName("assetExportPath")]
     public string? AssetExportPath { get; set; }
 
-    public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
+    public string ToJson() => JsonSerializer.Serialize(this, JsonOptions.PrettyCamel);
 
     public static ProjectConfig FromJson(string json) =>
-        JsonSerializer.Deserialize<ProjectConfig>(json, JsonOptions)
+        JsonSerializer.Deserialize<ProjectConfig>(json, JsonOptions.PrettyCamel)
         ?? new ProjectConfig();
 
     public static string ConfigDir(string projectRoot) =>

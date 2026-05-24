@@ -130,7 +130,7 @@ internal static class TemplateRuntimeAccess
         // to the specific resolved type so consumers storing into a typed
         // array (e.g. Il2CppReferenceArray<PerkTreeTemplate>) get a wrapper
         // of the correct element type.
-        var tryCast = TryCastTemplate(resolvedType);
+        var tryCast = Il2CppReflectiveCast.GetTryCastMethod(resolvedType);
         foreach (var candidate in candidates)
         {
             if (candidate == null)
@@ -143,20 +143,6 @@ internal static class TemplateRuntimeAccess
         }
 
         return false;
-    }
-
-    // Resolves Il2CppObjectBase.TryCast<T>(). This method is part of the
-    // Il2CppInterop runtime and always exists on Il2CppObjectBase; missing
-    // means a fundamental runtime setup failure, so we throw rather than
-    // silently return a less-specific wrapper.
-    private static MethodInfo TryCastTemplate(Type resolvedType)
-    {
-        var method = typeof(Il2CppObjectBase)
-            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
-            .FirstOrDefault(m => m.Name == "TryCast" && m.IsGenericMethodDefinition && m.GetParameters().Length == 0)
-            ?? throw new InvalidOperationException(
-                "Il2CppObjectBase.TryCast<T>() not found — Il2CppInterop runtime missing or mismatched.");
-        return method.MakeGenericMethod(resolvedType);
     }
 
     /// <summary>
@@ -225,7 +211,7 @@ internal static class TemplateRuntimeAccess
         if (candidates == null || candidates.Length == 0)
             return Array.Empty<Il2CppObjectBase>();
 
-        var tryCast = TryCastTemplate(resolvedType);
+        var tryCast = Il2CppReflectiveCast.GetTryCastMethod(resolvedType);
         var results = new List<Il2CppObjectBase>(candidates.Length);
         foreach (var candidate in candidates)
         {
@@ -412,10 +398,7 @@ internal static class TemplateRuntimeAccess
         // Il2CppObjectBase proxy, which doesn't expose the specific wrapper's
         // members via reflection. We need to TryCast each element to the
         // resolved wrapper type before the applier reads fields off it.
-        var tryCastBound = typeof(Il2CppObjectBase)
-            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
-            .FirstOrDefault(m => m.Name == "TryCast" && m.IsGenericMethodDefinition && m.GetParameters().Length == 0)
-            ?.MakeGenericMethod(templateType);
+        var tryCastBound = Il2CppReflectiveCast.GetTryCastMethod(templateType, throwIfMissing: false);
 
         var results = new List<Il2CppObjectBase>();
 

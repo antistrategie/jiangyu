@@ -15,6 +15,29 @@ namespace Jiangyu.Core.Templates;
 /// and returns the total error count so callers (compile, tests) can gate on
 /// a zero-error result.
 /// </summary>
+/// <summary>
+/// Validation modes for <see cref="TemplateCatalogValidator"/>. Replaces
+/// the previous <c>mutateHashableIds</c>/<c>clearRedundantTypes</c>
+/// boolean pair so the call site declares intent rather than picking
+/// flags.
+/// </summary>
+public enum ValidationMode
+{
+    /// <summary>Compile pipeline. Mutates string-keyed Int32 fields to
+    /// resolved ints so the manifest is loader-ready. Does not clear
+    /// redundant composite= type names.</summary>
+    Compile,
+
+    /// <summary>Editor validation. Surfaces errors but leaves the authored
+    /// values intact so parse → validate → serialise round-trips.</summary>
+    EditorValidate,
+
+    /// <summary>Pre-emit normaliser. Clears <c>composite=</c>/<c>handler=</c>
+    /// type names when the destination has only one valid concrete subtype
+    /// so the emitted KDL omits redundant attributes.</summary>
+    EditorNormalise,
+}
+
 public static class TemplateCatalogValidator
 {
     public static int Validate(
@@ -24,14 +47,14 @@ public static class TemplateCatalogValidator
         ILogSink log,
         IAssetAdditionsCatalog? additions = null,
         IGameAssetIndex? gameAssets = null,
-        bool mutateHashableIds = true)
+        ValidationMode mode = ValidationMode.Compile)
     {
         var errors = 0;
 
         if (patches != null)
         {
             foreach (var patch in patches)
-                errors += ValidatePatch(patch, catalog, additions, log, gameAssets, mutateHashableIds);
+                errors += ValidatePatch(patch, catalog, additions, log, gameAssets, mode);
         }
 
         if (clones != null)
@@ -73,7 +96,7 @@ public static class TemplateCatalogValidator
             {
                 if (string.IsNullOrWhiteSpace(directive.FieldPath)) continue;
 
-                var op = KdlTemplateParser.EditorDirectiveToCompiled(directive);
+                var op = KdlEditorBridge.EditorDirectiveToCompiled(directive);
                 var swallowed = new List<string>();
                 ValidateOperation(
                     op,
@@ -81,14 +104,13 @@ public static class TemplateCatalogValidator
                     catalog,
                     additions: null,
                     swallowed.Add,
-                    mutateHashableIds: false,
-                    clearRedundantTypes: true);
+                    mode: ValidationMode.EditorNormalise);
 
                 // Re-import the normalised wire form. Skip when validation
                 // surfaced errors so we don't paper over a broken directive
                 // by emitting a half-cleared value.
                 if (swallowed.Count > 0) continue;
-                var normalised = KdlTemplateParser.CompiledOpToEditorDirective(op);
+                var normalised = KdlEditorBridge.CompiledOpToEditorDirective(op);
                 directive.Value = normalised.Value;
             }
         }
@@ -136,7 +158,7 @@ public static class TemplateCatalogValidator
                 if (string.IsNullOrWhiteSpace(directive.FieldPath))
                     continue;
 
-                var op = KdlTemplateParser.EditorDirectiveToCompiled(directive);
+                var op = KdlEditorBridge.EditorDirectiveToCompiled(directive);
 
                 // Apply RoleGuid resolution before per-directive validation.
                 // The compile path's RoleGuidResolver runs as a pre-pass; the
@@ -165,7 +187,7 @@ public static class TemplateCatalogValidator
                     catalog,
                     additions: null,
                     message => localErrors.Add(message),
-                    mutateHashableIds: false);
+                    mode: ValidationMode.EditorValidate);
 
                 if (errorCount > 0)
                 {
@@ -184,7 +206,7 @@ public static class TemplateCatalogValidator
                 // Keep the editor directive in sync with any canonicalisation
                 // done by semantic validation (numeric kind coercion,
                 // concrete-field string -> TemplateReference, etc.).
-                var normalised = KdlTemplateParser.CompiledOpToEditorDirective(op);
+                var normalised = KdlEditorBridge.CompiledOpToEditorDirective(op);
                 directive.Op = normalised.Op;
                 directive.FieldPath = normalised.FieldPath;
                 directive.Index = normalised.Index;
@@ -265,8 +287,10 @@ public static class TemplateCatalogValidator
         IAssetAdditionsCatalog? additions,
         ILogSink log,
         IGameAssetIndex? gameAssets = null,
-        bool mutateHashableIds = true)
+        ValidationMode mode = ValidationMode.Compile)
     {
+        var mutateHashableIds = mode == ValidationMode.Compile;
+        var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
         var templateType = patch.TemplateType ?? "EntityTemplate";
         var label = $"{templateType}:{patch.TemplateId}";
 
@@ -287,7 +311,7 @@ public static class TemplateCatalogValidator
                 additions,
                 message => log.Error($"Template patch '{label}.{FormatFullPath(op)}' — {message}"),
                 gameAssets,
-                mutateHashableIds);
+                mode);
         }
         return errors;
     }
@@ -314,9 +338,13 @@ public static class TemplateCatalogValidator
         IAssetAdditionsCatalog? additions,
         Action<string> reportError,
         IGameAssetIndex? gameAssets = null,
-        bool mutateHashableIds = true,
-        bool clearRedundantTypes = false)
+        ValidationMode mode = ValidationMode.Compile)
     {
+        // Compile mutates hashable string→int so the manifest is loader-ready;
+        // both editor modes preserve the authored string for round-trip.
+        var mutateHashableIds = mode == ValidationMode.Compile;
+        // Only the pre-emit normaliser strips redundant composite= types.
+        var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
         if (string.IsNullOrWhiteSpace(op.FieldPath)) return 0;
 
         // TemplateMemberQuery still walks a flat dotted-with-bracket path,
@@ -621,8 +649,7 @@ public static class TemplateCatalogValidator
                 additions,
                 reportError,
                 gameAssets,
-                mutateHashableIds,
-                clearRedundantTypes,
+                mode,
                 isTaggedStringTarget: isTaggedTarget);
         }
 
@@ -635,8 +662,7 @@ public static class TemplateCatalogValidator
                 additions,
                 reportError,
                 gameAssets,
-                mutateHashableIds,
-                clearRedundantTypes);
+                mode);
 
         return 0;
     }
@@ -823,9 +849,10 @@ public static class TemplateCatalogValidator
         IAssetAdditionsCatalog? additions,
         Action<string> reportError,
         IGameAssetIndex? gameAssets = null,
-        bool mutateHashableIds = true,
-        bool clearRedundantTypes = false)
+        ValidationMode mode = ValidationMode.Compile)
     {
+        var mutateHashableIds = mode == ValidationMode.Compile;
+        var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
         // Two valid destinations:
         //  - Collection element-type, auto-unwrapped from the array. The
         //    canonical Append/Insert pattern: handler= constructs an owned
@@ -933,8 +960,7 @@ public static class TemplateCatalogValidator
             additions,
             reportError,
             gameAssets,
-            mutateHashableIds,
-            clearRedundantTypes);
+            mode);
     }
 
     private static int ValidateCompositeValue(
@@ -945,10 +971,11 @@ public static class TemplateCatalogValidator
         IAssetAdditionsCatalog? additions,
         Action<string> reportError,
         IGameAssetIndex? gameAssets = null,
-        bool mutateHashableIds = true,
-        bool clearRedundantTypes = false,
+        ValidationMode mode = ValidationMode.Compile,
         bool isTaggedStringTarget = false)
     {
+        var mutateHashableIds = mode == ValidationMode.Compile;
+        var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
         // Inferred composite: the parser emits TypeName="" for child blocks
         // without an explicit composite=/handler= property. Resolve from the
         // destination's element type when monomorphic; reject when
@@ -1093,8 +1120,7 @@ public static class TemplateCatalogValidator
             additions,
             reportError,
             gameAssets,
-            mutateHashableIds,
-            clearRedundantTypes);
+            mode);
     }
 
     private static int ValidateInnerOperations(
@@ -1105,9 +1131,10 @@ public static class TemplateCatalogValidator
         IAssetAdditionsCatalog? additions,
         Action<string> reportError,
         IGameAssetIndex? gameAssets = null,
-        bool mutateHashableIds = true,
-        bool clearRedundantTypes = false)
+        ValidationMode mode = ValidationMode.Compile)
     {
+        var mutateHashableIds = mode == ValidationMode.Compile;
+        var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
         var errors = 0;
         foreach (var inner in operations)
         {
@@ -1119,8 +1146,7 @@ public static class TemplateCatalogValidator
                 additions,
                 InnerReport,
                 gameAssets,
-                mutateHashableIds,
-                clearRedundantTypes);
+                mode);
         }
         return errors;
     }

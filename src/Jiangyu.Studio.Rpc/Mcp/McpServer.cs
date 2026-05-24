@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.Json;
-using Jiangyu.Shared;
+using Jiangyu.Acp.JsonRpc;
+using Jiangyu.Core.Rpc;
 
 namespace Jiangyu.Studio.Rpc.Mcp;
 
@@ -66,14 +67,14 @@ public sealed class McpServer
         }
         catch (Exception ex)
         {
-            return JsonRpcError(null, -32700, $"Parse error: {ex.Message}");
+            return JsonRpcError(null, JsonRpcErrorCodes.ParseError, $"Parse error: {ex.Message}");
         }
 
         var id = request.TryGetProperty("id", out var idProp) ? idProp.Clone() : (JsonElement?)null;
         var method = request.TryGetProperty("method", out var methodProp) ? methodProp.GetString() : null;
 
         if (method is null)
-            return JsonRpcError(id, -32600, "Missing 'method' field");
+            return JsonRpcError(id, JsonRpcErrorCodes.InvalidRequest, "Missing 'method' field");
 
         return method switch
         {
@@ -84,7 +85,7 @@ public sealed class McpServer
             "resources/list" => HandleResourcesList(id),
             "resources/read" => HandleResourcesRead(id, request),
             "ping" => JsonRpcResult(id, JsonSerializer.SerializeToElement(new { })),
-            _ => JsonRpcError(id, -32601, $"Method not found: {method}"),
+            _ => JsonRpcError(id, JsonRpcErrorCodes.MethodNotFound, $"Method not found: {method}"),
         };
     }
 
@@ -191,14 +192,14 @@ public sealed class McpServer
     private string HandleToolsCall(JsonElement? id, JsonElement request)
     {
         if (!request.TryGetProperty("params", out var callParams))
-            return JsonRpcError(id, -32602, "Missing 'params'");
+            return JsonRpcError(id, JsonRpcErrorCodes.InvalidParams, "Missing 'params'");
 
         var toolName = callParams.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : null;
         if (toolName is null)
-            return JsonRpcError(id, -32602, "Missing tool 'name'");
+            return JsonRpcError(id, JsonRpcErrorCodes.InvalidParams, "Missing tool 'name'");
 
         if (!_tools.TryGetValue(toolName, out var tool))
-            return JsonRpcError(id, -32602, $"Unknown tool: {toolName}");
+            return JsonRpcError(id, JsonRpcErrorCodes.InvalidParams, $"Unknown tool: {toolName}");
 
         var arguments = callParams.TryGetProperty("arguments", out var argsProp)
             ? argsProp
@@ -322,11 +323,11 @@ public sealed class McpServer
     private static string HandleResourcesRead(JsonElement? id, JsonElement request)
     {
         if (!request.TryGetProperty("params", out var readParams))
-            return JsonRpcError(id, -32602, "Missing 'params'");
+            return JsonRpcError(id, JsonRpcErrorCodes.InvalidParams, "Missing 'params'");
 
         var uri = readParams.TryGetProperty("uri", out var uriProp) ? uriProp.GetString() : null;
         if (uri is null)
-            return JsonRpcError(id, -32602, "Missing 'uri'");
+            return JsonRpcError(id, JsonRpcErrorCodes.InvalidParams, "Missing 'uri'");
 
         if (uri == "jiangyu://project-context")
             return ReadProjectContextResource(id);
@@ -345,7 +346,7 @@ public sealed class McpServer
             }
         }
 
-        return JsonRpcError(id, -32602, $"Unknown resource: {uri}");
+        return JsonRpcError(id, JsonRpcErrorCodes.InvalidParams, $"Unknown resource: {uri}");
     }
 
     private static string ReadProjectContextResource(JsonElement? id)

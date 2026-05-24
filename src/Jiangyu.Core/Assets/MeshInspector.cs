@@ -3,7 +3,7 @@ using AssetsTools.NET.Extra;
 
 namespace Jiangyu.Core.Assets;
 
-public sealed class MeshInspectionService
+public static class MeshInspector
 {
     private const int ClassIdMesh = 43;
 

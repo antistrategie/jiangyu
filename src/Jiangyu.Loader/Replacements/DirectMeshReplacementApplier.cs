@@ -95,13 +95,13 @@ internal sealed class DirectMeshReplacementApplier
             if (smr.sharedMaterials != null &&
                 smr.sharedMaterials.Length > 0 &&
                 replacement.MaterialBindings != null &&
-                replacement.MaterialBindings.Length > 0 &&
+                replacement.MaterialBindings.Count > 0 &&
                 _materialReplacements.HasReplacementTextures)
             {
                 _materialReplacements.ApplyBindings(log, smr.sharedMaterials, replacement.MaterialBindings);
             }
 
-            log.Msg($"  Swapped: {smr.sharedMesh.name} (readable={smr.sharedMesh.isReadable}, rootBone={smr.rootBone?.name ?? "<null>"}, boundsCenter={FormatVector3(safeBounds.center)}, boundsSize={FormatVector3(safeBounds.size)}, updateWhenOffscreen={smr.updateWhenOffscreen})");
+            log.Msg($"  Swapped: {smr.sharedMesh.name} (readable={smr.sharedMesh.isReadable}, rootBone={smr.rootBone?.name ?? "<null>"}, boundsCenter={SkeletonTraversal.FormatVector3(safeBounds.center)}, boundsSize={SkeletonTraversal.FormatVector3(safeBounds.size)}, updateWhenOffscreen={smr.updateWhenOffscreen})");
             return true;
         }
         catch (Exception ex)
@@ -129,7 +129,7 @@ internal sealed class DirectMeshReplacementApplier
         }
 
         if (smr.rootBone != null)
-            CollectBonesRecursive(smr.rootBone.root, gameBoneMap);
+            SkeletonTraversal.CollectBonesRecursive(smr.rootBone.root, gameBoneMap);
 
         return gameBoneMap;
     }
@@ -159,9 +159,6 @@ internal sealed class DirectMeshReplacementApplier
             names[i] = bones[i]?.name ?? string.Empty;
         return names;
     }
-
-    private static string FormatVector3(Vector3 v)
-        => $"({v.x:F4}, {v.y:F4}, {v.z:F4})";
 
     private static bool CanReuseGameBoneOrder(string[] targetBoneNames, string[] effectiveBoneNames)
     {
@@ -216,16 +213,6 @@ internal sealed class DirectMeshReplacementApplier
         }
 
         return true;
-    }
-
-    private static void CollectBonesRecursive(Transform parent, Dictionary<string, Transform> map)
-    {
-        if (parent == null)
-            return;
-
-        map.TryAdd(parent.name, parent);
-        for (int i = 0; i < parent.childCount; i++)
-            CollectBonesRecursive(parent.GetChild(i), map);
     }
 
     private static Transform[] ToManagedBones(Il2CppReferenceArray<Transform> bones)

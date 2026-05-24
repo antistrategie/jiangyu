@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Jiangyu.Core.Rpc;
 using Jiangyu.Shared;
 
 namespace Jiangyu.Core.Config;
@@ -14,13 +15,6 @@ namespace Jiangyu.Core.Config;
 [RpcType]
 public sealed class StudioSettings
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
-
     public const int EditorFontSizeMin = 8;
     public const int EditorFontSizeMax = 32;
     public const int EditorFontSizeDefault = 14;
@@ -61,10 +55,10 @@ public sealed class StudioSettings
 
     public static string Path => System.IO.Path.Combine(GlobalConfig.ConfigDir, "studio.json");
 
-    public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
+    public string ToJson() => JsonSerializer.Serialize(this, JsonOptions.PrettyCamel);
 
     public static StudioSettings FromJson(string json) =>
-        JsonSerializer.Deserialize<StudioSettings>(json, JsonOptions)
+        JsonSerializer.Deserialize<StudioSettings>(json, JsonOptions.PrettyCamel)
         ?? new StudioSettings();
 
     public static StudioSettings Load()

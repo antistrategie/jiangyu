@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace Jiangyu.Core.Glb;
 
-public static class BindPoseRetargetService
+public static class BindPoseRetargeter
 {
     public sealed class SkeletonContract
     {

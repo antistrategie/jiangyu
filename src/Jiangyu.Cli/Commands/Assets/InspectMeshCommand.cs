@@ -50,8 +50,7 @@ public static class InspectMeshCommand
 
             try
             {
-                var service = new MeshInspectionService();
-                var report = MeshInspectionService.Inspect(bundlePath, gameDataPath, meshName);
+                var report = MeshInspector.Inspect(bundlePath, gameDataPath, meshName);
 
                 Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
                 File.WriteAllText(outputPath, JsonSerializer.Serialize(report, PrettyJsonOptions));

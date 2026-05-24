@@ -1,19 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Jiangyu.Shared;
+using Jiangyu.Shared.Bundles;
 using Jiangyu.Shared.Templates;
 
 namespace Jiangyu.Core.Models;
 
 public sealed class ModManifest
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
-
     [JsonPropertyName("name")]
     public required string Name { get; set; }
 
@@ -81,101 +75,11 @@ public sealed class ModManifest
         Depends = ["Jiangyu >= 1.0.0"],
     };
 
-    public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
+    public string ToJson() => JsonSerializer.Serialize(this, JsonOptions.PrettyRelaxedEscape);
 
     public static ModManifest FromJson(string json) =>
-        JsonSerializer.Deserialize<ModManifest>(json, JsonOptions)
+        JsonSerializer.Deserialize<ModManifest>(json, JsonOptions.PrettyRelaxedEscape)
         ?? throw new InvalidOperationException("Failed to deserialise jiangyu.json");
 
     public const string FileName = "jiangyu.json";
-}
-
-public sealed class CompiledMeshMetadata
-{
-    [JsonPropertyName("boneNames")]
-    public required string[] BoneNames { get; set; }
-
-    [JsonPropertyName("materials")]
-    public List<CompiledMaterialBinding>? Materials { get; set; }
-
-    [JsonPropertyName("targetRendererPath")]
-    public string? TargetRendererPath { get; set; }
-
-    [JsonPropertyName("targetMeshName")]
-    public string? TargetMeshName { get; set; }
-
-    [JsonPropertyName("targetEntityName")]
-    public string? TargetEntityName { get; set; }
-
-    [JsonPropertyName("targetEntityPathId")]
-    public long? TargetEntityPathId { get; set; }
-}
-
-public sealed class CompiledMaterialBinding
-{
-    [JsonPropertyName("slot")]
-    public required int Slot { get; set; }
-
-    [JsonPropertyName("name")]
-    public string? Name { get; set; }
-
-    [JsonPropertyName("textures")]
-    public required Dictionary<string, string> Textures { get; set; }
-}
-
-[JsonConverter(typeof(MeshManifestEntryJsonConverter))]
-public sealed class MeshManifestEntry
-{
-    [JsonPropertyName("source")]
-    public required string Source { get; set; }
-
-    [JsonPropertyName("compiled")]
-    public CompiledMeshMetadata? Compiled { get; set; }
-}
-
-internal sealed class MeshManifestEntryJsonConverter : JsonConverter<MeshManifestEntry>
-{
-    public override MeshManifestEntry Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-    {
-        if (reader.TokenType == JsonTokenType.String)
-        {
-            var source = reader.GetString() ?? throw new JsonException("Mesh source cannot be null.");
-            return new MeshManifestEntry { Source = source };
-        }
-
-        if (reader.TokenType != JsonTokenType.StartObject)
-            throw new JsonException("Expected string or object for mesh entry.");
-
-        using var doc = JsonDocument.ParseValue(ref reader);
-        if (!doc.RootElement.TryGetProperty("source", out var sourceElement) || sourceElement.ValueKind != JsonValueKind.String)
-            throw new JsonException("Mesh entry object must contain a string 'source' property.");
-
-        var entry = new MeshManifestEntry
-        {
-            Source = sourceElement.GetString()!,
-        };
-
-        if (doc.RootElement.TryGetProperty("compiled", out var compiledElement) &&
-            compiledElement.ValueKind == JsonValueKind.Object)
-        {
-            entry.Compiled = compiledElement.Deserialize<CompiledMeshMetadata>(options);
-        }
-
-        return entry;
-    }
-
-    public override void Write(Utf8JsonWriter writer, MeshManifestEntry value, JsonSerializerOptions options)
-    {
-        if (value.Compiled == null)
-        {
-            writer.WriteStringValue(value.Source);
-            return;
-        }
-
-        writer.WriteStartObject();
-        writer.WriteString("source", value.Source);
-        writer.WritePropertyName("compiled");
-        JsonSerializer.Serialize(writer, value.Compiled, options);
-        writer.WriteEndObject();
-    }
 }
