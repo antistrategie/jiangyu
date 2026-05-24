@@ -162,7 +162,7 @@ public sealed class PrefabImportService(string gameDataPath, IProgressSink progr
         // Mesh, Material, ...}/ directly.
         _progress.SetPhase("Exporting");
         Directory.CreateDirectory(destDir);
-        var handler = new AssetRipper.Export.UnityProjects.ExportHandler(settings);
+        var handler = new JiangyuExportHandler(settings);
         handler.ExportSubset(gameData, destDir, LocalFileSystem.Instance, keep);
 
         var exportedAssetsDir = Path.Combine(destDir, "ExportedProject", "Assets");
