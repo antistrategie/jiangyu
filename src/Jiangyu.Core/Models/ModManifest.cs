@@ -30,6 +30,18 @@ public sealed class ModManifest
     public List<string>? Depends { get; set; }
 
     /// <summary>
+    /// Host-game prefab names that the mod's bake outputs reference at
+    /// compile time (shaders, materials, avatars, etc.). Compile auto-rips
+    /// these from the user's game install into
+    /// <c>unity/Assets/Imported/&lt;name&gt;/</c> when missing, so the
+    /// committed repo never needs to ship copyrighted host content. Each
+    /// entry must resolve unambiguously via the asset index. Once ripped,
+    /// the directory is cached locally and skipped on subsequent compiles.
+    /// </summary>
+    [JsonPropertyName("importedPrefabs")]
+    public List<string>? ImportedPrefabs { get; set; }
+
+    /// <summary>
     /// Mesh replacement mappings. Key = target skinned-renderer path under the entity root.
     /// </summary>
     [JsonPropertyName("meshes")]

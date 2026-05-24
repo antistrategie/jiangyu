@@ -58,7 +58,7 @@ namespace Jiangyu.Mod
         // Batchmode entry point. Invoke via:
         //   Unity -batchmode -nographics -quit -projectPath <unity/> \
         //         -executeMethod Jiangyu.Mod.BakeHumanoid.BakeBatch \
-        //         -gltfFolder <Assets/Imported/MyCharacter> \
+        //         -gltfFolder <Assets/Authored/MyCharacter> \
         //         -referencePrefab <Assets/Imported/.../soldier.prefab> \
         //         -outputDir <Assets/Prefabs> \
         //         -outputName <MyCharacter>

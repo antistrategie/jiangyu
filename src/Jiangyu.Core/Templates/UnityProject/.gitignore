@@ -5,6 +5,17 @@ Logs/
 UserSettings/
 obj/
 
+# Jiangyu compile staging. Audio/, SpriteSources/, SpriteAdditions/ are
+# repopulated from assets/additions/ by GlbMeshBundleCompiler. Generated/
+# is rebuilt by BuildMeshReplacementBundle. None of it is source.
+Assets/Jiangyu/Staging/
+
+# Host-game prefab rips. Auto-populated by `jiangyu compile` from the list
+# in jiangyu.json's `importedPrefabs` field. The user's game install is the
+# source of truth, so the committed repo never ships derivative host
+# content. Authored mod content lives in Assets/Authored/ and IS committed.
+Assets/Imported/
+
 # Loose log files (Jiangyu writes assemble.log / bake.log / build.log / dump.log
 # to the unity/ root during compile).
 *.log

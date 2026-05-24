@@ -51,7 +51,7 @@ public sealed class CompilationResult
 /// Decides between the GLB mesh pipeline and the FBX/Unity pipeline,
 /// invokes the appropriate compiler, and copies outputs.
 /// </summary>
-public sealed class CompilationService(ILogSink log, IProgressSink progress)
+public sealed partial class CompilationService(ILogSink log, IProgressSink progress)
 {
     private const string AssetIndexFileName = "asset-index.json";
     private const string BindPoseReferenceManifestFileName = "reference-manifest.json";
@@ -88,15 +88,60 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var replacementRoot = Path.Combine(projectDir, "assets", "replacements");
         var additionRoot = Path.Combine(projectDir, "assets", "additions");
 
-        // The asset index is only consulted when resolving replacement/addition
-        // targets. Template-only mods and empty projects don't need it, so don't
-        // force the modder to build it just to compile.
-        if (HasAnyAssetSources(replacementRoot, additionRoot))
+        // Auto-import host-game prefabs declared in manifest.importedPrefabs,
+        // and auto-build the asset index when stale. Both steps need
+        // GameData, which is multi-second to load, so load it lazily and at
+        // most once per compile.
+        var importedRoot = Path.Combine(projectDir, "unity", "Assets", "Imported");
+        var missingImports = manifest.ImportedPrefabs is { Count: > 0 }
+            ? manifest.ImportedPrefabs
+                .Where(name => !Directory.Exists(Path.Combine(importedRoot, name)))
+                .ToList()
+            : new List<string>();
+        var needsIndex = HasAnyAssetSources(replacementRoot, additionRoot)
+            && !assetPipeline.GetIndexStatus().IsCurrent;
+
+        if (missingImports.Count > 0 || needsIndex)
         {
-            var assetIndexStatus = assetPipeline.GetIndexStatus();
-            if (!assetIndexStatus.IsCurrent)
-                return Fail(assetIndexStatus.Reason ?? "Asset index is missing or stale. Run 'jiangyu assets index' first.");
+            var reasons = new List<string>();
+            if (missingImports.Count > 0) reasons.Add($"{missingImports.Count} host prefab(s) to import");
+            if (needsIndex) reasons.Add("asset index missing/stale");
+            _log.Info($"Loading game data ({string.Join(", ", reasons)})...");
+
+            var gameData = assetPipeline.LoadAndProcessGameData();
+
+            foreach (var name in missingImports)
+            {
+                _log.Info($"  importing host prefab: {name}");
+                try
+                {
+                    assetPipeline.ImportPrefabAsUnityAssets(
+                        gameData,
+                        assetName: name,
+                        destDir: Path.Combine(importedRoot, name),
+                        collection: null,
+                        pathId: -1);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return Fail($"Failed to import host prefab '{name}' from importedPrefabs: {ex.Message}");
+                }
+            }
+
+            if (needsIndex)
+            {
+                _log.Info("  building asset index...");
+                assetPipeline.BuildIndexFromGameData(gameData);
+            }
         }
+
+        // Validate that every host-rip GUID referenced outside Imported/ has
+        // its rip declared in importedPrefabs. Catches the silent-pink-
+        // material failure where a contributor bakes against a vanilla rip
+        // but forgets to add it to the manifest.
+        var importValidationError = ValidateImportedPrefabReferences(projectDir, manifest);
+        if (importValidationError != null)
+            return Fail(importValidationError);
 
         _log.Info($"  [timing] Setup/validation: {phaseSw.Elapsed.TotalSeconds:F1}s");
         phaseSw.Restart();
@@ -1978,5 +2023,95 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
     {
         _log.Error(message);
         return new CompilationResult { Success = false, ErrorMessage = message };
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"guid:\s*([0-9a-fA-F]{32})")]
+    private static partial System.Text.RegularExpressions.Regex MetaGuidRegex();
+
+    /// <summary>
+    /// Returns an error message if any text-serialised asset under
+    /// <c>unity/Assets/</c> (excluding the <c>Imported/</c> tree itself)
+    /// references a GUID owned by an <c>Imported/&lt;X&gt;/</c> subdir whose
+    /// name is not declared in <c>manifest.importedPrefabs</c>. Returns
+    /// null if everything resolves. Limits the scan to .mat/.prefab/.asset
+    /// because those are the file types Unity uses GUIDs in. Binary .asset
+    /// files won't regex-match and are silently skipped.
+    /// </summary>
+    internal static string? ValidateImportedPrefabReferences(string projectDir, ModManifest manifest)
+    {
+        var assetsRoot = Path.Combine(projectDir, "unity", "Assets");
+        var importedRoot = Path.Combine(assetsRoot, "Imported");
+        if (!Directory.Exists(assetsRoot) || !Directory.Exists(importedRoot))
+            return null;
+
+        var guidToSubdir = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var subdir in Directory.EnumerateDirectories(importedRoot))
+        {
+            var subdirName = Path.GetFileName(subdir);
+            foreach (var meta in Directory.EnumerateFiles(subdir, "*.meta", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    var match = MetaGuidRegex().Match(File.ReadAllText(meta));
+                    if (match.Success) guidToSubdir.TryAdd(match.Groups[1].Value, subdirName);
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+        }
+        if (guidToSubdir.Count == 0) return null;
+
+        var declared = new HashSet<string>(
+            (IEnumerable<string>?)manifest.ImportedPrefabs ?? [],
+            StringComparer.OrdinalIgnoreCase);
+
+        var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mat", ".prefab", ".asset" };
+        var importedPrefix = importedRoot + Path.DirectorySeparatorChar;
+        var violationsByFile = new SortedDictionary<string, SortedSet<string>>(StringComparer.Ordinal);
+
+        foreach (var file in Directory.EnumerateFiles(assetsRoot, "*", SearchOption.AllDirectories))
+        {
+            if (file.StartsWith(importedPrefix, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!extensions.Contains(Path.GetExtension(file))) continue;
+
+            string content;
+            try { content = File.ReadAllText(file); }
+            catch (IOException) { continue; }
+            catch (UnauthorizedAccessException) { continue; }
+
+            foreach (System.Text.RegularExpressions.Match match in MetaGuidRegex().Matches(content))
+            {
+                var guid = match.Groups[1].Value;
+                if (!guidToSubdir.TryGetValue(guid, out var subdir)) continue;
+                if (declared.Contains(subdir)) continue;
+
+                var rel = Path.GetRelativePath(projectDir, file);
+                if (!violationsByFile.TryGetValue(rel, out var subdirs))
+                {
+                    subdirs = new SortedSet<string>(StringComparer.Ordinal);
+                    violationsByFile[rel] = subdirs;
+                }
+                subdirs.Add(subdir);
+            }
+        }
+
+        if (violationsByFile.Count == 0) return null;
+
+        var missingSubdirs = new SortedSet<string>(
+            violationsByFile.Values.SelectMany(v => v),
+            StringComparer.Ordinal);
+
+        var lines = new List<string>
+        {
+            "Mod content references host-game rips that are missing from 'importedPrefabs' in jiangyu.json.",
+            "Either add the following names to the manifest and re-run compile, or remove the references from the listed files:",
+        };
+        foreach (var subdir in missingSubdirs)
+            lines.Add($"  - {subdir}");
+        lines.Add("References found in:");
+        foreach (var (file, subdirs) in violationsByFile)
+            lines.Add($"  {file} -> Imported/{string.Join(", Imported/", subdirs)}/");
+
+        return string.Join("\n", lines);
     }
 }

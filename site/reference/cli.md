@@ -16,6 +16,13 @@ Equivalent to Studio's "New project" dialog. See [Manifest](/reference/manifest)
 
 Compiles the project's replacements and templates into a shippable mod under `compiled/`. Reads `jiangyu.json`, walks `assets/replacements/` and `templates/`, emits AssetBundles and the compiled manifest. If `unity/Assets/Prefabs/` has any `.prefab` files, invokes Unity batchmode against the `unity/` project to build prefab addition bundles.
 
+Compile bootstraps two preconditions on first run so the modder doesn't need to chain commands by hand:
+
+- Host prefabs declared in [`importedPrefabs`](/reference/manifest#imported-prefabs) are ripped into `unity/Assets/Imported/<name>/` if missing. Cached on subsequent runs.
+- The asset index is built if missing or stale. Cached on subsequent runs.
+
+Game data is loaded once and reused for both steps. Compile also verifies that every `Imported/<X>/` GUID referenced from authored content has `X` listed in `importedPrefabs`, and fails with the unlisted names if not.
+
 Equivalent to Studio's Compile dossier. Returns non-zero on any compile error.
 
 ### `jiangyu unity sync`
@@ -37,6 +44,8 @@ jiangyu unity import-prefab rmc_default_female_soldier_2
 ```
 
 Pass `--path-id` and/or `--collection` when the name is ambiguous (use `jiangyu assets search` to disambiguate).
+
+Most modders won't run this directly. List the names in [`importedPrefabs`](/reference/manifest#imported-prefabs) instead, and `jiangyu compile` rips on first run. Use this command as an escape hatch when you want to bring in a prefab one-off for inspection without committing to a manifest entry.
 
 ## Assets
 

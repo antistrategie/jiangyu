@@ -18,13 +18,14 @@ Every mod has a `jiangyu.json` at its root. It carries the mod's identity (name,
 
 ## Modder-authored fields
 
-| Field         | Type       | Required | Default   | Notes                                                  |
-| ------------- | ---------- | -------- | --------- | ------------------------------------------------------ |
-| `name`        | `string`   | yes      | (none)    | Used as the dependency-resolution identity.            |
-| `version`     | `string`   | no       | `"0.1.0"` | Free-form text; not parsed or enforced.                |
-| `author`      | `string`   | no       | (none)    | Display only.                                          |
-| `description` | `string`   | no       | (none)    | Display only.                                          |
-| `depends`     | `string[]` | no       | (none)    | See [Dependencies](#dependencies).                     |
+| Field             | Type       | Required | Default   | Notes                                                  |
+| ----------------- | ---------- | -------- | --------- | ------------------------------------------------------ |
+| `name`            | `string`   | yes      | (none)    | Used as the dependency-resolution identity.            |
+| `version`         | `string`   | no       | `"0.1.0"` | Free-form text, not parsed or enforced.                |
+| `author`          | `string`   | no       | (none)    | Display only.                                          |
+| `description`     | `string`   | no       | (none)    | Display only.                                          |
+| `depends`         | `string[]` | no       | (none)    | See [Dependencies](#dependencies).                     |
+| `importedPrefabs` | `string[]` | no       | (none)    | See [Imported prefabs](#imported-prefabs).             |
 
 Unknown fields are ignored on read.
 
@@ -50,6 +51,25 @@ Names match against other mods' `name` fields (case-sensitive). The literal name
 ::: warning Dependency identity is provisional
 `depends` resolves against display `name` until Jiangyu defines a stable machine-readable mod ID. Renaming a mod renames its dependency identity. Treat names as long-lived.
 :::
+
+## Imported prefabs
+
+`importedPrefabs` lists vanilla game prefabs that the mod's authored content references at compile time (typically shaders, materials, or avatars donated by [`BakeHumanoid`](/assets/additions/prefabs) or `BakeWeapon`). Each entry is the asset name surfaced by `jiangyu assets search`, the same value you would pass to [`jiangyu unity import-prefab`](/reference/cli#jiangyu-unity-import-prefab-name).
+
+```json
+{
+  "importedPrefabs": [
+    "rmc_default_female_soldier_2",
+    "arc_assault_rifle_t1"
+  ]
+}
+```
+
+On `jiangyu compile`, each listed name is checked against `unity/Assets/Imported/<name>/`. Missing directories are ripped from the modder's game install in one shared pass. Present directories are skipped. The combined effect: a fresh clone can run `jiangyu compile` directly without a separate import step, and the committed repo never needs to ship derivative host assets.
+
+Compile also walks `unity/Assets/` for GUID references into `Imported/<X>/` and fails if `X` is not declared. This catches the silent fallback to Unity's pink "missing shader" material when a contributor bakes against a host rip but forgets to update the manifest.
+
+`unity/Assets/Imported/` should be gitignored. Authored content (PMX-derived models, weapon meshes, sprites the modder created) belongs elsewhere under `unity/Assets/` and IS committed.
 
 ## Compiler-owned fields
 

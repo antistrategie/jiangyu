@@ -393,8 +393,7 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
             if (!gameData.GameBundle.HasAnyAssetCollections())
             {
                 _progress.Finish();
-                _log.Error("No asset collections found in game data.");
-                return;
+                throw new InvalidOperationException("No asset collections found in game data.");
             }
 
             _progress.Finish();
@@ -478,10 +477,8 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         }
 
         if (target is null)
-        {
-            _log.Error($"No asset named '{assetName}' found. Confirm with `jiangyu assets search`.");
-            return;
-        }
+            throw new InvalidOperationException(
+                $"No asset named '{assetName}' found. Confirm with `jiangyu assets search`.");
 
         // PrefabHierarchyObject is AssetRipper's wrapper for an extracted
         // prefab hierarchy; if the modder named it directly that's fine,
@@ -496,8 +493,8 @@ public sealed class AssetPipelineService(string gameDataPath, string cachePath, 
         }
         else
         {
-            _log.Error($"'{assetName}' resolved to {target.GetType().Name}, not a prefab/GameObject. Try `assets export model` for non-prefab assets.");
-            return;
+            throw new InvalidOperationException(
+                $"'{assetName}' resolved to {target.GetType().Name}, not a prefab/GameObject. Try `assets export model` for non-prefab assets.");
         }
 
         // Walk the dependency closure breadth-first. Each step pulls

@@ -47,7 +47,7 @@ namespace Jiangyu.Mod
         // Batchmode entry point. Invoke via:
         //   Unity -batchmode -nographics -quit -projectPath <unity/> \
         //         -executeMethod Jiangyu.Mod.BakeWeapon.BakeBatch \
-        //         -gltfPath <Assets/Imported/.../raw.glb> \
+        //         -gltfPath <Assets/Authored/.../raw.glb> \
         //         -referencePrefab <Assets/Imported/.../arc_assault_rifle_t1.prefab> \
         //         -outputDir <Assets/Prefabs> \
         //         -outputName <voymastina/ak15> \
