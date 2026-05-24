@@ -6,10 +6,11 @@ export interface CompileSummary {
   readonly modName: string | null;
   readonly modVersion: string | null;
   readonly modAuthor: string | null;
-  readonly modelReplacements: number;
-  readonly textureReplacements: number;
-  readonly spriteReplacements: number;
-  readonly audioReplacements: number;
+  readonly models: number;
+  readonly textures: number;
+  readonly sprites: number;
+  readonly audio: number;
+  readonly replacementFiles: number;
   readonly additionFiles: number;
   readonly templateFiles: number;
   readonly templatePatches: number;

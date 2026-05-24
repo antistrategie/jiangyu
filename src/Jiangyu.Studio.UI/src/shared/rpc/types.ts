@@ -337,10 +337,11 @@ export interface CompileSummary {
   modName?: string | null;
   modVersion?: string | null;
   modAuthor?: string | null;
-  modelReplacements: number;
-  textureReplacements: number;
-  spriteReplacements: number;
-  audioReplacements: number;
+  models: number;
+  textures: number;
+  sprites: number;
+  audio: number;
+  replacementFiles: number;
   additionFiles: number;
   templateFiles: number;
   templatePatches: number;

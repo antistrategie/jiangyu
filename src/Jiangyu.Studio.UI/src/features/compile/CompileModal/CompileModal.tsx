@@ -146,12 +146,6 @@ function InfoPanel({
     [state.logs],
   );
 
-  const totalReplacements = summary
-    ? summary.modelReplacements +
-      summary.textureReplacements +
-      summary.spriteReplacements +
-      summary.audioReplacements
-    : 0;
 
   const isRunning = state.status === "running";
   const isDone = state.status === "success" || state.status === "failed";
@@ -176,15 +170,15 @@ function InfoPanel({
 
       <Section title="Assets · 资产">
         <div className={styles.statGrid}>
-          <Stat label="Models" value={summary?.modelReplacements ?? null} />
-          <Stat label="Textures" value={summary?.textureReplacements ?? null} />
-          <Stat label="Sprites" value={summary?.spriteReplacements ?? null} />
-          <Stat label="Audio" value={summary?.audioReplacements ?? null} />
+          <Stat label="Models" value={summary?.models ?? null} />
+          <Stat label="Textures" value={summary?.textures ?? null} />
+          <Stat label="Sprites" value={summary?.sprites ?? null} />
+          <Stat label="Audio" value={summary?.audio ?? null} />
         </div>
         <div className={styles.subStats}>
           <SubStat
             label="Replacements"
-            value={summary !== null ? String(totalReplacements) : "—"}
+            value={summary !== null ? String(summary.replacementFiles) : "—"}
           />
           <SubStat
             label="Additions"

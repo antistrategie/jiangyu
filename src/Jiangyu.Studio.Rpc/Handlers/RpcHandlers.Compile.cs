@@ -133,17 +133,49 @@ public static partial class RpcHandlers
         var replacementsRoot = Path.Combine(projectRoot, "assets", "replacements");
         var additionsRoot = Path.Combine(projectRoot, "assets", "additions");
         var templatesRoot = Path.Combine(projectRoot, "templates");
+        var unityPrefabsRoot = Path.Combine(projectRoot, "unity", "Assets", "Prefabs");
 
         var summary = new CompileSummary
         {
             ModName = modName,
             ModVersion = modVersion,
             ModAuthor = modAuthor,
-            ModelReplacements = CountSubdirs(Path.Combine(replacementsRoot, "models")),
-            TextureReplacements = CountFiles(Path.Combine(replacementsRoot, "textures")),
-            SpriteReplacements = CountFiles(Path.Combine(replacementsRoot, "sprites")),
-            AudioReplacements = CountFiles(Path.Combine(replacementsRoot, "audio")),
-            AdditionFiles = CountFilesRecursive(additionsRoot),
+            // Per-type counts sum the replacement convention
+            // (assets/replacements/<cat>/) and the addition convention
+            // (assets/additions/<cat>/) so what the modal advertises matches
+            // what the compile pipeline actually bundles. Models rolls in
+            // prefab additions because both are GameObject-shaped 3D content
+            // from the modder's perspective: model replacements (vanilla
+            // mesh swaps) and prefab additions (new entities baked via
+            // BakeHumanoid / dropped under unity/Assets/Prefabs/) share the
+            // same stat tile.
+            Models = CountSubdirs(Path.Combine(replacementsRoot, "models"))
+                + CountSubdirs(Path.Combine(additionsRoot, "models"))
+                + CountMainPrefabs(unityPrefabsRoot)
+                + CountFiles(Path.Combine(additionsRoot, "prefabs"), "*.bundle"),
+            Textures = CountFiles(Path.Combine(replacementsRoot, "textures"))
+                + CountFilesRecursive(Path.Combine(additionsRoot, "textures")),
+            Sprites = CountFiles(Path.Combine(replacementsRoot, "sprites"))
+                + CountFilesRecursive(Path.Combine(additionsRoot, "sprites")),
+            Audio = CountFiles(Path.Combine(replacementsRoot, "audio"))
+                + CountFilesRecursive(Path.Combine(additionsRoot, "audio")),
+            // Replacements live at assets/replacements/<cat>/<file>; additions
+            // at assets/additions/<cat>/<file>. The two sub-stats break the
+            // top-line totals down by source so the modder can see at a
+            // glance how much of the bundle is replacing vanilla vs adding
+            // new content.
+            ReplacementFiles =
+                CountSubdirs(Path.Combine(replacementsRoot, "models"))
+                + CountFiles(Path.Combine(replacementsRoot, "textures"))
+                + CountFiles(Path.Combine(replacementsRoot, "sprites"))
+                + CountFiles(Path.Combine(replacementsRoot, "audio")),
+            AdditionFiles =
+                CountSubdirs(Path.Combine(additionsRoot, "models"))
+                + CountMainPrefabs(unityPrefabsRoot)
+                + CountFiles(Path.Combine(additionsRoot, "prefabs"), "*.bundle")
+                + CountFilesRecursive(Path.Combine(additionsRoot, "textures"))
+                + CountFilesRecursive(Path.Combine(additionsRoot, "sprites"))
+                + CountFilesRecursive(Path.Combine(additionsRoot, "audio")),
             TemplateFiles = CountFilesRecursive(templatesRoot, "*.kdl"),
             TemplatePatches = CountKdlNodes(templatesRoot, "patch"),
             TemplateClones = CountKdlNodes(templatesRoot, "clone"),
@@ -155,12 +187,23 @@ public static partial class RpcHandlers
     private static int CountSubdirs(string dir)
         => Directory.Exists(dir) ? Directory.EnumerateDirectories(dir).Count() : 0;
 
-    private static int CountFiles(string dir)
-        => Directory.Exists(dir) ? Directory.EnumerateFiles(dir).Count() : 0;
+    private static int CountFiles(string dir, string searchPattern = "*")
+        => Directory.Exists(dir) ? Directory.EnumerateFiles(dir, searchPattern).Count() : 0;
 
     private static int CountFilesRecursive(string dir, string searchPattern = "*")
         => Directory.Exists(dir)
-            ? Directory.EnumerateFiles(dir, searchPattern, SearchOption.AllDirectories).Count()
+            ? Directory.EnumerateFiles(dir, searchPattern, SearchOption.AllDirectories)
+                .Where(p => !p.EndsWith(".meta", StringComparison.OrdinalIgnoreCase))
+                .Count()
+            : 0;
+
+    // Counts `main.prefab` files anywhere under unityPrefabsRoot — the bake
+    // convention emits unity/Assets/Prefabs/<cat>/<name>/main.prefab per
+    // entity, so this matches the count of prefab bundles Unity will build.
+    // Pre-built `.bundle` escape-hatch additions are counted separately.
+    private static int CountMainPrefabs(string dir)
+        => Directory.Exists(dir)
+            ? Directory.EnumerateFiles(dir, "main.prefab", SearchOption.AllDirectories).Count()
             : 0;
 
     // Heuristic line counter. Good enough for the compile status badge — not
@@ -215,18 +258,34 @@ public sealed class CompileSummary
     [JsonPropertyName("modAuthor")]
     public string? ModAuthor { get; set; }
 
-    [JsonPropertyName("modelReplacements")]
-    public required int ModelReplacements { get; set; }
+    [JsonPropertyName("models")]
+    public required int Models { get; set; }
 
-    [JsonPropertyName("textureReplacements")]
-    public required int TextureReplacements { get; set; }
+    [JsonPropertyName("textures")]
+    public required int Textures { get; set; }
 
-    [JsonPropertyName("spriteReplacements")]
-    public required int SpriteReplacements { get; set; }
+    [JsonPropertyName("sprites")]
+    public required int Sprites { get; set; }
 
-    [JsonPropertyName("audioReplacements")]
-    public required int AudioReplacements { get; set; }
+    [JsonPropertyName("audio")]
+    public required int Audio { get; set; }
 
+    /// <summary>
+    /// Count of vanilla-replacement entries (files under
+    /// <c>assets/replacements/&lt;cat&gt;/</c>). Modal sub-stat that shows
+    /// how many of the top-line per-type counts came from replacements
+    /// vs additions.
+    /// </summary>
+    [JsonPropertyName("replacementFiles")]
+    public required int ReplacementFiles { get; set; }
+
+    /// <summary>
+    /// Count of addition-source files: anything under
+    /// <c>assets/additions/&lt;cat&gt;/</c> plus <c>main.prefab</c> files
+    /// under <c>unity/Assets/Prefabs/</c>. Modal sub-stat paired with
+    /// <see cref="ReplacementFiles"/> to split the top-line per-type
+    /// counts between replacement-of-vanilla and new-content sources.
+    /// </summary>
     [JsonPropertyName("additionFiles")]
     public required int AdditionFiles { get; set; }
 
