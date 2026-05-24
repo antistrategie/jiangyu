@@ -540,6 +540,7 @@ function PathRow({ label, hint, path, missingIcon, onChange }: PathRowProps) {
 const STUDIO_VERSION = __STUDIO_VERSION__;
 const REPO_URL = "https://github.com/antistrategie/jiangyu";
 const DOCS_URL = "https://antistrategie.github.io/jiangyu/";
+const DISCORD_URL = "https://discord.com/invite/XcfYGmxvde";
 
 interface Credit {
   readonly name: string;
@@ -585,15 +586,30 @@ const CREDIT_GROUPS: readonly CreditGroup[] = [
         license: "GPL-3.0",
         note: "Unity asset extraction & recompilation (bundled in vendor/).",
       },
+      {
+        name: "TinySerializer",
+        license: "Apache-2.0",
+        note: "Offline Sirenix Odin payload decoding (bundled in vendor/).",
+      },
       { name: "AssetsTools.NET", license: "MIT", note: "Unity asset-table manipulation." },
       { name: "SharpGLTF", license: "MIT", note: "glTF / GLB export in the asset pipeline." },
+      { name: "StbImageSharp", license: "MIT", note: "Image decoding for atlas compositing." },
+      {
+        name: "StbImageWriteSharp",
+        license: "MIT",
+        note: "Image encoding for replacement textures.",
+      },
       { name: "KdlSharp", license: "MIT", note: "KDL template parser." },
       { name: "System.CommandLine", license: "MIT", note: "Jiangyu CLI framework." },
     ],
   },
   {
     label: "In-game loader",
-    items: [{ name: "Harmony", license: "MIT", note: "Runtime method patching." }],
+    items: [
+      { name: "MelonLoader", license: "Apache-2.0", note: "IL2CPP modding host." },
+      { name: "Il2CppInterop", license: "LGPL-3.0", note: "Managed wrappers over IL2CPP types." },
+      { name: "Harmony", license: "MIT", note: "Runtime method patching." },
+    ],
   },
 ];
 
@@ -630,6 +646,19 @@ function AboutSection() {
           }}
         >
           {DOCS_URL}
+        </button>
+      </Field>
+      <Field label="Antistratégie Discord">
+        <button
+          type="button"
+          className={styles.repoLink}
+          onClick={() => {
+            void rpcCall<null>("openExternal", { url: DISCORD_URL }).catch((err: unknown) => {
+              console.error("[Settings] openExternal failed:", err);
+            });
+          }}
+        >
+          {DISCORD_URL}
         </button>
       </Field>
       <SectionHeader title="Credits · 致谢" />
