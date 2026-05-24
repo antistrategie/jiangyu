@@ -171,13 +171,14 @@ export function DirectiveBody({
     d: StampedDirective,
     flatIndex: number,
     displayFieldPath?: string,
+    overrideMemberMap?: Map<string, TemplateMember>,
   ): React.ReactNode => (
     <DirectiveRow
       key={d._uiId}
       directive={d}
       flatIndex={flatIndex}
       displayFieldPath={displayFieldPath}
-      memberMap={memberMap}
+      memberMap={overrideMemberMap ?? memberMap}
       vanillaFields={vanillaFields}
       reorder={reorder}
       onChange={onUpdateDirective}
@@ -234,7 +235,6 @@ export function DirectiveBody({
         </React.Fragment>
       );
     }
-    const memberRows = g.members.map((m, mi) => looseRow(m.directive, startIndex + mi, m.suffix));
     const firstMemberId = g.members[0]?.directive._uiId ?? "";
     const groupKey = firstMemberId || `group-${g.field}-${g.index}`;
     const groupHandlers = reorder.buildHandlers(firstMemberId, startIndex, endIndex);
@@ -254,7 +254,7 @@ export function DirectiveBody({
           onSetDirectives={onSetDirectives}
           onConvertToPending={handleConvertGroupToPending}
           members={g.members}
-          memberRows={memberRows}
+          renderMemberRow={looseRow}
           isDragging={groupHandlers.isDragging}
           onDragStart={groupHandlers.onDragStart}
           onDragEnd={groupHandlers.onDragEnd}
@@ -556,8 +556,15 @@ export interface DescentGroupProps {
     | undefined;
   /** Members of the group as (directive, suffix) pairs. */
   members: { directive: StampedDirective; suffix: string }[];
-  /** Pre-rendered member SetRows from the parent. */
-  memberRows: React.ReactNode[];
+  /** Row renderer from the parent. Accepts an override memberMap so the
+   *  inner descent rows resolve their member info against the descent
+   *  target's members rather than the outer template's. */
+  renderMemberRow: (
+    directive: StampedDirective,
+    flatIndex: number,
+    displayFieldPath?: string,
+    overrideMemberMap?: Map<string, TemplateMember>,
+  ) => React.ReactNode;
   isDragging: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
@@ -576,7 +583,7 @@ function DescentGroup({
   onSetDirectives,
   onConvertToPending,
   members,
-  memberRows,
+  renderMemberRow,
   isDragging,
   onDragStart,
   onDragEnd,
@@ -600,6 +607,20 @@ function DescentGroup({
     innerType || undefined,
     true,
     subtypeElementContext,
+  );
+
+  // Member-by-name lookup over the descent target's own members. Inner
+  // SetRows resolve their per-field schema (referenceTypeName, enumTypeName,
+  // …) against this map instead of the outer template's, so a monomorphic
+  // ref field like Perk.Skill correctly hides the type selector.
+  const innerMemberMap = useMemo(() => {
+    const map = new Map<string, TemplateMember>();
+    for (const m of innerMembers) map.set(m.name, m);
+    return map;
+  }, [innerMembers]);
+
+  const memberRows = members.map((m, mi) =>
+    renderMemberRow(m.directive, startIndex + mi, m.suffix, innerMemberMap),
   );
 
   // Members that already have a directive in the group — used to dim the

@@ -25,7 +25,7 @@ export function formatValue(value: InspectedFieldNode | null): string {
     const name = (value as { asset?: { name?: string } | null }).asset?.name;
     return name ? `→ ${name}` : "→ ?";
   }
-  if (value.kind === "string" && value.value !== null) return JSON.stringify(String(value.value));
+  if (value.kind === "string" && value.value !== null) return `"${String(value.value)}"`;
   if (value.kind === "array") {
     const count = value.count ?? value.elements?.length ?? 0;
     if (count === 0) return "[]";

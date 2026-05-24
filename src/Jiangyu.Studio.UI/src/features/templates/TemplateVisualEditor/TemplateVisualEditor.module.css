@@ -455,6 +455,25 @@
   min-height: 32px;
 }
 
+.setRowHeader:has(textarea) {
+  align-items: flex-start;
+}
+
+.setRowHeader:has(textarea) > .rowDragGrip,
+.setRowHeader:has(textarea) > .setOpWrap,
+.setRowHeader:has(textarea) > .setOpLabel,
+.setRowHeader:has(textarea) > .setField,
+.setRowHeader:has(textarea) > .setKind,
+.setRowHeader:has(textarea) > .setDelete {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.setRowHeader:has(textarea) > .setOpWrap .setOpBtn {
+  height: 100%;
+}
+
 .setField {
   font-family: var(--font-mono);
   font-size: var(--fs-sm);

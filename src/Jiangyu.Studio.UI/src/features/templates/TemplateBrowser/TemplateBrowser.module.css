@@ -714,12 +714,13 @@
 
 .memberNestedRow {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: var(--space-2);
   padding: 1px var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   min-height: 20px;
+  overflow-x: auto;
 }
 
 .memberNestedRow:hover {
@@ -738,10 +739,7 @@
 
 .memberNestedValue {
   color: var(--fg);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre;
 }
 
 .memberNestedSubList {
@@ -753,7 +751,7 @@
 
 .memberNestedSubRow {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: var(--space-2);
   padding: 1px var(--space-2) 1px var(--space-4);
   font-family: var(--font-mono);
@@ -784,6 +782,7 @@
 
 .valueString {
   color: var(--jade-1);
+  white-space: pre-wrap;
 }
 
 .valueNull {
