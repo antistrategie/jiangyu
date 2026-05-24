@@ -143,6 +143,24 @@ jiangyu templates query EntityTemplate.Skills        # auto-unwraps to SkillTemp
 
 For leaf fields it emits a copy-pasteable KDL snippet you can drop into a `templates/*.kdl` file.
 
+### `jiangyu templates format`
+
+Canonicalises every `*.kdl` under `templates/` (or a path you pass). Runs the same parse → validate → normalise → serialise pipeline Studio uses on save, so the on-disk text matches what the visual editor would write. Comments — leading and inline — round-trip through the format.
+
+```sh
+jiangyu templates format                  # rewrite every templates/*.kdl
+jiangyu templates format path/to/file.kdl # rewrite one file
+jiangyu templates format --check          # exit 1 if anything would change
+```
+
+What the pass does on top of plain reformatting:
+
+- Strips redundant `composite="X"`, `handler="X"`, and `ref="X"` attributes when the destination field is monomorphic (the type is recovered on re-parse).
+- Resolves symbolic Conversation `RoleGuid "Entity"` into the numeric guid the game stores (`RoleGuid 1248015120`).
+- Coerces shorthand forms the validator accepts (e.g. `set "MoraleState" "Fleeing"` → enum, `set "ParentRef" "id"` on a concrete-typed field → `ref="X" "id"`).
+
+`--check` is the CI-friendly mode: it prints each file that would change and exits non-zero if any do. No writes.
+
 ## Configuration
 
 The CLI reads global configuration from a JSON file in your platform's standard config location (XDG / AppData adaptive). Three fields:

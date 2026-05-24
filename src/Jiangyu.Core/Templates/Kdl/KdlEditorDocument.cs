@@ -15,6 +15,15 @@ public sealed class KdlEditorDocument
 
     [JsonPropertyName("errors")]
     public List<KdlEditorError> Errors { get; set; } = [];
+
+    /// <summary>
+    /// Line comments that appeared after the last node in source. Each entry
+    /// holds the substring after <c>//</c> with one optional leading space
+    /// stripped; the serialiser re-prefixes <c>// </c> at emit time. Null
+    /// for the common no-trailing-footer case so the JSON stays compact.
+    /// </summary>
+    [JsonPropertyName("trailingComments")]
+    public List<string>? TrailingComments { get; set; }
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -51,6 +60,23 @@ public sealed class KdlEditorNode
 
     [JsonPropertyName("directives")]
     public List<KdlEditorDirective> Directives { get; set; } = [];
+
+    /// <summary>
+    /// Line comments authored immediately above this node in source. See
+    /// <see cref="KdlEditorDocument.TrailingComments"/> for the storage
+    /// convention. Null when the node has no leading comments.
+    /// </summary>
+    [JsonPropertyName("leadingComments")]
+    public List<string>? LeadingComments { get; set; }
+
+    /// <summary>
+    /// Inline comment authored on the same line that opens this node (after
+    /// the <c>{</c>). The serialiser re-emits it on the opening-brace line.
+    /// Stored with one optional leading space stripped, matching the
+    /// <c>LeadingComments</c> convention.
+    /// </summary>
+    [JsonPropertyName("trailingComment")]
+    public string? TrailingComment { get; set; }
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -106,6 +132,34 @@ public sealed class KdlEditorDirective
     /// <summary>1-based source line of the directive. Set by the parser for diagnostic output.</summary>
     [JsonPropertyName("line")]
     public int? Line { get; set; }
+
+    /// <summary>
+    /// Line comments authored immediately above this directive in source.
+    /// Attribution covers directives at every nesting depth — the parser
+    /// stamps a source line on each compiled op, top-level and inside
+    /// composite / handler bodies alike, so the comment-attribution pass
+    /// can find every directive.
+    /// </summary>
+    [JsonPropertyName("leadingComments")]
+    public List<string>? LeadingComments { get; set; }
+
+    /// <summary>
+    /// Inline comment on the same source line as this directive. For
+    /// composite/handler-valued directives this is the comment immediately
+    /// after the opening <c>{</c>; for flat directives it's the comment at
+    /// end of the directive's line.
+    /// </summary>
+    [JsonPropertyName("trailingComment")]
+    public string? TrailingComment { get; set; }
+
+    /// <summary>
+    /// True when source authored a blank line immediately above this
+    /// directive. The serialiser emits one blank line so visual grouping
+    /// (e.g. spacing inside a clone body) survives a round-trip. Multiple
+    /// consecutive blanks collapse to one.
+    /// </summary>
+    [JsonPropertyName("blankLineBefore")]
+    public bool BlankLineBefore { get; set; }
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

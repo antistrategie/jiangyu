@@ -14,6 +14,7 @@ public static class TemplatesCommand
             TemplatesInspectCommand.Create(),
             TemplatesQueryCommand.Create(),
             TemplatesBaselineCommand.Create(),
+            TemplatesFormatCommand.Create(),
         };
 
         return command;

@@ -95,6 +95,18 @@ public sealed class CompiledTemplateSetOperation
 
     [JsonPropertyName("value")]
     public CompiledTemplateValue? Value { get; set; }
+
+    /// <summary>
+    /// Parser-side 1-based source-line annotation for editor-doc round-trips.
+    /// Stamped by <c>KdlTemplateParser</c> on every op it creates (top-level
+    /// and inner) so the editor-bridge can carry it through to
+    /// <see cref="Jiangyu.Core.Templates.KdlEditorDirective.Line"/> and the
+    /// comment-attribution pass has a position for every directive — not just
+    /// the outermost. Not serialised; the compile manifest and applier ignore
+    /// this field entirely.
+    /// </summary>
+    [JsonIgnore]
+    public int? SourceLine { get; set; }
 }
 
 public enum CompiledTemplateOp

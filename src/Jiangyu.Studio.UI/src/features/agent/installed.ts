@@ -9,22 +9,16 @@
  */
 import { create } from "zustand";
 import { rpcCall, type InstalledAgent, type StudioSettings } from "@shared/rpc";
+import { loadJson, saveJson } from "@shared/storage";
 
 const STORAGE_KEY = "jiangyu:setting:installedAgents";
 
 function loadInitial(): InstalledAgent[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === null) return [];
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as InstalledAgent[]) : [];
-  } catch {
-    return [];
-  }
+  return loadJson(STORAGE_KEY, (v): v is InstalledAgent[] => Array.isArray(v)) ?? [];
 }
 
 function saveLocal(list: readonly InstalledAgent[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  saveJson(STORAGE_KEY, list);
 }
 
 interface InstalledAgentsState {

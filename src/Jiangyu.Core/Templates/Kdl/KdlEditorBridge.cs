@@ -76,6 +76,11 @@ public static class KdlEditorBridge
             IndexPath = op.IndexPath != null ? new List<int>(op.IndexPath) : null,
             Descent = op.Descent != null ? CloneDescent(op.Descent) : null,
             Value = op.Value != null ? CompiledValueToEditor(op.Value) : null,
+            // SourceLine is the parser-stamped source position; the comment
+            // attribution pass uses this on every directive including those
+            // nested inside composite/handler bodies. Null on directives
+            // produced outside the parser (compile-side or hand-built tests).
+            Line = op.SourceLine,
         };
     }
 

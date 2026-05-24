@@ -1,7 +1,21 @@
+import { loadJson, removeKey, saveJson } from "@shared/storage";
 import type { EditorDirective, EditorNode } from "./types";
 
 const STORAGE_PREFIX = "jiangyu:visualEditor:collapsed:";
 const COMPOSITE_STORAGE_PREFIX = "jiangyu:visualEditor:compositeCollapsed:";
+
+function isArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
+function isStringBoolEntry(entry: unknown): entry is [string, boolean] {
+  return (
+    Array.isArray(entry) &&
+    entry.length === 2 &&
+    typeof entry[0] === "string" &&
+    typeof entry[1] === "boolean"
+  );
+}
 
 /**
  * Stable per-node identity used to key collapse state across parses.
@@ -26,28 +40,18 @@ export function computeNodeKeyByUiId(nodes: readonly EditorNode[]): Map<string, 
 
 export function loadCollapsed(filePath: string): Set<string> {
   if (!filePath) return new Set();
-  try {
-    const raw = localStorage.getItem(STORAGE_PREFIX + filePath);
-    if (raw === null) return new Set();
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return new Set();
-    return new Set(parsed.filter((x): x is string => typeof x === "string"));
-  } catch {
-    return new Set();
-  }
+  // Permissive filter: drop non-string entries instead of failing the whole
+  // load, so a stale entry from an older serialiser shape doesn't wipe the
+  // user's collapse state.
+  const parsed = loadJson(STORAGE_PREFIX + filePath, isArray);
+  if (parsed === null) return new Set();
+  return new Set(parsed.filter((x): x is string => typeof x === "string"));
 }
 
 export function saveCollapsed(filePath: string, keys: ReadonlySet<string>): void {
   if (!filePath) return;
-  try {
-    if (keys.size === 0) {
-      localStorage.removeItem(STORAGE_PREFIX + filePath);
-    } else {
-      localStorage.setItem(STORAGE_PREFIX + filePath, JSON.stringify([...keys]));
-    }
-  } catch {
-    /* quota exceeded / private mode — accept loss */
-  }
+  if (keys.size === 0) removeKey(STORAGE_PREFIX + filePath);
+  else saveJson(STORAGE_PREFIX + filePath, [...keys]);
 }
 
 /** Drop entries from `stored` that don't match any current node key. */
@@ -104,42 +108,16 @@ export function computeCompositeKeyByUiId(
  */
 export function loadCompositeCollapse(filePath: string): Map<string, boolean> {
   if (!filePath) return new Map();
-  try {
-    const raw = localStorage.getItem(COMPOSITE_STORAGE_PREFIX + filePath);
-    if (raw === null) return new Map();
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return new Map();
-    const result = new Map<string, boolean>();
-    for (const entry of parsed) {
-      if (
-        Array.isArray(entry) &&
-        entry.length === 2 &&
-        typeof entry[0] === "string" &&
-        typeof entry[1] === "boolean"
-      ) {
-        result.set(entry[0], entry[1]);
-      }
-    }
-    return result;
-  } catch {
-    return new Map();
-  }
+  // Permissive filter: keep valid [string, boolean] pairs, drop the rest.
+  const parsed = loadJson(COMPOSITE_STORAGE_PREFIX + filePath, isArray);
+  if (parsed === null) return new Map();
+  return new Map(parsed.filter(isStringBoolEntry));
 }
 
 export function saveCompositeCollapse(filePath: string, map: ReadonlyMap<string, boolean>): void {
   if (!filePath) return;
-  try {
-    if (map.size === 0) {
-      localStorage.removeItem(COMPOSITE_STORAGE_PREFIX + filePath);
-    } else {
-      localStorage.setItem(
-        COMPOSITE_STORAGE_PREFIX + filePath,
-        JSON.stringify(Array.from(map.entries())),
-      );
-    }
-  } catch {
-    /* quota exceeded / private mode — accept loss */
-  }
+  if (map.size === 0) removeKey(COMPOSITE_STORAGE_PREFIX + filePath);
+  else saveJson(COMPOSITE_STORAGE_PREFIX + filePath, [...map.entries()]);
 }
 
 export function pruneCompositeCollapse(

@@ -1,4 +1,5 @@
 import { basename } from "@shared/path";
+import { loadJson, saveJson } from "@shared/storage";
 import type { AssetBrowserState, TemplateBrowserState } from "@features/panes/browserState";
 
 export interface Tab {
@@ -745,23 +746,11 @@ export function remapPaths(layout: Layout, remap: (path: string) => string): Lay
 const STORAGE_PREFIX = "jiangyu:layout:";
 
 export function saveLayout(projectPath: string, layout: Layout): void {
-  try {
-    localStorage.setItem(STORAGE_PREFIX + projectPath, JSON.stringify(layout));
-  } catch {
-    // Quota exceeded or storage unavailable — drop the save silently.
-  }
+  saveJson(STORAGE_PREFIX + projectPath, layout);
 }
 
 export function loadLayout(projectPath: string): Layout | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_PREFIX + projectPath);
-    if (raw === null) return null;
-    const parsed = JSON.parse(raw) as Layout;
-    if (!isValidLayout(parsed)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+  return loadJson(STORAGE_PREFIX + projectPath, isValidLayout);
 }
 
 function isValidPane(p: unknown): p is Pane {

@@ -1,5 +1,6 @@
 import type { PaneKind } from "@features/panes/layout";
 import type { AssetBrowserState, TemplateBrowserState } from "@features/panes/browserState";
+import { loadJson, removeKey, saveJson } from "@shared/storage";
 
 // Persistent descriptor of a pane window open against a project. The runtime
 // windowId that InfiniFrame assigns isn't stored because it's process-local;
@@ -19,28 +20,25 @@ function keyFor(projectPath: string): string {
   return KEY_PREFIX + projectPath;
 }
 
+function isArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
 export function loadPaneWindows(projectPath: string): PaneWindowDescriptor[] {
-  try {
-    const raw = localStorage.getItem(keyFor(projectPath));
-    if (raw === null) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isDescriptor);
-  } catch {
-    return [];
-  }
+  // Permissive filter: drop entries that don't pass isDescriptor, keep the
+  // rest. A partial descriptor list from an older schema shouldn't blow away
+  // the user's open windows.
+  const parsed = loadJson(keyFor(projectPath), isArray);
+  if (parsed === null) return [];
+  return parsed.filter(isDescriptor);
 }
 
 export function savePaneWindows(
   projectPath: string,
   descriptors: readonly PaneWindowDescriptor[],
 ): void {
-  try {
-    if (descriptors.length === 0) localStorage.removeItem(keyFor(projectPath));
-    else localStorage.setItem(keyFor(projectPath), JSON.stringify(descriptors));
-  } catch {
-    // Storage quota / disabled — non-fatal.
-  }
+  if (descriptors.length === 0) removeKey(keyFor(projectPath));
+  else saveJson(keyFor(projectPath), descriptors);
 }
 
 function isDescriptor(value: unknown): value is PaneWindowDescriptor {

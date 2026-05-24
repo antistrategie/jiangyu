@@ -520,6 +520,68 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
+    public void NormaliseForEmit_ClearsTypeWhenInnerDirectiveHasValidationError()
+    {
+        // Regression: when ValidateOperation surfaced an error from an
+        // unrelated inner directive (e.g. a string value on an Int32 field
+        // that the resolver can't coerce, which is exactly what happens
+        // with Stem.ID.bankId when no IBankIdResolver is wired through),
+        // NormaliseForEmit silently skipped the write-back. The outer
+        // composite's redundant TypeName then survived to the serialiser,
+        // producing `set "Field" composite="OuterType" { ... }` on round-
+        // trip even though the destination is monomorphic and the modder's
+        // source had used the bare inferred form.
+        using var catalog = Load();
+        var document = new KdlEditorDocument
+        {
+            Nodes =
+            [
+                new KdlEditorNode
+                {
+                    Kind = KdlEditorNodeKind.Patch,
+                    TemplateType = "FixtureEntity",
+                    TemplateId = "unit.x",
+                    Directives =
+                    [
+                        new KdlEditorDirective
+                        {
+                            Op = KdlEditorOp.Set,
+                            FieldPath = "Properties",
+                            Value = new KdlEditorValue
+                            {
+                                Kind = KdlEditorValueKind.Composite,
+                                CompositeType = typeof(FixtureProperties).FullName!,
+                                CompositeDirectives =
+                                [
+                                    new KdlEditorDirective
+                                    {
+                                        Op = KdlEditorOp.Set,
+                                        FieldPath = "Accuracy",
+                                        Value = new KdlEditorValue
+                                        {
+                                            // Accuracy is Int32; the validator can't coerce a
+                                            // bare string with no resolver in scope.
+                                            Kind = KdlEditorValueKind.String,
+                                            String = "not-a-number",
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                },
+            ],
+        };
+
+        TemplateCatalogValidator.NormaliseForEmit(document, catalog);
+
+        // The inner Set has an unresolved coercion, but the outer
+        // composite's monomorphic type cleanup is independent of that and
+        // must still apply.
+        Assert.True(string.IsNullOrEmpty(document.Nodes[0].Directives[0].Value?.CompositeType));
+    }
+
+    [Fact]
     public void NormaliseForEmit_DoesNotMutateValidationOutput()
     {
         // ValidateEditorDocument keeps the filled-in CompositeType so the

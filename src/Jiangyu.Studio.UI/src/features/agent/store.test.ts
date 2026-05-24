@@ -8,7 +8,7 @@ vi.mock("./rpc", () => ({
   agentPermissionResponse: (...args: unknown[]) => permissionResponseMock(...args),
 }));
 
-import { useAgentStore, type ChatMessage } from "./store";
+import { configOptionIdentifier, useAgentStore, type ChatMessage } from "./store";
 import type {
   AgentMessageChunk,
   AgentThoughtChunk,
@@ -18,6 +18,7 @@ import type {
   AvailableCommandsUpdate,
   SessionInfoUpdate,
   CurrentModeUpdate,
+  ConfigOption,
 } from "./types";
 
 function reset() {
@@ -44,6 +45,92 @@ function reset() {
 }
 
 beforeEach(reset);
+
+describe("configOptionIdentifier", () => {
+  it("prefers key over id", () => {
+    expect(configOptionIdentifier({ key: "mode", id: "ignored", name: "n" })).toBe("mode");
+  });
+
+  it("falls back to id when key is missing", () => {
+    expect(configOptionIdentifier({ id: "thinking", name: "n" })).toBe("thinking");
+  });
+
+  it("returns null when neither key nor id is set", () => {
+    expect(configOptionIdentifier({ name: "anon" })).toBeNull();
+  });
+});
+
+describe("config_option_update merging", () => {
+  // Indirectly exercises mergeConfigOptions through handleUpdate.
+
+  function seed(options: ConfigOption[]) {
+    useAgentStore.setState({ configOptions: options });
+  }
+
+  it("appends new keys", () => {
+    seed([{ key: "mode", name: "Mode", value: "plan" }]);
+    useAgentStore.getState().handleUpdate({
+      sessionUpdate: "config_option_update",
+      configOptions: [{ key: "thinking", name: "Thinking", value: "high" }],
+    });
+    const opts = useAgentStore.getState().configOptions;
+    expect(opts).toHaveLength(2);
+    expect(opts.map((o) => o.key).sort()).toEqual(["mode", "thinking"]);
+  });
+
+  it("overwrites existing keys in place", () => {
+    seed([{ key: "mode", name: "Mode", value: "plan" }]);
+    useAgentStore.getState().handleUpdate({
+      sessionUpdate: "config_option_update",
+      configOptions: [{ key: "mode", name: "Mode", value: "default" }],
+    });
+    const opts = useAgentStore.getState().configOptions;
+    expect(opts).toHaveLength(1);
+    expect(opts[0]?.value).toBe("default");
+  });
+
+  it("drops entries without any identifier", () => {
+    seed([{ key: "mode", name: "Mode" }]);
+    useAgentStore.getState().handleUpdate({
+      sessionUpdate: "config_option_update",
+      configOptions: [{ name: "Anonymous" }],
+    });
+    const opts = useAgentStore.getState().configOptions;
+    expect(opts).toHaveLength(1);
+    expect(opts[0]?.key).toBe("mode");
+  });
+});
+
+describe("content block text extraction", () => {
+  // Indirectly exercises contentBlockText through agent_message_chunk handling.
+
+  it("emits placeholder for image blocks", () => {
+    useAgentStore.getState().handleUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "image", data: "...", mimeType: "image/png" },
+    });
+    const msgs = useAgentStore.getState().messages;
+    expect((msgs[0] as { text: string }).text).toBe("[image]");
+  });
+
+  it("emits placeholder for audio blocks", () => {
+    useAgentStore.getState().handleUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "audio", data: "...", mimeType: "audio/wav" },
+    });
+    const msgs = useAgentStore.getState().messages;
+    expect((msgs[0] as { text: string }).text).toBe("[audio]");
+  });
+
+  it("emits resource link with uri", () => {
+    useAgentStore.getState().handleUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "resource_link", uri: "file:///tmp/x.txt", name: "x.txt" },
+    });
+    const msgs = useAgentStore.getState().messages;
+    expect((msgs[0] as { text: string }).text).toBe("[resource file:///tmp/x.txt]");
+  });
+});
 
 describe("connection lifecycle", () => {
   it("sets connected state from agent info", () => {

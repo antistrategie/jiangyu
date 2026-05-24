@@ -1,8 +1,86 @@
-// Pure helpers extracted from TemplateBrowser.tsx so the JSX module only
-// exports React components — keeps Vite fast-refresh working and gives the
-// unit tests a stable, side-effect-free import surface.
+// Pure helpers for the template browser. Side-effect-free so the JSX modules
+// alongside can rely on stable identity at import time and the unit tests
+// can call them without booting React.
 
-import type { TemplateInstanceEntry } from "@shared/rpc";
+import type { InspectedFieldNode, TemplateInstanceEntry } from "@shared/rpc";
+
+/**
+ * Compact single-line summary of an inspected field value. Drives the
+ * collapsed-row preview in TemplateBrowser and TemplateDetail. Recurses
+ * into short, all-scalar arrays so something like `[1, 2, 3]` renders
+ * inline instead of `[3 items]`.
+ */
+export function formatValue(value: InspectedFieldNode | null): string {
+  if (!value) return "…";
+  if (value.null) return "null";
+  // eslint-disable-next-line @typescript-eslint/no-base-to-string -- String() handles unknown at runtime, and the guard above excludes null/undefined.
+  if (value.value !== undefined && value.value !== null) return String(value.value);
+  if (value.kind === "reference" && value.reference) {
+    return value.reference.name ?? `[pathId=${value.reference.pathId}]`;
+  }
+  if (value.kind === "assetReference") {
+    // The inspector emits "reference" for vanilla asset-typed fields today,
+    // so this branch covers the modder-edited pathway where a patch has
+    // been merged into the inspected view as an AssetReference value.
+    const name = (value as { asset?: { name?: string } | null }).asset?.name;
+    return name ? `→ ${name}` : "→ ?";
+  }
+  if (value.kind === "string" && value.value !== null) return JSON.stringify(String(value.value));
+  if (value.kind === "array") {
+    const count = value.count ?? value.elements?.length ?? 0;
+    if (count === 0) return "[]";
+    const allSimple =
+      value.elements?.every((e) => e.value !== undefined || e.kind === "string" || e.null) ?? false;
+    if (allSimple && value.elements && value.elements.length <= 4 && value.elements.length > 0) {
+      return "[" + value.elements.map((e) => formatValue(e)).join(", ") + "]";
+    }
+    return `[${count} items]`;
+  }
+  if (value.kind === "object") {
+    const fieldCount = value.fields?.length ?? 0;
+    return `{ ${fieldCount} field${fieldCount !== 1 ? "s" : ""} }`;
+  }
+  return "";
+}
+
+/**
+ * Single-character preview of one cell in a matrix-typed field. Bools render
+ * as ■ / ·; numeric / enum scalars render as their string form; missing or
+ * unknown cells render as `·`.
+ */
+export function formatMatrixCell(cell: InspectedFieldNode | undefined): string {
+  if (!cell) return "·";
+  if (cell.kind === "bool") return cell.value === true ? "■" : "·";
+  if (cell.value !== undefined && cell.value !== null) {
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string -- numeric or enum scalar
+    return String(cell.value);
+  }
+  return "·";
+}
+
+/**
+ * Whether the node renders as a single inline value (no expand affordance).
+ * Used by row-renderers to decide between a leaf cell and a tree-expand row.
+ */
+export function valueNodeKindIsScalar(node: InspectedFieldNode): boolean {
+  return node.kind !== "array" && node.kind !== "object" && node.kind !== "reference";
+}
+
+/**
+ * Maps enum members (numeric value → name) to an index-keyed dictionary for
+ * fast lookup in named-array rendering. Returns null when the input is
+ * null/undefined so callers can short-circuit without an extra check.
+ */
+export function buildNamedArrayLabelMap(
+  members: readonly { readonly name: string; readonly value: number }[] | null | undefined,
+): Record<number, string> | null {
+  if (!members) return null;
+  const map: Record<number, string> = {};
+  for (const m of members) {
+    map[m.value] = m.name;
+  }
+  return map;
+}
 
 /**
  * Looks up the enum member name for a numeric leaf value. Returns null when

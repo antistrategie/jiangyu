@@ -9,7 +9,12 @@
  * Distribution shape mirrors the published schema. npx-only is the v1
  * happy path; binary and uvx install are left for a follow-up.
  */
-import { rpcCall, subscribe, type AgentRegistryFetchedNotification, type InstalledAgent } from "@shared/rpc";
+import {
+  rpcCall,
+  subscribe,
+  type AgentRegistryFetchedNotification,
+  type InstalledAgent,
+} from "@shared/rpc";
 
 export interface RegistryNpx {
   readonly package: string;

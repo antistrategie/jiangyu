@@ -103,10 +103,15 @@ public static class KdlTemplateParser
             // KDL library throws on the first syntax error and stops.
             // Recover by splitting into top-level blocks and parsing each
             // independently so we can report errors across all blocks.
-            return ParseTextWithRecovery(text);
+            var recovered = ParseTextWithRecovery(text);
+            AttachLineComments(recovered, text);
+            AttachBlankLines(recovered, text);
+            return recovered;
         }
 
         ProcessKdlNodes(kdl, doc, lineOffset: 0);
+        AttachLineComments(doc, text);
+        AttachBlankLines(doc, text);
         return doc;
     }
 
@@ -165,7 +170,7 @@ public static class KdlTemplateParser
                     {
                         var patchNode = KdlEditorBridge.CompiledPatchToEditor(patch);
                         patchNode.Line = line;
-                        StampDirectiveLines(patchNode.Directives, node.Children, lineOffset);
+                        ApplyLineOffsetToDirectives(patchNode.Directives, lineOffset);
                         doc.Nodes.Add(patchNode);
                     }
                     else
@@ -189,7 +194,7 @@ public static class KdlTemplateParser
                         {
                             foreach (var op in clonePatches.Set)
                                 editorNode.Directives.Add(KdlEditorBridge.CompiledOpToEditorDirective(op));
-                            StampDirectiveLines(editorNode.Directives, node.Children, lineOffset);
+                            ApplyLineOffsetToDirectives(editorNode.Directives, lineOffset);
                         }
                         doc.Nodes.Add(editorNode);
                     }
@@ -314,17 +319,202 @@ public static class KdlTemplateParser
     /// 1:1 ordering between parsed directives and source children; only called
     /// after TryParsePatchNode/TryParseCloneNode have already succeeded.
     /// </summary>
-    private static void StampDirectiveLines(
-        List<KdlEditorDirective> directives,
-        IList<KdlNode> sourceChildren,
-        int lineOffset)
+    /// <summary>
+    /// Apply <paramref name="lineOffset"/> to every <see cref="KdlEditorDirective.Line"/>
+    /// in the tree. The bridge stamps the local (per-block) line via
+    /// <see cref="CompiledTemplateSetOperation.SourceLine"/>; ParseTextWithRecovery
+    /// parses each top-level block independently with its own offset, so we
+    /// have to adjust after the fact.
+    /// </summary>
+    /// <summary>
+    /// Scan the raw text for blank lines (lines containing only whitespace)
+    /// and mark the directive immediately following each blank run with
+    /// <see cref="KdlEditorDirective.BlankLineBefore"/>. Multiple consecutive
+    /// blanks collapse to one — the serialiser only emits a single blank
+    /// line regardless. Blanks are only attributed within sibling
+    /// directive lists (same node body or same composite body), so an
+    /// inter-node blank like the separator between two top-level clones
+    /// doesn't bleed onto the next clone's first directive (the serialiser
+    /// already emits inter-node blanks unconditionally).
+    /// </summary>
+    private static void AttachBlankLines(KdlEditorDocument doc, string text)
     {
-        var pairs = Math.Min(directives.Count, sourceChildren.Count);
-        for (var i = 0; i < pairs; i++)
+        var normalised = text.Replace("\r\n", "\n").Replace("\r", "\n");
+        var lines = normalised.Split('\n');
+        var blanks = new SortedSet<int>();
+        for (var i = 0; i < lines.Length; i++)
         {
-            var local = sourceChildren[i].SourcePosition?.Line;
-            directives[i].Line = local.HasValue ? local.Value + lineOffset : null;
+            if (lines[i].Length == 0 || string.IsNullOrWhiteSpace(lines[i]))
+                blanks.Add(i + 1);
         }
+        if (blanks.Count == 0) return;
+
+        foreach (var node in doc.Nodes)
+            AttachBlanksAmongSiblings(node.Directives, blanks);
+    }
+
+    private static void AttachBlanksAmongSiblings(
+        List<KdlEditorDirective> siblings,
+        SortedSet<int> blanks)
+    {
+        KdlEditorDirective? prev = null;
+        foreach (var d in siblings)
+        {
+            if (prev?.Line is { } prevLine && d.Line is { } currLine && prevLine < currLine)
+            {
+                foreach (var blank in blanks)
+                {
+                    if (blank <= prevLine) continue;
+                    if (blank >= currLine) break;
+                    d.BlankLineBefore = true;
+                    break;
+                }
+            }
+            prev = d;
+            if (d.Value?.CompositeDirectives is { } inner)
+                AttachBlanksAmongSiblings(inner, blanks);
+        }
+    }
+
+    /// <summary>
+    /// Recursively collect every directive's leading / trailing closure for
+    /// the comment-attribution pass, descending into composite and handler
+    /// bodies. Directives with no <see cref="KdlEditorDirective.Line"/> are
+    /// silently skipped — they don't have a source position so we can't
+    /// reason about which comment is "above" them.
+    /// </summary>
+    private static void CollectDirectiveEntities(
+        IEnumerable<KdlEditorDirective> directives,
+        List<(int Line, Action<string> AppendLeading, Action<string> SetTrailing)> entities)
+    {
+        foreach (var directive in directives)
+        {
+            if (directive.Line is { } directiveLine)
+            {
+                entities.Add((
+                    directiveLine,
+                    t => (directive.LeadingComments ??= []).Add(t),
+                    t => directive.TrailingComment = t));
+            }
+            if (directive.Value?.CompositeDirectives is { } inner)
+                CollectDirectiveEntities(inner, entities);
+        }
+    }
+
+    private static void ApplyLineOffsetToDirectives(IEnumerable<KdlEditorDirective> directives, int lineOffset)
+    {
+        if (lineOffset == 0) return;
+        foreach (var directive in directives)
+        {
+            if (directive.Line.HasValue)
+                directive.Line += lineOffset;
+            if (directive.Value?.CompositeDirectives is { } inner)
+                ApplyLineOffsetToDirectives(inner, lineOffset);
+        }
+    }
+
+    /// <summary>
+    /// Tokenise <c>//</c> line comments out of the raw source text and
+    /// attach each to the closest following stamped entity (node or top-
+    /// level directive). Comments trailing the last entity land on
+    /// <see cref="KdlEditorDocument.TrailingComments"/>. KdlSharp drops
+    /// comments during parse, so we run a separate string-aware pass.
+    /// </summary>
+    private static void AttachLineComments(KdlEditorDocument doc, string text)
+    {
+        var comments = ExtractLineComments(text);
+        if (comments.Count == 0) return;
+
+        // Each entity contributes two closures: one for "comment on a line
+        // strictly before this entity" (leading), one for "comment on the
+        // same line as this entity's opening" (inline trailing). KDL only
+        // allows one comment per line so a single TrailingComment slot is
+        // enough.
+        var entities = new List<(int Line, Action<string> AppendLeading, Action<string> SetTrailing)>();
+        foreach (var node in doc.Nodes)
+        {
+            if (node.Line is { } nodeLine)
+            {
+                entities.Add((
+                    nodeLine,
+                    t => (node.LeadingComments ??= []).Add(t),
+                    t => node.TrailingComment = t));
+            }
+            CollectDirectiveEntities(node.Directives, entities);
+        }
+        entities.Sort((a, b) => a.Line.CompareTo(b.Line));
+
+        var idx = 0;
+        foreach (var (line, commentText) in comments)
+        {
+            while (idx < entities.Count && entities[idx].Line < line) idx++;
+            if (idx < entities.Count && entities[idx].Line == line)
+            {
+                entities[idx].SetTrailing(commentText);
+            }
+            else if (idx < entities.Count)
+            {
+                entities[idx].AppendLeading(commentText);
+            }
+            else
+            {
+                (doc.TrailingComments ??= []).Add(commentText);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Scan <paramref name="text"/> for <c>//</c> line comments. Returns
+    /// each as (1-based line, normalised text). String state (including
+    /// KDL v2 triple-quoted multi-line literals) is tracked so a <c>//</c>
+    /// inside a quoted string isn't treated as a comment. The leading
+    /// <c>// </c> prefix is stripped (one optional space after the slashes
+    /// is consumed) so callers can re-emit with a canonical prefix.
+    /// </summary>
+    private static List<(int Line, string Text)> ExtractLineComments(string text)
+    {
+        var result = new List<(int Line, string Text)>();
+        var normalised = text.Replace("\r\n", "\n").Replace("\r", "\n");
+        var lines = normalised.Split('\n');
+        var inString = false;
+        var inTripleQuote = false;
+        var escape = false;
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            var c = 0;
+            while (c < line.Length)
+            {
+                if (escape) { escape = false; c++; continue; }
+                var ch = line[c];
+
+                // Triple-quoted bodies span multiple lines and disable
+                // single-quote string state until the closing """.
+                if (!inString && c + 2 < line.Length && ch == '"' && line[c + 1] == '"' && line[c + 2] == '"')
+                {
+                    inTripleQuote = !inTripleQuote;
+                    c += 3;
+                    continue;
+                }
+                if (inTripleQuote) { c++; continue; }
+
+                if (ch == '\\' && inString) { escape = true; c++; continue; }
+                if (ch == '"') { inString = !inString; c++; continue; }
+                if (inString) { c++; continue; }
+
+                if (ch == '/' && c + 1 < line.Length && line[c + 1] == '/')
+                {
+                    var rest = line[(c + 2)..];
+                    if (rest.Length > 0 && rest[0] == ' ') rest = rest[1..];
+                    result.Add((i + 1, rest));
+                    break;
+                }
+                c++;
+            }
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -620,6 +810,7 @@ public static class KdlTemplateParser
             {
                 Op = opKind,
                 FieldPath = fieldPath,
+                SourceLine = node.SourcePosition?.Line,
             });
             return true;
         }
@@ -668,6 +859,7 @@ public static class KdlTemplateParser
                     Op = opKind,
                     FieldPath = fieldPath,
                     Index = removeIndexProp!.AsInt32(),
+                    SourceLine = node.SourcePosition?.Line,
                 });
                 return true;
             }
@@ -680,6 +872,7 @@ public static class KdlTemplateParser
                 Op = opKind,
                 FieldPath = fieldPath,
                 Value = removeValue,
+                SourceLine = node.SourcePosition?.Line,
             });
             return true;
         }
@@ -806,6 +999,7 @@ public static class KdlTemplateParser
             Index = parsedIndex,
             IndexPath = parsedIndexPath,
             Value = value,
+            SourceLine = node.SourcePosition?.Line,
         });
         return true;
     }

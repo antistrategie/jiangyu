@@ -1,27 +1,50 @@
 import { create } from "zustand";
-import { subscribe, type AgentSessionCreatedNotification } from "@shared/rpc";
 import type {
-  AgentStartResult,
   AgentAuthResult,
   AgentSessionResult,
+  AgentStartResult,
   AgentStopReason,
   AuthMethod,
-  SessionNotification,
-  SessionUpdate,
-  PermissionRequest,
-  AgentStatusEvent,
   AvailableCommand,
   ConfigOption,
+  PermissionRequest,
   SessionMode,
   SessionModes,
-  ContentBlock,
-  PermissionOption,
-  PlanEntry,
-  ToolCallContent,
+  SessionUpdate,
   ToolKind,
-  PermissionToolCall,
 } from "./types";
-import { agentPermissionResponse } from "./rpc";
+import {
+  contentBlockText,
+  mergeConfigOptions,
+  nextMessageId,
+  type AgentMessage,
+  type ChatMessage,
+  type PlanMessage,
+  type ThoughtMessage,
+  type ToolMessage,
+  type UserMessage,
+} from "./messages";
+// The named bindings here are used by the bypass paths in
+// handlePermissionRequest; importing the module also registers the host
+// notification subscribers as a side effect. The circular reference is
+// safe — subscriptions only reads useAgentStore lazily inside its
+// subscribe callbacks.
+import { pickAllowOption, pickRejectOption, sendPermissionResponse } from "./subscriptions";
+
+// Re-export the message types and the config-option helper from this entry
+// point so callers don't need to know which sibling file each symbol lives
+// in.
+export { configOptionIdentifier } from "./messages";
+export type {
+  AgentMessage,
+  ChatMessage,
+  ChatRole,
+  PermissionMessage,
+  PlanMessage,
+  ThoughtMessage,
+  ToolMessage,
+  UserMessage,
+} from "./messages";
 
 /// Notification emitted by the host when a prompt turn ends. Carries the
 /// spec stop reason or, for host-side failures, an opaque error string.
@@ -55,107 +78,6 @@ export interface AgentResumeResult {
 export type PendingSessionAction =
   | { readonly kind: "create" }
   | { readonly kind: "resume"; readonly sessionId: string };
-
-// --- Chat message model ---
-
-export type ChatRole = "user" | "agent" | "thought" | "tool" | "plan" | "permission";
-
-interface MessageBase {
-  /** Stable identity for React keys; assigned at creation, never reused. */
-  readonly id: string;
-}
-
-export interface UserMessage extends MessageBase {
-  readonly role: "user";
-  readonly text: string;
-}
-
-export interface AgentMessage extends MessageBase {
-  readonly role: "agent";
-  readonly text: string;
-}
-
-export interface ThoughtMessage extends MessageBase {
-  readonly role: "thought";
-  readonly text: string;
-}
-
-export interface ToolMessage extends MessageBase {
-  readonly role: "tool";
-  readonly toolCallId: string;
-  readonly toolName: string;
-  readonly content: readonly ToolCallContent[];
-  readonly status: string | null;
-}
-
-export interface PlanMessage extends MessageBase {
-  readonly role: "plan";
-  readonly entries: readonly PlanEntry[];
-}
-
-export interface PermissionMessage extends MessageBase {
-  readonly role: "permission";
-  readonly permissionId: string;
-  readonly toolCall: PermissionToolCall;
-  readonly options: PermissionRequest["options"];
-  readonly resolved: boolean;
-}
-
-export type ChatMessage =
-  | UserMessage
-  | AgentMessage
-  | ThoughtMessage
-  | ToolMessage
-  | PlanMessage
-  | PermissionMessage;
-
-let messageIdCounter = 0;
-function nextMessageId(): string {
-  messageIdCounter += 1;
-  return `m${messageIdCounter.toString(36)}`;
-}
-
-/** Best-available identifier for a config option (agents emit either
- *  `key` or `id`; Claude Agent emits neither and we drop those). */
-export function configOptionIdentifier(opt: ConfigOption): string | null {
-  return opt.key ?? opt.id ?? null;
-}
-
-/** Merge a config_option_update payload into the existing list by key.
- *  New keys append; existing keys overwrite. Entries without any
- *  identifier are dropped (we have no way to address them). */
-function mergeConfigOptions(
-  existing: readonly ConfigOption[],
-  incoming: readonly ConfigOption[],
-): ConfigOption[] {
-  const byKey = new Map<string, ConfigOption>();
-  for (const opt of existing) {
-    const id = configOptionIdentifier(opt);
-    if (id !== null) byKey.set(id, opt);
-  }
-  for (const opt of incoming) {
-    const id = configOptionIdentifier(opt);
-    if (id !== null) byKey.set(id, opt);
-  }
-  return [...byKey.values()];
-}
-
-/** Extract a flat string from a content block. Non-text blocks render to a
- *  short placeholder so we don't drop them silently. */
-function contentBlockText(block: ContentBlock): string {
-  switch (block.type) {
-    case "text":
-      return block.text;
-    case "image":
-      return "[image]";
-    case "audio":
-      return "[audio]";
-    case "resource_link":
-      return `[resource ${block.uri}]`;
-  }
-}
-
-// --- Store ---
 
 interface AgentStore {
   // Connection
@@ -739,97 +661,3 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       return { autoApproveKinds: nextApprove, autoRejectKinds: nextReject };
     }),
 }));
-
-/**
- * Fires `agentPermissionResponse` and silently swallows rejections so a
- * disconnected host (test env, or a race against agentStop) doesn't
- * surface as an unhandled promise rejection. Used only by the bypass
- * paths in `handlePermissionRequest`; the user-facing button handler in
- * `PermissionBlock` runs through `agentPermissionResponse` directly so
- * that genuine RPC failures still bubble.
- */
-function sendPermissionResponse(
-  permissionId: string,
-  outcome: "selected" | "cancelled",
-  optionId?: string,
-): void {
-  agentPermissionResponse(permissionId, outcome, optionId).catch(() => undefined);
-}
-
-/**
- * Picks the option to send when bypassing a permission prompt. Prefers
- * the `_once` variant (single-shot, the safest default for an automated
- * answer) over `_always` (which would mean "remember this again",
- * redundant when we're already remembering on our side). Returns null
- * when the agent didn't offer either kind.
- */
-function pickAllowOption(options: readonly PermissionOption[]): PermissionOption | null {
-  return (
-    options.find((o) => o.kind === "allow_once") ??
-    options.find((o) => o.kind === "allow_always") ??
-    null
-  );
-}
-
-function pickRejectOption(options: readonly PermissionOption[]): PermissionOption | null {
-  return (
-    options.find((o) => o.kind === "reject_once") ??
-    options.find((o) => o.kind === "reject_always") ??
-    null
-  );
-}
-
-// Wire up host notifications.
-//
-// Host pushes { sessionId, update: { sessionUpdate, ... } } as `agentUpdate`.
-// We unwrap the envelope before dispatch.
-subscribe("agentUpdate", (params) => {
-  const notification = params as SessionNotification;
-  useAgentStore.getState().handleUpdate(notification.update);
-});
-
-subscribe("agentPermissionRequest", (params) => {
-  const request = params as PermissionRequest;
-  useAgentStore.getState().handlePermissionRequest(request);
-});
-
-subscribe("agentStatus", (params) => {
-  const event = params as AgentStatusEvent;
-  if (!event.running) {
-    useAgentStore.getState().setDisconnected();
-  }
-});
-
-subscribe("agentPromptResult", (params) => {
-  useAgentStore.getState().handlePromptResult(params as AgentPromptResultEvent);
-});
-
-subscribe("agentStartResult", (params) => {
-  const result = params as AgentStartResult;
-  useAgentStore.getState().handleStartResult(result);
-});
-
-subscribe("agentAuthenticated", (params) => {
-  useAgentStore.getState().handleAuthResult(params as AgentAuthResult);
-});
-
-subscribe("agentSessionCreated", (params) => {
-  // Adapt the host's typed notification envelope onto the existing store
-  // contract. Keeping AgentSessionResult internal-only lets the store logic
-  // stay unchanged while the host moves to the uniform {ok, error, ...}
-  // shape every notification now uses.
-  const note = params as AgentSessionCreatedNotification;
-  const result: AgentSessionResult = {
-    ...(note.sessionId !== undefined && note.sessionId !== null ? { sessionId: note.sessionId } : {}),
-    modes: (note.modes as SessionModes | undefined) ?? null,
-    configOptions: (note.configOptions as ConfigOption[] | undefined) ?? null,
-    error: note.error ?? null,
-    authRequired: note.authRequired,
-    authMethods: (note.authMethods as AuthMethod[] | undefined) ?? null,
-  };
-  useAgentStore.getState().handleSessionCreated(result);
-});
-
-subscribe("agentSessionResumed", (params) => {
-  useAgentStore.getState().handleResumeResult(params as AgentResumeResult);
-});

@@ -20,6 +20,8 @@ public static class KdlTemplateSerialiser
             if (!first) sb.AppendLine();
             first = false;
 
+            WriteLeadingComments(sb, node.LeadingComments, indent: 0);
+
             switch (node.Kind)
             {
                 case KdlEditorNodeKind.Patch:
@@ -31,11 +33,53 @@ public static class KdlTemplateSerialiser
             }
         }
 
+        if (document.TrailingComments is { Count: > 0 })
+        {
+            if (sb.Length > 0 && sb[^1] != '\n') sb.AppendLine();
+            sb.AppendLine();
+            WriteLeadingComments(sb, document.TrailingComments, indent: 0);
+        }
+
         // Ensure trailing newline
         if (sb.Length > 0 && sb[^1] != '\n')
             sb.AppendLine();
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Emit each stored comment as <c>// {text}</c> at the given indent.
+    /// Empty entries serialise to a bare <c>//</c>. No-op for null or empty.
+    /// </summary>
+    private static void WriteLeadingComments(StringBuilder sb, List<string>? comments, int indent)
+    {
+        if (comments is null || comments.Count == 0) return;
+        foreach (var comment in comments)
+        {
+            WriteIndent(sb, indent);
+            sb.Append("//");
+            if (comment.Length > 0)
+            {
+                sb.Append(' ');
+                sb.Append(comment);
+            }
+            sb.AppendLine();
+        }
+    }
+
+    /// <summary>
+    /// End the current line with an optional inline comment. <c>trailing</c>
+    /// of null or empty just emits the newline. Used for same-line comments
+    /// after node-opening braces and flat directive bodies.
+    /// </summary>
+    private static void EndLine(StringBuilder sb, string? trailing)
+    {
+        if (!string.IsNullOrEmpty(trailing))
+        {
+            sb.Append("  // ");
+            sb.Append(trailing);
+        }
+        sb.AppendLine();
     }
 
     private static void WritePatch(StringBuilder sb, KdlEditorNode node)
@@ -44,11 +88,13 @@ public static class KdlTemplateSerialiser
 
         if (node.Directives.Count == 0)
         {
-            sb.AppendLine(" {}");
+            sb.Append(" {}");
+            EndLine(sb, node.TrailingComment);
             return;
         }
 
-        sb.AppendLine(" {");
+        sb.Append(" {");
+        EndLine(sb, node.TrailingComment);
         WriteDirectiveBlock(sb, node.Directives, indent: 1);
         sb.AppendLine("}");
     }
@@ -59,11 +105,12 @@ public static class KdlTemplateSerialiser
 
         if (node.Directives.Count == 0)
         {
-            sb.AppendLine();
+            EndLine(sb, node.TrailingComment);
             return;
         }
 
-        sb.AppendLine(" {");
+        sb.Append(" {");
+        EndLine(sb, node.TrailingComment);
         WriteDirectiveBlock(sb, node.Directives, indent: 1);
         sb.AppendLine("}");
     }
@@ -84,6 +131,16 @@ public static class KdlTemplateSerialiser
             var d = directives[i];
             var outerStep = d.Descent is { Count: > 0 } steps ? steps[0] : null;
 
+            // Blank-line preservation: one blank before this directive if
+            // source authored one (or more, collapsed to one). Sits above
+            // any leading comments so the visual grouping reads the same.
+            if (d.BlankLineBefore) sb.AppendLine();
+
+            // Leading comments are attached to the first directive in a
+            // descent run (the one that emits the wrapping `set "Field"
+            // {...}`), since visually the comment was above that block.
+            WriteLeadingComments(sb, d.LeadingComments, indent);
+
             if (outerStep != null)
             {
                 // Gather a contiguous run that shares the same outer step.
@@ -102,7 +159,8 @@ public static class KdlTemplateSerialiser
                     sb.Append($" index={outerStep.Index.Value.ToString(CultureInfo.InvariantCulture)}");
                 if (!string.IsNullOrEmpty(outerStep.Subtype))
                     sb.Append($" type=\"{Esc(outerStep.Subtype)}\"");
-                sb.AppendLine(" {");
+                sb.Append(" {");
+                EndLine(sb, d.TrailingComment);
                 WriteDirectiveBlock(sb, group, indent + 1);
                 WriteIndent(sb, indent);
                 sb.AppendLine("}");
@@ -111,7 +169,6 @@ public static class KdlTemplateSerialiser
             {
                 WriteIndent(sb, indent);
                 WriteFlatDirective(sb, d, indent);
-                sb.AppendLine();
             }
 
             i++;
@@ -186,22 +243,36 @@ public static class KdlTemplateSerialiser
             // Mutually exclusive at parse time; emit whichever the
             // directive carries.
             if (d.Index != null)
+            {
                 sb.Append(CultureInfo.InvariantCulture, $" index={d.Index.Value}");
+                EndLine(sb, d.TrailingComment);
+            }
             else if (d.Value != null)
             {
                 sb.Append(' ');
-                WriteValue(sb, d.Value, indent);
+                WriteValue(sb, d.Value, indent, d.TrailingComment);
+            }
+            else
+            {
+                EndLine(sb, d.TrailingComment);
             }
             return;
         }
 
         if (d.Op == KdlEditorOp.Clear)
+        {
+            EndLine(sb, d.TrailingComment);
             return;
+        }
 
         if (d.Value != null)
         {
             sb.Append(' ');
-            WriteValue(sb, d.Value, indent);
+            WriteValue(sb, d.Value, indent, d.TrailingComment);
+        }
+        else
+        {
+            EndLine(sb, d.TrailingComment);
         }
     }
 
@@ -211,17 +282,24 @@ public static class KdlTemplateSerialiser
             sb.Append("    ");
     }
 
-    private static void WriteValue(StringBuilder sb, KdlEditorValue v, int indent)
+    /// <summary>
+    /// Emit a value and terminate its line. <paramref name="inlineComment"/>
+    /// is placed on the value's "first line" — at end of line for scalars,
+    /// after the opening <c>{</c> for composite/handler bags.
+    /// </summary>
+    private static void WriteValue(StringBuilder sb, KdlEditorValue v, int indent, string? inlineComment)
     {
         switch (v.Kind)
         {
             case KdlEditorValueKind.Boolean:
                 sb.Append(v.Boolean == true ? "#true" : "#false");
+                EndLine(sb, inlineComment);
                 break;
 
             case KdlEditorValueKind.Byte:
             case KdlEditorValueKind.Int32:
                 sb.Append((v.Int32 ?? 0).ToString(CultureInfo.InvariantCulture));
+                EndLine(sb, inlineComment);
                 break;
 
             case KdlEditorValueKind.Single:
@@ -231,14 +309,17 @@ public static class KdlTemplateSerialiser
                 var f = v.Single ?? 0f;
                 var s = f.ToString("G", CultureInfo.InvariantCulture);
                 sb.Append(s.Contains('.') || s.Contains('E') || s.Contains('e') ? s : s + ".0");
+                EndLine(sb, inlineComment);
                 break;
 
             case KdlEditorValueKind.String:
                 WriteStringValue(sb, v.String ?? "", indent);
+                EndLine(sb, inlineComment);
                 break;
 
             case KdlEditorValueKind.Enum:
                 sb.Append($"enum=\"{Esc(v.EnumType ?? "")}\" \"{Esc(v.EnumValue ?? "")}\"");
+                EndLine(sb, inlineComment);
                 break;
 
             case KdlEditorValueKind.TemplateReference:
@@ -250,22 +331,25 @@ public static class KdlTemplateSerialiser
                     sb.Append($"ref=\"{Esc(v.ReferenceType)}\" \"{Esc(v.ReferenceId ?? "")}\"");
                 else
                     sb.Append($"\"{Esc(v.ReferenceId ?? "")}\"");
+                EndLine(sb, inlineComment);
                 break;
 
             case KdlEditorValueKind.Composite:
-                WriteFieldBag(sb, "composite", v, indent);
+                WriteFieldBag(sb, "composite", v, indent, inlineComment);
                 break;
 
             case KdlEditorValueKind.HandlerConstruction:
-                WriteFieldBag(sb, "handler", v, indent);
+                WriteFieldBag(sb, "handler", v, indent, inlineComment);
                 break;
 
             case KdlEditorValueKind.AssetReference:
                 sb.Append($"asset=\"{Esc(v.AssetName ?? "")}\"");
+                EndLine(sb, inlineComment);
                 break;
 
             case KdlEditorValueKind.Null:
                 sb.Append("#null");
+                EndLine(sb, inlineComment);
                 break;
         }
     }
@@ -278,7 +362,7 @@ public static class KdlTemplateSerialiser
     /// (Sound inside SoundBank, SoundVariation inside Sound) keep their
     /// indentation in lockstep with depth.
     /// </summary>
-    private static void WriteFieldBag(StringBuilder sb, string keyword, KdlEditorValue v, int parentIndent)
+    private static void WriteFieldBag(StringBuilder sb, string keyword, KdlEditorValue v, int parentIndent, string? inlineComment)
     {
         // Omit composite=/handler= when the type is empty so inference applies
         // on re-parse. The validator clears the type for monomorphic
@@ -293,23 +377,24 @@ public static class KdlTemplateSerialiser
 
         // Spacing before `{`: the caller (WriteFlatDirective) already
         // emitted a single space before WriteValue. When type or from
-        // attributes preceded `{` here, the AppendLine(" {") below adds
-        // the separating space between attribute and brace. When the
-        // inferred-composite path emitted nothing, the caller's space is
-        // the only one — adding another would produce `set "F"  {` with
-        // a double space.
+        // attributes preceded `{` here, the brace below adds the separating
+        // space between attribute and brace. When the inferred-composite
+        // path emitted nothing, the caller's space is the only one —
+        // adding another would produce `set "F"  {` with a double space.
         var leadingSpace = hasType || hasFrom ? " " : string.Empty;
 
         if (v.CompositeDirectives == null || v.CompositeDirectives.Count == 0)
         {
             sb.Append($"{leadingSpace}{{}}");
+            EndLine(sb, inlineComment);
             return;
         }
 
-        sb.AppendLine($"{leadingSpace}{{");
+        sb.Append($"{leadingSpace}{{");
+        EndLine(sb, inlineComment);
         WriteDirectiveBlock(sb, v.CompositeDirectives, parentIndent + 1);
         WriteIndent(sb, parentIndent);
-        sb.Append('}');
+        sb.AppendLine("}");
     }
 
     private static string Esc(string s)

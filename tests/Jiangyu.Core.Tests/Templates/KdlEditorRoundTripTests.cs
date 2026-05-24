@@ -7,6 +7,264 @@ namespace Jiangyu.Core.Tests.Templates;
 public class KdlEditorRoundTripTests
 {
     [Fact]
+    public void LineComments_RoundTrip()
+    {
+        const string kdl = """
+            // Top-of-file note about this mod.
+            // Two lines of context.
+            patch "EntityTemplate" "player_squad.darby" {
+                // Inline scale tweak for the boss fight.
+                set "HudYOffsetScale" 5.0
+                // Re-enable squad activation after a long break.
+                set "IsActive" #true
+            }
+
+            // After the patch.
+            clone "EntityTemplate" from="player_squad.darby" id="player_squad.bob" {
+                set "HudYOffsetScale" 7.0
+            }
+            // Trailing footer line.
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+        Assert.Equal(2, doc.Nodes.Count);
+
+        // Leading comments survive on the first node.
+        Assert.Equal(
+            new[] { "Top-of-file note about this mod.", "Two lines of context." },
+            doc.Nodes[0].LeadingComments ?? new List<string>());
+
+        // Directive-level comments line up with the directive they precede.
+        Assert.Equal(
+            new[] { "Inline scale tweak for the boss fight." },
+            doc.Nodes[0].Directives[0].LeadingComments ?? new List<string>());
+        Assert.Equal(
+            new[] { "Re-enable squad activation after a long break." },
+            doc.Nodes[0].Directives[1].LeadingComments ?? new List<string>());
+
+        // Mid-document comment attaches to the next node.
+        Assert.Equal(
+            new[] { "After the patch." },
+            doc.Nodes[1].LeadingComments ?? new List<string>());
+
+        // Final orphan comment goes onto the document.
+        Assert.Equal(
+            new[] { "Trailing footer line." },
+            doc.TrailingComments ?? new List<string>());
+
+        // Serialise + re-parse: every comment is still where we put it.
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        var doc2 = KdlTemplateParser.ParseText(text);
+        Assert.Empty(doc2.Errors);
+        Assert.Equal(2, doc2.Nodes.Count);
+        Assert.Equal(doc.Nodes[0].LeadingComments, doc2.Nodes[0].LeadingComments);
+        Assert.Equal(
+            doc.Nodes[0].Directives[0].LeadingComments,
+            doc2.Nodes[0].Directives[0].LeadingComments);
+        Assert.Equal(
+            doc.Nodes[0].Directives[1].LeadingComments,
+            doc2.Nodes[0].Directives[1].LeadingComments);
+        Assert.Equal(doc.Nodes[1].LeadingComments, doc2.Nodes[1].LeadingComments);
+        Assert.Equal(doc.TrailingComments, doc2.TrailingComments);
+    }
+
+    [Fact]
+    public void NoComments_ProducesNullFields()
+    {
+        // Defensive: a clean document carries no leading/trailing arrays so
+        // the JSON over the wire stays compact for the common case.
+        const string kdl = """
+            patch "EntityTemplate" "id" {
+                set "HudYOffsetScale" 1.0
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Null(doc.TrailingComments);
+        Assert.Null(doc.Nodes[0].LeadingComments);
+        Assert.Null(doc.Nodes[0].Directives[0].LeadingComments);
+    }
+
+    [Fact]
+    public void InlineComments_RoundTrip()
+    {
+        const string kdl = """
+            patch "EntityTemplate" "id" {  // boss-flavoured override
+                set "HudYOffsetScale" 5.0  // tweaked from 3 for boss fight
+                set "Properties" composite="FixtureProperties" {  // override accuracy only
+                    set "Accuracy" 5
+                }
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+
+        // Node-opening inline (after the `{`).
+        Assert.Equal("boss-flavoured override", doc.Nodes[0].TrailingComment);
+
+        // Flat directive inline (end of line).
+        Assert.Equal(
+            "tweaked from 3 for boss fight",
+            doc.Nodes[0].Directives[0].TrailingComment);
+
+        // Composite directive inline (after the composite's opening `{`).
+        Assert.Equal(
+            "override accuracy only",
+            doc.Nodes[0].Directives[1].TrailingComment);
+
+        // Round-trip preserves placement.
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        Assert.Contains("{  // boss-flavoured override", text);
+        Assert.Contains("set \"HudYOffsetScale\" 5.0  // tweaked from 3 for boss fight", text);
+        Assert.Contains("{  // override accuracy only", text);
+
+        var doc2 = KdlTemplateParser.ParseText(text);
+        Assert.Empty(doc2.Errors);
+        Assert.Equal(doc.Nodes[0].TrailingComment, doc2.Nodes[0].TrailingComment);
+        Assert.Equal(
+            doc.Nodes[0].Directives[0].TrailingComment,
+            doc2.Nodes[0].Directives[0].TrailingComment);
+        Assert.Equal(
+            doc.Nodes[0].Directives[1].TrailingComment,
+            doc2.Nodes[0].Directives[1].TrailingComment);
+    }
+
+    [Fact]
+    public void BlankLines_RoundTripBetweenDirectives()
+    {
+        const string kdl = """
+            clone "SoundBank" from="weapons_soundbank" id="weapons_ar_addition_bank" {
+                clear "sounds"
+                clear "busIndices"
+
+                append "sounds" {
+                    set "name" "ar_burst"
+                }
+
+                append "sounds" {
+                    set "name" "ar_distant"
+                }
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+
+        var directives = doc.Nodes[0].Directives;
+        // Directives: clear "sounds", clear "busIndices", append "sounds" #1, append "sounds" #2.
+        Assert.Equal(4, directives.Count);
+        Assert.False(directives[0].BlankLineBefore);
+        Assert.False(directives[1].BlankLineBefore);
+        // Blank line before each append: source had one.
+        Assert.True(directives[2].BlankLineBefore);
+        Assert.True(directives[3].BlankLineBefore);
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        Assert.Contains("clear \"busIndices\"\n\n    append", text);
+    }
+
+    [Fact]
+    public void MultipleBlankLines_CollapseToOne()
+    {
+        // Modders sometimes leave 2+ blank lines for emphasis; one blank is
+        // what survives the round-trip. Different from "no blank → no blank",
+        // and from "1 blank → 1 blank" — pinning the collapse-to-one rule so
+        // a future change doesn't silently start emitting N blanks.
+        const string kdl = """
+            clone "SoundBank" from="weapons_soundbank" id="bank.x" {
+                clear "sounds"
+
+
+
+                append "sounds" {
+                    set "name" "first"
+                }
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+
+        var directives = doc.Nodes[0].Directives;
+        Assert.True(directives[1].BlankLineBefore);
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        // Exactly one blank line between the two directives. Two newlines
+        // back-to-back is `clear "sounds"\n\n    append "sounds"`, which is
+        // one terminating newline + one blank. Three or more would be a bug.
+        Assert.Contains("clear \"sounds\"\n\n    append", text);
+        Assert.DoesNotContain("clear \"sounds\"\n\n\n", text);
+    }
+
+    [Fact]
+    public void InnerCompositeComments_AttachToInnerDirectives()
+    {
+        // Regression: comments inside a composite or descent body used to
+        // attribute to the next top-level entity because inner directives
+        // weren't getting a source-line stamp. Now the parser stamps every
+        // op (top-level and nested) so the comment pass can reach them.
+        const string kdl = """
+            patch "EntityTemplate" "id" {
+                set "Properties" composite="FixtureProperties" {
+                    // leading on Accuracy
+                    set "Accuracy" 5  // inline on Accuracy
+                    // leading on Armor
+                    set "Armor" 2.0
+                }
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+
+        var inner = doc.Nodes[0].Directives[0].Value!.CompositeDirectives!;
+        Assert.Equal(2, inner.Count);
+
+        // Both inner directives now carry their stamped source lines.
+        Assert.NotNull(inner[0].Line);
+        Assert.NotNull(inner[1].Line);
+
+        // First inner: leading + inline.
+        Assert.Equal(new[] { "leading on Accuracy" }, inner[0].LeadingComments ?? new List<string>());
+        Assert.Equal("inline on Accuracy", inner[0].TrailingComment);
+
+        // Second inner: leading only.
+        Assert.Equal(new[] { "leading on Armor" }, inner[1].LeadingComments ?? new List<string>());
+        Assert.Null(inner[1].TrailingComment);
+
+        // The top-level node and directive don't absorb the inner comments.
+        Assert.Null(doc.Nodes[0].LeadingComments);
+        Assert.Null(doc.Nodes[0].Directives[0].LeadingComments);
+
+        // Round-trip preserves placement: each inner comment lands above /
+        // inline with the directive it was authored against.
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        var doc2 = KdlTemplateParser.ParseText(text);
+        var inner2 = doc2.Nodes[0].Directives[0].Value!.CompositeDirectives!;
+        Assert.Equal(inner[0].LeadingComments, inner2[0].LeadingComments);
+        Assert.Equal(inner[0].TrailingComment, inner2[0].TrailingComment);
+        Assert.Equal(inner[1].LeadingComments, inner2[1].LeadingComments);
+    }
+
+    [Fact]
+    public void CommentsInsideStrings_AreNotExtracted()
+    {
+        // A `//` inside a quoted string isn't a comment.
+        const string kdl = """
+            patch "EntityTemplate" "id" {
+                set "DisplayName" "https://example.com/path"
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+        Assert.Null(doc.Nodes[0].LeadingComments);
+        Assert.Null(doc.Nodes[0].Directives[0].LeadingComments);
+    }
+
+    [Fact]
     public void SimplePatch_RoundTrips()
     {
         const string kdl = """

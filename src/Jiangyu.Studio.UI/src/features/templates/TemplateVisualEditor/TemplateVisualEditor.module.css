@@ -86,26 +86,6 @@
   border-color: var(--jade-1);
 }
 
-.cardType {
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-  color: var(--fg-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.cardId {
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-  color: var(--fg-strong);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
 .cardProp {
   font-family: var(--font-label);
   font-size: var(--fs-xs);
@@ -113,12 +93,6 @@
   text-transform: uppercase;
   color: var(--fg-muted);
   flex-shrink: 0;
-}
-
-.cardPropValue {
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-  color: var(--fg);
 }
 
 .cardTypeInput {
@@ -197,6 +171,7 @@
   display: flex;
   flex-direction: column;
   container-type: inline-size;
+  margin-top: var(--space-2);
 }
 
 /* --- Matrix field editor (Odin multi-dim arrays) ---
@@ -465,13 +440,11 @@
 .setRow {
   display: flex;
   flex-direction: column;
-  border-bottom: 1px solid var(--rule-faint);
 }
 
 .setRowComposite {
   display: flex;
   flex-direction: column;
-  border-bottom: 1px solid var(--rule-faint);
 }
 
 .setRowHeader {
@@ -562,17 +535,6 @@
   font-style: italic;
   color: var(--fg-muted);
   padding: 2px var(--space-2);
-}
-
-.setValueSelect {
-  width: 100%;
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-  padding: 2px var(--space-2);
-  background: var(--bg);
-  color: var(--fg);
-  border: var(--border-rule);
-  outline: none;
 }
 
 .setKind {
@@ -1318,51 +1280,6 @@
   color: var(--fg-default);
 }
 
-.compositeRow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--space-2);
-  min-height: 28px;
-}
-
-.compositeFieldName {
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-  color: var(--fg-strong);
-  flex-shrink: 0;
-  min-width: 60px;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.compositeFieldValue {
-  flex: 1;
-  min-width: 0;
-}
-
-.compositeFieldDelete {
-  background: none;
-  border: none;
-  padding: 2px;
-  color: var(--fg-muted);
-  cursor: pointer;
-  flex-shrink: 0;
-  line-height: 1;
-  opacity: 0;
-  transition: opacity var(--ease-fast-linear) 120ms;
-}
-
-.compositeRow:hover .compositeFieldDelete {
-  opacity: 1;
-}
-
-.compositeFieldDelete:hover {
-  color: var(--cinnabar-1);
-}
-
 /* --- Descent group --- */
 /* Descent groups visually reuse `.setRowComposite` (same border / drag
    grip / op label / field / index / value-or-body-area as a regular
@@ -1392,13 +1309,4 @@
 .fieldAdderItemDescent {
   padding-left: var(--space-4);
   color: var(--fg-muted);
-}
-
-.compositeEmpty {
-  font-family: var(--font-label);
-  font-size: var(--fs-xs);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-  color: var(--fg-muted);
-  padding: var(--space-1) var(--space-2);
 }

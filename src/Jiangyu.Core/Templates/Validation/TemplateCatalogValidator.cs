@@ -99,20 +99,24 @@ public static class TemplateCatalogValidator
                 if (string.IsNullOrWhiteSpace(directive.FieldPath)) continue;
 
                 var op = KdlEditorBridge.EditorDirectiveToCompiled(directive);
-                var swallowed = new List<string>();
                 ValidateOperation(
                     op,
                     node.TemplateType,
                     catalog,
                     additions: null,
-                    swallowed.Add,
+                    _ => { },
                     mode: ValidationMode.EditorNormalise,
                     bankIdResolver: bankIdResolver);
 
-                // Re-import the normalised wire form. Skip when validation
-                // surfaced errors so we don't paper over a broken directive
-                // by emitting a half-cleared value.
-                if (swallowed.Count > 0) continue;
+                // Re-import the normalised wire form regardless of whether
+                // validation surfaced errors on inner directives. Type
+                // clearing happens before recursive inner-op validation, so
+                // an unresolvable inner string (e.g. a Stem.ID.bankId
+                // reference whose IBankIdResolver isn't wired through to
+                // this call site) shouldn't suppress the outer composite's
+                // monomorphic-type cleanup. The mutations the validator
+                // performs are idempotent — any genuinely-broken value
+                // surfaces the same error on re-parse.
                 var normalised = KdlEditorBridge.CompiledOpToEditorDirective(op);
                 directive.Value = normalised.Value;
             }
@@ -164,26 +168,6 @@ public static class TemplateCatalogValidator
 
                 var op = KdlEditorBridge.EditorDirectiveToCompiled(directive);
 
-                // Apply RoleGuid resolution before per-directive validation.
-                // The compile path's RoleGuidResolver runs as a pre-pass; the
-                // editor path doesn't have access to compiled patches, so
-                // mutate the in-flight CompiledTemplateSetOperation here.
-                // Resolution is recursive: SAY composites nest inside
-                // VARIATION composites, etc. Failures append to the
-                // document's error list with the directive's line number.
-                if (nodeRoles is not null)
-                {
-                    var roleErrors = new List<string>();
-                    ApplyRoleGuidResolutionEditor(op, nodeRoles, roleErrors);
-                    if (roleErrors.Count > 0)
-                    {
-                        var line = directive.Line ?? node.Line;
-                        foreach (var msg in roleErrors)
-                            document.Errors.Add(new KdlEditorError { Message = msg, Line = line });
-                        continue;
-                    }
-                }
-
                 var localErrors = new List<string>();
                 var errorCount = ValidateOperation(
                     op,
@@ -192,7 +176,8 @@ public static class TemplateCatalogValidator
                     additions: null,
                     message => localErrors.Add(message),
                     mode: ValidationMode.EditorValidate,
-                    bankIdResolver: bankIdResolver);
+                    bankIdResolver: bankIdResolver,
+                    roles: nodeRoles);
 
                 if (errorCount > 0)
                 {
@@ -234,56 +219,6 @@ public static class TemplateCatalogValidator
     {
         var lookupKey = node.Kind == KdlEditorNodeKind.Clone ? node.SourceId : node.TemplateId;
         return ConversationRoleLookup.FindRoles(lookupKey, indexedAssets);
-    }
-
-    /// <summary>
-    /// Pre-mutate <c>RoleGuid "Name"</c> ops to their resolved Int32 form
-    /// so the editor's per-op validation doesn't trip on the
-    /// String-on-Int32 coercion check. Recurses through composite and
-    /// handler-construction bodies so nested SAY/CHOICE composites
-    /// inside <c>m_SerializedNodes</c> are covered. Reports an editor-
-    /// friendly error when the role name doesn't match the source's
-    /// known names.
-    /// </summary>
-    private static void ApplyRoleGuidResolutionEditor(
-        CompiledTemplateSetOperation op,
-        IReadOnlyList<Jiangyu.Core.Models.AssetEntryRole> roles,
-        List<string> errors)
-    {
-        TryResolveOpValue(op, roles, errors);
-        if (op.Value is { Kind: CompiledTemplateValueKind.Composite, Composite: { } composite })
-        {
-            foreach (var inner in composite.Operations)
-                ApplyRoleGuidResolutionEditor(inner, roles, errors);
-        }
-        else if (op.Value is { Kind: CompiledTemplateValueKind.HandlerConstruction, HandlerConstruction: { } handler })
-        {
-            foreach (var inner in handler.Operations)
-                ApplyRoleGuidResolutionEditor(inner, roles, errors);
-        }
-    }
-
-    private static void TryResolveOpValue(
-        CompiledTemplateSetOperation op,
-        IReadOnlyList<Jiangyu.Core.Models.AssetEntryRole> roles,
-        List<string> errors)
-    {
-        if (op.Value is not { Kind: CompiledTemplateValueKind.String, String: { } literal })
-            return;
-        if (!string.Equals(op.FieldPath, "RoleGuid", StringComparison.Ordinal))
-            return;
-        foreach (var role in roles)
-        {
-            if (!string.Equals(role.Name, literal, StringComparison.Ordinal)) continue;
-            op.Value = new CompiledTemplateValue
-            {
-                Kind = CompiledTemplateValueKind.Int32,
-                Int32 = role.Guid,
-            };
-            return;
-        }
-        var known = string.Join(", ", roles.Select(r => r.Name));
-        errors.Add($"RoleGuid \"{literal}\" does not match any role. Known: {known}.");
     }
 
     private static int ValidatePatch(
@@ -346,7 +281,8 @@ public static class TemplateCatalogValidator
         Action<string> reportError,
         IGameAssetIndex? gameAssets = null,
         ValidationMode mode = ValidationMode.Compile,
-        IBankIdResolver? bankIdResolver = null)
+        IBankIdResolver? bankIdResolver = null,
+        IReadOnlyList<Jiangyu.Core.Models.AssetEntryRole>? roles = null)
     {
         // Compile mutates hashable string→int so the manifest is loader-ready;
         // both editor modes preserve the authored string for round-trip.
@@ -397,6 +333,44 @@ public static class TemplateCatalogValidator
             // Skip the numeric coercion below; when we haven't mutated,
             // the value is still String on an Int32 field which would
             // otherwise fail there.
+            return 0;
+        }
+
+        // RoleGuid symbolic resolution: `set "RoleGuid" "Entity"` on a
+        // ConversationNode subtype names a role from the source's Roles
+        // list rather than the int guid the game stores. Same shape as
+        // HashableId — validate the name resolves, mutate to Int32 only
+        // on the compile path so editor-doc round-trips preserve the
+        // symbolic form (nobody should have to read bare guid integers).
+        if (op.Value is { Kind: CompiledTemplateValueKind.String } roleStringValue
+            && result.PatchScalarKind is CompiledTemplateValueKind.Int32
+            && string.Equals(op.FieldPath, "RoleGuid", StringComparison.Ordinal)
+            && roles is not null)
+        {
+            var literal = roleStringValue.String ?? string.Empty;
+            int? matched = null;
+            foreach (var role in roles)
+            {
+                if (string.Equals(role.Name, literal, StringComparison.Ordinal))
+                {
+                    matched = role.Guid;
+                    break;
+                }
+            }
+            if (matched is null)
+            {
+                var known = roles.Count == 0
+                    ? "(none)"
+                    : string.Join(", ", roles.Select(r => $"\"{r.Name}\""));
+                reportError($"RoleGuid \"{literal}\" does not match any role on the source template. Known: {known}.");
+                return 1;
+            }
+            if (mutateHashableIds)
+            {
+                op.Value.Kind = CompiledTemplateValueKind.Int32;
+                op.Value.Int32 = matched;
+                op.Value.String = null;
+            }
             return 0;
         }
 
@@ -659,7 +633,8 @@ public static class TemplateCatalogValidator
                 gameAssets,
                 mode,
                 isTaggedStringTarget: isTaggedTarget,
-                bankIdResolver: bankIdResolver);
+                bankIdResolver: bankIdResolver,
+                roles: roles);
         }
 
         if (op.Value?.Kind == CompiledTemplateValueKind.HandlerConstruction && op.Value.HandlerConstruction != null)
@@ -672,7 +647,8 @@ public static class TemplateCatalogValidator
                 reportError,
                 gameAssets,
                 mode,
-                bankIdResolver);
+                bankIdResolver,
+                roles);
 
         return 0;
     }
@@ -860,7 +836,8 @@ public static class TemplateCatalogValidator
         Action<string> reportError,
         IGameAssetIndex? gameAssets = null,
         ValidationMode mode = ValidationMode.Compile,
-        IBankIdResolver? bankIdResolver = null)
+        IBankIdResolver? bankIdResolver = null,
+        IReadOnlyList<Jiangyu.Core.Models.AssetEntryRole>? roles = null)
     {
         var mutateHashableIds = mode == ValidationMode.Compile;
         var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
@@ -972,7 +949,8 @@ public static class TemplateCatalogValidator
             reportError,
             gameAssets,
             mode,
-            bankIdResolver);
+            bankIdResolver,
+            roles);
     }
 
     private static int ValidateCompositeValue(
@@ -985,7 +963,8 @@ public static class TemplateCatalogValidator
         IGameAssetIndex? gameAssets = null,
         ValidationMode mode = ValidationMode.Compile,
         bool isTaggedStringTarget = false,
-        IBankIdResolver? bankIdResolver = null)
+        IBankIdResolver? bankIdResolver = null,
+        IReadOnlyList<Jiangyu.Core.Models.AssetEntryRole>? roles = null)
     {
         var mutateHashableIds = mode == ValidationMode.Compile;
         var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
@@ -1111,16 +1090,25 @@ public static class TemplateCatalogValidator
             }
         }
 
-        // Editor-doc normalisation: drop composite=/handler= when the
-        // destination has exactly one possible concrete subtype (monomorphic
-        // and non-abstract), so the inference shape round-trips on re-parse.
-        // Compile-path docs keep the explicit name because the applier reads
-        // it directly without re-running inference.
+        // Editor-doc normalisation: drop composite= whenever the bare
+        // inferred form would re-parse to the same destination type. The
+        // inferred-composite acceptance condition at the top of this method
+        // rejects only on HasReferenceSubtype + IsAbstract, so the strip
+        // gate must mirror that exactly. Using EnumerateConcreteSubtypes
+        // here would over-restrict — any non-reference concrete descendant
+        // (interface-impl pair surfaced by the IL2Cpp metadata supplement,
+        // a sibling class) would block stripping even though re-parse
+        // would succeed with inference. The MENACE production case is
+        // ConversationNodeContainer: `set "Nodes" {…}` parses cleanly but
+        // round-tripped back to `composite="Il2CppMenace.Conversations.ConversationNodeContainer" {…}`
+        // because the supplement reports concrete descendants the bare-
+        // inferred path doesn't actually care about. handler= keeps the
+        // stricter check because its inferred-form rejection includes the
+        // EnumerateConcreteSubtypes branch (line ~922).
         if (clearRedundantTypes
             && destinationType is not null
             && !destinationType.IsAbstract
-            && !catalog.HasReferenceSubtype(destinationType)
-            && catalog.EnumerateConcreteSubtypes(destinationType).Count == 0)
+            && !catalog.HasReferenceSubtype(destinationType))
         {
             composite.TypeName = string.Empty;
         }
@@ -1134,7 +1122,8 @@ public static class TemplateCatalogValidator
             reportError,
             gameAssets,
             mode,
-            bankIdResolver);
+            bankIdResolver,
+            roles);
     }
 
     private static int ValidateInnerOperations(
@@ -1146,7 +1135,8 @@ public static class TemplateCatalogValidator
         Action<string> reportError,
         IGameAssetIndex? gameAssets = null,
         ValidationMode mode = ValidationMode.Compile,
-        IBankIdResolver? bankIdResolver = null)
+        IBankIdResolver? bankIdResolver = null,
+        IReadOnlyList<Jiangyu.Core.Models.AssetEntryRole>? roles = null)
     {
         var mutateHashableIds = mode == ValidationMode.Compile;
         var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
@@ -1162,7 +1152,8 @@ public static class TemplateCatalogValidator
                 InnerReport,
                 gameAssets,
                 mode,
-                bankIdResolver);
+                bankIdResolver,
+                roles);
         }
         return errors;
     }

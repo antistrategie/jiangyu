@@ -237,6 +237,13 @@
   cursor: grabbing;
 }
 
+/* Invisible placeholder rendered for non-draggable rows so the name column
+   lines up with draggable siblings whose grip occupies the same slot. */
+.rowDragGripSpacer {
+  width: 10px;
+  flex-shrink: 0;
+}
+
 .rowDragging {
   opacity: 0.35;
 }
@@ -262,7 +269,11 @@
 }
 
 .rowOwner {
-  flex-shrink: 0;
+  /* Cap the owner column at the smaller of 200px and 40% of the row so it
+     never crowds out the instance name. Allow shrinking below that when the
+     row is tighter; the ellipsis below keeps it readable. */
+  min-width: 0;
+  max-width: min(200px, 40%);
   font-family: var(--font-label);
   font-size: var(--fs-xs);
   letter-spacing: var(--tracking-wide);
@@ -270,7 +281,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 200px;
 }
 
 /* --- Detail panel --- */

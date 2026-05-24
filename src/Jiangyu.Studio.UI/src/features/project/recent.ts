@@ -1,3 +1,5 @@
+import { loadJson, saveJson } from "@shared/storage";
+
 /**
  * Recent-project list persisted to localStorage. Kept client-side so that
  * multiple Studio instances on the same machine don't race the host's
@@ -9,24 +11,20 @@
 const STORAGE_KEY = "jiangyu:recentProjects";
 const MAX_ENTRIES = 10;
 
+function isArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
 export function loadRecentProjects(): readonly string[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === null) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((p): p is string => typeof p === "string");
-  } catch {
-    return [];
-  }
+  // Permissive filter: keep valid string entries and drop the rest. A single
+  // bad entry from an older schema or a hand-edit shouldn't wipe the list.
+  const parsed = loadJson(STORAGE_KEY, isArray);
+  if (parsed === null) return [];
+  return parsed.filter((p): p is string => typeof p === "string");
 }
 
 function save(entries: readonly string[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-  } catch {
-    // Quota exceeded or storage unavailable — drop silently.
-  }
+  saveJson(STORAGE_KEY, entries);
 }
 
 /** Promote `path` to the front of the list; trims to MAX_ENTRIES. */

@@ -14,6 +14,7 @@
  */
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { rpcCall, type StudioSettings } from "@shared/rpc";
+import { loadRaw, saveJson } from "@shared/storage";
 
 const STORAGE_PREFIX = "jiangyu:setting:";
 
@@ -48,18 +49,12 @@ function clampEditorFontSize(n: unknown): number {
 }
 
 export function loadEditorFontSize(): number {
-  try {
-    const raw = localStorage.getItem(EDITOR_FONT_SIZE_KEY);
-    if (raw === null) return EDITOR_FONT_SIZE_DEFAULT;
-    return clampEditorFontSize(JSON.parse(raw));
-  } catch {
-    return EDITOR_FONT_SIZE_DEFAULT;
-  }
+  return clampEditorFontSize(loadRaw(EDITOR_FONT_SIZE_KEY));
 }
 
 export function saveEditorFontSize(value: number): void {
   const clamped = clampEditorFontSize(value);
-  localStorage.setItem(EDITOR_FONT_SIZE_KEY, JSON.stringify(clamped));
+  saveJson(EDITOR_FONT_SIZE_KEY, clamped);
   void persistSetting("editorFontSize", clamped);
   notify();
 }
@@ -77,18 +72,12 @@ function clampUiFontScale(n: unknown): number {
 }
 
 export function loadUiFontScale(): number {
-  try {
-    const raw = localStorage.getItem(UI_FONT_SCALE_KEY);
-    if (raw === null) return UI_FONT_SCALE_DEFAULT;
-    return clampUiFontScale(JSON.parse(raw));
-  } catch {
-    return UI_FONT_SCALE_DEFAULT;
-  }
+  return clampUiFontScale(loadRaw(UI_FONT_SCALE_KEY));
 }
 
 export function saveUiFontScale(value: number): void {
   const clamped = clampUiFontScale(value);
-  localStorage.setItem(UI_FONT_SCALE_KEY, JSON.stringify(clamped));
+  saveJson(UI_FONT_SCALE_KEY, clamped);
   void persistSetting("uiFontScale", clamped);
   notify();
 }
@@ -104,17 +93,11 @@ function parseEditorWordWrap(raw: unknown): EditorWordWrap {
 }
 
 export function loadEditorWordWrap(): EditorWordWrap {
-  try {
-    const raw = localStorage.getItem(EDITOR_WORD_WRAP_KEY);
-    if (raw === null) return EDITOR_WORD_WRAP_DEFAULT;
-    return parseEditorWordWrap(JSON.parse(raw));
-  } catch {
-    return EDITOR_WORD_WRAP_DEFAULT;
-  }
+  return parseEditorWordWrap(loadRaw(EDITOR_WORD_WRAP_KEY));
 }
 
 export function saveEditorWordWrap(value: EditorWordWrap): void {
-  localStorage.setItem(EDITOR_WORD_WRAP_KEY, JSON.stringify(value));
+  saveJson(EDITOR_WORD_WRAP_KEY, value);
   void persistSetting("editorWordWrap", value);
   notify();
 }
@@ -125,17 +108,11 @@ export const SIDEBAR_HIDDEN_DEFAULT = false;
 const SIDEBAR_HIDDEN_KEY = `${STORAGE_PREFIX}sidebarHidden`;
 
 export function loadSidebarHidden(): boolean {
-  try {
-    const raw = localStorage.getItem(SIDEBAR_HIDDEN_KEY);
-    if (raw === null) return SIDEBAR_HIDDEN_DEFAULT;
-    return parseBool(JSON.parse(raw), SIDEBAR_HIDDEN_DEFAULT);
-  } catch {
-    return SIDEBAR_HIDDEN_DEFAULT;
-  }
+  return parseBool(loadRaw(SIDEBAR_HIDDEN_KEY), SIDEBAR_HIDDEN_DEFAULT);
 }
 
 export function saveSidebarHidden(value: boolean): void {
-  localStorage.setItem(SIDEBAR_HIDDEN_KEY, JSON.stringify(value));
+  saveJson(SIDEBAR_HIDDEN_KEY, value);
   void persistSetting("sidebarHidden", value);
   notify();
 }
@@ -148,33 +125,21 @@ const SESSION_RESTORE_PROJECT_KEY = `${STORAGE_PREFIX}sessionRestoreProject`;
 const SESSION_RESTORE_TABS_KEY = `${STORAGE_PREFIX}sessionRestoreTabs`;
 
 export function loadSessionRestoreProject(): boolean {
-  try {
-    const raw = localStorage.getItem(SESSION_RESTORE_PROJECT_KEY);
-    if (raw === null) return SESSION_RESTORE_PROJECT_DEFAULT;
-    return parseBool(JSON.parse(raw), SESSION_RESTORE_PROJECT_DEFAULT);
-  } catch {
-    return SESSION_RESTORE_PROJECT_DEFAULT;
-  }
+  return parseBool(loadRaw(SESSION_RESTORE_PROJECT_KEY), SESSION_RESTORE_PROJECT_DEFAULT);
 }
 
 export function saveSessionRestoreProject(value: boolean): void {
-  localStorage.setItem(SESSION_RESTORE_PROJECT_KEY, JSON.stringify(value));
+  saveJson(SESSION_RESTORE_PROJECT_KEY, value);
   void persistSetting("sessionRestoreProject", value);
   notify();
 }
 
 export function loadSessionRestoreTabs(): boolean {
-  try {
-    const raw = localStorage.getItem(SESSION_RESTORE_TABS_KEY);
-    if (raw === null) return SESSION_RESTORE_TABS_DEFAULT;
-    return parseBool(JSON.parse(raw), SESSION_RESTORE_TABS_DEFAULT);
-  } catch {
-    return SESSION_RESTORE_TABS_DEFAULT;
-  }
+  return parseBool(loadRaw(SESSION_RESTORE_TABS_KEY), SESSION_RESTORE_TABS_DEFAULT);
 }
 
 export function saveSessionRestoreTabs(value: boolean): void {
-  localStorage.setItem(SESSION_RESTORE_TABS_KEY, JSON.stringify(value));
+  saveJson(SESSION_RESTORE_TABS_KEY, value);
   void persistSetting("sessionRestoreTabs", value);
   notify();
 }
@@ -190,17 +155,11 @@ function parseEditorKeybindMode(raw: unknown): EditorKeybindMode {
 }
 
 export function loadEditorKeybindMode(): EditorKeybindMode {
-  try {
-    const raw = localStorage.getItem(EDITOR_KEYBIND_MODE_KEY);
-    if (raw === null) return EDITOR_KEYBIND_MODE_DEFAULT;
-    return parseEditorKeybindMode(JSON.parse(raw));
-  } catch {
-    return EDITOR_KEYBIND_MODE_DEFAULT;
-  }
+  return parseEditorKeybindMode(loadRaw(EDITOR_KEYBIND_MODE_KEY));
 }
 
 export function saveEditorKeybindMode(value: EditorKeybindMode): void {
-  localStorage.setItem(EDITOR_KEYBIND_MODE_KEY, JSON.stringify(value));
+  saveJson(EDITOR_KEYBIND_MODE_KEY, value);
   void persistSetting("editorKeybindMode", value);
   notify();
 }
@@ -216,17 +175,11 @@ function parseTemplateEditorMode(raw: unknown): TemplateEditorMode {
 }
 
 export function loadTemplateEditorMode(): TemplateEditorMode {
-  try {
-    const raw = localStorage.getItem(TEMPLATE_EDITOR_MODE_KEY);
-    if (raw === null) return TEMPLATE_EDITOR_MODE_DEFAULT;
-    return parseTemplateEditorMode(JSON.parse(raw));
-  } catch {
-    return TEMPLATE_EDITOR_MODE_DEFAULT;
-  }
+  return parseTemplateEditorMode(loadRaw(TEMPLATE_EDITOR_MODE_KEY));
 }
 
 export function saveTemplateEditorMode(value: TemplateEditorMode): void {
-  localStorage.setItem(TEMPLATE_EDITOR_MODE_KEY, JSON.stringify(value));
+  saveJson(TEMPLATE_EDITOR_MODE_KEY, value);
   void persistSetting("templateEditorMode", value);
   notify();
 }
@@ -237,17 +190,11 @@ export const AI_ENABLED_DEFAULT = false;
 const AI_ENABLED_KEY = `${STORAGE_PREFIX}aiEnabled`;
 
 export function loadAiEnabled(): boolean {
-  try {
-    const raw = localStorage.getItem(AI_ENABLED_KEY);
-    if (raw === null) return AI_ENABLED_DEFAULT;
-    return parseBool(JSON.parse(raw), AI_ENABLED_DEFAULT);
-  } catch {
-    return AI_ENABLED_DEFAULT;
-  }
+  return parseBool(loadRaw(AI_ENABLED_KEY), AI_ENABLED_DEFAULT);
 }
 
 export function saveAiEnabled(value: boolean): void {
-  localStorage.setItem(AI_ENABLED_KEY, JSON.stringify(value));
+  saveJson(AI_ENABLED_KEY, value);
   void persistSetting("aiEnabled", value);
   notify();
 }
@@ -274,15 +221,15 @@ export function initSettings(): void {
 }
 
 function syncToLocalStorage(settings: StudioSettings): void {
-  localStorage.setItem(EDITOR_FONT_SIZE_KEY, JSON.stringify(settings.editorFontSize));
-  localStorage.setItem(UI_FONT_SCALE_KEY, JSON.stringify(settings.uiFontScale));
-  localStorage.setItem(EDITOR_WORD_WRAP_KEY, JSON.stringify(settings.editorWordWrap));
-  localStorage.setItem(SIDEBAR_HIDDEN_KEY, JSON.stringify(settings.sidebarHidden));
-  localStorage.setItem(SESSION_RESTORE_PROJECT_KEY, JSON.stringify(settings.sessionRestoreProject));
-  localStorage.setItem(SESSION_RESTORE_TABS_KEY, JSON.stringify(settings.sessionRestoreTabs));
-  localStorage.setItem(EDITOR_KEYBIND_MODE_KEY, JSON.stringify(settings.editorKeybindMode));
-  localStorage.setItem(TEMPLATE_EDITOR_MODE_KEY, JSON.stringify(settings.templateEditorMode));
-  localStorage.setItem(AI_ENABLED_KEY, JSON.stringify(settings.aiEnabled));
+  saveJson(EDITOR_FONT_SIZE_KEY, settings.editorFontSize);
+  saveJson(UI_FONT_SCALE_KEY, settings.uiFontScale);
+  saveJson(EDITOR_WORD_WRAP_KEY, settings.editorWordWrap);
+  saveJson(SIDEBAR_HIDDEN_KEY, settings.sidebarHidden);
+  saveJson(SESSION_RESTORE_PROJECT_KEY, settings.sessionRestoreProject);
+  saveJson(SESSION_RESTORE_TABS_KEY, settings.sessionRestoreTabs);
+  saveJson(EDITOR_KEYBIND_MODE_KEY, settings.editorKeybindMode);
+  saveJson(TEMPLATE_EDITOR_MODE_KEY, settings.templateEditorMode);
+  saveJson(AI_ENABLED_KEY, settings.aiEnabled);
 }
 
 /**

@@ -113,7 +113,7 @@ public sealed class UnityBundleInvokerTests : IDisposable
         // Make script executable on POSIX. On Windows this would silently
         // no-op; that's why we early-return when /bin/sh is missing.
         using (var chmod = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("/bin/chmod", $"+x \"{scriptPath}\"")
-            { UseShellExecute = false }))
+        { UseShellExecute = false }))
         {
             chmod?.WaitForExit();
         }

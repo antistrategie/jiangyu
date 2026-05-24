@@ -146,7 +146,6 @@ function InfoPanel({
     [state.logs],
   );
 
-
   const isRunning = state.status === "running";
   const isDone = state.status === "success" || state.status === "failed";
 

@@ -324,3 +324,14 @@ jiangyu compile
 ```
 
 `templates query` is a jq-like navigator that emits copy-pasteable KDL snippets for leaf fields.
+
+## Formatting
+
+`jiangyu templates format` rewrites every `*.kdl` under `templates/` (or a single file path) to the canonical form Studio emits when you save in the visual editor. It runs the same parse → validate → normalise → serialise pipeline as the editor:
+
+- Strips redundant `composite=` / `handler=` / `ref=` attributes on monomorphic destinations.
+- Resolves symbolic Conversation role names into the numeric guids the game stores.
+- Coerces shorthand value forms the validator accepts.
+- Round-trips leading and inline `//` comments alongside the code.
+
+Use `--check` in CI: it prints which files would change and exits non-zero if any do, without writing.
