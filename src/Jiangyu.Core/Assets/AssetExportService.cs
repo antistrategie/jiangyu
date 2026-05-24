@@ -85,12 +85,76 @@ public sealed class AssetExportService(string gameDataPath, AssetIndex? index, I
                 return false;
             }
 
+            // AssetRipper's SpriteConverter returns the entire backing texture
+            // when the sprite has one; for atlas-packed sprites that's wrong
+            // (we'd export the whole atlas instead of just this sprite's
+            // region). Crop to the sprite's textureRect here so atlas-backed
+            // exports get only the modder-visible sprite. Single-sprite
+            // textures pass straight through.
+            bitmap = CropSpriteToTextureRect(bitmap, sprite);
+
             Directory.CreateDirectory(Path.GetDirectoryName(outputFilePath)!);
             using var stream = File.Create(outputFilePath);
             bitmap.SaveAsPng(stream);
             _log.Info($"  -> {outputFilePath} ({bitmap.Width}x{bitmap.Height})");
             return true;
         });
+    }
+
+    private static DirectBitmap CropSpriteToTextureRect(DirectBitmap whole, ISprite sprite)
+    {
+        var rect = sprite.RD.TextureRect.CastToStruct();
+        var crop = ResolveSpriteCropRect(
+            wholeWidth: whole.Width,
+            wholeHeight: whole.Height,
+            rectX: rect.X,
+            rectY: rect.Y,
+            rectWidth: rect.Width,
+            rectHeight: rect.Height);
+
+        return crop.HasValue
+            ? whole.Crop(crop.Value.X..(crop.Value.X + crop.Value.Width), crop.Value.Y..(crop.Value.Y + crop.Value.Height))
+            : whole;
+    }
+
+    /// <summary>
+    /// Resolves the top-left-origin crop rectangle for a sprite that lives
+    /// inside an atlas-style backing texture. Returns null when the sprite
+    /// already occupies the entire texture (no-op crop) or when the rect is
+    /// degenerate after clamping. Pure for testability — does not touch
+    /// AssetRipper types.
+    /// </summary>
+    /// <param name="wholeWidth">Backing texture width in pixels.</param>
+    /// <param name="wholeHeight">Backing texture height in pixels.</param>
+    /// <param name="rectX">Sprite textureRect X (Unity bottom-left origin).</param>
+    /// <param name="rectY">Sprite textureRect Y (Unity bottom-left origin).</param>
+    /// <param name="rectWidth">Sprite textureRect width.</param>
+    /// <param name="rectHeight">Sprite textureRect height.</param>
+    internal static (int X, int Y, int Width, int Height)? ResolveSpriteCropRect(
+        int wholeWidth, int wholeHeight,
+        float rectX, float rectY, float rectWidth, float rectHeight)
+    {
+        int rx = (int)Math.Round(rectX);
+        int ry = (int)Math.Round(rectY);
+        int rw = (int)Math.Round(rectWidth);
+        int rh = (int)Math.Round(rectHeight);
+
+        if (rx <= 0 && ry <= 0 && rw >= wholeWidth && rh >= wholeHeight)
+            return null;
+
+        // Unity textureRect: bottom-left origin. DirectBitmap rows: top-left
+        // origin. Translate y before slicing.
+        int topLeftY = wholeHeight - ry - rh;
+
+        int xStart = Math.Clamp(rx, 0, wholeWidth);
+        int yStart = Math.Clamp(topLeftY, 0, wholeHeight);
+        int xEnd = Math.Clamp(rx + rw, 0, wholeWidth);
+        int yEnd = Math.Clamp(topLeftY + rh, 0, wholeHeight);
+
+        if (xEnd <= xStart || yEnd <= yStart)
+            return null;
+
+        return (xStart, yStart, xEnd - xStart, yEnd - yStart);
     }
 
     public string? ExportAudio(string assetName, string outputDirectory, string collection, long pathId)
