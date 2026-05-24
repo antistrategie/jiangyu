@@ -74,6 +74,14 @@ internal sealed class TemplateCloneApplier
     /// already landed.</summary>
     public void RunPostPatchHooks(MelonLogger.Instance log)
     {
+        // Re-deserialise typed Requirements/m_Nodes on every registered
+        // ConversationTemplate clone against its now-patched serialised
+        // string lists. Clones are registered during the clone-applier
+        // pass which runs BEFORE the patch applier; the per-injection
+        // refresh in ConversationManagerRegistry captures pre-patch
+        // typed state, so this hook is what closes the loop.
+        ConversationManagerRegistry.OnPostPatch();
+
         if (_pendingSoundBankRegistrations.Count == 0) return;
         foreach (var pending in _pendingSoundBankRegistrations)
         {

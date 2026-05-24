@@ -194,6 +194,60 @@ internal static class Il2CppCollectionReflection
     }
 
     /// <summary>
+    /// Append-multiple variant of <see cref="TryRebuildReferenceArray"/>. One
+    /// allocation + one source pass for the whole batch, instead of N rebuilds
+    /// when adding N elements one at a time. Used by the conversation registry
+    /// when replaying all known clones into a freshly-constructed manager.
+    /// </summary>
+    public static bool TryRebuildReferenceArrayBatch(
+        object source, Type arrayType, Type elementType, IReadOnlyList<object> appendedElements,
+        out object fresh, out string error)
+    {
+        fresh = null;
+        error = null;
+        if (source == null) { error = "source array is null."; return false; }
+        if (appendedElements == null || appendedElements.Count == 0)
+            return TryRebuildReferenceArray(source, arrayType, elementType, null, out fresh, out error);
+
+        var srcType = source.GetType();
+        var lengthProp = srcType.GetProperty("Length", BindingFlags.Instance | BindingFlags.Public);
+        var indexer = FindIntIndexer(srcType);
+        var ctor = arrayType.GetConstructor(new[] { elementType.MakeArrayType() });
+        if (lengthProp == null || indexer == null || ctor == null)
+        {
+            error = $"source array type {srcType.FullName} missing Length/indexer or destination "
+                + $"{arrayType.FullName} missing managed-array ctor.";
+            return false;
+        }
+
+        int length;
+        try { length = (int)lengthProp.GetValue(source); }
+        catch (Exception ex) { error = $"Length read threw: {ex.Message}."; return false; }
+
+        var managed = Array.CreateInstance(elementType, length + appendedElements.Count);
+        var readArgs = new object[1];
+        for (var i = 0; i < length; i++)
+        {
+            readArgs[0] = i;
+            try { managed.SetValue(indexer.GetValue(source, readArgs), i); }
+            catch (Exception ex)
+            {
+                error = $"copy of element [{i}] threw: {ex.Message}.";
+                return false;
+            }
+        }
+        for (var i = 0; i < appendedElements.Count; i++)
+            managed.SetValue(appendedElements[i], length + i);
+
+        try { fresh = ctor.Invoke(new object[] { managed }); return true; }
+        catch (Exception ex)
+        {
+            error = $"{arrayType.FullName} ctor(managed[]) threw: {ex.Message}.";
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Build a fresh empty IL2CPP array wrapper via the type's
     /// managed-array constructor, or a plain managed <c>T[]</c> when the
     /// destination is a real array. Used by the composite constructor.
