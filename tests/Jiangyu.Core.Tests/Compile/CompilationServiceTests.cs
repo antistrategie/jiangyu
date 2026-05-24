@@ -1,6 +1,7 @@
 using Jiangyu.Core.Compile;
 using Jiangyu.Core.Unity;
 using Jiangyu.Core.Abstractions;
+using Jiangyu.Shared.Replacements;
 using AssetRipper.Primitives;
 using SharpGLTF.Geometry;
 using SharpGLTF.Geometry.VertexTypes;
@@ -78,7 +79,7 @@ public class ModelReplacementAliasTests
     [Fact]
     public void BuildModelReplacementRelativePath_UsesTargetNameAndPathId()
     {
-        var path = CompilationService.BuildModelReplacementRelativePath("el.local_forces_basic_soldier", 519);
+        var path = ReplacementPaths.BuildModelReplacementRelativePath("el.local_forces_basic_soldier", 519);
 
         Assert.Equal(
             "assets/replacements/models/el.local_forces_basic_soldier--519/model.gltf",
@@ -88,7 +89,7 @@ public class ModelReplacementAliasTests
     [Fact]
     public void TryParseModelReplacementAlias_ExtractsNameAndPathId()
     {
-        var success = CompilationService.TryParseModelReplacementAlias("el.local_forces_basic_soldier--20510", out var name, out var pathId);
+        var success = ReplacementPaths.TryParseModelReplacementAlias("el.local_forces_basic_soldier--20510", out var name, out var pathId);
 
         Assert.True(success);
         Assert.Equal("el.local_forces_basic_soldier", name);
@@ -103,7 +104,7 @@ public class ModelReplacementAliasTests
     [InlineData("soldier--abc")]
     public void TryParseModelReplacementAlias_RejectsInvalidValues(string alias)
     {
-        var success = CompilationService.TryParseModelReplacementAlias(alias, out _, out _);
+        var success = ReplacementPaths.TryParseModelReplacementAlias(alias, out _, out _);
 
         Assert.False(success);
     }
@@ -111,7 +112,7 @@ public class ModelReplacementAliasTests
     [Fact]
     public void BuildTextureReplacementRelativePath_UsesBareTargetName()
     {
-        var path = CompilationService.BuildTextureReplacementRelativePath("local_forces_basic_soldier_BaseMap");
+        var path = ReplacementPaths.BuildTextureReplacementRelativePath("local_forces_basic_soldier_BaseMap");
 
         Assert.Equal(
             "assets/replacements/textures/local_forces_basic_soldier_BaseMap.png",
@@ -121,7 +122,7 @@ public class ModelReplacementAliasTests
     [Fact]
     public void BuildAudioReplacementRelativePath_UsesBareTargetName()
     {
-        var path = CompilationService.BuildAudioReplacementRelativePath("sfx_rifle_fire");
+        var path = ReplacementPaths.BuildAudioReplacementRelativePath("sfx_rifle_fire");
 
         Assert.Equal(
             "assets/replacements/audio/sfx_rifle_fire.wav",
@@ -131,7 +132,7 @@ public class ModelReplacementAliasTests
     [Fact]
     public void BuildSpriteReplacementRelativePath_UsesBareTargetName()
     {
-        var path = CompilationService.BuildSpriteReplacementRelativePath("MenaceFontIcons_0");
+        var path = ReplacementPaths.BuildSpriteReplacementRelativePath("MenaceFontIcons_0");
 
         Assert.Equal(
             "assets/replacements/sprites/MenaceFontIcons_0.png",
@@ -144,7 +145,7 @@ public class ReplacementAliasParsingTests
     [Fact]
     public void TryParseReplacementAlias_ExtractsNameAndPathId()
     {
-        var success = CompilationService.TryParseReplacementAlias("soldier--20510", out var name, out var pathId);
+        var success = ReplacementPaths.TryParseReplacementAlias("soldier--20510", out var name, out var pathId);
 
         Assert.True(success);
         Assert.Equal("soldier", name);
@@ -154,7 +155,7 @@ public class ReplacementAliasParsingTests
     [Fact]
     public void TryParseReplacementAlias_AcceptsBareName()
     {
-        var success = CompilationService.TryParseReplacementAlias("soldier", out var name, out var pathId);
+        var success = ReplacementPaths.TryParseReplacementAlias("soldier", out var name, out var pathId);
 
         Assert.True(success);
         Assert.Equal("soldier", name);
@@ -164,7 +165,7 @@ public class ReplacementAliasParsingTests
     [Fact]
     public void TryParseReplacementAlias_TreatsNonNumericSuffixAsBareName()
     {
-        var success = CompilationService.TryParseReplacementAlias("soldier--abc", out var name, out var pathId);
+        var success = ReplacementPaths.TryParseReplacementAlias("soldier--abc", out var name, out var pathId);
 
         Assert.True(success);
         Assert.Equal("soldier--abc", name);
@@ -176,13 +177,13 @@ public class ReplacementAliasParsingTests
     [InlineData("  ")]
     public void TryParseReplacementAlias_RejectsEmptyOrWhitespace(string alias)
     {
-        Assert.False(CompilationService.TryParseReplacementAlias(alias, out _, out _));
+        Assert.False(ReplacementPaths.TryParseReplacementAlias(alias, out _, out _));
     }
 
     [Fact]
     public void TryParseReplacementAlias_RejectsPathIdOnlyNoName()
     {
-        var success = CompilationService.TryParseReplacementAlias("--20510", out var name, out var pathId);
+        var success = ReplacementPaths.TryParseReplacementAlias("--20510", out var name, out var pathId);
 
         // "--20510" has separator at index 0 (no name before --), so
         // it falls through to bare-name parsing. The bare name is "--20510".
@@ -194,7 +195,7 @@ public class ReplacementAliasParsingTests
     [Fact]
     public void TryParseReplacementAlias_HandlesDottedNamesWithPathId()
     {
-        var success = CompilationService.TryParseReplacementAlias("el.local_forces_basic_soldier--519", out var name, out var pathId);
+        var success = ReplacementPaths.TryParseReplacementAlias("el.local_forces_basic_soldier--519", out var name, out var pathId);
 
         Assert.True(success);
         Assert.Equal("el.local_forces_basic_soldier", name);
@@ -205,7 +206,7 @@ public class ReplacementAliasParsingTests
     public void TryParseReplacementAlias_HandlesNameWithDoubleDashInMiddle()
     {
         // Name itself contains "--" but also has a valid --<digits> suffix.
-        var success = CompilationService.TryParseReplacementAlias("some--thing--123", out var name, out var pathId);
+        var success = ReplacementPaths.TryParseReplacementAlias("some--thing--123", out var name, out var pathId);
 
         Assert.True(success);
         Assert.Equal("some--thing", name);
@@ -215,19 +216,19 @@ public class ReplacementAliasParsingTests
     [Fact]
     public void BuildReplacementAlias_EmitsBareName_WhenPathIdNull()
     {
-        Assert.Equal("soldier", CompilationService.BuildReplacementAlias("soldier", null));
+        Assert.Equal("soldier", ReplacementPaths.BuildReplacementAlias("soldier", null));
     }
 
     [Fact]
     public void BuildReplacementAlias_EmitsQualifiedName_WhenPathIdPresent()
     {
-        Assert.Equal("soldier--123", CompilationService.BuildReplacementAlias("soldier", 123));
+        Assert.Equal("soldier--123", ReplacementPaths.BuildReplacementAlias("soldier", 123));
     }
 
     [Fact]
     public void BuildModelReplacementRelativePath_BareNameOverload()
     {
-        var path = CompilationService.BuildModelReplacementRelativePath("soldier", (long?)null);
+        var path = ReplacementPaths.BuildModelReplacementRelativePath("soldier", (long?)null);
 
         Assert.Equal("assets/replacements/models/soldier/model.gltf", path);
     }
@@ -277,7 +278,7 @@ public class BlenderMeshNameNormalisationTests
     [Fact]
     public void TryStripBlenderNumericSuffix_StripsDotNumericSuffix()
     {
-        var success = CompilationService.TryStripBlenderNumericSuffix("rmc_default_female_soldier_LOD0.001", out var stripped, out var suffix);
+        var success = MeshRendererPathResolver.TryStripBlenderNumericSuffix("rmc_default_female_soldier_LOD0.001", out var stripped, out var suffix);
 
         Assert.True(success);
         Assert.Equal("rmc_default_female_soldier_LOD0", stripped);
@@ -287,7 +288,7 @@ public class BlenderMeshNameNormalisationTests
     [Fact]
     public void TryStripBlenderNumericSuffix_RejectsNonBlenderSuffix()
     {
-        var success = CompilationService.TryStripBlenderNumericSuffix("carrier_light_bag_LOD0.alpha", out var stripped, out var suffix);
+        var success = MeshRendererPathResolver.TryStripBlenderNumericSuffix("carrier_light_bag_LOD0.alpha", out var stripped, out var suffix);
 
         Assert.False(success);
         Assert.Equal("carrier_light_bag_LOD0.alpha", stripped);
@@ -494,7 +495,7 @@ public class ReplacementMeshPrimitiveContractTests
             var path = Path.Combine(dir, "model.gltf");
             WriteNamedMeshContractGltf(path, [("mesh_a", 1), ("mesh_b", 2)]);
 
-            var counts = CompilationService.DiscoverReplacementMeshPrimitiveCounts(path);
+            var counts = MeshRendererPathResolver.DiscoverReplacementMeshPrimitiveCounts(path);
 
             Assert.Equal(1, counts["mesh_a"]);
             Assert.Equal(2, counts["mesh_b"]);

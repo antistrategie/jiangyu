@@ -1,7 +1,8 @@
 using System.Text.RegularExpressions;
 using AssetRipper.Import.Logging;
+using Jiangyu.Core.Abstractions;
 
-namespace Jiangyu.Core.Abstractions;
+namespace Jiangyu.Core.Assets;
 
 /// <summary>
 /// Bridges IProgressSink to AssetRipper's ILogger interface.

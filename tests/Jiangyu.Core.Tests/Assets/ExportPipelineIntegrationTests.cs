@@ -43,7 +43,7 @@ public sealed class ExportPipelineIntegrationTests : IDisposable
 
         var cleanScene = ModelCleaner.BuildCleanScene(rawGlbPath, NullLogSink.Instance, materialTextures);
         var gltfPath = Path.Combine(_tempDir, "model.gltf");
-        var nonStandardTextures = new List<AssetPipelineService.DiscoveredTexture>
+        var nonStandardTextures = new List<ModelExportService.DiscoveredTexture>
         {
             new()
             {
@@ -55,7 +55,7 @@ public sealed class ExportPipelineIntegrationTests : IDisposable
             },
         };
 
-        AssetPipelineService.SaveGltfPackage(cleanScene, nonStandardTextures, gltfPath);
+        ModelExportService.SaveGltfPackage(cleanScene, nonStandardTextures, gltfPath);
 
         var json = JsonNode.Parse(File.ReadAllText(gltfPath));
         Assert.True(json?["extras"]?["jiangyu"]?["cleaned"]?.GetValue<bool>());

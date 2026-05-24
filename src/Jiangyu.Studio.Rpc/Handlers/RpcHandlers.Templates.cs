@@ -105,17 +105,17 @@ public static partial class RpcHandlers
                     {
                         if (templateType == "SoundBank")
                         {
-                            if (asset.BankId is null || string.IsNullOrEmpty(asset.Name)) continue;
+                            if (asset.SoundBank?.BankId is null || string.IsNullOrEmpty(asset.Name)) continue;
                             items.Add(new TemplateCloneSource { Id = asset.Name, Label = asset.Name });
                         }
                         else
                         {
                             // ConversationTemplate: prefer the Path field
                             // for uniqueness; fall back to bare asset
-                            // name when Path isn't indexed (older
-                            // indexes built pre-v8).
-                            if (asset.Roles is null) continue;
-                            var id = !string.IsNullOrEmpty(asset.Path) ? asset.Path : asset.Name;
+                            // name when Path isn't indexed.
+                            var conv = asset.Conversation;
+                            if (conv?.Roles is null) continue;
+                            var id = !string.IsNullOrEmpty(conv.Path) ? conv.Path : asset.Name;
                             if (string.IsNullOrEmpty(id)) continue;
                             items.Add(new TemplateCloneSource { Id = id, Label = id });
                         }
@@ -153,9 +153,10 @@ public static partial class RpcHandlers
 
             foreach (var asset in assets)
             {
-                if (asset.Roles is null || asset.Roles.Count == 0) continue;
-                if (pathMatch is null && !string.IsNullOrEmpty(asset.Path)
-                    && string.Equals(asset.Path, templateId, StringComparison.Ordinal))
+                var conv = asset.Conversation;
+                if (conv?.Roles is null || conv.Roles.Count == 0) continue;
+                if (pathMatch is null && !string.IsNullOrEmpty(conv.Path)
+                    && string.Equals(conv.Path, templateId, StringComparison.Ordinal))
                 {
                     pathMatch = asset;
                     break;
@@ -165,7 +166,7 @@ public static partial class RpcHandlers
             }
 
             var picked = pathMatch ?? nameMatch;
-            if (picked?.Roles is { } pickedRoles)
+            if (picked?.Conversation?.Roles is { } pickedRoles)
             {
                 foreach (var role in pickedRoles)
                     roles.Add(new TemplateConversationRole { Name = role.Name, Guid = role.Guid });
@@ -366,10 +367,11 @@ public static partial class RpcHandlers
             // tagged-discriminator allowlist that the compile path
             // installs, otherwise cross-references like
             // `Stem.ID.bankId` strings and `RoleGuid "Entity"` strings
-            // fail with cryptic errors. Resolve the env once and install
-            // both before the per-directive walk.
+            // fail with cryptic errors. Build the resolver locally and
+            // pass it through; no process-static slot.
             var resolution = EnvironmentContext.ResolveFromGlobalConfig();
             IReadOnlyList<Jiangyu.Core.Models.AssetEntry>? indexedAssets = null;
+            IBankIdResolver? bankIdResolver = null;
             if (resolution.Success)
             {
                 EnsureTaggedDiscriminatorsInstalled(RpcHelpers.RequireEnvironment());
@@ -382,17 +384,16 @@ public static partial class RpcHandlers
                     var bankPairs = new List<KeyValuePair<string, int>>();
                     foreach (var a in assets)
                     {
-                        if (a.Name != null && a.BankId.HasValue)
-                            bankPairs.Add(new KeyValuePair<string, int>(a.Name, a.BankId.Value));
+                        if (a.Name != null && a.SoundBank?.BankId is not null)
+                            bankPairs.Add(new KeyValuePair<string, int>(a.Name, a.SoundBank.BankId.Value));
                     }
                     // Mod-defined SoundBank clones: surface their
                     // cloneId → FNV(cloneId) so cross-references resolve
-                    // at editor-parse time. Mirrors CompilationService's
-                    // pre-validation install, which aggregates every
-                    // templates/*.kdl in one pass. Editor-parse has to
-                    // walk those files itself because the RPC sees only
-                    // the document being edited; without the project
-                    // scan, a squad_leader patch referencing a
+                    // at editor-parse time. Mirrors CompilationService,
+                    // which aggregates every templates/*.kdl in one pass.
+                    // Editor-parse has to walk those files itself because
+                    // the RPC sees only the document being edited; without
+                    // the project scan, a squad_leader patch referencing a
                     // voicelines.kdl SoundBank clone gets a spurious
                     // "no SoundBank named …" error every keystroke.
                     var seenBankNames = new HashSet<string>(StringComparer.Ordinal);
@@ -414,11 +415,11 @@ public static partial class RpcHandlers
                         if (!string.Equals(clone.TemplateType, "SoundBank", StringComparison.Ordinal)) continue;
                         AddBankClone(clone.Id);
                     }
-                    HashableIdFieldRegistry.InstallBankIdResolver(new InMemoryBankIdResolver(bankPairs));
+                    bankIdResolver = new InMemoryBankIdResolver(bankPairs);
                 }
             }
 
-            TemplateCatalogValidator.ValidateEditorDocument(document, catalog, indexedAssets);
+            TemplateCatalogValidator.ValidateEditorDocument(document, catalog, indexedAssets, bankIdResolver);
         }
 
         return JsonSerializer.SerializeToElement(document);
@@ -658,8 +659,8 @@ public static partial class RpcHandlers
     }
 
     // Read pre-built sound names from the asset index. The asset-index
-    // build (index format v4+) walks each SoundBank's sounds[] array once
-    // and stores the names on AssetEntry.NamedChildren, so this is a flat
+    // build walks each SoundBank's sounds[] array once and stores the
+    // names on AssetEntry.SoundBank.NamedChildren, so this is a flat
     // dictionary lookup at RPC time, no live AssetRipper inspection, no
     // host-thread freeze, no per-call cost beyond reading the cached index.
     private static List<string> CollectSoundCandidates()
@@ -674,14 +675,15 @@ public static partial class RpcHandlers
 
         foreach (var entry in index.Assets)
         {
-            if (entry.NamedChildren is null || entry.NamedChildren.Count == 0)
+            var soundBank = entry.SoundBank;
+            if (soundBank?.NamedChildren is null || soundBank.NamedChildren.Count == 0)
                 continue;
             if (!string.Equals(entry.ClassName, "MonoBehaviour", StringComparison.Ordinal))
                 continue;
             if (entry.Name is null || !entry.Name.EndsWith("_soundbank", StringComparison.Ordinal))
                 continue;
 
-            foreach (var name in entry.NamedChildren)
+            foreach (var name in soundBank.NamedChildren)
             {
                 if (!string.IsNullOrEmpty(name))
                     names.Add(name);

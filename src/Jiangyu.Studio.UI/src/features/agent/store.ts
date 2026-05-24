@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { subscribe } from "@shared/rpc";
+import { subscribe, type AgentSessionCreatedNotification } from "@shared/rpc";
 import type {
   AgentStartResult,
   AgentAuthResult,
@@ -814,7 +814,19 @@ subscribe("agentAuthenticated", (params) => {
 });
 
 subscribe("agentSessionCreated", (params) => {
-  const result = params as AgentSessionResult;
+  // Adapt the host's typed notification envelope onto the existing store
+  // contract. Keeping AgentSessionResult internal-only lets the store logic
+  // stay unchanged while the host moves to the uniform {ok, error, ...}
+  // shape every notification now uses.
+  const note = params as AgentSessionCreatedNotification;
+  const result: AgentSessionResult = {
+    ...(note.sessionId !== undefined && note.sessionId !== null ? { sessionId: note.sessionId } : {}),
+    modes: (note.modes as SessionModes | undefined) ?? null,
+    configOptions: (note.configOptions as ConfigOption[] | undefined) ?? null,
+    error: note.error ?? null,
+    authRequired: note.authRequired,
+    authMethods: (note.authMethods as AuthMethod[] | undefined) ?? null,
+  };
   useAgentStore.getState().handleSessionCreated(result);
 });
 

@@ -83,7 +83,7 @@ internal sealed class AgentProcessManager : IDisposable
             {
                 string? line;
                 while ((line = await process.StandardError.ReadLineAsync().ConfigureAwait(false)) is not null)
-                    Console.Error.WriteLine($"[Agent stderr] {line}");
+                    HostLog.Instance.Info($"[Agent stderr] {line}");
             }
             catch { /* process exited */ }
         });
@@ -95,7 +95,7 @@ internal sealed class AgentProcessManager : IDisposable
             FramingMode.NdJson);
         client.Start();
 
-        Console.Error.WriteLine("[Agent] Listen loop started, sending initialize…");
+        HostLog.Instance.Info("[Agent] Listen loop started, sending initialize…");
 
         lock (_lock)
         {
@@ -108,7 +108,7 @@ internal sealed class AgentProcessManager : IDisposable
         process.EnableRaisingEvents = true;
         process.Exited += (_, _) =>
         {
-            Console.Error.WriteLine($"[Agent] Process exited (code {(process.HasExited ? process.ExitCode : -1)})");
+            HostLog.Instance.Info($"[Agent] Process exited (code {(process.HasExited ? process.ExitCode : -1)})");
             OnProcessExited?.Invoke();
         };
 
@@ -118,7 +118,7 @@ internal sealed class AgentProcessManager : IDisposable
         InitializeResponse response;
         try
         {
-            Console.Error.WriteLine("[Agent] Sending initialize request…");
+            HostLog.Instance.Info("[Agent] Sending initialize request…");
             response = await client.InitializeAsync(new InitializeRequest
             {
                 ProtocolVersion = 1,
@@ -140,7 +140,7 @@ internal sealed class AgentProcessManager : IDisposable
             }, ct);
             var caps = response.AgentCapabilities;
             var mcpCaps = caps?.McpCapabilities;
-            Console.Error.WriteLine(
+            HostLog.Instance.Info(
                 $"[Agent] Initialised: {response.AgentInfo?.Name} v{response.AgentInfo?.Version} " +
                 $"protocol={response.ProtocolVersion} " +
                 $"loadSession={caps?.LoadSession ?? false} " +
@@ -190,7 +190,7 @@ internal sealed class AgentProcessManager : IDisposable
         var client = Client ?? throw new InvalidOperationException("Agent not running.");
 
         var mcp = McpServerConfigBuilder.Build();
-        Console.Error.WriteLine($"[Agent] session/new cwd={projectRoot} mcpServers={McpServerConfigBuilder.Describe(mcp)}");
+        HostLog.Instance.Info($"[Agent] session/new cwd={projectRoot} mcpServers={McpServerConfigBuilder.Describe(mcp)}");
 
         var response = await client.NewSessionAsync(new NewSessionRequest
         {
@@ -255,7 +255,7 @@ internal sealed class AgentProcessManager : IDisposable
             // shouldn't poison session creation. Log and proceed; the
             // worst case is the agent doesn't have context until the
             // user's first prompt establishes it implicitly.
-            Console.Error.WriteLine($"[Agent] Context priming failed: {ex.Message}");
+            HostLog.Instance.Warning($"[Agent] Context priming failed: {ex.Message}");
         }
     }
 

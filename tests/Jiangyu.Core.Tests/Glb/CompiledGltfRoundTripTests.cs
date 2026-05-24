@@ -36,11 +36,11 @@ public sealed class CompiledGltfRoundTripTests : IDisposable
 
         var textures = new Dictionary<string, GlbMeshBundleCompiler.CompiledTexture>(StringComparer.Ordinal);
 
-        var found = GlbMeshBundleCompiler.TryExtractTexturesFromModelGraph(gltfPath, textures);
+        var found = GlbTextureExtractor.TryExtractTexturesFromModelGraph(gltfPath, textures);
 
         Assert.True(found);
-        Assert.True(GlbMeshBundleCompiler.IsCleanedExport(gltfPath));
-        Assert.Equal("soldier", GlbMeshBundleCompiler.InferTexturePrefix(gltfPath));
+        Assert.True(GlbTextureExtractor.IsCleanedExport(gltfPath));
+        Assert.Equal("soldier", GlbTextureExtractor.InferTexturePrefix(gltfPath));
         Assert.Contains("soldier_BaseMap", textures.Keys);
         Assert.Contains("soldier_MaskMap", textures.Keys);
     }
@@ -53,11 +53,11 @@ public sealed class CompiledGltfRoundTripTests : IDisposable
 
         var textures = new Dictionary<string, GlbMeshBundleCompiler.CompiledTexture>(StringComparer.Ordinal);
 
-        var found = GlbMeshBundleCompiler.TryExtractTexturesFromModelGraph(glbPath, textures);
+        var found = GlbTextureExtractor.TryExtractTexturesFromModelGraph(glbPath, textures);
 
         Assert.True(found);
-        Assert.True(GlbMeshBundleCompiler.IsCleanedExport(glbPath));
-        Assert.Equal("soldier", GlbMeshBundleCompiler.InferTexturePrefix(glbPath));
+        Assert.True(GlbTextureExtractor.IsCleanedExport(glbPath));
+        Assert.Equal("soldier", GlbTextureExtractor.InferTexturePrefix(glbPath));
         Assert.Contains("soldier_BaseMap", textures.Keys);
         Assert.Contains("soldier_NormalMap", textures.Keys);
     }
@@ -96,7 +96,7 @@ public sealed class CompiledGltfRoundTripTests : IDisposable
         scene.AddRigidMesh(mesh, root);
         scene.AddNode(root);
 
-        var textures = new List<AssetPipelineService.DiscoveredTexture>
+        var textures = new List<ModelExportService.DiscoveredTexture>
         {
             new()
             {
@@ -124,7 +124,7 @@ public sealed class CompiledGltfRoundTripTests : IDisposable
             },
         };
 
-        AssetPipelineService.SaveGltfPackage(scene, textures, gltfPath);
+        ModelExportService.SaveGltfPackage(scene, textures, gltfPath);
     }
 
     private static void WriteCompiledLikeGlbPackage(string glbPath)

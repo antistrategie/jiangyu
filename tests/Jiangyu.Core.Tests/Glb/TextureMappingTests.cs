@@ -16,7 +16,7 @@ public class StandardChannelMapTests
     [InlineData("_OcclusionMap", "Occlusion")]
     public void KnownProperties_MapToExpectedChannels(string property, string expectedChannel)
     {
-        Assert.True(AssetPipelineService.StandardChannelMap.TryGetValue(property, out var channel));
+        Assert.True(ModelExportService.StandardChannelMap.TryGetValue(property, out var channel));
         Assert.Equal(expectedChannel, channel);
     }
 
@@ -26,14 +26,14 @@ public class StandardChannelMapTests
     [InlineData("_DetailAlbedoMap")]
     public void NonStandardProperties_NotMapped(string property)
     {
-        Assert.False(AssetPipelineService.StandardChannelMap.ContainsKey(property));
+        Assert.False(ModelExportService.StandardChannelMap.ContainsKey(property));
     }
 
     [Fact]
     public void Lookup_IsCaseInsensitive()
     {
-        Assert.True(AssetPipelineService.StandardChannelMap.ContainsKey("_basecolormap"));
-        Assert.True(AssetPipelineService.StandardChannelMap.ContainsKey("_NORMALMAP"));
+        Assert.True(ModelExportService.StandardChannelMap.ContainsKey("_basecolormap"));
+        Assert.True(ModelExportService.StandardChannelMap.ContainsKey("_NORMALMAP"));
     }
 }
 
@@ -52,7 +52,7 @@ public class IsMenaceTextureNamePatternTests
     [InlineData("soldier_MetallicGlossMap")]
     public void KnownSuffixes_ReturnTrue(string name)
     {
-        Assert.True(GlbMeshBundleCompiler.IsMenaceTextureNamePattern(name));
+        Assert.True(GlbTextureExtractor.IsMenaceTextureNamePattern(name));
     }
 
     [Theory]
@@ -62,14 +62,14 @@ public class IsMenaceTextureNamePatternTests
     [InlineData("soldier")]
     public void UnknownSuffixes_ReturnFalse(string name)
     {
-        Assert.False(GlbMeshBundleCompiler.IsMenaceTextureNamePattern(name));
+        Assert.False(GlbTextureExtractor.IsMenaceTextureNamePattern(name));
     }
 
     [Fact]
     public void CaseInsensitive()
     {
-        Assert.True(GlbMeshBundleCompiler.IsMenaceTextureNamePattern("SOLDIER_BASEMAP"));
-        Assert.True(GlbMeshBundleCompiler.IsMenaceTextureNamePattern("soldier_normalmap"));
+        Assert.True(GlbTextureExtractor.IsMenaceTextureNamePattern("SOLDIER_BASEMAP"));
+        Assert.True(GlbTextureExtractor.IsMenaceTextureNamePattern("soldier_normalmap"));
     }
 }
 
@@ -86,7 +86,7 @@ public class IsLinearTextureNameTests
     [InlineData("soldier_OcclusionMap", false)]
     public void IdentifiesLinearTextures(string name, bool expected)
     {
-        Assert.Equal(expected, GlbMeshBundleCompiler.IsLinearTextureName(name));
+        Assert.Equal(expected, GlbTextureExtractor.IsLinearTextureName(name));
     }
 }
 
@@ -95,7 +95,7 @@ public class FindCommonPrefixTests
     [Fact]
     public void SingleName_ReturnsName()
     {
-        var result = GlbMeshBundleCompiler.FindCommonPrefix(["soldier_Normal"]);
+        var result = GlbTextureExtractor.FindCommonPrefix(["soldier_Normal"]);
 
         Assert.Equal("soldier_Normal", result);
     }
@@ -103,7 +103,7 @@ public class FindCommonPrefixTests
     [Fact]
     public void SharedPrefix_ReturnsCommonPart()
     {
-        var result = GlbMeshBundleCompiler.FindCommonPrefix(
+        var result = GlbTextureExtractor.FindCommonPrefix(
             ["soldier_Normal", "soldier_BaseMap", "soldier_MaskMap"]);
 
         Assert.Equal("soldier", result);
@@ -113,7 +113,7 @@ public class FindCommonPrefixTests
     public void TrailingUnderscore_StrippedFromPrefix()
     {
         // If the common prefix ends with _, it's trimmed
-        var result = GlbMeshBundleCompiler.FindCommonPrefix(
+        var result = GlbTextureExtractor.FindCommonPrefix(
             ["pfx_A", "pfx_B"]);
 
         Assert.Equal("pfx", result);
@@ -122,7 +122,7 @@ public class FindCommonPrefixTests
     [Fact]
     public void NoCommonPrefix_ReturnsNull()
     {
-        var result = GlbMeshBundleCompiler.FindCommonPrefix(
+        var result = GlbTextureExtractor.FindCommonPrefix(
             ["alpha_Normal", "beta_Normal"]);
 
         Assert.Null(result);
@@ -131,7 +131,7 @@ public class FindCommonPrefixTests
     [Fact]
     public void EmptyList_ReturnsNull()
     {
-        var result = GlbMeshBundleCompiler.FindCommonPrefix([]);
+        var result = GlbTextureExtractor.FindCommonPrefix([]);
 
         Assert.Null(result);
     }
@@ -139,7 +139,7 @@ public class FindCommonPrefixTests
     [Fact]
     public void IdenticalNames_ReturnsFullName()
     {
-        var result = GlbMeshBundleCompiler.FindCommonPrefix(
+        var result = GlbTextureExtractor.FindCommonPrefix(
             ["soldier_Normal", "soldier_Normal"]);
 
         Assert.Equal("soldier_Normal", result);
@@ -148,7 +148,7 @@ public class FindCommonPrefixTests
     [Fact]
     public void DifferentLengths_FindsShortestCommonPrefix()
     {
-        var result = GlbMeshBundleCompiler.FindCommonPrefix(
+        var result = GlbTextureExtractor.FindCommonPrefix(
             ["a_short", "a_longer_name", "a_medium"]);
 
         Assert.Equal("a", result);

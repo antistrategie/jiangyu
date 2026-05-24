@@ -140,7 +140,7 @@ internal static class McpServerConfigBuilder
         }
         else
         {
-            Console.Error.WriteLine($"[Agent] jiangyu-mcp binary not found in bin/ next to host exe or AppContext.BaseDirectory; stdio MCP disabled.");
+            HostLog.Instance.Warning($"[Agent] jiangyu-mcp binary not found in bin/ next to host exe or AppContext.BaseDirectory; stdio MCP disabled.");
         }
 
         if (HttpMcpUrl is { } url && HttpMcpToken is { } token)
@@ -158,7 +158,7 @@ internal static class McpServerConfigBuilder
         }
         else
         {
-            Console.Error.WriteLine("[Agent] HTTP MCP endpoint not bound; http MCP disabled.");
+            HostLog.Instance.Warning("[Agent] HTTP MCP endpoint not bound; http MCP disabled.");
         }
 
         return [.. configs];

@@ -5,313 +5,35 @@ using MelonLoader;
 
 namespace Jiangyu.Loader.Templates;
 
-// Per-op dispatch + scalar-set verification. TryApplyOperation walks
-// the descent prefix and inner segments, then dispatches to the
-// per-op-kind handler (Set, Append/InsertAt, Set with cell=, Set with
-// index=, Remove, Clear). ApplyAndVerify is the read-write-readback
-// loop the scalar Set path uses; collection-shape ops (HashSet Add,
-// MD-array cell, Remove, Clear) bypass it because their semantics
-// don't fit the "value-with-readback" contract.
+// Per-op entry point + the IL2CPP-specific dispatch helpers the visitor
+// reaches into. TryApplyOperation projects the loaded op into the
+// walker view and drives a fresh RuntimeFieldVisitor; descent +
+// inner-segment navigation and op-kind switching live in the shared
+// walker. ApplyAndVerify is the read-write-readback contract the
+// scalar/element/append/insert paths share; collection-shape ops
+// (HashSet Add, MD-array cell, Remove, Clear) bypass it because their
+// semantics don't fit the "value-with-readback" loop.
 internal sealed partial class TemplatePatchApplier
 {
     private static ApplyOutcome TryApplyOperation(
         object template, string templateTypeName, string templateId, LoadedPatchOperation op,
         ModAssetResolver assetResolver, MelonLogger.Instance log)
     {
-        if (!TryParseInnerSegments(op.FieldPath, out var innerSegments, out var parseError))
+        var visitor = new RuntimeFieldVisitor(templateTypeName, templateId, op, assetResolver, log);
+        var view = new TemplateOperationView(
+            op.Op, op.FieldPath, op.Index, op.IndexPath, op.Descent, op.Value);
+
+        var result = TemplateOperationWalker.Execute(visitor, template, view, out _);
+        return result switch
         {
-            log.Warning(FormatPrefix(templateTypeName, templateId, op) + parseError);
-            return ApplyOutcome.MemberMissing;
-        }
-
-        var descentCount = op.Descent?.Count ?? 0;
-        var chain = new List<ChainEntry>(descentCount + innerSegments.Length);
-        object current = template;
-
-        // Walk descent steps first. Two shapes per step:
-        //   - Index non-null: collection-element descent into element [Index]
-        //     of collection [Field], optionally casting to [Subtype].
-        //   - Index null: scalar polymorphic descent into the value held by
-        //     the (non-collection) field [Field], casting to [Subtype] so
-        //     subsequent path resolution sees subclass-specific members.
-        if (op.Descent != null)
-        {
-            for (var i = 0; i < op.Descent.Count; i++)
-            {
-                var step = op.Descent[i];
-                if (!TryReadMember(current, step.Field, out var value, out var memberType, out var readError))
-                {
-                    log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                        + $"cannot navigate descent step '{step.Field}': {readError}");
-                    return ApplyOutcome.MemberMissing;
-                }
-
-                if (value == null)
-                {
-                    log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                        + $"descent step '{step.Field}' ({memberType.FullName}) is null on this template.");
-                    return ApplyOutcome.MemberMissing;
-                }
-
-                var entry = new ChainEntry
-                {
-                    Parent = current,
-                    Name = step.Field,
-                    ValueIsStruct = memberType.IsValueType,
-                };
-
-                object element;
-                Type elementType;
-                if (step.Index.HasValue)
-                {
-                    // Collection-element descent: index into the list/array
-                    // and optionally cast the element to a concrete subtype.
-                    if (!TryIndexInto(value, step.Index.Value, out element, out elementType, out var indexError))
-                    {
-                        log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                            + $"cannot index descent step '{step.Field}' index={step.Index}: {indexError}");
-                        return ApplyOutcome.MemberMissing;
-                    }
-
-                    if (element == null)
-                    {
-                        log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                            + $"element {step.Index} of '{step.Field}' is null.");
-                        return ApplyOutcome.MemberMissing;
-                    }
-
-                    // We don't support writing mutated struct-elements back into
-                    // collections on this slice. Reject early so modders know.
-                    if (elementType.IsValueType)
-                    {
-                        log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                            + $"element {step.Index} of '{step.Field}' is a value-type "
-                            + $"({elementType.FullName}); in-collection struct mutation is not supported on this slice.");
-                        return ApplyOutcome.MemberMissing;
-                    }
-                }
-                else
-                {
-                    // Scalar polymorphic descent: no index. The field's
-                    // runtime value is the descent target. The subtype
-                    // cast below makes its concrete members visible to
-                    // subsequent path resolution.
-                    element = value;
-                    elementType = memberType;
-                }
-
-                // Polymorphic descent: the Il2CppInterop wrapper for a
-                // List<AbstractBase> element returns the base-type wrapper,
-                // so reflection on it sees only the base's own members
-                // (typically zero). Cast to the concrete subtype wrapper
-                // when the modder declared one via type="X" on the descent
-                // block so subclass fields are visible. Same logic applies
-                // to scalar polymorphic descent.
-                if (!string.IsNullOrEmpty(step.Subtype))
-                {
-                    var castContext = step.Index.HasValue
-                        ? $"'{step.Field}[{step.Index}]'"
-                        : $"'{step.Field}'";
-                    if (!TryCastToSubtype(element, step.Subtype, out var castElement, out var castError))
-                    {
-                        log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                            + $"cannot cast {castContext} to subtype "
-                            + $"'{step.Subtype}': {castError}");
-                        return ApplyOutcome.MemberMissing;
-                    }
-                    element = castElement;
-                }
-
-                current = element;
-                chain.Add(entry);
-            }
-        }
-
-        // Walk inner path segments (dotted name only, no brackets).
-        // Each non-terminal segment is a plain member read; the terminal
-        // segment carries the actual write below.
-        for (var i = 0; i < innerSegments.Length - 1; i++)
-        {
-            var segment = innerSegments[i];
-            if (!TryReadMember(current, segment.Name, out var value, out var memberType, out var readError))
-            {
-                log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                    + $"cannot navigate segment '{segment.Name}': {readError}");
-                return ApplyOutcome.MemberMissing;
-            }
-
-            if (value == null)
-            {
-                log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                    + $"intermediate segment '{segment.Name}' ({memberType.FullName}) is null on this template.");
-                return ApplyOutcome.MemberMissing;
-            }
-
-            chain.Add(new ChainEntry
-            {
-                Parent = current,
-                Name = segment.Name,
-                ValueIsStruct = memberType.IsValueType,
-            });
-            current = value;
-        }
-
-        var terminal = innerSegments[^1];
-        Action<object> setter;
-        Func<object> getter;
-        Type terminalType;
-        // Tracks the destination collection for Append/InsertAt so the
-        // composite-construction path can find a prototype element when
-        // composite.From is set. Populated inside the Append branch below.
-        object appendDestination = null;
-
-        if (op.Op == CompiledTemplateOp.Remove)
-            return TryApplyRemove(current, terminal, templateTypeName, templateId, op, assetResolver, log);
-
-        if (op.Op == CompiledTemplateOp.Clear)
-            return TryApplyClear(current, terminal, templateTypeName, templateId, op, log);
-
-        if (op.Op == CompiledTemplateOp.Append || op.Op == CompiledTemplateOp.InsertAt)
-        {
-            if (!TryReadMember(current, terminal.Name, out var collection, out var collectionType, out var readError))
-            {
-                log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                    + $"cannot read terminal collection '{terminal.Name}': {readError}");
-                return ApplyOutcome.MemberMissing;
-            }
-            appendDestination = collection;
-
-            // HashSet Append uses dedicated dispatch: HashSet has no
-            // positional indexer, so the ApplyAndVerify readback path
-            // (which compares the written value against the last
-            // element) doesn't apply. Add returns bool but is idempotent
-            // and we trust the underlying call.
-            if (op.Op == CompiledTemplateOp.Append
-                && collection != null
-                && IsHashSetType(collectionType))
-            {
-                return TryApplyHashSetAdd(
-                    current, terminal, collection, collectionType,
-                    templateTypeName, templateId, op, assetResolver, log);
-            }
-
-            int? insertIndex = op.Op == CompiledTemplateOp.InsertAt ? op.Index : null;
-            if (!TryBindCollectionMutation(
-                    current, terminal.Name, collection, collectionType, insertIndex,
-                    out terminalType, out setter, out getter, out var bindError))
-            {
-                log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                    + $"cannot bind {op.Op} on '{terminal.Name}': {bindError}");
-                return ApplyOutcome.MemberMissing;
-            }
-        }
-        else if (op.Op == CompiledTemplateOp.Set && op.Index.HasValue)
-        {
-            // Set one collection element via `set "Field" index=N <value>`.
-            // Terminal is non-indexed (validator enforces); resolve the
-            // collection then bind the element at op.Index.
-            if (!TryReadMember(current, terminal.Name, out var arrayValue, out var arrayType, out var readError))
-            {
-                log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                    + $"cannot read terminal collection '{terminal.Name}': {readError}");
-                return ApplyOutcome.MemberMissing;
-            }
-
-            if (arrayValue == null)
-            {
-                log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                    + $"terminal collection '{terminal.Name}' ({arrayType.FullName}) is null on this template.");
-                return ApplyOutcome.MemberMissing;
-            }
-
-            if (!TryBindArrayElement(arrayValue, op.Index.Value, out terminalType, out setter, out getter, out var elementError))
-            {
-                log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                    + $"cannot bind '{terminal.Name}' index={op.Index.Value}: {elementError}");
-                return ApplyOutcome.MemberMissing;
-            }
-        }
-        else if (op.Op == CompiledTemplateOp.Set && op.IndexPath is { Count: > 0 })
-        {
-            // Multi-dim cell write: `set "Field" cell="r,c" <value>`. We
-            // route these through Il2CppMdArrayAccessor instead of the
-            // C# property layer because Il2CppInterop has no wrapper
-            // class for multi-dim arrays: its generator falls back to
-            // Il2CppObjectBase and the auto-generated getter throws NRE
-            // on first access. See the type-doc on
-            // Il2CppMdArrayAccessor for the canonical layout, the prior
-            // art (SimRailConnect), and a link to the upstream tracker
-            // (BepInEx/Il2CppInterop#218, planned for v2 but stalled).
-            return TryApplyMdCellWrite(current, terminal, templateTypeName, templateId, op, log);
-        }
-        else if (terminal.Index.HasValue)
-        {
-            if (!TryReadMember(current, terminal.Name, out var arrayValue, out var arrayType, out var readError))
-            {
-                log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                    + $"cannot read terminal array member '{terminal.Name}': {readError}");
-                return ApplyOutcome.MemberMissing;
-            }
-
-            if (arrayValue == null)
-            {
-                log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                    + $"terminal array '{terminal.Name}' ({arrayType.FullName}) is null on this template.");
-                return ApplyOutcome.MemberMissing;
-            }
-
-            if (!TryBindArrayElement(arrayValue, terminal.Index.Value, out terminalType, out setter, out getter, out var elementError))
-            {
-                log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                    + $"cannot bind '{terminal.Name}[{terminal.Index.Value}]': {elementError}");
-                return ApplyOutcome.MemberMissing;
-            }
-        }
-        else
-        {
-            if (!TryGetWritableMember(current, terminal.Name, out terminalType, out setter, out getter))
-            {
-                log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                    + $"no writable field or property '{terminal.Name}' found on {current.GetType().FullName}.");
-                return ApplyOutcome.MemberMissing;
-            }
-        }
-
-        var outcome = ApplyAndVerify(templateTypeName, templateId, op, terminalType, setter, getter, assetResolver, log, appendDestination);
-        if (outcome != ApplyOutcome.Applied)
-            return outcome;
-
-        // Write-back for value-type intermediates: propagate the mutated
-        // descendant up the chain through each parent's setter.
-        for (var i = chain.Count - 1; i >= 0; i--)
-        {
-            var entry = chain[i];
-            if (!entry.ValueIsStruct)
-                continue;
-
-            if (!TryGetWritableMember(entry.Parent, entry.Name, out _, out var parentSetter, out _))
-            {
-                log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                    + $"write-back after terminal set failed: parent segment '{entry.Name}' on "
-                    + $"{entry.Parent.GetType().FullName} has no writable surface, so the struct mutation may not persist.");
-                return ApplyOutcome.Applied;
-            }
-
-            try
-            {
-                parentSetter(current);
-            }
-            catch (Exception ex)
-            {
-                log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                    + $"write-back after terminal set threw at segment '{entry.Name}': {ex.Message}");
-                return ApplyOutcome.Applied;
-            }
-
-            current = entry.Parent;
-        }
-
-        return outcome;
+            OperationResult.Applied => ApplyOutcome.Applied,
+            OperationResult.MemberMissing => ApplyOutcome.MemberMissing,
+            // NotSupported only fires when the walker hands a shape the
+            // visitor can't represent. Surface it as a conversion failure
+            // so the patch summary's `conversion` counter ticks rather
+            // than silently swallowing the op.
+            _ => ApplyOutcome.ConversionFailed,
+        };
     }
 
     private static ApplyOutcome ApplyAndVerify(

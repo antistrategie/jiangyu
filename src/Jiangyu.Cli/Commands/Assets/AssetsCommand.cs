@@ -5,6 +5,7 @@ using Jiangyu.Core.Config;
 using Jiangyu.Core.Il2Cpp;
 using Jiangyu.Core.Models;
 using Jiangyu.Core.Unity;
+using Jiangyu.Shared.Replacements;
 
 namespace Jiangyu.Cli.Commands.Assets;
 
@@ -165,12 +166,12 @@ public static class AssetsCommand
 
                 var replacementTarget = entry.ClassName switch
                 {
-                    "PrefabHierarchyObject" => CompilationService.BuildModelReplacementRelativePath(
+                    "PrefabHierarchyObject" => ReplacementPaths.BuildModelReplacementRelativePath(
                         entry.Name!,
                         modelNameCounts.GetValueOrDefault(entry.Name) > 2 ? entry.PathId : null),
-                    "Texture2D" => CompilationService.BuildTextureReplacementRelativePath(entry.Name!),
-                    "Sprite" => CompilationService.BuildSpriteReplacementRelativePath(entry.Name!),
-                    "AudioClip" => CompilationService.BuildAudioReplacementRelativePath(entry.Name!),
+                    "Texture2D" => ReplacementPaths.BuildTextureReplacementRelativePath(entry.Name!),
+                    "Sprite" => ReplacementPaths.BuildSpriteReplacementRelativePath(entry.Name!),
+                    "AudioClip" => ReplacementPaths.BuildAudioReplacementRelativePath(entry.Name!),
                     _ => null,
                 };
 

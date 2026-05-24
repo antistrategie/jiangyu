@@ -78,7 +78,7 @@ public static partial class RpcDispatcher
         foreach (var window in ProjectWatcher.SubscribedWindows())
         {
             try { SendNotification(window, method, payload); }
-            catch (Exception ex) { Console.Error.WriteLine($"[Compile] Failed to send {method}: {ex.Message}"); }
+            catch (Exception ex) { HostLog.Instance.Warning($"[Compile] Failed to send {method}: {ex.Message}"); }
         }
     }
 

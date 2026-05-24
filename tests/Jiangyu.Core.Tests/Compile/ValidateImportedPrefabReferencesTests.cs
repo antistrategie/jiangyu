@@ -29,7 +29,7 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
     {
         var manifest = NewManifest(importedPrefabs: null);
 
-        var result = CompilationService.ValidateImportedPrefabReferences(_projectDir, manifest);
+        var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
         Assert.Null(result);
     }
@@ -42,7 +42,7 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
             "m_Script: {fileID: 1, guid: deadbeefdeadbeefdeadbeefdeadbeef, type: 3}");
         var manifest = NewManifest(importedPrefabs: null);
 
-        var result = CompilationService.ValidateImportedPrefabReferences(_projectDir, manifest);
+        var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
         Assert.Null(result);
     }
@@ -57,7 +57,7 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
 
         var manifest = NewManifest(importedPrefabs: ["rmc_default_female_soldier_2"]);
 
-        var result = CompilationService.ValidateImportedPrefabReferences(_projectDir, manifest);
+        var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
         Assert.Null(result);
     }
@@ -70,7 +70,7 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
 
         var manifest = NewManifest(importedPrefabs: null);
 
-        var result = CompilationService.ValidateImportedPrefabReferences(_projectDir, manifest);
+        var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
         Assert.Null(result);
     }
@@ -85,7 +85,7 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
 
         var manifest = NewManifest(importedPrefabs: null);
 
-        var result = CompilationService.ValidateImportedPrefabReferences(_projectDir, manifest);
+        var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
         Assert.NotNull(result);
         Assert.Contains("importedPrefabs", result);
@@ -108,7 +108,7 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
 
         var manifest = NewManifest(importedPrefabs: null);
 
-        var result = CompilationService.ValidateImportedPrefabReferences(_projectDir, manifest);
+        var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
         Assert.NotNull(result);
         Assert.Contains("- rifle", result);
@@ -130,7 +130,7 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
 
         var manifest = NewManifest(importedPrefabs: null);
 
-        var result = CompilationService.ValidateImportedPrefabReferences(_projectDir, manifest);
+        var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
         Assert.Null(result);
     }
@@ -145,7 +145,7 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
 
         var manifest = NewManifest(importedPrefabs: ["SOLDIER"]);
 
-        var result = CompilationService.ValidateImportedPrefabReferences(_projectDir, manifest);
+        var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
         Assert.Null(result);
     }
@@ -162,7 +162,7 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
 
         var manifest = NewManifest(importedPrefabs: null);
 
-        var result = CompilationService.ValidateImportedPrefabReferences(_projectDir, manifest);
+        var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
         Assert.Null(result);
     }

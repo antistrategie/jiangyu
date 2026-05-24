@@ -48,7 +48,7 @@ internal static class AgentSessionsStore
                 // Corrupt file — start fresh rather than crashing the agent
                 // panel. The previous file isn't deleted; if a user wants
                 // to recover they can salvage it manually.
-                Console.Error.WriteLine($"[Sessions] Failed to read {path}: {ex.Message}");
+                HostLog.Instance.Warning($"[Sessions] Failed to read {path}: {ex.Message}");
                 return new AgentSessionsFile();
             }
         }

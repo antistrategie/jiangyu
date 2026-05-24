@@ -164,7 +164,7 @@ internal static class AtlasCompositor
             {
                 Name = group.AtlasName,
                 Content = pngBytes,
-                Linear = Glb.GlbMeshBundleCompiler.IsLinearTextureName(group.AtlasName),
+                Linear = Glb.GlbTextureExtractor.IsLinearTextureName(group.AtlasName),
             });
 
             log.Info($"  Composited {group.Replacements.Count} sprite replacement(s) into atlas '{group.AtlasName}'.");

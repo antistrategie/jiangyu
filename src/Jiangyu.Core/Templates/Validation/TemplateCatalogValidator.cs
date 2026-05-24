@@ -47,14 +47,15 @@ public static class TemplateCatalogValidator
         ILogSink log,
         IAssetAdditionsCatalog? additions = null,
         IGameAssetIndex? gameAssets = null,
-        ValidationMode mode = ValidationMode.Compile)
+        ValidationMode mode = ValidationMode.Compile,
+        IBankIdResolver? bankIdResolver = null)
     {
         var errors = 0;
 
         if (patches != null)
         {
             foreach (var patch in patches)
-                errors += ValidatePatch(patch, catalog, additions, log, gameAssets, mode);
+                errors += ValidatePatch(patch, catalog, additions, log, gameAssets, mode, bankIdResolver);
         }
 
         if (clones != null)
@@ -82,7 +83,8 @@ public static class TemplateCatalogValidator
     /// </summary>
     public static void NormaliseForEmit(
         KdlEditorDocument document,
-        TemplateTypeCatalog catalog)
+        TemplateTypeCatalog catalog,
+        IBankIdResolver? bankIdResolver = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(catalog);
@@ -104,7 +106,8 @@ public static class TemplateCatalogValidator
                     catalog,
                     additions: null,
                     swallowed.Add,
-                    mode: ValidationMode.EditorNormalise);
+                    mode: ValidationMode.EditorNormalise,
+                    bankIdResolver: bankIdResolver);
 
                 // Re-import the normalised wire form. Skip when validation
                 // surfaced errors so we don't paper over a broken directive
@@ -119,7 +122,8 @@ public static class TemplateCatalogValidator
     public static void ValidateEditorDocument(
         KdlEditorDocument document,
         TemplateTypeCatalog catalog,
-        IReadOnlyList<Jiangyu.Core.Models.AssetEntry>? indexedAssets = null)
+        IReadOnlyList<Jiangyu.Core.Models.AssetEntry>? indexedAssets = null,
+        IBankIdResolver? bankIdResolver = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(catalog);
@@ -187,7 +191,8 @@ public static class TemplateCatalogValidator
                     catalog,
                     additions: null,
                     message => localErrors.Add(message),
-                    mode: ValidationMode.EditorValidate);
+                    mode: ValidationMode.EditorValidate,
+                    bankIdResolver: bankIdResolver);
 
                 if (errorCount > 0)
                 {
@@ -287,7 +292,8 @@ public static class TemplateCatalogValidator
         IAssetAdditionsCatalog? additions,
         ILogSink log,
         IGameAssetIndex? gameAssets = null,
-        ValidationMode mode = ValidationMode.Compile)
+        ValidationMode mode = ValidationMode.Compile,
+        IBankIdResolver? bankIdResolver = null)
     {
         var mutateHashableIds = mode == ValidationMode.Compile;
         var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
@@ -311,7 +317,8 @@ public static class TemplateCatalogValidator
                 additions,
                 message => log.Error($"Template patch '{label}.{FormatFullPath(op)}' — {message}"),
                 gameAssets,
-                mode);
+                mode,
+                bankIdResolver);
         }
         return errors;
     }
@@ -338,7 +345,8 @@ public static class TemplateCatalogValidator
         IAssetAdditionsCatalog? additions,
         Action<string> reportError,
         IGameAssetIndex? gameAssets = null,
-        ValidationMode mode = ValidationMode.Compile)
+        ValidationMode mode = ValidationMode.Compile,
+        IBankIdResolver? bankIdResolver = null)
     {
         // Compile mutates hashable string→int so the manifest is loader-ready;
         // both editor modes preserve the authored string for round-trip.
@@ -375,7 +383,7 @@ public static class TemplateCatalogValidator
             && result.PatchScalarKind is CompiledTemplateValueKind.Int32
             && HashableIdFieldRegistry.IsHashable(templateType, op.FieldPath))
         {
-            if (!HashableIdFieldRegistry.TryResolve(templateType, op.FieldPath, stringValue.String, out var resolved, out var resolveErr))
+            if (!HashableIdFieldRegistry.TryResolve(templateType, op.FieldPath, stringValue.String, bankIdResolver, out var resolved, out var resolveErr))
             {
                 reportError($"cannot resolve hashable id for '{templateType}.{op.FieldPath}' from \"{stringValue.String}\": {resolveErr}");
                 return 1;
@@ -650,7 +658,8 @@ public static class TemplateCatalogValidator
                 reportError,
                 gameAssets,
                 mode,
-                isTaggedStringTarget: isTaggedTarget);
+                isTaggedStringTarget: isTaggedTarget,
+                bankIdResolver: bankIdResolver);
         }
 
         if (op.Value?.Kind == CompiledTemplateValueKind.HandlerConstruction && op.Value.HandlerConstruction != null)
@@ -662,7 +671,8 @@ public static class TemplateCatalogValidator
                 additions,
                 reportError,
                 gameAssets,
-                mode);
+                mode,
+                bankIdResolver);
 
         return 0;
     }
@@ -849,7 +859,8 @@ public static class TemplateCatalogValidator
         IAssetAdditionsCatalog? additions,
         Action<string> reportError,
         IGameAssetIndex? gameAssets = null,
-        ValidationMode mode = ValidationMode.Compile)
+        ValidationMode mode = ValidationMode.Compile,
+        IBankIdResolver? bankIdResolver = null)
     {
         var mutateHashableIds = mode == ValidationMode.Compile;
         var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
@@ -960,7 +971,8 @@ public static class TemplateCatalogValidator
             additions,
             reportError,
             gameAssets,
-            mode);
+            mode,
+            bankIdResolver);
     }
 
     private static int ValidateCompositeValue(
@@ -972,7 +984,8 @@ public static class TemplateCatalogValidator
         Action<string> reportError,
         IGameAssetIndex? gameAssets = null,
         ValidationMode mode = ValidationMode.Compile,
-        bool isTaggedStringTarget = false)
+        bool isTaggedStringTarget = false,
+        IBankIdResolver? bankIdResolver = null)
     {
         var mutateHashableIds = mode == ValidationMode.Compile;
         var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
@@ -1120,7 +1133,8 @@ public static class TemplateCatalogValidator
             additions,
             reportError,
             gameAssets,
-            mode);
+            mode,
+            bankIdResolver);
     }
 
     private static int ValidateInnerOperations(
@@ -1131,7 +1145,8 @@ public static class TemplateCatalogValidator
         IAssetAdditionsCatalog? additions,
         Action<string> reportError,
         IGameAssetIndex? gameAssets = null,
-        ValidationMode mode = ValidationMode.Compile)
+        ValidationMode mode = ValidationMode.Compile,
+        IBankIdResolver? bankIdResolver = null)
     {
         var mutateHashableIds = mode == ValidationMode.Compile;
         var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
@@ -1146,7 +1161,8 @@ public static class TemplateCatalogValidator
                 additions,
                 InnerReport,
                 gameAssets,
-                mode);
+                mode,
+                bankIdResolver);
         }
         return errors;
     }

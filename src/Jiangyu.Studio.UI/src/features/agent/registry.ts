@@ -9,7 +9,7 @@
  * Distribution shape mirrors the published schema. npx-only is the v1
  * happy path; binary and uvx install are left for a follow-up.
  */
-import { rpcCall, subscribe, type InstalledAgent } from "@shared/rpc";
+import { rpcCall, subscribe, type AgentRegistryFetchedNotification, type InstalledAgent } from "@shared/rpc";
 
 export interface RegistryNpx {
   readonly package: string;
@@ -62,11 +62,6 @@ export interface RegistryDocument {
   readonly agents: readonly RegistryAgent[];
 }
 
-interface RegistryFetchedEvent {
-  readonly registry?: RegistryDocument;
-  readonly error?: string;
-}
-
 /**
  * Fire the host fetch and resolve when the matching notification arrives.
  * Concurrent calls share a single in-flight promise so opening the modal
@@ -81,11 +76,11 @@ export function fetchRegistry(): Promise<RegistryDocument> {
     const unsubscribe = subscribe("agentsRegistryFetched", (params) => {
       unsubscribe();
       inFlight = null;
-      const event = params as RegistryFetchedEvent;
-      if (event.error !== undefined) {
-        reject(new Error(event.error));
-      } else if (event.registry !== undefined) {
-        resolve(event.registry);
+      const event = params as AgentRegistryFetchedNotification;
+      if (!event.ok) {
+        reject(new Error(event.error ?? "Registry fetch failed."));
+      } else if (event.registry !== undefined && event.registry !== null) {
+        resolve(event.registry as RegistryDocument);
       } else {
         reject(new Error("Registry response missing payload"));
       }

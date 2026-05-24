@@ -129,8 +129,11 @@ public class AudioTargetValidationTests
                     PathId = pathId,
                     Collection = "resources.assets",
                     CanonicalPath = $"resources.assets/AudioClip/{name}--{pathId}",
-                    AudioFrequency = frequency,
-                    AudioChannels = channels,
+                    Audio = new AssetAudioMetadata
+                    {
+                        Frequency = frequency,
+                        Channels = channels,
+                    },
                 },
             ],
         };

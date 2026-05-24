@@ -15,7 +15,7 @@ public class WriteSourceDiagnosticsTests
         var path = Path.Combine(dir, "bundle.source-diagnostics.json");
         try
         {
-            GlbMeshBundleCompiler.WriteSourceDiagnostics(path, []);
+            MeshBundleStager.WriteSourceDiagnostics(path, []);
             Assert.False(File.Exists(path), "empty meshes should not produce a diagnostics file");
             Assert.False(Directory.Exists(dir), "empty meshes should not even create the diagnostics directory");
         }
@@ -50,7 +50,7 @@ public class WriteSourceDiagnosticsTests
                 BoneNames = [],
             };
 
-            GlbMeshBundleCompiler.WriteSourceDiagnostics(path, [mesh]);
+            MeshBundleStager.WriteSourceDiagnostics(path, [mesh]);
 
             Assert.True(File.Exists(path));
             using var doc = JsonDocument.Parse(File.ReadAllText(path));

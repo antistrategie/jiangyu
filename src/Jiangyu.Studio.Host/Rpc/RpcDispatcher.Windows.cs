@@ -118,7 +118,7 @@ public static partial class RpcDispatcher
                     }
                     catch (Exception ex)
                     {
-                        Console.Error.WriteLine($"[openPaneWindow] close emit failed: {ex.Message}");
+                        HostLog.Instance.Warning($"[openPaneWindow] close emit failed: {ex.Message}");
                     }
                 }
                 return WindowClosingResult.Close;
@@ -168,7 +168,7 @@ public static partial class RpcDispatcher
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[tabMove] notify source failed: {ex.Message}");
+            HostLog.Instance.Warning($"[tabMove] notify source failed: {ex.Message}");
         }
         return NullElement;
     }
@@ -205,7 +205,7 @@ public static partial class RpcDispatcher
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[paneMove] notify source failed: {ex.Message}");
+            HostLog.Instance.Warning($"[paneMove] notify source failed: {ex.Message}");
         }
         return NullElement;
     }
@@ -231,7 +231,7 @@ public static partial class RpcDispatcher
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[updatePaneWindowBrowserState] notify failed: {ex.Message}");
+            HostLog.Instance.Warning($"[updatePaneWindowBrowserState] notify failed: {ex.Message}");
         }
         return NullElement;
     }
@@ -259,7 +259,7 @@ public static partial class RpcDispatcher
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[updatePaneWindowTabs] notify failed: {ex.Message}");
+            HostLog.Instance.Warning($"[updatePaneWindowTabs] notify failed: {ex.Message}");
         }
         return NullElement;
     }
@@ -284,7 +284,7 @@ public static partial class RpcDispatcher
             try { window.Close(); }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[closeSelf] failed: {ex.Message}");
+                HostLog.Instance.Warning($"[closeSelf] failed: {ex.Message}");
             }
         });
         return NullElement;
@@ -308,7 +308,7 @@ public static partial class RpcDispatcher
                     try { window.Close(); }
                     catch (Exception ex)
                     {
-                        Console.Error.WriteLine($"[openPaneWindow] close failed: {ex.Message}");
+                        HostLog.Instance.Warning($"[openPaneWindow] close failed: {ex.Message}");
                     }
                 }
             }

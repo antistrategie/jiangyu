@@ -31,7 +31,7 @@ public class EnumerateSidecarTexturePathsTests : IDisposable
         File.WriteAllBytes(Path.Combine(texturesDir, "soldier_BaseMap.png"), []);
         File.WriteAllBytes(Path.Combine(texturesDir, "unrelated.png"), []);
 
-        var results = GlbMeshBundleCompiler.EnumerateSidecarTexturePaths(sourceFile, "soldier").ToList();
+        var results = GlbTextureExtractor.EnumerateSidecarTexturePaths(sourceFile, "soldier").ToList();
 
         Assert.Equal(2, results.Count);
         Assert.All(results, r => Assert.Contains("soldier", Path.GetFileName(r)));
@@ -51,7 +51,7 @@ public class EnumerateSidecarTexturePathsTests : IDisposable
         Directory.CreateDirectory(texture2dDir);
         File.WriteAllBytes(Path.Combine(texture2dDir, "soldier_MaskMap.png"), []);
 
-        var results = GlbMeshBundleCompiler.EnumerateSidecarTexturePaths(sourceFile, "soldier").ToList();
+        var results = GlbTextureExtractor.EnumerateSidecarTexturePaths(sourceFile, "soldier").ToList();
 
         Assert.Single(results);
         Assert.Contains("soldier_MaskMap.png", results[0]);
@@ -69,7 +69,7 @@ public class EnumerateSidecarTexturePathsTests : IDisposable
         File.WriteAllBytes(Path.Combine(texturesDir, "soldier_BaseMap.jpg"), []);
         File.WriteAllBytes(Path.Combine(texturesDir, "soldier_data.txt"), []);
 
-        var results = GlbMeshBundleCompiler.EnumerateSidecarTexturePaths(sourceFile, "soldier").ToList();
+        var results = GlbTextureExtractor.EnumerateSidecarTexturePaths(sourceFile, "soldier").ToList();
 
         Assert.Equal(2, results.Count);
         Assert.DoesNotContain(results, r => r.EndsWith(".txt"));
@@ -81,7 +81,7 @@ public class EnumerateSidecarTexturePathsTests : IDisposable
         var sourceFile = Path.Combine(_tempDir, "model.glb");
         File.WriteAllBytes(sourceFile, []);
 
-        var results = GlbMeshBundleCompiler.EnumerateSidecarTexturePaths(sourceFile, "soldier").ToList();
+        var results = GlbTextureExtractor.EnumerateSidecarTexturePaths(sourceFile, "soldier").ToList();
 
         Assert.Empty(results);
     }
@@ -98,7 +98,7 @@ public class EnumerateSidecarTexturePathsTests : IDisposable
         File.WriteAllBytes(Path.Combine(texturesDir, "soldier_BaseMap.png"), []);
         File.WriteAllBytes(Path.Combine(texturesDir, "soldier_MaskMap.png"), []);
 
-        var results = GlbMeshBundleCompiler.EnumerateSidecarTexturePaths(sourceFile, "soldier").ToList();
+        var results = GlbTextureExtractor.EnumerateSidecarTexturePaths(sourceFile, "soldier").ToList();
 
         Assert.Equal(3, results.Count);
         for (int i = 1; i < results.Count; i++)

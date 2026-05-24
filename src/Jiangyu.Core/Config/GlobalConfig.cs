@@ -14,9 +14,9 @@ public sealed class GlobalConfig
 
     /// <summary>
     /// Asset pipeline cache root. Contains:
-    ///   asset-index.json     — searchable asset catalogue (from 'assets index')
-    ///   index-manifest.json  — cache validity metadata
-    ///   template-index.json  — searchable template catalogue (from 'templates index')
+    ///   asset-index.json             — searchable asset catalogue (from 'assets index')
+    ///   asset-index-manifest.json    — asset cache validity metadata
+    ///   template-index.json          — searchable template catalogue (from 'templates index')
     ///   template-index-manifest.json — template cache validity metadata
     ///   exports/             — raw exported assets (from 'assets export')
     /// </summary>

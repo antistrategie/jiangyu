@@ -16,6 +16,22 @@ export interface AgentSessionMeta {
   configValues?: Record<string, unknown> | null;
 }
 
+export interface AgentRegistryFetchedNotification {
+  ok: boolean;
+  error?: string | null;
+  registry?: unknown;
+}
+
+export interface AgentSessionCreatedNotification {
+  ok: boolean;
+  error?: string | null;
+  sessionId?: string | null;
+  modes?: unknown;
+  configOptions?: unknown;
+  authRequired: boolean;
+  authMethods?: unknown;
+}
+
 export interface CompileStartedAck {
   started: boolean;
 }

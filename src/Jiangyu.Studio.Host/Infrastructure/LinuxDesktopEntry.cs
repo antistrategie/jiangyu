@@ -61,7 +61,7 @@ internal static class LinuxDesktopEntry
             // Non-fatal: worst case the user sees the default icon. Log and
             // continue — we don't want a missing/read-only home directory to
             // break launch.
-            Console.Error.WriteLine($"[LinuxDesktopEntry] failed to install entry: {ex.Message}");
+            HostLog.Instance.Warning($"[LinuxDesktopEntry] failed to install entry: {ex.Message}");
         }
     }
 

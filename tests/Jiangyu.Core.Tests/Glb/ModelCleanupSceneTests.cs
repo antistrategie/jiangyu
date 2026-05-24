@@ -140,15 +140,15 @@ public class ModelCleanupSceneTests : IDisposable
         var cleanModel = cleanScene.ToGltf2();
         Assert.Empty(cleanModel.LogicalSkins);
 
-        var recovered = AssetPipelineService.FindMissingSkinBindings(cleanModel);
+        var recovered = ModelExportService.FindMissingSkinBindings(cleanModel);
         Assert.NotEmpty(recovered);
-        var assignments = AssetPipelineService.CreateRecoveredSkinAssignments(cleanModel, recovered);
+        var assignments = ModelExportService.CreateRecoveredSkinAssignments(cleanModel, recovered);
         Assert.NotEmpty(assignments);
         Assert.NotEmpty(cleanModel.LogicalSkins);
 
         var gltfPath = Path.Combine(_tempDir, "recovered_skin_test.gltf");
         cleanModel.SaveGLTF(gltfPath);
-        AssetPipelineService.ApplyRecoveredSkinAssignmentsToGltf(gltfPath, assignments);
+        ModelExportService.ApplyRecoveredSkinAssignmentsToGltf(gltfPath, assignments);
 
         var root = JsonNode.Parse(File.ReadAllText(gltfPath))!.AsObject();
         Assert.True((root["skins"] as JsonArray)?.Count > 0);
@@ -181,7 +181,7 @@ public class ModelCleanupSceneTests : IDisposable
         var meshNodePath = RelativePath(cleanModel.LogicalNodes.Single(n => n.Mesh?.Name == "weighted_no_skin"));
         var sourceBindings = new[]
         {
-            new AssetPipelineService.SourceSkinBinding(
+            new ModelExportService.SourceSkinBinding(
                 "weighted_no_skin",
                 meshNodePath,
                 [
@@ -191,7 +191,7 @@ public class ModelCleanupSceneTests : IDisposable
                 ])
         };
 
-        var recovered = AssetPipelineService.FindMissingSkinBindings(cleanModel, sourceBindings);
+        var recovered = ModelExportService.FindMissingSkinBindings(cleanModel, sourceBindings);
         Assert.NotEmpty(recovered);
 
         var first = recovered[0];

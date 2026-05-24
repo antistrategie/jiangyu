@@ -94,17 +94,19 @@ public static partial class RpcDispatcher
                 var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
                 using var doc = JsonDocument.Parse(body);
-                SendNotification(window, "agentsRegistryFetched", new
+                SendNotification(window, "agentsRegistryFetched", new AgentRegistryFetchedNotification
                 {
-                    registry = doc.RootElement.Clone(),
+                    Ok = true,
+                    Registry = doc.RootElement.Clone(),
                 });
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[Agent] Registry fetch failed: {ex}");
-                SendNotification(window, "agentsRegistryFetched", new
+                HostLog.Instance.Warning($"[Agent] Registry fetch failed: {ex}");
+                SendNotification(window, "agentsRegistryFetched", new AgentRegistryFetchedNotification
                 {
-                    error = ex.Message,
+                    Ok = false,
+                    Error = ex.Message,
                 });
             }
         });
@@ -173,9 +175,9 @@ public static partial class RpcDispatcher
         {
             try
             {
-                Console.Error.WriteLine($"[Agent] Starting: {resolvedCommand} {string.Join(' ', resolvedArgs)}");
+                HostLog.Instance.Info($"[Agent] Starting: {resolvedCommand} {string.Join(' ', resolvedArgs)}");
                 var initResponse = await manager.StartAsync(resolvedCommand, resolvedArgs, handler).ConfigureAwait(false);
-                Console.Error.WriteLine($"[Agent] Initialised: {initResponse.AgentInfo?.Name} v{initResponse.AgentInfo?.Version}");
+                HostLog.Instance.Info($"[Agent] Initialised: {initResponse.AgentInfo?.Name} v{initResponse.AgentInfo?.Version}");
 
                 if (Volatile.Read(ref _agentStartGeneration) != generation)
                 {
@@ -183,7 +185,7 @@ public static partial class RpcDispatcher
                     // on the floor: tear down terminals, stop the subprocess,
                     // and stay quiet so the frontend's view of the newer
                     // agent isn't disturbed.
-                    Console.Error.WriteLine("[Agent] Start superseded; tearing down");
+                    HostLog.Instance.Warning("[Agent] Start superseded; tearing down");
                     handler.ReleaseAllTerminals();
                     manager.Stop();
                     return;
@@ -202,11 +204,11 @@ public static partial class RpcDispatcher
                     protocolVersion = initResponse.ProtocolVersion,
                     authMethods = initResponse.AuthMethods,
                 });
-                Console.Error.WriteLine("[Agent] agentStartResult notification sent");
+                HostLog.Instance.Info("[Agent] agentStartResult notification sent");
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[Agent] Start failed: {ex}");
+                HostLog.Instance.Warning($"[Agent] Start failed: {ex}");
                 manager.Stop();
                 // Don't surface the failure to the frontend if we've been
                 // superseded — the frontend already moved on to a different
@@ -267,32 +269,41 @@ public static partial class RpcDispatcher
                 // conversation history. Awaited so the user can't beat the
                 // priming with their first prompt.
                 await manager.PrimeContextAsync(Acp.AgentContext.Blurb).ConfigureAwait(false);
-                SendNotification(window, "agentSessionCreated", new
+                SendNotification(window, "agentSessionCreated", new AgentSessionCreatedNotification
                 {
-                    sessionId = response.SessionId,
-                    modes = response.Modes,
-                    configOptions = response.ConfigOptions,
+                    Ok = true,
+                    SessionId = response.SessionId,
+                    Modes = response.Modes is { } modes
+                        ? JsonSerializer.SerializeToElement(modes)
+                        : null,
+                    ConfigOptions = response.ConfigOptions is { } opts
+                        ? JsonSerializer.SerializeToElement(opts)
+                        : null,
                 });
             }
             catch (AcpException ex) when (ex.ErrorCode == AcpAuthRequiredCode)
             {
                 // Re-surface the agent's auth methods so the panel can
                 // render a sign-in card without re-fetching them. The
-                // initialize response is the authoritative source —
-                // session/new auth_required errors don't carry the
-                // method list themselves.
-                SendNotification(window, "agentSessionCreated", new
+                // initialize response is the authoritative source for the
+                // method list: session/new auth_required errors don't
+                // carry it themselves.
+                SendNotification(window, "agentSessionCreated", new AgentSessionCreatedNotification
                 {
-                    error = ex.Message,
-                    authRequired = true,
-                    authMethods = _agentStartLastResponse?.AuthMethods,
+                    Ok = false,
+                    Error = ex.Message,
+                    AuthRequired = true,
+                    AuthMethods = _agentStartLastResponse?.AuthMethods is { } methods
+                        ? JsonSerializer.SerializeToElement(methods)
+                        : null,
                 });
             }
             catch (Exception ex)
             {
-                SendNotification(window, "agentSessionCreated", new
+                SendNotification(window, "agentSessionCreated", new AgentSessionCreatedNotification
                 {
-                    error = ex.Message,
+                    Ok = false,
+                    Error = ex.Message,
                 });
             }
         });
@@ -329,13 +340,13 @@ public static partial class RpcDispatcher
         if (projectRoot is not null)
         {
             try { AgentSessionsStore.SetConfigValue(projectRoot, sessionId, configId, value); }
-            catch (Exception ex) { Console.Error.WriteLine($"[Sessions] persist configValue: {ex.Message}"); }
+            catch (Exception ex) { HostLog.Instance.Warning($"[Sessions] persist configValue: {ex.Message}"); }
         }
 
         _ = Task.Run(async () =>
         {
             try { await manager.SetConfigOptionAsync(sessionId, configId, value).ConfigureAwait(false); }
-            catch (Exception ex) { Console.Error.WriteLine($"[Agent] setConfigOption failed: {ex.Message}"); }
+            catch (Exception ex) { HostLog.Instance.Warning($"[Agent] setConfigOption failed: {ex.Message}"); }
         });
         return JsonSerializer.SerializeToElement(new { accepted = true });
     }
@@ -358,13 +369,13 @@ public static partial class RpcDispatcher
         if (projectRoot is not null)
         {
             try { AgentSessionsStore.SetMode(projectRoot, sessionId, modeId); }
-            catch (Exception ex) { Console.Error.WriteLine($"[Sessions] persist modeId: {ex.Message}"); }
+            catch (Exception ex) { HostLog.Instance.Warning($"[Sessions] persist modeId: {ex.Message}"); }
         }
 
         _ = Task.Run(async () =>
         {
             try { await manager.SetSessionModeAsync(sessionId, modeId).ConfigureAwait(false); }
-            catch (Exception ex) { Console.Error.WriteLine($"[Agent] setSessionMode failed: {ex.Message}"); }
+            catch (Exception ex) { HostLog.Instance.Warning($"[Agent] setSessionMode failed: {ex.Message}"); }
         });
         return JsonSerializer.SerializeToElement(new { accepted = true });
     }
@@ -413,7 +424,7 @@ public static partial class RpcDispatcher
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[Sessions] Failed to bump session: {ex.Message}");
+                HostLog.Instance.Warning($"[Sessions] Failed to bump session: {ex.Message}");
             }
         }
 
@@ -524,14 +535,14 @@ public static partial class RpcDispatcher
                     if (meta.CurrentModeId is { } savedMode)
                     {
                         try { await manager.SetSessionModeAsync(sessionId, savedMode).ConfigureAwait(false); }
-                        catch (Exception ex) { Console.Error.WriteLine($"[Sessions] replay mode: {ex.Message}"); }
+                        catch (Exception ex) { HostLog.Instance.Warning($"[Sessions] replay mode: {ex.Message}"); }
                     }
                     if (meta.ConfigValues is { } values)
                     {
                         foreach (var (configId, value) in values)
                         {
                             try { await manager.SetConfigOptionAsync(sessionId, configId, value).ConfigureAwait(false); }
-                            catch (Exception ex) { Console.Error.WriteLine($"[Sessions] replay configValue {configId}: {ex.Message}"); }
+                            catch (Exception ex) { HostLog.Instance.Warning($"[Sessions] replay configValue {configId}: {ex.Message}"); }
                         }
                     }
                 }
@@ -550,7 +561,7 @@ public static partial class RpcDispatcher
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[Agent] Resume failed: {ex}");
+                HostLog.Instance.Warning($"[Agent] Resume failed: {ex}");
                 SendNotification(window, "agentSessionResumed", new
                 {
                     error = ex.Message,
@@ -582,7 +593,7 @@ public static partial class RpcDispatcher
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[Agent] authenticate failed: {ex}");
+                HostLog.Instance.Warning($"[Agent] authenticate failed: {ex}");
                 SendNotification(window, "agentAuthenticated", new
                 {
                     methodId,

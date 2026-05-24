@@ -189,7 +189,7 @@ internal sealed class AcpClientHandler : IAcpClientHandler
             catch (Exception ex)
             {
                 state.MarkCaptureFailed();
-                Console.Error.WriteLine($"[Acp] terminal {terminalId} capture failed: {ex.Message}");
+                HostLog.Instance.Warning($"[Acp] terminal {terminalId} capture failed: {ex.Message}");
             }
         }, ct);
 
@@ -298,7 +298,7 @@ internal sealed class AcpClientHandler : IAcpClientHandler
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"[Sessions] Failed to persist title: {ex.Message}");
+                    HostLog.Instance.Warning($"[Sessions] Failed to persist title: {ex.Message}");
                 }
             }
         }

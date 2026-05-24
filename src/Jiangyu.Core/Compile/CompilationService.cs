@@ -9,6 +9,7 @@ using Jiangyu.Core.Models;
 using Jiangyu.Core.Templates;
 using Jiangyu.Core.Unity;
 using Jiangyu.Shared.Bundles;
+using Jiangyu.Shared.Replacements;
 using Jiangyu.Shared.Templates;
 using SharpGLTF.Schema2;
 
@@ -52,11 +53,10 @@ public sealed class CompilationResult
 /// Decides between the GLB mesh pipeline and the FBX/Unity pipeline,
 /// invokes the appropriate compiler, and copies outputs.
 /// </summary>
-public sealed partial class CompilationService(ILogSink log, IProgressSink progress)
+public sealed class CompilationService(ILogSink log, IProgressSink progress)
 {
     private const string AssetIndexFileName = "asset-index.json";
     private const string BindPoseReferenceManifestFileName = "reference-manifest.json";
-    private const string MeshDiagnosticsEnvVar = "JIANGYU_MESH_DISCOVERY_DIAGNOSTICS";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private readonly ILogSink _log = log;
     private readonly IProgressSink _progress = progress;
@@ -140,25 +140,25 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
         // its rip declared in importedPrefabs. Catches the silent-pink-
         // material failure where a contributor bakes against a vanilla rip
         // but forgets to add it to the manifest.
-        var importValidationError = ValidateImportedPrefabReferences(projectDir, manifest);
+        var importValidationError = ImportedPrefabValidator.Validate(projectDir, manifest);
         if (importValidationError != null)
             return Fail(importValidationError);
 
         _log.Info($"  [timing] Setup/validation: {phaseSw.Elapsed.TotalSeconds:F1}s");
         phaseSw.Restart();
         var replacementEntries = DiscoverReplacementMeshEntries(projectDir, replacementRoot, config.GetCachePath(), gameDataPath, assetPipeline);
-        var replacementTextures = DiscoverReplacementTextureEntries(projectDir, replacementRoot, config.GetCachePath(), _log);
-        var spriteDiscovery = DiscoverReplacementSpriteEntries(projectDir, replacementRoot, config.GetCachePath(), _log);
+        var replacementTextures = ReplacementDiscovery.DiscoverReplacementTextureEntries(replacementRoot, config.GetCachePath(), _log);
+        var spriteDiscovery = ReplacementDiscovery.DiscoverReplacementSpriteEntries(replacementRoot, config.GetCachePath(), _log);
         var replacementSprites = spriteDiscovery.UniqueSprites;
-        var replacementAudio = DiscoverReplacementAudioEntries(projectDir, replacementRoot, config.GetCachePath(), _log);
+        var replacementAudio = ReplacementDiscovery.DiscoverReplacementAudioEntries(replacementRoot, config.GetCachePath(), _log);
 
         // Asset additions: files under assets/additions/<category>/ are
         // bundled with their relative path (extension stripped) as the
         // Unity Object name, so a template's asset="item/fancy-pen-icon"
         // resolves to the bundle entry of the same name.
-        replacementTextures.AddRange(DiscoverAdditionTextureEntries(additionRoot));
-        replacementSprites.AddRange(DiscoverAdditionSpriteEntries(additionRoot));
-        replacementAudio.AddRange(DiscoverAdditionAudioEntries(additionRoot));
+        replacementTextures.AddRange(ReplacementDiscovery.DiscoverAdditionTextureEntries(additionRoot));
+        replacementSprites.AddRange(ReplacementDiscovery.DiscoverAdditionSpriteEntries(additionRoot));
+        replacementAudio.AddRange(ReplacementDiscovery.DiscoverAdditionAudioEntries(additionRoot));
 
         // Atlas compositing: for atlas-backed sprite replacements, composite the modder's
         // images into a copy of the original atlas and emit as Texture2D replacements.
@@ -277,26 +277,27 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
                     ? new GameAssetIndex(loadedAssetIndex)
                     : null;
 
-                // The HashableIdFieldRegistry needs a SoundBank-name→bankId
-                // resolver to handle string-keyed Stem.ID.bankId fields. The
-                // names and ids come from the asset index's per-SoundBank
-                // BankId metadata, populated by the indexer's pre-pass. If
-                // the index is unavailable we leave the resolver
-                // uninstalled; modders writing string-keyed bankIds get a
-                // clean error instead of a stale hardcoded answer.
+                // Build a SoundBank-name→bankId resolver from the asset index
+                // for string-keyed Stem.ID.bankId fields. The names and ids
+                // come from the asset index's per-SoundBank BankId metadata,
+                // populated by the indexer's pre-pass. When the index is
+                // unavailable we pass null; modders writing string-keyed
+                // bankIds get a clean error instead of a stale hardcoded
+                // answer.
                 //
                 // Mod-defined SoundBank clones are added too: their bankId
                 // is FNV-1a(cloneId), the same hash the loader will apply
                 // when patching the clone. Lets cross-references inside the
                 // same compile unit (a SAY node's Sound.bankId pointing at
                 // a freshly-cloned SoundBank) resolve at validate time.
+                IBankIdResolver? bankIdResolver;
                 {
                     var bankPairs = new List<KeyValuePair<string, int>>();
                     if (loadedAssetIndex?.Assets is { } indexedAssets)
                     {
                         bankPairs.AddRange(indexedAssets
-                            .Where(a => a.Name != null && a.BankId.HasValue)
-                            .Select(a => new KeyValuePair<string, int>(a.Name!, a.BankId!.Value)));
+                            .Where(a => a.Name != null && a.SoundBank?.BankId is not null)
+                            .Select(a => new KeyValuePair<string, int>(a.Name!, a.SoundBank!.BankId!.Value)));
                     }
                     if (templateCloneResult.Clones is { } clones)
                     {
@@ -311,7 +312,7 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
                             }
                         }
                     }
-                    HashableIdFieldRegistry.InstallBankIdResolver(new InMemoryBankIdResolver(bankPairs));
+                    bankIdResolver = new InMemoryBankIdResolver(bankPairs);
                 }
 
                 // Install the indexed tagged-discriminator allowlist so
@@ -343,7 +344,8 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
                     catalog,
                     _log,
                     additionsCatalog,
-                    gameAssetIndex);
+                    gameAssetIndex,
+                    bankIdResolver: bankIdResolver);
                 if (catalogErrors > 0 || additionsCatalog.ConflictingNames.Count > 0)
                     return Fail($"Template validation failed with {catalogErrors + additionsCatalog.ConflictingNames.Count} error(s). See errors above.");
 
@@ -459,8 +461,6 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
         return new CompilationResult { Success = true, BundlePath = destBundle };
     }
 
-    public static string BuildModelReplacementAlias(string targetName, long pathId)
-        => $"{targetName}--{pathId}";
 
     /// <summary>
     /// Invokes Unity batchmode against the modder's <c>unity/</c> project to
@@ -484,109 +484,25 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
         _log.Info($"  Building {prefabFiles.Length} prefab(s) from unity/Assets/Prefabs/...");
 
         var logFile = Path.Combine(unityProjectDir, "build.log");
-        var arguments = string.Join(" ",
-            "-batchmode",
-            "-nographics",
-            "-quit",
-            "-buildTarget StandaloneWindows64",
-            $"-projectPath \"{unityProjectDir}\"",
-            "-executeMethod Jiangyu.Mod.BuildBundles.BuildAll",
-            $"-logFile \"{logFile}\"");
-
-        using var process = new System.Diagnostics.Process
+        var result = await UnityBundleInvoker.InvokeAsync(new UnityBundleInvocation
         {
-            StartInfo = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = unityEditorPath,
-                Arguments = arguments,
-                UseShellExecute = false,
-            }
-        };
+            UnityEditor = unityEditorPath,
+            ProjectPath = unityProjectDir,
+            ExecuteMethod = "Jiangyu.Mod.BuildBundles.BuildAll",
+            LogFile = logFile,
+        });
 
-        process.Start();
-        await process.WaitForExitAsync();
-
-        if (process.ExitCode != 0)
+        if (!result.Success)
         {
-            _log.Error($"Unity exited with code {process.ExitCode} building unity/ prefab bundles.");
+            _log.Error($"Unity exited with code {result.ExitCode} building unity/ prefab bundles.");
             _log.Error($"  Log: {logFile}");
-            if (File.Exists(logFile))
-            {
-                var lines = await File.ReadAllLinesAsync(logFile);
-                foreach (var line in lines.Skip(Math.Max(0, lines.Length - 20)))
-                    _log.Error($"  {line}");
-            }
+            foreach (var line in result.LogTailLines)
+                _log.Error($"  {line}");
             throw new InvalidOperationException("Unity batchmode build for unity/ prefab bundles failed.");
         }
 
         var builtBundles = Directory.EnumerateFiles(unityBuildOutputDir, "*.bundle").Count();
         _log.Info($"  Unity built {builtBundles} prefab bundle(s) into {unityBuildOutputDir}");
-    }
-
-    public static string BuildReplacementAlias(string targetName, long? pathId)
-        => pathId.HasValue ? $"{targetName}--{pathId.Value}" : targetName;
-
-    public static string BuildModelReplacementRelativePath(string targetName, long pathId, string fileName = "model.gltf")
-        => Path.Combine("assets", "replacements", "models", BuildModelReplacementAlias(targetName, pathId), fileName)
-            .Replace(Path.DirectorySeparatorChar, '/');
-
-    public static string BuildModelReplacementRelativePath(string targetName, long? pathId, string fileName = "model.gltf")
-        => Path.Combine("assets", "replacements", "models", BuildReplacementAlias(targetName, pathId), fileName)
-            .Replace(Path.DirectorySeparatorChar, '/');
-
-    public static string BuildTextureReplacementRelativePath(string targetName, string extension = ".png")
-        => Path.Combine("assets", "replacements", "textures", $"{targetName}{NormalizeReplacementExtension(extension)}")
-            .Replace(Path.DirectorySeparatorChar, '/');
-
-    public static string BuildSpriteReplacementRelativePath(string targetName, string extension = ".png")
-        => Path.Combine("assets", "replacements", "sprites", $"{targetName}{NormalizeReplacementExtension(extension)}")
-            .Replace(Path.DirectorySeparatorChar, '/');
-
-    public static string BuildAudioReplacementRelativePath(string targetName, string extension = ".wav")
-        => Path.Combine("assets", "replacements", "audio", $"{targetName}{NormalizeReplacementExtension(extension)}")
-            .Replace(Path.DirectorySeparatorChar, '/');
-
-    /// <summary>
-    /// Parses a replacement alias into a target name and optional pathId.
-    /// Accepts both <c>name--pathId</c> and bare <c>name</c> forms.
-    /// Only the <c>--&lt;digits&gt;</c> suffix is treated as a pathId; if the
-    /// text after <c>--</c> is non-numeric the whole alias is a bare name.
-    /// </summary>
-    public static bool TryParseReplacementAlias(string alias, out string targetName, out long? pathId)
-    {
-        targetName = string.Empty;
-        pathId = null;
-
-        if (string.IsNullOrWhiteSpace(alias))
-            return false;
-
-        var separatorIndex = alias.LastIndexOf("--", StringComparison.Ordinal);
-        if (separatorIndex > 0 && separatorIndex + 2 < alias.Length &&
-            long.TryParse(alias[(separatorIndex + 2)..], out var parsed))
-        {
-            targetName = alias[..separatorIndex];
-            pathId = parsed;
-            return true;
-        }
-
-        // Bare name — no pathId suffix, or non-numeric suffix after --.
-        targetName = alias;
-        return true;
-    }
-
-    public static bool TryParseModelReplacementAlias(string alias, out string targetName, out long pathId)
-    {
-        var result = TryParseReplacementAlias(alias, out targetName, out var nullablePathId);
-        pathId = nullablePathId ?? 0;
-        return result && nullablePathId.HasValue;
-    }
-
-    private static string NormalizeReplacementExtension(string extension)
-    {
-        if (string.IsNullOrWhiteSpace(extension))
-            return string.Empty;
-
-        return extension.StartsWith('.') ? extension : $".{extension}";
     }
 
     internal static bool HasAnyAssetSources(string replacementRoot, string additionRoot)
@@ -629,7 +545,7 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
         foreach (var targetDirectory in Directory.GetDirectories(modelsRoot))
         {
             var targetAlias = Path.GetFileName(targetDirectory);
-            if (!TryParseReplacementAlias(targetAlias, out var targetName, out var targetPathId))
+            if (!ReplacementPaths.TryParseReplacementAlias(targetAlias, out var targetName, out var targetPathId))
             {
                 throw new InvalidOperationException(
                     $"Replacement target directory '{targetDirectory}' has an invalid name.");
@@ -650,12 +566,12 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
 
             var file = modelFiles[0];
             var bindPoseReferencePath = EnsureBindPoseReferenceExport(projectDir, target, assetPipeline);
-            var providedMeshCandidates = DiscoverReplacementMeshPathCandidates(file);
+            var providedMeshCandidates = MeshRendererPathResolver.DiscoverReplacementMeshPathCandidates(file);
             var expectedTargets = AssetInspector.GetSkinnedMeshTargetsForIndexedObject(gameDataPath, target.Collection, target.PathId);
             if (expectedTargets.Count == 0)
                 throw new InvalidOperationException(
                     $"Replacement target '{targetAlias}' [{target.CanonicalPath ?? $"{target.Collection}:{target.PathId}"}] has no skinned mesh renderer targets to replace.");
-            var emitMeshDiscoveryDiagnostics = IsMeshDiscoveryDiagnosticsEnabled();
+            var emitMeshDiscoveryDiagnostics = MeshRendererPathResolver.IsDiagnosticsEnabled();
             var ambiguousRuntimeMeshNames = GetAmbiguousRuntimeMeshNames(
                 index,
                 [.. expectedTargets
@@ -663,33 +579,33 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
                     .Where(name => !string.IsNullOrWhiteSpace(name))
                     .Distinct(StringComparer.Ordinal)]);
 
-            var resolvedTargets = ResolveReplacementRendererTargets(expectedTargets, providedMeshCandidates, out var missingTargetPaths);
+            var resolvedTargets = MeshRendererPathResolver.ResolveReplacementRendererTargets(expectedTargets, providedMeshCandidates, out var missingTargetPaths);
             if (resolvedTargets.Count == 0)
             {
                 throw new InvalidOperationException(
                     $"Replacement model '{Path.GetRelativePath(projectDir, file)}' does not contain any renderer paths that match target '{targetAlias}'. " +
-                    $"Expected at least one of: {FormatNameListPreview(expectedTargets.Select(x => x.RendererPath), 16)}");
+                    $"Expected at least one of: {MeshRendererPathResolver.FormatNameListPreview(expectedTargets.Select(x => x.RendererPath), 16)}");
             }
 
-            ValidateReplacementMeshPrimitiveContract(file, bindPoseReferencePath, resolvedTargets);
+            MeshRendererPathResolver.ValidateReplacementMeshPrimitiveContract(file, bindPoseReferencePath, resolvedTargets);
 
             if (emitMeshDiscoveryDiagnostics && missingTargetPaths.Length > 0)
             {
                 _log.Warning(
                     $"Replacement target '{targetAlias}' has renderer paths with no replacement in '{Path.GetRelativePath(projectDir, file)}'. " +
-                    $"Original game meshes will be kept for: {FormatNameListPreview(missingTargetPaths, 24)}");
+                    $"Original game meshes will be kept for: {MeshRendererPathResolver.FormatNameListPreview(missingTargetPaths, 24)}");
             }
 
             if (emitMeshDiscoveryDiagnostics && ambiguousRuntimeMeshNames.Count > 0)
             {
                 _log.Warning(
-                    $"Replacement target '{targetAlias}' includes runtime-ambiguous mesh name(s): {FormatNameListPreview(ambiguousRuntimeMeshNames, 24)}. " +
+                    $"Replacement target '{targetAlias}' includes runtime-ambiguous mesh name(s): {MeshRendererPathResolver.FormatNameListPreview(ambiguousRuntimeMeshNames, 24)}. " +
                     "Jiangyu will skip mesh-contract injection for those meshes and rely on runtime live-skeleton binding.");
             }
 
             foreach (var resolved in resolvedTargets)
             {
-                var bundleMeshName = BuildBundleMeshName(resolved.TargetRendererPath, resolved.TargetMeshName);
+                var bundleMeshName = MeshRendererPathResolver.BuildBundleMeshName(resolved.TargetRendererPath, resolved.TargetMeshName);
                 entries.Add(new GlbMeshBundleCompiler.MeshSourceEntry
                 {
                     SourceFilePath = file,
@@ -733,289 +649,7 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
             .ThenBy(entry => entry.BundleMeshName, StringComparer.Ordinal)];
     }
 
-    private static List<GlbMeshBundleCompiler.CompiledTexture> DiscoverReplacementTextureEntries(string projectDir, string replacementsRoot, string cachePath, ILogSink log)
-    {
-        var texturesRoot = Path.Combine(replacementsRoot, "textures");
-        if (!Directory.Exists(texturesRoot))
-            return [];
-
-        var index = LoadAssetIndex(cachePath)
-            ?? throw new InvalidOperationException(
-                $"Asset index not found or unreadable at '{Path.Combine(cachePath, AssetIndexFileName)}'. Run 'jiangyu assets index' first.");
-
-        var files = CollectAssetFiles(texturesRoot, "*.png", "*.jpg", "*.jpeg");
-        if (files.Length == 0)
-            return [];
-
-        var entries = new List<GlbMeshBundleCompiler.CompiledTexture>();
-        foreach (var file in files)
-        {
-            var targetName = Path.GetFileNameWithoutExtension(file);
-            var target = ResolveReplacementTextureTarget(index, targetName, targetName, targetPathId: null, log);
-
-            entries.Add(new GlbMeshBundleCompiler.CompiledTexture
-            {
-                Name = target.Name,
-                Content = File.ReadAllBytes(file),
-                Linear = GlbMeshBundleCompiler.IsLinearTextureName(target.Name),
-            });
-        }
-
-        var duplicateTargets = entries
-            .GroupBy(entry => entry.Name, StringComparer.Ordinal)
-            .Where(group => group.Count() > 1)
-            .Select(group => group.Key)
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToArray();
-
-        if (duplicateTargets.Length > 0)
-        {
-            throw new InvalidOperationException(
-                $"Multiple replacement textures resolve to the same target name under assets/replacements/textures: {string.Join(", ", duplicateTargets)}");
-        }
-
-        return [.. entries.OrderBy(entry => entry.Name, StringComparer.Ordinal)];
-    }
-
-    /// <summary>Result of sprite discovery: unique-backed sprites go through the normal pipeline,
-    /// atlas-backed sprites are grouped for compile-time compositing.</summary>
-    internal sealed class SpriteDiscoveryResult
-    {
-        public required List<GlbMeshBundleCompiler.ImportedSpriteAsset> UniqueSprites { get; init; }
-        public required List<AtlasCompositor.AtlasGroup> AtlasGroups { get; init; }
-    }
-
-    private static SpriteDiscoveryResult DiscoverReplacementSpriteEntries(string projectDir, string replacementsRoot, string cachePath, ILogSink log)
-    {
-        var emptyResult = new SpriteDiscoveryResult
-        {
-            UniqueSprites = [],
-            AtlasGroups = [],
-        };
-
-        var spritesRoot = Path.Combine(replacementsRoot, "sprites");
-        if (!Directory.Exists(spritesRoot))
-            return emptyResult;
-
-        var index = LoadAssetIndex(cachePath)
-            ?? throw new InvalidOperationException(
-                $"Asset index not found or unreadable at '{Path.Combine(cachePath, AssetIndexFileName)}'. Run 'jiangyu assets index' first.");
-
-        var files = CollectAssetFiles(spritesRoot, "*.png", "*.jpg", "*.jpeg");
-        if (files.Length == 0)
-            return emptyResult;
-
-        // Check for duplicate targets first
-        var targetNames = new List<(string Name, string File)>();
-        var uniqueEntries = new List<GlbMeshBundleCompiler.ImportedSpriteAsset>();
-        var atlasReplacements = new Dictionary<(long PathId, string Collection), List<(ReplacementSpriteTarget Target, SpriteBackingClassification Classification, string File)>>();
-
-        foreach (var file in files)
-        {
-            var targetName = Path.GetFileNameWithoutExtension(file);
-            var (target, classification) = ResolveAndClassifySpriteTarget(index, targetName, targetName, targetPathId: null, log);
-            targetNames.Add((target.Name, file));
-
-            if (classification.IsAtlasBacked)
-            {
-                var key = (classification.BackingTexturePathId, classification.BackingTextureCollection ?? string.Empty);
-                if (!atlasReplacements.TryGetValue(key, out var list))
-                {
-                    list = [];
-                    atlasReplacements[key] = list;
-                }
-                list.Add((target, classification, file));
-            }
-            else
-            {
-                uniqueEntries.Add(new GlbMeshBundleCompiler.ImportedSpriteAsset
-                {
-                    Name = target.Name,
-                    SourceFilePath = file,
-                    Extension = Path.GetExtension(file),
-                    StagingName = $"sprite_source__{target.Name}",
-                });
-            }
-        }
-
-        var duplicateTargets = targetNames
-            .GroupBy(t => t.Name, StringComparer.Ordinal)
-            .Where(group => group.Count() > 1)
-            .Select(group => group.Key)
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToArray();
-
-        if (duplicateTargets.Length > 0)
-        {
-            throw new InvalidOperationException(
-                $"Multiple replacement sprite files resolve to the same target name under assets/replacements/sprites: {string.Join(", ", duplicateTargets)}");
-        }
-
-        // Build atlas groups
-        var atlasGroups = atlasReplacements
-            .Select(kvp =>
-            {
-                var first = kvp.Value[0].Classification;
-                return new AtlasCompositor.AtlasGroup
-                {
-                    AtlasName = first.BackingTextureName ?? $"pathId={first.BackingTexturePathId}",
-                    AtlasPathId = first.BackingTexturePathId,
-                    AtlasCollection = first.BackingTextureCollection ?? string.Empty,
-                    Replacements = kvp.Value
-                        .OrderBy(r => r.Target.Name, StringComparer.Ordinal)
-                        .Select(r => new AtlasCompositor.AtlasSpriteReplacement
-                        {
-                            SpriteName = r.Target.Name,
-                            SourceFilePath = r.File,
-                            TextureRectX = r.Classification.TextureRectX,
-                            TextureRectY = r.Classification.TextureRectY,
-                            TextureRectWidth = r.Classification.TextureRectWidth,
-                            TextureRectHeight = r.Classification.TextureRectHeight,
-                            PackingRotation = r.Classification.PackingRotation,
-                        })
-                        .ToList(),
-                };
-            })
-            .OrderBy(g => g.AtlasName, StringComparer.Ordinal)
-            .ToList();
-
-        return new SpriteDiscoveryResult
-        {
-            UniqueSprites = [.. uniqueEntries.OrderBy(entry => entry.Name, StringComparer.Ordinal)],
-            AtlasGroups = atlasGroups,
-        };
-    }
-
-    private static List<GlbMeshBundleCompiler.ImportedAudioAsset> DiscoverReplacementAudioEntries(string projectDir, string replacementsRoot, string cachePath, ILogSink log)
-    {
-        var audioRoot = Path.Combine(replacementsRoot, "audio");
-        if (!Directory.Exists(audioRoot))
-            return [];
-
-        var index = LoadAssetIndex(cachePath)
-            ?? throw new InvalidOperationException(
-                $"Asset index not found or unreadable at '{Path.Combine(cachePath, AssetIndexFileName)}'. Run 'jiangyu assets index' first.");
-
-        var files = CollectAssetFiles(audioRoot, "*.wav", "*.ogg", "*.mp3");
-        if (files.Length == 0)
-            return [];
-
-        var entries = new List<GlbMeshBundleCompiler.ImportedAudioAsset>();
-        foreach (var file in files)
-        {
-            var targetName = Path.GetFileNameWithoutExtension(file);
-            var target = ResolveAndValidateAudioTarget(index, targetName, targetName, targetPathId: null, file, log);
-
-            entries.Add(new GlbMeshBundleCompiler.ImportedAudioAsset
-            {
-                Name = target.Name,
-                SourceFilePath = file,
-                Extension = Path.GetExtension(file),
-            });
-        }
-
-        var duplicateTargets = entries
-            .GroupBy(entry => entry.Name, StringComparer.Ordinal)
-            .Where(group => group.Count() > 1)
-            .Select(group => group.Key)
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToArray();
-
-        if (duplicateTargets.Length > 0)
-        {
-            throw new InvalidOperationException(
-                $"Multiple replacement audio files resolve to the same target name under assets/replacements/audio: {string.Join(", ", duplicateTargets)}");
-        }
-
-        return [.. entries.OrderBy(entry => entry.Name, StringComparer.Ordinal)];
-    }
-
-    /// <summary>
-    /// Walk <c>assets/additions/&lt;category&gt;/</c> recursively and produce
-    /// one bundle entry per file. The bundle name is the relative path with
-    /// the extension stripped and slashes flattened to <c>__</c> (see
-    /// <see cref="Jiangyu.Shared.Replacements.AssetCategory.ToBundleAssetName"/>);
-    /// the runtime resolver applies the same translation to the modder's
-    /// KDL reference so a slashed authoring form matches a flat bundle key.
-    /// Additions don't consult the asset index because the asset name is
-    /// the modder's choice rather than a target lookup.
-    /// </summary>
-    private static IEnumerable<GlbMeshBundleCompiler.CompiledTexture> DiscoverAdditionTextureEntries(string additionRoot)
-    {
-        var dir = Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Textures);
-        if (!Directory.Exists(dir))
-            return [];
-
-        return CollectAdditionFiles(dir, Jiangyu.Shared.Replacements.AssetCategory.Textures)
-            .Select(file => new GlbMeshBundleCompiler.CompiledTexture
-            {
-                Name = Jiangyu.Shared.Replacements.AssetCategory.ToBundleAssetName(LogicalAdditionName(dir, file)),
-                Content = File.ReadAllBytes(file),
-                Linear = false,
-            })
-            .OrderBy(entry => entry.Name, StringComparer.Ordinal);
-    }
-
-    private static IEnumerable<GlbMeshBundleCompiler.ImportedSpriteAsset> DiscoverAdditionSpriteEntries(string additionRoot)
-    {
-        var dir = Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Sprites);
-        if (!Directory.Exists(dir))
-            return [];
-
-        return CollectAdditionFiles(dir, Jiangyu.Shared.Replacements.AssetCategory.Sprites)
-            .Select(file =>
-            {
-                var bundleName = Jiangyu.Shared.Replacements.AssetCategory.ToBundleAssetName(LogicalAdditionName(dir, file));
-                return new GlbMeshBundleCompiler.ImportedSpriteAsset
-                {
-                    Name = bundleName,
-                    SourceFilePath = file,
-                    Extension = Path.GetExtension(file),
-                    StagingName = $"sprite_source__{bundleName}",
-                    IsAddition = true,
-                };
-            })
-            .OrderBy(entry => entry.Name, StringComparer.Ordinal);
-    }
-
-    private static IEnumerable<GlbMeshBundleCompiler.ImportedAudioAsset> DiscoverAdditionAudioEntries(string additionRoot)
-    {
-        var dir = Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Audio);
-        if (!Directory.Exists(dir))
-            return [];
-
-        return CollectAdditionFiles(dir, Jiangyu.Shared.Replacements.AssetCategory.Audio)
-            .Select(file => new GlbMeshBundleCompiler.ImportedAudioAsset
-            {
-                Name = Jiangyu.Shared.Replacements.AssetCategory.ToBundleAssetName(LogicalAdditionName(dir, file)),
-                SourceFilePath = file,
-                Extension = Path.GetExtension(file),
-            })
-            .OrderBy(entry => entry.Name, StringComparer.Ordinal);
-    }
-
-    /// <summary>
-    /// Walk an additions category directory and collect every file whose
-    /// extension is in the category's shared allowlist. Routing through
-    /// <see cref="Jiangyu.Shared.Replacements.AssetCategory.AdditionExtensionsForCategory"/>
-    /// keeps the compile pipeline and the studio picker in lockstep so the
-    /// dropdown can never advertise a file the build wouldn't include.
-    /// </summary>
-    private static string[] CollectAdditionFiles(string directory, string category)
-    {
-        var extensions = Jiangyu.Shared.Replacements.AssetCategory.AdditionExtensionsForCategory(category);
-        if (extensions.Count == 0)
-            return [];
-        var globs = new string[extensions.Count];
-        for (var i = 0; i < extensions.Count; i++)
-            globs[i] = "*" + extensions[i];
-        return CollectAssetFiles(directory, globs);
-    }
-
-    private static string LogicalAdditionName(string categoryRoot, string filePath)
-        => Jiangyu.Shared.Replacements.AssetCategory.LogicalAdditionName(categoryRoot, filePath);
-
-    private static AssetIndex? LoadAssetIndex(string cachePath)
+    internal static AssetIndex? LoadAssetIndex(string cachePath)
     {
         var indexPath = Path.Combine(cachePath, AssetIndexFileName);
         if (!File.Exists(indexPath))
@@ -1214,29 +848,30 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
         if (targetEntry is null)
             return new SpriteBackingClassification { IsAtlasBacked = false };
 
-        if (targetEntry.SpriteBackingTexturePathId is null)
+        var spriteMeta = targetEntry.Sprite;
+        if (spriteMeta?.BackingTexturePathId is null)
         {
             throw new InvalidOperationException(
                 $"Replacement sprite target '{target.Alias}' is missing backing-texture information in the asset index. " +
                 "Rebuild the index with 'jiangyu assets index' so the compiler can verify sprite atlas membership. " +
-                "Sprite replacement now requires backing-texture identity for atlas compositing.");
+                "Sprite replacement requires backing-texture identity for atlas compositing.");
         }
 
-        if (targetEntry.SpriteTextureRectWidth is null || targetEntry.SpriteTextureRectHeight is null)
+        if (spriteMeta.TextureRectWidth is null || spriteMeta.TextureRectHeight is null)
         {
             throw new InvalidOperationException(
                 $"Replacement sprite target '{target.Alias}' is missing textureRect metadata in the asset index. " +
-                "Rebuild the index with 'jiangyu assets index' (the index format has been updated to include sprite atlas metadata).");
+                "Rebuild the index with 'jiangyu assets index' (the index format includes sprite atlas metadata).");
         }
 
-        var backingPathId = targetEntry.SpriteBackingTexturePathId.Value;
-        var backingCollection = targetEntry.SpriteBackingTextureCollection;
+        var backingPathId = spriteMeta.BackingTexturePathId.Value;
+        var backingCollection = spriteMeta.BackingTextureCollection;
 
         var coTenants = index.Assets?
             .Where(entry =>
                 string.Equals(entry.ClassName, "Sprite", StringComparison.Ordinal) &&
-                entry.SpriteBackingTexturePathId == backingPathId &&
-                string.Equals(entry.SpriteBackingTextureCollection, backingCollection, StringComparison.Ordinal) &&
+                entry.Sprite?.BackingTexturePathId == backingPathId &&
+                string.Equals(entry.Sprite?.BackingTextureCollection, backingCollection, StringComparison.Ordinal) &&
                 !(entry.PathId == target.PathId &&
                   string.Equals(entry.Collection, target.Collection, StringComparison.Ordinal)))
             .ToList()
@@ -1247,13 +882,13 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
             IsAtlasBacked = coTenants.Count > 0,
             BackingTexturePathId = backingPathId,
             BackingTextureCollection = backingCollection,
-            BackingTextureName = targetEntry.SpriteBackingTextureName,
+            BackingTextureName = spriteMeta.BackingTextureName,
             CoTenantCount = coTenants.Count,
-            TextureRectX = targetEntry.SpriteTextureRectX!.Value,
-            TextureRectY = targetEntry.SpriteTextureRectY!.Value,
-            TextureRectWidth = targetEntry.SpriteTextureRectWidth!.Value,
-            TextureRectHeight = targetEntry.SpriteTextureRectHeight!.Value,
-            PackingRotation = targetEntry.SpritePackingRotation ?? 0,
+            TextureRectX = spriteMeta.TextureRectX!.Value,
+            TextureRectY = spriteMeta.TextureRectY!.Value,
+            TextureRectWidth = spriteMeta.TextureRectWidth!.Value,
+            TextureRectHeight = spriteMeta.TextureRectHeight!.Value,
+            PackingRotation = spriteMeta.PackingRotation ?? 0,
         };
     }
 
@@ -1300,7 +935,8 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
             entry.PathId == target.PathId);
 
         if (targetEntry is null) return;
-        if (targetEntry.AudioFrequency is null || targetEntry.AudioChannels is null) return;
+        var audioMeta = targetEntry.Audio;
+        if (audioMeta?.Frequency is null || audioMeta.Channels is null) return;
 
         var ext = Path.GetExtension(filePath).ToLowerInvariant();
         if (ext != ".wav") return;
@@ -1308,12 +944,12 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
         if (!TryReadWavHeader(filePath, out var sourceFrequency, out var sourceChannels))
             return;
 
-        if (sourceFrequency == targetEntry.AudioFrequency.Value && sourceChannels == targetEntry.AudioChannels.Value)
+        if (sourceFrequency == audioMeta.Frequency.Value && sourceChannels == audioMeta.Channels.Value)
             return;
 
         throw new InvalidOperationException(
             $"Replacement audio target '{target.Alias}' has a WAV source at {sourceFrequency}Hz {sourceChannels}ch, " +
-            $"but the target AudioClip is {targetEntry.AudioFrequency.Value}Hz {targetEntry.AudioChannels.Value}ch. " +
+            $"but the target AudioClip is {audioMeta.Frequency.Value}Hz {audioMeta.Channels.Value}ch. " +
             "Unity would resample the mismatch at runtime, which pitch-shifts the sound. " +
             "Re-export the source at the target's rate and channel layout, or ship a format Jiangyu doesn't validate (OGG/MP3) if runtime resampling is acceptable.");
     }
@@ -1343,7 +979,7 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
 
         foreach (var provided in providedMeshNames)
         {
-            if (TryResolveTargetMeshNameFromProvided(provided, expectedSet, out var targetName))
+            if (MeshRendererPathResolver.TryResolveTargetMeshNameFromProvided(provided, expectedSet, out var targetName))
             {
                 candidatesByTarget[targetName].Add(provided);
                 continue;
@@ -1360,7 +996,7 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
                 continue;
 
             var selected = candidates
-                .OrderBy(candidate => GetResolvedMeshNameSortKey(candidate, targetName))
+                .OrderBy(candidate => MeshRendererPathResolver.GetResolvedMeshNameSortKey(candidate, targetName))
                 .ThenBy(candidate => candidate, StringComparer.Ordinal)
                 .First();
 
@@ -1375,274 +1011,6 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
         unexpectedMeshNames = [.. unresolved.OrderBy(name => name, StringComparer.Ordinal)];
         collapsedDuplicateMeshNames = [.. collapsedDuplicates.Distinct(StringComparer.Ordinal).OrderBy(name => name, StringComparer.Ordinal)];
         return resolved;
-    }
-
-    private static IReadOnlyList<ReplacementMeshPathCandidate> DiscoverReplacementMeshPathCandidates(string filePath)
-    {
-        var model = ModelRoot.Load(filePath);
-        var candidates = model.LogicalNodes
-            .Where(node => node.Mesh != null)
-            .SelectMany(node => BuildPathCandidates(node, filePath))
-            .Distinct()
-            .OrderBy(candidate => candidate.PathSelector, StringComparer.Ordinal)
-            .ToArray();
-
-        if (candidates.Length == 0)
-        {
-            throw new InvalidOperationException(
-                $"No mesh nodes were found in replacement file '{filePath}'.");
-        }
-
-        return candidates;
-    }
-
-    private static IReadOnlyList<ResolvedReplacementRendererTarget> ResolveReplacementRendererTargets(
-        IReadOnlyList<SkinnedMeshTarget> expectedTargets,
-        IReadOnlyList<ReplacementMeshPathCandidate> providedCandidates,
-        out string[] missingTargetPaths)
-    {
-        var byNormalisedPath = providedCandidates
-            .GroupBy(candidate => candidate.MatchPath, StringComparer.Ordinal)
-            .ToDictionary(
-                group => group.Key,
-                group => group
-                    .Select(candidate => candidate.PathSelector)
-                    .Distinct(StringComparer.Ordinal)
-                    .OrderBy(path => path, StringComparer.Ordinal)
-                    .ToList(),
-                StringComparer.Ordinal);
-
-        var usedSourceSelectors = new HashSet<string>(StringComparer.Ordinal);
-        var resolved = new List<ResolvedReplacementRendererTarget>();
-        var missing = new List<string>();
-
-        foreach (var target in expectedTargets.OrderBy(target => target.RendererPath, StringComparer.Ordinal))
-        {
-            var normalisedTargetPath = NormaliseRendererPath(target.RendererPath);
-            if (!byNormalisedPath.TryGetValue(normalisedTargetPath, out var selectors))
-            {
-                missing.Add(target.RendererPath);
-                continue;
-            }
-
-            var sourceSelector = selectors.FirstOrDefault(selector => !usedSourceSelectors.Contains(selector));
-            if (string.IsNullOrWhiteSpace(sourceSelector))
-            {
-                missing.Add(target.RendererPath);
-                continue;
-            }
-
-            usedSourceSelectors.Add(sourceSelector);
-            resolved.Add(new ResolvedReplacementRendererTarget(target.RendererPath, target.MeshName, sourceSelector, target.TargetMeshMaxHalfExtent));
-        }
-
-        missingTargetPaths = [.. missing.Distinct(StringComparer.Ordinal).OrderBy(path => path, StringComparer.Ordinal)];
-        return resolved;
-    }
-
-    private static IEnumerable<ReplacementMeshPathCandidate> BuildPathCandidates(Node node, string filePath)
-    {
-        foreach (var path in BuildNodePathAliases(node))
-        {
-            var normalisedPath = NormaliseRendererPath(path);
-            if (!string.IsNullOrWhiteSpace(path) && !string.IsNullOrWhiteSpace(normalisedPath))
-                yield return new ReplacementMeshPathCandidate(path, normalisedPath);
-        }
-
-        foreach (var fallbackAlias in GetReplacementMeshAliases(node, filePath))
-        {
-            var normalisedAlias = NormaliseRendererPath(fallbackAlias);
-            if (!string.IsNullOrWhiteSpace(fallbackAlias) && !string.IsNullOrWhiteSpace(normalisedAlias))
-                yield return new ReplacementMeshPathCandidate(fallbackAlias, normalisedAlias);
-        }
-    }
-
-    private static IEnumerable<string> BuildNodePathAliases(Node node)
-    {
-        var withRoot = BuildNodePath(node, includeRoot: true);
-        if (!string.IsNullOrWhiteSpace(withRoot))
-            yield return withRoot;
-
-        var withoutRoot = BuildNodePath(node, includeRoot: false);
-        if (!string.IsNullOrWhiteSpace(withoutRoot))
-            yield return withoutRoot;
-    }
-
-    private static string BuildNodePath(Node node, bool includeRoot)
-    {
-        var segments = new List<string>();
-        var current = node;
-
-        while (current != null)
-        {
-            if (current.VisualParent == null && !includeRoot)
-                break;
-
-            if (string.IsNullOrWhiteSpace(current.Name))
-                return string.Empty;
-
-            segments.Add(current.Name);
-            current = current.VisualParent;
-        }
-
-        segments.Reverse();
-        return string.Join("/", segments);
-    }
-
-    private static string NormaliseRendererPath(string path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-            return string.Empty;
-
-        var segments = path
-            .Split('/', StringSplitOptions.RemoveEmptyEntries)
-            .Select(segment =>
-            {
-                var normalised = segment;
-                if (TryStripBlenderNumericSuffix(segment, out var strippedSegment, out _))
-                    normalised = strippedSegment;
-
-                if (TryStripContainerPathSuffix(normalised, out var strippedContainerSegment))
-                    normalised = strippedContainerSegment;
-
-                return normalised;
-            });
-
-        return string.Join("/", segments);
-    }
-
-    private static bool TryStripContainerPathSuffix(string segment, out string strippedSegment)
-    {
-        const string containerSuffix = "_container";
-
-        strippedSegment = segment;
-        if (string.IsNullOrWhiteSpace(segment) ||
-            !segment.EndsWith(containerSuffix, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        strippedSegment = segment[..^containerSuffix.Length];
-        return !string.IsNullOrWhiteSpace(strippedSegment);
-    }
-
-    private static string BuildBundleMeshName(string targetRendererPath, string targetMeshName)
-    {
-        var safeMeshName = SanitizeBundleNameToken(targetMeshName);
-        var pathHash = ComputeStableShortHash(targetRendererPath);
-        return $"{safeMeshName}__{pathHash}";
-    }
-
-    private static string SanitizeBundleNameToken(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return "mesh";
-
-        var chars = value.Select(c =>
-        {
-            if (char.IsLetterOrDigit(c))
-                return c;
-
-            return c switch
-            {
-                '_' => '_',
-                '-' => '-',
-                _ => '_',
-            };
-        }).ToArray();
-
-        return new string(chars);
-    }
-
-    private static string ComputeStableShortHash(string value)
-    {
-        var bytes = System.Text.Encoding.UTF8.GetBytes(value ?? string.Empty);
-        var hash = System.Security.Cryptography.SHA1.HashData(bytes);
-        return string.Concat(hash.Take(6).Select(b => b.ToString("x2")));
-    }
-
-    internal static bool TryStripBlenderNumericSuffix(string name, out string strippedName, out int suffixValue)
-    {
-        strippedName = name;
-        suffixValue = -1;
-
-        if (string.IsNullOrWhiteSpace(name))
-            return false;
-
-        var dotIndex = name.LastIndexOf('.');
-        if (dotIndex <= 0 || dotIndex >= name.Length - 1)
-            return false;
-
-        var suffix = name[(dotIndex + 1)..];
-        if (suffix.Length < 3 || !suffix.All(char.IsDigit))
-            return false;
-
-        if (!int.TryParse(suffix, out suffixValue))
-            return false;
-
-        strippedName = name[..dotIndex];
-        return !string.IsNullOrEmpty(strippedName);
-    }
-
-    private static bool TryResolveTargetMeshNameFromProvided(string providedName, HashSet<string> expectedSet, out string targetName)
-    {
-        targetName = string.Empty;
-
-        if (expectedSet.Contains(providedName))
-        {
-            targetName = providedName;
-            return true;
-        }
-
-        if (TryStripBlenderNumericSuffix(providedName, out var stripped, out _) &&
-            expectedSet.Contains(stripped))
-        {
-            targetName = stripped;
-            return true;
-        }
-
-        return false;
-    }
-
-    private static int GetResolvedMeshNameSortKey(string providedName, string targetName)
-    {
-        if (providedName.Equals(targetName, StringComparison.Ordinal))
-            return 0;
-
-        if (TryStripBlenderNumericSuffix(providedName, out var strippedTargetCandidate, out var targetSuffixValue) &&
-            strippedTargetCandidate.Equals(targetName, StringComparison.Ordinal))
-        {
-            return 100 + targetSuffixValue;
-        }
-
-        return int.MaxValue;
-    }
-
-    private static bool IsMeshDiscoveryDiagnosticsEnabled()
-    {
-        var raw = Environment.GetEnvironmentVariable(MeshDiagnosticsEnvVar);
-        if (string.IsNullOrWhiteSpace(raw))
-            return false;
-
-        return raw.Equals("1", StringComparison.Ordinal) ||
-               raw.Equals("true", StringComparison.OrdinalIgnoreCase) ||
-               raw.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
-               raw.Equals("on", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string FormatNameListPreview(IEnumerable<string> names, int maxItems)
-    {
-        var ordered = names
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToArray();
-
-        if (ordered.Length <= maxItems)
-            return string.Join(", ", ordered);
-
-        var preview = ordered.Take(maxItems);
-        return $"{string.Join(", ", preview)} (+{ordered.Length - maxItems} more)";
     }
 
     private static bool TryReadWavHeader(string path, out int sampleRate, out int channels)
@@ -1688,81 +1056,6 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
         }
     }
 
-    private static void ValidateReplacementMeshPrimitiveContract(
-        string replacementFilePath,
-        string referenceFilePath,
-        IReadOnlyList<ResolvedReplacementRendererTarget> resolvedTargets)
-    {
-        var replacementPrimitiveCounts = DiscoverReplacementMeshPrimitiveCounts(replacementFilePath);
-        var referencePrimitiveCounts = DiscoverReplacementMeshPrimitiveCounts(referenceFilePath);
-
-        var mismatches = resolvedTargets
-            .Where(resolved =>
-                replacementPrimitiveCounts.TryGetValue(resolved.SourceSelector, out var replacementCount) &&
-                referencePrimitiveCounts.TryGetValue(resolved.TargetRendererPath, out var referenceCount) &&
-                replacementCount != referenceCount)
-            .Select(resolved => $"{resolved.TargetRendererPath} (replacement {replacementPrimitiveCounts[resolved.SourceSelector]}, target {referencePrimitiveCounts[resolved.TargetRendererPath]})")
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToArray();
-
-        if (mismatches.Length == 0)
-            return;
-
-        throw new InvalidOperationException(
-            $"Replacement model '{replacementFilePath}' does not match the target mesh primitive/material-slot contract. " +
-            $"Direct mesh replacement currently requires the same primitive count per target mesh as the target export. " +
-            $"Mismatches: {string.Join(", ", mismatches)}");
-    }
-
-    internal static IReadOnlyDictionary<string, int> DiscoverReplacementMeshPrimitiveCounts(string filePath)
-    {
-        var model = ModelRoot.Load(filePath);
-        var result = new Dictionary<string, int>(StringComparer.Ordinal);
-
-        foreach (var node in model.LogicalNodes.Where(node => node.Mesh != null))
-        {
-            var primitiveCount = node.Mesh!.Primitives.Count;
-            foreach (var alias in GetReplacementMeshAliases(node, filePath))
-            {
-                if (result.TryGetValue(alias, out var existingCount) && existingCount != primitiveCount)
-                {
-                    throw new InvalidOperationException(
-                        $"Replacement file '{filePath}' maps alias '{alias}' to multiple mesh primitive counts ({existingCount} and {primitiveCount}).");
-                }
-
-                result[alias] = primitiveCount;
-            }
-        }
-
-        return result;
-    }
-
-    private static IReadOnlyList<string> GetReplacementMeshAliases(Node node, string filePath)
-    {
-        var mesh = node.Mesh ?? throw new InvalidOperationException("Replacement mesh discovery expected a node with a mesh.");
-        var aliases = new List<string>();
-
-        foreach (var pathAlias in BuildNodePathAliases(node))
-        {
-            if (!aliases.Contains(pathAlias, StringComparer.Ordinal))
-                aliases.Add(pathAlias);
-        }
-
-        if (!string.IsNullOrWhiteSpace(mesh.Name))
-            aliases.Add(mesh.Name);
-
-        if (!string.IsNullOrWhiteSpace(node.Name) &&
-            !aliases.Contains(node.Name, StringComparer.Ordinal))
-        {
-            aliases.Add(node.Name);
-        }
-
-        if (aliases.Count == 0)
-            aliases.Add(Path.GetFileNameWithoutExtension(filePath));
-
-        return aliases;
-    }
-
     // JIANGYU-CONTRACT: the bind-pose retargeting reference is the cleaned authoring
     // export (ModelCleaner-normalised, metre-space, no LOD containers). Retarget
     // correction is expressed relative to the modder's authoring space, and modders
@@ -1777,7 +1070,7 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
     // replacement path.
     private static string EnsureBindPoseReferenceExport(string projectDir, ReplacementModelTarget target, AssetPipelineService assetPipeline)
     {
-        var referenceDirectory = Path.Combine(projectDir, ".jiangyu", "bind_pose_references", BuildModelReplacementAlias(target.Name, target.PathId));
+        var referenceDirectory = Path.Combine(projectDir, ".jiangyu", "bind_pose_references", ReplacementPaths.BuildModelReplacementAlias(target.Name, target.PathId));
         var referenceModelPath = Path.Combine(referenceDirectory, "model.gltf");
         var referenceManifestPath = Path.Combine(referenceDirectory, BindPoseReferenceManifestFileName);
         var assetIndexManifest = assetPipeline.LoadManifest()
@@ -1973,45 +1266,24 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
         var modRoot = Path.GetFullPath(Path.Combine(userUnityDir, ".."));
         var logFile = Path.Combine(modRoot, ".jiangyu", "unity_build_models.log");
 
-        var arguments = string.Join(" ",
-            "-batchmode",
-            "-nographics",
-            "-quit",
-            "-buildTarget StandaloneWindows64",
-            $"-projectPath \"{userUnityDir}\"",
-            "-executeMethod Jiangyu.Mod.BuildModelBundles.BuildAll",
-            $"-logFile \"{logFile}\"",
-            $"-bundleName {bundleName}");
-
         _log.Info("  Invoking Unity to build model bundle...");
 
-        using var process = new Process
+        var result = await UnityBundleInvoker.InvokeAsync(new UnityBundleInvocation
         {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = unityEditor,
-                Arguments = arguments,
-                UseShellExecute = false,
-            }
-        };
+            UnityEditor = unityEditor,
+            ProjectPath = userUnityDir,
+            ExecuteMethod = "Jiangyu.Mod.BuildModelBundles.BuildAll",
+            LogFile = logFile,
+            ExtraArgs = [new("bundleName", bundleName)],
+        });
 
-        process.Start();
-        await process.WaitForExitAsync();
-
-        if (process.ExitCode != 0)
+        if (!result.Success)
         {
-            _log.Error($"Unity exited with code {process.ExitCode}");
+            _log.Error($"Unity exited with code {result.ExitCode}");
             _log.Error($"  Log: {logFile}");
-
-            if (File.Exists(logFile))
-            {
-                var lines = await File.ReadAllLinesAsync(logFile);
-                var tail = lines.Skip(Math.Max(0, lines.Length - 20));
-                _log.Error("");
-                foreach (var line in tail)
-                    _log.Error($"  {line}");
-            }
-
+            _log.Error("");
+            foreach (var line in result.LogTailLines)
+                _log.Error($"  {line}");
             return false;
         }
 
@@ -2024,93 +1296,4 @@ public sealed partial class CompilationService(ILogSink log, IProgressSink progr
         return new CompilationResult { Success = false, ErrorMessage = message };
     }
 
-    [System.Text.RegularExpressions.GeneratedRegex(@"guid:\s*([0-9a-fA-F]{32})")]
-    private static partial System.Text.RegularExpressions.Regex MetaGuidRegex();
-
-    /// <summary>
-    /// Returns an error message if any text-serialised asset under
-    /// <c>unity/Assets/</c> (excluding the <c>Imported/</c> tree itself)
-    /// references a GUID owned by an <c>Imported/&lt;X&gt;/</c> subdir whose
-    /// name is not declared in <c>manifest.importedPrefabs</c>. Returns
-    /// null if everything resolves. Limits the scan to .mat/.prefab/.asset
-    /// because those are the file types Unity uses GUIDs in. Binary .asset
-    /// files won't regex-match and are silently skipped.
-    /// </summary>
-    internal static string? ValidateImportedPrefabReferences(string projectDir, ModManifest manifest)
-    {
-        var assetsRoot = Path.Combine(projectDir, "unity", "Assets");
-        var importedRoot = Path.Combine(assetsRoot, "Imported");
-        if (!Directory.Exists(assetsRoot) || !Directory.Exists(importedRoot))
-            return null;
-
-        var guidToSubdir = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var subdir in Directory.EnumerateDirectories(importedRoot))
-        {
-            var subdirName = Path.GetFileName(subdir);
-            foreach (var meta in Directory.EnumerateFiles(subdir, "*.meta", SearchOption.AllDirectories))
-            {
-                try
-                {
-                    var match = MetaGuidRegex().Match(File.ReadAllText(meta));
-                    if (match.Success) guidToSubdir.TryAdd(match.Groups[1].Value, subdirName);
-                }
-                catch (IOException) { }
-                catch (UnauthorizedAccessException) { }
-            }
-        }
-        if (guidToSubdir.Count == 0) return null;
-
-        var declared = new HashSet<string>(
-            (IEnumerable<string>?)manifest.ImportedPrefabs ?? [],
-            StringComparer.OrdinalIgnoreCase);
-
-        var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mat", ".prefab", ".asset" };
-        var importedPrefix = importedRoot + Path.DirectorySeparatorChar;
-        var violationsByFile = new SortedDictionary<string, SortedSet<string>>(StringComparer.Ordinal);
-
-        foreach (var file in Directory.EnumerateFiles(assetsRoot, "*", SearchOption.AllDirectories))
-        {
-            if (file.StartsWith(importedPrefix, StringComparison.OrdinalIgnoreCase)) continue;
-            if (!extensions.Contains(Path.GetExtension(file))) continue;
-
-            string content;
-            try { content = File.ReadAllText(file); }
-            catch (IOException) { continue; }
-            catch (UnauthorizedAccessException) { continue; }
-
-            foreach (System.Text.RegularExpressions.Match match in MetaGuidRegex().Matches(content))
-            {
-                var guid = match.Groups[1].Value;
-                if (!guidToSubdir.TryGetValue(guid, out var subdir)) continue;
-                if (declared.Contains(subdir)) continue;
-
-                var rel = Path.GetRelativePath(projectDir, file);
-                if (!violationsByFile.TryGetValue(rel, out var subdirs))
-                {
-                    subdirs = new SortedSet<string>(StringComparer.Ordinal);
-                    violationsByFile[rel] = subdirs;
-                }
-                subdirs.Add(subdir);
-            }
-        }
-
-        if (violationsByFile.Count == 0) return null;
-
-        var missingSubdirs = new SortedSet<string>(
-            violationsByFile.Values.SelectMany(v => v),
-            StringComparer.Ordinal);
-
-        var lines = new List<string>
-        {
-            "Mod content references host-game rips that are missing from 'importedPrefabs' in jiangyu.json.",
-            "Either add the following names to the manifest and re-run compile, or remove the references from the listed files:",
-        };
-        foreach (var subdir in missingSubdirs)
-            lines.Add($"  - {subdir}");
-        lines.Add("References found in:");
-        foreach (var (file, subdirs) in violationsByFile)
-            lines.Add($"  {file} -> Imported/{string.Join(", Imported/", subdirs)}/");
-
-        return string.Join("\n", lines);
-    }
 }

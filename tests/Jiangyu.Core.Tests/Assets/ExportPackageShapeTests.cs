@@ -31,7 +31,7 @@ public class ExportPackageShapeTests : IDisposable
         var scene = BuildSimpleScene();
         var gltfPath = Path.Combine(_tempDir, "model.gltf");
 
-        AssetPipelineService.SaveGltfPackage(scene, [], gltfPath);
+        ModelExportService.SaveGltfPackage(scene, [], gltfPath);
 
         var json = JsonNode.Parse(File.ReadAllText(gltfPath));
         var cleaned = json?["extras"]?["jiangyu"]?["cleaned"]?.GetValue<bool>();
@@ -58,7 +58,7 @@ public class ExportPackageShapeTests : IDisposable
         var scene = BuildSimpleScene(material);
         var gltfPath = Path.Combine(_tempDir, "model.gltf");
 
-        AssetPipelineService.SaveGltfPackage(scene, [], gltfPath);
+        ModelExportService.SaveGltfPackage(scene, [], gltfPath);
 
         // sourceMaterial should be stripped from output
         var json = JsonNode.Parse(File.ReadAllText(gltfPath));
@@ -94,7 +94,7 @@ public class ExportPackageShapeTests : IDisposable
 
         // Simulate a non-standard texture (_MaskMap is not in StandardChannelMap)
         var fakePng = CreateMinimalPng();
-        var textures = new List<AssetPipelineService.DiscoveredTexture>
+        var textures = new List<ModelExportService.DiscoveredTexture>
         {
             new()
             {
@@ -106,7 +106,7 @@ public class ExportPackageShapeTests : IDisposable
             },
         };
 
-        AssetPipelineService.SaveGltfPackage(scene, textures, gltfPath);
+        ModelExportService.SaveGltfPackage(scene, textures, gltfPath);
 
         // Non-standard texture should be written to textures/ directory
         var texturePath = Path.Combine(_tempDir, "textures", "soldier_MaskMap.png");
@@ -133,7 +133,7 @@ public class ExportPackageShapeTests : IDisposable
         var scene = BuildSimpleScene(material);
         var gltfPath = Path.Combine(_tempDir, "model.gltf");
 
-        AssetPipelineService.SaveGltfPackage(scene, [], gltfPath);
+        ModelExportService.SaveGltfPackage(scene, [], gltfPath);
 
         // The output .gltf should have a PBR baseColorTexture reference
         var json = JsonNode.Parse(File.ReadAllText(gltfPath));
@@ -147,7 +147,7 @@ public class ExportPackageShapeTests : IDisposable
         var scene = BuildSimpleScene();
         var gltfPath = Path.Combine(_tempDir, "model.gltf");
 
-        AssetPipelineService.SaveGltfPackage(scene, [], gltfPath);
+        ModelExportService.SaveGltfPackage(scene, [], gltfPath);
 
         Assert.True(File.Exists(gltfPath));
         var json = JsonNode.Parse(File.ReadAllText(gltfPath));

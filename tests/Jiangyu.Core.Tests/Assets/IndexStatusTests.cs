@@ -55,7 +55,7 @@ public class IndexStatusTests
             };
 
             File.WriteAllText(
-                Path.Combine(cacheDir, "index-manifest.json"),
+                Path.Combine(cacheDir, "asset-index-manifest.json"),
                 JsonSerializer.Serialize(manifest));
 
             var service = new AssetPipelineService(dataDir, cacheDir, NullProgressSink.Instance, NullLogSink.Instance);
@@ -96,7 +96,7 @@ public class IndexStatusTests
             };
 
             File.WriteAllText(
-                Path.Combine(cacheDir, "index-manifest.json"),
+                Path.Combine(cacheDir, "asset-index-manifest.json"),
                 JsonSerializer.Serialize(manifest));
 
             var service = new AssetPipelineService(dataDir, cacheDir, NullProgressSink.Instance, NullLogSink.Instance);

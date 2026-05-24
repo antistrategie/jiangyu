@@ -4,3 +4,4 @@
 // shared Studio.Rpc library so the standalone Jiangyu.Mcp binary calls
 // the same code.
 global using static Jiangyu.Studio.Rpc.RpcHelpers;
+global using Jiangyu.Studio.Host.Infrastructure;

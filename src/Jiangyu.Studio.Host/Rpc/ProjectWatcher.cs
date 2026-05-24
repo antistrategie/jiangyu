@@ -67,7 +67,7 @@ internal static class ProjectWatcher
             QueueEvent(e.OldFullPath);
         };
         _watcher.Error += (_, e) =>
-            Console.Error.WriteLine($"[Watcher] {e.GetException().Message}");
+            HostLog.Instance.Warning($"[Watcher] {e.GetException().Message}");
     }
 
     public static void Stop()
@@ -249,7 +249,7 @@ internal static class ProjectWatcher
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[Watcher] SendNotification failed: {ex.Message}");
+                HostLog.Instance.Warning($"[Watcher] SendNotification failed: {ex.Message}");
             }
         }
     }

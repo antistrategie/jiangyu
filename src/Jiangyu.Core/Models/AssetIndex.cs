@@ -45,106 +45,149 @@ public sealed class AssetEntry
     public string? Collection { get; set; }
 
     /// <summary>
-    /// For Sprite entries, identifies the backing Texture2D the sprite is cut from.
-    /// Present only when the indexer could resolve the reference; null for older indexes
-    /// or for non-Sprite entries. Used by compile-time atlas detection — a sprite whose
-    /// backing texture is shared by multiple indexed Sprites is atlas-backed and cannot
-    /// be individually replaced via in-place Texture2D mutation.
+    /// Sprite-only metadata: backing texture identity plus atlas-region rect
+    /// and rotation. Null for non-Sprite entries.
     /// </summary>
-    [JsonPropertyName("spriteBackingTexturePathId")]
-    public long? SpriteBackingTexturePathId { get; set; }
-
-    [JsonPropertyName("spriteBackingTextureCollection")]
-    public string? SpriteBackingTextureCollection { get; set; }
-
-    [JsonPropertyName("spriteBackingTextureName")]
-    public string? SpriteBackingTextureName { get; set; }
+    [JsonPropertyName("sprite")]
+    public AssetSpriteMetadata? Sprite { get; set; }
 
     /// <summary>
-    /// For Sprite entries, the atlas-space rectangle (x, y, width, height in pixels) that
-    /// defines where this sprite's pixel data lives inside the backing Texture2D. Used by
-    /// compile-time atlas compositing to blit modder images into the correct region.
-    /// Coordinates follow Unity conventions: origin at bottom-left of the texture.
+    /// AudioClip-only metadata: sample rate plus channel count, used by
+    /// compile-time validation to confirm a modder-supplied audio file
+    /// matches the target's format. Null for non-AudioClip entries.
     /// </summary>
-    [JsonPropertyName("spriteTextureRectX")]
-    public float? SpriteTextureRectX { get; set; }
-
-    [JsonPropertyName("spriteTextureRectY")]
-    public float? SpriteTextureRectY { get; set; }
-
-    [JsonPropertyName("spriteTextureRectWidth")]
-    public float? SpriteTextureRectWidth { get; set; }
-
-    [JsonPropertyName("spriteTextureRectHeight")]
-    public float? SpriteTextureRectHeight { get; set; }
+    [JsonPropertyName("audio")]
+    public AssetAudioMetadata? Audio { get; set; }
 
     /// <summary>
-    /// Raw <c>SpritePackingRotation</c> enum value extracted from the sprite's
-    /// <c>SettingsRaw</c> field. Non-zero means the sprite region is stored rotated
-    /// or flipped in the atlas; the compiler must apply the matching transform to the
-    /// modder's image before compositing.
+    /// SoundBank-only metadata: the resolved bankId plus the names of every
+    /// Sound child so modders can target individual sounds as composite
+    /// prototype sources. Null for non-SoundBank entries.
     /// </summary>
-    [JsonPropertyName("spritePackingRotation")]
-    public int? SpritePackingRotation { get; set; }
-
-    [JsonPropertyName("audioFrequency")]
-    public int? AudioFrequency { get; set; }
-
-    [JsonPropertyName("audioChannels")]
-    public int? AudioChannels { get; set; }
+    [JsonPropertyName("soundBank")]
+    public AssetSoundBankMetadata? SoundBank { get; set; }
 
     /// <summary>
-    /// For asset types that hold named sub-elements modders can target as
-    /// prototype sources via composite= from="..." authoring (currently
-    /// Stem.SoundBank's sounds[]), this lists each sub-element's name. The
-    /// asset-index build extracts these once so editor autocompletes and
-    /// validators can answer "what names are available inside this asset"
-    /// without re-running live AssetRipper inspection. Null on assets with
-    /// no such surface.
+    /// ConversationTemplate-only metadata: the asset's unique <c>Path</c>
+    /// (asset names alone aren't unique) plus the role list used by
+    /// compile-time RoleGuid resolution and the Studio role picker. Null
+    /// for non-ConversationTemplate entries.
     /// </summary>
-    [JsonPropertyName("namedChildren")]
-    public List<string>? NamedChildren { get; set; }
+    [JsonPropertyName("conversation")]
+    public AssetConversationMetadata? Conversation { get; set; }
+}
+
+/// <summary>
+/// Sprite-specific metadata grouped under <see cref="AssetEntry.Sprite"/>.
+/// Compile-time atlas detection reads <see cref="BackingTexturePathId"/> +
+/// <see cref="BackingTextureCollection"/> to identify atlases (multiple
+/// sprites sharing one texture) and the rect/rotation fields to drive
+/// per-region compositing.
+/// </summary>
+public sealed class AssetSpriteMetadata
+{
+    [JsonPropertyName("backingTexturePathId")]
+    public long? BackingTexturePathId { get; set; }
+
+    [JsonPropertyName("backingTextureCollection")]
+    public string? BackingTextureCollection { get; set; }
+
+    [JsonPropertyName("backingTextureName")]
+    public string? BackingTextureName { get; set; }
 
     /// <summary>
-    /// For <c>Stem.SoundBank</c> entries, the serialised <c>bankId</c> from
-    /// the asset's <c>m_Structure.bankId</c> field. Lets the compile-time
-    /// validator resolve string-keyed <c>Stem.ID.bankId</c> references to
-    /// the right int without shipping a hardcoded name→id table that
-    /// would drift on every MENACE update. Null on non-SoundBank entries
-    /// and on indexes built before this field was introduced.
+    /// Atlas-space rectangle (x, y, width, height in pixels) where this
+    /// sprite's pixel data lives inside the backing Texture2D. Origin at
+    /// bottom-left per Unity convention.
+    /// </summary>
+    [JsonPropertyName("textureRectX")]
+    public float? TextureRectX { get; set; }
+
+    [JsonPropertyName("textureRectY")]
+    public float? TextureRectY { get; set; }
+
+    [JsonPropertyName("textureRectWidth")]
+    public float? TextureRectWidth { get; set; }
+
+    [JsonPropertyName("textureRectHeight")]
+    public float? TextureRectHeight { get; set; }
+
+    /// <summary>
+    /// Raw <c>SpritePackingRotation</c> enum value extracted from the
+    /// sprite's <c>SettingsRaw</c> field. Non-zero means the sprite region
+    /// is stored rotated or flipped in the atlas; the compiler applies the
+    /// matching transform before compositing.
+    /// </summary>
+    [JsonPropertyName("packingRotation")]
+    public int? PackingRotation { get; set; }
+}
+
+/// <summary>
+/// AudioClip-specific metadata grouped under <see cref="AssetEntry.Audio"/>.
+/// </summary>
+public sealed class AssetAudioMetadata
+{
+    [JsonPropertyName("frequency")]
+    public int? Frequency { get; set; }
+
+    [JsonPropertyName("channels")]
+    public int? Channels { get; set; }
+}
+
+/// <summary>
+/// SoundBank-specific metadata grouped under <see cref="AssetEntry.SoundBank"/>.
+/// </summary>
+public sealed class AssetSoundBankMetadata
+{
+    /// <summary>
+    /// The asset's serialised <c>bankId</c> from <c>m_Structure.bankId</c>.
+    /// Lets the compile-time validator resolve string-keyed <c>Stem.ID.bankId</c>
+    /// references to the right int without shipping a hardcoded name→id
+    /// table that would drift on every MENACE update.
     /// </summary>
     [JsonPropertyName("bankId")]
     public int? BankId { get; set; }
 
     /// <summary>
-    /// For <c>ConversationTemplate</c> entries, the conversation's
-    /// <c>Roles</c> list flattened to <c>(RoleName, Guid)</c> pairs.
-    /// Lets the compile-time validator resolve string-keyed
-    /// <c>RoleGuid</c> references on SAY/CHOICE nodes to the int Guid
-    /// of the matching role within the same (possibly cloned)
-    /// conversation. Also surfaces role names to the Studio visual
-    /// editor for combobox population. Null on non-ConversationTemplate
-    /// entries and on indexes built before this field was introduced.
+    /// Names of the bank's <c>sounds[]</c> children so modders can target
+    /// individual sounds as composite prototype sources via
+    /// <c>composite= from="..."</c> authoring.
     /// </summary>
-    [JsonPropertyName("roles")]
-    public List<AssetEntryRole>? Roles { get; set; }
+    [JsonPropertyName("namedChildren")]
+    public List<string>? NamedChildren { get; set; }
+}
 
+/// <summary>
+/// ConversationTemplate-specific metadata grouped under
+/// <see cref="AssetEntry.Conversation"/>.
+/// </summary>
+public sealed class AssetConversationMetadata
+{
     /// <summary>
-    /// For <c>ConversationTemplate</c> entries, the asset's
-    /// <c>m_Structure.Path</c> value (e.g. <c>"JeanSy/click_bark"</c>).
-    /// Path is the unique identifier — asset names alone aren't
-    /// (every speaker has its own <c>click_bark</c>). Powers Studio's
-    /// from= clone-source dropdown and the loader's path-keyed lookup.
-    /// Null on non-ConversationTemplate entries and on indexes built
-    /// before this field was introduced.
+    /// The asset's <c>m_Structure.Path</c> value (e.g.
+    /// <c>"JeanSy/click_bark"</c>). Path is the unique identifier because
+    /// asset names alone aren't (every speaker has its own
+    /// <c>click_bark</c>). Powers Studio's from= clone-source dropdown
+    /// and the loader's path-keyed lookup.
     /// </summary>
     [JsonPropertyName("path")]
     public string? Path { get; set; }
+
+    /// <summary>
+    /// The conversation's <c>Roles</c> list flattened to
+    /// <c>(RoleName, Guid)</c> pairs. Lets the compile-time validator
+    /// resolve string-keyed <c>RoleGuid</c> references on SAY/CHOICE
+    /// nodes to the int Guid of the matching role within the same
+    /// (possibly cloned) conversation. Also surfaces role names to the
+    /// Studio visual editor for combobox population.
+    /// </summary>
+    [JsonPropertyName("roles")]
+    public List<AssetEntryRole>? Roles { get; set; }
 }
 
 /// <summary>
 /// One <c>Role</c> from a <c>ConversationTemplate</c>'s <c>Roles</c> list.
-/// See <see cref="AssetEntry.Roles"/>.
+/// See <see cref="AssetConversationMetadata.Roles"/>.
 /// </summary>
 public sealed class AssetEntryRole
 {

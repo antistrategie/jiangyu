@@ -109,6 +109,103 @@ public sealed class TemplateInspectionPreviewTests : IDisposable
     }
 
     [Fact]
+    public void PreviewApplier_HandlesClearOnArrayField()
+    {
+        ObjectInspectionResult source = CreateUnitLeaderResult("base.alpha");
+        ObjectInspectionResult cloned = TemplateInspectionPreviewApplier.CloneForTarget(
+            source,
+            new TemplatePreviewKey("UnitLeaderTemplate", "clone.beta"));
+
+        TemplateInspectionPreviewApplier.Apply(
+            cloned,
+            [
+                new CompiledTemplatePatch
+                {
+                    TemplateType = "UnitLeaderTemplate",
+                    TemplateId = "clone.beta",
+                    Set =
+                    [
+                        new CompiledTemplateSetOperation
+                        {
+                            Op = CompiledTemplateOp.Clear,
+                            FieldPath = "PerkTrees",
+                        },
+                    ],
+                },
+            ],
+            reference => null);
+
+        InspectedFieldNode structure = cloned.Fields.Single(field => field.Name == "m_Structure");
+        InspectedFieldNode perkTrees = structure.Fields!.Single(field => field.Name == "PerkTrees");
+        Assert.Equal(0, perkTrees.Count);
+        Assert.NotNull(perkTrees.Elements);
+        Assert.Empty(perkTrees.Elements!);
+    }
+
+    [Fact]
+    public void PreviewApplier_HandlesScalarPolymorphicDescent()
+    {
+        // Modder writes
+        //   patch UnitLeaderTemplate "clone.beta" {
+        //     set "CustomCondition" type="MoraleStateCondition" {
+        //       set "Threshold" 7
+        //     }
+        //   }
+        // which compiles to a Descent step with Subtype="MoraleStateCondition"
+        // and an inner Set targeting Threshold.
+        ObjectInspectionResult source = CreateUnitLeaderResult("base.alpha");
+        InspectedFieldNode structure = source.Fields.Single(f => f.Name == "m_Structure");
+        structure.Fields!.Add(new InspectedFieldNode
+        {
+            Name = "CustomCondition",
+            Kind = "object",
+            FieldTypeName = "ITacticalCondition",
+            Fields =
+            [
+                new InspectedFieldNode { Name = "Threshold", Kind = "int", FieldTypeName = "Int32", Value = 0 },
+            ],
+        });
+
+        ObjectInspectionResult cloned = TemplateInspectionPreviewApplier.CloneForTarget(
+            source,
+            new TemplatePreviewKey("UnitLeaderTemplate", "clone.beta"));
+
+        TemplateInspectionPreviewApplier.Apply(
+            cloned,
+            [
+                new CompiledTemplatePatch
+                {
+                    TemplateType = "UnitLeaderTemplate",
+                    TemplateId = "clone.beta",
+                    Set =
+                    [
+                        new CompiledTemplateSetOperation
+                        {
+                            Op = CompiledTemplateOp.Set,
+                            FieldPath = "Threshold",
+                            Descent =
+                            [
+                                new TemplateDescentStep
+                                {
+                                    Field = "CustomCondition",
+                                    Subtype = "MoraleStateCondition",
+                                },
+                            ],
+                            Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 7 },
+                        },
+                    ],
+                },
+            ],
+            reference => null);
+
+        InspectedFieldNode descended = cloned.Fields
+            .Single(f => f.Name == "m_Structure").Fields!
+            .Single(f => f.Name == "CustomCondition");
+        Assert.Equal("MoraleStateCondition", descended.FieldTypeName);
+        Assert.Equal(7, descended.Fields!.Single(f => f.Name == "Threshold").Value);
+    }
+
+    [Fact]
     public void TextRenderer_PreservesStableReferenceIdentity()
     {
         ObjectInspectionResult result = CreateUnitLeaderResult("clone.beta");

@@ -2,21 +2,10 @@ using Jiangyu.Core.Templates;
 
 namespace Jiangyu.Core.Tests.Templates;
 
-public class HashableIdFieldRegistryTests : IDisposable
+public class HashableIdFieldRegistryTests
 {
-    public HashableIdFieldRegistryTests()
-    {
-        // Each test installs its own resolver as needed; default is an
-        // empty one so unrelated tests aren't entangled with state from
-        // the production install path.
-        HashableIdFieldRegistry.InstallBankIdResolver(
-            new InMemoryBankIdResolver(Array.Empty<KeyValuePair<string, int>>()));
-    }
-
-    public void Dispose()
-    {
-        HashableIdFieldRegistry.InstallBankIdResolver(null);
-    }
+    private static readonly IBankIdResolver EmptyResolver =
+        new InMemoryBankIdResolver(Array.Empty<KeyValuePair<string, int>>());
 
     [Fact]
     public void Fnv1a32_IsDeterministic()
@@ -60,7 +49,7 @@ public class HashableIdFieldRegistryTests : IDisposable
     public void TryResolve_Fnv1aPath_ReturnsHash()
     {
         var ok = HashableIdFieldRegistry.TryResolve(
-            "Stem.Sound", "id", "custom_rifle_fire",
+            "Stem.Sound", "id", "custom_rifle_fire", EmptyResolver,
             out var resolved, out var error);
 
         Assert.True(ok);
@@ -71,13 +60,13 @@ public class HashableIdFieldRegistryTests : IDisposable
     [Fact]
     public void TryResolve_BankNamePath_KnownBank()
     {
-        HashableIdFieldRegistry.InstallBankIdResolver(new InMemoryBankIdResolver(new[]
+        var resolver = new InMemoryBankIdResolver(new[]
         {
             new KeyValuePair<string, int>("weapons_soundbank", 7),
-        }));
+        });
 
         var ok = HashableIdFieldRegistry.TryResolve(
-            "Stem.ID", "bankId", "weapons_soundbank",
+            "Stem.ID", "bankId", "weapons_soundbank", resolver,
             out var resolved, out var error);
 
         Assert.True(ok);
@@ -88,13 +77,13 @@ public class HashableIdFieldRegistryTests : IDisposable
     [Fact]
     public void TryResolve_BankNamePath_UnknownBank()
     {
-        HashableIdFieldRegistry.InstallBankIdResolver(new InMemoryBankIdResolver(new[]
+        var resolver = new InMemoryBankIdResolver(new[]
         {
             new KeyValuePair<string, int>("weapons_soundbank", 7),
-        }));
+        });
 
         var ok = HashableIdFieldRegistry.TryResolve(
-            "Stem.ID", "bankId", "not_a_real_bank",
+            "Stem.ID", "bankId", "not_a_real_bank", resolver,
             out var _, out var error);
 
         Assert.False(ok);
@@ -105,17 +94,15 @@ public class HashableIdFieldRegistryTests : IDisposable
     }
 
     [Fact]
-    public void TryResolve_BankNamePath_NoResolverInstalled_Errors()
+    public void TryResolve_BankNamePath_NoResolverSupplied_Errors()
     {
-        HashableIdFieldRegistry.InstallBankIdResolver(null);
-
         var ok = HashableIdFieldRegistry.TryResolve(
-            "Stem.ID", "bankId", "weapons_soundbank",
+            "Stem.ID", "bankId", "weapons_soundbank", bankIdResolver: null,
             out _, out var error);
 
         Assert.False(ok);
         Assert.NotNull(error);
-        Assert.Contains("no SoundBank resolver installed", error);
+        Assert.Contains("no SoundBank resolver supplied", error);
     }
 
     [Fact]
@@ -128,7 +115,7 @@ public class HashableIdFieldRegistryTests : IDisposable
         // through the asset-index-backed resolver (which the asset
         // indexer populates with the same FNV during indexing).
         var ok = HashableIdFieldRegistry.TryResolve(
-            "Stem.SoundBank", "bankId", "tactical_barks_voymastina_va",
+            "Stem.SoundBank", "bankId", "tactical_barks_voymastina_va", EmptyResolver,
             out var resolved, out var error);
 
         Assert.True(ok);
@@ -140,7 +127,7 @@ public class HashableIdFieldRegistryTests : IDisposable
     public void TryResolve_UnregisteredField_Errors()
     {
         var ok = HashableIdFieldRegistry.TryResolve(
-            "Stem.Sound", "name", "anything",
+            "Stem.Sound", "name", "anything", EmptyResolver,
             out _, out var error);
 
         Assert.False(ok);
@@ -151,15 +138,15 @@ public class HashableIdFieldRegistryTests : IDisposable
     [Fact]
     public void TryResolve_EmptyTypeOrField_Errors()
     {
-        Assert.False(HashableIdFieldRegistry.TryResolve("", "id", "x", out _, out _));
-        Assert.False(HashableIdFieldRegistry.TryResolve("Stem.Sound", "", "x", out _, out _));
+        Assert.False(HashableIdFieldRegistry.TryResolve("", "id", "x", EmptyResolver, out _, out _));
+        Assert.False(HashableIdFieldRegistry.TryResolve("Stem.Sound", "", "x", EmptyResolver, out _, out _));
     }
 
     [Fact]
     public void TryResolve_NullValue_Errors()
     {
         var ok = HashableIdFieldRegistry.TryResolve(
-            "Stem.Sound", "id", null!,
+            "Stem.Sound", "id", null!, EmptyResolver,
             out _, out var error);
 
         Assert.False(ok);
@@ -175,8 +162,8 @@ public class HashableIdFieldRegistryTests : IDisposable
         // linked without the modder writing the raw number.
         const string name = "custom_rifle_fire";
 
-        HashableIdFieldRegistry.TryResolve("Stem.Sound", "id", name, out var soundId, out _);
-        HashableIdFieldRegistry.TryResolve("Stem.ID", "itemId", name, out var itemId, out _);
+        HashableIdFieldRegistry.TryResolve("Stem.Sound", "id", name, EmptyResolver, out var soundId, out _);
+        HashableIdFieldRegistry.TryResolve("Stem.ID", "itemId", name, EmptyResolver, out var itemId, out _);
 
         Assert.Equal(soundId, itemId);
     }

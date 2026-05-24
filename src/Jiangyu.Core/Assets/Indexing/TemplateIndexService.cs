@@ -71,50 +71,32 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
 
     public CachedIndexStatus GetIndexStatus()
     {
-        string indexPath = Path.Combine(CachePath, IndexFileName);
-        if (!File.Exists(indexPath))
-        {
-            return new CachedIndexStatus
+        return IndexCacheValidator.Validate(
+            cacheFilePath: Path.Combine(CachePath, IndexFileName),
+            manifestFilePath: Path.Combine(CachePath, ManifestFileName),
+            loadManifest: _ => LoadManifest(),
+            staleReason: manifest =>
             {
-                State = CachedIndexState.Missing,
-                Reason = "Template index not found. Run 'jiangyu templates index' first.",
-            };
-        }
+                TemplateClassificationMetadata classification = TemplateClassifier.GetMetadata();
+                string? currentHash = ComputeGameAssemblyHash();
 
-        TemplateIndexManifest? manifest = LoadManifest();
-        if (manifest is null)
-        {
-            return new CachedIndexStatus
-            {
-                State = CachedIndexState.Stale,
-                Reason = "Template index manifest is unreadable. Rebuild it with 'jiangyu templates index'.",
-            };
-        }
+                if (IsIl2CppSupplementStale())
+                {
+                    return "IL2CPP metadata supplement is out of date. Rebuild the template index to refresh it.";
+                }
 
-        TemplateClassificationMetadata classification = TemplateClassifier.GetMetadata();
-        string? currentHash = ComputeGameAssemblyHash();
-
-        if (currentHash is null
-            || !string.Equals(currentHash, manifest.GameAssemblyHash, StringComparison.Ordinal)
-            || !string.Equals(manifest.RuleVersion, classification.RuleVersion, StringComparison.Ordinal)
-            || !string.Equals(manifest.RuleDescription, classification.RuleDescription, StringComparison.Ordinal)
-            || manifest.FormatVersion != CurrentFormatVersion
-            || IsIl2CppSupplementStale())
-        {
-            var reason = IsIl2CppSupplementStale()
-                ? "IL2CPP metadata supplement is out of date. Rebuild the template index to refresh it."
-                : "Template index is missing or stale for the current game version.";
-            return new CachedIndexStatus
-            {
-                State = CachedIndexState.Stale,
-                Reason = reason,
-            };
-        }
-
-        return new CachedIndexStatus
-        {
-            State = CachedIndexState.Current,
-        };
+                if (currentHash is null
+                    || !string.Equals(currentHash, manifest.GameAssemblyHash, StringComparison.Ordinal)
+                    || !string.Equals(manifest.RuleVersion, classification.RuleVersion, StringComparison.Ordinal)
+                    || !string.Equals(manifest.RuleDescription, classification.RuleDescription, StringComparison.Ordinal)
+                    || manifest.FormatVersion != CurrentFormatVersion)
+                {
+                    return "Template index is missing or stale for the current game version.";
+                }
+                return null;
+            },
+            missingReason: "Template index not found. Run 'jiangyu templates index' first.",
+            unreadableManifestReason: "Template index manifest is unreadable. Rebuild it with 'jiangyu templates index'.");
     }
 
     public void BuildIndex()

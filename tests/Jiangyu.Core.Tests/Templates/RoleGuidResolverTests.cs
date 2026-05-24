@@ -67,14 +67,20 @@ public class RoleGuidResolverTests
             new()
             {
                 Name = "click_bark",
-                Path = "JeanSy/click_bark",
-                Roles = [new AssetEntryRole { Name = "Entity", Guid = EntityGuid }],
+                Conversation = new AssetConversationMetadata
+                {
+                    Path = "JeanSy/click_bark",
+                    Roles = [new AssetEntryRole { Name = "Entity", Guid = EntityGuid }],
+                },
             },
             new()
             {
                 Name = "click_bark",
-                Path = "Bog/click_bark",
-                Roles = [new AssetEntryRole { Name = "Entity", Guid = 99 }],
+                Conversation = new AssetConversationMetadata
+                {
+                    Path = "Bog/click_bark",
+                    Roles = [new AssetEntryRole { Name = "Entity", Guid = 99 }],
+                },
             },
         };
         var sayComposite = new CompiledTemplateComposite
@@ -196,12 +202,15 @@ public class RoleGuidResolverTests
         new()
         {
             Name = "click_bark",
-            Path = "JeanSy/click_bark",
-            Roles =
-            [
-                new AssetEntryRole { Name = "Entity", Guid = EntityGuid },
-                new AssetEntryRole { Name = "Voymastina", Guid = VoymastinaGuid },
-            ],
+            Conversation = new AssetConversationMetadata
+            {
+                Path = "JeanSy/click_bark",
+                Roles =
+                [
+                    new AssetEntryRole { Name = "Entity", Guid = EntityGuid },
+                    new AssetEntryRole { Name = "Voymastina", Guid = VoymastinaGuid },
+                ],
+            },
         },
     ];
 

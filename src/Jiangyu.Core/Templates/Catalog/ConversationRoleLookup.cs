@@ -4,7 +4,7 @@ namespace Jiangyu.Core.Templates;
 
 /// <summary>
 /// Path-first, bare-name-fallback resolution of a ConversationTemplate
-/// identifier to its indexed <see cref="AssetEntry.Roles"/>.
+/// identifier to its indexed <see cref="AssetConversationMetadata.Roles"/>.
 ///
 /// <para>ConversationTemplate is the one indexed asset whose <c>Object.name</c>
 /// is non-unique (every speaker has a <c>click_bark</c>). The unique
@@ -44,9 +44,10 @@ internal static class ConversationRoleLookup
 
         foreach (var asset in indexedAssets)
         {
-            if (asset.Roles is null || asset.Roles.Count == 0) continue;
-            if (pathMatch is null && !string.IsNullOrEmpty(asset.Path)
-                && string.Equals(asset.Path, lookupKey, StringComparison.Ordinal))
+            var conv = asset.Conversation;
+            if (conv?.Roles is null || conv.Roles.Count == 0) continue;
+            if (pathMatch is null && !string.IsNullOrEmpty(conv.Path)
+                && string.Equals(conv.Path, lookupKey, StringComparison.Ordinal))
             {
                 // Path is unique, no point continuing.
                 pathMatch = asset;
@@ -55,6 +56,6 @@ internal static class ConversationRoleLookup
             if (nameMatch is null && string.Equals(asset.Name, bareName, StringComparison.Ordinal))
                 nameMatch = asset;
         }
-        return pathMatch?.Roles ?? nameMatch?.Roles;
+        return pathMatch?.Conversation?.Roles ?? nameMatch?.Conversation?.Roles;
     }
 }
