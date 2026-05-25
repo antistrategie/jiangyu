@@ -1,6 +1,6 @@
 # Getting started
 
-This walkthrough takes you from zero to a working mod that replaces the MENACE main-menu logo. Once you've shipped one replacement end to end, the [Reference](./studio.md) pages cover the other asset types and template patches.
+This walkthrough takes you from zero to a working mod that replaces the MENACE main-menu logo. [Next steps](#next-steps) at the end lists the other asset types and template patching.
 
 ## Prerequisites
 

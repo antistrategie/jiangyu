@@ -57,6 +57,10 @@ The **sidebar** on the left is a project file tree. Click a file to open it in a
 
 The **status bar** along the bottom shows the current compile state and a button to open the [compile dossier](#compile).
 
+### Saving
+
+Code edits don't auto-save. Press **Ctrl+S** to write the active tab to disk. A dirty tab shows a dot next to its title until saved.
+
 ## Command palette
 
 Press **Ctrl+Shift+P** (or **Ctrl+K**) to open the palette: a fuzzy-searchable list of every action Studio currently registers. Most navigation happens through here.
