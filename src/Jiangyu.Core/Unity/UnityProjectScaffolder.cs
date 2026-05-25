@@ -29,6 +29,18 @@ namespace Jiangyu.Core.Unity;
 /// </summary>
 public sealed class UnityProjectScaffolder
 {
+    private static readonly IReadOnlyList<(string TemplateLogicalPath, string[] DestRelativeParts)> OverwriteManagedTemplates = new[]
+    {
+        ("UnityProject/Assets/Jiangyu/Editor/BuildBundles.cs", new[] { "Assets", "Jiangyu", "Editor", "BuildBundles.cs" }),
+        ("UnityProject/Assets/Jiangyu/Editor/BuildModelBundles.cs", new[] { "Assets", "Jiangyu", "Editor", "BuildModelBundles.cs" }),
+        ("UnityProject/Assets/Jiangyu/Editor/BuildMeshReplacementBundle.cs", new[] { "Assets", "Jiangyu", "Editor", "BuildMeshReplacementBundle.cs" }),
+        ("UnityProject/Assets/Jiangyu/Editor/ImportedPrefabPostProcessor.cs", new[] { "Assets", "Jiangyu", "Editor", "ImportedPrefabPostProcessor.cs" }),
+        ("UnityProject/Assets/Jiangyu/Editor/BakeHumanoid.cs", new[] { "Assets", "Jiangyu", "Editor", "BakeHumanoid.cs" }),
+        ("UnityProject/Assets/Jiangyu/Editor/BakeWeapon.cs", new[] { "Assets", "Jiangyu", "Editor", "BakeWeapon.cs" }),
+        ("UnityProject/Assets/Jiangyu/README.md", new[] { "Assets", "Jiangyu", "README.md" }),
+        ("UnityProject/.gitignore", new[] { ".gitignore" }),
+    };
+
     private readonly ILogSink _log;
 
     public UnityProjectScaffolder(ILogSink log)
@@ -52,53 +64,14 @@ public sealed class UnityProjectScaffolder
         Directory.CreateDirectory(Path.Combine(unityDir, "Packages"));
 
         // Jiangyu-owned files: overwrite on every run.
-        WriteFromTemplate(
-            unityDir,
-            templateLogicalPath: "UnityProject/Assets/Jiangyu/Editor/BuildBundles.cs",
-            destRelative: Path.Combine("Assets", "Jiangyu", "Editor", "BuildBundles.cs"),
-            result);
-
-        WriteFromTemplate(
-            unityDir,
-            templateLogicalPath: "UnityProject/Assets/Jiangyu/Editor/BuildModelBundles.cs",
-            destRelative: Path.Combine("Assets", "Jiangyu", "Editor", "BuildModelBundles.cs"),
-            result);
-
-        WriteFromTemplate(
-            unityDir,
-            templateLogicalPath: "UnityProject/Assets/Jiangyu/Editor/BuildMeshReplacementBundle.cs",
-            destRelative: Path.Combine("Assets", "Jiangyu", "Editor", "BuildMeshReplacementBundle.cs"),
-            result);
-
-        WriteFromTemplate(
-            unityDir,
-            templateLogicalPath: "UnityProject/Assets/Jiangyu/Editor/ImportedPrefabPostProcessor.cs",
-            destRelative: Path.Combine("Assets", "Jiangyu", "Editor", "ImportedPrefabPostProcessor.cs"),
-            result);
-
-        WriteFromTemplate(
-            unityDir,
-            templateLogicalPath: "UnityProject/Assets/Jiangyu/Editor/BakeHumanoid.cs",
-            destRelative: Path.Combine("Assets", "Jiangyu", "Editor", "BakeHumanoid.cs"),
-            result);
-
-        WriteFromTemplate(
-            unityDir,
-            templateLogicalPath: "UnityProject/Assets/Jiangyu/Editor/BakeWeapon.cs",
-            destRelative: Path.Combine("Assets", "Jiangyu", "Editor", "BakeWeapon.cs"),
-            result);
-
-        WriteFromTemplate(
-            unityDir,
-            templateLogicalPath: "UnityProject/Assets/Jiangyu/README.md",
-            destRelative: Path.Combine("Assets", "Jiangyu", "README.md"),
-            result);
-
-        WriteFromTemplate(
-            unityDir,
-            templateLogicalPath: "UnityProject/.gitignore",
-            destRelative: ".gitignore",
-            result);
+        foreach (var (templatePath, destParts) in OverwriteManagedTemplates)
+        {
+            WriteFromTemplate(
+                unityDir,
+                templateLogicalPath: templatePath,
+                destRelative: Path.Combine(destParts),
+                result);
+        }
 
         // Modder-extensible: seed only if missing.
         WriteFromTemplateIfMissing(
@@ -119,6 +92,38 @@ public sealed class UnityProjectScaffolder
         _log.Info("  Author prefabs under unity/Assets/Prefabs/.");
 
         return result;
+    }
+
+    /// <summary>
+    /// Returns absolute paths of Jiangyu-managed files under <c>unity/</c>
+    /// whose contents differ from their embedded templates in this Jiangyu
+    /// version. Missing files count as drift. Empty when <c>unity/</c> is absent.
+    /// </summary>
+    public IReadOnlyList<string> FindDriftedManagedFiles(string projectRoot)
+    {
+        if (string.IsNullOrWhiteSpace(projectRoot))
+            return Array.Empty<string>();
+
+        var unityDir = Path.Combine(projectRoot, "unity");
+        if (!Directory.Exists(unityDir))
+            return Array.Empty<string>();
+
+        var drifted = new List<string>();
+        foreach (var (templatePath, destParts) in OverwriteManagedTemplates)
+        {
+            var destPath = Path.Combine(unityDir, Path.Combine(destParts));
+            if (!File.Exists(destPath))
+            {
+                drifted.Add(destPath);
+                continue;
+            }
+
+            var expected = LoadEmbeddedTemplate(templatePath);
+            var actual = File.ReadAllText(destPath);
+            if (!string.Equals(expected, actual, StringComparison.Ordinal))
+                drifted.Add(destPath);
+        }
+        return drifted;
     }
 
     private void WriteFromTemplate(

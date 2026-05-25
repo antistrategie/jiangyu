@@ -213,6 +213,101 @@ public sealed class UnityProjectScaffolderTests : IDisposable
     }
 
     [Fact]
+    public void FindDriftedManagedFiles_FreshInit_ReportsNoDrift()
+    {
+        var scaffolder = new UnityProjectScaffolder(new NullLog());
+        scaffolder.Init(_tempRoot);
+
+        var result = scaffolder.FindDriftedManagedFiles(_tempRoot);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void FindDriftedManagedFiles_NoUnityDir_ReportsNoDrift()
+    {
+        // Template-only mods omit unity/ entirely. Drift detection must not
+        // false-positive on a missing directory.
+        var scaffolder = new UnityProjectScaffolder(new NullLog());
+
+        var result = scaffolder.FindDriftedManagedFiles(_tempRoot);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void FindDriftedManagedFiles_EmptyProjectRoot_ReportsNoDrift()
+    {
+        var scaffolder = new UnityProjectScaffolder(new NullLog());
+
+        var result = scaffolder.FindDriftedManagedFiles("");
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void FindDriftedManagedFiles_ModifiedScript_IsFlagged()
+    {
+        var scaffolder = new UnityProjectScaffolder(new NullLog());
+        scaffolder.Init(_tempRoot);
+
+        var buildBundlesPath = Path.Combine(_tempRoot, "unity", "Assets", "Jiangyu", "Editor", "BuildBundles.cs");
+        File.WriteAllText(buildBundlesPath, "// modder hacked this");
+
+        var result = scaffolder.FindDriftedManagedFiles(_tempRoot);
+
+        Assert.Equal(new[] { buildBundlesPath }, result);
+    }
+
+    [Fact]
+    public void FindDriftedManagedFiles_MissingScript_IsFlagged()
+    {
+        var scaffolder = new UnityProjectScaffolder(new NullLog());
+        scaffolder.Init(_tempRoot);
+
+        var readmePath = Path.Combine(_tempRoot, "unity", "Assets", "Jiangyu", "README.md");
+        File.Delete(readmePath);
+
+        var result = scaffolder.FindDriftedManagedFiles(_tempRoot);
+
+        Assert.Contains(readmePath, result);
+    }
+
+    [Fact]
+    public void FindDriftedManagedFiles_MultipleDrifts_AllFlagged()
+    {
+        var scaffolder = new UnityProjectScaffolder(new NullLog());
+        scaffolder.Init(_tempRoot);
+
+        var readmePath = Path.Combine(_tempRoot, "unity", "Assets", "Jiangyu", "README.md");
+        var gitignorePath = Path.Combine(_tempRoot, "unity", ".gitignore");
+        File.WriteAllText(readmePath, "stale");
+        File.WriteAllText(gitignorePath, "stale");
+
+        var result = scaffolder.FindDriftedManagedFiles(_tempRoot);
+
+        Assert.Equal(2, result.Count);
+        Assert.Contains(readmePath, result);
+        Assert.Contains(gitignorePath, result);
+    }
+
+    [Fact]
+    public void FindDriftedManagedFiles_PrefabChangesIgnored()
+    {
+        // Drift detection covers only Jiangyu-managed templates. Modder-owned
+        // files under Assets/Prefabs/ must never be flagged.
+        var scaffolder = new UnityProjectScaffolder(new NullLog());
+        scaffolder.Init(_tempRoot);
+
+        var modderPrefab = Path.Combine(_tempRoot, "unity", "Assets", "Prefabs", "MyPrefab.prefab");
+        File.WriteAllText(modderPrefab, "fake prefab content");
+
+        var result = scaffolder.FindDriftedManagedFiles(_tempRoot);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
     public void FreshInit_GitignoreCoversUnityArtifacts()
     {
         var scaffolder = new UnityProjectScaffolder(new NullLog());

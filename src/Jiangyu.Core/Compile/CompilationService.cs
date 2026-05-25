@@ -144,6 +144,17 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         if (importValidationError != null)
             return Fail(importValidationError);
 
+        // Stale Jiangyu-managed editor scripts silently skip new batchmode pipeline steps.
+        var drifted = new UnityProjectScaffolder(_log).FindDriftedManagedFiles(projectDir);
+        if (drifted.Count > 0)
+        {
+            _log.Warning(
+                $"Jiangyu-managed Unity Editor scripts are out of sync with this Jiangyu version ({drifted.Count} file(s)):");
+            foreach (var path in drifted)
+                _log.Warning($"  {Path.GetRelativePath(projectDir, path)}");
+            _log.Warning("Run 'jiangyu unity sync' to refresh. Compile will continue, but bundles may not build correctly.");
+        }
+
         _log.Info($"  [timing] Setup/validation: {phaseSw.Elapsed.TotalSeconds:F1}s");
         phaseSw.Restart();
         var replacementEntries = DiscoverReplacementMeshEntries(projectDir, replacementRoot, config.GetCachePath(), gameDataPath, assetPipeline);
