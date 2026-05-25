@@ -12,14 +12,8 @@ You need:
     - [`Jiangyu.Loader.dll`](https://github.com/antistrategie/jiangyu/releases/latest/download/Jiangyu.Loader.dll), the in-game loader.
     - **Studio** for your platform: [Windows](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-studio-win-x64.zip) or [Linux](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-studio-linux-x64.zip).
     - **CLI** (optional, for scripting): [Windows](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-cli-win-x64.zip) or [Linux](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-cli-linux-x64.zip).
-- **Unity Editor** (optional). Required for bundled assets (textures, sprites, models, audio). Template-only mods don't need it. Install via [Unity Hub](https://unity.com/download), download `6000.0.72f1` from the [Unity archive](https://unity.com/releases/editor/archive), and add it to Hub.
+- **Unity Editor**. Install via [Unity Hub](https://unity.com/download), download `6000.0.72f1` from the [Unity archive](https://unity.com/releases/editor/archive), and add it to Hub. Studio shows the exact version Jiangyu expects and you should trust it over these docs if they differ. The expected version tracks MENACE's Unity build, so an editor update may be needed when MENACE updates.
 - **An image editor** (anything that exports PNG: GIMP, Photoshop, Krita).
-
-::: tip Do you need Unity?
-Replacements, template patches, and other simple tasks typically don't need Unity. But anything genuinely new generally does, and most mods past the skin-and-stat-tweak stage end up there. If there's any chance you'll cross that line, install Unity up front so you don't have to break flow halfway through.
-
-Studio shows the exact Unity Editor version Jiangyu expects, and you should trust Studio over these docs if they differ. The expected version tracks MENACE's Unity build, so an editor update may be needed when MENACE updates.
-:::
 
 ## Install the Jiangyu Loader
 
@@ -36,7 +30,7 @@ You only do this once per MENACE install. Updating Jiangyu means replacing this 
 Launch **Jiangyu Studio**. The Welcome screen appears. Expand the **Configuration** panel. That's where Studio surfaces missing prerequisites and lets you set the relevant paths.
 
 - **MENACE not found**: click **Set path…** and pick the directory containing `MENACE.exe`. The **Open Project** and **New Project** buttons only appear once this is set.
-- **Unity Editor not found**: click **Set path…** and pick your Unity Editor binary. The tooltip shows the expected version. Skip this if you only plan to ship template-only mods. This tutorial replaces a texture, so set it now.
+- **Unity Editor not found**: click **Set path…** and pick your Unity Editor binary. The tooltip shows the expected version.
 - **MelonLoader not installed**: indicates MelonLoader isn't present in your MENACE folder. Mods don't run without it. Install MelonLoader before continuing.
 
 The Welcome screen writes these into a global config file shared with the `jiangyu` CLI. After a project is loaded, the same fields appear in the Settings dialog (palette → **Settings**).
@@ -49,9 +43,10 @@ From the Welcome screen, click **New project**. Pick a directory and a name (for
 RedLogo/
   jiangyu.json
   .gitignore
+  unity/                 # per-mod Unity Editor project
 ```
 
-`jiangyu.json` is the manifest. See [Manifest](./reference/manifest.md) for the full reference. For now the defaults are fine.
+`jiangyu.json` is the manifest. See [Manifest](./reference/manifest.md) for the full reference. For now the defaults are fine. `unity/` is the per-mod Unity Editor project where modders author prefabs under `Assets/Prefabs/`.
 
 ## Find a target asset
 

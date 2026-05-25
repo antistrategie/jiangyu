@@ -482,16 +482,16 @@ function PathsSection() {
             label="Unity Editor"
             hint={
               config.gameUnityVersion !== null
-                ? `Required for asset compilation (${config.gameUnityVersion})`
-                : "Required for asset compilation"
+                ? `Unity Editor ${config.gameUnityVersion}`
+                : "Unity Editor binary"
             }
             path={config.unityEditorPath}
-            missingIcon={<TriangleAlert size={12} />}
+            missingIcon={<CircleX size={12} />}
             onChange={() => void handleSetUnityPath()}
           />
           {config.unityEditorPath !== null && config.unityEditorError !== null && (
-            <p className={styles.warning}>
-              <TriangleAlert size={12} /> {config.unityEditorError}
+            <p className={styles.error}>
+              <CircleX size={12} /> {config.unityEditorError}
             </p>
           )}
           {config.melonLoaderError !== null && (

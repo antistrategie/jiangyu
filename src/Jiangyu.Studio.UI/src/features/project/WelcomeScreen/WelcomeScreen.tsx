@@ -52,10 +52,12 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
   };
 
   const hasGameError = config?.gamePath === null;
-  const hasEditorWarning = config?.unityEditorPath === null;
+  const hasEditorError = config?.unityEditorPath === null;
   const hasEditorVersionMismatch =
     config?.unityEditorPath != null && config.unityEditorError !== null;
   const hasMelonWarning = config?.melonLoaderError != null;
+  const canOpenProject =
+    config?.gamePath != null && config.unityEditorPath != null && config.unityEditorError === null;
 
   return (
     <main className={styles.welcome}>
@@ -87,7 +89,7 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
                       change
                     </button>
                   </div>
-                  {!hasEditorWarning && !hasEditorVersionMismatch && (
+                  {!hasEditorError && !hasEditorVersionMismatch && (
                     <div className={styles.statusLine}>
                       <span className={styles.statusText}>Unity: {config.unityEditorPath}</span>
                       <button
@@ -102,10 +104,7 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
                 </div>
               )}
 
-              {(hasGameError ||
-                hasEditorWarning ||
-                hasEditorVersionMismatch ||
-                hasMelonWarning) && (
+              {(hasGameError || hasEditorError || hasEditorVersionMismatch || hasMelonWarning) && (
                 <div className={styles.statusGroup}>
                   {hasGameError && (
                     <div className={styles.statusLine}>
@@ -120,20 +119,18 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
                       </button>
                     </div>
                   )}
-                  {hasEditorWarning && (
+                  {hasEditorError && (
                     <div className={styles.statusLine}>
-                      <TriangleAlert size={14} className={styles.iconWarning} />
-                      <span className={styles.statusTextWarning}>Unity Editor not found</span>
-                      <span
-                        className={styles.infoTip}
-                        title={
-                          config.gameUnityVersion !== null
-                            ? `Requires ${config.gameUnityVersion}. Only needed for asset compilation.`
-                            : "Only needed for asset compilation."
-                        }
-                      >
-                        <Info size={12} />
-                      </span>
+                      <CircleX size={14} className={styles.iconError} />
+                      <span className={styles.statusTextError}>Unity Editor not found</span>
+                      {config.gameUnityVersion !== null && (
+                        <span
+                          className={styles.infoTip}
+                          title={`Requires ${config.gameUnityVersion}.`}
+                        >
+                          <Info size={12} />
+                        </span>
+                      )}
                       <button
                         className={styles.setPathBtn}
                         type="button"
@@ -145,8 +142,8 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
                   )}
                   {hasEditorVersionMismatch && (
                     <div className={styles.statusLine}>
-                      <TriangleAlert size={14} className={styles.iconWarning} />
-                      <span className={styles.statusTextWarning}>{config.unityEditorError}</span>
+                      <CircleX size={14} className={styles.iconError} />
+                      <span className={styles.statusTextError}>{config.unityEditorError}</span>
                       <button
                         className={styles.configLinkInline}
                         type="button"
@@ -173,7 +170,7 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
             </div>
           </details>
 
-          {config.gamePath !== null && (
+          {canOpenProject && (
             <div className={styles.actions}>
               <div className={styles.actionRow}>
                 <Button variant="primary" size="md" onClick={() => void handleOpen()}>

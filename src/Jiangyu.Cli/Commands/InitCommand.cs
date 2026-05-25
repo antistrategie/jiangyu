@@ -14,7 +14,7 @@ public static class InitCommand
 
             try
             {
-                var dirName = await ProjectScaffold.InitAsync(projectDir);
+                var dirName = await ProjectScaffold.InitAsync(projectDir, new ConsoleLogSink());
                 Console.WriteLine($"Initialised mod project: {dirName}");
                 return 0;
             }
