@@ -149,15 +149,18 @@ internal class ReplacementCoordinator
             log.Msg($"Applied {visualReplacements} visual replacement(s) and {textureMutations} texture mutation(s).");
 
         // Clones first: patches may target the newly registered cloneIds.
-        _templateCloneApplier.TryApply(log);
-        _templatePatchApplier.TryApply(log);
+        var clonesApplied = _templateCloneApplier.TryApply(log);
+        var patchesApplied = _templatePatchApplier.TryApply(log);
 
         // Type-specific post-patch registration. SoundBank clones need to
         // be registered with Stem's runtime SoundManager only after the
         // bankId patch lands, otherwise Stem indexes them under the source
         // bank's bankId and SAY/skill audio lookups by the modder's chosen
-        // bankId resolve to nothing.
-        _templateCloneApplier.RunPostPatchHooks(log);
+        // bankId resolve to nothing. Skipping this no-op when neither
+        // applier did work avoids re-deserialising every clone on each of
+        // the ~25 post-scene-load polls.
+        if (clonesApplied > 0 || patchesApplied > 0)
+            _templateCloneApplier.RunPostPatchHooks(log);
 
         // Humanoid-addition prefab script-config mirrors deferred from
         // addition-prefab loading. Resources is populated by this pass

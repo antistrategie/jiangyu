@@ -591,41 +591,33 @@ internal sealed class TemplateCloneApplier
         var type = reflectionTarget.GetType();
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var containers = 0;
 
         foreach (var prop in type.GetProperties(flags))
         {
             if (prop.GetIndexParameters().Length != 0) continue;
             if (!prop.CanRead || !prop.CanWrite) continue;
             if (!seen.Add("P:" + prop.Name)) continue;
-            if (TryReallocCollectionContainer(
-                    () => prop.GetValue(reflectionTarget),
-                    v => prop.SetValue(reflectionTarget, v),
-                    prop.PropertyType,
-                    prop.Name,
-                    cloneId,
-                    log))
-                containers++;
+            TryReallocCollectionContainer(
+                () => prop.GetValue(reflectionTarget),
+                v => prop.SetValue(reflectionTarget, v),
+                prop.PropertyType,
+                prop.Name,
+                cloneId,
+                log);
         }
 
         foreach (var field in type.GetFields(flags))
         {
             if (!seen.Add("F:" + field.Name)) continue;
             if (field.IsInitOnly) continue;
-            if (TryReallocCollectionContainer(
-                    () => field.GetValue(reflectionTarget),
-                    v => field.SetValue(reflectionTarget, v),
-                    field.FieldType,
-                    field.Name,
-                    cloneId,
-                    log))
-                containers++;
+            TryReallocCollectionContainer(
+                () => field.GetValue(reflectionTarget),
+                v => field.SetValue(reflectionTarget, v),
+                field.FieldType,
+                field.Name,
+                cloneId,
+                log);
         }
-
-        if (containers > 0)
-            log.Msg(
-                $"Template clone '{cloneId}': reallocated {containers} collection container(s) "
-                + "so clone-side clear/append/index-set don't leak into the source.");
     }
 
     private static bool TryReallocCollectionContainer(

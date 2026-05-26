@@ -93,22 +93,10 @@ internal sealed partial class TemplatePatchApplier
                 return ApplyOutcome.Applied;
             }
 
-            var matches = ReadbackMatches(converted, readback);
-            var verb = op.Op switch
-            {
-                CompiledTemplateOp.Append => "appended",
-                CompiledTemplateOp.InsertAt => $"inserted at [{op.Index}]",
-                _ => "set to",
-            };
-            if (!matches)
+            if (!ReadbackMatches(converted, readback))
             {
                 log.Warning(FormatPrefix(templateTypeName, templateId, op)
                     + $"wrote {converted}, read back {readback ?? "null"}: the write did not propagate to the live template.");
-            }
-            else
-            {
-                log.Msg(FormatPrefix(templateTypeName, templateId, op)
-                    + $"{verb} {FormatValue(converted)}, readback matches.");
             }
         }
 
