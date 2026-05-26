@@ -4,6 +4,7 @@ using Jiangyu.Core.Config;
 using Jiangyu.Core.Il2Cpp;
 using Jiangyu.Core.Models;
 using Jiangyu.Core.Templates;
+using Jiangyu.Core.Templates.Kdl;
 
 namespace Jiangyu.Cli.Commands.Templates;
 
@@ -59,7 +60,7 @@ public static class TemplatesFormatCommand
         }
 
         var files = File.Exists(inputPath)
-            ? new List<string> { inputPath }
+            ? [inputPath]
             : Directory.EnumerateFiles(inputPath, "*.kdl", SearchOption.AllDirectories)
                 .OrderBy(f => f, StringComparer.Ordinal)
                 .ToList();
@@ -150,13 +151,17 @@ public static class TemplatesFormatCommand
         IReadOnlyList<AssetEntry>? indexedAssets,
         IBankIdResolver? bankIdResolver)
     {
-        var doc = KdlTemplateParser.ParseText(text);
+        // KdlSharp discards /- blocks at parse time, so strip them before the
+        // parse pipeline runs and reinject them into the formatted output.
+        var slashdashBlocks = KdlSlashdashPreserver.Extract(text, out var stripped);
+        var doc = KdlTemplateParser.ParseText(stripped);
         if (catalog != null)
         {
             TemplateCatalogValidator.ValidateEditorDocument(doc, catalog, indexedAssets, bankIdResolver);
             TemplateCatalogValidator.NormaliseForEmit(doc, catalog, bankIdResolver);
         }
-        return KdlTemplateSerialiser.Serialise(doc);
+        var formatted = KdlTemplateSerialiser.Serialise(doc);
+        return KdlSlashdashPreserver.Reinject(formatted, slashdashBlocks);
     }
 
     /// <summary>

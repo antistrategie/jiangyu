@@ -347,4 +347,3 @@ export interface CompileSummary {
   templatePatches: number;
   templateClones: number;
 }
-
