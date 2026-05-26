@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using UnityEditor;
+using UnityEditorInternal;
 using UnityEngine;
 using StringComparer = System.StringComparer;
 
@@ -285,6 +286,13 @@ namespace Jiangyu.Mod
                     // is saved.
                     CopySupplementaryChildrenFromReference(instance, referenceInstance);
 
+                    // Mirror the reference soldier's per-bone ragdoll physics
+                    // (Rigidbody / Collider / CharacterJoint) onto matching
+                    // bones in the baked rig. Without this, MENACE's
+                    // MenaceRagdoll component has nothing to actuate on
+                    // death and the unit stays standing.
+                    MirrorRagdollPhysicsFromReference(instance, referenceInstance);
+
                     // Record the reference vanilla prefab's runtime Object.name
                     // on a sentinel child of the output prefab. The loader's
                     // humanoid mirror reads this at addition-load time to know
@@ -374,6 +382,82 @@ namespace Jiangyu.Mod
                 Debug.Log(
                     $"Jiangyu BakeHumanoid: copied {copied} supplementary child subtree(s) from "
                     + $"'{reference.name}' onto baked prefab.");
+        }
+
+        // Copy the reference soldier's per-bone Rigidbody / Collider /
+        // CharacterJoint onto matching bones in the baked rig. Bone
+        // matching is by Object.name, since humanoid bones share the
+        // same names across vanilla and baked rigs by convention.
+        // CharacterJoint.connectedBody references are remapped from
+        // the reference's Rigidbody pointers to the baked rig's
+        // freshly-pasted equivalents.
+        //
+        // Three passes preserve ordering: Rigidbody first (joints
+        // reference it via connectedBody), Colliders second, Joints
+        // last.
+        private static void MirrorRagdollPhysicsFromReference(GameObject baked, GameObject reference)
+        {
+            var bakedBones = new Dictionary<string, Transform>(StringComparer.Ordinal);
+            foreach (var t in baked.GetComponentsInChildren<Transform>(includeInactive: true))
+                bakedBones[t.name] = t;
+
+            // Pass 1: Rigidbody. Record ref→baked mapping so joint
+            // connectedBody references can be remapped in Pass 3.
+            var rigidbodyMap = new Dictionary<Rigidbody, Rigidbody>();
+            foreach (var refRb in reference.GetComponentsInChildren<Rigidbody>(includeInactive: true))
+            {
+                var boneName = refRb.gameObject.name;
+                if (!bakedBones.TryGetValue(boneName, out var targetTransform))
+                {
+                    Debug.LogWarning(
+                        $"Jiangyu BakeHumanoid: ragdoll bone '{boneName}' not found in baked rig; "
+                        + "skipping Rigidbody.");
+                    continue;
+                }
+                ComponentUtility.CopyComponent(refRb);
+                ComponentUtility.PasteComponentAsNew(targetTransform.gameObject);
+                rigidbodyMap[refRb] = targetTransform.gameObject.GetComponent<Rigidbody>();
+            }
+
+            // Pass 2: Colliders. A bone may carry more than one collider
+            // (the vanilla rig has Spine2 with both BoxCollider and
+            // SphereCollider). PasteComponentAsNew appends rather than
+            // replacing, so iterating per-collider-instance covers that.
+            foreach (var refCollider in reference.GetComponentsInChildren<Collider>(includeInactive: true))
+            {
+                var boneName = refCollider.gameObject.name;
+                if (!bakedBones.TryGetValue(boneName, out var targetTransform))
+                    continue;
+                ComponentUtility.CopyComponent(refCollider);
+                ComponentUtility.PasteComponentAsNew(targetTransform.gameObject);
+            }
+
+            // Pass 3: CharacterJoint, with connectedBody remap from
+            // reference Rigidbody → baked Rigidbody via the map built
+            // in Pass 1. Joints whose connectedBody isn't in the map
+            // (cross-prefab edge case) leave the field null and log.
+            foreach (var refJoint in reference.GetComponentsInChildren<CharacterJoint>(includeInactive: true))
+            {
+                var boneName = refJoint.gameObject.name;
+                if (!bakedBones.TryGetValue(boneName, out var targetTransform))
+                    continue;
+                ComponentUtility.CopyComponent(refJoint);
+                ComponentUtility.PasteComponentAsNew(targetTransform.gameObject);
+                var newJoint = targetTransform.gameObject.GetComponent<CharacterJoint>();
+                if (refJoint.connectedBody != null
+                    && rigidbodyMap.TryGetValue(refJoint.connectedBody, out var remapped))
+                {
+                    newJoint.connectedBody = remapped;
+                }
+                else if (refJoint.connectedBody != null)
+                {
+                    Debug.LogWarning(
+                        $"Jiangyu BakeHumanoid: CharacterJoint on '{boneName}' references Rigidbody on "
+                        + $"'{refJoint.connectedBody.gameObject.name}' which has no baked equivalent. "
+                        + "Joint connectedBody left null.");
+                    newJoint.connectedBody = null;
+                }
+            }
         }
 
         private static HashSet<Transform> CollectHumanoidBones(GameObject root)

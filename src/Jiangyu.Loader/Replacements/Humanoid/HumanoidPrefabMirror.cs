@@ -176,10 +176,75 @@ internal static class HumanoidPrefabMirror
     private static void MirrorRagdoll(GameObject addition, GameObject reference, MelonLogger.Instance log)
     {
         var src = reference.GetComponent<MenaceRagdoll>();
-        if (src == null) return;
+        if (src == null)
+        {
+            log.Warning(
+                $"  Humanoid mirror on '{addition.name}': reference '{reference.name}' has no "
+                + "MenaceRagdoll component. Death physics will not activate on this unit.");
+            return;
+        }
         var dst = addition.GetComponent<MenaceRagdoll>() ?? addition.AddComponent<MenaceRagdoll>();
         dst.m_Template = src.m_Template;
         dst.m_SkeletalRoot = RemapTransform(src.m_SkeletalRoot, reference.transform, addition.transform, log);
+        MirrorRagdollParts(dst, src, addition, log);
+    }
+
+    /// <summary>
+    /// Copy the reference Ragdoll's <c>m_Parts</c> array onto the addition
+    /// Ragdoll, remapping each <c>RagdollPart.Rigidbody</c> reference from
+    /// the reference's bone Rigidbody to the addition's same-named bone
+    /// Rigidbody. Static config on each part (HasCustomCenterOfMass,
+    /// AttachmentSlot, DismemberPrefab, etc.) is preserved.
+    ///
+    /// MENACE serialises <c>m_Parts</c> on the live soldier prefab. When
+    /// the runtime instantiates an addition prefab without this populated,
+    /// <c>Ragdoll.GetCenterRigidbody()</c> returns null and the death
+    /// physics chain bombs out.
+    /// </summary>
+    private static void MirrorRagdollParts(
+        MenaceRagdoll dst, MenaceRagdoll src,
+        GameObject addition, MelonLogger.Instance log)
+    {
+        var srcParts = src.m_Parts;
+        if (srcParts == null || srcParts.Count == 0)
+        {
+            log.Warning(
+                $"  Humanoid mirror on '{addition.name}': reference Ragdoll has empty m_Parts; "
+                + "death physics will not activate.");
+            return;
+        }
+
+        var bakedRigidbodies = new Dictionary<string, Rigidbody>(StringComparer.Ordinal);
+        foreach (var rb in addition.GetComponentsInChildren<Rigidbody>(includeInactive: true))
+            bakedRigidbodies[rb.gameObject.name] = rb;
+
+        var remapped = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<RagdollPart>(srcParts.Count);
+        for (int i = 0; i < srcParts.Count; i++)
+        {
+            var srcPart = srcParts[i];
+            if (srcPart == null || srcPart.Rigidbody == null)
+                continue;
+            var boneName = srcPart.Rigidbody.gameObject.name;
+            if (!bakedRigidbodies.TryGetValue(boneName, out var dstRb))
+            {
+                log.Warning(
+                    $"  Humanoid mirror on '{addition.name}': RagdollPart[{i}] bone '{boneName}' "
+                    + "has no equivalent Rigidbody in the baked rig; part skipped.");
+                continue;
+            }
+
+            remapped[i] = new RagdollPart
+            {
+                Rigidbody = dstRb,
+                HasCustomCenterOfMass = srcPart.HasCustomCenterOfMass,
+                CustomCenterOfMass = srcPart.CustomCenterOfMass,
+                DismemberPrefab = srcPart.DismemberPrefab,
+                CanHaveAttachmentWithCollider = srcPart.CanHaveAttachmentWithCollider,
+                AttachmentSlot = srcPart.AttachmentSlot,
+            };
+        }
+
+        dst.m_Parts = remapped;
     }
 
     private static void MirrorFootprints(GameObject addition, GameObject reference, MelonLogger.Instance log)
