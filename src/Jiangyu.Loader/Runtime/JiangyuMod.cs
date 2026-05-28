@@ -3,7 +3,7 @@ using Jiangyu.Loader.Diagnostics;
 using MelonLoader;
 using MelonLoader.Utils;
 
-[assembly: MelonInfo(typeof(Jiangyu.Loader.Runtime.JiangyuMod), "Jiangyu", "0.1.0", "antistrategie")]
+[assembly: MelonInfo(typeof(Jiangyu.Loader.Runtime.JiangyuMod), "Jiangyu", Jiangyu.Loader.BuildInfo.Version, "antistrategie")]
 [assembly: MelonGame("Overhype Studios", "Menace")]
 
 namespace Jiangyu.Loader.Runtime;
@@ -54,7 +54,7 @@ public class JiangyuMod : MelonMod
 
     public override void OnInitializeMelon()
     {
-        LoggerInstance.Msg("Jiangyu loader initialising...");
+        LoggerInstance.Msg($"Jiangyu loader v{Info.Version} initialising...");
 
         var modsDir = Path.Combine(MelonEnvironment.MelonBaseDirectory, "Mods");
         var loadSummary = _replacementCoordinator.LoadBundles(modsDir, LoggerInstance);

@@ -18,6 +18,46 @@
     <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.45" PrivateAssets="all" />
   </ItemGroup>
 
+  <!--
+    Generates BuildInfo.g.cs with a Jiangyu.Loader.BuildInfo.Version const from
+    git describe output. The MelonInfo assembly attribute consumes this const so
+    logs and the MelonLoader console report the real tag-derived version (e.g.
+    "0.5.0" on a tagged build, "0.5.0-1-g269ec83" on a dev build). Falls back to
+    "0.0.0-dev" when git or tags are unavailable (e.g. shallow CI checkouts).
+  -->
+  <Target Name="GenerateJiangyuBuildInfo" BeforeTargets="CoreCompile">
+    <Exec Command="git describe --tags --always --dirty"
+          ConsoleToMSBuild="true"
+          IgnoreExitCode="true"
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          StandardOutputImportance="low"
+          StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_GitDescribeRaw" />
+      <Output TaskParameter="ExitCode" PropertyName="_GitDescribeExitCode" />
+    </Exec>
+    <PropertyGroup>
+      <JiangyuVersion Condition=" '$(_GitDescribeExitCode)' == '0' AND '$(_GitDescribeRaw)' != '' ">$(_GitDescribeRaw.TrimStart('v'))</JiangyuVersion>
+      <JiangyuVersion Condition=" '$(JiangyuVersion)' == '' ">0.0.0-dev</JiangyuVersion>
+      <_BuildInfoFile>$(IntermediateOutputPath)BuildInfo.g.cs</_BuildInfoFile>
+    </PropertyGroup>
+    <ItemGroup>
+      <_BuildInfoLines Include="// &lt;auto-generated /&gt;" />
+      <_BuildInfoLines Include="namespace Jiangyu.Loader {" />
+      <_BuildInfoLines Include="    internal static class BuildInfo {" />
+      <_BuildInfoLines Include="        public const string Version = &quot;$(JiangyuVersion)&quot;%3B" />
+      <_BuildInfoLines Include="    }" />
+      <_BuildInfoLines Include="}" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(_BuildInfoFile)"
+                      Lines="@(_BuildInfoLines)"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Compile Include="$(_BuildInfoFile)" />
+      <FileWrites Include="$(_BuildInfoFile)" />
+    </ItemGroup>
+  </Target>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Jiangyu.Loader.Tests" />
   </ItemGroup>
