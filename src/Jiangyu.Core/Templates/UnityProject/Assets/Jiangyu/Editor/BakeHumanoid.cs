@@ -487,23 +487,7 @@ namespace Jiangyu.Mod
 
         private static Material BuildBakedMaterial(Material reference, Texture2D baseColor)
         {
-            // Resolve by name, not by direct property. reference.shader returns
-            // a Shader bound by GUID, and AssetRipper's GUIDs aren't guaranteed
-            // stable across re-rips. If Imported/ is regenerated later, the
-            // captured GUID becomes a dangling reference and the bundled
-            // material falls back to Unity's magenta error shader. Shader.Find
-            // pulls the currently-imported asset matching the name string,
-            // which is the stable identifier.
-            var shaderName = reference.shader.name;
-            var shader = Shader.Find(shaderName);
-            if (shader == null)
-            {
-                Debug.LogWarning(
-                    $"BakeHumanoid: Shader.Find('{shaderName}') returned null; falling back to "
-                    + "the reference's GUID-bound shader. If the bundled material renders magenta, "
-                    + "the GUID has drifted since the last rip. Re-run Imported/ extraction.");
-                shader = reference.shader;
-            }
+            var shader = reference.shader;
             var mat = new Material(shader)
             {
                 name = "baked",

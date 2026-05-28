@@ -1,6 +1,8 @@
 using AssetRipper.Assets;
 using AssetRipper.Assets.Collections;
 using AssetRipper.SourceGenerated.Classes.ClassID_1034;
+using System.Buffers.Binary;
+using System.Text;
 
 namespace AssetRipper.Export.UnityProjects;
 
@@ -10,6 +12,7 @@ public class AssetExportCollection<T> : ExportCollection where T : IUnityObjectB
 	{
 		AssetExporter = assetExporter ?? throw new ArgumentNullException(nameof(assetExporter));
 		Asset = asset ?? throw new ArgumentNullException(nameof(asset));
+		GUID = ComputeStableGuid(asset);
 	}
 
 	public override bool Export(IExportContainer container, string projectDirectory, FileSystem fileSystem)
@@ -75,7 +78,7 @@ public class AssetExportCollection<T> : ExportCollection where T : IUnityObjectB
 		return importer;
 	}
 
-	public override UnityGuid GUID { get; } = UnityGuid.NewGuid();
+	public override UnityGuid GUID { get; }
 	public override IAssetExporter AssetExporter { get; }
 	public override AssetCollection File => Asset.Collection;
 	public override IEnumerable<IUnityObjectBase> Assets
@@ -84,4 +87,23 @@ public class AssetExportCollection<T> : ExportCollection where T : IUnityObjectB
 	}
 	public override string Name => Asset.GetBestName();
 	public T Asset { get; }
+
+	/// <summary>
+	/// Deterministic GUID derived from the asset's identity inside the source bundle.
+	/// </summary>
+	protected virtual UnityGuid ComputeStableGuid(T asset)
+		=> ComputeStableGuid(asset.Collection.Name, asset.PathID, asset.ClassID);
+
+	/// <summary>
+	/// MD5 of UTF-8 collection name, little-endian int64 PathID, and little-endian int32 ClassID.
+	/// </summary>
+	public static UnityGuid ComputeStableGuid(string collectionName, long pathId, int classId)
+	{
+		ReadOnlySpan<byte> nameBytes = Encoding.UTF8.GetBytes(collectionName);
+		Span<byte> source = stackalloc byte[nameBytes.Length + sizeof(long) + sizeof(int)];
+		nameBytes.CopyTo(source);
+		BinaryPrimitives.WriteInt64LittleEndian(source.Slice(nameBytes.Length, sizeof(long)), pathId);
+		BinaryPrimitives.WriteInt32LittleEndian(source.Slice(nameBytes.Length + sizeof(long), sizeof(int)), classId);
+		return UnityGuid.Md5Hash(source);
+	}
 }
