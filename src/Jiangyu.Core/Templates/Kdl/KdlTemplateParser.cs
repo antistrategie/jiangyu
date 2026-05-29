@@ -787,6 +787,20 @@ public static class KdlTemplateParser
             return false;
         }
 
+        // type= is the single construction keyword. It names the type and the
+        // compiler picks the storage mechanism from the destination field: an
+        // inline value for a concrete struct, a constructed ScriptableObject for
+        // a reference element, a tagged string for a tagged-string field. The
+        // error points composite=/handler= authors at type=.
+        if (GetProperty(node, "composite") != null || GetProperty(node, "handler") != null)
+        {
+            var keyword = GetProperty(node, "composite") != null ? "composite=" : "handler=";
+            log.Error(
+                $"{pos}: '{keyword}' is not a valid keyword. Use type=\"<TypeName>\". "
+                + "type= names the type and the compiler picks how to store it from the destination field.");
+            return false;
+        }
+
         // Clear takes neither index nor value — empties the whole collection.
         if (opKind == CompiledTemplateOp.Clear)
         {
@@ -834,9 +848,7 @@ public static class KdlTemplateParser
                 node.Arguments.Count >= 2
                 || GetProperty(node, "enum") != null
                 || GetProperty(node, "ref") != null
-                || GetProperty(node, "asset") != null
-                || GetProperty(node, "composite") != null
-                || GetProperty(node, "handler") != null;
+                || GetProperty(node, "asset") != null;
 
             if (hasIndex && hasValue)
             {
@@ -904,30 +916,25 @@ public static class KdlTemplateParser
                 parsedIndex = parsed;
             }
 
-            // Descent block: set "Field" index=N type="X" { set "Sub" ... }.
-            // The outer 'set' is purely a navigation marker — it carries no
-            // value and no scalar result. Each inner directive becomes its
-            // own compiled op with a TemplateDescentStep prepended onto its
-            // Descent list, recording the outer (Field, index, type) navigation.
+            // Edit-in-place descent: set "Field" index=N { set "Sub" ... }
+            // with no type=. Navigates into the existing element at slot N and
+            // edits its fields; the concrete subtype is inferred from the live
+            // element at apply time (and from the source slot at validate
+            // time), so no type= is needed. Each inner directive becomes its
+            // own compiled op with a TemplateDescentStep (Field, index, null
+            // subtype) prepended onto its Descent list.
             //
-            // Composite construction (set "Field" composite="X" { ... }) and
-            // handler construction (set "Field" handler="X" { ... }) also use
-            // a child block but produce a value rather than navigate. Fall
-            // through to TryParseValue.
-            //
-            // Bare child block with no hint (set "Field" { ... }) is the
-            // inferred-composite case: the destination is a monomorphic
-            // composite-typed scalar (e.g. LocalizedLine UnitTitle) and the
-            // type is recovered at validation time. Mirrors the same
-            // inference append/insert already get via TryParseValue line
-            // 1278. Only route to descent when index= or type= is present,
-            // since those are the two genuine descent signals.
+            // type= present means "construct a fresh element here" and falls
+            // through to TryParseValue as a TypeConstruction value (the index,
+            // if any, rides the Set op so element N is replaced). The bare-block
+            // inferred-composite (set "Field" { ... }) also produces a value via
+            // TryParseValue. So descent fires only for an indexed set with no
+            // type=.
             if (node.HasChildren
-                && (parsedIndex != null || GetProperty(node, "type") != null)
-                && GetProperty(node, "composite") == null
-                && GetProperty(node, "handler") == null)
+                && parsedIndex is int descentIndex
+                && GetProperty(node, "type") == null)
             {
-                return TryParseDescentBlock(node, pos, log, ops, fieldPath, parsedIndex);
+                return TryParseDescentBlock(node, pos, log, ops, fieldPath, descentIndex);
             }
         }
 
@@ -970,24 +977,6 @@ public static class KdlTemplateParser
             }
         }
 
-        // type= is only meaningful on a descent block (set with index= and a
-        // child block, no composite=). On any other shape it's either a typo
-        // or a misunderstanding — surface it loudly rather than silently
-        // dropping the hint and letting the modder think they're getting
-        // polymorphism validation. The descent path consumes type= before
-        // reaching this check; getting here means it isn't descent.
-        if (GetProperty(node, "type") != null)
-        {
-            log.Error(
-                $"{pos}: 'type=' is only valid on 'set' with a descent child block "
-                + $"(set \"Field\" index=N type=\"X\" {{ ... }}); it has no meaning on '{opName}' "
-                + (GetProperty(node, "composite") != null
-                    ? "with composite= (which constructs a value), "
-                    : "without descent, ")
-                + "and is rejected to surface the typo.");
-            return false;
-        }
-
         // Parse the value
         if (!TryParseValue(node, pos, log, out var value))
             return false;
@@ -1015,26 +1004,13 @@ public static class KdlTemplateParser
     private static bool TryParseDescentBlock(
         KdlNode node, string pos, ILogSink log,
         List<CompiledTemplateSetOperation> ops,
-        string outerField, int? outerIndex)
+        string outerField, int outerIndex)
     {
-        // Two valid descent shapes:
-        //  - Collection descent (outerIndex non-null): navigate into element
-        //    [N] of the named collection. type= optional for monomorphic
-        //    element types, required for polymorphic.
-        //  - Scalar polymorphic descent (outerIndex null + type= present):
-        //    navigate into the named scalar field, casting to the named
-        //    concrete subtype. Used for Odin-routed interface-typed fields
-        //    like Attack.DamageFilterCondition: ITacticalCondition.
-        var subtypeHintEarly = GetProperty(node, "type");
-        if (outerIndex == null && string.IsNullOrEmpty(subtypeHintEarly))
-        {
-            log.Error(
-                $"{pos}: 'set' with a child block requires either index= "
-                + "(collection descent into element N) or type=\"<Subtype>\" "
-                + "(scalar polymorphic descent into a non-collection field).");
-            return false;
-        }
-
+        // Reached only for an indexed edit descent: set "Field" index=N { ... }
+        // with no type= (the routing guarantees that). The element's concrete
+        // subtype is inferred from the live element at apply time and from the
+        // base's concrete subtypes at validate time, so the descent step
+        // carries a null subtype.
         if (node.Arguments.Count > 1)
         {
             log.Error(
@@ -1045,19 +1021,11 @@ public static class KdlTemplateParser
 
         if (GetProperty(node, "ref") != null
             || GetProperty(node, "enum") != null
-            || GetProperty(node, "composite") != null
             || GetProperty(node, "asset") != null)
         {
             log.Error(
-                $"{pos}: 'set' with a child block must not carry ref=, enum=, composite=, or asset= properties; "
+                $"{pos}: 'set' with a child block must not carry ref=, enum=, or asset= properties; "
                 + "those belong on the inner 'set' that produces the value.");
-            return false;
-        }
-
-        var subtypeHint = GetProperty(node, "type");
-        if (subtypeHint != null && string.IsNullOrWhiteSpace(subtypeHint))
-        {
-            log.Error($"{pos}: type= must be a non-empty string.");
             return false;
         }
 
@@ -1094,9 +1062,7 @@ public static class KdlTemplateParser
         var newStep = new TemplateDescentStep
         {
             Field = outerField,
-            // Null index marks a scalar polymorphic descent (type-only).
             Index = outerIndex,
-            Subtype = subtypeHint,
         };
 
         // Prepend the new step onto each inner op's descent list. Nested
@@ -1116,11 +1082,13 @@ public static class KdlTemplateParser
 
     /// <summary>
     /// Parse the value from an operation node. The value can come from:
-    /// - <c>handler="Subtype"</c> with children (HandlerConstruction —
-    ///   ScriptableObject construction for a polymorphic-reference array)
-    /// - <c>composite="TypeName"</c> with children (Composite — inline value)
+    /// - <c>type="TypeName"</c> with children (TypeConstruction — the compiler
+    ///   later picks ScriptableObject construction, inline value, or tagged
+    ///   string from the destination field)
     /// - <c>ref="TemplateType" "id"</c> (TemplateReference)
     /// - <c>enum="EnumType" "value"</c> (Enum)
+    /// - <c>asset="name"</c> (Asset)
+    /// - A child block with no value-type property (inferred inline value)
     /// - A second positional argument (scalar or string)
     /// </summary>
     private static bool TryParseValue(
@@ -1129,16 +1097,15 @@ public static class KdlTemplateParser
     {
         value = null!;
 
-        // Check for handler= (ScriptableObject construction for a
-        // polymorphic-reference array element, e.g. EventHandlers).
-        var handlerType = GetProperty(node, "handler");
-        if (handlerType != null)
-            return TryParseHandlerConstructionValue(node, handlerType, pos, log, out value);
-
-        // Check for composite=
-        var compositeType = GetProperty(node, "composite");
-        if (compositeType != null)
-            return TryParseCompositeValue(node, compositeType, pos, log, out value);
+        // Check for type= construction. On append/insert this builds a fresh
+        // polymorphic element (e.g. an EventHandlers entry); on set, type= is
+        // consumed earlier as a descent block, so reaching here with type=
+        // means either an append/insert construct or a set that named type=
+        // without the required child block (the construct path reports the
+        // missing block).
+        var typeConstruct = GetProperty(node, "type");
+        if (typeConstruct != null)
+            return TryParseTypeConstructionValue(node, typeConstruct, pos, log, out value);
 
         // Check for ref=
         var refType = GetProperty(node, "ref");
@@ -1155,22 +1122,21 @@ public static class KdlTemplateParser
         if (enumType != null)
             return TryParseEnumValue(node, enumType, pos, log, out value);
 
-        // Inferred composite: a child block with no value-type property and
+        // Inferred inline value: a child block with no value-type property and
         // no positional value. The element type is determined from the
-        // destination at validation time, which lets monomorphic
-        // destinations (List<Sound>, List<SoundVariation>, List<ID>) omit
-        // the redundant composite="X" declaration. Polymorphic
-        // destinations still need explicit composite=/handler=; the
-        // validator rejects inferred-composite there with a candidate
-        // list. Authoring sentinel: TypeName="" tells the validator to
-        // infer rather than resolve.
+        // destination at validation time, which lets monomorphic destinations
+        // (List<Sound>, List<SoundVariation>, List<ID>) omit the redundant
+        // type="X" declaration. Polymorphic destinations still need explicit
+        // type=; the validator rejects an inferred value there with a candidate
+        // list. Authoring sentinel: TypeName="" tells the validator to infer
+        // rather than resolve.
         if (node.HasChildren && node.Arguments.Count < 2)
             return TryParseCompositeValue(node, string.Empty, pos, log, out value);
 
         // Must have a second argument with the literal value
         if (node.Arguments.Count < 2)
         {
-            log.Error($"{pos}: '{node.Name}' requires a value (second argument, ref=, enum=, composite=, or handler=).");
+            log.Error($"{pos}: '{node.Name}' requires a value (second argument, ref=, enum=, asset=, or type=).");
             return false;
         }
 
@@ -1411,17 +1377,18 @@ public static class KdlTemplateParser
         return true;
     }
 
-    // handler="SubtypeName" { set "field" <value> ... }
+    // type="TypeName" { set "field" <value> ... } constructs a fresh element.
     //
-    // Constructs a freshly-allocated ScriptableObject of the named subtype
-    // at apply time and pushes/inserts/replaces it in a polymorphic-
-    // reference array such as SkillTemplate.EventHandlers. Distinct from
-    // composite= which builds an inline value-typed struct. The inner
-    // directives must be flat 'set' ops naming top-level fields on the
-    // constructed type; descent and indexed writes inside the construction
-    // are not supported in this slice (use a separate descent patch on
-    // the resulting element after append/insert if you need them).
-    private static bool TryParseHandlerConstructionValue(
+    // It names the concrete type to build. The compiler picks the storage
+    // mechanism from the destination field. A polymorphic-reference element
+    // (SkillTemplate.EventHandlers) constructs a freshly-allocated
+    // ScriptableObject. A concrete struct field (EntityTemplate.AIRole) builds
+    // an inline value. A tagged-string field packs a tagged string. On append
+    // or insert the element is pushed or inserted. On an indexed set it
+    // replaces the element at that slot, whereas an indexed set with no type=
+    // edits in place via a descent block. The inner directives configure the
+    // new instance.
+    private static bool TryParseTypeConstructionValue(
         KdlNode node, string subtypeName, string pos, ILogSink log,
         out CompiledTemplateValue value)
     {
@@ -1429,53 +1396,52 @@ public static class KdlTemplateParser
 
         if (string.IsNullOrWhiteSpace(subtypeName))
         {
-            log.Error($"{pos}: handler= must be a non-empty subtype name.");
+            log.Error($"{pos}: type= must be a non-empty subtype name.");
             return false;
         }
 
         if (GetProperty(node, "ref") != null
             || GetProperty(node, "enum") != null
-            || GetProperty(node, "composite") != null
-            || GetProperty(node, "asset") != null
-            || GetProperty(node, "type") != null)
+            || GetProperty(node, "asset") != null)
         {
             log.Error(
-                $"{pos}: 'handler=' is exclusive with ref=, enum=, composite=, asset=, and type=. "
-                + "It signals construction of a new ScriptableObject; the others are different value shapes.");
+                $"{pos}: 'type=' is exclusive with ref=, enum=, and asset=. "
+                + "It names a new element to construct; the others are different value shapes.");
             return false;
         }
 
         if (node.Arguments.Count > 1)
         {
-            log.Error($"{pos}: 'handler=' construction must not carry a positional value; configure fields via inner directives only.");
+            log.Error($"{pos}: 'type=' construction must not carry a positional value. Configure fields via inner directives only.");
             return false;
         }
 
-        if (!node.HasChildren)
-        {
-            log.Error(
-                $"{pos}: 'handler=\"{subtypeName}\"' requires a child block with at least one directive "
-                + "(otherwise the constructed handler would carry only its default field values, "
-                + "which is rarely intentional — use ref= or refer to an existing handler instead).");
-            return false;
-        }
-
+        // An empty body (type="X" {}) is allowed: it constructs the element
+        // with its default field values, which is the intent for marker nodes
+        // such as a tagged-string EMPTY conversation node.
         if (!TryParseInnerOperations(node, pos, log, out var ops))
             return false;
 
+        // Optional from="..." prototype-source, mirroring the inferred-value
+        // path: deep-copy an existing element in the destination collection
+        // (matched by name) before applying the inner ops.
+        var from = GetProperty(node, "from");
+
         value = new CompiledTemplateValue
         {
-            Kind = CompiledTemplateValueKind.HandlerConstruction,
-            HandlerConstruction = new CompiledTemplateComposite
+            Kind = CompiledTemplateValueKind.TypeConstruction,
+            TypeConstruction = new CompiledTemplateComposite
             {
                 TypeName = subtypeName,
                 Operations = ops,
+                From = string.IsNullOrWhiteSpace(from) ? null : from,
             },
         };
         return true;
     }
 
-    // composite="TypeName" { <directives> }. Same set of operations as the
+    // Inferred inline value: a child block with no type= (TypeName=""). The
+    // destination's element type resolves it at validate time. Same operations as the
     // outer patch block — set/append/insert/remove/clear — applied to the
     // freshly-constructed instance. Allowing all five ops is what lets
     // modders author "append a PropertyChange to the constructed handler's

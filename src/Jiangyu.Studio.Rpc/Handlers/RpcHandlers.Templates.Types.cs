@@ -175,9 +175,9 @@ public static partial class RpcHandlers
         /// <c>ConversationNodeContainer.m_SerializedNodes</c>). Non-null
         /// signals to the visual editor that the field stores
         /// <c>"DISCRIMINATOR|{json}"</c> entries authored via
-        /// <c>composite="X"</c>; the editor renders a discriminator picker
+        /// <c>type="X"</c>. The editor renders a discriminator picker
         /// from <see cref="TaggedDiscriminators"/> instead of a free-form
-        /// composite type field. Null on non-tagged members.</summary>
+        /// type field. Null on non-tagged members.</summary>
         [JsonPropertyName("taggedPolymorphicBase")]
         public string? TaggedPolymorphicBase { get; set; }
 

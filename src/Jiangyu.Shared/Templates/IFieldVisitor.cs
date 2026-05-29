@@ -41,28 +41,18 @@ public interface IFieldVisitor<TNode>
     /// <summary>
     /// Resolve <paramref name="parent"/>'s <paramref name="fieldName"/>
     /// member and bind its value into <paramref name="child"/>. Used for
-    /// non-terminal segment walks and for the read half of scalar
-    /// polymorphic descent.
+    /// non-terminal segment walks.
     /// </summary>
     OperationResult TryReadField(TNode parent, string fieldName, out TNode child, out string? error);
 
     /// <summary>
-    /// Cast or otherwise switch the descended node's visible type to
-    /// <paramref name="subtype"/>. The IL2CPP adapter routes this through
-    /// <c>Il2CppObjectBase.Cast&lt;T&gt;</c>; the preview adapter updates
-    /// the node's <c>FieldTypeName</c> tag. When <paramref name="subtype"/>
-    /// is null the descent is a pass-through.
-    /// </summary>
-    OperationResult TryDescendScalar(TNode current, string? subtype, out TNode descended, out string? error);
-
-    /// <summary>
     /// Read element <paramref name="index"/> of the collection at
-    /// <paramref name="parent"/>'s <paramref name="fieldName"/> member,
-    /// optionally casting it to <paramref name="subtype"/>. Used for
-    /// collection-element descent (the <c>set "Field" index=N type="X"</c>
-    /// KDL form).
+    /// <paramref name="parent"/>'s <paramref name="fieldName"/> member for an
+    /// edit descent (the <c>set "Field" index=N { ... }</c> KDL form). The
+    /// adapter reads the element's live concrete type and binds it so inner
+    /// ops can address subclass members.
     /// </summary>
-    OperationResult TryDescendElement(TNode parent, string fieldName, int index, string? subtype, out TNode descended, out string? error);
+    OperationResult TryDescendElement(TNode parent, string fieldName, int index, out TNode descended, out string? error);
 
     /// <summary>
     /// Write <paramref name="value"/> to <paramref name="parent"/>'s

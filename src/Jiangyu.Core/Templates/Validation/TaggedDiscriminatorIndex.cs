@@ -9,7 +9,7 @@ namespace Jiangyu.Core.Templates;
 /// Studio editor's discriminator picker.
 ///
 /// The validator's per-subtype heuristic accepts more discriminator
-/// forms than MENACE's runtime does: <c>composite="Action"</c> resolves
+/// forms than MENACE's runtime does: <c>type="Action"</c> resolves
 /// to <c>ActionConversationNode</c> via the candidate set, but the
 /// runtime <c>OnAfterDeserialize</c> matches the
 /// <c>ConversationNodeType</c> enum's member name (<c>ACTION</c>). The

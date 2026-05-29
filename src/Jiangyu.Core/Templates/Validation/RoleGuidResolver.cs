@@ -91,7 +91,7 @@ internal static class RoleGuidResolver
             foreach (var inner in composite.Operations)
                 errors += WalkOperation(inner, roles, templateContext, log);
         }
-        else if (op.Value is { Kind: CompiledTemplateValueKind.HandlerConstruction, HandlerConstruction: { } handler })
+        else if (op.Value is { Kind: CompiledTemplateValueKind.TypeConstruction, TypeConstruction: { } handler })
         {
             foreach (var inner in handler.Operations)
                 errors += WalkOperation(inner, roles, templateContext, log);

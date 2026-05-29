@@ -45,13 +45,13 @@ public class TemplatePatchCatalogDedupTests
     {
         var a = new List<TemplateDescentStep>
         {
-            new() { Field = "EventHandlers", Index = 0, Subtype = "Attack" },
-            new() { Field = "DamageFilterCondition", Index = null, Subtype = "MoraleStateCondition" },
+            new() { Field = "EventHandlers", Index = 0 },
+            new() { Field = "Conditions", Index = 1 },
         };
         var b = new List<TemplateDescentStep>
         {
-            new() { Field = "EventHandlers", Index = 0, Subtype = "Attack" },
-            new() { Field = "DamageFilterCondition", Index = null, Subtype = "MoraleStateCondition" },
+            new() { Field = "EventHandlers", Index = 0 },
+            new() { Field = "Conditions", Index = 1 },
         };
         Assert.True(TemplatePatchCatalog.DescentEquals(a, b));
     }
@@ -59,48 +59,16 @@ public class TemplatePatchCatalogDedupTests
     [Fact]
     public void DescentEquals_DifferentIndex_NotEqual()
     {
-        // The Phase 2f case: same fieldPath, same subtype, different
-        // collection index — must NOT dedup.
+        // Same field, different collection index: must NOT dedup.
         var a = new List<TemplateDescentStep>
         {
-            new() { Field = "Conditions", Index = 0, Subtype = "EntityWithTagsCondition" },
+            new() { Field = "Conditions", Index = 0 },
         };
         var b = new List<TemplateDescentStep>
         {
-            new() { Field = "Conditions", Index = 1, Subtype = "EntityWithTagsCondition" },
+            new() { Field = "Conditions", Index = 1 },
         };
         Assert.False(TemplatePatchCatalog.DescentEquals(a, b));
-    }
-
-    [Fact]
-    public void DescentEquals_DifferentSubtype_NotEqual()
-    {
-        var a = new List<TemplateDescentStep>
-        {
-            new() { Field = "Conditions", Index = 0, Subtype = "EntityWithTagsCondition" },
-        };
-        var b = new List<TemplateDescentStep>
-        {
-            new() { Field = "Conditions", Index = 0, Subtype = "EntityWithOneOfTheTagsCondition" },
-        };
-        Assert.False(TemplatePatchCatalog.DescentEquals(a, b));
-    }
-
-    [Fact]
-    public void DescentEquals_NullVsEmptySubtype_AreEqual()
-    {
-        // The wire format may encode "no subtype" as either null or
-        // empty string; treat them identically so a parser quirk in one
-        // version doesn't become a phantom override.
-        var a = new List<TemplateDescentStep>
-        {
-            new() { Field = "Foo", Index = 0, Subtype = null },
-        };
-        var b = new List<TemplateDescentStep>
-        {
-            new() { Field = "Foo", Index = 0, Subtype = "" },
-        };
-        Assert.True(TemplatePatchCatalog.DescentEquals(a, b));
     }
 
     [Fact]

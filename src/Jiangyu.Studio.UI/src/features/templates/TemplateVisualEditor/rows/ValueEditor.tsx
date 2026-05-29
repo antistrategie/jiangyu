@@ -218,7 +218,7 @@ export function ValueEditor({ value, onChange, member }: ValueEditorProps) {
       return <AssetValueEditor value={value} onChange={onChange} member={member} />;
 
     case "Composite":
-    case "HandlerConstruction":
+    case "TypeConstruction":
       // Field-bag values are rendered by CompositeEditor at SetRow level.
       return null;
 

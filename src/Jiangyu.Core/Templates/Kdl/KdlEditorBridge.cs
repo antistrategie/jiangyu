@@ -41,7 +41,7 @@ public static class KdlEditorBridge
     {
         var copy = new List<TemplateDescentStep>(source.Count);
         foreach (var step in source)
-            copy.Add(new TemplateDescentStep { Field = step.Field, Index = step.Index, Subtype = step.Subtype });
+            copy.Add(new TemplateDescentStep { Field = step.Field, Index = step.Index });
         return copy;
     }
 
@@ -142,14 +142,15 @@ public static class KdlEditorBridge
                     From = string.IsNullOrWhiteSpace(value.CompositeFrom) ? null : value.CompositeFrom,
                 },
             },
-            KdlEditorValueKind.HandlerConstruction => new CompiledTemplateValue
+            KdlEditorValueKind.TypeConstruction => new CompiledTemplateValue
             {
-                Kind = CompiledTemplateValueKind.HandlerConstruction,
-                HandlerConstruction = new CompiledTemplateComposite
+                Kind = CompiledTemplateValueKind.TypeConstruction,
+                TypeConstruction = new CompiledTemplateComposite
                 {
                     TypeName = value.CompositeType ?? string.Empty,
                     Operations = value.CompositeDirectives?
                         .Select(EditorDirectiveToCompiled).ToList() ?? [],
+                    From = string.IsNullOrWhiteSpace(value.CompositeFrom) ? null : value.CompositeFrom,
                 },
             },
             KdlEditorValueKind.AssetReference => new CompiledTemplateValue
@@ -229,11 +230,17 @@ public static class KdlEditorBridge
                 CompositeDirectives = v.Composite?.Operations
                     .Select(CompiledOpToEditor).ToList(),
             },
-            CompiledTemplateValueKind.HandlerConstruction => new KdlEditorValue
+            CompiledTemplateValueKind.TypeConstruction => new KdlEditorValue
             {
-                Kind = KdlEditorValueKind.HandlerConstruction,
-                CompositeType = v.HandlerConstruction?.TypeName,
-                CompositeDirectives = v.HandlerConstruction?.Operations
+                Kind = KdlEditorValueKind.TypeConstruction,
+                // Mirror the Composite mapping: a tagged-string construction
+                // carries the modder's discriminator, and from= seeds from an
+                // existing element. Round-trip emits what the modder wrote.
+                CompositeType = v.TypeConstruction is { TaggedDiscriminator: { Length: > 0 } d }
+                    ? d
+                    : v.TypeConstruction?.TypeName,
+                CompositeFrom = v.TypeConstruction?.From,
+                CompositeDirectives = v.TypeConstruction?.Operations
                     .Select(CompiledOpToEditor).ToList(),
             },
             CompiledTemplateValueKind.AssetReference => new KdlEditorValue

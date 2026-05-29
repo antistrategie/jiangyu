@@ -92,26 +92,8 @@ public static class TemplateOperationWalker
                 TemplateDescentStep step = descent[i];
                 visitor.OnEnterSegment(current, step.Field);
 
-                OperationResult stepResult;
-                TNode next;
-                string? stepError;
-
-                if (step.Index.HasValue)
-                {
-                    stepResult = visitor.TryDescendElement(current, step.Field, step.Index.Value, step.Subtype, out next, out stepError);
-                }
-                else
-                {
-                    stepResult = visitor.TryReadField(current, step.Field, out TNode fieldValue, out stepError);
-                    if (stepResult == OperationResult.Applied)
-                    {
-                        stepResult = visitor.TryDescendScalar(fieldValue, step.Subtype, out next, out stepError);
-                    }
-                    else
-                    {
-                        next = default!;
-                    }
-                }
+                OperationResult stepResult = visitor.TryDescendElement(
+                    current, step.Field, step.Index, out TNode next, out string? stepError);
 
                 if (stepResult != OperationResult.Applied)
                 {

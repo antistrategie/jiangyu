@@ -155,7 +155,7 @@ jiangyu templates format --check          # exit 1 if anything would change
 
 What the pass does on top of plain reformatting:
 
-- Strips redundant `composite="X"`, `handler="X"`, and `ref="X"` attributes when the destination field is monomorphic (the type is recovered on re-parse).
+- Strips redundant `type="X"` and `ref="X"` attributes when the destination field is monomorphic (the type is recovered on re-parse).
 - Resolves symbolic Conversation `RoleGuid "Entity"` into the numeric guid the game stores (`RoleGuid 1248015120`).
 - Coerces shorthand forms the validator accepts (e.g. `set "MoraleState" "Fleeing"` → enum, `set "ParentRef" "id"` on a concrete-typed field → `ref="X" "id"`).
 

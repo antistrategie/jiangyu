@@ -213,7 +213,7 @@ public static class TemplatePatchEmitter
     {
         var copy = new List<TemplateDescentStep>(source.Count);
         foreach (var step in source)
-            copy.Add(new TemplateDescentStep { Field = step.Field, Index = step.Index, Subtype = step.Subtype });
+            copy.Add(new TemplateDescentStep { Field = step.Field, Index = step.Index });
         return copy;
     }
 }

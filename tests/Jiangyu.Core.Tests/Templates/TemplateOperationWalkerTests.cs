@@ -262,39 +262,6 @@ public sealed class TemplateOperationWalkerTests
     }
 
     [Fact]
-    public void Execute_Descent_ScalarStepReadsThenCasts()
-    {
-        FakeNode condition = FakeNode.Object("Condition", ("Threshold", FakeNode.Scalar("Threshold")));
-        FakeNode root = FakeNode.Object("root", ("Condition", condition));
-        FakeVisitor visitor = new(root);
-
-        TemplateOperationWalker.Execute(
-            visitor,
-            root,
-            new TemplateOperationView(
-                CompiledTemplateOp.Set,
-                fieldPath: "Threshold",
-                index: null,
-                indexPath: null,
-                descent: new List<TemplateDescentStep>
-                {
-                    new() { Field = "Condition", Index = null, Subtype = "MoraleCondition" },
-                },
-                value: Int32(50)),
-            out _);
-
-        Assert.Equal(
-            new[]
-            {
-                "Enter:root.Condition",
-                "ReadField:Condition",
-                "DescendScalar:Condition->MoraleCondition",
-                "SetScalar:Threshold=50",
-            },
-            visitor.Calls);
-    }
-
-    [Fact]
     public void Execute_Descent_ElementStepDispatchesToTryDescendElement()
     {
         FakeNode root = FakeNode.Object("root", ("Handlers", FakeNode.Scalar("Handlers")));
@@ -310,7 +277,7 @@ public sealed class TemplateOperationWalkerTests
                 indexPath: null,
                 descent: new List<TemplateDescentStep>
                 {
-                    new() { Field = "Handlers", Index = 2, Subtype = "ChangeProperty" },
+                    new() { Field = "Handlers", Index = 2 },
                 },
                 value: Int32(0)),
             out _);
@@ -319,7 +286,7 @@ public sealed class TemplateOperationWalkerTests
             new[]
             {
                 "Enter:root.Handlers",
-                "DescendElement:Handlers[2]->ChangeProperty",
+                "DescendElement:Handlers[2]",
                 "SetScalar:Trigger=0",
             },
             visitor.Calls);
@@ -437,17 +404,9 @@ public sealed class TemplateOperationWalkerTests
             return OperationResult.Applied;
         }
 
-        public OperationResult TryDescendScalar(FakeNode current, string? subtype, out FakeNode descended, out string? error)
+        public OperationResult TryDescendElement(FakeNode parent, string fieldName, int index, out FakeNode descended, out string? error)
         {
-            Calls.Add($"DescendScalar:{current.Name}->{subtype ?? "<none>"}");
-            descended = current;
-            error = null;
-            return OperationResult.Applied;
-        }
-
-        public OperationResult TryDescendElement(FakeNode parent, string fieldName, int index, string? subtype, out FakeNode descended, out string? error)
-        {
-            Calls.Add($"DescendElement:{fieldName}[{index}]->{subtype ?? "<none>"}");
+            Calls.Add($"DescendElement:{fieldName}[{index}]");
             descended = parent;
             error = null;
             return OperationResult.Applied;

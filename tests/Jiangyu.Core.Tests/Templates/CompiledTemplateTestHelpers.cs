@@ -4,7 +4,7 @@ namespace Jiangyu.Core.Tests.Templates;
 
 /// <summary>
 /// Tiny construction helpers that keep test fixtures readable now that
-/// composite/handler bodies are directive lists rather than name→value
+/// composite/construction bodies are directive lists rather than name→value
 /// dictionaries. Each test still spells out one operation per field; these
 /// just hide the ceremony of <c>new() { Op = Set, FieldPath = ..., Value = ...
 /// }</c> at every site.

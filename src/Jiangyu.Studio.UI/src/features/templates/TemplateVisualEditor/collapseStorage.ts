@@ -83,7 +83,7 @@ export function computeCompositeKeyByUiId(
   function walk(directives: readonly EditorDirective[], parentKey: string): void {
     directives.forEach((d, i) => {
       const v = d.value;
-      if (!v || (v.kind !== "Composite" && v.kind !== "HandlerConstruction")) return;
+      if (!v || (v.kind !== "Composite" && v.kind !== "TypeConstruction")) return;
       const key = `${parentKey}/dir[${i}]`;
       if (d._uiId !== undefined) result.set(d._uiId, key);
       const nested = v.compositeDirectives ?? [];

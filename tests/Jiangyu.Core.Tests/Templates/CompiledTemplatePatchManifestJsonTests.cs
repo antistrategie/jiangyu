@@ -28,7 +28,7 @@ public class CompiledTemplatePatchManifestJsonTests
             FieldPath = "ShowHUDText",
             Descent =
             [
-                new TemplateDescentStep { Field = "EventHandlers", Index = 0, Subtype = "AddSkill" },
+                new TemplateDescentStep { Field = "EventHandlers", Index = 0 },
             ],
             Value = new CompiledTemplateValue
             {
@@ -41,8 +41,6 @@ public class CompiledTemplatePatchManifestJsonTests
         Assert.Contains("\"descent\"", json);
         Assert.Contains("\"field\":\"EventHandlers\"", json);
         Assert.Contains("\"index\":0", json);
-        Assert.Contains("\"subtype\":\"AddSkill\"", json);
-        Assert.Contains("\"AddSkill\"", json);
 
         var roundTripped = JsonSerializer.Deserialize<CompiledTemplateSetOperation>(json, Options);
         Assert.NotNull(roundTripped);
@@ -51,7 +49,6 @@ public class CompiledTemplatePatchManifestJsonTests
         Assert.Single(roundTripped.Descent);
         Assert.Equal("EventHandlers", roundTripped.Descent[0].Field);
         Assert.Equal(0, roundTripped.Descent[0].Index);
-        Assert.Equal("AddSkill", roundTripped.Descent[0].Subtype);
     }
 
     [Fact]
@@ -65,8 +62,8 @@ public class CompiledTemplatePatchManifestJsonTests
             FieldPath = "Leaf",
             Descent =
             [
-                new TemplateDescentStep { Field = "Outer", Index = 0, Subtype = "TypeX" },
-                new TemplateDescentStep { Field = "Inner", Index = 2, Subtype = "TypeY" },
+                new TemplateDescentStep { Field = "Outer", Index = 0 },
+                new TemplateDescentStep { Field = "Inner", Index = 2 },
             ],
             Value = new CompiledTemplateValue
             {
@@ -82,10 +79,8 @@ public class CompiledTemplatePatchManifestJsonTests
         Assert.Equal(2, roundTripped!.Descent!.Count);
         Assert.Equal("Outer", roundTripped.Descent[0].Field);
         Assert.Equal(0, roundTripped.Descent[0].Index);
-        Assert.Equal("TypeX", roundTripped.Descent[0].Subtype);
         Assert.Equal("Inner", roundTripped.Descent[1].Field);
         Assert.Equal(2, roundTripped.Descent[1].Index);
-        Assert.Equal("TypeY", roundTripped.Descent[1].Subtype);
     }
 
     [Fact]
@@ -117,7 +112,7 @@ public class CompiledTemplatePatchManifestJsonTests
     }
 
     [Fact]
-    public void HandlerConstruction_RoundTrip()
+    public void TypeConstruction_RoundTrip()
     {
         var op = new CompiledTemplateSetOperation
         {
@@ -125,8 +120,8 @@ public class CompiledTemplatePatchManifestJsonTests
             FieldPath = "EventHandlers",
             Value = new CompiledTemplateValue
             {
-                Kind = CompiledTemplateValueKind.HandlerConstruction,
-                HandlerConstruction = new CompiledTemplateComposite
+                Kind = CompiledTemplateValueKind.TypeConstruction,
+                TypeConstruction = new CompiledTemplateComposite
                 {
                     TypeName = "AddSkill",
                     Operations = SetOps(
@@ -146,27 +141,27 @@ public class CompiledTemplatePatchManifestJsonTests
         };
 
         var json = JsonSerializer.Serialize(op, Options);
-        Assert.Contains("\"HandlerConstruction\"", json);
-        Assert.Contains("\"handlerConstruction\"", json);
+        Assert.Contains("\"TypeConstruction\"", json);
+        Assert.Contains("\"typeConstruction\"", json);
         Assert.Contains("\"AddSkill\"", json);
         Assert.Contains("\"OnAttack\"", json);
 
         var roundTripped = JsonSerializer.Deserialize<CompiledTemplateSetOperation>(json, Options);
         Assert.NotNull(roundTripped);
-        Assert.Equal(CompiledTemplateValueKind.HandlerConstruction, roundTripped!.Value!.Kind);
-        Assert.NotNull(roundTripped.Value.HandlerConstruction);
-        Assert.Equal("AddSkill", roundTripped.Value.HandlerConstruction!.TypeName);
-        Assert.Equal(2, roundTripped.Value.HandlerConstruction.Operations.Count);
-        Assert.Equal("OnAttack", roundTripped.Value.HandlerConstruction.ValueAt("Event").EnumValue);
-        Assert.True(roundTripped.Value.HandlerConstruction.ValueAt("ShowHUDText").Boolean);
+        Assert.Equal(CompiledTemplateValueKind.TypeConstruction, roundTripped!.Value!.Kind);
+        Assert.NotNull(roundTripped.Value.TypeConstruction);
+        Assert.Equal("AddSkill", roundTripped.Value.TypeConstruction!.TypeName);
+        Assert.Equal(2, roundTripped.Value.TypeConstruction.Operations.Count);
+        Assert.Equal("OnAttack", roundTripped.Value.TypeConstruction.ValueAt("Event").EnumValue);
+        Assert.True(roundTripped.Value.TypeConstruction.ValueAt("ShowHUDText").Boolean);
     }
 
     [Fact]
-    public void HandlerConstruction_AndDescent_CoexistInOneOp()
+    public void TypeConstruction_AndDescent_CoexistInOneOp()
     {
         // A "replace element N with new construction" op can carry both
         // Descent (in case the path descends through a polymorphic
-        // intermediate; rare) and a HandlerConstruction value at the
+        // intermediate; rare) and a TypeConstruction value at the
         // terminal. Both must round-trip together.
         var op = new CompiledTemplateSetOperation
         {
@@ -175,12 +170,12 @@ public class CompiledTemplatePatchManifestJsonTests
             Index = 1,
             Descent =
             [
-                new TemplateDescentStep { Field = "Outer", Index = 0, Subtype = "AddSkill" },
+                new TemplateDescentStep { Field = "Outer", Index = 0 },
             ],
             Value = new CompiledTemplateValue
             {
-                Kind = CompiledTemplateValueKind.HandlerConstruction,
-                HandlerConstruction = new CompiledTemplateComposite
+                Kind = CompiledTemplateValueKind.TypeConstruction,
+                TypeConstruction = new CompiledTemplateComposite
                 {
                     TypeName = "ChangeProperty",
                     Operations = SetOps(
@@ -198,8 +193,7 @@ public class CompiledTemplatePatchManifestJsonTests
         Assert.Single(roundTripped.Descent);
         Assert.Equal("Outer", roundTripped.Descent[0].Field);
         Assert.Equal(0, roundTripped.Descent[0].Index);
-        Assert.Equal("AddSkill", roundTripped.Descent[0].Subtype);
-        Assert.Equal("ChangeProperty", roundTripped.Value!.HandlerConstruction!.TypeName);
+        Assert.Equal("ChangeProperty", roundTripped.Value!.TypeConstruction!.TypeName);
     }
 
     [Fact]
@@ -234,7 +228,7 @@ public class CompiledTemplatePatchManifestJsonTests
     }
 
     [Fact]
-    public void CompositeAndHandlerConstruction_AreDistinctValueKinds()
+    public void CompositeAndTypeConstruction_AreDistinctValueKinds()
     {
         // Sanity: two value kinds with the same payload type must serialise
         // distinguishably so the runtime applier dispatches on the right
@@ -257,8 +251,8 @@ public class CompiledTemplatePatchManifestJsonTests
             FieldPath = "EventHandlers",
             Value = new CompiledTemplateValue
             {
-                Kind = CompiledTemplateValueKind.HandlerConstruction,
-                HandlerConstruction = new CompiledTemplateComposite { TypeName = "AddSkill", Operations = SetOps(("ShowHUDText", new() { Kind = CompiledTemplateValueKind.Boolean, Boolean = true })) },
+                Kind = CompiledTemplateValueKind.TypeConstruction,
+                TypeConstruction = new CompiledTemplateComposite { TypeName = "AddSkill", Operations = SetOps(("ShowHUDText", new() { Kind = CompiledTemplateValueKind.Boolean, Boolean = true })) },
             },
         };
 
@@ -266,8 +260,8 @@ public class CompiledTemplatePatchManifestJsonTests
         var handlerJson = JsonSerializer.Serialize(handlerOp, Options);
 
         Assert.Contains("\"Composite\"", compositeJson);
-        Assert.DoesNotContain("\"HandlerConstruction\"", compositeJson);
-        Assert.Contains("\"HandlerConstruction\"", handlerJson);
+        Assert.DoesNotContain("\"TypeConstruction\"", compositeJson);
+        Assert.Contains("\"TypeConstruction\"", handlerJson);
         Assert.DoesNotContain("\"Composite\"", handlerJson);
     }
 }

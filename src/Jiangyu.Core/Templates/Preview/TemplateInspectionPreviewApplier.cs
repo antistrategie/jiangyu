@@ -180,24 +180,7 @@ public static class TemplateInspectionPreviewApplier
             return OperationResult.Applied;
         }
 
-        public OperationResult TryDescendScalar(InspectedFieldNode current, string? subtype, out InspectedFieldNode descended, out string? error)
-        {
-            if (!string.Equals(current.Kind, "object", StringComparison.Ordinal))
-            {
-                descended = null!;
-                error = $"Template preview scalar descent into '{current.Name ?? "<unnamed>"}' expected an object.";
-                return OperationResult.MemberMissing;
-            }
-
-            if (!string.IsNullOrEmpty(subtype))
-                current.FieldTypeName = subtype;
-
-            descended = current;
-            error = null;
-            return OperationResult.Applied;
-        }
-
-        public OperationResult TryDescendElement(InspectedFieldNode parent, string fieldName, int index, string? subtype, out InspectedFieldNode descended, out string? error)
+        public OperationResult TryDescendElement(InspectedFieldNode parent, string fieldName, int index, out InspectedFieldNode descended, out string? error)
         {
             OperationResult readResult = TryReadField(parent, fieldName, out InspectedFieldNode field, out error);
             if (readResult != OperationResult.Applied)
@@ -227,9 +210,10 @@ public static class TemplateInspectionPreviewApplier
                 return OperationResult.MemberMissing;
             }
 
+            // Edit descent: navigate into the existing element. Inner ops apply
+            // to its fields; the element keeps whatever concrete subtype the
+            // inspector captured.
             descended = field.Elements[index];
-            if (!string.IsNullOrEmpty(subtype))
-                descended.FieldTypeName = subtype;
             error = null;
             return OperationResult.Applied;
         }
@@ -434,6 +418,12 @@ public static class TemplateInspectionPreviewApplier
                 },
                 CompiledTemplateValueKind.TemplateReference => BuildReferenceNode(name, fieldTypeName, value.Reference),
                 CompiledTemplateValueKind.Composite => BuildCompositeNode(name, fieldTypeName, value.Composite),
+                // TypeConstruction shares Composite's field-bag shape but
+                // names a freshly constructed ScriptableObject. Render it as
+                // the constructed subtype so an indexed overwrite
+                // (set "Field" index=N type="X") shows the new handler
+                // rather than the element it replaced.
+                CompiledTemplateValueKind.TypeConstruction => BuildCompositeNode(name, value.TypeConstruction?.TypeName ?? fieldTypeName, value.TypeConstruction),
                 _ => throw new InvalidOperationException($"Unsupported template preview value kind '{value.Kind}'."),
             };
         }

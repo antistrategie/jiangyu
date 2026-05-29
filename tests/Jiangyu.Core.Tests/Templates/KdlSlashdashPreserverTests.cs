@@ -221,7 +221,7 @@ public class KdlSlashdashPreserverTests
     {
         var src =
             "patch \"EntityTemplate\" \"id\" {\n" +
-            "    set \"Properties\" composite=\"FixtureProperties\" {\n" +
+            "    set \"Properties\" type=\"FixtureProperties\" {\n" +
             "        set \"A\" 1\n" +
             "        /-set \"B\" 2\n" +
             "        set \"C\" 3\n" +

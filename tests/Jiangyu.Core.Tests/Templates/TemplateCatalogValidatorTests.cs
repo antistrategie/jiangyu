@@ -528,7 +528,7 @@ public class TemplateCatalogValidatorTests
         // with Stem.ID.bankId when no IBankIdResolver is wired through),
         // NormaliseForEmit silently skipped the write-back. The outer
         // composite's redundant TypeName then survived to the serialiser,
-        // producing `set "Field" composite="OuterType" { ... }` on round-
+        // producing `set "Field" type="OuterType" { ... }` on round-
         // trip even though the destination is monomorphic and the modder's
         // source had used the bare inferred form.
         using var catalog = Load();
@@ -703,7 +703,7 @@ public class TemplateCatalogValidatorTests
 
         Assert.Equal(1, errors);
         Assert.Contains("polymorphic destination", log.Errors[0]);
-        Assert.Contains("composite=", log.Errors[0]);
+        Assert.Contains("type=", log.Errors[0]);
         Assert.Contains("FixtureConcreteDerived", log.Errors[0]);
     }
 
@@ -1195,11 +1195,15 @@ public class TemplateCatalogValidatorTests
         Assert.Contains("List", log.Errors[0]);
     }
 
-    // --- Polymorphic descent (subtype-hint) validator dispatch ---
+    // --- Polymorphic edit descent (subtype-union) validator dispatch ---
 
     [Fact]
-    public void PolymorphicDescent_WithMatchingHint_Validates()
+    public void PolymorphicDescent_ResolvesInnerFieldViaSubtypeUnion()
     {
+        // An edit descent names no subtype: the inner field resolves against
+        // the union of the element base's concrete subtypes (DerivedField lives
+        // on a subtype). The runtime casts to the live element's actual type,
+        // so this is accepted at compile.
         using var catalog = Load();
         var log = new RecordingLog();
         var patches = new[]
@@ -1216,7 +1220,7 @@ public class TemplateCatalogValidatorTests
                         FieldPath = "DerivedField",
                         Descent =
                         [
-                            new TemplateDescentStep { Field = "Handlers", Index = 0, Subtype = "FixtureConcreteDerived" },
+                            new TemplateDescentStep { Field = "Handlers", Index = 0 },
                         ],
                         Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 7 },
                     },
@@ -1227,12 +1231,13 @@ public class TemplateCatalogValidatorTests
         var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
 
         Assert.Equal(0, errors);
-        Assert.Empty(log.Errors);
     }
 
     [Fact]
-    public void PolymorphicDescent_MissingHint_Errors()
+    public void PolymorphicDescent_BogusInnerField_Errors()
     {
+        // A field that exists on no concrete subtype is a genuine typo and is
+        // rejected.
         using var catalog = Load();
         var log = new RecordingLog();
         var patches = new[]
@@ -1246,10 +1251,10 @@ public class TemplateCatalogValidatorTests
                     new CompiledTemplateSetOperation
                     {
                         Op = CompiledTemplateOp.Set,
-                        FieldPath = "DerivedField",
+                        FieldPath = "NotARealFieldOnAnySubtype",
                         Descent =
                         [
-                            new TemplateDescentStep { Field = "Handlers", Index = 0, Subtype = null },
+                            new TemplateDescentStep { Field = "Handlers", Index = 0 },
                         ],
                         Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 7 },
                     },
@@ -1260,84 +1265,13 @@ public class TemplateCatalogValidatorTests
         var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
 
         Assert.Equal(1, errors);
-        Assert.Contains(log.Errors, e => e.Contains("polymorphic descent", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(log.Errors, e => e.Contains("type=", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public void PolymorphicDescent_HintNamesUnknownType_Errors()
-    {
-        using var catalog = Load();
-        var log = new RecordingLog();
-        var patches = new[]
-        {
-            new CompiledTemplatePatch
-            {
-                TemplateType = "FixtureEntity",
-                TemplateId = "unit.x",
-                Set =
-                [
-                    new CompiledTemplateSetOperation
-                    {
-                        Op = CompiledTemplateOp.Set,
-                        FieldPath = "DerivedField",
-                        Descent =
-                        [
-                            new TemplateDescentStep { Field = "Handlers", Index = 0, Subtype = "NoSuchType" },
-                        ],
-                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 7 },
-                    },
-                ],
-            },
-        };
-
-        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
-
-        Assert.Equal(1, errors);
-        Assert.Contains(log.Errors, e => e.Contains("NoSuchType", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void PolymorphicDescent_HintNamesNonSubtype_Errors()
-    {
-        // FixtureRefHolder is unrelated to FixtureBaseDataTemplate;
-        // hint must be assignable to the array's element type. Use the FQN
-        // form because the test fixtures declare two FixtureSkillTemplate
-        // shorts and we want to avoid the ambiguity branch.
-        using var catalog = Load();
-        var log = new RecordingLog();
-        var patches = new[]
-        {
-            new CompiledTemplatePatch
-            {
-                TemplateType = "FixtureEntity",
-                TemplateId = "unit.x",
-                Set =
-                [
-                    new CompiledTemplateSetOperation
-                    {
-                        Op = CompiledTemplateOp.Set,
-                        FieldPath = "DerivedField",
-                        Descent =
-                        [
-                            new TemplateDescentStep { Field = "Handlers", Index = 0, Subtype = "FixtureRefHolder" },
-                        ],
-                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 1 },
-                    },
-                ],
-            },
-        };
-
-        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
-
-        Assert.Equal(1, errors);
-        Assert.Contains(log.Errors, e => e.Contains("not a subtype", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(log.Errors, e => e.Contains("not found on any concrete subtype", StringComparison.OrdinalIgnoreCase));
     }
 
     // --- Handler construction (slice 4b) ---
 
     [Fact]
-    public void HandlerConstruction_AppendValidates()
+    public void TypeConstruction_AppendValidates()
     {
         using var catalog = Load();
         var log = new RecordingLog();
@@ -1355,8 +1289,8 @@ public class TemplateCatalogValidatorTests
                         FieldPath = "Handlers",
                         Value = new CompiledTemplateValue
                         {
-                            Kind = CompiledTemplateValueKind.HandlerConstruction,
-                            HandlerConstruction = new CompiledTemplateComposite
+                            Kind = CompiledTemplateValueKind.TypeConstruction,
+                            TypeConstruction = new CompiledTemplateComposite
                             {
                                 TypeName = "FixtureConcreteDerived",
                                 Operations = SetOps(
@@ -1379,7 +1313,7 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
-    public void HandlerConstruction_RejectsNonSubtype()
+    public void TypeConstruction_RejectsNonSubtype()
     {
         using var catalog = Load();
         var log = new RecordingLog();
@@ -1397,8 +1331,8 @@ public class TemplateCatalogValidatorTests
                         FieldPath = "Handlers",
                         Value = new CompiledTemplateValue
                         {
-                            Kind = CompiledTemplateValueKind.HandlerConstruction,
-                            HandlerConstruction = new CompiledTemplateComposite
+                            Kind = CompiledTemplateValueKind.TypeConstruction,
+                            TypeConstruction = new CompiledTemplateComposite
                             {
                                 TypeName = "FixtureRefHolder",
                                 Operations = [],
@@ -1416,7 +1350,7 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
-    public void HandlerConstruction_RejectsUnknownSubtypeName()
+    public void TypeConstruction_RejectsUnknownSubtypeName()
     {
         using var catalog = Load();
         var log = new RecordingLog();
@@ -1434,8 +1368,8 @@ public class TemplateCatalogValidatorTests
                         FieldPath = "Handlers",
                         Value = new CompiledTemplateValue
                         {
-                            Kind = CompiledTemplateValueKind.HandlerConstruction,
-                            HandlerConstruction = new CompiledTemplateComposite
+                            Kind = CompiledTemplateValueKind.TypeConstruction,
+                            TypeConstruction = new CompiledTemplateComposite
                             {
                                 TypeName = "NoSuchType",
                                 Operations = [],
@@ -1453,7 +1387,7 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
-    public void HandlerConstruction_RejectsUnknownInnerField()
+    public void TypeConstruction_RejectsUnknownInnerField()
     {
         using var catalog = Load();
         var log = new RecordingLog();
@@ -1471,8 +1405,8 @@ public class TemplateCatalogValidatorTests
                         FieldPath = "Handlers",
                         Value = new CompiledTemplateValue
                         {
-                            Kind = CompiledTemplateValueKind.HandlerConstruction,
-                            HandlerConstruction = new CompiledTemplateComposite
+                            Kind = CompiledTemplateValueKind.TypeConstruction,
+                            TypeConstruction = new CompiledTemplateComposite
                             {
                                 TypeName = "FixtureConcreteDerived",
                                 Operations = SetOps(
@@ -1495,14 +1429,16 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
-    public void HandlerConstruction_RejectsOnConcreteScalarField()
+    public void TypeConstruction_OnConcreteScalarField_ConstructsInline()
     {
         // InitialSkill is a FixtureSkillTemplate scalar with no subclasses.
-        // handler= on a non-collection-non-polymorphic field is meaningless
-        // (the modder probably wanted ref= or composite=), so the validator
-        // rejects to surface the typo. Polymorphic-scalar destinations
-        // (interface/abstract field types with subclasses) are exercised
-        // separately by HandlerConstruction_AcceptsOnPolymorphicScalarField.
+        // type= names the type and the compiler picks the mechanism from the
+        // destination: a concrete non-polymorphic scalar routes through the
+        // inline-value path (demoted to Composite at compile), so it validates
+        // rather than rejecting. Polymorphic-scalar destinations
+        // (interface/abstract field types with subclasses) keep the
+        // ScriptableObject-construction path, exercised separately by
+        // TypeConstruction_AcceptsOnPolymorphicScalarField.
         using var catalog = Load();
         var log = new RecordingLog();
         var patches = new[]
@@ -1519,8 +1455,8 @@ public class TemplateCatalogValidatorTests
                         FieldPath = "InitialSkill",
                         Value = new CompiledTemplateValue
                         {
-                            Kind = CompiledTemplateValueKind.HandlerConstruction,
-                            HandlerConstruction = new CompiledTemplateComposite
+                            Kind = CompiledTemplateValueKind.TypeConstruction,
+                            TypeConstruction = new CompiledTemplateComposite
                             {
                                 TypeName = "FixtureSkillTemplate",
                                 Operations = [],
@@ -1533,97 +1469,11 @@ public class TemplateCatalogValidatorTests
 
         var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
 
-        Assert.Equal(1, errors);
-        Assert.Contains(log.Errors, e => e.Contains("non-polymorphic", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public void ScalarPolymorphicDescent_AcceptsTypedInnerWrite()
-    {
-        // Phase 2a: descend into a polymorphic scalar field (interface-typed,
-        // Odin-routed in production) by naming the concrete subtype on the
-        // outer set. The inner directive resolves against the subtype's
-        // members, so writes to subclass-specific fields validate cleanly.
-        using var catalog = Load();
-        var log = new RecordingLog();
-        var patches = new[]
-        {
-            new CompiledTemplatePatch
-            {
-                TemplateType = "FixtureEntity",
-                TemplateId = "unit.x",
-                Set =
-                [
-                    new CompiledTemplateSetOperation
-                    {
-                        Op = CompiledTemplateOp.Set,
-                        FieldPath = "Radius",
-                        Descent = [new TemplateDescentStep
-                        {
-                            Field = "AoEShape",
-                            Index = null,
-                            Subtype = "FixtureAoEShapeImpl",
-                        }],
-                        Value = new CompiledTemplateValue
-                        {
-                            Kind = CompiledTemplateValueKind.Int32,
-                            Int32 = 3,
-                        },
-                    },
-                ],
-            },
-        };
-
-        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
-
         Assert.Equal(0, errors);
-        Assert.Empty(log.Errors);
     }
 
     [Fact]
-    public void ScalarPolymorphicDescent_RejectsHintNotInSubtypeFamily()
-    {
-        // Negative guard: a type= on a scalar descent must name a real
-        // subtype of the field's declared type. Hints that resolve to
-        // unrelated classes are rejected.
-        using var catalog = Load();
-        var log = new RecordingLog();
-        var patches = new[]
-        {
-            new CompiledTemplatePatch
-            {
-                TemplateType = "FixtureEntity",
-                TemplateId = "unit.x",
-                Set =
-                [
-                    new CompiledTemplateSetOperation
-                    {
-                        Op = CompiledTemplateOp.Set,
-                        FieldPath = "Radius",
-                        Descent = [new TemplateDescentStep
-                        {
-                            Field = "AoEShape",
-                            Index = null,
-                            Subtype = "FixtureSkillTemplate", // not an IFixtureAoEShape
-                        }],
-                        Value = new CompiledTemplateValue
-                        {
-                            Kind = CompiledTemplateValueKind.Int32,
-                            Int32 = 1,
-                        },
-                    },
-                ],
-            },
-        };
-
-        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
-
-        Assert.Equal(1, errors);
-        Assert.Contains(log.Errors, e => e.Contains("not a subtype", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public void HandlerConstruction_AppendsOdinRoutedListElement()
+    public void TypeConstruction_AppendsOdinRoutedListElement()
     {
         // Phase 2c: appending a polymorphic non-ScriptableObject element to
         // an Odin-routed reference array (FixtureEntity.AoEShapes is
@@ -1646,8 +1496,8 @@ public class TemplateCatalogValidatorTests
                         FieldPath = "AoEShapes",
                         Value = new CompiledTemplateValue
                         {
-                            Kind = CompiledTemplateValueKind.HandlerConstruction,
-                            HandlerConstruction = new CompiledTemplateComposite
+                            Kind = CompiledTemplateValueKind.TypeConstruction,
+                            TypeConstruction = new CompiledTemplateComposite
                             {
                                 TypeName = "FixtureAoEShapeImpl",
                                 Operations = SetOps(
@@ -1670,7 +1520,7 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
-    public void HandlerConstruction_RejectsEmptyTypeNameOnPolymorphicScalar()
+    public void TypeConstruction_RejectsEmptyTypeNameOnPolymorphicScalar()
     {
         // Polymorphic scalar destination always needs a TypeName because the
         // gate above already confirmed it has subtypes the modder must pick.
@@ -1693,8 +1543,8 @@ public class TemplateCatalogValidatorTests
                         FieldPath = "AoEShape",
                         Value = new CompiledTemplateValue
                         {
-                            Kind = CompiledTemplateValueKind.HandlerConstruction,
-                            HandlerConstruction = new CompiledTemplateComposite
+                            Kind = CompiledTemplateValueKind.TypeConstruction,
+                            TypeConstruction = new CompiledTemplateComposite
                             {
                                 TypeName = "",
                                 Operations = [],
@@ -1712,10 +1562,10 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
-    public void HandlerConstruction_AcceptsOnPolymorphicScalarField()
+    public void TypeConstruction_AcceptsOnPolymorphicScalarField()
     {
         // FixtureEntity.AoEShape is IFixtureAoEShape scalar with concrete
-        // implementations. handler="<Subtype>" on a Set must be accepted so
+        // implementations. type="<Subtype>" on a Set must be accepted so
         // the modder can construct an Odin-routed condition like
         // Attack.DamageFilterCondition: ITacticalCondition without writing
         // to a collection slot.
@@ -1735,8 +1585,8 @@ public class TemplateCatalogValidatorTests
                         FieldPath = "AoEShape",
                         Value = new CompiledTemplateValue
                         {
-                            Kind = CompiledTemplateValueKind.HandlerConstruction,
-                            HandlerConstruction = new CompiledTemplateComposite
+                            Kind = CompiledTemplateValueKind.TypeConstruction,
+                            TypeConstruction = new CompiledTemplateComposite
                             {
                                 TypeName = "FixtureAoEShapeImpl",
                                 Operations = SetOps(
@@ -1759,13 +1609,11 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
-    public void SubtypeHint_OnNonPolymorphicCollection_IsTolerated()
+    public void EditDescent_OnNonPolymorphicCollection_Validates()
     {
-        // Skills is List<FixtureSkillTemplate> where FixtureSkillTemplate
-        // has no subclasses. A modder accidentally writing
-        // type="FixtureSkillTemplate" on the descent (redundant but not
-        // wrong) should validate cleanly: the navigator doesn't need the
-        // hint, but it isn't harmful either.
+        // Skills is List<FixtureSkillTemplate> where FixtureSkillTemplate has
+        // no subclasses. An edit descent into a monomorphic collection resolves
+        // its inner field against the concrete element type directly.
         using var catalog = Load();
         var log = new RecordingLog();
         var patches = new[]
@@ -1782,7 +1630,7 @@ public class TemplateCatalogValidatorTests
                         FieldPath = "Cooldown",
                         Descent =
                         [
-                            new TemplateDescentStep { Field = "Skills", Index = 0, Subtype = "FixtureSkillTemplate" },
+                            new TemplateDescentStep { Field = "Skills", Index = 0 },
                         ],
                         Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Single, Single = 1.0f },
                     },
@@ -1792,10 +1640,6 @@ public class TemplateCatalogValidatorTests
 
         var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
 
-        // Hint is harmless for monomorphic destinations — navigator unwraps
-        // to FixtureSkillTemplate without needing the hint, then either
-        // ignores or applies it (validator shouldn't error on a hint that
-        // matches the array's existing element type).
         Assert.Equal(0, errors);
     }
 
@@ -1831,10 +1675,10 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
-    public void HandlerConstruction_OptionalSubtypeWhenMonomorphic()
+    public void TypeConstruction_OptionalSubtypeWhenMonomorphic()
     {
         // FixtureSkillTemplate has no subclasses in the fixture assembly, so
-        // append "Skills" handler="" {...} should resolve implicitly (we
+        // append "Skills" type="" {...} should resolve implicitly (we
         // simulate by passing an empty subtype name).
         using var catalog = Load();
         var log = new RecordingLog();
@@ -1852,8 +1696,8 @@ public class TemplateCatalogValidatorTests
                         FieldPath = "Skills",
                         Value = new CompiledTemplateValue
                         {
-                            Kind = CompiledTemplateValueKind.HandlerConstruction,
-                            HandlerConstruction = new CompiledTemplateComposite
+                            Kind = CompiledTemplateValueKind.TypeConstruction,
+                            TypeConstruction = new CompiledTemplateComposite
                             {
                                 TypeName = "",
                                 Operations = SetOps(
@@ -1876,8 +1720,12 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
-    public void PolymorphicDescent_FieldOnHintedTypeMustExist()
+    public void PolymorphicDescent_InnerFieldOnAnySubtype_Resolves()
     {
+        // The subtype union spans every concrete subtype: DerivedFieldB lives
+        // on FixtureConcreteDerivedB (a different subtype than the one carrying
+        // DerivedField), and an edit descent still resolves it. The runtime
+        // casts to the live element's actual type, which is authoritative.
         using var catalog = Load();
         var log = new RecordingLog();
         var patches = new[]
@@ -1891,13 +1739,10 @@ public class TemplateCatalogValidatorTests
                     new CompiledTemplateSetOperation
                     {
                         Op = CompiledTemplateOp.Set,
-                        // DerivedFieldB lives on FixtureConcreteDerivedB, not on
-                        // FixtureConcreteDerived — hinting the wrong subtype
-                        // surfaces the missing-member error after dispatch.
                         FieldPath = "DerivedFieldB",
                         Descent =
                         [
-                            new TemplateDescentStep { Field = "Handlers", Index = 0, Subtype = "FixtureConcreteDerived" },
+                            new TemplateDescentStep { Field = "Handlers", Index = 0 },
                         ],
                         Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.String, String = "x" },
                     },
@@ -1907,8 +1752,7 @@ public class TemplateCatalogValidatorTests
 
         var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
 
-        Assert.Equal(1, errors);
-        Assert.Contains(log.Errors, e => e.Contains("DerivedFieldB", StringComparison.Ordinal));
+        Assert.Equal(0, errors);
     }
 
     [Theory]
@@ -2247,7 +2091,7 @@ public class TemplateCatalogValidatorTests
     [Fact]
     public void TaggedStringList_ResolvesDiscriminatorAndPreservesDiscriminator()
     {
-        // Modder writes append "m_SerializedItems" composite="FixtureTaggedAlpha" { set "AlphaText" "..." }.
+        // Modder writes append "m_SerializedItems" type="FixtureTaggedAlpha" { set "AlphaText" "..." }.
         // Validator must:
         //   - substitute destinationType to TaggedPolymorphicBase
         //     (FixtureTaggedBase) for the composite dispatch
@@ -2416,12 +2260,12 @@ public class TemplateCatalogValidatorTests
     public void TaggedString_NestedRecursion_ResolvesAtEveryLevel()
     {
         // Mirrors VARIATION-inside-m_SerializedNodes:
-        //   append "m_SerializedNodes" composite="Wrapper" {
+        //   append "m_SerializedNodes" type="Wrapper" {
         //       append "NestedContainers" {           // inferred composite
-        //           append "m_SerializedNodes" composite="CHAT" { ... }
+        //           append "m_SerializedNodes" type="CHAT" { ... }
         //       }
         //   }
-        // The inner composite="CHAT" must resolve through the inner
+        // The inner type="CHAT" must resolve through the inner
         // SampleNodeContainer.m_SerializedNodes' TaggedPolymorphicBase
         // metadata, recursively.
         using var catalog = Load();

@@ -260,34 +260,28 @@ public class TemplateMemberQueryTests
     }
 
     [Fact]
-    public void PolymorphicDescent_ResolvesShortNameAgainstSubtypeFamilyOnly()
+    public void PolymorphicDescent_ResolvesInnerFieldAgainstSubtypeUnion()
     {
-        // FixtureConcreteDerived exists in two namespaces: one is a subtype
-        // of FixtureBaseDataTemplate (the descent's element type), the other
-        // is a plain class. The polymorphic descent resolver picks the
-        // subtype-family member without ambiguity, mirroring the production
-        // case where "Attack" routes to Effects.Attack rather than the
-        // unrelated AI.Behaviors.Attack.
+        // An edit descent names no subtype. The inner field resolves against
+        // the union of the element base's concrete subtypes; DerivedField lives
+        // on FixtureConcreteDerived, so the query reaches a leaf.
         using var catalog = Load();
-        var hints = new Dictionary<int, string> { [0] = "FixtureConcreteDerived" };
-        var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.Handlers[0].DerivedField", hints);
+        var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.Handlers[0].DerivedField");
 
         Assert.Equal(QueryResultKind.Leaf, result.Kind);
         Assert.Equal(CompiledTemplateValueKind.Int32, result.PatchScalarKind);
     }
 
     [Fact]
-    public void PolymorphicDescent_HintNotInSubtypeFamilyErrors()
+    public void PolymorphicDescent_InnerFieldOnNoSubtypeErrors()
     {
-        // FixtureSkillTemplate isn't a subtype of FixtureBaseDataTemplate;
-        // the descent must reject it instead of resolving to a sibling
-        // hierarchy.
+        // A field that exists on no concrete subtype of the element base is a
+        // genuine typo and is rejected.
         using var catalog = Load();
-        var hints = new Dictionary<int, string> { [0] = "FixtureSkillTemplate" };
-        var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.Handlers[0].Anything", hints);
+        var result = TemplateMemberQuery.Run(catalog, "FixtureEntity.Handlers[0].Anything");
 
         Assert.Equal(QueryResultKind.Error, result.Kind);
-        Assert.Contains("not a subtype", result.ErrorMessage!);
+        Assert.Contains("not found on any concrete subtype", result.ErrorMessage!);
     }
 
     [Fact]

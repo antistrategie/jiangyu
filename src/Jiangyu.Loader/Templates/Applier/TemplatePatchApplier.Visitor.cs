@@ -1,3 +1,4 @@
+using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using Jiangyu.Shared.Templates;
 using MelonLoader;
@@ -65,33 +66,7 @@ internal sealed partial class TemplatePatchApplier
             return OperationResult.Applied;
         }
 
-        public OperationResult TryDescendScalar(object current, string subtype, out object descended, out string error)
-        {
-            // Read for the descent step already happened in TryReadField; the
-            // scalar descent only swaps the wrapper type so subsequent path
-            // resolution sees subclass-specific members.
-            if (string.IsNullOrEmpty(subtype))
-            {
-                descended = current;
-                _latestCurrent = current;
-                error = null;
-                return OperationResult.Applied;
-            }
-
-            if (!TryCastToSubtype(current, subtype, out descended, out var castError))
-            {
-                _log.Warning(FormatPrefix(_templateTypeName, _templateId, _op)
-                    + $"cannot cast to subtype '{subtype}': {castError}");
-                error = castError;
-                return OperationResult.MemberMissing;
-            }
-
-            _latestCurrent = descended;
-            error = null;
-            return OperationResult.Applied;
-        }
-
-        public OperationResult TryDescendElement(object parent, string fieldName, int index, string subtype, out object descended, out string error)
+        public OperationResult TryDescendElement(object parent, string fieldName, int index, out object descended, out string error)
         {
             descended = null;
             if (!TryReadMember(parent, fieldName, out var value, out var memberType, out var readError))
@@ -146,16 +121,16 @@ internal sealed partial class TemplatePatchApplier
                 return OperationResult.MemberMissing;
             }
 
-            if (!string.IsNullOrEmpty(subtype))
+            // Edit-in-place descent: indexing a List<AbstractBase> hands back a
+            // base-typed wrapper exposing only base members, so detect the live
+            // element's actual concrete type and cast to it; the inner ops then
+            // reach the subclass fields. If the concrete type can't be resolved
+            // the base-typed wrapper stays: ops touching only base members still
+            // apply, and subclass-member ops surface a clear "no writable"
+            // diagnostic.
+            if (TryCastToLiveConcreteType(element, value.GetType(), out var concrete, out _))
             {
-                if (!TryCastToSubtype(element, subtype, out var castElement, out var castError))
-                {
-                    _log.Warning(FormatPrefix(_templateTypeName, _templateId, _op)
-                        + $"cannot cast '{fieldName}[{index}]' to subtype '{subtype}': {castError}");
-                    error = castError;
-                    return OperationResult.MemberMissing;
-                }
-                element = castElement;
+                element = concrete;
             }
 
             descended = element;

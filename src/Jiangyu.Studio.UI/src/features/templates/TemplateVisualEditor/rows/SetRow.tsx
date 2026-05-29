@@ -170,7 +170,7 @@ export function SetRow({
   const isFieldBag = isFieldBagValue(directive.value);
 
   // Kind label: hide for remove/clear (no value), hide for field-bag values
-  // (Composite / HandlerConstruction render their kind inline in the body).
+  // (Composite / TypeConstruction render their kind inline in the body).
   const kindLabel =
     isRemove || isClear || isFieldBag
       ? null
@@ -405,7 +405,7 @@ export function SetRow({
           directiveUiId={directive._uiId}
           // Three shapes of polymorphic destination route through the same
           // picker UX:
-          //  - collection-element subtypes (elementSubtypes, handler= flow)
+          //  - collection-element subtypes (elementSubtypes, type= flow)
           //  - scalar-polymorphic subtypes (scalarSubtypes, Odin construction)
           //  - tagged-string discriminators (taggedDiscriminators, e.g. SAY
           //    against m_SerializedNodes). For tagged-string, the picker
@@ -477,7 +477,7 @@ export interface CompositeEditorProps {
    *  unbounded and the high-fidelity converter wants member shapes we don't
    *  have at that depth). */
   vanillaNode?: InspectedFieldNode | undefined;
-  /** For HandlerConstruction values targeting a polymorphic owned-element
+  /** For TypeConstruction values targeting a polymorphic owned-element
    *  collection: the concrete subtypes the modder can pick. Drives the
    *  subtype combobox shown in place of the body until a type is chosen. */
   elementSubtypes?: readonly string[] | null;
@@ -665,15 +665,15 @@ export function CompositeEditor({
 
   const memberMap = new Map(members.map((m) => [m.name, m]));
 
-  const isHandler = value.kind === "HandlerConstruction";
+  const isConstruction = value.kind === "TypeConstruction";
   // Tagged-string composites surface their discriminators through the
-  // same picker UX as handler subtypes. Modder picks once; the chip
+  // same picker UX as construction subtypes. Modder picks once; the chip
   // round-trips and clearing re-opens the picker.
   const subtypeChoices = isTaggedString
     ? (taggedDiscriminators ?? null)
     : (elementSubtypes ?? null);
   const needsSubtypePick =
-    (isHandler || isTaggedString) &&
+    (isConstruction || isTaggedString) &&
     subtypeChoices !== null &&
     subtypeChoices.length > 0 &&
     !value.compositeType;
@@ -692,7 +692,7 @@ export function CompositeEditor({
   };
 
   const canClearSubtype =
-    (isHandler || isTaggedString) &&
+    (isConstruction || isTaggedString) &&
     subtypeChoices !== null &&
     subtypeChoices.length > 0 &&
     !!value.compositeType;
@@ -716,7 +716,7 @@ export function CompositeEditor({
         >
           <ChevronDown size={10} />
         </span>
-        <span className={styles.compositeKind}>{isHandler ? "handler" : "composite"}</span>
+        <span className={styles.compositeKind}>{isConstruction ? "construct" : "composite"}</span>
         {canClearSubtype ? (
           // Clickable subtype chip — clicking clears compositeType + fields
           // and re-shows the picker. Hover restyles to telegraph the action;
@@ -731,13 +731,13 @@ export function CompositeEditor({
               e.stopPropagation();
               handleClearSubtype();
             }}
-            title="Clear handler type (resets fields)"
+            title="Clear type (resets fields)"
           >
             {value.compositeType}
           </button>
         ) : (
           <span className={styles.compositeType}>
-            {value.compositeType ?? (isHandler ? "handler" : "composite")}
+            {value.compositeType ?? (isConstruction ? "construct" : "composite")}
           </span>
         )}
         {collapsed && directives.length > 0 && (
@@ -746,7 +746,7 @@ export function CompositeEditor({
           </span>
         )}
         {!collapsed &&
-          !isHandler &&
+          !isConstruction &&
           prototypesSupported &&
           (fromInputVisible ? (
             // stopPropagation on the wrapping div so picker interactions

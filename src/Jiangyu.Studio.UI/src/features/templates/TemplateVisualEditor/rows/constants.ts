@@ -32,7 +32,7 @@ export const VALUE_KIND_LABELS: Record<EditorValueKind, string> = {
   Enum: "Enum",
   TemplateReference: "Ref",
   Composite: "Composite",
-  HandlerConstruction: "Handler",
+  TypeConstruction: "Construct",
   AssetReference: "Asset",
   Null: "null",
 };

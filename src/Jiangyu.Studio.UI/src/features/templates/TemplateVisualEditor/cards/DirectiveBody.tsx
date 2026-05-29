@@ -7,6 +7,7 @@ import {
   groupDirectives,
   insertAtPendingAnchor,
   isCellAddressedSet,
+  resolveInspectedSlotType,
   rewriteDescentSlotIndex,
   type PendingAnchor,
   type StampedDirective,
@@ -101,17 +102,12 @@ export function DirectiveBody({
     return starts;
   }, [groups]);
 
-  // Pending descent group: UI-only state for a group whose subtype +
-  // first member directive aren't yet committed. Two paths reach here:
-  //  1. "Edit slot…" picked from the top-level FieldAdder — pending
-  //     renders at the end of the list (anchor = "end").
-  //  2. Subtype chip cleared on an existing group — that group's
-  //     member directives get deleted and pending takes over its visual
-  //     position (anchor = "after-flat-index" of whatever was directly
-  //     above the cleared group, or "start" if the group was first).
-  // Empty groups can't exist in the data model, so this UI state holds
-  // field+index+subtype until the first member is picked, then we
-  // materialise the directive and dismiss pending.
+  // Pending descent group: UI-only state for an "Edit slot…" pick from the
+  // top-level FieldAdder, before its first member directive is committed.
+  // Empty groups can't exist in the data model, so this state holds the
+  // field+index (plus a view-only subtype that drives the field picker)
+  // until the first member is added, then we materialise the directive and
+  // dismiss pending. Pending renders at the end of the list (anchor = "end").
   const [pending, setPending] = useState<{
     field: string;
     index: number;
@@ -133,36 +129,9 @@ export function DirectiveBody({
     setPending({ field, index: 0, subtype: presetSubtype, anchor: { kind: "end" } });
   };
 
-  const handleConvertGroupToPending = (
-    field: string,
-    index: number,
-    startFlatIndex: number,
-    endFlatIndex: number,
-  ) => {
-    // Clearing the subtype drops every member directive — they're bound
-    // to subtype-specific fields that won't survive a type change. The
-    // group's structural position is preserved by anchoring pending to
-    // whatever directive sat immediately above (or "start" if it was
-    // the first thing in the node).
-    const anchor: PendingAnchor =
-      startFlatIndex === 0
-        ? { kind: "start" }
-        : { kind: "afterIndex", flatIndex: startFlatIndex - 1 };
-    onSetDirectives([
-      ...node.directives.slice(0, startFlatIndex),
-      ...node.directives.slice(endFlatIndex),
-    ]);
-    setPending({ field, index, subtype: null, anchor });
-  };
-
   const handleMaterialisePending = (newDirective: StampedDirective) => {
     if (!pending) return;
-    const prefixed = buildDescentMemberDirective(
-      pending.field,
-      pending.index,
-      pending.subtype,
-      newDirective,
-    );
+    const prefixed = buildDescentMemberDirective(pending.field, pending.index, newDirective);
     onSetDirectives(insertAtPendingAnchor(node.directives, prefixed, pending.anchor));
     setPending(null);
   };
@@ -192,6 +161,7 @@ export function DirectiveBody({
         field={pending.field}
         slotIndex={pending.index}
         subtype={pending.subtype}
+        inspectedSlotType={resolveInspectedSlotType(vanillaFields, pending.field, pending.index)}
         outerMember={memberMap.get(pending.field)}
         onChangeIndex={(index) => setPending({ ...pending, index })}
         onChangeSubtype={(subtype) => setPending({ ...pending, subtype })}
@@ -246,13 +216,12 @@ export function DirectiveBody({
         <DescentGroup
           field={g.field}
           slotIndex={g.index}
-          subtype={g.subtype}
+          inspectedSlotType={resolveInspectedSlotType(vanillaFields, g.field, g.index)}
           startIndex={startIndex}
           endIndex={endIndex}
           outerMember={memberMap.get(g.field)}
           directives={node.directives}
           onSetDirectives={onSetDirectives}
-          onConvertToPending={handleConvertGroupToPending}
           members={g.members}
           renderMemberRow={looseRow}
           isDragging={groupHandlers.isDragging}
@@ -407,10 +376,8 @@ export function DirectiveBody({
 
 export interface DescentHeaderProps {
   readonly field: string;
-  /** Null when the descent step is scalar polymorphic (no collection
-   *  index); a number for collection-element descent. The header hides
-   *  the "at N" affordance when null. */
-  readonly slotIndex: number | null;
+  /** Zero-based element index the descent step edits. */
+  readonly slotIndex: number;
   readonly subtype: string | null;
   readonly subtypeChoices: readonly string[] | null;
   readonly subtypeMode: "fixed" | "clearable" | "picker";
@@ -493,19 +460,15 @@ export function DescentHeader({
       <span className={styles.setField} title={field}>
         {field}
       </span>
-      {slotIndex !== null && (
-        <>
-          <span className={styles.setInsertAt}>at</span>
-          <CommitInput
-            type="number"
-            className={styles.setIndexInput}
-            value={slotIndex}
-            min={0}
-            step={1}
-            onCommit={(v) => onChangeIndex(Number(v))}
-          />
-        </>
-      )}
+      <span className={styles.setInsertAt}>at</span>
+      <CommitInput
+        type="number"
+        className={styles.setIndexInput}
+        value={slotIndex}
+        min={0}
+        step={1}
+        onCommit={(v) => onChangeIndex(Number(v))}
+      />
       {subtypeMode === "picker" && subtype === null ? (
         <SubtypePicker
           fetchSubtypeChoices={fetchSubtypeChoices}
@@ -535,9 +498,12 @@ export function DescentHeader({
 
 export interface DescentGroupProps {
   field: string;
-  /** Null = scalar polymorphic descent; number = collection-element descent. */
-  slotIndex: number | null;
-  subtype: string | null;
+  /** Zero-based element index this group edits. */
+  slotIndex: number;
+  /** Concrete type of the live element at this slot, read from the inspected
+   *  source template. Drives the field list (a descent carries no type=) and
+   *  shows read-only as the edited element's type. */
+  inspectedSlotType: string | null;
   /** Inclusive flat index of this group's first member directive. */
   startIndex: number;
   /** Exclusive flat index of the end of this group. New members get
@@ -549,11 +515,6 @@ export interface DescentGroupProps {
    *  of the group; the new list is then handed to onSetDirectives. */
   directives: StampedDirective[];
   onSetDirectives: (directives: StampedDirective[]) => void;
-  /** Drop the group's member directives and convert to a pending state
-   *  with the same outer field+index, ready for a fresh subtype pick. */
-  onConvertToPending?:
-    | ((field: string, index: number, startFlatIndex: number, endFlatIndex: number) => void)
-    | undefined;
   /** Members of the group as (directive, suffix) pairs. */
   members: { directive: StampedDirective; suffix: string }[];
   /** Row renderer from the parent. Accepts an override memberMap so the
@@ -575,13 +536,12 @@ export interface DescentGroupProps {
 function DescentGroup({
   field,
   slotIndex,
-  subtype,
+  inspectedSlotType,
   startIndex,
   endIndex,
   outerMember,
   directives,
   onSetDirectives,
-  onConvertToPending,
   members,
   renderMemberRow,
   isDragging,
@@ -590,19 +550,19 @@ function DescentGroup({
   onDragOverRow,
   onDropRow,
 }: DescentGroupProps) {
-  const subtypeChoices = outerMember?.elementSubtypes ?? null;
-  // Inner-type members for the FieldAdder. Resolved from the subtype hint
-  // when the group has one (polymorphic collection); otherwise fall back
-  // to the outer member's element type (monomorphic owned-element list,
-  // e.g. List<PropertyChange>).
-  const innerType = subtype ?? outerMember?.elementTypeName ?? "";
-  // When innerType is a polymorphic subtype short name (e.g. "Attack" within
-  // a SkillEventHandlerTemplate family), pass the outer element type so the
-  // resolver can disambiguate against unrelated short-name twins. Suppress
-  // for the monomorphic fallback path (innerType === elementTypeName) so we
-  // don't waste RPC keys on a no-op context.
+  // Inner-type members for the FieldAdder. A descent is an edit and carries no
+  // type=, so resolve the live slot's concrete type from inspection to offer
+  // that subtype's fields. Fall back to the outer member's element type for a
+  // monomorphic owned-element list (e.g. List<PropertyChange>) or when the
+  // slot can't be inspected.
+  const innerType = inspectedSlotType ?? outerMember?.elementTypeName ?? "";
+  // When innerType is a polymorphic subtype name (e.g. "Attack" within a
+  // SkillEventHandlerTemplate family), pass the outer element type so the
+  // resolver can disambiguate against unrelated short-name twins. Suppress for
+  // the monomorphic fallback path so we don't waste RPC keys on a no-op
+  // context.
   const subtypeElementContext =
-    subtype !== null ? (outerMember?.elementTypeName ?? undefined) : undefined;
+    inspectedSlotType !== null ? (outerMember?.elementTypeName ?? undefined) : undefined;
   const { members: innerMembers, loaded: innerMembersLoaded } = useTemplateMembers(
     innerType || undefined,
     true,
@@ -641,7 +601,7 @@ function DescentGroup({
   }, [directives, startIndex, endIndex]);
 
   const handleAddMember = (newDirective: StampedDirective) => {
-    const prefixed = buildDescentMemberDirective(field, slotIndex, subtype, newDirective);
+    const prefixed = buildDescentMemberDirective(field, slotIndex, newDirective);
     const next = [...directives.slice(0, endIndex), prefixed, ...directives.slice(endIndex)];
     onSetDirectives(next);
   };
@@ -651,34 +611,10 @@ function DescentGroup({
   };
 
   const handleChangeSlotIndex = (next: number) => {
-    // Scalar polymorphic descent has no index to rewrite; the header
-    // hides the affordance, so this should never be called for the
-    // null branch. Defensive no-op.
-    if (slotIndex === null) return;
     onSetDirectives(
       rewriteDescentSlotIndex(directives, startIndex, endIndex, field, slotIndex, next),
     );
   };
-
-  // Clearing the subtype on a polymorphic group keeps the group's
-  // outer (field, index) in place but drops every member directive
-  // (each is bound to a subtype-specific field that won't survive a
-  // type change) and re-shows the subtype picker.
-  const handleClearSubtype = () => {
-    // onConvertToPending currently expects a non-null index (its only
-    // call site is collection-element descent groups). Scalar descent
-    // groups don't expose the clear-subtype affordance, so this
-    // doesn't fire for them — defensive guard for the type system.
-    if (onConvertToPending && slotIndex !== null) {
-      onConvertToPending(field, slotIndex, startIndex, endIndex);
-    }
-  };
-
-  // Polymorphic collection with multi-choice: clearing the chip drops the
-  // whole group (subtype-specific member fields wouldn't survive a type
-  // change). Single-choice / non-polymorphic: chip is read-only.
-  const subtypeMode: "fixed" | "clearable" =
-    subtypeChoices !== null && subtypeChoices.length > 1 ? "clearable" : "fixed";
 
   const firstMemberId = members[0]?.directive._uiId ?? "";
 
@@ -694,11 +630,11 @@ function DescentGroup({
       <DescentHeader
         field={field}
         slotIndex={slotIndex}
-        subtype={subtype}
-        subtypeChoices={subtypeChoices}
-        subtypeMode={subtypeMode}
+        subtype={inspectedSlotType}
+        subtypeChoices={null}
+        subtypeMode="fixed"
         onChangeIndex={handleChangeSlotIndex}
-        onChangeSubtype={handleClearSubtype}
+        onChangeSubtype={() => {}}
         dragBinding={{
           onDragStart: (e) => {
             e.stopPropagation();
@@ -714,7 +650,6 @@ function DescentGroup({
         }}
         onClose={handleDeleteGroup}
         closeTitle="Remove descent group (deletes all member directives)"
-        subtypeChipTitle="Clear subtype (deletes the group; restart via Edit slot)"
       />
       <div className={styles.compositeBody}>
         {memberRows}
@@ -734,9 +669,12 @@ function DescentGroup({
 
 export interface PendingDescentGroupProps {
   field: string;
-  /** Null = scalar polymorphic descent; number = collection-element descent. */
-  slotIndex: number | null;
+  /** Zero-based element index this pending group will edit. */
+  slotIndex: number;
   subtype: string | null;
+  /** Concrete type of the live element at this slot, read from inspection.
+   *  Auto-fills the field list so editing a polymorphic slot needs no pick. */
+  inspectedSlotType: string | null;
   outerMember: TemplateMember | undefined;
   onChangeIndex: (index: number) => void;
   onChangeSubtype: (subtype: string | null) => void;
@@ -748,21 +686,23 @@ function PendingDescentGroup({
   field,
   slotIndex,
   subtype,
+  inspectedSlotType,
   outerMember,
   onChangeIndex,
   onChangeSubtype,
   onCancel,
   onAddFirstMember,
 }: PendingDescentGroupProps) {
-  // Inner type resolution mirrors DescentGroup's: subtype hint when set
-  // (polymorphic collection), else fall back to the outer's element type.
-  // The FieldAdder is gated until innerType resolves so the modder can't
-  // add a member without first picking the subtype on a polymorphic list.
+  // Inner type resolution mirrors DescentGroup's: the live slot's inspected
+  // type auto-fills the field list, a manual subtype pick overrides it, and
+  // the outer element type is the monomorphic fallback. The FieldAdder is
+  // gated only when none of these resolve a type on a polymorphic list.
   const subtypeChoices = outerMember?.elementSubtypes ?? null;
   const isPolymorphic = subtypeChoices !== null && subtypeChoices.length > 0;
-  const innerType = subtype ?? outerMember?.elementTypeName ?? "";
+  const resolvedInner = subtype ?? inspectedSlotType;
+  const innerType = resolvedInner ?? outerMember?.elementTypeName ?? "";
   const subtypeElementContext =
-    subtype !== null ? (outerMember?.elementTypeName ?? undefined) : undefined;
+    resolvedInner !== null ? (outerMember?.elementTypeName ?? undefined) : undefined;
 
   const { members: innerMembers, loaded: innerMembersLoaded } = useTemplateMembers(
     innerType || undefined,
@@ -775,7 +715,7 @@ function PendingDescentGroup({
       <DescentHeader
         field={field}
         slotIndex={slotIndex}
-        subtype={subtype}
+        subtype={subtype ?? inspectedSlotType}
         subtypeChoices={subtypeChoices}
         subtypeMode={isPolymorphic ? "picker" : "fixed"}
         onChangeIndex={onChangeIndex}
@@ -786,7 +726,7 @@ function PendingDescentGroup({
         subtypeChipTitle="Clear subtype"
       />
       <div className={styles.compositeBody}>
-        {isPolymorphic && subtype === null ? (
+        {isPolymorphic && resolvedInner === null ? (
           <div className={styles.descentGroupHint}>Pick a subtype above before adding fields.</div>
         ) : (
           <FieldAdder

@@ -8,6 +8,7 @@ import {
   isFieldBagValue,
   makeDefaultValue,
   resolveEnumCommitType,
+  resolveInspectedSlotType,
   resolveRefTypeDisplay,
   shouldShowRefTypeSelector,
   stampDirective,
@@ -149,6 +150,49 @@ describe("isCellAddressedSet", () => {
   it("rejects non-Set ops even when indexPath is present", () => {
     expect(isCellAddressedSet({ op: "Append", indexPath: [0, 0] })).toBe(false);
     expect(isCellAddressedSet({ op: "Remove", indexPath: [0, 0] })).toBe(false);
+  });
+});
+
+// --- resolveInspectedSlotType ---
+
+describe("resolveInspectedSlotType", () => {
+  const fields = (): Map<string, InspectedFieldNode> =>
+    new Map<string, InspectedFieldNode>([
+      [
+        "EventHandlers",
+        {
+          kind: "array",
+          elements: [
+            { kind: "reference", reference: { className: "AddSkill" } },
+            { kind: "reference", reference: { className: "ChangeProperty" } },
+          ],
+        },
+      ],
+      [
+        "Perks",
+        {
+          kind: "array",
+          elements: [{ kind: "composite", fieldTypeName: "Perk" }],
+        },
+      ],
+    ]);
+
+  it("reads a polymorphic element's runtime class from its reference", () => {
+    expect(resolveInspectedSlotType(fields(), "EventHandlers", 0)).toBe("AddSkill");
+    expect(resolveInspectedSlotType(fields(), "EventHandlers", 1)).toBe("ChangeProperty");
+  });
+
+  it("falls back to the element's field type for an embedded element", () => {
+    expect(resolveInspectedSlotType(fields(), "Perks", 0)).toBe("Perk");
+  });
+
+  it("returns null for a scalar descent (no index)", () => {
+    expect(resolveInspectedSlotType(fields(), "EventHandlers", null)).toBeNull();
+  });
+
+  it("returns null when the field or slot is not inspected", () => {
+    expect(resolveInspectedSlotType(fields(), "Missing", 0)).toBeNull();
+    expect(resolveInspectedSlotType(fields(), "EventHandlers", 9)).toBeNull();
   });
 });
 
@@ -351,10 +395,10 @@ describe("isFieldBagValue", () => {
     ).toBe(true);
   });
 
-  it("treats HandlerConstruction values as field bags", () => {
+  it("treats TypeConstruction values as field bags", () => {
     expect(
       isFieldBagValue({
-        kind: "HandlerConstruction",
+        kind: "TypeConstruction",
         compositeType: "OnAttackEventHandlerTemplate",
         compositeDirectives: [],
       }),
@@ -372,7 +416,7 @@ describe("isFieldBagValue", () => {
 // --- makeDefaultValue (handler construction) ---
 
 describe("makeDefaultValue (handler construction)", () => {
-  it("emits HandlerConstruction with empty compositeType when multiple subtypes are available", () => {
+  it("emits TypeConstruction with empty compositeType when multiple subtypes are available", () => {
     const m = member({
       name: "EventHandlers",
       typeName: "List<BaseEventHandlerTemplate>",
@@ -381,7 +425,7 @@ describe("makeDefaultValue (handler construction)", () => {
       elementSubtypes: ["OnAddedEventHandlerTemplate", "OnAttackEventHandlerTemplate"],
     });
     expect(makeDefaultValue(m)).toEqual({
-      kind: "HandlerConstruction",
+      kind: "TypeConstruction",
       compositeType: "",
       compositeDirectives: [],
     });
@@ -396,7 +440,7 @@ describe("makeDefaultValue (handler construction)", () => {
       elementSubtypes: ["OnAttackEventHandlerTemplate"],
     });
     expect(makeDefaultValue(m)).toEqual({
-      kind: "HandlerConstruction",
+      kind: "TypeConstruction",
       compositeType: "OnAttackEventHandlerTemplate",
       compositeDirectives: [],
     });
@@ -481,13 +525,13 @@ describe("stampDirective", () => {
     expect(inner![1]?._uiId).toBe("id3");
   });
 
-  it("recurses into HandlerConstruction values too", () => {
+  it("recurses into TypeConstruction values too", () => {
     const stamped = stampDirective(
       {
         op: "Append",
         fieldPath: "EventHandlers",
         value: {
-          kind: "HandlerConstruction",
+          kind: "TypeConstruction",
           compositeType: "AddSkill",
           compositeDirectives: [
             { op: "Set", fieldPath: "ShowHUDText", value: { kind: "Boolean", boolean: true } },
@@ -507,7 +551,7 @@ describe("stampDirective", () => {
         op: "Append",
         fieldPath: "EventHandlers",
         value: {
-          kind: "HandlerConstruction",
+          kind: "TypeConstruction",
           compositeType: "ChangeProperty",
           compositeDirectives: [
             {
@@ -605,7 +649,7 @@ describe("strip*UiIds", () => {
     const original: EditorDirective = {
       op: "Set",
       fieldPath: "ShowHUDText",
-      descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
+      descent: [{ field: "EventHandlers", index: 0 }],
       value: { kind: "Boolean", boolean: true },
     };
     const stamped = stampDirective(original, counter());
@@ -641,17 +685,17 @@ describe("groupDirectives", () => {
     descent?: DescentStep[];
   }
 
-  it("groups consecutive descent directives sharing field+index+subtype", () => {
+  it("groups consecutive descent directives sharing field+index", () => {
     const directives: D[] = [
       {
         op: "Set",
         fieldPath: "ShowHUDText",
-        descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
+        descent: [{ field: "EventHandlers", index: 0 }],
       },
       {
         op: "Set",
         fieldPath: "OnlyApplyOnHit",
-        descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
+        descent: [{ field: "EventHandlers", index: 0 }],
       },
     ];
     const groups = groupDirectives(directives);
@@ -660,22 +704,21 @@ describe("groupDirectives", () => {
       kind: "group",
       field: "EventHandlers",
       index: 0,
-      subtype: "AddSkill",
       members: [{ suffix: "ShowHUDText" }, { suffix: "OnlyApplyOnHit" }],
     });
   });
 
-  it("splits when subtype hints differ at segment 0", () => {
+  it("splits when the slot index differs at segment 0", () => {
     const directives: D[] = [
       {
         op: "Set",
         fieldPath: "A",
-        descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
+        descent: [{ field: "EventHandlers", index: 0 }],
       },
       {
         op: "Set",
         fieldPath: "B",
-        descent: [{ field: "EventHandlers", index: 0, subtype: "ChangePropertyConditional" }],
+        descent: [{ field: "EventHandlers", index: 1 }],
       },
     ];
     const groups = groupDirectives(directives);
@@ -688,7 +731,7 @@ describe("groupDirectives", () => {
       {
         op: "Set",
         fieldPath: "ShowHUDText",
-        descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
+        descent: [{ field: "EventHandlers", index: 0 }],
       },
       { op: "Append", fieldPath: "Tags" },
     ];
@@ -704,13 +747,13 @@ describe("groupDirectives", () => {
       {
         op: "Set",
         fieldPath: "A",
-        descent: [{ field: "EventHandlers", index: 0, subtype: "X" }],
+        descent: [{ field: "EventHandlers", index: 0 }],
       },
       { op: "Set", fieldPath: "Cooldown" },
       {
         op: "Set",
         fieldPath: "B",
-        descent: [{ field: "EventHandlers", index: 0, subtype: "X" }],
+        descent: [{ field: "EventHandlers", index: 0 }],
       },
     ];
     const groups = groupDirectives(directives);
@@ -719,7 +762,7 @@ describe("groupDirectives", () => {
     expect(groups[2]?.kind).toBe("group");
   });
 
-  it("treats missing subtype hint as null and groups by null subtype", () => {
+  it("groups type-less edit descents into the same slot", () => {
     const directives: D[] = [
       {
         op: "Set",
@@ -734,6 +777,6 @@ describe("groupDirectives", () => {
     ];
     const groups = groupDirectives(directives);
     expect(groups).toHaveLength(1);
-    expect(groups[0]).toMatchObject({ kind: "group", subtype: null });
+    expect(groups[0]).toMatchObject({ kind: "group" });
   });
 });

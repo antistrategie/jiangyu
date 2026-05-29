@@ -195,7 +195,10 @@ public static partial class RpcHandlers
                 return new TemplateMember
                 {
                     Name = m.Name,
-                    TypeName = catalog.FriendlyName(m.MemberType),
+                    // ResolvableName keeps a scalar-composite member's type=
+                    // value resolvable when its short name collides across
+                    // namespaces; generic/collection names stay friendly.
+                    TypeName = catalog.ResolvableName(m.MemberType),
                     TypeFullName = m.MemberType.FullName,
                     IsWritable = m.IsWritable,
                     IsInherited = m.IsInherited,

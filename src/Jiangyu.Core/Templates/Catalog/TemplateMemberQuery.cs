@@ -16,10 +16,6 @@ public static class TemplateMemberQuery
     /// <summary>
     /// Resolve <paramref name="query"/> against <paramref name="catalog"/>.
     /// </summary>
-    /// <param name="subtypeHints">
-    /// Per-segment concrete-subtype overrides used to descend through
-    /// polymorphic reference arrays. Keyed by segment index.
-    /// </param>
     /// <param name="namespaceHint">
     /// Optional CLR namespace of the source type, forwarded to
     /// <see cref="TemplateTypeCatalog.ResolveType"/> to disambiguate
@@ -39,7 +35,6 @@ public static class TemplateMemberQuery
     public static QueryResult Run(
         TemplateTypeCatalog catalog,
         string query,
-        IReadOnlyDictionary<int, string>? subtypeHints = null,
         string? namespaceHint = null,
         string? elementTypeContext = null)
     {
@@ -97,7 +92,7 @@ public static class TemplateMemberQuery
         if (!TemplatePatchPathValidator.IsSupportedFieldPath(fieldPath))
             return QueryResult.FromError($"field path '{fieldPath}' is not a supported patch path.");
 
-        return NavigateFieldPath(catalog, resolvedType, typeName, fieldSegments, subtypeHints);
+        return NavigateFieldPath(catalog, resolvedType, typeName, fieldSegments);
     }
 
     private static int FindBestTypePrefix(
@@ -159,8 +154,7 @@ public static class TemplateMemberQuery
         TemplateTypeCatalog catalog,
         Type rootType,
         string typeName,
-        string[] fieldSegments,
-        IReadOnlyDictionary<int, string>? subtypeHints)
+        string[] fieldSegments)
     {
         var resolvedPathParts = new List<string> { typeName };
         var currentType = rootType;
@@ -171,6 +165,11 @@ public static class TemplateMemberQuery
         bool lastSegmentHadIndexer = false;
         string? lastNamedArrayEnum = null;
         Type? lastTaggedPolymorphicBase = null;
+        // Set by a no-type edit descent into a polymorphic collection element
+        // (set "Field" index=N { ... }). The element's concrete subtype isn't
+        // named, so the next segment's member is resolved against the union of
+        // the base's concrete subtypes. Reset after it's consumed.
+        Type? unionFallbackBase = null;
 
         for (var i = 0; i < fieldSegments.Length; i++)
         {
@@ -182,13 +181,39 @@ public static class TemplateMemberQuery
 
             var members = catalog.EnrichMembers(currentType, TemplateTypeCatalog.GetMembers(currentType, includeReadOnly: true));
             var member = members.FirstOrDefault(m => m.Name == memberName);
+            if (member == null && unionFallbackBase != null)
+            {
+                // No-type edit descent: accept the field if it exists on any
+                // concrete subtype of the element base, switching to that
+                // subtype so the rest of the path resolves. The runtime casts
+                // to the live element's actual type, so exact-slot resolution
+                // happens there; this only rejects fields that exist on no
+                // subtype at all (a genuine typo).
+                foreach (var sub in catalog.EnumerateConcreteSubtypes(unionFallbackBase))
+                {
+                    var subMembers = catalog.EnrichMembers(sub, TemplateTypeCatalog.GetMembers(sub, includeReadOnly: true));
+                    var match = subMembers.FirstOrDefault(m => m.Name == memberName);
+                    if (match != null)
+                    {
+                        currentType = sub;
+                        members = subMembers;
+                        member = match;
+                        break;
+                    }
+                }
+            }
+
             if (member == null)
             {
                 var attempted = string.Join('.', resolvedPathParts.Concat([segment]));
+                var where = unionFallbackBase != null
+                    ? $"any concrete subtype of '{catalog.FriendlyName(unionFallbackBase)}'"
+                    : $"'{catalog.FriendlyName(currentType)}'";
                 return QueryResult.FromError(
-                    $"member '{memberName}' not found on '{catalog.FriendlyName(currentType)}' (while resolving '{attempted}').");
+                    $"member '{memberName}' not found on {where} (while resolving '{attempted}').");
             }
 
+            unionFallbackBase = null;
             resolvedPathParts.Add(segment);
             lastMemberType = member.MemberType;
             lastWritable = member.IsWritable;
@@ -227,92 +252,26 @@ public static class TemplateMemberQuery
                 lastMemberType = elementType;
                 unwrappedFrom = memberType;
 
-                // Polymorphic descent: when the unwrapped element type has
+                // Polymorphic edit descent: when the unwrapped element type has
                 // strict subtypes (reference-style ScriptableObjects like
                 // SkillEventHandlerTemplate → Attack/AddSkill/..., OR
                 // interface-typed Odin fields like ITacticalCondition[] →
-                // AndCondition/MoraleStateCondition/...), the catalogue
-                // can't see the inner members of the concrete instance
-                // from the abstract base alone. The modder declares the
-                // concrete subtype via type="X" on the descent block;
-                // the parser threads it through as SubtypeHints[i].
-                // Switch the navigator to that type before continuing.
-                if (hasIndexer
-                    && i < fieldSegments.Length - 1
+                // AndCondition/MoraleStateCondition/...), the catalogue can't
+                // see the concrete instance's members from the abstract base
+                // alone. The edit descent names no subtype, so the next
+                // segment's member resolves against the union of the base's
+                // concrete subtypes (the runtime casts to the live element's
+                // actual type). Stay on the base element type and arm the union
+                // fallback for the next segment.
+                if (i < fieldSegments.Length - 1
                     && catalog.HasPolymorphicSubtype(elementType))
                 {
-                    var hint = subtypeHints != null && subtypeHints.TryGetValue(i, out var hinted) ? hinted : null;
-                    if (hint == null)
-                    {
-                        var attempted = string.Join('.', resolvedPathParts);
-                        return QueryResult.FromError(
-                            $"polymorphic descent through '{member.Name}[…]' "
-                            + $"(element type '{catalog.FriendlyName(elementType)}' has subclasses) "
-                            + "requires a type=\"<ConcreteType>\" hint on the descent block "
-                            + $"(at '{attempted}').");
-                    }
-
-                    // Resolve the hint within the element type's concrete-
-                    // subtype set, not against the whole assembly. This both
-                    // disambiguates (e.g. "Attack" picks Effects.Attack
-                    // unambiguously over AI.Behaviors.Attack, which is not a
-                    // SkillEventHandlerTemplate subtype) and tightens the
-                    // error message when the hint is genuinely off-tree.
-                    var resolved = catalog.ResolveSubtypeHint(elementType, hint, out var matchedFullNames);
-                    if (resolved == null)
-                    {
-                        var note = matchedFullNames.Count > 0
-                            ? " candidates: " + string.Join(", ", matchedFullNames)
-                            : string.Empty;
-                        return QueryResult.FromError(
-                            $"type=\"{hint}\" on descent into '{member.Name}[…]' "
-                            + $"is not a subtype of '{catalog.FriendlyName(elementType)}'.{note}");
-                    }
-
-                    // ResolveSubtypeHint already verified the relationship
-                    // via reflection + the metadata supplement (which
-                    // records interface impls Cpp2IL recovered from
-                    // global-metadata.dat). A managed
-                    // elementType.IsAssignableFrom(resolved) check would
-                    // double-count and falsely reject interface impls,
-                    // because IL2CPP wraps interfaces as classes and
-                    // strips the implements relations.
-                    currentType = resolved;
-                    lastMemberType = resolved;
+                    unionFallbackBase = elementType;
                 }
             }
             else
             {
                 currentType = memberType;
-
-                // Scalar polymorphic descent: a non-collection field whose
-                // declared type is a polymorphic base (e.g. Odin-routed
-                // Attack.DamageFilterCondition: ITacticalCondition). The
-                // modder supplies type="<Subtype>" on the outer descent
-                // block; the parser threads it through subtypeHints. Switch
-                // currentType so subsequent segments resolve subclass
-                // members. We only perform this when the next segment is
-                // about to navigate past this one (i < length-1) and there
-                // is something to switch to.
-                if (!hasIndexer
-                    && i < fieldSegments.Length - 1
-                    && subtypeHints != null
-                    && subtypeHints.TryGetValue(i, out var scalarHint)
-                    && !string.IsNullOrEmpty(scalarHint))
-                {
-                    var resolvedScalar = catalog.ResolveSubtypeHint(memberType, scalarHint, out var matchedFullNames);
-                    if (resolvedScalar == null)
-                    {
-                        var note = matchedFullNames.Count > 0
-                            ? " candidates: " + string.Join(", ", matchedFullNames)
-                            : string.Empty;
-                        return QueryResult.FromError(
-                            $"type=\"{scalarHint}\" on descent into '{member.Name}' "
-                            + $"is not a subtype of '{catalog.FriendlyName(memberType)}'.{note}");
-                    }
-                    currentType = resolvedScalar;
-                    lastMemberType = resolvedScalar;
-                }
             }
         }
 
@@ -441,8 +400,8 @@ public sealed class QueryResult
     /// Non-null when the terminal member is a tagged-string serialisation of
     /// polymorphic typed values (see
     /// <see cref="MemberShape.TaggedPolymorphicBase"/>). Validators substitute
-    /// this for <see cref="CurrentType"/> when dispatching composite-value
-    /// checks so <c>composite="X"</c> resolves against the polymorphic
+    /// this for <see cref="CurrentType"/> when dispatching construction-value
+    /// checks so <c>type="X"</c> resolves against the polymorphic
     /// subtype family rather than the literal <c>System.String</c> storage
     /// type.
     /// </summary>

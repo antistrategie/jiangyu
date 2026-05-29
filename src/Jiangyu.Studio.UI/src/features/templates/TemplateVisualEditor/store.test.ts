@@ -55,9 +55,7 @@ describe("reorderDirectives", () => {
   });
 
   it("moves a descent group as a contiguous unit", () => {
-    const eventHandlerStep: DescentStep[] = [
-      { field: "EventHandlers", index: 0, subtype: "AddSkill" },
-    ];
+    const eventHandlerStep: DescentStep[] = [{ field: "EventHandlers", index: 0 }];
     const list = [
       dir("g0", "A", { descent: eventHandlerStep }),
       dir("g1", "B", { descent: eventHandlerStep }),
@@ -69,9 +67,7 @@ describe("reorderDirectives", () => {
   });
 
   it("only the head id triggers group-span; non-head members move alone", () => {
-    const eventHandlerStep: DescentStep[] = [
-      { field: "EventHandlers", index: 0, subtype: "AddSkill" },
-    ];
+    const eventHandlerStep: DescentStep[] = [{ field: "EventHandlers", index: 0 }];
     const list = [
       dir("g0", "A", { descent: eventHandlerStep }),
       dir("g1", "B", { descent: eventHandlerStep }),
@@ -115,32 +111,20 @@ describe("insertAtPendingAnchor", () => {
 // --- buildDescentMemberDirective ---
 
 describe("buildDescentMemberDirective", () => {
-  it("prepends an outer descent step to the inner directive", () => {
-    const out = buildDescentMemberDirective(
-      "EventHandlers",
-      0,
-      "AddSkill",
-      dir("id", "ShowHUDText"),
-    );
+  it("prepends a no-subtype outer descent step to the inner directive", () => {
+    const out = buildDescentMemberDirective("EventHandlers", 0, dir("id", "ShowHUDText"));
     expect(out.fieldPath).toBe("ShowHUDText");
-    expect(out.descent).toEqual([{ field: "EventHandlers", index: 0, subtype: "AddSkill" }]);
-  });
-
-  it("omits subtype on the outer step when subtype is null", () => {
-    const out = buildDescentMemberDirective("Properties", 2, null, dir("id", "Amount"));
-    expect(out.fieldPath).toBe("Amount");
-    expect(out.descent).toEqual([{ field: "Properties", index: 2 }]);
-    expect(out.descent?.[0]?.subtype).toBeUndefined();
+    expect(out.descent).toEqual([{ field: "EventHandlers", index: 0 }]);
   });
 
   it("preserves the inner directive's existing descent steps", () => {
     const inner = dir("id", "Amount", {
-      descent: [{ field: "Properties", index: 0, subtype: "PropertyChange" }],
+      descent: [{ field: "Properties", index: 0 }],
     });
-    const out = buildDescentMemberDirective("EventHandlers", 0, "AddSkill", inner);
+    const out = buildDescentMemberDirective("EventHandlers", 0, inner);
     expect(out.descent).toEqual([
-      { field: "EventHandlers", index: 0, subtype: "AddSkill" },
-      { field: "Properties", index: 0, subtype: "PropertyChange" },
+      { field: "EventHandlers", index: 0 },
+      { field: "Properties", index: 0 },
     ]);
   });
 });
@@ -149,8 +133,8 @@ describe("buildDescentMemberDirective", () => {
 
 describe("rewriteDescentSlotIndex", () => {
   it("rewrites the outer descent step's index in the [start, end) slice", () => {
-    const handlerSlot0: DescentStep[] = [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }];
-    const handlerSlot1: DescentStep[] = [{ field: "EventHandlers", index: 1, subtype: "AddSkill" }];
+    const handlerSlot0: DescentStep[] = [{ field: "EventHandlers", index: 0 }];
+    const handlerSlot1: DescentStep[] = [{ field: "EventHandlers", index: 1 }];
     const list = [
       dir("a", "A", { descent: handlerSlot0 }),
       dir("b", "B", { descent: handlerSlot0 }),
@@ -162,7 +146,6 @@ describe("rewriteDescentSlotIndex", () => {
     expect(next[0]?.descent?.[0]).toEqual({
       field: "EventHandlers",
       index: 5,
-      subtype: "AddSkill",
     });
     expect(next.map((d) => d.fieldPath)).toEqual(["A", "B", "Cooldown", "X"]);
   });
@@ -170,7 +153,7 @@ describe("rewriteDescentSlotIndex", () => {
   it("no-ops when newSlot equals oldSlot", () => {
     const list = [
       dir("a", "A", {
-        descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
+        descent: [{ field: "EventHandlers", index: 0 }],
       }),
     ];
     const next = rewriteDescentSlotIndex(list, 0, 1, "EventHandlers", 0, 0);
@@ -180,7 +163,7 @@ describe("rewriteDescentSlotIndex", () => {
   it("no-ops on negative new slot (defensive against bad number-input)", () => {
     const list = [
       dir("a", "A", {
-        descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
+        descent: [{ field: "EventHandlers", index: 0 }],
       }),
     ];
     const next = rewriteDescentSlotIndex(list, 0, 1, "EventHandlers", 0, -1);
@@ -203,20 +186,20 @@ describe("editor-doc round-trip", () => {
             {
               op: "Set",
               fieldPath: "ShowHUDText",
-              descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
+              descent: [{ field: "EventHandlers", index: 0 }],
               value: { kind: "Boolean", boolean: true },
             },
             {
               op: "Set",
               fieldPath: "OnlyApplyOnHit",
-              descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
+              descent: [{ field: "EventHandlers", index: 0 }],
               value: { kind: "Boolean", boolean: true },
             },
             {
               op: "Append",
               fieldPath: "EventHandlers",
               value: {
-                kind: "HandlerConstruction",
+                kind: "TypeConstruction",
                 compositeType: "ChangeProperty",
                 compositeDirectives: [
                   {
@@ -255,14 +238,12 @@ describe("descent group lifecycle", () => {
       { op: "Set", fieldPath: "ShowHUDText", value: { kind: "Boolean", boolean: true } },
       newId,
     );
-    const firstPrefixed = buildDescentMemberDirective("EventHandlers", 0, "AddSkill", first);
+    const firstPrefixed = buildDescentMemberDirective("EventHandlers", 0, first);
     directives = insertAtPendingAnchor(directives, firstPrefixed, { kind: "end" });
 
     expect(directives).toHaveLength(1);
     expect(directives[0]?.fieldPath).toBe("ShowHUDText");
-    expect(directives[0]?.descent).toEqual([
-      { field: "EventHandlers", index: 0, subtype: "AddSkill" },
-    ]);
+    expect(directives[0]?.descent).toEqual([{ field: "EventHandlers", index: 0 }]);
 
     const groups = groupDirectives(directives);
     expect(groups).toHaveLength(1);
@@ -270,7 +251,6 @@ describe("descent group lifecycle", () => {
       kind: "group",
       field: "EventHandlers",
       index: 0,
-      subtype: "AddSkill",
       members: [{ suffix: "ShowHUDText" }],
     });
 
@@ -278,7 +258,7 @@ describe("descent group lifecycle", () => {
       { op: "Set", fieldPath: "OnlyApplyOnHit", value: { kind: "Boolean", boolean: true } },
       newId,
     );
-    const secondPrefixed = buildDescentMemberDirective("EventHandlers", 0, "AddSkill", second);
+    const secondPrefixed = buildDescentMemberDirective("EventHandlers", 0, second);
     directives = [...directives.slice(0, 1), secondPrefixed, ...directives.slice(1)];
 
     const updatedGroups = groupDirectives(directives);
@@ -289,7 +269,7 @@ describe("descent group lifecycle", () => {
     });
   });
 
-  it("clearing subtype anchors pending state, materialise puts new directive in original position", () => {
+  it("materialising at an afterIndex anchor puts the new directive in the original position", () => {
     const directives: StampedDirective[] = [
       stampDirective(
         { op: "Set", fieldPath: "Cooldown", value: { kind: "Single", single: 1 } },
@@ -299,7 +279,7 @@ describe("descent group lifecycle", () => {
         {
           op: "Set",
           fieldPath: "ShowHUDText",
-          descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
+          descent: [{ field: "EventHandlers", index: 0 }],
           value: { kind: "Boolean", boolean: true },
         },
         counter(),
@@ -308,7 +288,7 @@ describe("descent group lifecycle", () => {
         {
           op: "Set",
           fieldPath: "OnlyApplyOnHit",
-          descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
+          descent: [{ field: "EventHandlers", index: 0 }],
           value: { kind: "Boolean", boolean: true },
         },
         counter(),
@@ -332,16 +312,14 @@ describe("descent group lifecycle", () => {
       },
       counter(),
     );
-    const firstPrefixed = buildDescentMemberDirective("EventHandlers", 0, "ChangeProperty", first);
+    const firstPrefixed = buildDescentMemberDirective("EventHandlers", 0, first);
     const final = insertAtPendingAnchor(afterClear, firstPrefixed, {
       kind: "afterIndex",
       flatIndex: 0,
     });
 
     expect(final.map((d) => d.fieldPath)).toEqual(["Cooldown", "Event", "Tier"]);
-    expect(final[1]?.descent).toEqual([
-      { field: "EventHandlers", index: 0, subtype: "ChangeProperty" },
-    ]);
+    expect(final[1]?.descent).toEqual([{ field: "EventHandlers", index: 0 }]);
   });
 });
 
@@ -354,14 +332,14 @@ describe("descent group + reorder interaction", () => {
       {
         op: "Set",
         fieldPath: "X",
-        descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
+        descent: [{ field: "EventHandlers", index: 0 }],
         value: { kind: "Boolean", boolean: true },
         _uiId: "g0",
       },
       {
         op: "Set",
         fieldPath: "Y",
-        descent: [{ field: "EventHandlers", index: 0, subtype: "AddSkill" }],
+        descent: [{ field: "EventHandlers", index: 0 }],
         value: { kind: "Boolean", boolean: false },
         _uiId: "g1",
       },
@@ -384,14 +362,14 @@ describe("rewriteDescentSlotIndex composes with grouping", () => {
       {
         op: "Set",
         fieldPath: "A",
-        descent: [{ field: "EventHandlers", index: 0, subtype: "X" }],
+        descent: [{ field: "EventHandlers", index: 0 }],
         value: { kind: "Int32", int32: 1 },
         _uiId: "g0",
       },
       {
         op: "Set",
         fieldPath: "B",
-        descent: [{ field: "EventHandlers", index: 0, subtype: "X" }],
+        descent: [{ field: "EventHandlers", index: 0 }],
         value: { kind: "Int32", int32: 2 },
         _uiId: "g1",
       },

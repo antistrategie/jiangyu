@@ -219,8 +219,6 @@ internal sealed class TemplatePatchCatalog
             var sb = b[i];
             if (!string.Equals(sa.Field, sb.Field, StringComparison.Ordinal)) return false;
             if (sa.Index != sb.Index) return false;
-            if (!string.Equals(sa.Subtype ?? string.Empty, sb.Subtype ?? string.Empty, StringComparison.Ordinal))
-                return false;
         }
         return true;
     }

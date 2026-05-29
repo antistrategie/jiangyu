@@ -180,15 +180,15 @@ public sealed class CompiledTemplateValue
     public CompiledTemplateComposite? Composite { get; set; }
 
     /// <summary>
-    /// Payload for <see cref="CompiledTemplateValueKind.HandlerConstruction"/>.
+    /// Payload for <see cref="CompiledTemplateValueKind.TypeConstruction"/>.
     /// Same field-bag shape as <see cref="Composite"/>, but signals
     /// "construct a new ScriptableObject" at apply time rather than
     /// "build an inline value". Used to add a freshly-instantiated handler
     /// (e.g. AddSkill) into a polymorphic-reference array such as
     /// <c>SkillTemplate.EventHandlers</c>.
     /// </summary>
-    [JsonPropertyName("handlerConstruction")]
-    public CompiledTemplateComposite? HandlerConstruction { get; set; }
+    [JsonPropertyName("typeConstruction")]
+    public CompiledTemplateComposite? TypeConstruction { get; set; }
 }
 
 /// <summary>
@@ -210,10 +210,10 @@ public sealed class CompiledTemplateComposite
     /// <summary>
     /// Patch operations applied to the freshly-constructed instance, in
     /// declaration order. Same shape as <see cref="CompiledTemplatePatch.Set"/>
-    /// at the outer level — every op (Set, Append, InsertAt, Remove, Clear) is
+    /// at the outer level: every op (Set, Append, InsertAt, Remove, Clear) is
     /// supported. Modders writing
-    /// <c>composite="X" { append "Items" composite="Y" { ... } }</c> get this
-    /// list directly; older syntax <c>set "F" v</c> appears as a single Set op.
+    /// <c>type="X" { append "Items" type="Y" { ... } }</c> get this
+    /// list directly. A flat <c>set "F" v</c> appears as a single Set op.
     /// </summary>
     [JsonPropertyName("operations")]
     public List<CompiledTemplateSetOperation> Operations { get; set; } = [];
@@ -286,7 +286,7 @@ public enum CompiledTemplateValueKind
     /// <c>ScriptableObject.CreateInstance&lt;T&gt;()</c> reflectively;
     /// inline composites stay on the <see cref="Composite"/> path.
     /// </summary>
-    HandlerConstruction,
+    TypeConstruction,
 
     /// <summary>
     /// Reference to a Unity asset shipped by the mod under

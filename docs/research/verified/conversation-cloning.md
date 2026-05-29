@@ -154,20 +154,20 @@ conversation for a new character `voymastina_speaker` requires:
 ```kdl
 clone "ConversationTemplate" from="JeanSy/click_bark" id="Voymastina/click_bark" {
     set "Roles" index=0 {
-        set "m_SerializedRequirements" index=2 composite="HasOneTag" {
+        set "m_SerializedRequirements" index=2 type="HasOneTag" {
             set "Tags" "voymastina"
         }
     }
     set "Nodes" {
-        append "m_SerializedNodes" composite="ACTION" {
-            set "m_SerAction" composite="SetFlag" {
+        append "m_SerializedNodes" type="ACTION" {
+            set "m_SerAction" type="SetFlag" {
                 set "FlagName" "click_bark_voymastina_test"
                 set "FlagValue" #true
             }
         }
-        append "m_SerializedNodes" composite="VARIATION" {
+        append "m_SerializedNodes" type="VARIATION" {
             append "Variations" {
-                append "m_SerializedNodes" composite="SAY" {
+                append "m_SerializedNodes" type="SAY" {
                     set "Sound" {
                         set "bankId" "tactical_barks_voymastina_va"
                         set "itemId" "voymastina_click_bark_test"
@@ -177,7 +177,7 @@ clone "ConversationTemplate" from="JeanSy/click_bark" id="Voymastina/click_bark"
                 }
             }
         }
-        append "m_SerializedNodes" composite="EMPTY" {}
+        append "m_SerializedNodes" type="EMPTY" {}
     }
 }
 ```
@@ -188,7 +188,7 @@ populated from the inner ops. The refresh pass calls
 `OnAfterDeserialize` on the new container to rebuild typed `m_Nodes`
 before the matcher sees the clone.
 
-`composite="ACTION"` and friends use the tagged-string authoring path
+`type="ACTION"` and friends use the tagged-string authoring path
 (see [`tagged-string-authoring.md`](tagged-string-authoring.md)). The
 modder's discriminator string resolves to the concrete
 `BaseConversationNode` subtype, inner ops apply against that type, and

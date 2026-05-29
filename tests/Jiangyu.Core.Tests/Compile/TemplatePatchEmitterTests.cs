@@ -575,7 +575,7 @@ public class TemplatePatchEmitterTests
     {
         // An empty TypeName on Composite is the deferred-inference sentinel
         // emitted when the modder writes `append "Field" { ... }` without
-        // composite="X". The catalog-aware validator (TemplateCatalogValidator)
+        // type="X". The catalog-aware validator (TemplateCatalogValidator)
         // is responsible for filling it in from the destination's element
         // type or rejecting on polymorphic destinations. At the emitter
         // layer the value is structurally valid and round-trips.
@@ -605,7 +605,7 @@ public class TemplatePatchEmitterTests
     [Fact]
     public void CompositeValue_EmptyFieldsWithTypeName_AllowsDefaultConstruct()
     {
-        // composite="X" {} is the modder constructing X with default field
+        // type="X" {} is the modder constructing X with default field
         // values. The catalog validator + auto-filler (e.g.
         // NodeGuidAutoFiller for conversation-node types) handle any
         // downstream completion. Path validation only rejects the

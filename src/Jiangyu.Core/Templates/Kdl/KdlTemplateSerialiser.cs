@@ -118,10 +118,12 @@ public static class KdlTemplateSerialiser
     /// <summary>
     /// Emit a list of directives, grouping consecutive directives whose
     /// outermost <see cref="TemplateDescentStep"/> matches under a single
-    /// <c>set "Field" index=N type="X" { ... }</c> block. Order is preserved —
-    /// non-descent directives and breaks in the descent run interleave at
-    /// their original positions; later runs sharing the same outer step still
-    /// emit as separate blocks because reordering would change modder intent.
+    /// <c>set "Field" index=N { ... }</c> block. A descent is an edit, so it
+    /// carries no type=, and the concrete subtype is inferred at apply time.
+    /// Order is preserved: non-descent directives and breaks in the descent run
+    /// interleave at their original positions, and later runs sharing the same
+    /// outer step still emit as separate blocks because reordering would change
+    /// modder intent.
     /// </summary>
     private static void WriteDirectiveBlock(StringBuilder sb, IList<KdlEditorDirective> directives, int indent)
     {
@@ -155,10 +157,7 @@ public static class KdlTemplateSerialiser
 
                 WriteIndent(sb, indent);
                 sb.Append($"set \"{Esc(outerStep.Field)}\"");
-                if (outerStep.Index.HasValue)
-                    sb.Append($" index={outerStep.Index.Value.ToString(CultureInfo.InvariantCulture)}");
-                if (!string.IsNullOrEmpty(outerStep.Subtype))
-                    sb.Append($" type=\"{Esc(outerStep.Subtype)}\"");
+                sb.Append($" index={outerStep.Index.ToString(CultureInfo.InvariantCulture)}");
                 sb.Append(" {");
                 EndLine(sb, d.TrailingComment);
                 WriteDirectiveBlock(sb, group, indent + 1);
@@ -204,7 +203,7 @@ public static class KdlTemplateSerialiser
     }
 
     private static bool DescentStepsEqual(TemplateDescentStep a, TemplateDescentStep b)
-        => a.Field == b.Field && a.Index == b.Index && a.Subtype == b.Subtype;
+        => a.Field == b.Field && a.Index == b.Index;
 
     /// <summary>
     /// Emit a non-descent directive (Descent null/empty). Covers scalar set,
@@ -334,12 +333,12 @@ public static class KdlTemplateSerialiser
                 EndLine(sb, inlineComment);
                 break;
 
+            // Both kinds serialise with type=, the single authoring keyword. A
+            // named type emits type="X". An empty type (inferred inline value
+            // for a monomorphic destination) emits a bare { } block.
             case KdlEditorValueKind.Composite:
-                WriteFieldBag(sb, "composite", v, indent, inlineComment);
-                break;
-
-            case KdlEditorValueKind.HandlerConstruction:
-                WriteFieldBag(sb, "handler", v, indent, inlineComment);
+            case KdlEditorValueKind.TypeConstruction:
+                WriteFieldBag(sb, "type", v, indent, inlineComment);
                 break;
 
             case KdlEditorValueKind.AssetReference:
@@ -355,19 +354,18 @@ public static class KdlTemplateSerialiser
     }
 
     /// <summary>
-    /// Emit a composite or handler value bag. <paramref name="parentIndent"/>
-    /// is the indent of the surrounding directive; inner ops emit at
+    /// Emit a type= construction value bag. <paramref name="parentIndent"/>
+    /// is the indent of the surrounding directive. Inner ops emit at
     /// <c>parentIndent + 1</c> and the closing brace lines up with the
-    /// surrounding directive. Threaded through so nested composites
+    /// surrounding directive. Threaded through so nested constructions
     /// (Sound inside SoundBank, SoundVariation inside Sound) keep their
     /// indentation in lockstep with depth.
     /// </summary>
     private static void WriteFieldBag(StringBuilder sb, string keyword, KdlEditorValue v, int parentIndent, string? inlineComment)
     {
-        // Omit composite=/handler= when the type is empty so inference applies
-        // on re-parse. The validator clears the type for monomorphic
-        // destinations in editor-doc mode; compile-path docs always carry a
-        // concrete type.
+        // Omit type= when the type is empty so inference applies on re-parse.
+        // The validator clears the type for monomorphic destinations in
+        // editor-doc mode; compile-path docs always carry a concrete type.
         var hasType = !string.IsNullOrWhiteSpace(v.CompositeType);
         var hasFrom = !string.IsNullOrWhiteSpace(v.CompositeFrom);
         if (hasType)

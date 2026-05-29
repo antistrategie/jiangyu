@@ -14,7 +14,7 @@ export type EditorValueKind =
   // (e.g. EventHandlers). Same shape as Composite — compositeType names the
   // concrete subtype, compositeDirectives hold the patch operations applied
   // to the freshly-constructed instance.
-  | "HandlerConstruction"
+  | "TypeConstruction"
   // Unity asset reference: a single name string the loader resolves
   // against the mod-bundle catalog (assets/additions/<category>/<name>) or
   // the live game-asset registry. The category is derived from the
@@ -37,10 +37,11 @@ export interface EditorValue {
   referenceType?: string;
   referenceId?: string;
   compositeType?: string;
-  /** Patch operations applied to the constructed composite/handler instance.
-   *  Mirrors the outer EditorDirective shape — every op (Set/Append/Insert/
-   *  Remove/Clear) is allowed inside, with nested composite/handler values
-   *  authored the same way as outer directives. */
+  /** Patch operations applied to the constructed composite/TypeConstruction
+   *  instance. Mirrors the outer EditorDirective shape — every op
+   *  (Set/Append/Insert/Remove/Clear) is allowed inside, with nested
+   *  composite/TypeConstruction values authored the same way as outer
+   *  directives. */
   compositeDirectives?: EditorDirective[];
   /** Optional prototype-source key for Composite values. When set, the
    *  applier looks up an existing element in the destination collection
@@ -53,16 +54,14 @@ export interface EditorValue {
 
 export type DirectiveOp = "Set" | "Append" | "Insert" | "Remove" | "Clear";
 
-/** One descent step along a template patch path. Mirrors the KDL syntax
- *  `set "Field" index=N type="Subtype" { ... }` (or `set "Field" type="X"
- *  { ... }` for scalar polymorphic descent, where `index` is null). The
- *  validator switches to `subtype` when the destination is polymorphic.
- *  Mirrors the host `Jiangyu.Shared.Templates.TemplateDescentStep`. */
+/** One descent step along a template patch path: an edit into element
+ *  `index` of collection `field`, the KDL syntax `set "Field" index=N
+ *  { ... }`. The element's concrete subtype is inferred at apply time, so no
+ *  subtype is carried. Mirrors the host
+ *  `Jiangyu.Shared.Templates.TemplateDescentStep`. */
 export interface DescentStep {
   field: string;
-  /** Null = scalar polymorphic descent (no collection index). */
-  index?: number | null;
-  subtype?: string;
+  index: number;
 }
 
 export interface EditorDirective {

@@ -30,7 +30,7 @@ A `patch` block targets a specific template by type and id. Inside the block you
 ```kdl
 patch "EntityTemplate" "player_squad.darby" {
     set "HudYOffsetScale" 2.0
-    set "AIRole" composite="RoleData" {
+    set "AIRole" {
         set "AvoidOpponents" #true
     }
 }
@@ -59,14 +59,15 @@ For the apply-order model (clones before patches, source order within a template
 
 | Operation                                            | Purpose                                              |
 | ---------------------------------------------------- | ---------------------------------------------------- |
-| `set "<field>" <value>`                              | Set a scalar, ref, enum, or composite field.         |
+| `set "<field>" <value>`                              | Set a scalar, ref, enum, or asset field.             |
 | `set "<field>" index=N <value>`                      | Set element N of a collection field.                 |
-| `set "<field>" index=N { ... }`                      | Descend into element N to edit its sub-fields.       |
-| `set "<field>" index=N handler="<X>" { ... }`        | Replace element N with a new constructed handler X.  |
+| `set "<field>" index=N { ... }`                      | Descend into element N to edit its sub-fields. The element's type is inferred. |
+| `set "<field>" index=N type="<X>" { ... }`           | Construct a fresh X and replace element N.           |
+| `set "<field>" type="<X>" { ... }`                   | Construct a fresh X for a value or polymorphic-scalar field. |
 | `append "<field>" <value>`                           | Append to a collection field.                        |
-| `append "<field>" handler="<X>" { ... }`             | Construct a new handler X and append it.             |
+| `append "<field>" type="<X>" { ... }`                | Construct a new X and append it.                     |
 | `insert "<field>" index=N <value>`                   | Insert into a collection field at position N.        |
-| `insert "<field>" index=N handler="<X>" { ... }`     | Construct a new handler X and insert it at N.        |
+| `insert "<field>" index=N type="<X>" { ... }`        | Construct a new X and insert it at N.                |
 | `remove "<field>" index=N`                           | Remove element N from a collection field.            |
 | `clear "<field>"`                                    | Empty a collection field. Composes with `append` for "replace the whole list". |
 
@@ -109,29 +110,29 @@ patch "EntityTemplate" "player_squad.darby" {
 
 The descent block is purely an authoring shape that keeps deeply-indexed paths readable.
 
-### Polymorphic descent: type=
+### Editing a polymorphic element
 
-When the collection's declared element type is an abstract base with multiple concrete subclasses (for example, `SkillTemplate.EventHandlers` is `List<SkillEventHandlerTemplate>` but the actual elements are `Attack`, `AddSkill`, `ChangeProperty`, etc.), the compiler can't see the concrete subclass's fields from the abstract base alone. Add `type="<ConcreteType>"` to declare which subclass lives at this slot:
+Editing into an element needs no type annotation, even when the collection's declared element type is an abstract base with multiple concrete subclasses (for example, `SkillTemplate.EventHandlers` is `List<SkillEventHandlerTemplate>` but the actual elements are `Attack`, `AddSkill`, `ChangeProperty`, etc.). The descent edits the element already at that slot, so the concrete subtype is inferred:
 
 ```kdl
 patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
-    set "EventHandlers" index=0 type="AddSkill" {
+    set "EventHandlers" index=0 {
         set "ShowHUDText" #true
     }
 }
 ```
 
-The `type=` hint is required at any polymorphic-abstract descent boundary. The compiler errors loudly when it's missing, naming the available subclasses. For non-polymorphic collections (where the element type is concrete and unambiguous), `type=` is unnecessary.
+The runtime reads the live element's concrete type and edits it, leaving every other field untouched. The compiler validates each inner field against the element base's concrete subtypes, so a typo on a field that exists on no subtype is still caught. To replace the element with a freshly-constructed one instead of editing it, add `type="<X>"` (see [Construction with `type=`](#construction-adding-new-collection-elements)).
 
-Descent blocks may nest: each inner `set "<field>" index=N type="..." { ... }` works the same way, descending one level further.
+Descent blocks may nest: each inner `set "<field>" index=N { ... }` works the same way, descending one level further.
 
 ## Construction: adding new collection elements
 
-To add a brand-new element to a polymorphic-reference collection (most commonly an event handler on a skill or perk), use `handler="<SubtypeName>" { ... }` on `append`, `insert`, or `set` (with `index=`). The inner block sets fields on the new element.
+To add a brand-new element to a polymorphic-reference collection (most commonly an event handler on a skill or perk), use `type="<SubtypeName>" { ... }` on `append` or `insert`. The inner block sets the new element's fields.
 
 ```kdl
 patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
-    append "EventHandlers" handler="AddSkill" {
+    append "EventHandlers" type="AddSkill" {
         set "Event" enum="AddEvent" "OnAttack"
         set "SkillToAdd" ref="SkillTemplate" "effect.bleeding"
         set "ShowHUDText" #true
@@ -139,33 +140,19 @@ patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
 }
 ```
 
-### `type=` vs `handler=`: edit-in-place vs construct-and-replace
+### `type=`: name the type to construct
 
-Authored side-by-side they look almost identical, but they're different operations:
+`type="X"` is the one construction keyword. It names the concrete type to build, and the compiler picks how to store it from the destination field: a constructed ScriptableObject for a polymorphic-reference element (an event handler), an inline value for a concrete struct field (`RoleData`, `LocalizedLine`), or a tagged string for a tagged-string field (see [Tagged-string fields](#tagged-string-polymorphic-fields)). `type=` always constructs a fresh instance:
 
-```kdl
-// Edit one field of slot 0. Every other field on the existing handler is preserved.
-set "EventHandlers" index=0 type="AddSkill" {
-    set "ShowHUDText" #true
-}
+- `append "F" type="X" { ... }` / `insert "F" index=N type="X" { ... }`: construct a fresh X and add it to the collection.
+- `set "F" index=N type="X" { ... }`: construct a fresh X and replace element N (even when N already holds an X). To edit element N in place, drop `type=` and use a plain descent block.
+- `set "ScalarField" type="X" { ... }`: construct a fresh X and assign it to a value or polymorphic-scalar field (an Odin-routed interface such as `Attack.DamageFilterCondition`).
 
-// Replace slot 0 with a freshly-constructed AddSkill. Every other field on the new
-// handler is its type's default (zero, null, empty list, …).
-set "EventHandlers" index=0 handler="AddSkill" {
-    set "ShowHUDText" #true
-}
-```
+The inner `set` directives provide the new instance's fields and everything else takes its type default (`0`, `null`, empty list, …). Nothing carries over from whatever was there, so set every field the element needs to function, including its trigger. A passive perk's `AddSkill`, for example, needs `set "Event" enum="AddEvent" "OnMissionStart"` or it never grants the skill. To keep the existing fields and change only a few, edit in place with a plain descent block instead.
 
-If the vanilla slot 0 already had `Cooldown=2.5` and three `TagsCanPreventSkillUse` entries:
+Inner directives inside a `type=` block accept the full `set` / `append` / `insert` / `remove` / `clear` vocabulary against the new instance, so you can author "construct an `AddSkill` and append two `PropertyChange` entries to its `Properties` list" inline rather than splitting into separate patches.
 
-- `type=` leaves you with `ShowHUDText=true`, `Cooldown=2.5`, `TagsCanPreventSkillUse=[…vanilla…]` (preserved).
-- `handler=` leaves you with `ShowHUDText=true`, `Cooldown=0`, `TagsCanPreventSkillUse=[]` (destroyed).
-
-Pick `type=` to flip a field on a vanilla-shipped element. Pick `handler=` only when you want to recreate the slot from scratch and you've configured every field you care about in the inner block.
-
-Inner directives inside a `handler=` block accept the full `set` / `append` / `insert` / `remove` / `clear` vocabulary and apply against the freshly-constructed instance, so you can author "construct an `AddSkill` and append two `PropertyChange` entries to its `Properties` list" inline rather than splitting into separate patches.
-
-The `handler=` subtype name is required when the array's element type is abstract polymorphic (the common case for event handlers). It can be omitted when the element type is monomorphic (the array's declared element type is the only construction option). The compiler errors when the subtype is missing for a polymorphic destination, when the named subtype isn't a subclass of the destination's element type, or when an inner field doesn't exist on the constructed type.
+The `type=` subtype name is required when the destination's element type is abstract polymorphic (the common case for event handlers). It can be omitted when the element type is monomorphic (a child block with no `type=` infers the only construction option). The compiler errors when the subtype is missing for a polymorphic destination, when the named subtype isn't a subclass of the destination's element type, or when an inner field doesn't exist on the constructed type.
 
 ### `from=`: inherit an existing element's fields
 
@@ -184,7 +171,7 @@ patch "SoundBank" "weapons_soundbank" {
 }
 ```
 
-This copies every field of the `aimed_shot` sound (volume, pitch, retrigger mode, distance falloff, etc.) and then overrides `id`, `name`, and `variations` on the copy. Without `from=`, every scalar field defaults to zero and the modder has to remember to set sensible playback parameters. The `from=` name matches the source element's `name` property; the destination composite type doesn't need to be named explicitly when only one type is possible.
+This copies every field of the `aimed_shot` sound (volume, pitch, retrigger mode, distance falloff, etc.) and then overrides `id`, `name`, and `variations` on the copy. Without `from=`, every scalar field defaults to zero and the modder has to remember to set sensible playback parameters. The `from=` name matches the source element's `name` property; the destination type doesn't need to be named explicitly when only one type is possible.
 
 ## Value kinds
 
@@ -197,13 +184,12 @@ A value at the end of a `set`, `append`, or `insert` line is one of:
 | String              | quoted string, or triple-quoted multi-line               | `set "InitialPerk" "perk.assassin"`                      |
 | Template reference  | `ref="<TemplateType>" "<templateId>"`                    | `append "PerkTrees" ref="PerkTreeTemplate" "perk_tree.tech"` |
 | Enum                | `enum="<EnumType>" "<value>"`                            | `set "Tier" enum="PerkTier" "Advanced"`                  |
-| Composite           | `composite="<TypeName>" { ...nested set ops... }`        | inline value-type composite (e.g. `RoleData`)            |
-| Handler construction | `handler="<SubtypeName>" { ...nested set ops... }`      | construct a new ScriptableObject element (see above)     |
+| Construction        | `type="<TypeName>" { ...nested set ops... }`             | build a value, element, or tagged string (see above)     |
 | Null                | `#null`                                                  | `set "CustomHead" #null` (clear a reference field)       |
 
-`composite=` builds an inline value embedded in the parent. `handler=` constructs a separate element that the parent references. Pick `composite=` for inline value-type fields (`RoleData`, `LocalizedLine`) and `handler=` for adding elements to polymorphic-reference lists (event handlers on skills and perks).
+`type=` names the type to build and the compiler picks the storage mechanism from the destination field: an inline value for a concrete struct (`RoleData`, `LocalizedLine`), a constructed ScriptableObject for a polymorphic-reference element (event handlers on skills and perks), or a tagged string for a tagged-string field.
 
-When the destination type is unambiguous (a value-type composite like `LocalizedLine`, or a monomorphic list element), the `composite="X"` declaration can be omitted. Studio's visual editor emits the omitted form for these cases:
+When the destination type is unambiguous (a value-type field like `LocalizedLine`, or a monomorphic list element), the `type="X"` declaration can be omitted. Studio's visual editor emits the omitted form for these cases:
 
 ```kdl
 patch "UnitLeaderTemplate" "squad_leader.darby_clone" {
@@ -213,7 +199,7 @@ patch "UnitLeaderTemplate" "squad_leader.darby_clone" {
 }
 ```
 
-The compiler infers the concrete type from the destination field. Polymorphic destinations (an abstract base with multiple concrete subclasses) still require explicit `composite=` or `handler=` so the chosen subtype is unambiguous; the validator lists the candidates when the hint is missing.
+The compiler infers the concrete type from the destination field. Polymorphic destinations (an abstract base with multiple concrete subclasses) still require explicit `type=` so the chosen subtype is unambiguous. The validator lists the candidates when the hint is missing.
 
 `#null` clears a reference-typed scalar field (GameObject, ScriptableObject, MonoBehaviour, etc.) so the runtime falls back to its default-when-null behaviour. Useful on cloned templates where the source's field holds an overlay you don't want; e.g. dropping a soldier clone's `CustomHead` so the body mesh's own head shows through. Value-typed fields (numbers, enums, structs) reject `#null` at compile time.
 
@@ -230,29 +216,29 @@ set "Description" """
 
 The leading whitespace on the closing `"""` defines the common indent stripped from every line on re-parse. Single-line strings stay on the standard `"text"` form, so most patches still diff compactly.
 
-The compiler infers numeric width (Byte, Int32, Single) from the destination field's type. For polymorphic destinations (an abstract base type with multiple concrete subclasses), specify the type explicitly via `ref=`, `composite=`, `handler=`, or `type=` as appropriate.
+The compiler infers numeric width (Byte, Int32, Single) from the destination field's type. For polymorphic destinations (an abstract base type with multiple concrete subclasses), specify the type explicitly via `ref=` or `type=` as appropriate.
 
-## Tagged-string composites
+## Tagged-string polymorphic fields
 
 Some MENACE fields store polymorphic typed values as strings of the form `"DISCRIMINATOR|{json}"`, paired with a sibling typed field that the game rebuilds on load. `ConversationTemplate`'s node tree and role-requirement list, and `ActionConversationNode`'s sub-action, all use this convention.
 
-Author them with the same `composite="X"` op. The `X` is the discriminator (`ACTION`, `SAY`, `HasOneTag`, `SetFlag`, ...), which Jiangyu maps to the concrete CLR subtype via the polymorphic family's naming convention. The compiler builds the typed instance, JSON-serialises it, and prefixes the discriminator before storing the result.
+Author them with the same `type="X"` op. The `X` is the discriminator (`ACTION`, `SAY`, `HasOneTag`, `SetFlag`, ...), which Jiangyu maps to the concrete CLR subtype via the polymorphic family's naming convention. The compiler builds the typed instance, JSON-serialises it, and prefixes the discriminator before storing the result.
 
 ```kdl
 clone "ConversationTemplate" from="JeanSy/click_bark" id="Voymastina/click_bark" {
     set "Roles" index=0 {
-        set "m_SerializedRequirements" index=2 composite="HasOneTag" {
+        set "m_SerializedRequirements" index=2 type="HasOneTag" {
             set "Tags" "voymastina"
         }
     }
     set "Nodes" {
-        append "m_SerializedNodes" composite="ACTION" {
-            set "m_SerAction" composite="SetFlag" {
+        append "m_SerializedNodes" type="ACTION" {
+            set "m_SerAction" type="SetFlag" {
                 set "FlagName" "click_bark_voymastina_test"
                 set "FlagValue" #true
             }
         }
-        append "m_SerializedNodes" composite="SAY" {
+        append "m_SerializedNodes" type="SAY" {
             set "Sound" {
                 set "bankId" "tactical_barks_voymastina_va"
                 set "itemId" "voymastina_click_bark_test"
@@ -260,12 +246,12 @@ clone "ConversationTemplate" from="JeanSy/click_bark" id="Voymastina/click_bark"
             set "RoleGuid" "Entity"
             set "Text" "Roger."
         }
-        append "m_SerializedNodes" composite="EMPTY" {}
+        append "m_SerializedNodes" type="EMPTY" {}
     }
 }
 ```
 
-Recursion is automatic. The inner `composite="SetFlag"` packs first to `"SetFlag|{...}"`, assigns to the typed `ActionConversationNode.m_SerAction`, then the outer composite packs to `"ACTION|{"Guid":...,"m_SerAction":"SetFlag|{...}"}"`. The raw string form (`set "F" "TYPE|{\"...\":\"...\"}"`) still works as an escape hatch when a discriminator isn't recognised yet or a modder pastes from a decompiled asset.
+Recursion is automatic. The inner `type="SetFlag"` packs first to `"SetFlag|{...}"`, assigns to the typed `ActionConversationNode.m_SerAction`, then the outer node packs to `"ACTION|{"Guid":...,"m_SerAction":"SetFlag|{...}"}"`. The raw string form (`set "F" "TYPE|{\"...\":\"...\"}"`) still works as an escape hatch when a discriminator isn't recognised yet or a modder pastes from a decompiled asset.
 
 ### Ergonomic auto-fills
 
@@ -329,7 +315,7 @@ jiangyu compile
 
 `jiangyu templates format` rewrites every `*.kdl` under `templates/` (or a single file path) to the canonical form Studio emits when you save in the visual editor. It runs the same parse → validate → normalise → serialise pipeline as the editor:
 
-- Strips redundant `composite=` / `handler=` / `ref=` attributes on monomorphic destinations.
+- Strips redundant `type=` / `ref=` attributes on monomorphic destinations.
 - Resolves symbolic Conversation role names into the numeric guids the game stores.
 - Coerces shorthand value forms the validator accepts.
 - Round-trips leading and inline `//` comments alongside the code.

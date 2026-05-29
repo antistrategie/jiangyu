@@ -149,13 +149,13 @@ function inspectedFieldToEditorValueByKind(node: InspectedFieldNode): EditorValu
 }
 
 /**
- * Composite and HandlerConstruction share the same field-bag shape and render
+ * Composite and TypeConstruction share the same field-bag shape and render
  * through the same CompositeEditor; this predicate centralises the call sites
  * so a future kind with a third distinct shape doesn't accidentally inherit
  * the field-bag rendering path.
  */
 export function isFieldBagValue(value: EditorValue | undefined): boolean {
-  return value?.kind === "Composite" || value?.kind === "HandlerConstruction";
+  return value?.kind === "Composite" || value?.kind === "TypeConstruction";
 }
 
 /**
@@ -262,7 +262,7 @@ export function isCellAddressedSet<T extends { op: string; indexPath?: number[] 
  */
 export function stampDirective(d: EditorDirective, newId: () => string): StampedDirective {
   const stamped: StampedDirective = { ...d, _uiId: d._uiId ?? newId() };
-  if (d.value && (d.value.kind === "Composite" || d.value.kind === "HandlerConstruction")) {
+  if (d.value && (d.value.kind === "Composite" || d.value.kind === "TypeConstruction")) {
     const inner = d.value.compositeDirectives;
     if (inner) {
       stamped.value = {
@@ -289,10 +289,7 @@ export function stampNodes(nodes: EditorNode[], newId: () => string): StampedNod
  */
 export function stripDirectiveUiIds(d: EditorDirective): EditorDirective {
   const { _uiId: _id, ...rest } = d;
-  if (
-    rest.value &&
-    (rest.value.kind === "Composite" || rest.value.kind === "HandlerConstruction")
-  ) {
+  if (rest.value && (rest.value.kind === "Composite" || rest.value.kind === "TypeConstruction")) {
     const inner = rest.value.compositeDirectives;
     if (inner) {
       return {
@@ -321,8 +318,8 @@ export function stripUiIds(doc: EditorDocument): EditorDocument {
  * Item in the directive-list render plan. NodeCard / CompositeEditor walk
  * the produced array and render each entry with the appropriate component.
  * Groups own a contiguous run of directives that share the same outermost
- * descent step (field + index + subtype). A loose entry is anything else —
- * a top-level scalar set, an append, a non-descent set with index, etc.
+ * descent step (field + index). A loose entry is anything else: a top-level
+ * scalar set, an append, a non-descent set with index, etc.
  *
  * Member descent steps deeper than segment 0 stay on the inner directive's
  * `descent` list intact; rendering recurses for nested groups.
@@ -332,10 +329,7 @@ export type DirectiveGroup<T> =
   | {
       kind: "group";
       field: string;
-      /** Null when the descent step is scalar polymorphic descent (no
-       *  collection index); a number for collection-element descent. */
-      index: number | null;
-      subtype: string | null;
+      index: number;
       members: { directive: T; suffix: string }[];
     };
 
@@ -343,10 +337,10 @@ export type DirectiveGroup<T> =
  * Walk the directive list once and partition it into groups + loose
  * entries, preserving order. Two consecutive descent directives merge into
  * the same group only when they share the same outer descent step (field,
- * index, subtype) at position 0 — distinct outer steps can't be folded
- * together because the serialiser deliberately emits them as separate
- * outer blocks. The member's `suffix` is the inner-relative fieldPath used
- * for the row label.
+ * index) at position 0 — distinct outer steps can't be folded together
+ * because the serialiser deliberately emits them as separate outer blocks.
+ * The member's `suffix` is the inner-relative fieldPath used for the row
+ * label.
  */
 export function groupDirectives<
   T extends {
@@ -364,21 +358,14 @@ export function groupDirectives<
       result.push({ kind: "loose", directive: d });
       continue;
     }
-    const subtype = outerStep.subtype ?? null;
-    if (
-      active !== null &&
-      active.field === outerStep.field &&
-      active.index === outerStep.index &&
-      active.subtype === subtype
-    ) {
+    if (active !== null && active.field === outerStep.field && active.index === outerStep.index) {
       active.members.push({ directive: d, suffix: d.fieldPath });
       continue;
     }
     const group: Extract<DirectiveGroup<T>, { kind: "group" }> = {
       kind: "group",
       field: outerStep.field,
-      index: outerStep.index ?? null,
-      subtype,
+      index: outerStep.index,
       members: [{ directive: d, suffix: d.fieldPath }],
     };
     result.push(group);
@@ -464,29 +451,45 @@ export function insertAtPendingAnchor<T>(
 /**
  * Build the directive that materialises a pending descent group's first
  * member. Mirrors what the parser produces for an authored
- * `set "<field>" index=<N> type="<subtype>" { set "<inner>" v }` block:
- * the outer (field, index, subtype) is prepended to the inner directive's
- * descent step list. The inner fieldPath stays inner-relative.
+ * `set "<field>" index=<N> { set "<inner>" v }` block: the outer (field,
+ * index) is prepended to the inner directive's descent step list, and the
+ * inner fieldPath stays inner-relative. A descent is an edit, so the step
+ * carries no subtype. The concrete subtype is inferred at apply time. The
+ * editor still tracks the chosen subtype as view-only state so it knows which
+ * fields to offer, but that choice is not written into the directive.
  */
 export function buildDescentMemberDirective<T extends EditorDirective>(
   field: string,
-  /** Null = scalar polymorphic descent; number = collection-element descent. */
-  slotIndex: number | null,
-  subtype: string | null,
+  slotIndex: number,
   innerDirective: T,
 ): T {
-  // Scalar polymorphic descent omits index; collection descent carries it.
-  const outerStep: DescentStep = (() => {
-    if (slotIndex === null) {
-      return subtype !== null ? { field, subtype } : { field };
-    }
-    return subtype !== null ? { field, index: slotIndex, subtype } : { field, index: slotIndex };
-  })();
+  const outerStep: DescentStep = { field, index: slotIndex };
   const combined: DescentStep[] = [outerStep, ...(innerDirective.descent ?? [])];
   return {
     ...innerDirective,
     descent: combined,
   };
+}
+
+/**
+ * Resolve the concrete type of an existing collection element from the
+ * inspected source template. Backs the auto-fill on edit descent: editing
+ * `set "Field" index=N { ... }` carries no type=, so the visual editor reads
+ * the live slot's type here to offer that subtype's fields without the modder
+ * picking it. Returns null when the field is not an inspected collection, the
+ * slot is out of range, or the descent is a scalar (no index).
+ */
+export function resolveInspectedSlotType(
+  vanillaFields: ReadonlyMap<string, InspectedFieldNode>,
+  field: string,
+  slotIndex: number | null,
+): string | null {
+  if (slotIndex === null) return null;
+  const element = vanillaFields.get(field)?.elements?.[slotIndex];
+  if (!element) return null;
+  // A polymorphic ScriptableObject element reports its runtime class on the
+  // reference. A plain embedded element reports it as the field type.
+  return element.reference?.className ?? element.fieldTypeName ?? null;
 }
 
 /**
@@ -519,15 +522,15 @@ export function rewriteDescentSlotIndex<T extends EditorDirective>(
  * Neutral default value for a freshly-added directive on `member`. Drives
  * the FieldAdder's "click to add" path and any drag-drop fallback. Falls
  * through tiers: declared scalar → ref/enum → polymorphic owned-element
- * collection (HandlerConstruction with picker) → plain composite → string.
+ * collection (TypeConstruction with picker) → plain composite → string.
  */
 export function makeDefaultValue(member: TemplateMember): EditorValue {
   const kind = member.patchScalarKind;
   const elementType = member.elementTypeName;
   // Polymorphic subtype choices come from one of two sources:
-  //  - elementSubtypes: collection element family (existing handler= flow)
+  //  - elementSubtypes: collection element family (existing type= flow)
   //  - scalarSubtypes: scalar polymorphic field (Phase 2b: Odin construction)
-  // Both produce a HandlerConstruction value; the modder UX is identical.
+  // Both produce a TypeConstruction value; the modder UX is identical.
   const subtypes = member.elementSubtypes ?? member.scalarSubtypes;
 
   switch (kind) {
@@ -553,14 +556,14 @@ export function makeDefaultValue(member: TemplateMember): EditorValue {
     default:
       // Polymorphic owned-element collection (e.g. EventHandlers): the
       // element is a freshly-constructed ScriptableObject subordinate to the
-      // parent template, so emit HandlerConstruction. compositeType stays
+      // parent template, so emit TypeConstruction. compositeType stays
       // empty until the modder picks a concrete subtype; CompositeEditor
       // renders the picker against `elementSubtypes`. When exactly one
       // subtype is available there's no real choice — pre-fill it.
       if (subtypes && subtypes.length > 0) {
         const first = subtypes[0];
         const compositeType = subtypes.length === 1 && first ? first : "";
-        return { kind: "HandlerConstruction", compositeType, compositeDirectives: [] };
+        return { kind: "TypeConstruction", compositeType, compositeDirectives: [] };
       }
       if (elementType) {
         return { kind: "Composite", compositeType: elementType, compositeDirectives: [] };

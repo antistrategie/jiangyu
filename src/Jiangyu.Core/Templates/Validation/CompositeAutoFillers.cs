@@ -96,8 +96,8 @@ internal static class CompositeAutoFillers
             foreach (var inner in composite.Operations)
                 Walk(inner);
         }
-        else if (value.Kind == CompiledTemplateValueKind.HandlerConstruction
-            && value.HandlerConstruction is { } handler)
+        else if (value.Kind == CompiledTemplateValueKind.TypeConstruction
+            && value.TypeConstruction is { } handler)
         {
             foreach (var inner in handler.Operations)
                 Walk(inner);

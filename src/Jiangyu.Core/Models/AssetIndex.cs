@@ -150,8 +150,8 @@ public sealed class AssetSoundBankMetadata
 
     /// <summary>
     /// Names of the bank's <c>sounds[]</c> children so modders can target
-    /// individual sounds as composite prototype sources via
-    /// <c>composite= from="..."</c> authoring.
+    /// individual sounds as prototype sources via
+    /// <c>type= from="..."</c> authoring.
     /// </summary>
     [JsonPropertyName("namedChildren")]
     public List<string>? NamedChildren { get; set; }

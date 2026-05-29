@@ -49,6 +49,30 @@ public class TemplateTypeCatalogTests
     }
 
     [Fact]
+    public void ResolvableName_UnambiguousShortName_ReturnsShortName()
+    {
+        using var catalog = Load();
+        var type = catalog.ResolveType("FixtureEntity", out _, out _)!;
+        Assert.Equal("FixtureEntity", catalog.ResolvableName(type));
+    }
+
+    [Fact]
+    public void ResolvableName_AmbiguousShortName_ReturnsResolvableFullName()
+    {
+        // FixtureSkillTemplate exists in two namespaces, so its short name
+        // can't round-trip. ResolvableName falls back to the full name, which
+        // the editor stores as the type= value and resolves unambiguously.
+        using var catalog = Load();
+        var type = catalog.ResolveType(
+            "Jiangyu.Core.Tests.Templates.Fixtures.Gameplay.FixtureSkillTemplate",
+            out _,
+            out _)!;
+        var name = catalog.ResolvableName(type);
+        Assert.Equal(type.FullName, name);
+        Assert.Equal(type, catalog.ResolveType(name, out _, out _));
+    }
+
+    [Fact]
     public void ResolveType_NamespaceHintDisambiguatesShortName()
     {
         using var catalog = Load();
@@ -648,7 +672,7 @@ public class TemplateTypeCatalogTests
     {
         // m_SerializedCounts looks like a tagged-string list (List<string> with
         // sibling m_Counts), but the sibling is List<int> — a primitive
-        // element. Auto-detect rejects so we don't propose composite= against
+        // element. Auto-detect rejects so we don't propose type= against
         // a non-polymorphic destination.
         using var catalog = Load();
         var type = catalog.ResolveType("FixtureTaggedPrimitiveSibling", out _, out _)!;

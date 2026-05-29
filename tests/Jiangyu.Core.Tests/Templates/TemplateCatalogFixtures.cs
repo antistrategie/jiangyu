@@ -130,7 +130,7 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
     }
 
     // Concrete implementation of the polymorphic-scalar interface IFixtureAoEShape.
-    // Used by HandlerConstruction validator tests for Odin-routed scalar
+    // Used by TypeConstruction validator tests for Odin-routed scalar
     // construction on a non-collection field. Radius is settable because the
     // Phase 2b construction path writes inner ops via reflection.
     public class FixtureAoEShapeImpl : IFixtureAoEShape

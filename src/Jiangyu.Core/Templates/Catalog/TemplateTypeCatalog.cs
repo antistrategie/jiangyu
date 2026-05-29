@@ -580,8 +580,8 @@ public sealed class TemplateTypeCatalog : IDisposable
         if (string.IsNullOrEmpty(discriminator))
             return null;
 
-        // Direct short-name / FQN match comes first — preserves the existing
-        // path for modders who write the full class name in composite=.
+        // Direct short-name / FQN match comes first, for modders who write the
+        // full class name in type=.
         var direct = ResolveSubtypeHint(baseType, discriminator, out ambiguousFullNames);
         if (direct != null) return direct;
         if (ambiguousFullNames.Count > 0) return null;
@@ -841,6 +841,26 @@ public sealed class TemplateTypeCatalog : IDisposable
             "System.String" => "String",
             _ => type.Name,
         };
+    }
+
+    /// <summary>
+    /// A type name the editor can round-trip: the short <see cref="FriendlyName"/>
+    /// when it resolves unambiguously back to this type, otherwise the full name
+    /// (which <see cref="ResolveType"/> always matches exactly). Keeps an
+    /// editor-produced <c>type=</c> value resolvable when a short name collides
+    /// across namespaces (e.g. <c>Il2CppStem.ID</c> vs
+    /// <c>Il2CppMenace.Tactical.AI.ID</c>). Generic/array display names
+    /// (<c>List&lt;T&gt;</c>, <c>T[]</c>) have no resolvable full-name form the
+    /// editor would use, so they keep the friendly name.
+    /// </summary>
+    public string ResolvableName(Type type)
+    {
+        var friendly = FriendlyName(type);
+        if (type.IsArray || type.IsGenericType)
+            return friendly;
+        return ResolveType(friendly, out _, out _) == type
+            ? friendly
+            : type.FullName ?? friendly;
     }
 
     /// <summary>
@@ -1330,7 +1350,7 @@ public sealed record MemberShape(
     /// (e.g. <c>BaseConversationNode</c> for
     /// <c>ConversationNodeContainer.m_SerializedNodes</c>). Detected via
     /// the <c>m_Ser*</c> ↔ typed-sibling convention at catalogue build.
-    /// Authoring uses the existing <c>composite="X"</c> op against the
-    /// tagged-string field; emitter packs to the storage shape.
+    /// Authoring uses the <c>type="X"</c> op against the
+    /// tagged-string field, and the emitter packs to the storage shape.
     /// </summary>
     Type? TaggedPolymorphicBase = null);

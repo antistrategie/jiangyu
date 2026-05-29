@@ -50,7 +50,7 @@ Templates take five **operations** on a field:
 - **Remove** drops the element at a specific index (`remove "Field" index=N`).
 - **Clear** empties a collection.
 
-For the full syntax of each op, including descent (`type=`) and construction (`handler=`), see [Templates](/templates#operations).
+For the full syntax of each op, including descent and construction (`type=`), see [Templates](/templates#operations).
 
 Patches and clones are both lists of operations. A patch targets an existing template by ID. A clone deep-copies a vanilla template into a new ID and then applies its inline operations to the copy.
 
@@ -109,8 +109,7 @@ Operations carry a value. KDL templates support several kinds:
 - **Enums** (`set "SlotType" enum="ItemSlot" "ModularVehicleLight"`)
 - **Template references** (`set "Skill" ref="SkillTemplate" "active.aimed_shot"`): point at another live `DataTemplate`-descended template by ID.
 - **Asset references** (`set "Icon" asset="lrm5/icon"`): point at a `Sprite`/`Texture2D`/`AudioClip`/`Material` asset, either an addition shipped by the mod or a vanilla game asset of the same name.
-- **Composites** (`composite="OperationResources" { set "m_Supplies" 75 }`): construct a fresh value-typed payload inline.
-- **Handler construction** (`handler="AddSkill" { ... }`): construct a fresh `ScriptableObject` for a polymorphic-element list (e.g. `EventHandlers`).
+- **Construction** (`type="OperationResources" { set "m_Supplies" 75 }`): name a type to build. The compiler picks the storage from the destination: an inline value for a struct field, a fresh polymorphic element for a list such as `EventHandlers`, or a tagged string for a tagged-string field.
 
 The category for asset references is derived from the destination field's declared Unity type, so the modder writes only the name. See [Templates](/templates) for the full KDL grammar and [Additions](/assets/additions/) for the asset-reference contract.
 

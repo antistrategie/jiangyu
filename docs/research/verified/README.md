@@ -29,6 +29,6 @@ just the local index for promoted findings.
 
 ## Authoring shapes
 
-- [Tagged-string authoring](tagged-string-authoring.md) — `composite="X" { ... }` against `m_Ser*` fields that store polymorphic typed values as `"TYPE|{json}"`; discriminator heuristic resolution, JsonUtility pack at apply, ergonomic auto-fills (node Guids, clone identity, Sound.id, VariationCopyCount)
+- [Tagged-string authoring](tagged-string-authoring.md) — `type="X" { ... }` against `m_Ser*` fields that store polymorphic typed values as `"TYPE|{json}"`; discriminator heuristic resolution, JsonUtility pack at apply, ergonomic auto-fills (node Guids, clone identity, Sound.id, VariationCopyCount)
 
 Each doc lists the investigation notes it draws from.

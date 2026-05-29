@@ -5,7 +5,7 @@ with full structured-nodes authoring).
 
 KDL composites against MENACE's `m_Ser*`-named string fields pack to
 `"DISCRIMINATOR|{json}"` storage at apply time. The authoring shape
-uses the existing 5 ops plus `composite=` and `index=`. No new
+uses the existing 5 ops plus `type=` and `index=`. No new
 directives.
 
 ## The pattern
@@ -32,27 +32,27 @@ detection covers any future site that follows the convention.
 
 ## Authoring shape
 
-Modder writes a normal `composite="X"` op against the tagged-string
+Modder writes a normal `type="X"` op against the tagged-string
 field. The `X` is the discriminator from the asset's stored
 `"X|{json}"` form, not the CLR class name.
 
 ```kdl
 clone "ConversationTemplate" from="JeanSy/click_bark" id="Voymastina/click_bark" {
     set "Roles" index=0 {
-        set "m_SerializedRequirements" index=2 composite="HasOneTag" {
+        set "m_SerializedRequirements" index=2 type="HasOneTag" {
             set "Tags" "voymastina"
         }
     }
     set "Nodes" {
-        append "m_SerializedNodes" composite="ACTION" {
-            set "m_SerAction" composite="SetFlag" {
+        append "m_SerializedNodes" type="ACTION" {
+            set "m_SerAction" type="SetFlag" {
                 set "FlagName" "click_bark_voymastina_test"
                 set "FlagValue" #true
             }
         }
-        append "m_SerializedNodes" composite="VARIATION" {
+        append "m_SerializedNodes" type="VARIATION" {
             append "Variations" {
-                append "m_SerializedNodes" composite="SAY" {
+                append "m_SerializedNodes" type="SAY" {
                     set "Sound" {
                         set "bankId" "tactical_barks_voymastina_va"
                         set "itemId" "voymastina_click_bark_test"
@@ -62,7 +62,7 @@ clone "ConversationTemplate" from="JeanSy/click_bark" id="Voymastina/click_bark"
                 }
             }
         }
-        append "m_SerializedNodes" composite="EMPTY" {}
+        append "m_SerializedNodes" type="EMPTY" {}
     }
 }
 ```
@@ -76,7 +76,7 @@ references a discriminator the SDK doesn't know about yet.
 
 `TemplateCatalogValidator` calls
 `TemplateTypeCatalog.ResolveTaggedDiscriminator` to map the modder's
-`composite="X"` string to a concrete subtype of the destination's
+`type="X"` string to a concrete subtype of the destination's
 `TaggedPolymorphicBase`. Three candidates are tried per concrete
 subtype:
 
@@ -124,8 +124,8 @@ The validator preserves the modder's discriminator on
    `"<discriminator>|{json}"`.
 4. Return the string for the `List<string>` or string destination.
 
-Recursion is automatic. A `composite="ACTION" { set "m_SerAction"
-composite="SetFlag" { ... } }` packs the inner `SetFlag` first
+Recursion is automatic. A `type="ACTION" { set "m_SerAction"
+type="SetFlag" { ... } }` packs the inner `SetFlag` first
 (`"SetFlag|{...}"`), assigns it to the typed `ActionConversationNode`'s
 `m_SerAction` field, then JsonUtility serialises the outer instance.
 The result is `"ACTION|{\"Guid\":...,\"m_SerAction\":\"SetFlag|{...}\"}"` —

@@ -280,7 +280,7 @@ This is the largest slice and probably the highest-value one. Order:
 1. Decide the authoring grammar. Strawman:
    ```kdl
    patch "SkillTemplate" id="active.foo" {
-       append "EventHandlers" handler="AddSkill" {
+       append "EventHandlers" type="AddSkill" {
            set "Event" "OnHit"
            set "SkillToAdd" "Burning"
            set "OnlyApplyOnHit" true

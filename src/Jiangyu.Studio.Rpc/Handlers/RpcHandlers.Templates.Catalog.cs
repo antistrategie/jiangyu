@@ -352,8 +352,8 @@ public static partial class RpcHandlers
     }
 
     [McpTool("jiangyu_templates_prototype_candidates",
-        "List candidate prototype-source names for a composite type. Used by the visual editor's `from=` autocomplete on composite values; returns the names a modder could write as `from=\"X\"` to seed a fresh element from an existing one. Sound is the only composite type with semantically-named elements (`sounds[].name` inside each SoundBank); other composite types in MENACE are either nameless structs (SoundVariation, ID), ref-keyed elements that would need a per-type lookup (Perk, EntityLootEntry), or top-level templates that go through `clone` rather than `composite=`. Empty list for those.")]
-    [McpParam("compositeType", "string", "Composite type name (e.g. \"Sound\", \"Stem.Sound\", or \"Il2CppStem.Sound\").", Required = true)]
+        "List candidate prototype-source names for a constructed type. Used by the visual editor's `from=` autocomplete on type= construction values; returns the names a modder could write as `from=\"X\"` to seed a fresh element from an existing one. Sound is the only constructed type with semantically-named elements (`sounds[].name` inside each SoundBank); other constructed types in MENACE are either nameless structs (SoundVariation, ID), ref-keyed elements that would need a per-type lookup (Perk, EntityLootEntry), or top-level templates that go through `clone` rather than `type=`. Empty list for those.")]
+    [McpParam("compositeType", "string", "Constructed type name (e.g. \"Sound\", \"Stem.Sound\", or \"Il2CppStem.Sound\").", Required = true)]
     internal static JsonElement TemplatesPrototypeCandidates(JsonElement? parameters)
     {
         var compositeType = RequireString(parameters, "compositeType");
@@ -464,7 +464,7 @@ public static partial class RpcHandlers
         //    subtypes via Resources.FindObjectsOfTypeAll + Object.name like
         //    PerkTreeTemplate). Both surface as TemplateReference for the
         //    modder — same authoring shape, different runtime lookup path.
-        //  - Constructed inline as HandlerConstruction when the leaf is an
+        //  - Constructed inline as TypeConstruction when the leaf is an
         //    abstract base with concrete subtypes (the owned-element shape
         //    of EventHandlers, surfaced via ElementSubtypes). Returning null
         //    here routes the visual editor to the composite/handler picker.
@@ -493,13 +493,13 @@ public static partial class RpcHandlers
     /// Object.name through Resources.FindObjectsOfTypeAll, e.g.
     /// PerkTreeTemplate or SpeakerTemplate). Excludes abstract bases like
     /// SkillEventHandlerTemplate whose authoring shape is construction-style
-    /// (handler="X" { ... }), not by-name reference.
+    /// (type="X" { ... }), not by-name reference.
     /// </summary>
     private static bool IsByNameResolvableReference(TemplateTypeCatalog catalog, Type leafType)
     {
         if (TemplateTypeCatalog.IsDataTemplateType(leafType)) return true;
         // Construction-style polymorphic destinations have descendants and
-        // ride the ElementSubtypes / handler= path instead — keep them out
+        // ride the ElementSubtypes / type= path instead — keep them out
         // of the ref-combobox UX so the two pickers don't both fire.
         return !catalog.HasReferenceSubtype(leafType);
     }
@@ -507,7 +507,11 @@ public static partial class RpcHandlers
     private static string? ComputeElementTypeName(TemplateTypeCatalog catalog, MemberShape m)
     {
         var elementType = TemplateTypeCatalog.GetElementType(m.MemberType);
-        return elementType != null ? catalog.FriendlyName(elementType) : null;
+        // ResolvableName, not FriendlyName: the editor stores this as a
+        // construction type= value and queries members against it, so a short
+        // name that collides across namespaces (Il2CppStem.ID) must come back
+        // as the full name that resolves unambiguously.
+        return elementType != null ? catalog.ResolvableName(elementType) : null;
     }
 
     private static string? ComputeEnumTypeName(TemplateTypeCatalog catalog, MemberShape m)
@@ -654,7 +658,7 @@ public static partial class RpcHandlers
     /// descendants, but isn't a Unity-asset reference target — that case
     /// goes through ref= picking instead). The visual editor surfaces these
     /// as a "Pick handler" combobox the same way it does for collection
-    /// elements; the resulting patch is a Set with a HandlerConstruction
+    /// elements; the resulting patch is a Set with a TypeConstruction
     /// value. Used for Odin-routed scalar fields like
     /// <c>Attack.DamageFilterCondition: ITacticalCondition</c>.
     /// </summary>
@@ -664,7 +668,7 @@ public static partial class RpcHandlers
         if (TemplateTypeCatalog.GetElementType(memberType) != null) return null;
         if (TemplateTypeCatalog.IsScalar(memberType)) return null;
         // ScriptableObject / DataTemplate-typed scalars are picked via ref=,
-        // not constructed via handler=. EnumerateConcreteSubtypes on its own
+        // not constructed via type=. EnumerateConcreteSubtypes on its own
         // doesn't filter those out, so we exclude them explicitly.
         if (TemplateTypeCatalog.IsTemplateReferenceTarget(memberType)) return null;
         if (TemplateTypeCatalog.IsDataTemplateType(memberType)) return null;

@@ -100,10 +100,10 @@ public static partial class RpcHandlers
         var document = p.Deserialize<KdlEditorDocument>()
             ?? throw new ArgumentException("Could not deserialise editor document");
 
-        // Strip composite=/handler=/ref= type attributes from values where
-        // the destination field is monomorphic, so the emitted KDL relies
-        // on inference. Studio displays the type from a parse-side fill-in,
-        // but the on-disk text stays terse.
+        // Strip type=/ref= type attributes from values where the destination
+        // field is monomorphic, so the emitted KDL relies on inference. Studio
+        // displays the type from a parse-side fill-in, but the on-disk text
+        // stays terse.
         var catalog = TryGetCachedCatalog();
         if (catalog != null)
             TemplateCatalogValidator.NormaliseForEmit(document, catalog);

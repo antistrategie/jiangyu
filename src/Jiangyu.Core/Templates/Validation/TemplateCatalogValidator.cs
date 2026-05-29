@@ -25,16 +25,16 @@ public enum ValidationMode
 {
     /// <summary>Compile pipeline. Mutates string-keyed Int32 fields to
     /// resolved ints so the manifest is loader-ready. Does not clear
-    /// redundant composite= type names.</summary>
+    /// redundant type= names.</summary>
     Compile,
 
     /// <summary>Editor validation. Surfaces errors but leaves the authored
-    /// values intact so parse → validate → serialise round-trips.</summary>
+    /// values intact so parse, validate, serialise round-trips.</summary>
     EditorValidate,
 
-    /// <summary>Pre-emit normaliser. Clears <c>composite=</c>/<c>handler=</c>
-    /// type names when the destination has only one valid concrete subtype
-    /// so the emitted KDL omits redundant attributes.</summary>
+    /// <summary>Pre-emit normaliser. Clears redundant <c>type=</c> names when
+    /// the destination has only one valid concrete subtype so the emitted KDL
+    /// omits the attribute.</summary>
     EditorNormalise,
 }
 
@@ -74,8 +74,8 @@ public static class TemplateCatalogValidator
     /// payloads in-place (numeric kind coercion, implicit concrete references).
     /// </summary>
     /// <summary>
-    /// Walk an editor document and clear <c>composite=</c>/<c>handler=</c>
-    /// type names and <c>ref=</c> types when the destination field has only
+    /// Walk an editor document and clear <c>type=</c> names
+    /// and <c>ref=</c> types when the destination field has only
     /// one valid concrete subtype. Used right before serialising so the
     /// emitted KDL skips redundant attributes and re-parse / inference
     /// restores the same shape. Does not collect errors; pair with
@@ -287,15 +287,14 @@ public static class TemplateCatalogValidator
         // Compile mutates hashable string→int so the manifest is loader-ready;
         // both editor modes preserve the authored string for round-trip.
         var mutateHashableIds = mode == ValidationMode.Compile;
-        // Only the pre-emit normaliser strips redundant composite= types.
+        // Only the pre-emit normaliser strips redundant type= names.
         var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
         if (string.IsNullOrWhiteSpace(op.FieldPath)) return 0;
 
-        // TemplateMemberQuery still walks a flat dotted-with-bracket path,
-        // so build one from the structural descent at the boundary. The
-        // segment-keyed hints map mirrors the descent step subtypes.
-        var (queryPath, hints) = BuildLegacyQueryPath(templateType, op);
-        var result = TemplateMemberQuery.Run(catalog, queryPath, hints);
+        // TemplateMemberQuery walks a flat dotted-with-bracket path, so build
+        // one from the structural descent at the boundary.
+        var queryPath = BuildLegacyQueryPath(templateType, op);
+        var result = TemplateMemberQuery.Run(catalog, queryPath);
         if (result.Kind == QueryResultKind.Error)
         {
             // Surface the navigator's specific message (polymorphism hint
@@ -619,7 +618,7 @@ public static class TemplateCatalogValidator
             // List<string> auto-unwrapped to String) but the modder is
             // composing a typed value within the
             // TaggedPolymorphicBase subtype family. Substitute so
-            // composite= resolves against the family and inner fields
+            // type= resolves against the family and inner fields
             // validate against the concrete subtype.
             var isTaggedTarget = result.TaggedPolymorphicBase is not null;
             var compositeDestination = result.TaggedPolymorphicBase ?? result.CurrentType;
@@ -637,9 +636,48 @@ public static class TemplateCatalogValidator
                 roles: roles);
         }
 
-        if (op.Value?.Kind == CompiledTemplateValueKind.HandlerConstruction && op.Value.HandlerConstruction != null)
-            return ValidateHandlerConstruction(
-                op.Value.HandlerConstruction,
+        if (op.Value?.Kind == CompiledTemplateValueKind.TypeConstruction && op.Value.TypeConstruction != null)
+        {
+            // type= names a concrete type and the compiler picks the storage
+            // mechanism from the destination field. A reference or polymorphic
+            // element constructs a ScriptableObject (the TypeConstruction
+            // path). A value-type composite or a tagged-string field is an
+            // inline value, so it routes through the composite path and the
+            // compiled value is demoted to Composite, which the loader builds
+            // inline or packs as a tagged string. The editor keeps the
+            // TypeConstruction so source round-trips as type=.
+            var isTagged = result.TaggedPolymorphicBase is not null;
+            var isCollectionElement = result.UnwrappedFrom is not null;
+            var isPolymorphicScalar = !isCollectionElement
+                && result.CurrentType is not null
+                && catalog.EnumerateConcreteSubtypes(result.CurrentType).Count > 0;
+
+            if (isTagged || (!isCollectionElement && !isPolymorphicScalar))
+            {
+                var payload = op.Value.TypeConstruction;
+                var compositeDestination = result.TaggedPolymorphicBase ?? result.CurrentType;
+                if (mode == ValidationMode.Compile)
+                {
+                    op.Value.Composite = payload;
+                    op.Value.TypeConstruction = null;
+                    op.Value.Kind = CompiledTemplateValueKind.Composite;
+                }
+                return ValidateCompositeValue(
+                    payload,
+                    FormatFullPath(op),
+                    compositeDestination,
+                    catalog,
+                    additions,
+                    reportError,
+                    gameAssets,
+                    mode,
+                    isTaggedStringTarget: isTagged,
+                    bankIdResolver: bankIdResolver,
+                    roles: roles);
+            }
+
+            return ValidateTypeConstruction(
+                op.Value.TypeConstruction,
                 op,
                 result,
                 catalog,
@@ -649,6 +687,7 @@ public static class TemplateCatalogValidator
                 mode,
                 bankIdResolver,
                 roles);
+        }
 
         return 0;
     }
@@ -820,14 +859,14 @@ public static class TemplateCatalogValidator
     }
 
     /// <summary>
-    /// Validate a HandlerConstruction value: the named subtype must exist,
+    /// Validate a TypeConstruction value: the named subtype must exist,
     /// must descend from the destination collection's element type, and
     /// every inner field must resolve on the subtype with a compatible
-    /// scalar kind. Optional handler= for monomorphic destinations:
+    /// scalar kind. Optional type= for monomorphic destinations:
     /// when the element type has no strict subtypes, an empty TypeName is
     /// allowed and the catalogue uses the element type itself.
     /// </summary>
-    private static int ValidateHandlerConstruction(
+    private static int ValidateTypeConstruction(
         CompiledTemplateComposite construction,
         CompiledTemplateSetOperation op,
         QueryResult destination,
@@ -843,7 +882,7 @@ public static class TemplateCatalogValidator
         var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
         // Two valid destinations:
         //  - Collection element-type, auto-unwrapped from the array. The
-        //    canonical Append/Insert pattern: handler= constructs an owned
+        //    canonical Append/Insert pattern: type= constructs an owned
         //    ScriptableObject element to push into the list.
         //  - Polymorphic scalar field, where the declared type itself has
         //    concrete subtypes the modder must pick from. Phase 2b: lets
@@ -856,28 +895,21 @@ public static class TemplateCatalogValidator
         var elementType = destination.CurrentType;
         if (elementType is null)
         {
-            reportError($"handler= construction on '{FormatFullPath(op)}': cannot resolve destination type.");
+            reportError($"type= construction on '{FormatFullPath(op)}': cannot resolve destination type.");
             return 1;
         }
 
         var isCollectionDestination = destination.UnwrappedFrom is not null;
-        // For collection-element handlers, the existing ScriptableObject-only
+        // For collection-element handlers, the ScriptableObject-construction
         // semantics apply (HasReferenceSubtype). For scalar polymorphic
         // destinations the subtypes may be plain managed classes (Odin-routed
         // interface impls, etc.), so we use the broader concrete-descendant
-        // check via EnumerateConcreteSubtypes.
+        // check via EnumerateConcreteSubtypes. The caller only routes a
+        // collection element or a polymorphic scalar here, so one of these
+        // holds. A concrete non-polymorphic destination is handled on the
+        // inline-value path instead.
         var isPolymorphicScalar = !isCollectionDestination
             && catalog.EnumerateConcreteSubtypes(elementType).Count > 0;
-
-        if (!isCollectionDestination && !isPolymorphicScalar)
-        {
-            reportError(
-                "handler= construction targets a collection element or a "
-                + "polymorphic scalar field, but field "
-                + $"'{FormatFullPath(op)}' is concrete and non-polymorphic. "
-                + "For a concrete inline value, use composite=\"<TypeName>\".");
-            return 1;
-        }
 
         // Resolve the named subtype. Allow empty/null when the destination
         // is monomorphic (no strict subtypes), in which case we use the
@@ -897,7 +929,7 @@ public static class TemplateCatalogValidator
                 || catalog.EnumerateConcreteSubtypes(elementType).Count > 0)
             {
                 reportError(
-                    $"handler= on '{FormatFullPath(op)}' must name a concrete subtype: "
+                    $"type= on '{FormatFullPath(op)}' must name a concrete subtype: "
                     + $"destination type {catalog.FriendlyName(elementType)} has subclasses.");
                 return 1;
             }
@@ -909,7 +941,7 @@ public static class TemplateCatalogValidator
             // type. Mirrors the polymorphic-descent navigator: short-name
             // collisions with unrelated classes (production case:
             // Effects.Attack vs AI.Behaviors.Attack) are filtered out
-            // structurally, so the modder's handler= picks the correct one.
+            // structurally, so the modder's type= picks the correct one.
             var resolved = catalog.ResolveSubtypeHint(elementType, typeName, out var ambiguous);
             if (resolved is null)
             {
@@ -917,14 +949,14 @@ public static class TemplateCatalogValidator
                     ? " candidates: " + string.Join(", ", ambiguous)
                     : string.Empty;
                 reportError(
-                    $"handler=\"{typeName}\" is not a subtype of "
+                    $"type=\"{typeName}\" is not a subtype of "
                     + $"{catalog.FriendlyName(elementType)} required by '{FormatFullPath(op)}'.{ambiguityNote}");
                 return 1;
             }
             subtype = resolved;
         }
 
-        // Editor-doc normalisation: drop handler= when the destination
+        // Editor-doc normalisation: drop type= when the destination
         // element type is monomorphic (no concrete subclasses besides itself
         // and not abstract). Compile-path docs keep the explicit name.
         if (clearRedundantTypes
@@ -943,7 +975,7 @@ public static class TemplateCatalogValidator
         return ValidateInnerOperations(
             construction.Operations,
             subtype.FullName ?? subtype.Name,
-            $"handler= construction for '{FormatFullPath(op)}'",
+            $"type= construction for '{FormatFullPath(op)}'",
             catalog,
             additions,
             reportError,
@@ -968,18 +1000,17 @@ public static class TemplateCatalogValidator
     {
         var mutateHashableIds = mode == ValidationMode.Compile;
         var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
-        // Inferred composite: the parser emits TypeName="" for child blocks
-        // without an explicit composite=/handler= property. Resolve from the
-        // destination's element type when monomorphic; reject when
-        // polymorphic so the modder writes composite="X" with a candidate
-        // listed in the error.
+        // Inferred value: the parser emits TypeName="" for child blocks
+        // without an explicit type= property. Resolve from the destination's
+        // element type when monomorphic, and reject when polymorphic so the
+        // modder writes type="X" with a candidate listed in the error.
         if (string.IsNullOrWhiteSpace(composite.TypeName))
         {
             if (destinationType == null)
             {
                 reportError(
-                    $"inferred composite at '{contextPath}' has no destination type to infer from; "
-                    + "declare the element type explicitly via composite=\"TypeName\".");
+                    $"inferred value at '{contextPath}' has no destination type to infer from. "
+                    + "Declare the element type explicitly via type=\"TypeName\".");
                 return 1;
             }
             if (catalog.HasReferenceSubtype(destinationType))
@@ -989,9 +1020,9 @@ public static class TemplateCatalogValidator
                     ? " candidates: " + string.Join(", ", candidates.Select(t => t.Name))
                     : string.Empty;
                 reportError(
-                    $"inferred composite at '{contextPath}' targets polymorphic destination "
-                    + $"{catalog.FriendlyName(destinationType)}; declare the concrete element type via "
-                    + $"composite=\"X\" (or handler=\"X\" for ScriptableObject construction).{note}");
+                    $"inferred value at '{contextPath}' targets polymorphic destination "
+                    + $"{catalog.FriendlyName(destinationType)}. Declare the concrete element type via "
+                    + $"type=\"X\".{note}");
                 return 1;
             }
             if (destinationType.IsAbstract)
@@ -1007,7 +1038,7 @@ public static class TemplateCatalogValidator
             composite.TypeName = destinationType.FullName ?? destinationType.Name;
         }
 
-        // Tagged-string composites: the modder's composite="X" string is the
+        // Tagged-string values: the modder's type="X" string is the
         // discriminator (e.g. "ACTION") that the destination's
         // ISerializationCallbackReceiver consumes. Resolve via the
         // discriminator candidate set first so the standard subtype path
@@ -1038,7 +1069,7 @@ public static class TemplateCatalogValidator
             }
             // No discriminator-match — fall through to the normal subtype
             // resolver. Modder may have written a CLR short name (e.g.
-            // composite="ActionConversationNode") which the standard path
+            // type="ActionConversationNode") which the standard path
             // still accepts; in that case the applier derives the
             // discriminator from the class name itself at pack time.
         }
@@ -1067,7 +1098,7 @@ public static class TemplateCatalogValidator
             && (string.Equals(composite.TypeName, destinationType.Name, StringComparison.Ordinal)
                 || string.Equals(composite.TypeName, destinationType.FullName, StringComparison.Ordinal)))
         {
-            // Monomorphic destination + explicit composite= matching it.
+            // Monomorphic destination + explicit type= matching it.
             // Use the destination type directly; bypass the assembly-wide
             // ResolveType which can collide with same-short-name twins in
             // unrelated namespaces (Stem.ID vs Menace.Tactical.AI.ID).
@@ -1090,7 +1121,7 @@ public static class TemplateCatalogValidator
             }
         }
 
-        // Editor-doc normalisation: drop composite= whenever the bare
+        // Editor-doc normalisation: drop type= whenever the bare
         // inferred form would re-parse to the same destination type. The
         // inferred-composite acceptance condition at the top of this method
         // rejects only on HasReferenceSubtype + IsAbstract, so the strip
@@ -1100,9 +1131,9 @@ public static class TemplateCatalogValidator
         // a sibling class) would block stripping even though re-parse
         // would succeed with inference. The MENACE production case is
         // ConversationNodeContainer: `set "Nodes" {…}` parses cleanly but
-        // round-tripped back to `composite="Il2CppMenace.Conversations.ConversationNodeContainer" {…}`
+        // round-tripped back to `type="Il2CppMenace.Conversations.ConversationNodeContainer" {…}`
         // because the supplement reports concrete descendants the bare-
-        // inferred path doesn't actually care about. handler= keeps the
+        // inferred path doesn't actually care about. type= keeps the
         // stricter check because its inferred-form rejection includes the
         // EnumerateConcreteSubtypes branch (line ~922).
         if (clearRedundantTypes
@@ -1164,30 +1195,24 @@ public static class TemplateCatalogValidator
     /// descent on <paramref name="op"/>. The hints map keys descent-step
     /// indexes (zero-based) where the step carries a non-empty subtype.
     /// </summary>
-    private static (string queryPath, Dictionary<int, string>? hints) BuildLegacyQueryPath(
+    private static string BuildLegacyQueryPath(
         string templateType,
         CompiledTemplateSetOperation op)
     {
         if (op.Descent is not { Count: > 0 } descent)
-            return ($"{templateType}.{op.FieldPath}", null);
+            return $"{templateType}.{op.FieldPath}";
 
         var sb = new System.Text.StringBuilder();
         sb.Append(templateType);
-        Dictionary<int, string>? hints = null;
-        for (var i = 0; i < descent.Count; i++)
+        foreach (var step in descent)
         {
-            var step = descent[i];
-            sb.Append('.').Append(step.Field);
-            // Bracketed indexer marks a collection descent for the navigator;
-            // a bare member name is a scalar polymorphic descent. The
-            // navigator distinguishes the two via the segment shape.
-            if (step.Index.HasValue)
-                sb.Append('[').Append(step.Index.Value).Append(']');
-            if (!string.IsNullOrEmpty(step.Subtype))
-                (hints ??= [])[i] = step.Subtype;
+            // The bracketed indexer marks a collection descent for the
+            // navigator. The element subtype is inferred (no hint), so the
+            // navigator resolves inner members against the base's subtype union.
+            sb.Append('.').Append(step.Field).Append('[').Append(step.Index).Append(']');
         }
         sb.Append('.').Append(op.FieldPath);
-        return (sb.ToString(), hints);
+        return sb.ToString();
     }
 
     /// <summary>
@@ -1202,10 +1227,7 @@ public static class TemplateCatalogValidator
         var sb = new System.Text.StringBuilder();
         foreach (var step in descent)
         {
-            sb.Append(step.Field);
-            if (step.Index.HasValue)
-                sb.Append('[').Append(step.Index.Value).Append(']');
-            sb.Append('.');
+            sb.Append(step.Field).Append('[').Append(step.Index).Append("].");
         }
         sb.Append(op.FieldPath);
         return sb.ToString();

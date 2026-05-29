@@ -161,8 +161,8 @@ internal sealed partial class TemplatePatchApplier
             case CompiledTemplateValueKind.Composite:
                 return TryConstructComposite(value.Composite, targetType, assetResolver, log, out converted, out error, appendDestination);
 
-            case CompiledTemplateValueKind.HandlerConstruction:
-                return TryConstructHandler(value.HandlerConstruction, targetType, assetResolver, log, out converted, out error, appendDestination);
+            case CompiledTemplateValueKind.TypeConstruction:
+                return TryConstructPolymorphic(value.TypeConstruction, targetType, assetResolver, log, out converted, out error, appendDestination);
 
             default:
                 error = $"unknown value kind {value.Kind}.";
@@ -172,14 +172,14 @@ internal sealed partial class TemplatePatchApplier
 
     /// <summary>
     /// Constructs a fresh ScriptableObject of the named subtype (for the
-    /// modder's <c>handler="X"</c> authoring shape on append/insert/set
+    /// modder's <c>type="X"</c> authoring shape on append/insert/set
     /// against a polymorphic-reference array). Routes through the existing
     /// composite construction path then sets
     /// <c>HideFlags.DontUnloadUnusedAsset</c> so scene-change GC doesn't
     /// sweep the freshly-allocated handler. When the payload's type name is
     /// empty, the array's element type is used (monomorphic case).
     /// </summary>
-    private static bool TryConstructHandler(
+    private static bool TryConstructPolymorphic(
         CompiledTemplateComposite handler, Type targetType, ModAssetResolver assetResolver, MelonLogger.Instance log,
         out object converted, out string error,
         object appendDestination = null)
@@ -188,11 +188,11 @@ internal sealed partial class TemplatePatchApplier
 
         if (handler == null)
         {
-            error = "value kind HandlerConstruction but payload is null.";
+            error = "value kind TypeConstruction but payload is null.";
             return false;
         }
 
-        // If the modder omitted handler="X" because the destination is
+        // If the modder omitted type="X" because the destination is
         // monomorphic (validator already confirmed), the empty TypeName
         // resolves to the array's element type. Synthesise the payload so
         // TryConstructComposite has something to look up.

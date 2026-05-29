@@ -62,8 +62,8 @@ internal static class NodeGuidAutoFiller
             foreach (var inner in composite.Operations)
                 Walk(inner.Value, scope, counter, baseNodeType, containerType, catalog);
         }
-        else if (value.Kind == CompiledTemplateValueKind.HandlerConstruction
-            && value.HandlerConstruction is { } handler)
+        else if (value.Kind == CompiledTemplateValueKind.TypeConstruction
+            && value.TypeConstruction is { } handler)
         {
             // Handlers are ScriptableObjects, not ConversationNodes, so the
             // top-level construct doesn't qualify for auto-Guid. Recurse

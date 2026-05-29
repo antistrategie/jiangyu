@@ -5,35 +5,41 @@ Status: **verified** (Jiangyu live-game readback, 2026-05-01).
 ## Contract
 
 Modders fully manage `SkillEventHandlerTemplate` / `PerkEventHandlerTemplate`
-instances on a skill or perk via a parent-anchored authoring surface. Three
+instances on a skill or perk via a parent-anchored authoring surface. Four
 authoring shapes cover the lifecycle:
 
-- **Edit** an existing handler's fields via descent (`set "EventHandlers"
-  index=N type="X" { ... }`).
-- **Add** a freshly-constructed handler via append/insert/replace
-  (`append "EventHandlers" handler="X" { ... }` and friends).
+- **Edit** an existing handler via descent (`set "EventHandlers" index=N
+  { ... }`, no `type=`): the live element at slot N is edited in place,
+  sibling fields preserved. Its concrete subtype is inferred from the live
+  element, so no annotation is needed.
+- **Replace** an existing handler (`set "EventHandlers" index=N type="X"
+  { ... }`): construct a fresh X and overwrite slot N. `type=` always builds
+  a fresh instance.
+- **Add** a freshly-constructed handler via append/insert
+  (`append "EventHandlers" type="X" { ... }` and friends).
 - **Remove** a handler outright via `remove "EventHandlers" index=N` or
   `clear "EventHandlers"`.
 
 The applier resolves the parent template by `m_ID`, walks into the array,
-and dispatches by op kind. For edit, it casts the indexed PPtr-resolved
-wrapper to the named subtype and writes via reflection. For add, it
-allocates a fresh `ScriptableObject` of the named subtype, populates fields
-on the concrete-typed wrapper, marks `hideFlags = DontUnloadUnusedAsset`,
-and pushes/inserts/replaces the PPtr in the parent's list. For remove and
-clear, the existing collection-mutation path operates without construction.
+and dispatches by op kind. For edit, it reads the live element's concrete
+type, casts the indexed PPtr-resolved wrapper to it, and writes via
+reflection. For replace and add, it allocates a fresh `ScriptableObject` of
+the named subtype, populates fields on the concrete-typed wrapper, marks
+`hideFlags = DontUnloadUnusedAsset`, and writes/pushes/inserts the PPtr in
+the parent's list. For remove and clear, the existing collection-mutation
+path operates without construction.
 
-Authoring example covering all three:
+Authoring example covering edit and add:
 
 ```kdl
 patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
     // Edit: flip a scalar on the existing handler at index 0.
-    set "EventHandlers" index=0 type="AddSkill" {
+    set "EventHandlers" index=0 {
         set "ShowHUDText" #true
     }
 
     // Add: append a brand-new AddSkill handler.
-    append "EventHandlers" handler="AddSkill" {
+    append "EventHandlers" type="AddSkill" {
         set "Event" enum="AddEvent" "OnAttack"
         set "SkillToAdd" ref="SkillTemplate" "effect.bleeding"
         set "ShowHUDText" #true
@@ -48,39 +54,37 @@ The parent-anchored surface is required because:
   path is through the parent skill.
 - The array's declared element type is the abstract base
   (`SkillEventHandlerTemplate`); concrete fields like `ShowHUDText` live on
-  the subclass (`AddSkill`). Without the `type=` (descent) or `handler=`
-  (construction) hint naming the concrete subtype, the catalogue can't see
-  the inner fields at compile time and the Il2CppInterop wrapper can't
-  expose them at runtime.
+  the subclass (`AddSkill`). When constructing (`type=`), the modder names the
+  subtype. When editing, the runtime reads the live element's concrete type so
+  the Il2CppInterop wrapper exposes the subclass fields, and the compiler
+  validates inner fields against the union of the base's concrete subtypes.
 
 ## Authoring
 
 | Form | Meaning |
 | --- | --- |
-| `set "EventHandlers" index=N type="X" { set "field" v }` | **Edit**: descend into element N (typed as X) and write fields. |
-| `set "EventHandlers" index=N { set "field" v }` | **Edit** when the array's element type is monomorphic (no subclasses). |
-| `append "EventHandlers" handler="X" { set "field" v }` | **Add**: construct a new X handler and push it onto the list. |
-| `insert "EventHandlers" index=N handler="X" { set "field" v }` | **Add** at a specific position. |
-| `set "EventHandlers" index=N handler="X" { set "field" v }` | **Replace** element N with a new X handler. Distinct from descent: descent edits in place; this discards the old handler at N. |
+| `set "EventHandlers" index=N { set "field" v }` | **Edit** element N in place. The concrete subtype is inferred, sibling fields preserved. |
+| `set "EventHandlers" index=N type="X" { set "field" v }` | **Replace** element N with a fresh X. Inner ops populate it, every other field defaults. |
+| `append "EventHandlers" type="X" { set "field" v }` | **Add**: construct a new X handler and push it onto the list. |
+| `insert "EventHandlers" index=N type="X" { set "field" v }` | **Add** at a specific position. |
 | `remove "EventHandlers" index=N` | **Remove** element N. |
 | `clear "EventHandlers"` | **Remove** all elements. |
 
-`type=` (descent) and `handler=` (construction) are mutually exclusive.
-Bracket indexers (`Foo[0].Bar`) are rejected in modder-authored fieldPath
-strings; descent and construction blocks are the only way to address an
-element. Inner directives in either block are flat-field `set` ops only —
-no nested descent or indexed writes inside the construction (use a
-follow-up patch with descent if a constructed handler needs further edits
-to a list field).
+`type=` is the single construction keyword and always builds a fresh
+instance. Bracket indexers (`Foo[0].Bar`) are rejected in modder-authored
+fieldPath strings; descent and construction blocks are the only way to
+address an element. Inner directives in a construction block accept the full
+`set` / `append` / `insert` / `remove` / `clear` vocabulary against the new
+instance.
 
 The compile-time validator errors loudly when:
 
-- `type=` is missing at a polymorphic-abstract descent boundary,
-- `handler=` is missing on append/insert/replace into a polymorphic
+- `type=` is missing on append/insert/replace into a polymorphic
   destination (omittable when monomorphic),
 - the named subtype doesn't exist in the assembly,
 - the named subtype isn't assignable to the array's element type,
-- an inner field doesn't exist on the named subtype.
+- an inner field doesn't exist on the named subtype (construction) or on any
+  concrete subtype of the element base (edit).
 
 ## Runtime steps
 
@@ -96,11 +100,14 @@ Implemented in `src/Jiangyu.Loader/Templates/TemplatePatchApplier.cs`:
 3. Walk `EventHandlers` to read the list, then index it via the existing
    `TryIndexInto` helper. The result is an Il2CppInterop wrapper of the
    abstract base type (e.g. `Il2CppMenace.Tactical.Skills.SkillEventHandlerTemplate`).
-4. Cast to the concrete subtype using `Il2CppObjectBase.Cast<T>` reflectively
-   (`MakeGenericMethod` over the resolved subtype). The cast succeeds because
-   the underlying IL2CPP object is the concrete subclass; only the wrapper
-   was reporting the base. Without this cast, reflection on the wrapper sees
-   only the abstract base's own members (typically zero).
+4. Read the live element's concrete class name via
+   `IL2CPP.il2cpp_object_get_class` + `il2cpp_class_get_name`, resolve the
+   wrapper type via `Il2CppSubtypeResolver`, and cast with
+   `Il2CppReflectiveCast` (`TryCastToLiveConcreteType`). The cast succeeds
+   because the underlying IL2CPP object is the concrete subclass; only the
+   wrapper was reporting the base. Without it, reflection on the wrapper sees
+   only the abstract base's own members (typically zero). The edit needs no
+   `type=` because the live element supplies the subtype.
 5. Reflection on the cast wrapper finds the named field on the subclass.
    Write via the existing scalar-set path; readback via the existing
    `ApplyAndVerify` helper confirms the write took.
@@ -128,18 +135,18 @@ Implemented in `src/Jiangyu.Loader/Templates/TemplatePatchApplier.cs`:
 
 ### Wire format
 
-`SubtypeHints` flows from the modder's `type="X"` annotation through the
-parser → emitter → loader catalogue → applier without rewriting. The wire
-format (`CompiledTemplateSetOperation.SubtypeHints: Dictionary<int, string>`)
-is keyed by zero-based segment index of the flattened `FieldPath`, so multi-
-level descent through multiple polymorphic boundaries can carry independent
-hints per segment.
+A `type="X"` construction compiles to a `CompiledTemplateValueKind.TypeConstruction`
+value whose payload mirrors the `Composite` field-bag shape: a type name plus
+the inner ops. On an indexed `set` the value carries `Index`, so the applier
+overwrites that slot. The runtime applier dispatches on
+`Kind == TypeConstruction` to take the ScriptableObject construction path; the
+validator demotes value-type and tagged-string destinations to `Composite` at
+compile so the loader builds them inline or packs the tagged string.
 
-`HandlerConstruction` is a new `CompiledTemplateValueKind` whose payload
-mirrors the existing `Composite` field-bag shape: a subtype name plus a
-dictionary of field values. The runtime applier dispatches on
-`Kind == HandlerConstruction` to take the ScriptableObject construction
-path rather than the inline-value path used by `Composite`.
+An edit descent compiles to a `TemplateDescentStep` carrying just the field and
+the index, with no subtype. The absence of a constructed value on the op is what
+tells the applier to read the live element's concrete type rather than
+constructing a fresh one. Multi-level descent chains a step per boundary.
 
 ## Verification
 
@@ -149,8 +156,8 @@ Confirmed by Jiangyu against the live game, 2026-05-01.
 
 `WOMENACE/templates/perk-darby_high_value_targets-handler-smoke.kdl`
 patched `PerkTemplate:perk.unique_darby_high_value_targets`'s
-`EventHandlers[0].ShowHUDText` from `false` to `true`, declaring the
-element's concrete type as `AddSkill`. Loader log:
+`EventHandlers[0].ShowHUDText` from `false` to `true` with a plain edit
+descent, the applier inferring the live element's `AddSkill` type. Loader log:
 
 ```
 Template patch 'PerkTemplate:perk.unique_darby_high_value_targets.EventHandlers[0].ShowHUDText'
@@ -200,7 +207,7 @@ contract), the clear-smoke clone had 0.
 
 ## Scope limits
 
-- **Inner construction fields are flat.** Inside a `handler="X" { ... }`
+- **Inner construction fields are flat.** Inside a `type="X" { ... }`
   block, each inner `set` configures one top-level field on the constructed
   handler. Indexed writes (`set "TargetTags" index=0 ...`) and descent
   (`set "Sub" index=0 type="Y" { ... }`) are not supported inside
@@ -237,18 +244,19 @@ contract), the clear-smoke clone had 0.
 ## Jiangyu Implementation
 
 ### Wire format
-- `CompiledTemplateSetOperation.SubtypeHints` and
-  `CompiledTemplateValueKind.HandlerConstruction` in
-  `src/Jiangyu.Shared/Templates/CompiledTemplatePatchManifest.cs`.
+- `CompiledTemplateValueKind.TypeConstruction` in
+  `src/Jiangyu.Shared/Templates/CompiledTemplatePatchManifest.cs`; the
+  edit-descent step is `TemplateDescentStep` (field + index, no subtype) in the
+  same folder.
 
 ### KDL grammar
 - Descent block parsing:
   `src/Jiangyu.Core/Templates/KdlTemplateParser.cs:TryParseDescentBlock`.
-- Construction value parsing (handler= on append/insert/set):
-  `src/Jiangyu.Core/Templates/KdlTemplateParser.cs:TryParseHandlerConstructionValue`.
+- Construction value parsing (type= on append/insert/set):
+  `src/Jiangyu.Core/Templates/KdlTemplateParser.cs:TryParseTypeConstructionValue`.
 - Hard-cut on bracket indexers in modder-authored fieldPaths:
   `src/Jiangyu.Core/Templates/KdlTemplateParser.cs:TryParseOperation`.
-- Round-trip serialisation (descent-block grouping + handler= field-bag):
+- Round-trip serialisation (descent-block grouping + type= field-bag):
   `src/Jiangyu.Core/Templates/KdlTemplateSerialiser.cs`.
 
 ### Validation
@@ -256,20 +264,20 @@ contract), the clear-smoke clone had 0.
   abstract bases):
   `src/Jiangyu.Core/Templates/TemplateMemberQuery.cs:NavigateFieldPath`.
 - Construction validation (subtype assignability + inner-field check):
-  `src/Jiangyu.Core/Templates/TemplateCatalogValidator.cs:ValidateHandlerConstruction`.
+  `src/Jiangyu.Core/Templates/TemplateCatalogValidator.cs:ValidateTypeConstruction`.
 
 ### Compile/loader plumbing
-- Manifest emission preserving hints and construction values:
+- Manifest emission preserving descent steps and construction values:
   `src/Jiangyu.Core/Compile/TemplatePatchEmitter.cs:TryEmitOperation`.
-- Loader catalogue carrying hints:
+- Loader catalogue carrying descent steps:
   `src/Jiangyu.Loader/Templates/TemplatePatchCatalog.cs:LoadedPatchOperation`.
 
 ### Runtime
-- Descent-time cast to concrete subtype:
-  `src/Jiangyu.Loader/Templates/TemplatePatchApplier.cs:TryCastToSubtype` and
-  `ResolveIl2CppSubtype`.
+- Edit-descent cast to the live concrete subtype:
+  `src/Jiangyu.Loader/Templates/TemplatePatchApplier.cs:TryCastToLiveConcreteType`,
+  resolving the wrapper via `Il2CppSubtypeResolver`.
 - Construction (CreateInstance + cast + populate + hideFlags + name):
-  `src/Jiangyu.Loader/Templates/TemplatePatchApplier.cs:TryConstructHandler`,
+  `src/Jiangyu.Loader/Templates/TemplatePatchApplier.cs:TryConstructPolymorphic`,
   reusing `TryConstructComposite`'s field-population path.
 
 ## Investigation notes

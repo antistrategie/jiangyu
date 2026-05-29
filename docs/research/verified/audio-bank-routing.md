@@ -46,12 +46,12 @@ A complete authoring example: add a new `Sound` to the weapons bank, then route 
 
 ```kdl
 patch "SoundBank" "weapons_soundbank" {
-    append "sounds" composite="Sound" {
+    append "sounds" {
         set "id" 99999001
         set "name" "custom_rifle_fire"
         set "minDistance" 1.0
         set "maxDistance" 500.0
-        append "variations" composite="SoundVariation" {
+        append "variations" {
             set "clip" asset="weapons/custom_rifle/fire_01"
         }
     }
@@ -66,7 +66,7 @@ clone "WeaponTemplate" from="weapon.generic_battle_rifle_tier1_crowbar" id="weap
 }
 ```
 
-Each block uses the standard `patch`/`clone` grammar. The bank patch uses recursive nested construction (`composite="Sound" { ... append "variations" composite="SoundVariation" { ... } }`); the parser and runtime applier both walk the construction tree at arbitrary depth.
+Each block uses the standard `patch`/`clone` grammar. The bank patch uses recursive nested construction: the `Sound` and its `SoundVariation` elements are both monomorphic, so the element type is inferred from the destination and no `type=` is needed. The parser and runtime applier both walk the construction tree at arbitrary depth.
 
 ## Compile-time validation
 

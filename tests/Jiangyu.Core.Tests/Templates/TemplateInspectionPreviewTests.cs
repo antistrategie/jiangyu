@@ -143,66 +143,119 @@ public sealed class TemplateInspectionPreviewTests : IDisposable
     }
 
     [Fact]
-    public void PreviewApplier_HandlesScalarPolymorphicDescent()
+    public void PreviewApplier_RendersHandlerConstructedAtIndex()
     {
-        // Modder writes
-        //   patch UnitLeaderTemplate "clone.beta" {
-        //     set "CustomCondition" type="MoraleStateCondition" {
-        //       set "Threshold" 7
-        //     }
-        //   }
-        // which compiles to a Descent step with Subtype="MoraleStateCondition"
-        // and an inner Set targeting Threshold.
-        ObjectInspectionResult source = CreateUnitLeaderResult("base.alpha");
-        InspectedFieldNode structure = source.Fields.Single(f => f.Name == "m_Structure");
-        structure.Fields!.Add(new InspectedFieldNode
-        {
-            Name = "CustomCondition",
-            Kind = "object",
-            FieldTypeName = "ITacticalCondition",
-            Fields =
-            [
-                new InspectedFieldNode { Name = "Threshold", Kind = "int", FieldTypeName = "Int32", Value = 0 },
-            ],
-        });
-
+        // patch ... { set "EventHandlers" index=0 type="IgnoreDamage" {
+        //   set "AbsorbDamagePct" 25 } }
+        // compiles to a Set op with Index=0 and a TypeConstruction value.
+        // The preview must render the freshly constructed handler in slot 0,
+        // overwriting the reference element that was there.
+        ObjectInspectionResult source = CreateResultWithEventHandlers("base.alpha", "ChangeProperty");
         ObjectInspectionResult cloned = TemplateInspectionPreviewApplier.CloneForTarget(
             source,
-            new TemplatePreviewKey("UnitLeaderTemplate", "clone.beta"));
+            new TemplatePreviewKey("PerkTemplate", "clone.beta"));
 
         TemplateInspectionPreviewApplier.Apply(
             cloned,
             [
                 new CompiledTemplatePatch
                 {
-                    TemplateType = "UnitLeaderTemplate",
+                    TemplateType = "PerkTemplate",
                     TemplateId = "clone.beta",
                     Set =
                     [
                         new CompiledTemplateSetOperation
                         {
                             Op = CompiledTemplateOp.Set,
-                            FieldPath = "Threshold",
-                            Descent =
-                            [
-                                new TemplateDescentStep
+                            FieldPath = "EventHandlers",
+                            Index = 0,
+                            Value = new CompiledTemplateValue
+                            {
+                                Kind = CompiledTemplateValueKind.TypeConstruction,
+                                TypeConstruction = new CompiledTemplateComposite
                                 {
-                                    Field = "CustomCondition",
-                                    Subtype = "MoraleStateCondition",
+                                    TypeName = "IgnoreDamage",
+                                    Operations =
+                                    [
+                                        new CompiledTemplateSetOperation
+                                        {
+                                            FieldPath = "AbsorbDamagePct",
+                                            Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 25 },
+                                        },
+                                    ],
                                 },
-                            ],
-                            Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 7 },
+                            },
                         },
                     ],
                 },
             ],
             reference => null);
 
-        InspectedFieldNode descended = cloned.Fields
+        InspectedFieldNode handlers = cloned.Fields
             .Single(f => f.Name == "m_Structure").Fields!
-            .Single(f => f.Name == "CustomCondition");
-        Assert.Equal("MoraleStateCondition", descended.FieldTypeName);
-        Assert.Equal(7, descended.Fields!.Single(f => f.Name == "Threshold").Value);
+            .Single(f => f.Name == "EventHandlers");
+        InspectedFieldNode replaced = handlers.Elements![0];
+        Assert.Equal("object", replaced.Kind);
+        Assert.Equal("IgnoreDamage", replaced.FieldTypeName);
+        Assert.Equal(25, replaced.Fields!.Single(f => f.Name == "AbsorbDamagePct").Value);
+    }
+
+    [Fact]
+    public void PreviewApplier_EditsElementInPlace()
+    {
+        // An edit descent (set "EventHandlers" index=0 { ... }) navigates into
+        // the existing element and applies inner ops: node identity and other
+        // fields are preserved.
+        ObjectInspectionResult source = CreateResultWithEventHandlers("base.alpha", "ChangeProperty");
+        InspectedFieldNode structure = source.Fields.Single(f => f.Name == "m_Structure");
+        InspectedFieldNode handlersSource = structure.Fields!.Single(f => f.Name == "EventHandlers");
+        handlersSource.Elements![0] = new InspectedFieldNode
+        {
+            Kind = "object",
+            FieldTypeName = "Menace.Tactical.Skills.Effects.ChangeProperty",
+            Fields =
+            [
+                new InspectedFieldNode { Name = "Amount", Kind = "int", FieldTypeName = "Int32", Value = 2 },
+                new InspectedFieldNode { Name = "AmountMult", Kind = "float", FieldTypeName = "Single", Value = 1.5f },
+            ],
+        };
+
+        ObjectInspectionResult cloned = TemplateInspectionPreviewApplier.CloneForTarget(
+            source,
+            new TemplatePreviewKey("PerkTemplate", "clone.beta"));
+
+        TemplateInspectionPreviewApplier.Apply(
+            cloned,
+            [
+                new CompiledTemplatePatch
+                {
+                    TemplateType = "PerkTemplate",
+                    TemplateId = "clone.beta",
+                    Set =
+                    [
+                        new CompiledTemplateSetOperation
+                        {
+                            Op = CompiledTemplateOp.Set,
+                            FieldPath = "Amount",
+                            Descent =
+                            [
+                                new TemplateDescentStep { Field = "EventHandlers", Index = 0 },
+                            ],
+                            Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 9 },
+                        },
+                    ],
+                },
+            ],
+            reference => null);
+
+        InspectedFieldNode handlers = cloned.Fields
+            .Single(f => f.Name == "m_Structure").Fields!
+            .Single(f => f.Name == "EventHandlers");
+        InspectedFieldNode edited = handlers.Elements![0];
+        Assert.Equal("object", edited.Kind);
+        Assert.Equal(9, edited.Fields!.Single(f => f.Name == "Amount").Value);
+        // The sibling field on the original element survives the edit.
+        Assert.Equal(1.5f, edited.Fields!.Single(f => f.Name == "AmountMult").Value);
     }
 
     [Fact]
@@ -334,4 +387,69 @@ public sealed class TemplateInspectionPreviewTests : IDisposable
         FieldTypeName = "Byte",
         Value = value,
     };
+
+    // A minimal template whose m_Structure carries a polymorphic
+    // EventHandlers list with a single reference element of the named handler
+    // subtype, mirroring how the inspector renders SkillEventHandlerTemplate
+    // entries (unexpanded PPtr references named after their concrete subtype).
+    private static ObjectInspectionResult CreateResultWithEventHandlers(string templateId, string handlerSubtype)
+    {
+        return new ObjectInspectionResult
+        {
+            Object = new InspectedObjectIdentity
+            {
+                Name = templateId,
+                ClassName = "MonoBehaviour",
+                Collection = "resources.assets",
+                PathId = 128002,
+            },
+            Options = new ObjectInspectionOptions
+            {
+                MaxDepth = 8,
+                MaxArraySampleLength = 16,
+                Truncated = false,
+            },
+            Fields =
+            [
+                new InspectedFieldNode
+                {
+                    Name = "m_Name",
+                    Kind = "string",
+                    FieldTypeName = "String",
+                    Value = templateId,
+                },
+                new InspectedFieldNode
+                {
+                    Name = "m_Structure",
+                    Kind = "object",
+                    FieldTypeName = "Menace.Strategy.PerkTemplate",
+                    Fields =
+                    [
+                        new InspectedFieldNode
+                        {
+                            Name = "EventHandlers",
+                            Kind = "array",
+                            FieldTypeName = "System.Collections.Generic.List`1<Menace.Tactical.Skills.SkillEventHandlerTemplate>",
+                            Count = 1,
+                            Elements =
+                            [
+                                new InspectedFieldNode
+                                {
+                                    Kind = "reference",
+                                    FieldTypeName = "PPtr<IObject>",
+                                    Reference = new InspectedReference
+                                    {
+                                        FileId = 0,
+                                        PathId = 120862,
+                                        Name = handlerSubtype,
+                                        ClassName = "MonoBehaviour",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        };
+    }
 }

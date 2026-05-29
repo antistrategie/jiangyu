@@ -177,14 +177,13 @@ public enum KdlEditorValueKind
     /// <summary>
     /// ScriptableObject construction for a polymorphic-reference array
     /// element (e.g. EventHandlers). Mirrors
-    /// <see cref="Jiangyu.Shared.Templates.CompiledTemplateValueKind.HandlerConstruction"/>;
+    /// <see cref="Jiangyu.Shared.Templates.CompiledTemplateValueKind.TypeConstruction"/>;
     /// the directive-list shape on
     /// <see cref="KdlEditorValue.CompositeDirectives"/> /
     /// <see cref="KdlEditorValue.CompositeType"/> is reused. The serialiser
-    /// emits <c>handler="X" { ... }</c> instead of <c>composite="X" { ... }</c>
-    /// when this kind is present.
+    /// emits <c>type="X" { ... }</c> when this kind is present.
     /// </summary>
-    HandlerConstruction,
+    TypeConstruction,
 
     /// <summary>
     /// Reference to a Unity asset shipped in the mod under

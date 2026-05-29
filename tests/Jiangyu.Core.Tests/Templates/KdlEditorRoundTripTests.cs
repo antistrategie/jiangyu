@@ -92,7 +92,7 @@ public class KdlEditorRoundTripTests
         const string kdl = """
             patch "EntityTemplate" "id" {  // boss-flavoured override
                 set "HudYOffsetScale" 5.0  // tweaked from 3 for boss fight
-                set "Properties" composite="FixtureProperties" {  // override accuracy only
+                set "Properties" type="FixtureProperties" {  // override accuracy only
                     set "Accuracy" 5
                 }
             }
@@ -109,7 +109,7 @@ public class KdlEditorRoundTripTests
             "tweaked from 3 for boss fight",
             doc.Nodes[0].Directives[0].TrailingComment);
 
-        // Composite directive inline (after the composite's opening `{`).
+        // Construction directive inline (after the block's opening `{`).
         Assert.Equal(
             "override accuracy only",
             doc.Nodes[0].Directives[1].TrailingComment);
@@ -199,15 +199,14 @@ public class KdlEditorRoundTripTests
     }
 
     [Fact]
-    public void InnerCompositeComments_AttachToInnerDirectives()
+    public void InnerConstructionComments_AttachToInnerDirectives()
     {
-        // Regression: comments inside a composite or descent body used to
-        // attribute to the next top-level entity because inner directives
-        // weren't getting a source-line stamp. Now the parser stamps every
-        // op (top-level and nested) so the comment pass can reach them.
+        // The parser stamps every op (top-level and nested) with a source line
+        // so the comment pass attaches comments inside a construction or
+        // descent body to the inner directive they sit against.
         const string kdl = """
             patch "EntityTemplate" "id" {
-                set "Properties" composite="FixtureProperties" {
+                set "Properties" type="FixtureProperties" {
                     // leading on Accuracy
                     set "Accuracy" 5  // inline on Accuracy
                     // leading on Armor
@@ -446,11 +445,11 @@ public class KdlEditorRoundTripTests
     }
 
     [Fact]
-    public void CompositeValue_RoundTrips()
+    public void TypeConstructionValue_RoundTrips()
     {
         const string kdl = """
             patch "PerkTreeTemplate" "perk_tree.darby" {
-                append "Perks" composite="Perk" {
+                append "Perks" type="Perk" {
                     set "Skill" ref="PerkTemplate" "perk.athletic"
                     set "Tier" 3
                 }
@@ -461,7 +460,7 @@ public class KdlEditorRoundTripTests
         Assert.Empty(doc.Errors);
         var d = doc.Nodes[0].Directives[0];
         Assert.Equal(KdlEditorOp.Append, d.Op);
-        Assert.Equal(KdlEditorValueKind.Composite, d.Value!.Kind);
+        Assert.Equal(KdlEditorValueKind.TypeConstruction, d.Value!.Kind);
         Assert.Equal("Perk", d.Value.CompositeType);
         Assert.NotNull(d.Value.CompositeDirectives);
         Assert.Equal(2, d.Value.CompositeDirectives.Count);
@@ -472,7 +471,7 @@ public class KdlEditorRoundTripTests
         Assert.Equal(3, tierDir.Value.Int32);
 
         var text = KdlTemplateSerialiser.Serialise(doc);
-        Assert.Contains("composite=\"Perk\"", text);
+        Assert.Contains("type=\"Perk\"", text);
         var doc2 = KdlTemplateParser.ParseText(text);
         Assert.Equal("Perk", doc2.Nodes[0].Directives[0].Value!.CompositeType);
         Assert.Equal(2, doc2.Nodes[0].Directives[0].Value!.CompositeDirectives!.Count);
@@ -926,18 +925,18 @@ public class KdlEditorRoundTripTests
     }
 
     [Fact]
-    public void NestedComposite_IndentsConsistentlyWithDepth()
+    public void NestedTypeConstruction_IndentsConsistentlyWithDepth()
     {
-        // Three composite levels deep: SoundBank.sounds (Sound) ->
+        // Three construction levels deep: SoundBank.sounds (Sound) ->
         // Sound.variations (SoundVariation) -> SoundVariation fields.
         // Each inner block should sit one indent deeper than its parent,
         // and the closing brace should align with the line that opened it.
         const string kdl = """
             patch "SoundBank" "weapons_soundbank" {
-                append "sounds" composite="Sound" from="aimed_shot" {
+                append "sounds" type="Sound" from="aimed_shot" {
                     set "id" "test_rifle_fire"
                     clear "variations"
-                    append "variations" composite="SoundVariation" {
+                    append "variations" type="SoundVariation" {
                         set "clip" asset="weapons/test_rifle/fire_01"
                     }
                 }
@@ -951,9 +950,7 @@ public class KdlEditorRoundTripTests
 
         // The inner-most directive sits three levels deep (12 spaces) and
         // its closing brace lines up with the variations-block opener (8
-        // spaces). The serialiser used to hardcode the composite child
-        // block at indent=2, so this line was emitted at 8 spaces with a
-        // closing brace at 4 instead.
+        // spaces).
         Assert.Contains("            set \"clip\" asset=\"weapons/test_rifle/fire_01\"\n", text);
         Assert.Contains("        }\n", text); // variations block close
         Assert.Contains("    }\n", text);     // sounds block close
@@ -970,11 +967,11 @@ public class KdlEditorRoundTripTests
     }
 
     [Fact]
-    public void EmptyComposite_RoundTrips()
+    public void EmptyTypeConstruction_RoundTrips()
     {
         const string kdl = """
             patch "PerkTreeTemplate" "x" {
-                append "Perks" composite="Perk" {
+                append "Perks" type="Perk" {
                     set "Tier" 1
                 }
             }
@@ -982,24 +979,23 @@ public class KdlEditorRoundTripTests
         var doc = KdlTemplateParser.ParseText(kdl);
         Assert.Empty(doc.Errors);
 
-        // Strip the composite's directives and re-serialise — the serialiser
-        // should still emit a valid empty composite block.
+        // Strip the directives and re-serialise. The serialiser still emits a
+        // valid empty construction block.
         doc.Nodes[0].Directives[0].Value!.CompositeDirectives = null;
         var text = KdlTemplateSerialiser.Serialise(doc);
-        Assert.Contains("composite=\"Perk\"", text);
+        Assert.Contains("type=\"Perk\"", text);
     }
 
     // --- Descent block (child-block) round-trips ---
 
     [Fact]
-    public void DescentBlock_RoundTrips_AsChildBlock()
+    public void EditDescent_RoundTrips_AsChildBlock()
     {
-        // Authored as child block, parsed into flat directive(s) with hint,
-        // serialised back to child block. Two-stage equivalence: text →
-        // editor doc → text reproduces the descent shape.
+        // No-type edit descent: set "Field" index=N { ... }. Round-trips as a
+        // descent with a null subtype (inferred at apply time).
         const string kdl = """
             patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
-                set "EventHandlers" index=0 type="AddSkill" {
+                set "EventHandlers" index=0 {
                     set "ShowHUDText" #true
                 }
             }
@@ -1016,32 +1012,61 @@ public class KdlEditorRoundTripTests
         Assert.Single(d.Descent);
         Assert.Equal("EventHandlers", d.Descent[0].Field);
         Assert.Equal(0, d.Descent[0].Index);
-        Assert.Equal("AddSkill", d.Descent[0].Subtype);
 
         var text = KdlTemplateSerialiser.Serialise(doc);
-        Assert.Contains("set \"EventHandlers\" index=0 type=\"AddSkill\"", text);
+        Assert.Contains("set \"EventHandlers\" index=0", text);
+        Assert.DoesNotContain("type=", text);
         Assert.Contains("set \"ShowHUDText\" #true", text);
         Assert.DoesNotContain("[0]", text);
 
         var doc2 = KdlTemplateParser.ParseText(text);
         Assert.Empty(doc2.Errors);
         Assert.Single(doc2.Nodes[0].Directives);
-        Assert.Equal(d.FieldPath, doc2.Nodes[0].Directives[0].FieldPath);
-        Assert.NotNull(doc2.Nodes[0].Directives[0].Descent);
-        Assert.Single(doc2.Nodes[0].Directives[0].Descent!);
-        Assert.Equal("EventHandlers", doc2.Nodes[0].Directives[0].Descent![0].Field);
-        Assert.Equal(0, doc2.Nodes[0].Directives[0].Descent![0].Index);
-        Assert.Equal("AddSkill", doc2.Nodes[0].Directives[0].Descent![0].Subtype);
+        var d2 = doc2.Nodes[0].Directives[0];
+        Assert.Equal(d.FieldPath, d2.FieldPath);
+        Assert.NotNull(d2.Descent);
+        Assert.Single(d2.Descent!);
+        Assert.Equal("EventHandlers", d2.Descent![0].Field);
+        Assert.Equal(0, d2.Descent![0].Index);
     }
 
     [Fact]
-    public void ScalarPolymorphicDescent_RoundTrips_NoIndex()
+    public void TypeConstruction_AtIndex_RoundTrips()
     {
-        // Phase 2a: descent into a non-collection polymorphic field. The
-        // outer step has type= but no index=, marking scalar descent in the
-        // wire format (TemplateDescentStep.Index is null). The serialiser
-        // must omit index= so the round-trip parses back to the same
-        // null-Index step rather than synthesising index=0.
+        // set "Field" index=N type="X" { ... } constructs/replaces element N.
+        // Round-trips as a single construction directive (not a descent).
+        const string kdl = """
+            patch "PerkTemplate" "perk.x" {
+                set "EventHandlers" index=0 type="AddSkill" {
+                    set "ShowHUDText" #true
+                }
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+        var d = Assert.Single(doc.Nodes[0].Directives);
+        Assert.Equal("EventHandlers", d.FieldPath);
+        Assert.Equal(0, d.Index);
+        Assert.Equal(KdlEditorValueKind.TypeConstruction, d.Value!.Kind);
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        Assert.Contains("set \"EventHandlers\" index=0 type=\"AddSkill\"", text);
+
+        var doc2 = KdlTemplateParser.ParseText(text);
+        Assert.Empty(doc2.Errors);
+        var d2 = Assert.Single(doc2.Nodes[0].Directives);
+        Assert.Equal("EventHandlers", d2.FieldPath);
+        Assert.Equal(0, d2.Index);
+        Assert.Equal(KdlEditorValueKind.TypeConstruction, d2.Value!.Kind);
+    }
+
+    [Fact]
+    public void TypeConstruction_OnScalarField_RoundTrips_NoIndex()
+    {
+        // set "Field" type="X" { ... } on a non-collection polymorphic scalar
+        // field constructs a fresh X. It's a construction value (no index, no
+        // descent), and the serialiser must not synthesise an index=.
         const string kdl = """
             patch "Attack" "fire_assault_rifle_attack" {
                 set "DamageFilterCondition" type="MoraleStateCondition" {
@@ -1053,32 +1078,33 @@ public class KdlEditorRoundTripTests
         var doc = KdlTemplateParser.ParseText(kdl);
         Assert.Empty(doc.Errors);
         var directive = Assert.Single(doc.Nodes[0].Directives);
-        var step = Assert.Single(directive.Descent!);
-        Assert.Equal("DamageFilterCondition", step.Field);
-        Assert.Null(step.Index);
-        Assert.Equal("MoraleStateCondition", step.Subtype);
+        Assert.Equal("DamageFilterCondition", directive.FieldPath);
+        Assert.Null(directive.Index);
+        Assert.Null(directive.Descent);
+        Assert.Equal(KdlEditorValueKind.TypeConstruction, directive.Value!.Kind);
 
         var text = KdlTemplateSerialiser.Serialise(doc);
         Assert.Contains("set \"DamageFilterCondition\" type=\"MoraleStateCondition\"", text);
-        // Critical guard: the serialiser must NOT emit index= for a scalar
-        // descent step. Otherwise the round-trip turns scalar descent into
-        // a (non-existent) collection descent at element 0.
         Assert.DoesNotContain("DamageFilterCondition\" index=", text);
 
         var doc2 = KdlTemplateParser.ParseText(text);
         Assert.Empty(doc2.Errors);
-        var step2 = Assert.Single(doc2.Nodes[0].Directives[0].Descent!);
-        Assert.Equal("DamageFilterCondition", step2.Field);
-        Assert.Null(step2.Index);
-        Assert.Equal("MoraleStateCondition", step2.Subtype);
+        var d2 = Assert.Single(doc2.Nodes[0].Directives);
+        Assert.Equal("DamageFilterCondition", d2.FieldPath);
+        Assert.Null(d2.Index);
+        Assert.Null(d2.Descent);
+        Assert.Equal(KdlEditorValueKind.TypeConstruction, d2.Value!.Kind);
     }
 
     [Fact]
-    public void DescentBlock_MultipleSiblingsGroupUnderOneOuter()
+    public void EditDescent_MultipleSiblingsGroupUnderOneOuter()
     {
+        // No-type edit descent: each inner set becomes its own directive with
+        // the same descent prefix; the serialiser groups them under one outer
+        // block.
         const string kdl = """
             patch "PerkTemplate" "perk.x" {
-                set "EventHandlers" index=0 type="AddSkill" {
+                set "EventHandlers" index=0 {
                     set "ShowHUDText" #true
                     set "OnlyApplyOnHit" #true
                 }
@@ -1099,12 +1125,10 @@ public class KdlEditorRoundTripTests
     }
 
     [Fact]
-    public void DescentBlock_DifferentHints_EmitSeparateOuterBlocks()
+    public void EditDescent_SameSlotDifferentFields_FoldUnderOneOuterBlock()
     {
-        // Two consecutive descent ops with the SAME outer (Field, index) but
-        // DIFFERENT type= hints must not be folded together — that would
-        // change the validated subtype for some inner ops. Each gets its
-        // own outer wrapper.
+        // Two edits into the same slot (same Field, index, both type-less)
+        // fold under a single `set "Field" index=N { ... }` block.
         var doc = new KdlEditorDocument();
         doc.Nodes.Add(new KdlEditorNode
         {
@@ -1119,7 +1143,7 @@ public class KdlEditorRoundTripTests
                     FieldPath = "FieldA",
                     Descent =
                     [
-                        new TemplateDescentStep { Field = "EventHandlers", Index = 0, Subtype = "TypeA" },
+                        new TemplateDescentStep { Field = "EventHandlers", Index = 0 },
                     ],
                     Value = new KdlEditorValue { Kind = KdlEditorValueKind.Boolean, Boolean = true },
                 },
@@ -1129,7 +1153,7 @@ public class KdlEditorRoundTripTests
                     FieldPath = "FieldB",
                     Descent =
                     [
-                        new TemplateDescentStep { Field = "EventHandlers", Index = 0, Subtype = "TypeB" },
+                        new TemplateDescentStep { Field = "EventHandlers", Index = 0 },
                     ],
                     Value = new KdlEditorValue { Kind = KdlEditorValueKind.Boolean, Boolean = false },
                 },
@@ -1140,18 +1164,20 @@ public class KdlEditorRoundTripTests
 
         var outerCount = System.Text.RegularExpressions.Regex.Matches(
             text, @"set ""EventHandlers"" index=0").Count;
-        Assert.Equal(2, outerCount);
-        Assert.Contains("type=\"TypeA\"", text);
-        Assert.Contains("type=\"TypeB\"", text);
+        Assert.Equal(1, outerCount);
+        Assert.DoesNotContain("type=", text);
+        Assert.Contains("set \"FieldA\"", text);
+        Assert.Contains("set \"FieldB\"", text);
     }
 
     [Fact]
-    public void DescentBlock_NestedDescent_RoundTrips()
+    public void EditDescent_NestedDescent_RoundTrips()
     {
+        // Nested no-type edit descents round-trip with null subtypes.
         const string kdl = """
             patch "PerkTemplate" "perk.x" {
-                set "Outer" index=0 type="X" {
-                    set "Inner" index=2 type="Y" {
+                set "Outer" index=0 {
+                    set "Inner" index=2 {
                         set "Leaf" 5
                     }
                 }
@@ -1168,15 +1194,14 @@ public class KdlEditorRoundTripTests
         Assert.Equal(2, d.Descent.Count);
         Assert.Equal("Outer", d.Descent[0].Field);
         Assert.Equal(0, d.Descent[0].Index);
-        Assert.Equal("X", d.Descent[0].Subtype);
         Assert.Equal("Inner", d.Descent[1].Field);
         Assert.Equal(2, d.Descent[1].Index);
-        Assert.Equal("Y", d.Descent[1].Subtype);
 
         var text = KdlTemplateSerialiser.Serialise(doc);
-        Assert.Contains("set \"Outer\" index=0 type=\"X\"", text);
-        Assert.Contains("set \"Inner\" index=2 type=\"Y\"", text);
+        Assert.Contains("set \"Outer\" index=0", text);
+        Assert.Contains("set \"Inner\" index=2", text);
         Assert.Contains("set \"Leaf\" 5", text);
+        Assert.DoesNotContain("type=", text);
         Assert.DoesNotContain("[", text);
 
         var doc2 = KdlTemplateParser.ParseText(text);
@@ -1248,11 +1273,11 @@ public class KdlEditorRoundTripTests
     }
 
     [Fact]
-    public void HandlerConstruction_AppendRoundTrips()
+    public void TypeConstruction_AppendRoundTrips()
     {
         const string kdl = """
             patch "SkillTemplate" "active.foo" {
-                append "EventHandlers" handler="AddSkill" {
+                append "EventHandlers" type="AddSkill" {
                     set "Event" enum="AddEvent" "OnHit"
                     set "OnlyApplyOnHit" #true
                 }
@@ -1265,26 +1290,26 @@ public class KdlEditorRoundTripTests
 
         var d = doc.Nodes[0].Directives[0];
         Assert.Equal(KdlEditorOp.Append, d.Op);
-        Assert.Equal(KdlEditorValueKind.HandlerConstruction, d.Value!.Kind);
+        Assert.Equal(KdlEditorValueKind.TypeConstruction, d.Value!.Kind);
         Assert.Equal("AddSkill", d.Value.CompositeType);
 
         var text = KdlTemplateSerialiser.Serialise(doc);
-        Assert.Contains("append \"EventHandlers\" handler=\"AddSkill\"", text);
+        Assert.Contains("append \"EventHandlers\" type=\"AddSkill\"", text);
         Assert.Contains("set \"Event\" enum=\"AddEvent\" \"OnHit\"", text);
         Assert.Contains("set \"OnlyApplyOnHit\" #true", text);
         Assert.DoesNotContain("composite=", text);
 
         var doc2 = KdlTemplateParser.ParseText(text);
         Assert.Empty(doc2.Errors);
-        Assert.Equal(KdlEditorValueKind.HandlerConstruction, doc2.Nodes[0].Directives[0].Value!.Kind);
+        Assert.Equal(KdlEditorValueKind.TypeConstruction, doc2.Nodes[0].Directives[0].Value!.Kind);
     }
 
     [Fact]
-    public void HandlerConstruction_InsertCarriesIndexThroughRoundTrip()
+    public void TypeConstruction_InsertCarriesIndexThroughRoundTrip()
     {
         const string kdl = """
             patch "SkillTemplate" "active.foo" {
-                insert "EventHandlers" index=2 handler="ChangeProperty" {
+                insert "EventHandlers" index=2 type="ChangeProperty" {
                     set "Amount" 5
                 }
             }
@@ -1298,7 +1323,7 @@ public class KdlEditorRoundTripTests
         Assert.Equal("ChangeProperty", d.Value!.CompositeType);
 
         var text = KdlTemplateSerialiser.Serialise(doc);
-        Assert.Contains("insert \"EventHandlers\" index=2 handler=\"ChangeProperty\"", text);
+        Assert.Contains("insert \"EventHandlers\" index=2 type=\"ChangeProperty\"", text);
 
         var doc2 = KdlTemplateParser.ParseText(text);
         Assert.Empty(doc2.Errors);
@@ -1323,7 +1348,6 @@ public class KdlEditorRoundTripTests
         Assert.Single(d.Descent);
         Assert.Equal("Properties", d.Descent[0].Field);
         Assert.Equal(0, d.Descent[0].Index);
-        Assert.Null(d.Descent[0].Subtype);
 
         var text = KdlTemplateSerialiser.Serialise(doc);
         Assert.Contains("set \"Properties\" index=0 {", text);
