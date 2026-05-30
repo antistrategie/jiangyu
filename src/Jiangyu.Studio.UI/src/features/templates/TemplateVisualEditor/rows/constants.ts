@@ -1,6 +1,10 @@
 import type { DirectiveOp, EditorValueKind } from "../types";
 
 export const SCALAR_OPS: DirectiveOp[] = ["Set"];
+// An inline object/struct field: Set edits/builds its fields, Clear resets it
+// to a fresh default. (Primitive scalars and PPtr references stay Set-only;
+// references are nulled with #null, not Clear.)
+export const OBJECT_OPS: DirectiveOp[] = ["Set", "Clear"];
 export const COLLECTION_OPS: DirectiveOp[] = ["Set", "Append", "Insert", "Remove", "Clear"];
 // Named arrays are fixed-size enum-indexed; only per-slot Set makes sense.
 export const NAMED_ARRAY_OPS: DirectiveOp[] = ["Set"];

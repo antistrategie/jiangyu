@@ -84,6 +84,11 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
     public class FixtureConcreteDerived : FixtureBaseDataTemplate
     {
         public int DerivedField { get; set; }
+
+        // A collection member so the freshInstance guard's negative branch is
+        // testable: an indexed element edit descent is rejected inside a fresh
+        // construction but allowed when from= seeds the collection.
+        public List<FixtureSkillTemplate> Items { get; set; } = new();
     }
 
     public class FixtureRefHolder : Menace.Tools.DataTemplate
@@ -106,6 +111,21 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
     {
         public int Uses { get; set; }
         public float Cooldown { get; set; }
+    }
+
+    // Value-type (struct) collection element. In-collection struct mutation has
+    // no runtime write-back path, so an indexed edit descent into a FixtureVec3
+    // element must be rejected at validation rather than diverging between the
+    // offline preview and the live applier.
+    public struct FixtureVec3
+    {
+        public int X { get; set; }
+        public int Y { get; set; }
+    }
+
+    public class FixtureStructListHolder : Menace.Tools.DataTemplate
+    {
+        public List<FixtureVec3> Points { get; set; } = new();
     }
 
     // Template carrying Unity-asset-typed fields, used by the asset-reference

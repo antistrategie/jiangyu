@@ -117,6 +117,12 @@ describe("buildDescentMemberDirective", () => {
     expect(out.descent).toEqual([{ field: "EventHandlers", index: 0 }]);
   });
 
+  it("omits the index for an object-field edit (null slot)", () => {
+    const out = buildDescentMemberDirective("AIRole", null, dir("id", "AvoidOpponents"));
+    expect(out.fieldPath).toBe("AvoidOpponents");
+    expect(out.descent).toEqual([{ field: "AIRole" }]);
+  });
+
   it("preserves the inner directive's existing descent steps", () => {
     const inner = dir("id", "Amount", {
       descent: [{ field: "Properties", index: 0 }],

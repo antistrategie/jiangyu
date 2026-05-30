@@ -404,42 +404,86 @@ internal sealed partial class TemplatePatchApplier
     // collection.
     private static ApplyOutcome TryApplyClear(
         object current, string terminalName, string templateTypeName, string templateId,
-        LoadedPatchOperation op, MelonLogger.Instance log)
+        LoadedPatchOperation op, ModAssetResolver assetResolver, MelonLogger.Instance log)
     {
-        if (!TryResolveTerminalCollectionForMutation(
+        if (TryResolveTerminalCollectionForMutation(
                 current, terminalName, templateTypeName, templateId, op, "clear", log,
                 out var collection, out var collectionType,
                 out var shape, out var elementType, out var fieldSetter,
-                out var outcome))
-            return outcome;
-
-        try
+                out var outcome,
+                warnOnNonCollection: false,
+                warnOnNull: false))
         {
-            switch (shape)
+            try
             {
-                case CollectionShape.List:
-                case CollectionShape.HashSet:
-                    // Both BCL and Il2Cpp List/HashSet expose a parameterless
-                    // Clear(); the helper just invokes that.
-                    ClearList(collection, collectionType);
-                    break;
+                switch (shape)
+                {
+                    case CollectionShape.List:
+                    case CollectionShape.HashSet:
+                        // Both BCL and Il2Cpp List/HashSet expose a parameterless
+                        // Clear(); the helper just invokes that.
+                        ClearList(collection, collectionType);
+                        break;
 
-                case CollectionShape.ReferenceArray:
-                case CollectionShape.StructArray:
-                    var emptied = BuildEmptyArray(collectionType, elementType);
-                    fieldSetter(emptied);
-                    break;
+                    case CollectionShape.ReferenceArray:
+                    case CollectionShape.StructArray:
+                        var emptied = BuildEmptyArray(collectionType, elementType);
+                        fieldSetter(emptied);
+                        break;
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                + $"clear threw: {ex.Message}");
-            return ApplyOutcome.ConversionFailed;
+            catch (Exception ex)
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"clear threw: {ex.Message}");
+                return ApplyOutcome.ConversionFailed;
+            }
+
+            log.Msg(FormatPrefix(templateTypeName, templateId, op)
+                + $"cleared {collectionType.Name}.");
+            return ApplyOutcome.Applied;
         }
 
-        log.Msg(FormatPrefix(templateTypeName, templateId, op)
-            + $"cleared {collectionType.Name}.");
-        return ApplyOutcome.Applied;
+        // Resolve failed. Distinguish three cases on a writable member:
+        //  - a null value (collection or inline object) is already empty, so
+        //    clear is a successful no-op — matching the offline preview;
+        //  - a writable non-collection member with a live value is an inline
+        //    object/struct to reset to a fresh default;
+        //  - a genuinely missing member keeps the resolver's diagnostic.
+        if (TryGetWritableMember(current, terminalName, out var memberType, out var objectSetter, out _))
+        {
+            if (collection == null || TryGetCollectionShape(memberType, out _, out _))
+            {
+                log.Msg(FormatPrefix(templateTypeName, templateId, op)
+                    + $"clear on '{terminalName}' ({memberType.FullName}) is a no-op: already empty.");
+                return ApplyOutcome.Applied;
+            }
+
+            var fresh = new CompiledTemplateComposite
+            {
+                TypeName = memberType.FullName ?? memberType.Name,
+            };
+            if (!TryConstructComposite(fresh, memberType, assetResolver, log, out var reset, out var constructError))
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"clear could not reset '{terminalName}' ({memberType.FullName}) to a default: {constructError}");
+                return ApplyOutcome.ConversionFailed;
+            }
+            try
+            {
+                objectSetter(reset);
+            }
+            catch (Exception ex)
+            {
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"clear write-back of '{terminalName}' threw: {ex.Message}");
+                return ApplyOutcome.ConversionFailed;
+            }
+            log.Msg(FormatPrefix(templateTypeName, templateId, op)
+                + $"reset {memberType.Name} to a default.");
+            return ApplyOutcome.Applied;
+        }
+
+        return outcome;
     }
 }

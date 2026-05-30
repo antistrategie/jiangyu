@@ -412,6 +412,15 @@ public sealed class TemplateTypeCatalog : IDisposable
     }
 
     /// <summary>
+    /// True when the field holds a PPtr to a separate Unity asset (a
+    /// UnityEngine.Object subclass or a DataTemplate). Such a field is set with
+    /// <c>ref=</c>/<c>asset=</c> and nulled with <c>#null</c>; it is not an
+    /// inline embedded object, so <c>clear</c> does not apply.
+    /// </summary>
+    public static bool IsReferenceField(Type type)
+        => DescendsFromUnityObject(type) || IsDataTemplateType(type);
+
+    /// <summary>
     /// True when the type descends from <c>Menace.Tools.DataTemplate</c>.
     /// Distinguishes ref-style polymorphism (the modder picks an existing
     /// DataTemplateLoader-registered instance, e.g. <c>BaseItemTemplate</c>)

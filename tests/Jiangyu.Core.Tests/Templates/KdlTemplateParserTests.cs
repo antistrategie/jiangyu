@@ -696,17 +696,12 @@ public class KdlTemplateParserTests
     }
 
     [Fact]
-    public void BareChildBlock_OnSet_RoutesToInferredComposite()
+    public void BareChildBlock_OnSet_RoutesToObjectDescent()
     {
-        // A bare set "Field" { ... } (no index= and no type=) parses as an
-        // inferred-composite construction, the same shape append/insert get
-        // when the destination is a monomorphic composite-typed scalar. The
-        // element type is recovered from the destination at validation time;
-        // the parser emits a Composite value with empty TypeName so the
-        // validator knows to infer. Descent block routing only kicks in when
-        // the outer set carries index= with no type=; type= (with or without
-        // index) produces a TypeConstruction value instead.
-        var dir = SetupKdl("inferred.kdl", """
+        // A bare set "Field" { ... } (no index=, type=, from=) edits the object
+        // at Field in place. Each inner directive becomes its own compiled op
+        // with a TemplateDescentStep (Field, null index) prepended.
+        var dir = SetupKdl("edit.kdl", """
             patch "UnitLeaderTemplate" "squad_leader.darby" {
                 set "UnitTitle" {
                     set "m_DefaultTranslation" "Tactical Doll"
@@ -719,15 +714,71 @@ public class KdlTemplateParserTests
         Assert.Equal(0, result.ErrorCount);
         var op = Assert.Single(result.Patches[0].Set);
         Assert.Equal(CompiledTemplateOp.Set, op.Op);
-        Assert.Equal("UnitTitle", op.FieldPath);
-        Assert.NotNull(op.Value);
-        Assert.Equal(CompiledTemplateValueKind.Composite, op.Value!.Kind);
-        Assert.NotNull(op.Value.Composite);
-        // Empty TypeName is the inference sentinel — validator picks the
-        // concrete type from the destination field's declared shape.
-        Assert.Equal(string.Empty, op.Value.Composite!.TypeName);
-        var inner = Assert.Single(op.Value.Composite.Operations);
-        Assert.Equal("m_DefaultTranslation", inner.FieldPath);
+        Assert.Equal("m_DefaultTranslation", op.FieldPath);
+        var step = Assert.Single(op.Descent!);
+        Assert.Equal("UnitTitle", step.Field);
+        Assert.Null(step.Index);
+        Assert.Equal(CompiledTemplateValueKind.String, op.Value!.Kind);
+        Assert.Equal("Tactical Doll", op.Value.String);
+    }
+
+    [Fact]
+    public void ObjectDescent_AppendToSubCollection_CarriesNullIndexStep()
+    {
+        // The conversation pattern: edit the Nodes container by appending a
+        // constructed node to its m_SerializedNodes list. set "Nodes" { } is an
+        // object-field edit (null index); the inner append rides it as its own
+        // op carrying the outer step plus a TypeConstruction value.
+        var dir = SetupKdl("nodes.kdl", """
+            patch "ConversationTemplate" "x" {
+                set "Nodes" {
+                    append "m_SerializedNodes" type="ACTION" {
+                        set "Guid" 1
+                    }
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var op = Assert.Single(result.Patches[0].Set);
+        Assert.Equal(CompiledTemplateOp.Append, op.Op);
+        Assert.Equal("m_SerializedNodes", op.FieldPath);
+        var step = Assert.Single(op.Descent!);
+        Assert.Equal("Nodes", step.Field);
+        Assert.Null(step.Index);
+        Assert.Equal(CompiledTemplateValueKind.TypeConstruction, op.Value!.Kind);
+        Assert.Equal("ACTION", op.Value.TypeConstruction!.TypeName);
+    }
+
+    [Fact]
+    public void ConstructBlock_InnerBareBlock_StaysComposite_NotObjectDescent()
+    {
+        // Inside a construct (type="X" { ... }), a bare child block builds a
+        // sub-object as a composite, NOT an object-field descent — so its
+        // fields stay together (e.g. a Sound's bankId+itemId resolve as
+        // siblings). Object descent is for editing existing structure only.
+        var dir = SetupKdl("c.kdl", """
+            patch "SkillTemplate" "active.foo" {
+                append "EventHandlers" type="AddSkill" {
+                    set "Sub" {
+                        set "Field" 1
+                    }
+                }
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        var op = result.Patches[0].Set[0];
+        Assert.Equal(CompiledTemplateValueKind.TypeConstruction, op.Value!.Kind);
+        var inner = Assert.Single(op.Value.TypeConstruction!.Operations);
+        Assert.Equal("Sub", inner.FieldPath);
+        // Sub is a composite value (sub-object construction), not a descent op.
+        Assert.Null(inner.Descent);
+        Assert.Equal(CompiledTemplateValueKind.Composite, inner.Value!.Kind);
     }
 
     [Fact]
@@ -798,9 +849,13 @@ public class KdlTemplateParserTests
     }
 
     [Fact]
-    public void DescentBlock_RejectsNonSetInnerOps()
+    public void DescentBlock_AllowsCollectionOpsInnerOps()
     {
-        var dir = SetupKdl("bad.kdl", """
+        // An edit block may carry any op: append/insert/remove/clear mutate a
+        // sub-collection of the descended element in place. Here, append to
+        // element 0's TargetTags list. The inner op becomes its own compiled
+        // op with the outer descent step prepended.
+        var dir = SetupKdl("ok.kdl", """
             patch "PerkTemplate" "perk.x" {
                 set "EventHandlers" index=0 {
                     append "TargetTags" ref="TagTemplate" "infantry"
@@ -810,8 +865,13 @@ public class KdlTemplateParserTests
 
         var result = KdlTemplateParser.ParseAll(dir, _log);
 
-        Assert.Equal(1, result.ErrorCount);
-        Assert.Contains(_log.Errors, e => e.Contains("only 'set'", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(0, result.ErrorCount);
+        var op = Assert.Single(result.Patches[0].Set);
+        Assert.Equal(CompiledTemplateOp.Append, op.Op);
+        Assert.Equal("TargetTags", op.FieldPath);
+        var step = Assert.Single(op.Descent!);
+        Assert.Equal("EventHandlers", step.Field);
+        Assert.Equal(0, step.Index);
     }
 
     [Fact]

@@ -159,6 +159,10 @@ public static class TemplateMemberQuery
         var resolvedPathParts = new List<string> { typeName };
         var currentType = rootType;
         Type? lastMemberType = null;
+        // Type that declares the terminal member (e.g. Stem.ID for a
+        // descended bankId). Carries through descent so hashable-id resolution
+        // keys on the field's owner, not the patch's root template type.
+        Type? lastDeclaringType = null;
         Type? unwrappedFrom = null;
         bool lastWritable = true;
         bool lastOdinOnly = false;
@@ -214,6 +218,7 @@ public static class TemplateMemberQuery
             }
 
             unionFallbackBase = null;
+            lastDeclaringType = currentType;
             resolvedPathParts.Add(segment);
             lastMemberType = member.MemberType;
             lastWritable = member.IsWritable;
@@ -245,6 +250,25 @@ public static class TemplateMemberQuery
 
             if (elementType != null)
             {
+                // In-collection struct mutation has no runtime write-back path
+                // (value-type elements are copies), so an indexed edit descent
+                // into a struct element is rejected here rather than silently
+                // diverging between the offline preview and the live applier.
+                // A terminal indexer (type discovery, no further segment) is
+                // fine; only descent that then edits the element's fields bites.
+                if (hasIndexer
+                    && i < fieldSegments.Length - 1
+                    && elementType.IsValueType
+                    && !TemplateTypeCatalog.IsScalar(elementType))
+                {
+                    var attempted = string.Join('.', resolvedPathParts);
+                    return QueryResult.FromError(
+                        $"cannot edit fields of the value-type element '{segment}' "
+                        + $"({catalog.FriendlyName(elementType)}) at '{attempted}': "
+                        + "in-collection struct mutation is not supported. "
+                        + "Replace the whole element with remove + insert instead.");
+                }
+
                 // Auto-unwrap collections regardless of bracket syntax. jq-like
                 // navigation treats Skills and Skills[0] identically for type
                 // discovery — matching the patch path syntax in both directions.
@@ -272,6 +296,15 @@ public static class TemplateMemberQuery
             else
             {
                 currentType = memberType;
+
+                // Polymorphic object-field descent: arm the union fallback so
+                // the next segment resolves against the base's concrete
+                // subtypes (the runtime casts to the live value's actual type).
+                if (i < fieldSegments.Length - 1
+                    && catalog.HasPolymorphicSubtype(memberType))
+                {
+                    unionFallbackBase = memberType;
+                }
             }
         }
 
@@ -284,6 +317,7 @@ public static class TemplateMemberQuery
                 Kind = QueryResultKind.Leaf,
                 ResolvedPath = resolvedPath,
                 CurrentType = lastMemberType,
+                DeclaringType = lastDeclaringType,
                 IsWritable = lastWritable,
                 PatchScalarKind = MapScalarKind(lastMemberType),
                 EnumMemberNames = TemplateTypeCatalog.GetEnumMemberNames(lastMemberType),
@@ -380,6 +414,14 @@ public sealed class QueryResult
     public QueryResultKind Kind { get; init; }
     public string? ResolvedPath { get; init; }
     public Type? CurrentType { get; init; }
+
+    /// <summary>
+    /// Type that declares the terminal member (e.g. <c>Stem.ID</c> for a
+    /// descended <c>bankId</c>). Hashable-id resolution keys on this rather
+    /// than the patch's root template type so a descent into a sound field
+    /// still resolves the bank-name / FNV id.
+    /// </summary>
+    public Type? DeclaringType { get; init; }
     public IReadOnlyList<MemberShape>? Members { get; init; }
     public bool IsWritable { get; init; } = true;
     public CompiledTemplateValueKind? PatchScalarKind { get; init; }

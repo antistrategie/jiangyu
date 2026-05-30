@@ -513,9 +513,11 @@ function MemberRow({
               {valueNode.fields.map((subVal, i) => (
                 <div key={subVal.name ?? `unnamed-${i}`} className={styles.memberNestedRow}>
                   <span className={styles.chevronSpacer} />
-                  <span className={styles.memberNestedLabel}>{subVal.name ?? "<unnamed>"}</span>
-                  <span className={styles.memberNestedType}>{subVal.fieldTypeName ?? ""}</span>
-                  <span className={styles.memberNestedValue}>{formatValue(subVal)}</span>
+                  <div className={styles.memberNestedScroll}>
+                    <span className={styles.memberNestedLabel}>{subVal.name ?? "<unnamed>"}</span>
+                    <span className={styles.memberNestedType}>{subVal.fieldTypeName ?? ""}</span>
+                    <span className={styles.memberNestedValue}>{formatValue(subVal)}</span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -793,9 +795,11 @@ function ExpandableElementRow({
         ) : (
           <span className={styles.chevronSpacer} />
         )}
-        <span className={styles.memberNestedLabel}>{label}</span>
-        <span className={styles.memberNestedType}>{typeName}</span>
-        <span className={styles.memberNestedValue}>{referenceLink ?? formatValue(elem)}</span>
+        <div className={styles.memberNestedScroll}>
+          <span className={styles.memberNestedLabel}>{label}</span>
+          <span className={styles.memberNestedType}>{typeName}</span>
+          <span className={styles.memberNestedValue}>{referenceLink ?? formatValue(elem)}</span>
+        </div>
       </div>
       {subExpanded && subFields && (
         <div className={styles.memberNestedSubList}>

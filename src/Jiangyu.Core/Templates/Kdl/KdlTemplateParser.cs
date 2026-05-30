@@ -745,9 +745,15 @@ public static class KdlTemplateParser
     // Appends parsed ops to <paramref name="ops"/>. Returns false on error.
     // A single source node usually produces one op; a descent block produces
     // one flattened op per inner directive.
+    // allowObjectDescent gates the no-index object-field descent
+    // (set "F" { ... }). It is true at the patch/clone top level and inside a
+    // descent block (editing existing structure), and false inside a
+    // construct block (type="X" { ... }), where a bare child block builds the
+    // sub-object as a composite so its fields stay together for validation.
     private static bool TryParseOperation(
         KdlNode node, string pos, ILogSink log,
-        List<CompiledTemplateSetOperation> ops)
+        List<CompiledTemplateSetOperation> ops,
+        bool allowObjectDescent = true)
     {
         var opName = node.Name;
         CompiledTemplateOp opKind;
@@ -916,25 +922,23 @@ public static class KdlTemplateParser
                 parsedIndex = parsed;
             }
 
-            // Edit-in-place descent: set "Field" index=N { set "Sub" ... }
-            // with no type=. Navigates into the existing element at slot N and
-            // edits its fields; the concrete subtype is inferred from the live
-            // element at apply time (and from the source slot at validate
-            // time), so no type= is needed. Each inner directive becomes its
-            // own compiled op with a TemplateDescentStep (Field, index, null
-            // subtype) prepended onto its Descent list.
-            //
-            // type= present means "construct a fresh element here" and falls
-            // through to TryParseValue as a TypeConstruction value (the index,
-            // if any, rides the Set op so element N is replaced). The bare-block
-            // inferred-composite (set "Field" { ... }) also produces a value via
-            // TryParseValue. So descent fires only for an indexed set with no
-            // type=.
+            // Edit-in-place descent (no type=, no from=, no cell=):
+            //   set "Field" index=N { ... }  edits element N of a collection
+            //   set "Field" { ... }          edits the object/struct at Field
+            // Each inner directive becomes its own compiled op with a
+            // TemplateDescentStep (Field, index) prepended onto its Descent
+            // list; a null index marks object-field descent. type= and from=
+            // construct a fresh value instead and fall through to TryParseValue.
+            // Object-field descent (null index) is suppressed inside a
+            // construct block: there the bare child block builds the sub-object
+            // as a composite (TryParseValue) so its fields stay together.
             if (node.HasChildren
-                && parsedIndex is int descentIndex
-                && GetProperty(node, "type") == null)
+                && GetProperty(node, "type") == null
+                && GetProperty(node, "from") == null
+                && GetProperty(node, "cell") == null
+                && (allowObjectDescent || parsedIndex is int))
             {
-                return TryParseDescentBlock(node, pos, log, ops, fieldPath, descentIndex);
+                return TryParseDescentBlock(node, pos, log, ops, fieldPath, parsedIndex);
             }
         }
 
@@ -994,23 +998,24 @@ public static class KdlTemplateParser
     }
 
     /// <summary>
-    /// Walk a descent block (<c>set "Field" index=N type="X" { ... }</c>) and
-    /// produce one compiled op per inner directive. Each inner op gets a
+    /// Walk an edit-descent block (<c>set "Field" index=N { ... }</c> for a
+    /// collection element, or <c>set "Field" { ... }</c> for an object field)
+    /// and produce one compiled op per inner directive. Each inner op gets a
     /// <see cref="TemplateDescentStep"/> prepended onto its
     /// <see cref="CompiledTemplateSetOperation.Descent"/> list, recording the
-    /// (field, index, subtype) navigation introduced at this level. Nested
-    /// descent ends up with multiple steps in outer-to-inner order.
+    /// (field, index) navigation introduced at this level; a null index marks
+    /// object-field descent. Nested descent ends up with multiple steps in
+    /// outer-to-inner order.
     /// </summary>
     private static bool TryParseDescentBlock(
         KdlNode node, string pos, ILogSink log,
         List<CompiledTemplateSetOperation> ops,
-        string outerField, int outerIndex)
+        string outerField, int? outerIndex)
     {
-        // Reached only for an indexed edit descent: set "Field" index=N { ... }
-        // with no type= (the routing guarantees that). The element's concrete
-        // subtype is inferred from the live element at apply time and from the
-        // base's concrete subtypes at validate time, so the descent step
-        // carries a null subtype.
+        // set "Field" index=N { ... } edits collection element N;
+        // set "Field" { ... } (null index) edits the object/struct at Field.
+        // The descent step carries no subtype; the concrete type is inferred
+        // from the live value at apply time and from the source at validate.
         if (node.Arguments.Count > 1)
         {
             log.Error(
@@ -1041,15 +1046,8 @@ public static class KdlTemplateParser
         foreach (var child in children)
         {
             var childPos = FormatPos(pos, child.SourcePosition);
-            if (child.Name != "set")
-            {
-                log.Error(
-                    $"{childPos}: only 'set' is allowed inside a descent block, not '{child.Name}'. "
-                    + "Append/insert/remove/clear stay at the top level.");
-                hasError = true;
-                continue;
-            }
-
+            // Any op (set/append/insert/remove/clear) is valid inside an edit
+            // block and mutates the descended value in place.
             if (!TryParseOperation(child, childPos, log, staging))
             {
                 hasError = true;
@@ -1490,7 +1488,9 @@ public static class KdlTemplateParser
         foreach (var child in node.Children)
         {
             var childPos = FormatPos(pos, child.SourcePosition);
-            if (!TryParseOperation(child, childPos, log, ops))
+            // Construct block: a bare child block builds a sub-object as a
+            // composite, not an object-field descent.
+            if (!TryParseOperation(child, childPos, log, ops, allowObjectDescent: false))
                 ok = false;
         }
         return ok;

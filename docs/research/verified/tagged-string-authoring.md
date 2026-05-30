@@ -44,6 +44,7 @@ clone "ConversationTemplate" from="JeanSy/click_bark" id="Voymastina/click_bark"
         }
     }
     set "Nodes" {
+        clear "m_SerializedNodes"
         append "m_SerializedNodes" type="ACTION" {
             set "m_SerAction" type="SetFlag" {
                 set "FlagName" "click_bark_voymastina_test"

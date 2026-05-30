@@ -203,6 +203,8 @@ internal sealed partial class TemplatePatchApplier
             {
                 TypeName = targetType.Name,
                 Operations = handler.Operations ?? new List<CompiledTemplateSetOperation>(),
+                From = handler.From,
+                TaggedDiscriminator = handler.TaggedDiscriminator,
             };
         }
 

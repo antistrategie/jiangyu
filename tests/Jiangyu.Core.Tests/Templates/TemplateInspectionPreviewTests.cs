@@ -259,6 +259,113 @@ public sealed class TemplateInspectionPreviewTests : IDisposable
     }
 
     [Fact]
+    public void PreviewApplier_ClearResetsInlineObjectFields()
+    {
+        // clear "AIRole" resets the inline object's scalar fields to defaults.
+        ObjectInspectionResult source = CreateResultWithAIRole("base.alpha");
+        ObjectInspectionResult cloned = TemplateInspectionPreviewApplier.CloneForTarget(
+            source, new TemplatePreviewKey("EntityTemplate", "clone.beta"));
+
+        TemplateInspectionPreviewApplier.Apply(
+            cloned,
+            [
+                new CompiledTemplatePatch
+                {
+                    TemplateType = "EntityTemplate",
+                    TemplateId = "clone.beta",
+                    Set = [new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Clear, FieldPath = "AIRole" }],
+                },
+            ],
+            reference => null);
+
+        InspectedFieldNode aiRole = cloned.Fields
+            .Single(f => f.Name == "m_Structure").Fields!
+            .Single(f => f.Name == "AIRole");
+        Assert.Equal(false, aiRole.Fields!.Single(f => f.Name == "AvoidOpponents").Value);
+        Assert.Equal(0, aiRole.Fields!.Single(f => f.Name == "SafetyScale").Value);
+    }
+
+    [Fact]
+    public void PreviewApplier_ClearThenEditComposes()
+    {
+        // clear "AIRole"; set "AIRole" { set "AvoidOpponents" #true } resets the
+        // object then edits one field: AvoidOpponents true, the rest default.
+        ObjectInspectionResult source = CreateResultWithAIRole("base.alpha");
+        ObjectInspectionResult cloned = TemplateInspectionPreviewApplier.CloneForTarget(
+            source, new TemplatePreviewKey("EntityTemplate", "clone.beta"));
+
+        TemplateInspectionPreviewApplier.Apply(
+            cloned,
+            [
+                new CompiledTemplatePatch
+                {
+                    TemplateType = "EntityTemplate",
+                    TemplateId = "clone.beta",
+                    Set =
+                    [
+                        new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Clear, FieldPath = "AIRole" },
+                        new CompiledTemplateSetOperation
+                        {
+                            Op = CompiledTemplateOp.Set,
+                            FieldPath = "AvoidOpponents",
+                            Descent = [new TemplateDescentStep { Field = "AIRole", Index = null }],
+                            Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Boolean, Boolean = true },
+                        },
+                    ],
+                },
+            ],
+            reference => null);
+
+        InspectedFieldNode aiRole = cloned.Fields
+            .Single(f => f.Name == "m_Structure").Fields!
+            .Single(f => f.Name == "AIRole");
+        Assert.Equal(true, aiRole.Fields!.Single(f => f.Name == "AvoidOpponents").Value);
+        Assert.Equal(0, aiRole.Fields!.Single(f => f.Name == "SafetyScale").Value);
+    }
+
+    // A minimal EntityTemplate-shaped result whose m_Structure carries an
+    // inline AIRole object with two scalar fields, mirroring how the inspector
+    // renders a RoleData struct.
+    private static ObjectInspectionResult CreateResultWithAIRole(string templateId)
+    {
+        return new ObjectInspectionResult
+        {
+            Object = new InspectedObjectIdentity
+            {
+                Name = templateId,
+                ClassName = "MonoBehaviour",
+                Collection = "resources.assets",
+                PathId = 128003,
+            },
+            Options = new ObjectInspectionOptions { MaxDepth = 8, MaxArraySampleLength = 16, Truncated = false },
+            Fields =
+            [
+                new InspectedFieldNode { Name = "m_Name", Kind = "string", FieldTypeName = "String", Value = templateId },
+                new InspectedFieldNode
+                {
+                    Name = "m_Structure",
+                    Kind = "object",
+                    FieldTypeName = "Menace.Tactical.EntityTemplate",
+                    Fields =
+                    [
+                        new InspectedFieldNode
+                        {
+                            Name = "AIRole",
+                            Kind = "object",
+                            FieldTypeName = "Menace.Tactical.AI.Data.RoleData",
+                            Fields =
+                            [
+                                new InspectedFieldNode { Name = "AvoidOpponents", Kind = "bool", FieldTypeName = "Boolean", Value = true },
+                                new InspectedFieldNode { Name = "SafetyScale", Kind = "float", FieldTypeName = "Single", Value = 1.5f },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        };
+    }
+
+    [Fact]
     public void TextRenderer_PreservesStableReferenceIdentity()
     {
         ObjectInspectionResult result = CreateUnitLeaderResult("clone.beta");

@@ -139,6 +139,48 @@ internal sealed partial class TemplatePatchApplier
             return OperationResult.Applied;
         }
 
+        public OperationResult TryDescendField(object parent, string fieldName, out object descended, out string error)
+        {
+            descended = null;
+            _latestCurrent = parent;
+            if (!TryReadMember(parent, fieldName, out var value, out var memberType, out var readError))
+            {
+                _log.Warning(FormatPrefix(_templateTypeName, _templateId, _op)
+                    + $"cannot navigate object-field descent '{fieldName}': {readError}");
+                error = readError;
+                return OperationResult.MemberMissing;
+            }
+
+            if (value == null)
+            {
+                _log.Warning(FormatPrefix(_templateTypeName, _templateId, _op)
+                    + $"object-field descent '{fieldName}' ({memberType.FullName}) is null on this template; "
+                    + "clear it first to build a fresh default (monomorphic), or use type= for a polymorphic field.");
+                error = $"object-field descent '{fieldName}' is null.";
+                return OperationResult.MemberMissing;
+            }
+
+            _chain.Add(new ChainEntry
+            {
+                Parent = parent,
+                Name = fieldName,
+                ValueIsStruct = memberType.IsValueType,
+            });
+
+            // A polymorphic object field hands back a base-typed wrapper; cast
+            // to the live concrete type. No-op for value-type and already-
+            // concrete fields, which keep the base wrapper.
+            if (TryCastToLiveConcreteType(value, memberType, out var concrete, out _))
+            {
+                value = concrete;
+            }
+
+            descended = value;
+            _latestCurrent = value;
+            error = null;
+            return OperationResult.Applied;
+        }
+
         public OperationResult TrySetScalar(object parent, string fieldName, CompiledTemplateValue value, out string error)
         {
             _latestCurrent = parent;
@@ -273,7 +315,7 @@ internal sealed partial class TemplatePatchApplier
         public OperationResult TryClear(object parent, string fieldName, out string error)
         {
             _latestCurrent = parent;
-            var outcome = TryApplyClear(parent, fieldName, _templateTypeName, _templateId, _op, _log);
+            var outcome = TryApplyClear(parent, fieldName, _templateTypeName, _templateId, _op, _assetResolver, _log);
             error = null;
             return TranslateOutcome(outcome);
         }
@@ -292,32 +334,35 @@ internal sealed partial class TemplatePatchApplier
             // Struct write-back: propagate the mutated descendant up the
             // chain through each parent's setter. _latestCurrent is the
             // direct parent of the terminal write (post-mutation); each
-            // iteration writes it back into its own parent and walks one
-            // step up.
+            // iteration writes a struct level back into its own parent and
+            // walks one step up. current advances to entry.Parent on every
+            // level — struct or reference — so a reference level (whose
+            // in-place mutation already persisted) still hands the correct
+            // value to the next-shallower struct level above it.
             var current = _latestCurrent;
             for (var i = _chain.Count - 1; i >= 0; i--)
             {
                 var entry = _chain[i];
-                if (!entry.ValueIsStruct)
-                    continue;
+                if (entry.ValueIsStruct)
+                {
+                    if (!TryGetWritableMember(entry.Parent, entry.Name, out _, out var parentSetter, out _))
+                    {
+                        _log.Warning(FormatPrefix(_templateTypeName, _templateId, _op)
+                            + $"write-back after terminal set failed: parent segment '{entry.Name}' on "
+                            + $"{entry.Parent.GetType().FullName} has no writable surface, so the struct mutation may not persist.");
+                        return;
+                    }
 
-                if (!TryGetWritableMember(entry.Parent, entry.Name, out _, out var parentSetter, out _))
-                {
-                    _log.Warning(FormatPrefix(_templateTypeName, _templateId, _op)
-                        + $"write-back after terminal set failed: parent segment '{entry.Name}' on "
-                        + $"{entry.Parent.GetType().FullName} has no writable surface, so the struct mutation may not persist.");
-                    return;
-                }
-
-                try
-                {
-                    parentSetter(current);
-                }
-                catch (Exception ex)
-                {
-                    _log.Warning(FormatPrefix(_templateTypeName, _templateId, _op)
-                        + $"write-back after terminal set threw at segment '{entry.Name}': {ex.Message}");
-                    return;
+                    try
+                    {
+                        parentSetter(current);
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Warning(FormatPrefix(_templateTypeName, _templateId, _op)
+                            + $"write-back after terminal set threw at segment '{entry.Name}': {ex.Message}");
+                        return;
+                    }
                 }
 
                 current = entry.Parent;

@@ -720,6 +720,20 @@
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   min-height: 20px;
+}
+
+/* The horizontal scroll for long values lives on this inner wrapper, not the
+   row. The row's min-height sits between the content height and the
+   content-plus-scrollbar height, and WebKit sizes a scroll container to its
+   min-height on the first layout pass then defers the grow that makes room for
+   the scrollbar, so the bar paints over the text until a reflow. A wrapper with
+   no min-height is sized purely by its content, so the scrollbar lands below it. */
+.memberNestedScroll {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
 }
 

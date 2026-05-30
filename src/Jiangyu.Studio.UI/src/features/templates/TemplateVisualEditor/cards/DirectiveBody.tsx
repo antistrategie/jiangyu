@@ -376,8 +376,8 @@ export function DirectiveBody({
 
 export interface DescentHeaderProps {
   readonly field: string;
-  /** Zero-based element index the descent step edits. */
-  readonly slotIndex: number;
+  /** Collection-element index; null for an object-field edit (hides "at N"). */
+  readonly slotIndex: number | null;
   readonly subtype: string | null;
   readonly subtypeChoices: readonly string[] | null;
   readonly subtypeMode: "fixed" | "clearable" | "picker";
@@ -460,15 +460,19 @@ export function DescentHeader({
       <span className={styles.setField} title={field}>
         {field}
       </span>
-      <span className={styles.setInsertAt}>at</span>
-      <CommitInput
-        type="number"
-        className={styles.setIndexInput}
-        value={slotIndex}
-        min={0}
-        step={1}
-        onCommit={(v) => onChangeIndex(Number(v))}
-      />
+      {slotIndex !== null && (
+        <>
+          <span className={styles.setInsertAt}>at</span>
+          <CommitInput
+            type="number"
+            className={styles.setIndexInput}
+            value={slotIndex}
+            min={0}
+            step={1}
+            onCommit={(v) => onChangeIndex(Number(v))}
+          />
+        </>
+      )}
       {subtypeMode === "picker" && subtype === null ? (
         <SubtypePicker
           fetchSubtypeChoices={fetchSubtypeChoices}
@@ -498,11 +502,11 @@ export function DescentHeader({
 
 export interface DescentGroupProps {
   field: string;
-  /** Zero-based element index this group edits. */
-  slotIndex: number;
-  /** Concrete type of the live element at this slot, read from the inspected
-   *  source template. Drives the field list (a descent carries no type=) and
-   *  shows read-only as the edited element's type. */
+  /** Collection-element index this group edits; null for an object-field edit. */
+  slotIndex: number | null;
+  /** Concrete type of the live element/object at this slot, read from the
+   *  inspected source template. Drives the field list (a descent carries no
+   *  type=) and shows read-only as the edited target's type. */
   inspectedSlotType: string | null;
   /** Inclusive flat index of this group's first member directive. */
   startIndex: number;
@@ -611,6 +615,9 @@ function DescentGroup({
   };
 
   const handleChangeSlotIndex = (next: number) => {
+    // Object-field edits have no index to rewrite; the header hides the
+    // affordance, so this only fires for collection-element groups.
+    if (slotIndex === null) return;
     onSetDirectives(
       rewriteDescentSlotIndex(directives, startIndex, endIndex, field, slotIndex, next),
     );

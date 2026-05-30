@@ -157,7 +157,10 @@ public static class KdlTemplateSerialiser
 
                 WriteIndent(sb, indent);
                 sb.Append($"set \"{Esc(outerStep.Field)}\"");
-                sb.Append($" index={outerStep.Index.ToString(CultureInfo.InvariantCulture)}");
+                // Object-field descent (null index) emits a bare block;
+                // collection-element descent carries index=N.
+                if (outerStep.Index is int outerIndex)
+                    sb.Append($" index={outerIndex.ToString(CultureInfo.InvariantCulture)}");
                 sb.Append(" {");
                 EndLine(sb, d.TrailingComment);
                 WriteDirectiveBlock(sb, group, indent + 1);

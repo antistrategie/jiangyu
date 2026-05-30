@@ -218,6 +218,30 @@ public static class TemplateInspectionPreviewApplier
             return OperationResult.Applied;
         }
 
+        public OperationResult TryDescendField(InspectedFieldNode parent, string fieldName, out InspectedFieldNode descended, out string? error)
+        {
+            OperationResult readResult = TryReadField(parent, fieldName, out InspectedFieldNode field, out error);
+            if (readResult != OperationResult.Applied)
+            {
+                descended = null!;
+                return readResult;
+            }
+
+            if (!string.Equals(field.Kind, "object", StringComparison.Ordinal))
+            {
+                descended = null!;
+                error = $"Template preview object-field descent into '{fieldName}' expected an object.";
+                return OperationResult.MemberMissing;
+            }
+
+            // Edit descent: navigate into the existing object and apply inner
+            // ops to its fields in place; the node keeps whatever concrete type
+            // the inspector captured.
+            descended = field;
+            error = null;
+            return OperationResult.Applied;
+        }
+
         public OperationResult TrySetScalar(InspectedFieldNode parent, string fieldName, CompiledTemplateValue value, out string? error)
         {
             if (parent.Fields is null)
@@ -311,23 +335,52 @@ public static class TemplateInspectionPreviewApplier
 
         public OperationResult TryClear(InspectedFieldNode parent, string fieldName, out string? error)
         {
-            OperationResult readResult = TryReadField(parent, fieldName, out InspectedFieldNode arrayField, out error);
+            OperationResult readResult = TryReadField(parent, fieldName, out InspectedFieldNode field, out error);
             if (readResult != OperationResult.Applied)
                 return readResult;
 
-            if (!string.Equals(arrayField.Kind, "array", StringComparison.Ordinal))
+            // Clear empties a collection or resets an inline object/struct to a
+            // fresh default. A primitive scalar (set) and a PPtr reference
+            // (#null) are rejected — matches the catalog validator.
+            switch (field.Kind)
             {
-                error = $"Template preview clear op for '{fieldName}' targets a non-array field.";
-                return OperationResult.MemberMissing;
+                case "array":
+                case "object":
+                    ResetNodeToDefault(field);
+                    error = null;
+                    return OperationResult.Applied;
+                default:
+                    error = $"Template preview clear op for '{fieldName}' targets a non-clearable field (kind '{field.Kind}').";
+                    return OperationResult.MemberMissing;
             }
+        }
 
-            // Mirror the runtime applier's contract: Clear empties the
-            // collection in place. The preview tree just drops every element
-            // and zeroes Count.
-            arrayField.Elements = [];
-            arrayField.Count = 0;
-            error = null;
-            return OperationResult.Applied;
+        private static void ResetNodeToDefault(InspectedFieldNode node)
+        {
+            switch (node.Kind)
+            {
+                case "array":
+                    node.Elements = [];
+                    node.Count = 0;
+                    break;
+                case "object":
+                    if (node.Fields is not null)
+                        foreach (var child in node.Fields)
+                            ResetNodeToDefault(child);
+                    break;
+                case "reference":
+                    node.Reference = null;
+                    break;
+                case "string":
+                    node.Value = null;
+                    break;
+                case "bool":
+                    node.Value = false;
+                    break;
+                default:
+                    node.Value = 0;
+                    break;
+            }
         }
 
         private OperationResult InsertIntoArray(InspectedFieldNode parent, string fieldName, int? index, CompiledTemplateValue value, out string? error)

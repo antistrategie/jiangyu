@@ -21,6 +21,11 @@ internal sealed partial class TemplatePatchApplier
     // the warning and writes the appropriate outcome; on success
     // populates all five outs. Removes ~50 lines of identical opener
     // boilerplate from the two op handlers that carry it.
+    // warnOnNonCollection=false lets a caller with a valid non-collection
+    // fallback (clear's object-reset) skip the "not a collection" warning so a
+    // successful object reset doesn't log misleading noise. warnOnNull=false
+    // lets a caller that treats a null member as a successful no-op (clear: a
+    // null collection is already empty) skip the "is null" warning.
     private static bool TryResolveTerminalCollectionForMutation(
         object current, string terminalName,
         string templateTypeName, string templateId, LoadedPatchOperation op,
@@ -28,7 +33,9 @@ internal sealed partial class TemplatePatchApplier
         out object collection, out Type collectionType,
         out CollectionShape shape, out Type elementType,
         out Action<object> fieldSetter,
-        out ApplyOutcome outcome)
+        out ApplyOutcome outcome,
+        bool warnOnNonCollection = true,
+        bool warnOnNull = true)
     {
         collection = null;
         collectionType = null;
@@ -46,15 +53,17 @@ internal sealed partial class TemplatePatchApplier
 
         if (collection == null)
         {
-            log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                + $"terminal collection '{terminalName}' ({collectionType.FullName}) is null; nothing to {opLabel}.");
+            if (warnOnNull)
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"terminal collection '{terminalName}' ({collectionType.FullName}) is null; nothing to {opLabel}.");
             return false;
         }
 
         if (!TryGetCollectionShape(collectionType, out shape, out elementType))
         {
-            log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                + $"collection type {collectionType.FullName} is not supported for {opLabel}.");
+            if (warnOnNonCollection)
+                log.Warning(FormatPrefix(templateTypeName, templateId, op)
+                    + $"collection type {collectionType.FullName} is not supported for {opLabel}.");
             return false;
         }
 

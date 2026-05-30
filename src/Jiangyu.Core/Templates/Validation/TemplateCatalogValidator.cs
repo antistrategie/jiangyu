@@ -314,13 +314,18 @@ public static class TemplateCatalogValidator
         // validate → serialise round-trip preserves the modder's original
         // string. ValidateEditorDocument sets mutateHashableIds=false to
         // keep the editor model on the authored string form.
+        // Key the hashable check on the terminal field's declaring type (e.g.
+        // Stem.ID for a descended bankId) and its terminal name, so descent
+        // and flat-dotted paths resolve the same as a composite-inner op.
+        var hashableType = result.DeclaringType?.FullName ?? templateType;
+        var hashableField = TerminalSegment(op.FieldPath);
         if (op.Value is { Kind: CompiledTemplateValueKind.String } stringValue
             && result.PatchScalarKind is CompiledTemplateValueKind.Int32
-            && HashableIdFieldRegistry.IsHashable(templateType, op.FieldPath))
+            && HashableIdFieldRegistry.IsHashable(hashableType, hashableField))
         {
-            if (!HashableIdFieldRegistry.TryResolve(templateType, op.FieldPath, stringValue.String, bankIdResolver, out var resolved, out var resolveErr))
+            if (!HashableIdFieldRegistry.TryResolve(hashableType, hashableField, stringValue.String, bankIdResolver, out var resolved, out var resolveErr))
             {
-                reportError($"cannot resolve hashable id for '{templateType}.{op.FieldPath}' from \"{stringValue.String}\": {resolveErr}");
+                reportError($"cannot resolve hashable id for '{hashableType}.{hashableField}' from \"{stringValue.String}\": {resolveErr}");
                 return 1;
             }
             if (mutateHashableIds)
@@ -403,16 +408,38 @@ public static class TemplateCatalogValidator
             return 1;
         }
 
-        // Clear is collection-only. UnwrappedFrom is non-null exactly when the
-        // resolved terminal is a collection, so the absence of unwrapping
-        // means the modder pointed Clear at a scalar field — likely a typo.
+        // Clear empties a collection (UnwrappedFrom non-null) or resets an
+        // inline object/struct. A primitive scalar (use set) and a PPtr
+        // reference (use #null) are non-clearable.
         if (op.Op == CompiledTemplateOp.Clear && result.UnwrappedFrom is null)
         {
-            reportError(
-                $"op=Clear targets a non-collection field "
-                + $"(declared {catalog.FriendlyName(result.CurrentType ?? typeof(object))}); "
-                + "Clear empties a list/array, so the destination must be a collection.");
-            return 1;
+            var isReference = result.CurrentType is not null && TemplateTypeCatalog.IsReferenceField(result.CurrentType);
+            var isInlineObject = result.CurrentType is not null
+                && !TemplateTypeCatalog.IsScalar(result.CurrentType)
+                && !isReference;
+            if (!isInlineObject)
+            {
+                var declared = catalog.FriendlyName(result.CurrentType ?? typeof(object));
+                var hint = isReference
+                    ? "Clear an inline object or a collection; null a reference field with #null instead."
+                    : "Clear empties a collection or resets an inline object, so the destination must be a collection or object, not a primitive scalar.";
+                reportError($"op=Clear targets a non-clearable field (declared {declared}). {hint}");
+                return 1;
+            }
+
+            // A polymorphic/abstract inline object has no single concrete
+            // default to reset to: the applier would construct the declared
+            // base (which fails for an interface/abstract type) or discard the
+            // live subtype. Reconstruct explicitly with type= instead.
+            var clearTarget = result.CurrentType!;
+            if (clearTarget.IsAbstract || catalog.HasPolymorphicSubtype(clearTarget))
+            {
+                reportError(
+                    $"op=Clear targets the polymorphic field '{FormatFullPath(op)}' "
+                    + $"(declared {catalog.FriendlyName(clearTarget)}), which has no single default to reset to. "
+                    + "Reconstruct it with type=\"<Subtype>\" instead.");
+                return 1;
+            }
         }
 
         // `set` on a whole collection would replace the list wholesale — use
@@ -638,21 +665,30 @@ public static class TemplateCatalogValidator
 
         if (op.Value?.Kind == CompiledTemplateValueKind.TypeConstruction && op.Value.TypeConstruction != null)
         {
-            // type= names a concrete type and the compiler picks the storage
-            // mechanism from the destination field. A reference or polymorphic
-            // element constructs a ScriptableObject (the TypeConstruction
-            // path). A value-type composite or a tagged-string field is an
-            // inline value, so it routes through the composite path and the
-            // compiled value is demoted to Composite, which the loader builds
-            // inline or packs as a tagged string. The editor keeps the
-            // TypeConstruction so source round-trips as type=.
+            // type= constructs only where there's a subtype to pick: a
+            // polymorphic reference/scalar/element, or a tagged-string field
+            // (demoted to a tagged Composite). A `set` against a monomorphic
+            // destination errors (edit in place, or replace via clear /
+            // remove+insert); append/insert still construct a monomorphic
+            // element, where type= is redundant.
             var isTagged = result.TaggedPolymorphicBase is not null;
             var isCollectionElement = result.UnwrappedFrom is not null;
-            var isPolymorphicScalar = !isCollectionElement
-                && result.CurrentType is not null
+            var hasConcreteSubtypes = result.CurrentType is not null
                 && catalog.EnumerateConcreteSubtypes(result.CurrentType).Count > 0;
 
-            if (isTagged || (!isCollectionElement && !isPolymorphicScalar))
+            if (op.Op == CompiledTemplateOp.Set && !isTagged && !hasConcreteSubtypes)
+            {
+                var replaceHint = isCollectionElement
+                    ? "Omit it to edit the element in place (set \"Field\" index=N { ... }), or replace via remove + insert."
+                    : "Omit it to edit in place (set \"Field\" { ... }), or use clear to reset the field.";
+                reportError(
+                    $"type= on '{FormatFullPath(op)}': destination "
+                    + $"{catalog.FriendlyName(result.CurrentType ?? typeof(object))} is monomorphic, so "
+                    + $"type= has nothing to pick. {replaceHint}");
+                return 1;
+            }
+
+            if (isTagged)
             {
                 var payload = op.Value.TypeConstruction;
                 var compositeDestination = result.TaggedPolymorphicBase ?? result.CurrentType;
@@ -671,7 +707,7 @@ public static class TemplateCatalogValidator
                     reportError,
                     gameAssets,
                     mode,
-                    isTaggedStringTarget: isTagged,
+                    isTaggedStringTarget: true,
                     bankIdResolver: bankIdResolver,
                     roles: roles);
             }
@@ -982,7 +1018,8 @@ public static class TemplateCatalogValidator
             gameAssets,
             mode,
             bankIdResolver,
-            roles);
+            roles,
+            freshInstance: string.IsNullOrWhiteSpace(construction.From));
     }
 
     private static int ValidateCompositeValue(
@@ -1154,7 +1191,8 @@ public static class TemplateCatalogValidator
             gameAssets,
             mode,
             bankIdResolver,
-            roles);
+            roles,
+            freshInstance: string.IsNullOrWhiteSpace(composite.From));
     }
 
     private static int ValidateInnerOperations(
@@ -1167,13 +1205,32 @@ public static class TemplateCatalogValidator
         IGameAssetIndex? gameAssets = null,
         ValidationMode mode = ValidationMode.Compile,
         IBankIdResolver? bankIdResolver = null,
-        IReadOnlyList<Jiangyu.Core.Models.AssetEntryRole>? roles = null)
+        IReadOnlyList<Jiangyu.Core.Models.AssetEntryRole>? roles = null,
+        bool freshInstance = false)
     {
         var mutateHashableIds = mode == ValidationMode.Compile;
         var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
         var errors = 0;
         foreach (var inner in operations)
         {
+            // Inside a freshly-constructed value (no from= prototype seed) the
+            // collections start empty, so an indexed element edit descent can
+            // never bind at apply time. Reject at compile rather than letting
+            // it fail at apply and silently misrender in the preview.
+            if (freshInstance && inner.Descent is { Count: > 0 } innerDescent)
+            {
+                var indexedStep = innerDescent.FirstOrDefault(step => step.Index.HasValue);
+                if (indexedStep is not null)
+                {
+                    reportError(
+                        $"{contextLabel}: '{indexedStep.Field}' index={indexedStep.Index!.Value} "
+                        + "edits an element of a freshly-constructed collection, which starts empty. "
+                        + "Use append/insert to add elements, or from= to seed from a prototype.");
+                    errors++;
+                    continue;
+                }
+            }
+
             void InnerReport(string message) => reportError($"{contextLabel}: {message}");
             errors += ValidateOperation(
                 inner,
@@ -1190,10 +1247,10 @@ public static class TemplateCatalogValidator
     }
 
     /// <summary>
-    /// Build the legacy bracketed dotted path that <see cref="TemplateMemberQuery"/>
-    /// expects, plus a segment-keyed subtype-hints map, from the structural
-    /// descent on <paramref name="op"/>. The hints map keys descent-step
-    /// indexes (zero-based) where the step carries a non-empty subtype.
+    /// Build the bracketed dotted path that <see cref="TemplateMemberQuery"/>
+    /// expects from the structural descent on <paramref name="op"/>. A
+    /// non-null step index emits a <c>Field[N]</c> collection indexer; a null
+    /// index emits a bare <c>Field</c> object-field descent.
     /// </summary>
     private static string BuildLegacyQueryPath(
         string templateType,
@@ -1206,10 +1263,11 @@ public static class TemplateCatalogValidator
         sb.Append(templateType);
         foreach (var step in descent)
         {
-            // The bracketed indexer marks a collection descent for the
-            // navigator. The element subtype is inferred (no hint), so the
-            // navigator resolves inner members against the base's subtype union.
-            sb.Append('.').Append(step.Field).Append('[').Append(step.Index).Append(']');
+            // The subtype is inferred either way, so the navigator resolves
+            // inner members against the base's subtype union.
+            sb.Append('.').Append(step.Field);
+            if (step.Index is int idx)
+                sb.Append('[').Append(idx).Append(']');
         }
         sb.Append('.').Append(op.FieldPath);
         return sb.ToString();
@@ -1220,6 +1278,17 @@ public static class TemplateCatalogValidator
     /// any descent prefix in canonical bracketed form. Used in error messages
     /// so the modder sees where the failing write lives.
     /// </summary>
+    /// <summary>Last dotted segment of a field path, with any bracket
+    /// indexer stripped (<c>A.B[0]</c> → <c>B</c>).</summary>
+    private static string TerminalSegment(string fieldPath)
+    {
+        if (string.IsNullOrEmpty(fieldPath)) return fieldPath;
+        var dot = fieldPath.LastIndexOf('.');
+        var terminal = dot >= 0 ? fieldPath[(dot + 1)..] : fieldPath;
+        var bracket = terminal.IndexOf('[');
+        return bracket >= 0 ? terminal[..bracket] : terminal;
+    }
+
     private static string FormatFullPath(CompiledTemplateSetOperation op)
     {
         if (op.Descent is not { Count: > 0 } descent)
@@ -1227,7 +1296,10 @@ public static class TemplateCatalogValidator
         var sb = new System.Text.StringBuilder();
         foreach (var step in descent)
         {
-            sb.Append(step.Field).Append('[').Append(step.Index).Append("].");
+            sb.Append(step.Field);
+            if (step.Index is int idx)
+                sb.Append('[').Append(idx).Append(']');
+            sb.Append('.');
         }
         sb.Append(op.FieldPath);
         return sb.ToString();

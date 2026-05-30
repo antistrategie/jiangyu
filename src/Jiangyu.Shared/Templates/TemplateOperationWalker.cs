@@ -92,8 +92,11 @@ public static class TemplateOperationWalker
                 TemplateDescentStep step = descent[i];
                 visitor.OnEnterSegment(current, step.Field);
 
-                OperationResult stepResult = visitor.TryDescendElement(
-                    current, step.Field, step.Index, out TNode next, out string? stepError);
+                // Null index = object-field descent (set "Field" { ... });
+                // non-null = collection-element descent (index=N).
+                OperationResult stepResult = step.Index is int elementIndex
+                    ? visitor.TryDescendElement(current, step.Field, elementIndex, out TNode next, out string? stepError)
+                    : visitor.TryDescendField(current, step.Field, out next, out stepError);
 
                 if (stepResult != OperationResult.Applied)
                 {

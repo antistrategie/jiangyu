@@ -293,6 +293,41 @@ public sealed class TemplateOperationWalkerTests
     }
 
     [Fact]
+    public void Execute_Descent_ObjectFieldStepDispatchesToTryDescendField()
+    {
+        // A null-index descent step is an object-field edit (set "AIRole" { ... }):
+        // the walker routes it to TryDescendField, not TryDescendElement, and the
+        // inner op applies to the descended object's own field.
+        FakeNode role = FakeNode.Object("AIRole", ("AvoidOpponents", FakeNode.Scalar("AvoidOpponents")));
+        FakeNode root = FakeNode.Object("root", ("AIRole", role));
+        FakeVisitor visitor = new(root);
+
+        TemplateOperationWalker.Execute(
+            visitor,
+            root,
+            new TemplateOperationView(
+                CompiledTemplateOp.Set,
+                fieldPath: "AvoidOpponents",
+                index: null,
+                indexPath: null,
+                descent: new List<TemplateDescentStep>
+                {
+                    new() { Field = "AIRole", Index = null },
+                },
+                value: Int32(1)),
+            out _);
+
+        Assert.Equal(
+            new[]
+            {
+                "Enter:root.AIRole",
+                "DescendField:AIRole",
+                "SetScalar:AvoidOpponents=1",
+            },
+            visitor.Calls);
+    }
+
+    [Fact]
     public void Execute_MalformedPath_BracketOnNonTerminalSegmentFailsParse()
     {
         FakeVisitor visitor = new(FakeNode.Object("root"));
@@ -408,6 +443,20 @@ public sealed class TemplateOperationWalkerTests
         {
             Calls.Add($"DescendElement:{fieldName}[{index}]");
             descended = parent;
+            error = null;
+            return OperationResult.Applied;
+        }
+
+        public OperationResult TryDescendField(FakeNode parent, string fieldName, out FakeNode descended, out string? error)
+        {
+            Calls.Add($"DescendField:{fieldName}");
+            if (!parent.Children.TryGetValue(fieldName, out FakeNode? c))
+            {
+                descended = null!;
+                error = $"field '{fieldName}' missing";
+                return OperationResult.MemberMissing;
+            }
+            descended = c;
             error = null;
             return OperationResult.Applied;
         }

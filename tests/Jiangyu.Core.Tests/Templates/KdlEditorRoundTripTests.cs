@@ -1031,6 +1031,42 @@ public class KdlEditorRoundTripTests
     }
 
     [Fact]
+    public void ObjectEditDescent_RoundTrips_AsBareChildBlock()
+    {
+        // Object-field edit descent: set "Field" { ... } with no index. The
+        // descent step carries a null index and serialises as a bare block.
+        const string kdl = """
+            patch "EntityTemplate" "player_squad.darby" {
+                set "AIRole" {
+                    set "AvoidOpponents" #true
+                }
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+        var d = Assert.Single(doc.Nodes[0].Directives);
+        Assert.Equal("AvoidOpponents", d.FieldPath);
+        var step = Assert.Single(d.Descent!);
+        Assert.Equal("AIRole", step.Field);
+        Assert.Null(step.Index);
+
+        var text = KdlTemplateSerialiser.Serialise(doc);
+        Assert.Contains("set \"AIRole\" {", text);
+        Assert.DoesNotContain("index=", text);
+        Assert.DoesNotContain("type=", text);
+        Assert.Contains("set \"AvoidOpponents\" #true", text);
+
+        var doc2 = KdlTemplateParser.ParseText(text);
+        Assert.Empty(doc2.Errors);
+        var d2 = Assert.Single(doc2.Nodes[0].Directives);
+        Assert.Equal("AvoidOpponents", d2.FieldPath);
+        var step2 = Assert.Single(d2.Descent!);
+        Assert.Equal("AIRole", step2.Field);
+        Assert.Null(step2.Index);
+    }
+
+    [Fact]
     public void TypeConstruction_AtIndex_RoundTrips()
     {
         // set "Field" index=N type="X" { ... } constructs/replaces element N.

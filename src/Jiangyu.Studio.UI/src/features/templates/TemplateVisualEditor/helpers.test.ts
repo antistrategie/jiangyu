@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { InspectedFieldNode, TemplateMember } from "@shared/rpc";
 import {
   allowsMultipleDirectives,
+  directiveForOpChange,
   groupDirectives,
   inspectedFieldToEditorValue,
   isCellAddressedSet,
@@ -15,6 +16,7 @@ import {
   stampNodes,
   stripDirectiveUiIds,
   stripUiIds,
+  type StampedDirective,
 } from "./helpers";
 import type { DescentStep, EditorDirective, EditorDocument, EditorNode } from "./types";
 
@@ -778,5 +780,87 @@ describe("groupDirectives", () => {
     const groups = groupDirectives(directives);
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({ kind: "group" });
+  });
+
+  it("groups object-field edits (no index) and reports index null", () => {
+    const directives: D[] = [
+      { op: "Set", fieldPath: "AvoidOpponents", descent: [{ field: "AIRole" }] },
+      { op: "Set", fieldPath: "SafetyScale", descent: [{ field: "AIRole" }] },
+    ];
+    const groups = groupDirectives(directives);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ kind: "group", field: "AIRole", index: null });
+  });
+
+  it("splits an object-field edit from a same-field collection-element edit", () => {
+    const directives: D[] = [
+      { op: "Set", fieldPath: "A", descent: [{ field: "F" }] },
+      { op: "Set", fieldPath: "B", descent: [{ field: "F", index: 0 }] },
+    ];
+    const groups = groupDirectives(directives);
+    expect(groups).toHaveLength(2);
+  });
+});
+
+// --- directiveForOpChange (op selector) ---
+
+describe("directiveForOpChange", () => {
+  const inlineObject = member({
+    name: "Properties",
+    isScalar: false,
+    isCollection: false,
+    isTemplateReference: false,
+    isAssetReference: false,
+  });
+  const collection = member({ name: "Skills", isCollection: true });
+
+  it("toggling Clear back to Set on an inline object leaves no phantom index", () => {
+    // Regression: Clear drops the index, and a Set on a non-collection field
+    // must NOT pick one back up — an index on a non-collection field is a
+    // compile error the modder can't clear through the UI.
+    const cleared: StampedDirective = { op: "Clear", fieldPath: "Properties", _uiId: "u1" };
+    const next = directiveForOpChange(cleared, "Set", inlineObject, false, false);
+    expect(next.op).toBe("Set");
+    expect(next.index).toBeUndefined();
+  });
+
+  it("Set on a collection stamps a default index", () => {
+    const cleared: StampedDirective = { op: "Clear", fieldPath: "Skills", _uiId: "u2" };
+    const next = directiveForOpChange(cleared, "Set", collection, false, true);
+    expect(next.op).toBe("Set");
+    expect(next.index).toBe(0);
+  });
+
+  it("Clear drops both index and value", () => {
+    const set: StampedDirective = {
+      op: "Set",
+      fieldPath: "Properties",
+      value: { kind: "Int32", int32: 5 },
+      index: 2,
+      _uiId: "u3",
+    };
+    const next = directiveForOpChange(set, "Clear", inlineObject, false, false);
+    expect(next).toEqual({ op: "Clear", fieldPath: "Properties", _uiId: "u3" });
+  });
+
+  it("HashSet Remove keeps the value and never gets a phantom index", () => {
+    const hashSet = member({ name: "Tags", isCollection: true, isOdinHashSet: true });
+    const set: StampedDirective = {
+      op: "Set",
+      fieldPath: "Tags",
+      value: { kind: "String", string: "x" },
+      _uiId: "u4",
+    };
+    const next = directiveForOpChange(set, "Remove", hashSet, true, true);
+    expect(next.op).toBe("Remove");
+    expect(next.value).toEqual({ kind: "String", string: "x" });
+    expect(next.index).toBeUndefined();
+  });
+
+  it("List Remove gets a default index", () => {
+    const set: StampedDirective = { op: "Set", fieldPath: "Skills", _uiId: "u5" };
+    const next = directiveForOpChange(set, "Remove", collection, false, true);
+    expect(next.op).toBe("Remove");
+    expect(next.index).toBe(0);
   });
 });

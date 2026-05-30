@@ -55,6 +55,17 @@ public interface IFieldVisitor<TNode>
     OperationResult TryDescendElement(TNode parent, string fieldName, int index, out TNode descended, out string? error);
 
     /// <summary>
+    /// Descend into <paramref name="parent"/>'s non-collection
+    /// <paramref name="fieldName"/> member for an object-field edit descent
+    /// (the <c>set "Field" { ... }</c> KDL form). The no-index analog of
+    /// <see cref="TryDescendElement"/>: the adapter binds the live value and,
+    /// when the declared type is polymorphic, casts it to its live concrete
+    /// type so inner ops can address subclass members. A struct field rides
+    /// the adapter's write-back chain so sibling fields survive the edit.
+    /// </summary>
+    OperationResult TryDescendField(TNode parent, string fieldName, out TNode descended, out string? error);
+
+    /// <summary>
     /// Write <paramref name="value"/> to <paramref name="parent"/>'s
     /// <paramref name="fieldName"/> scalar (non-collection) member. The
     /// runtime adapter routes through the same readback-verified path

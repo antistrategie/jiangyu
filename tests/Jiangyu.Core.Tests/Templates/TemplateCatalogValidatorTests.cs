@@ -965,7 +965,7 @@ public class TemplateCatalogValidatorTests
         var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
 
         Assert.Equal(1, errors);
-        Assert.Contains("non-collection field", log.Errors[0]);
+        Assert.Contains("primitive scalar", log.Errors[0]);
     }
 
     [Fact]
@@ -1268,6 +1268,181 @@ public class TemplateCatalogValidatorTests
         Assert.Contains(log.Errors, e => e.Contains("not found on any concrete subtype", StringComparison.OrdinalIgnoreCase));
     }
 
+    // --- Object-field edit descent (set "Field" { ... }, null index) ---
+
+    [Fact]
+    public void ObjectDescent_MonomorphicObjectField_ResolvesInnerField()
+    {
+        // set "Properties" { set "Accuracy" 80 } edits the Properties object in
+        // place. The null-index descent step resolves the inner field on the
+        // monomorphic object type directly.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "Accuracy",
+                        Descent = [new TemplateDescentStep { Field = "Properties", Index = null }],
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 80 },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+    }
+
+    [Fact]
+    public void ObjectDescent_PolymorphicScalarField_ResolvesViaSubtypeUnion()
+    {
+        // set "AoEShape" { set "Radius" 3 } edits the live AoEShape in place.
+        // AoEShape is IFixtureAoEShape (polymorphic); the null-index descent
+        // resolves Radius against the base's concrete-subtype union.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "Radius",
+                        Descent = [new TemplateDescentStep { Field = "AoEShape", Index = null }],
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 3 },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+    }
+
+    [Fact]
+    public void Clear_OnInlineObjectField_Validates()
+    {
+        // clear "Properties" resets an inline object field to a fresh default.
+        // Allowed on a non-collection inline object, unlike a primitive scalar
+        // or a PPtr reference.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set = [new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Clear, FieldPath = "Properties" }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+    }
+
+    [Fact]
+    public void Clear_OnPolymorphicInlineField_Errors()
+    {
+        // clear on a polymorphic inline field (an interface or an abstract
+        // class) has no single concrete default to reset to: the applier would
+        // fail to construct the base or discard the live subtype. The validator
+        // rejects, pointing the modder at type= reconstruction.
+        using var catalog = Load();
+        foreach (var field in new[] { "AoEShape", "CustomCondition" })
+        {
+            var log = new RecordingLog();
+            var patches = new[]
+            {
+                new CompiledTemplatePatch
+                {
+                    TemplateType = "FixtureEntity",
+                    TemplateId = "unit.x",
+                    Set = [new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Clear, FieldPath = field }],
+                },
+            };
+
+            var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+            Assert.Equal(1, errors);
+            Assert.Contains(log.Errors, e => e.Contains("polymorphic", StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    [Fact]
+    public void ElementEditDescent_IntoStructElement_Errors()
+    {
+        // set "Points" index=0 { set "X" 5 } edits a value-type (struct)
+        // element in place. The runtime has no write-back path for in-collection
+        // structs, so the validator rejects it rather than letting the offline
+        // preview (which would apply it) diverge from the live applier (which
+        // rejects it).
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureStructListHolder",
+                TemplateId = "x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "X",
+                        Descent = [new TemplateDescentStep { Field = "Points", Index = 0 }],
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 5 },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains(log.Errors, e => e.Contains("value-type", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Clear_OnReferenceField_Errors()
+    {
+        // ScriptableRef is a PPtr to a ScriptableObject. clear doesn't apply —
+        // null a reference with #null instead.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set = [new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Clear, FieldPath = "ScriptableRef" }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains(log.Errors, e => e.Contains("#null", StringComparison.OrdinalIgnoreCase));
+    }
+
     // --- Handler construction (slice 4b) ---
 
     [Fact]
@@ -1299,6 +1474,107 @@ public class TemplateCatalogValidatorTests
                                         Kind = CompiledTemplateValueKind.Int32,
                                         Int32 = 42,
                                     })),
+                            },
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+    }
+
+    [Fact]
+    public void TypeConstruction_IndexedDescentInner_Errors()
+    {
+        // type="FixtureConcreteDerived" { set "X" index=0 { ... } } — an indexed
+        // element edit inside a freshly-constructed value. The construct's
+        // collections start empty, so the inner descent can never bind at apply.
+        // Rejected at compile time instead of failing at apply (and silently
+        // misrendering in the preview).
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Append,
+                        FieldPath = "Handlers",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.TypeConstruction,
+                            TypeConstruction = new CompiledTemplateComposite
+                            {
+                                TypeName = "FixtureConcreteDerived",
+                                Operations =
+                                [
+                                    new CompiledTemplateSetOperation
+                                    {
+                                        Op = CompiledTemplateOp.Set,
+                                        FieldPath = "DerivedField",
+                                        Descent = [new TemplateDescentStep { Field = "DerivedField", Index = 0 }],
+                                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 1 },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains(log.Errors, e => e.Contains("freshly-constructed", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void TypeConstruction_IndexedDescentInner_WithFrom_Allowed()
+    {
+        // With from= the construction deep-copies a prototype whose collections
+        // may already hold elements, so an indexed element edit descent can
+        // bind. The freshly-constructed guard must not fire on this case.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Append,
+                        FieldPath = "Handlers",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.TypeConstruction,
+                            TypeConstruction = new CompiledTemplateComposite
+                            {
+                                TypeName = "FixtureConcreteDerived",
+                                From = "prototype_element",
+                                Operations =
+                                [
+                                    new CompiledTemplateSetOperation
+                                    {
+                                        Op = CompiledTemplateOp.Set,
+                                        FieldPath = "Uses",
+                                        Descent = [new TemplateDescentStep { Field = "Items", Index = 0 }],
+                                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 5 },
+                                    },
+                                ],
                             },
                         },
                     },
@@ -1429,15 +1705,12 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
-    public void TypeConstruction_OnConcreteScalarField_ConstructsInline()
+    public void TypeConstruction_SetOnMonomorphicScalarField_Errors()
     {
-        // InitialSkill is a FixtureSkillTemplate scalar with no subclasses.
-        // type= names the type and the compiler picks the mechanism from the
-        // destination: a concrete non-polymorphic scalar routes through the
-        // inline-value path (demoted to Composite at compile), so it validates
-        // rather than rejecting. Polymorphic-scalar destinations
-        // (interface/abstract field types with subclasses) keep the
-        // ScriptableObject-construction path, exercised separately by
+        // InitialSkill is a FixtureSkillTemplate scalar with no subclasses, so
+        // a set with type= has nothing to pick. Rejected: edit in place with
+        // set "InitialSkill" { ... }, or reset with clear. Polymorphic-scalar
+        // destinations keep the construction path, exercised separately by
         // TypeConstruction_AcceptsOnPolymorphicScalarField.
         using var catalog = Load();
         var log = new RecordingLog();
@@ -1469,7 +1742,45 @@ public class TemplateCatalogValidatorTests
 
         var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
 
-        Assert.Equal(0, errors);
+        Assert.Equal(1, errors);
+        Assert.Contains(log.Errors, e => e.Contains("monomorphic", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void TypeConstruction_SetIndexOnMonomorphicElement_Errors()
+    {
+        // Skills is List<FixtureSkillTemplate> (monomorphic element). Replacing
+        // element 0 with type= has nothing to pick, so it is rejected — replace
+        // via remove + insert instead. append/insert still construct an element.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "Skills",
+                        Index = 0,
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.TypeConstruction,
+                            TypeConstruction = new CompiledTemplateComposite { TypeName = "FixtureSkillTemplate", Operations = [] },
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains(log.Errors, e => e.Contains("monomorphic", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

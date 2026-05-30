@@ -60,20 +60,21 @@ For the apply-order model (clones before patches, source order within a template
 | Operation                                            | Purpose                                              |
 | ---------------------------------------------------- | ---------------------------------------------------- |
 | `set "<field>" <value>`                              | Set a scalar, ref, enum, or asset field.             |
+| `set "<field>" { ... }`                              | Descend into the object/struct at the field to edit its sub-fields in place. |
 | `set "<field>" index=N <value>`                      | Set element N of a collection field.                 |
 | `set "<field>" index=N { ... }`                      | Descend into element N to edit its sub-fields. The element's type is inferred. |
-| `set "<field>" index=N type="<X>" { ... }`           | Construct a fresh X and replace element N.           |
-| `set "<field>" type="<X>" { ... }`                   | Construct a fresh X for a value or polymorphic-scalar field. |
+| `set "<field>" type="<X>" { ... }`                   | Construct a fresh X for a **polymorphic** field (names the subtype). |
+| `set "<field>" index=N type="<X>" { ... }`           | Construct a fresh X and replace **polymorphic** element N.            |
 | `append "<field>" <value>`                           | Append to a collection field.                        |
 | `append "<field>" type="<X>" { ... }`                | Construct a new X and append it.                     |
 | `insert "<field>" index=N <value>`                   | Insert into a collection field at position N.        |
 | `insert "<field>" index=N type="<X>" { ... }`        | Construct a new X and insert it at N.                |
 | `remove "<field>" index=N`                           | Remove element N from a collection field.            |
-| `clear "<field>"`                                    | Empty a collection field. Composes with `append` for "replace the whole list". |
+| `clear "<field>"`                                    | Empty a collection, or reset an inline object to its defaults. Composes with `append` ("replace the whole list") or with a descent block ("reset, then set a few fields"). |
 
 Indexes are zero-based. `append` doesn't take an `index=` property, so use `insert` for positional writes. `clear` takes neither index nor value.
 
-
+`type=` names a concrete subtype and only applies where there's a choice to make — a **polymorphic** field or list element. On a monomorphic field `type=` is an error: edit it in place with `set "<field>" { ... }`, reset it with `clear`, or replace a monomorphic element with `remove` + `insert`. References (`GameObject`, `ScriptableObject`, another template) are nulled with `#null`, not `clear`.
 
 ## Composition across installed mods
 
@@ -88,27 +89,33 @@ Within a single project, `(templateType, templateId)` collisions remain a hard e
 
 ## Field paths
 
-Field paths navigate into nested members:
+A field name targets a member of the template:
 
 | Form                       | Meaning                                              |
 | -------------------------- | ---------------------------------------------------- |
-| `Properties.Accuracy`      | Dotted member access on a single object.             |
-| `InitialAttributes`        | Whole-collection field (with `index=N` for elements).|
+| `HudYOffsetScale`          | A top-level scalar field.                            |
+| `InitialAttributes`        | A whole-collection field (with `index=N` for elements).|
 
-## Descent: editing inside a collection element
+To reach fields *inside* a nested object or a collection element, use a [descent block](#descent-editing-inside-an-object-or-element) (`set "AIRole" { ... }`) rather than a dotted path.
 
-When you need to edit fields *inside* an element of a collection, wrap the inner edits in a `set "<field>" index=N { ... }` block. The outer `set` carries no value of its own and just navigates, while inner directives operate on the element's own fields.
+## Descent: editing inside an object or element
+
+When you need to edit fields *inside* a nested object or a collection element, wrap the inner edits in a descent block. The outer `set` carries no value of its own and just navigates, while inner directives operate in place on the target's own fields — every other field is left untouched.
+
+- `set "<field>" { ... }` descends into the **object/struct** at `<field>`.
+- `set "<field>" index=N { ... }` descends into **element N** of a collection.
 
 ```kdl
 patch "EntityTemplate" "player_squad.darby" {
-    set "Properties" index=0 {
-        set "Accuracy" 80.0
-        set "AccuracyMult" 1.5
+    // Edit two fields of the inline AIRole object; the rest stay as they are.
+    set "AIRole" {
+        set "AvoidOpponents" #true
+        set "SafetyScale" 2.0
     }
 }
 ```
 
-The descent block is purely an authoring shape that keeps deeply-indexed paths readable.
+The descent block is purely an authoring shape; it edits the existing value in place. To build a fresh one instead, see [Construction](#construction) (`clear`, `remove`/`insert`, or `type=`).
 
 ### Editing a polymorphic element
 
@@ -122,13 +129,19 @@ patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
 }
 ```
 
-The runtime reads the live element's concrete type and edits it, leaving every other field untouched. The compiler validates each inner field against the element base's concrete subtypes, so a typo on a field that exists on no subtype is still caught. To replace the element with a freshly-constructed one instead of editing it, add `type="<X>"` (see [Construction with `type=`](#construction-adding-new-collection-elements)).
+The runtime reads the live element's concrete type and edits it, leaving every other field untouched. The compiler validates each inner field against the element base's concrete subtypes, so a typo on a field that exists on no subtype is still caught. To replace a polymorphic element with a freshly-constructed one instead of editing it, add `type="<X>"` (see [Construction](#construction)).
 
 Descent blocks may nest: each inner `set "<field>" index=N { ... }` works the same way, descending one level further.
 
-## Construction: adding new collection elements
+Value-type (struct) elements are the one exception: a `List<SomeStruct>` element can't be edited in place, so `set "<field>" index=N { ... }` into a struct element is rejected. Replace the whole element with `remove` + `insert` instead.
 
-To add a brand-new element to a polymorphic-reference collection (most commonly an event handler on a skill or perk), use `type="<SubtypeName>" { ... }` on `append` or `insert`. The inner block sets the new element's fields.
+## Construction
+
+Editing keeps what's there; **construction** builds a fresh value. Which tool you reach for depends on whether there's a *type choice* to make.
+
+### `type=`: pick a polymorphic subtype
+
+`type="X"` names the concrete subtype to build, and only applies where there's a choice — a **polymorphic** field or list element (an abstract base with multiple concrete subclasses), or a tagged-string field. The most common case is adding an event handler:
 
 ```kdl
 patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
@@ -140,19 +153,27 @@ patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
 }
 ```
 
-### `type=`: name the type to construct
+- `append "F" type="X" { ... }` / `insert "F" index=N type="X" { ... }`: build a fresh X and add it.
+- `set "F" index=N type="X" { ... }`: build a fresh X and replace polymorphic element N.
+- `set "F" type="X" { ... }`: build a fresh X for a polymorphic scalar field (an Odin-routed interface such as `Attack.DamageFilterCondition`).
 
-`type="X"` is the one construction keyword. It names the concrete type to build, and the compiler picks how to store it from the destination field: a constructed ScriptableObject for a polymorphic-reference element (an event handler), an inline value for a concrete struct field (`RoleData`, `LocalizedLine`), or a tagged string for a tagged-string field (see [Tagged-string fields](#tagged-string-polymorphic-fields)). `type=` always constructs a fresh instance:
+The inner `set` directives provide the new instance's fields; everything else takes its type default (`0`, `null`, empty list, …). Nothing carries over, so set every field the new instance needs to function, including its trigger — a passive perk's `AddSkill`, for example, needs `set "Event" enum="AddEvent" "OnMissionStart"` or it never grants the skill. Inner directives accept the full `set` / `append` / `insert` / `remove` / `clear` vocabulary against the new instance.
 
-- `append "F" type="X" { ... }` / `insert "F" index=N type="X" { ... }`: construct a fresh X and add it to the collection.
-- `set "F" index=N type="X" { ... }`: construct a fresh X and replace element N (even when N already holds an X). To edit element N in place, drop `type=` and use a plain descent block.
-- `set "ScalarField" type="X" { ... }`: construct a fresh X and assign it to a value or polymorphic-scalar field (an Odin-routed interface such as `Attack.DamageFilterCondition`).
+`type=` is an **error on a monomorphic destination** — there's no subtype to pick. The compiler also errors when the named subtype isn't a subclass of the destination's element type, or when an inner field doesn't exist on it.
 
-The inner `set` directives provide the new instance's fields and everything else takes its type default (`0`, `null`, empty list, …). Nothing carries over from whatever was there, so set every field the element needs to function, including its trigger. A passive perk's `AddSkill`, for example, needs `set "Event" enum="AddEvent" "OnMissionStart"` or it never grants the skill. To keep the existing fields and change only a few, edit in place with a plain descent block instead.
+### Monomorphic: `clear` and `remove`/`insert`
 
-Inner directives inside a `type=` block accept the full `set` / `append` / `insert` / `remove` / `clear` vocabulary against the new instance, so you can author "construct an `AddSkill` and append two `PropertyChange` entries to its `Properties` list" inline rather than splitting into separate patches.
+A monomorphic field has only one possible type, so there's nothing for `type=` to name. To build a fresh one:
 
-The `type=` subtype name is required when the destination's element type is abstract polymorphic (the common case for event handlers). It can be omitted when the element type is monomorphic (a child block with no `type=` infers the only construction option). The compiler errors when the subtype is missing for a polymorphic destination, when the named subtype isn't a subclass of the destination's element type, or when an inner field doesn't exist on the constructed type.
+- **Object/struct field** — `clear "F"` resets it to defaults; follow with a descent block to set the fields you want:
+  ```kdl
+  clear "AIRole"
+  set "AIRole" { set "AvoidOpponents" #true }   // fresh RoleData, only AvoidOpponents changed
+  ```
+- **Collection element** — `remove "F" index=N` then `insert "F" index=N { ... }` (the element analog of `clear` + `set`).
+- **Append a monomorphic element** — `append "F" { ... }` infers the only element type; no `type=` needed.
+
+`clear` is the mirror image of `type=`: it resets a **monomorphic** inline object, and is an **error on a polymorphic one** — there's no single default to pick, so reconstruct it with `type="<Subtype>"` instead. A **reference** field (a `GameObject`, `ScriptableObject`, or another template) is pointed with `ref=`/`asset=` and nulled with `#null` — `clear` doesn't apply to it.
 
 ### `from=`: inherit an existing element's fields
 
@@ -184,12 +205,12 @@ A value at the end of a `set`, `append`, or `insert` line is one of:
 | String              | quoted string, or triple-quoted multi-line               | `set "InitialPerk" "perk.assassin"`                      |
 | Template reference  | `ref="<TemplateType>" "<templateId>"`                    | `append "PerkTrees" ref="PerkTreeTemplate" "perk_tree.tech"` |
 | Enum                | `enum="<EnumType>" "<value>"`                            | `set "Tier" enum="PerkTier" "Advanced"`                  |
-| Construction        | `type="<TypeName>" { ...nested set ops... }`             | build a value, element, or tagged string (see above)     |
-| Null                | `#null`                                                  | `set "CustomHead" #null` (clear a reference field)       |
+| Construction        | `type="<TypeName>" { ...nested set ops... }`             | build a polymorphic element/scalar or tagged string (see [Construction](#construction)) |
+| Null                | `#null`                                                  | `set "CustomHead" #null` (null a reference field)        |
 
-`type=` names the type to build and the compiler picks the storage mechanism from the destination field: an inline value for a concrete struct (`RoleData`, `LocalizedLine`), a constructed ScriptableObject for a polymorphic-reference element (event handlers on skills and perks), or a tagged string for a tagged-string field.
+`type=` names a polymorphic subtype (or a tagged-string discriminator); on a monomorphic destination it's an error.
 
-When the destination type is unambiguous (a value-type field like `LocalizedLine`, or a monomorphic list element), the `type="X"` declaration can be omitted. Studio's visual editor emits the omitted form for these cases:
+A bare child block with no `type=` is a **descent**: it edits the existing object/struct in place (see [Descent](#descent-editing-inside-an-object-or-element)). It's also what `append`/`insert` use to build a monomorphic element, where the element type is inferred from the destination:
 
 ```kdl
 patch "UnitLeaderTemplate" "squad_leader.darby_clone" {
@@ -199,7 +220,7 @@ patch "UnitLeaderTemplate" "squad_leader.darby_clone" {
 }
 ```
 
-The compiler infers the concrete type from the destination field. Polymorphic destinations (an abstract base with multiple concrete subclasses) still require explicit `type=` so the chosen subtype is unambiguous. The validator lists the candidates when the hint is missing.
+Here `UnitTitle` is a monomorphic `LocalizedLine`, so the block edits it in place — `m_DefaultTranslation` changes and its other fields stay. (To wipe it first, `clear "UnitTitle"` then set the fields you want.)
 
 `#null` clears a reference-typed scalar field (GameObject, ScriptableObject, MonoBehaviour, etc.) so the runtime falls back to its default-when-null behaviour. Useful on cloned templates where the source's field holds an overlay you don't want; e.g. dropping a soldier clone's `CustomHead` so the body mesh's own head shows through. Value-typed fields (numbers, enums, structs) reject `#null` at compile time.
 
@@ -232,6 +253,7 @@ clone "ConversationTemplate" from="JeanSy/click_bark" id="Voymastina/click_bark"
         }
     }
     set "Nodes" {
+        clear "m_SerializedNodes"
         append "m_SerializedNodes" type="ACTION" {
             set "m_SerAction" type="SetFlag" {
                 set "FlagName" "click_bark_voymastina_test"
@@ -250,6 +272,8 @@ clone "ConversationTemplate" from="JeanSy/click_bark" id="Voymastina/click_bark"
     }
 }
 ```
+
+`set "Nodes" { ... }` edits the cloned container in place, so `clear "m_SerializedNodes"` first defines a fresh node list rather than appending after the source's nodes. Drop the `clear` to extend the cloned conversation instead.
 
 Recursion is automatic. The inner `type="SetFlag"` packs first to `"SetFlag|{...}"`, assigns to the typed `ActionConversationNode.m_SerAction`, then the outer node packs to `"ACTION|{"Guid":...,"m_SerAction":"SetFlag|{...}"}"`. The raw string form (`set "F" "TYPE|{\"...\":\"...\"}"`) still works as an escape hatch when a discriminator isn't recognised yet or a modder pastes from a decompiled asset.
 

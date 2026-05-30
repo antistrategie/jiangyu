@@ -5,6 +5,7 @@
 import type { InspectedFieldNode, TemplateMember } from "@shared/rpc";
 import type {
   DescentStep,
+  DirectiveOp,
   EditorDirective,
   EditorDocument,
   EditorNode,
@@ -329,7 +330,8 @@ export type DirectiveGroup<T> =
   | {
       kind: "group";
       field: string;
-      index: number;
+      /** Collection-element index; null for an object-field edit. */
+      index: number | null;
       members: { directive: T; suffix: string }[];
     };
 
@@ -358,14 +360,17 @@ export function groupDirectives<
       result.push({ kind: "loose", directive: d });
       continue;
     }
-    if (active !== null && active.field === outerStep.field && active.index === outerStep.index) {
+    // Normalise absent/undefined index to null so object-field edits group
+    // consistently regardless of how the host serialised the step.
+    const outerIndex = outerStep.index ?? null;
+    if (active !== null && active.field === outerStep.field && active.index === outerIndex) {
       active.members.push({ directive: d, suffix: d.fieldPath });
       continue;
     }
     const group: Extract<DirectiveGroup<T>, { kind: "group" }> = {
       kind: "group",
       field: outerStep.field,
-      index: outerStep.index,
+      index: outerIndex,
       members: [{ directive: d, suffix: d.fieldPath }],
     };
     result.push(group);
@@ -460,10 +465,12 @@ export function insertAtPendingAnchor<T>(
  */
 export function buildDescentMemberDirective<T extends EditorDirective>(
   field: string,
-  slotIndex: number,
+  slotIndex: number | null,
   innerDirective: T,
 ): T {
-  const outerStep: DescentStep = { field, index: slotIndex };
+  // Object-field edit (null index) carries just the field; a collection-
+  // element edit carries the index.
+  const outerStep: DescentStep = slotIndex === null ? { field } : { field, index: slotIndex };
   const combined: DescentStep[] = [outerStep, ...(innerDirective.descent ?? [])];
   return {
     ...innerDirective,
@@ -573,4 +580,55 @@ export function makeDefaultValue(member: TemplateMember): EditorValue {
       }
       return { kind: "String", string: "" };
   }
+}
+
+/**
+ * Build the directive that replaces the current one when the op selector
+ * changes. Clear drops index and value; HashSet Remove keeps the value
+ * (by-value removal); List Remove keeps an index; other ops keep or synthesise
+ * a value. An index is stamped only when the op genuinely uses one — Insert,
+ * Set on a collection, or List Remove — so toggling a Clear back to Set on an
+ * inline object or scalar never leaves a phantom index=0 behind (which the
+ * validator would reject as an index on a non-collection field).
+ */
+export function directiveForOpChange(
+  directive: StampedDirective,
+  op: DirectiveOp,
+  member: TemplateMember | undefined,
+  isHashSet: boolean,
+  isCollection: boolean,
+): StampedDirective {
+  let updated: StampedDirective;
+  if (op === "Clear") {
+    // Clear drops both index and value.
+    updated = { op, fieldPath: directive.fieldPath, _uiId: directive._uiId };
+  } else if (op === "Remove" && isHashSet) {
+    // HashSet removal is by-value: keep (or synthesise) a value, no index.
+    const value = directive.value ?? (member ? makeDefaultValue(member) : undefined);
+    updated =
+      value !== undefined
+        ? { op, fieldPath: directive.fieldPath, value, _uiId: directive._uiId }
+        : { op, fieldPath: directive.fieldPath, _uiId: directive._uiId };
+  } else if (op === "Remove") {
+    // List removal is positional.
+    updated = {
+      op,
+      fieldPath: directive.fieldPath,
+      index: directive.index ?? 0,
+      _uiId: directive._uiId,
+    };
+  } else {
+    // Set / Insert: keep or synthesise a value.
+    updated = {
+      ...directive,
+      op,
+      value:
+        directive.value ?? (member ? makeDefaultValue(member) : { kind: "String", string: "" }),
+    };
+  }
+
+  const opNeedsIndex =
+    op === "Insert" || (op === "Set" && isCollection) || (op === "Remove" && !isHashSet);
+  if (opNeedsIndex && updated.index === undefined) updated.index = 0;
+  return updated;
 }

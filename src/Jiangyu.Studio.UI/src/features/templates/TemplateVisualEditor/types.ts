@@ -54,14 +54,15 @@ export interface EditorValue {
 
 export type DirectiveOp = "Set" | "Append" | "Insert" | "Remove" | "Clear";
 
-/** One descent step along a template patch path: an edit into element
- *  `index` of collection `field`, the KDL syntax `set "Field" index=N
- *  { ... }`. The element's concrete subtype is inferred at apply time, so no
- *  subtype is carried. Mirrors the host
- *  `Jiangyu.Shared.Templates.TemplateDescentStep`. */
+/** One descent step along a template patch path: an in-place edit into
+ *  `field`. A number `index` is a collection-element edit (`set "Field"
+ *  index=N { ... }`); null/absent is an object-field edit (`set "Field"
+ *  { ... }`). The concrete subtype is inferred at apply time, so no subtype is
+ *  carried. Mirrors the host `Jiangyu.Shared.Templates.TemplateDescentStep`. */
 export interface DescentStep {
   field: string;
-  index: number;
+  /** Collection-element index; null/absent for an object-field edit. */
+  index?: number | null;
 }
 
 export interface EditorDirective {

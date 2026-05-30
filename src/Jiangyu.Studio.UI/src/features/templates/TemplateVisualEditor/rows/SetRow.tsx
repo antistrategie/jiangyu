@@ -9,6 +9,7 @@ import type { EditorValue } from "../types";
 import { useAnchorPosition } from "../shared/useAnchorPosition";
 import {
   SCALAR_OPS,
+  OBJECT_OPS,
   COLLECTION_OPS,
   HASHSET_OPS,
   NAMED_ARRAY_OPS,
@@ -17,8 +18,8 @@ import {
 } from "./constants";
 import {
   allowsMultipleDirectives,
+  directiveForOpChange,
   isFieldBagValue,
-  makeDefaultValue,
   type StampedDirective,
 } from "../helpers";
 import { useDragReorder } from "../hooks";
@@ -137,6 +138,14 @@ export function SetRow({
 }: SetRowProps) {
   const labelText = displayFieldPath ?? directive.fieldPath;
   const isCollection = member?.isCollection ?? false;
+  // An inline object/struct field (not a primitive scalar, collection, or PPtr
+  // reference): Set + Clear both apply (Clear resets to a fresh default).
+  const isInlineObject =
+    member != null &&
+    !member.isScalar &&
+    !member.isCollection &&
+    !member.isTemplateReference &&
+    !member.isAssetReference;
   const [opOpen, setOpOpen] = useState(false);
   const opRef = useRef<HTMLDivElement>(null);
   const opMenuRef = useRef<HTMLDivElement>(null);
@@ -164,7 +173,9 @@ export function SetRow({
       ? HASHSET_OPS
       : isCollection
         ? COLLECTION_OPS
-        : SCALAR_OPS;
+        : isInlineObject
+          ? OBJECT_OPS
+          : SCALAR_OPS;
   const isRemove = directive.op === "Remove";
   const isClear = directive.op === "Clear";
   const isFieldBag = isFieldBagValue(directive.value);
@@ -232,49 +243,9 @@ export function SetRow({
                       type="button"
                       className={`${styles.setOpMenuItem} ${op === directive.op ? styles.setOpMenuItemActive : ""}`}
                       onClick={() => {
-                        // Clear drops both index and value. Remove drops the
-                        // value on List<T> destinations (index-based) but
-                        // KEEPS the value on HashSet destinations (by-value
-                        // removal). Other ops keep / synthesise a value and
-                        // set a default index when the op needs one.
-                        const updated: StampedDirective =
-                          op === "Clear"
-                            ? {
-                                op,
-                                fieldPath: directive.fieldPath,
-                                _uiId: directive._uiId,
-                              }
-                            : op === "Remove" && isHashSet
-                              ? {
-                                  op,
-                                  fieldPath: directive.fieldPath,
-                                  value: directive.value ?? makeDefaultValue(member),
-                                  _uiId: directive._uiId,
-                                }
-                              : op === "Remove"
-                                ? {
-                                    op,
-                                    fieldPath: directive.fieldPath,
-                                    index: directive.index ?? 0,
-                                    _uiId: directive._uiId,
-                                  }
-                                : {
-                                    ...directive,
-                                    op,
-                                    value:
-                                      directive.value ??
-                                      (member
-                                        ? makeDefaultValue(member)
-                                        : { kind: "String", string: "" }),
-                                  };
-                        // Index defaulting only applies when the op
-                        // genuinely uses an index (List Insert / Remove /
-                        // Set-with-index). HashSet Remove is value-based
-                        // and must not get a phantom index=0.
-                        const opNeedsIndex =
-                          op === "Insert" || op === "Set" || (op === "Remove" && !isHashSet);
-                        if (opNeedsIndex && updated.index === undefined) updated.index = 0;
-                        onChange(updated);
+                        onChange(
+                          directiveForOpChange(directive, op, member, isHashSet, isCollection),
+                        );
                         setOpOpen(false);
                       }}
                     >
@@ -746,7 +717,6 @@ export function CompositeEditor({
           </span>
         )}
         {!collapsed &&
-          !isConstruction &&
           prototypesSupported &&
           (fromInputVisible ? (
             // stopPropagation on the wrapping div so picker interactions
