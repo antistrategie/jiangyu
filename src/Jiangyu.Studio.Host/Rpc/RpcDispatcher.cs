@@ -404,9 +404,13 @@ public static partial class RpcDispatcher
 
         if (OperatingSystem.IsWindows())
         {
-            // ArgumentList avoids quoting bugs and command-injection via paths containing `"`.
-            var psi = new System.Diagnostics.ProcessStartInfo("explorer.exe");
-            psi.ArgumentList.Add($"/select,{path}");
+            // explorer.exe ignores forward slashes in /select, and won't parse a fully-quoted
+            // /select,path token, so feed it the native-separator path with only the path quoted.
+            var native = Path.GetFullPath(path);
+            var psi = new System.Diagnostics.ProcessStartInfo("explorer.exe")
+            {
+                Arguments = $"/select,\"{native}\"",
+            };
             System.Diagnostics.Process.Start(psi);
         }
         else if (OperatingSystem.IsMacOS())
