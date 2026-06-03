@@ -86,13 +86,15 @@ export interface EditorDirective {
   _uiId?: string;
 }
 
-export type EditorNodeKind = "Patch" | "Clone";
+export type EditorNodeKind = "Patch" | "Clone" | "Create";
 
 export interface EditorNode {
   kind: EditorNodeKind;
   templateType: string;
   templateId?: string;
+  /** Clone only: the source template copied from. A Create has no source. */
   sourceId?: string;
+  /** Clone/Create: the new template id. */
   cloneId?: string;
   directives: EditorDirective[];
   /** UI-only stable identity for drag/reorder. Not serialised. */

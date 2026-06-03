@@ -51,6 +51,22 @@ clone "UnitLeaderTemplate" from="squad_leader.darby" id="squad_leader.darby_alt"
 
 Clones run before patches at load time, so the clone's id is targetable by `ref="..."` in subsequent patches and by other game systems that look up templates by id.
 
+## Create
+
+::: warning Reach for `clone` first
+You almost never want `create`. A `create` starts from a blank template with every field at its type default, so you have to set everything the game expects and it is easy to miss one, leaving a broken or inert template. `clone` deep-copies a real template instead, so the new id inherits all of the source's Inspector-baked defaults and you set only what differs. Use `create` only when no existing template of that type is a sensible base.
+:::
+
+A `create` block makes a fresh template of a given type and registers it under a new id, with no source to copy from. It takes no `from=`; everything is set inside the block.
+
+```kdl
+create "PerkTemplate" id="my_mod.brand_new_perk" {
+    // nothing is inherited: set every field the game needs
+}
+```
+
+Like clones, creates run before patches, so the new id is targetable by `ref="..."` in subsequent patches and by other game systems that look up templates by id.
+
 ## Operations
 
 Inside a `patch` or `clone` block, operations modify fields on the targeted template. A patch is a list of operations rather than a desired final state: `set "Damage" 50` only changes `Damage`; `append "Perks" ref="..."` only adds an entry. This keeps each modder's intent intact when patches from different mods stack (see [Composition](#composition-across-installed-mods)).

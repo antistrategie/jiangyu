@@ -1,4 +1,5 @@
 using Jiangyu.Core.Abstractions;
+using Jiangyu.Core.Code;
 using Jiangyu.Core.Models;
 using Jiangyu.Core.Unity;
 
@@ -8,8 +9,10 @@ public static class ProjectScaffold
 {
     /// <summary>
     /// Scaffolds a new mod project in <paramref name="projectDir"/>.
-    /// Creates <c>jiangyu.json</c>, a default <c>.gitignore</c>, and the
-    /// per-mod <c>unity/</c> Editor project.
+    /// Creates <c>jiangyu.json</c>, a default <c>.gitignore</c>, the per-mod
+    /// <c>unity/</c> Editor project, and the per-mod <c>code/</c> C# project.
+    /// Both stay dormant until used: an empty <c>code/</c> ships nothing, the same
+    /// way an empty <c>unity/</c> builds no bundles.
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// Thrown when <c>jiangyu.json</c> already exists in the directory.
@@ -31,7 +34,16 @@ public static class ProjectScaffold
             await File.WriteAllTextAsync(gitignorePath, ".jiangyu/\ncompiled/\n");
         }
 
-        new UnityProjectScaffolder(log ?? NullLogSink.Instance).Init(projectDir);
+        var sink = log ?? NullLogSink.Instance;
+        new UnityProjectScaffolder(sink).Init(projectDir);
+
+        // Scaffold code/ too, resolving game + SDK paths best-effort so the IDE
+        // has them in local.props. Unresolved paths are fine: `jiangyu compile`
+        // injects them, and `jiangyu code sync` rewrites local.props later.
+        var config = GlobalConfig.Load();
+        var (gameDir, _) = GlobalConfig.ResolveGamePath(config);
+        var (sdkDir, _) = GlobalConfig.ResolveSdkDir(config);
+        new CodeProjectScaffolder(sink).Init(projectDir, gameDir, sdkDir);
 
         return dirName;
     }

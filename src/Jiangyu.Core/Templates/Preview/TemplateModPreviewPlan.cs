@@ -62,6 +62,11 @@ public sealed class TemplateModPreviewPlan
 
         while (_clones.TryGetValue(current, out CompiledTemplateClone? clone))
         {
+            // A 'create' directive (no source) is its own ultimate source: it
+            // instantiates a fresh template rather than copying an existing one.
+            if (clone.SourceId is null)
+                break;
+
             if (!seen.Add(current))
             {
                 throw new InvalidOperationException(

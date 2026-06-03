@@ -22,8 +22,10 @@ public sealed class CompiledTemplateClone
     [JsonPropertyName("templateType")]
     public string? TemplateType { get; set; }
 
+    // Null/empty marks a "create" directive: a fresh template is instantiated
+    // under CloneId instead of being copied from a source template.
     [JsonPropertyName("sourceId")]
-    public string SourceId { get; set; } = string.Empty;
+    public string? SourceId { get; set; }
 
     [JsonPropertyName("cloneId")]
     public string CloneId { get; set; } = string.Empty;

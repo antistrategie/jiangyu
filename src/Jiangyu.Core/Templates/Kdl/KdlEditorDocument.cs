@@ -31,6 +31,7 @@ public enum KdlEditorNodeKind
 {
     Patch,
     Clone,
+    Create,
 }
 
 public sealed class KdlEditorNode
@@ -38,21 +39,27 @@ public sealed class KdlEditorNode
     [JsonPropertyName("kind")]
     public KdlEditorNodeKind Kind { get; set; }
 
-    /// <summary>Patch/Clone: the targeted template type.</summary>
+    /// <summary>The targeted template type (Patch) or the new template's type (Clone/Create).</summary>
     [JsonPropertyName("templateType")]
     public string TemplateType { get; set; } = string.Empty;
 
-    /// <summary>Patch: the target template ID. Clone: unused (see <see cref="CloneId"/>).</summary>
+    /// <summary>Patch: the target template ID. Clone/Create: unused (see <see cref="CloneId"/>).</summary>
     [JsonPropertyName("templateId")]
     public string? TemplateId { get; set; }
 
-    /// <summary>Clone only: source template ID.</summary>
+    /// <summary>Clone only: source template ID. Null for Create (a fresh template has no source).</summary>
     [JsonPropertyName("sourceId")]
     public string? SourceId { get; set; }
 
-    /// <summary>Clone only: new template ID.</summary>
+    /// <summary>Clone/Create: the new template ID.</summary>
     [JsonPropertyName("cloneId")]
     public string? CloneId { get; set; }
+
+    /// <summary>A clone or create node: both introduce a new template under
+    /// <see cref="CloneId"/>, as opposed to a patch, which edits an existing one.
+    /// Consumers that index or resolve declared template IDs should accept both.</summary>
+    [JsonIgnore]
+    public bool DefinesNewTemplate => Kind is KdlEditorNodeKind.Clone or KdlEditorNodeKind.Create;
 
     /// <summary>1-based source line of the node. Set by the parser for diagnostic output.</summary>
     [JsonPropertyName("line")]

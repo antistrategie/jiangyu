@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Assets;
+using Jiangyu.Core.Code;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Il2Cpp;
 using Jiangyu.Core.Models;
@@ -160,6 +161,47 @@ public static partial class RpcHandlers
             }
         }
     }
+
+    // templatesQuery scans the open project's code DLLs into its catalog so a mod's
+    // [JiangyuType]s resolve; that catalog is cached separately from the game-only parse
+    // catalog above. The key is the game assembly plus each code DLL's last-write time,
+    // so a recompile (which rewrites the DLLs) reloads automatically with no explicit
+    // invalidation. Single-slot, matching the parse cache: switching projects reloads.
+    private static TemplateTypeCatalog? _queryCatalog;
+    private static string? _queryCatalogKey;
+    private static readonly Lock _queryCatalogLock = new();
+
+    private static TemplateTypeCatalog GetOrLoadQueryCatalog(
+        string assemblyPath,
+        List<string> additionalSearchDirs,
+        Il2CppMetadataSupplement? supplement,
+        IReadOnlyList<string> codeAssemblies)
+    {
+        var key = QueryCatalogKey(assemblyPath, codeAssemblies);
+        lock (_queryCatalogLock)
+        {
+            if (_queryCatalog != null && _queryCatalogKey == key)
+                return _queryCatalog;
+
+            _queryCatalog?.Dispose();
+            _queryCatalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirs, supplement, codeAssemblies);
+            _queryCatalogKey = key;
+            return _queryCatalog;
+        }
+    }
+
+    internal static string QueryCatalogKey(string assemblyPath, IReadOnlyList<string> codeAssemblies)
+    {
+        var key = new System.Text.StringBuilder(assemblyPath);
+        foreach (var dll in codeAssemblies.OrderBy(path => path, System.StringComparer.Ordinal))
+        {
+            key.Append('|').Append(dll).Append(':');
+            try { key.Append(File.GetLastWriteTimeUtc(dll).Ticks); }
+            catch { key.Append('?'); }
+        }
+        return key.ToString();
+    }
+
     [McpTool("jiangyu_templates_project_clones",
         "List template clones already defined in the current project's templates/*.kdl files. Returns {\"clones\": [{\"templateType\", \"id\", \"file\"}, ...]}.")]
     internal static JsonElement TemplatesProjectClones(JsonElement? __)
@@ -240,7 +282,7 @@ public static partial class RpcHandlers
                     var relativePath = Path.GetRelativePath(root, file).Replace('\\', '/');
                     foreach (var node in doc.Nodes)
                     {
-                        if (node.Kind == KdlEditorNodeKind.Clone && !string.IsNullOrEmpty(node.CloneId))
+                        if (node.DefinesNewTemplate && !string.IsNullOrEmpty(node.CloneId))
                         {
                             entries.Add(new ProjectCloneEntry
                             {
@@ -637,7 +679,7 @@ public static partial class RpcHandlers
     /// DataTemplateLoader instance. Null otherwise so the visual editor falls
     /// through to the standard composite/ref flow.
     /// </summary>
-    private static List<string>? ComputeElementSubtypes(TemplateTypeCatalog catalog, MemberShape m)
+    private static List<string>? ComputeElementSubtypes(TemplateTypeCatalog catalog, MemberShape m, string? modId)
     {
         var elementType = TemplateTypeCatalog.GetElementType(m.MemberType);
         if (elementType is null) return null;
@@ -648,9 +690,14 @@ public static partial class RpcHandlers
         var subtypes = catalog.EnumerateConcreteSubtypes(elementType);
         if (subtypes.Count == 0) return null;
         return [.. subtypes
-            .Select(catalog.FriendlyName)
+            .Select(s => SubtypeName(catalog, s, modId))
             .OrderBy(n => n, StringComparer.Ordinal)];
     }
+
+    // A subtype's type= reference: a mod [JiangyuType] is named modId:Name (the KDL
+    // construction reference); a game type keeps its catalog friendly name.
+    private static string SubtypeName(TemplateTypeCatalog catalog, Type subtype, string? modId)
+        => CodeTypeResolver.QualifiedName(catalog, subtype, modId) ?? catalog.FriendlyName(subtype);
 
     /// <summary>
     /// Concrete subtype choices for a polymorphic scalar field (declared
@@ -662,7 +709,7 @@ public static partial class RpcHandlers
     /// value. Used for Odin-routed scalar fields like
     /// <c>Attack.DamageFilterCondition: ITacticalCondition</c>.
     /// </summary>
-    private static List<string>? ComputeScalarSubtypes(TemplateTypeCatalog catalog, MemberShape m)
+    private static List<string>? ComputeScalarSubtypes(TemplateTypeCatalog catalog, MemberShape m, string? modId)
     {
         var memberType = m.MemberType;
         if (TemplateTypeCatalog.GetElementType(memberType) != null) return null;
@@ -686,7 +733,7 @@ public static partial class RpcHandlers
         var subtypes = catalog.EnumerateConcreteSubtypes(memberType);
         if (subtypes.Count == 0) return null;
         return [.. subtypes
-            .Select(catalog.FriendlyName)
+            .Select(s => SubtypeName(catalog, s, modId))
             .OrderBy(n => n, StringComparer.Ordinal)];
     }
 

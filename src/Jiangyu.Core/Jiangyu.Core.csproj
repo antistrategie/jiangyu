@@ -56,6 +56,25 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Templates/CodeProject/ is copied verbatim into the modder's scaffolded
+         code/ project. The .props/.targets/.csproj/.cs files are the modder's
+         build inputs, not Jiangyu.Core's; exclude them from this assembly's
+         compile + content pickup and ship them as embedded resources. -->
+    <Compile Remove="Templates\CodeProject\**\*" />
+    <None Remove="Templates\CodeProject\**\*" />
+    <EmbeddedResource Include="Templates\CodeProject\Directory.Build.props"
+                      LogicalName="CodeProject/Directory.Build.props" />
+    <EmbeddedResource Include="Templates\CodeProject\Directory.Build.targets"
+                      LogicalName="CodeProject/Directory.Build.targets" />
+    <EmbeddedResource Include="Templates\CodeProject\README.md"
+                      LogicalName="CodeProject/README.md" />
+    <EmbeddedResource Include="Templates\CodeProject\.gitignore"
+                      LogicalName="CodeProject/.gitignore" />
+    <EmbeddedResource Include="Templates\CodeProject\Mod.csproj"
+                      LogicalName="CodeProject/Mod.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Jiangyu.Core.Tests" />
   </ItemGroup>
 

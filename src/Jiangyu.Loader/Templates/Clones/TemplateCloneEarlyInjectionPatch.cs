@@ -246,7 +246,7 @@ internal sealed class TemplateCloneEarlyInjectionPatch : IHarmonyPatchModule
             return;
 
         _templateCloneApplier.ResetApplyState();
-        var applied = _templateCloneApplier.TryApply(_log);
+        var applied = _templateCloneApplier.TryApply(new Jiangyu.Loader.Logging.LoaderLog(_log));
 
         if (_templateCloneApplier.HasPendingClones)
         {

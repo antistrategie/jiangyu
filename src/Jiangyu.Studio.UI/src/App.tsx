@@ -27,8 +27,10 @@ import {
 import { buildProjectActions } from "@features/project/paletteActions";
 import { buildUnityActions } from "@features/unity/paletteActions";
 import { unityInit, unityOpen } from "@features/unity/unity";
+import { buildCodeActions } from "@features/code/paletteActions";
+import { codeSync, deploy } from "@features/code/code";
 import { revealInExplorer } from "@features/assets/assets";
-import { useToastStore } from "@shared/toast";
+import { useToastStore, type Toast } from "@shared/toast";
 import { usePaneActions } from "@features/panes/paneActions";
 import { useFileEntries } from "@features/project/useFileEntries";
 import { useGitBranch } from "@features/project/gitBranch";
@@ -40,6 +42,24 @@ import { useCrossWindowTabDrag } from "@features/panes/useCrossWindowTabDrag";
 import { useAppShortcuts } from "@shared/utils/useAppShortcuts";
 import { findPane } from "@features/panes/layout";
 import styles from "./App.module.css";
+
+// Run a host RPC and surface its outcome as a toast: a success toast built from
+// the result, or an error toast prefixed with errorLabel. Shared by the palette
+// commands that kick off an async host action.
+function runRpcWithToast<T>(
+  run: () => Promise<T>,
+  errorLabel: string,
+  onSuccess: (result: T) => Omit<Toast, "id" | "sticker" | "variant">,
+): void {
+  const push = useToastStore.getState().push;
+  void (async () => {
+    try {
+      push({ variant: "success", ...onSuccess(await run()) });
+    } catch (err) {
+      push({ variant: "error", message: `${errorLabel}: ${(err as Error).message}` });
+    }
+  })();
+}
 
 export function App() {
   useApplyUiFontScale();
@@ -175,6 +195,12 @@ export function App() {
         openProject: () => void ps.openProject(),
         closeProject: ps.closeProject,
         revealProject: ps.revealProject,
+        deployMod: () =>
+          runRpcWithToast(deploy, "Deploy failed", (r) => ({
+            message: `Deployed ${r.modName}`,
+            detail: r.destDir,
+            actions: [{ label: "Reveal", run: () => void revealInExplorer(r.destDir) }],
+          })),
       }),
       {
         id: "app.openSettings",
@@ -196,6 +222,7 @@ export function App() {
       });
     }
     if (projectPath !== null) {
+      const root = projectPath;
       // Palette's Compile entry just opens the dossier; the Run-Compile button
       // inside kicks off the pipeline. Surfacing state before acting lets the
       // user see asset and template counts before committing to a multi-minute
@@ -209,53 +236,30 @@ export function App() {
         run: () => setCompileOpen(true),
       });
       result.push(
-        ...buildUnityActions(projectPath, {
-          initUnity: () => {
-            const root = projectPath;
-            const push = useToastStore.getState().push;
-            void (async () => {
-              try {
-                const r = await unityInit();
-                push({
-                  variant: "success",
-                  message: "Unity project synced",
-                  detail: `Created ${r.createdCount.toString()} · Updated ${r.updatedCount.toString()}`,
-                  actions: [
-                    {
-                      label: "Reveal",
-                      run: () => void revealInExplorer(join(root, "unity")),
-                    },
-                  ],
-                });
-              } catch (err) {
-                push({
-                  variant: "error",
-                  message: `Unity init failed: ${(err as Error).message}`,
-                });
-              }
-            })();
-          },
-          openUnity: () => {
-            const push = useToastStore.getState().push;
-            void (async () => {
-              try {
-                const r = await unityOpen();
-                push({
-                  variant: "success",
-                  message: "Launched Unity Editor",
-                  detail: `${r.editorPath} (pid ${r.pid.toString()})`,
-                });
-              } catch (err) {
-                push({
-                  variant: "error",
-                  message: `Open Unity failed: ${(err as Error).message}`,
-                });
-              }
-            })();
-          },
+        ...buildUnityActions(root, {
+          initUnity: () =>
+            runRpcWithToast(unityInit, "Unity init failed", (r) => ({
+              message: "Unity project synced",
+              detail: `Created ${r.createdCount.toString()} · Updated ${r.updatedCount.toString()}`,
+              actions: [{ label: "Reveal", run: () => void revealInExplorer(join(root, "unity")) }],
+            })),
+          openUnity: () =>
+            runRpcWithToast(unityOpen, "Open Unity failed", (r) => ({
+              message: "Launched Unity Editor",
+              detail: `${r.editorPath} (pid ${r.pid.toString()})`,
+            })),
         }),
       );
-      const root = projectPath;
+      result.push(
+        ...buildCodeActions(root, {
+          syncCode: () =>
+            runRpcWithToast(codeSync, "Code sync failed", (r) => ({
+              message: "Code project synced",
+              detail: `Created ${r.createdCount.toString()} · Updated ${r.updatedCount.toString()}${r.sdkResolved ? "" : " · SDK path unresolved"}`,
+              actions: [{ label: "Reveal", run: () => void revealInExplorer(join(root, "code")) }],
+            })),
+        }),
+      );
       for (const rel of fileEntries) {
         result.push({
           id: `file:${rel}`,

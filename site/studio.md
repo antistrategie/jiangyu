@@ -68,12 +68,13 @@ Press **Ctrl+Shift+P** (or **Ctrl+K**) to open the palette: a fuzzy-searchable l
 Key uses:
 
 - **Open a browser** ("Open Asset Browser", "Open Template Browser") to start searching the asset or template index. Browsers open in a new pane.
-- **Compile** the project.
+- **Compile** the project, then **Deploy Mod** to copy the build into the game's `Mods/` folder.
+- **Sync Code Project** to scaffold or refresh `code/`, and **Sync Unity Project** / **Open Unity Editor** for prefab authoring.
 - **Switch project** or open a recent project.
 - **Layout actions**: split right or down, focus the next or previous pane, toggle fullscreen, toggle the sidebar.
 - **Go to file**: fuzzy navigation across the project tree.
 
-Actions are grouped by scope (**App**, **Project**, **View**, **File**, **Editor**, **Go to file**). Some show a keyboard shortcut on the right. Running the palette entry is equivalent to pressing the shortcut.
+Actions are grouped by scope (**App**, **Project**, **Code**, **Unity**, **View**, **File**, **Editor**, **AI**, **Go to file**). Some show a keyboard shortcut on the right. Running the palette entry is equivalent to pressing the shortcut.
 
 ## Asset Browser
 

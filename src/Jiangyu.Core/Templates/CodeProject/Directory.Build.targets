@@ -1,0 +1,56 @@
+<Project>
+
+  <!--
+    Jiangyu-managed references. Every .csproj under code/ inherits the SDK and
+    the common game proxy assemblies, so a mod project file stays minimal. Add
+    extra game DLLs or NuGet packages in your own .csproj as needed; reference
+    further proxies with <Reference Include="..."><HintPath>$(GameAssembliesDir)/...</HintPath></Reference>.
+  -->
+  <Target Name="JiangyuCheckSdkPath"
+          BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(JiangyuSdkDir)' == ''">
+    <Error Text="JiangyuSdkDir is not set. Run 'jiangyu code sync' to write code/local.props, or build with 'jiangyu compile' (which injects it from your global config)." />
+  </Target>
+
+  <!-- The author-time analyzer ships beside Jiangyu.Sdk.dll. -->
+  <ItemGroup>
+    <Analyzer Include="$(JiangyuSdkDir)/Jiangyu.Sdk.Analyzers.dll"
+              Condition="Exists('$(JiangyuSdkDir)/Jiangyu.Sdk.Analyzers.dll')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Jiangyu.Sdk">
+      <HintPath>$(JiangyuSdkDir)/Jiangyu.Sdk.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="MelonLoader">
+      <HintPath>$(MelonLoaderDir)/MelonLoader.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>$(MelonLoaderDir)/Il2CppInterop.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>$(GameAssembliesDir)/Il2Cppmscorlib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameAssembliesDir)/Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>$(GameAssembliesDir)/Assembly-CSharp-firstpass.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppSirenix.Serialization">
+      <HintPath>$(GameAssembliesDir)/Il2CppSirenix.Serialization.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameAssembliesDir)/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

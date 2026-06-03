@@ -86,6 +86,11 @@
   border-color: var(--jade-1);
 }
 
+.cardBadgeCreate {
+  color: var(--gold-1);
+  border-color: var(--gold-1);
+}
+
 .cardProp {
   font-family: var(--font-label);
   font-size: var(--fs-xs);

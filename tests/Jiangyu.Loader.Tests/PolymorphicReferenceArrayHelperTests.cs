@@ -268,7 +268,7 @@ public class PolymorphicReferenceArrayHelperTests
         Assert.NotSame(src.SerialisedRequirements, fresh.SerialisedRequirements);
         Assert.Equal(new[] { "sy" }, fresh.SerialisedRequirements);
 
-        fresh.SerialisedRequirements[0] = "voymastina";
+        fresh.SerialisedRequirements![0] = "voymastina";
         Assert.Equal("sy", src.SerialisedRequirements[0]);
     }
 

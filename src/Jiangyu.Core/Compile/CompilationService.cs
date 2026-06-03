@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Assets;
+using Jiangyu.Core.Code;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Glb;
 using Jiangyu.Core.Il2Cpp;
@@ -253,6 +254,31 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         if (totalEmitErrors > 0)
             return Fail($"Template compilation failed with {totalEmitErrors} error(s). See errors above.");
 
+        // Build the mod's code/ C# project (if present), injecting game + SDK
+        // paths so a fresh clone compiles without `code sync` first, then
+        // cross-check every type="ns:Name" against the [JiangyuType]s it produced.
+        var gameRoot = Path.GetDirectoryName(gameDataPath)!;
+        var (codeSdkDir, _) = GlobalConfig.ResolveSdkDir(config);
+        var codeBuild = await new CodeBuildService(_log).BuildAsync(projectDir, gameRoot, codeSdkDir);
+        if (codeBuild is { Success: false })
+            return Fail(codeBuild.Error!);
+
+        var knownCodeTypes = codeBuild?.JiangyuTypeNames ?? (IReadOnlySet<string>)new HashSet<string>();
+        var codeTypeErrors = ModCodeValidation.Validate(templatePatchResult.Patches, knownCodeTypes, _log);
+        if (codeTypeErrors > 0)
+            return Fail($"Code type validation failed with {codeTypeErrors} error(s). See errors above.");
+
+        if (codeBuild is { Success: true })
+        {
+            var codeOutputDir = Path.Combine(outputDir, "code");
+            Directory.CreateDirectory(codeOutputDir);
+            foreach (var stale in Directory.EnumerateFiles(codeOutputDir, "*.dll"))
+                File.Delete(stale);
+            foreach (var dll in codeBuild.DllPaths)
+                File.Copy(dll, Path.Combine(codeOutputDir, Path.GetFileName(dll)), overwrite: true);
+            _log.Info($"  Packaged {codeBuild.DllPaths.Count} code dll(s) -> {codeOutputDir}");
+        }
+
         // Catalog-aware semantic validation: unknown template types / fields,
         // op-shape rules that depend on collection-vs-scalar (Set on a whole
         // collection, etc.), and NamedArray restrictions. The supplement is
@@ -270,8 +296,19 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 if (Directory.Exists(melonNet6))
                     additionalSearchDirs.Add(melonNet6);
 
+                // Scan the mod's just-built code DLLs into the catalog so a type="ns:Name"
+                // construction resolves to its [JiangyuType] and its fields are validated
+                // (own plus inherited game members) rather than skipped.
+                IReadOnlyList<string> codeAssemblies = codeBuild?.DllPaths ?? [];
+                if (codeAssemblies.Count > 0)
+                {
+                    additionalSearchDirs.Add(Path.GetDirectoryName(codeAssemblies[0])!);
+                    if (codeSdkDir is not null)
+                        additionalSearchDirs.Add(codeSdkDir);
+                }
+
                 var supplement = Il2CppMetadataCache.LoadIfPresent(input.Config.GetCachePath());
-                using var catalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirs, supplement);
+                using var catalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirs, supplement, codeAssemblies);
                 var additionsCatalog = new FileSystemAssetAdditionsCatalog(
                     additionRoot,
                     unityPrefabsDir: Path.Combine(projectDir, "unity", "Assets", "Prefabs"));
@@ -378,6 +415,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var compiledManifest = ModManifest.FromJson(manifest.ToJson());
         compiledManifest.TemplatePatches = templatePatchResult.Patches;
         compiledManifest.TemplateClones = templateCloneResult.Clones;
+        compiledManifest.CompiledForUnity = gameVersion?.ToString();
 
         // Detect the combined-Unity-pass case: a mod with both addition
         // prefabs AND mesh-replacement work pays two cold starts today. When

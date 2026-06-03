@@ -7,6 +7,38 @@ namespace Jiangyu.Core.Tests.Templates;
 public class KdlEditorRoundTripTests
 {
     [Fact]
+    public void DefinesNewTemplate_TrueForCloneAndCreate_FalseForPatch()
+    {
+        // The SoundBank bankId resolver and the project clone index key off this, so a
+        // created template (not just a cloned one) must be indexed as a new template.
+        const string kdl = """
+            patch "EntityTemplate" "player_squad.darby" {
+                set "IsActive" #true
+            }
+            clone "SoundBank" from="weapons_soundbank" id="bank.cloned" {
+            }
+            create "SoundBank" id="bank.created" {
+            }
+            """;
+
+        var doc = KdlTemplateParser.ParseText(kdl);
+        Assert.Empty(doc.Errors);
+        Assert.Equal(3, doc.Nodes.Count);
+
+        Assert.Equal(KdlEditorNodeKind.Patch, doc.Nodes[0].Kind);
+        Assert.False(doc.Nodes[0].DefinesNewTemplate);
+
+        Assert.Equal(KdlEditorNodeKind.Clone, doc.Nodes[1].Kind);
+        Assert.True(doc.Nodes[1].DefinesNewTemplate);
+        Assert.Equal("bank.cloned", doc.Nodes[1].CloneId);
+
+        Assert.Equal(KdlEditorNodeKind.Create, doc.Nodes[2].Kind);
+        Assert.True(doc.Nodes[2].DefinesNewTemplate);
+        Assert.Equal("bank.created", doc.Nodes[2].CloneId);
+        Assert.Null(doc.Nodes[2].SourceId);
+    }
+
+    [Fact]
     public void LineComments_RoundTrip()
     {
         const string kdl = """

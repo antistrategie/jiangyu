@@ -1,4 +1,5 @@
 using Jiangyu.Core.Abstractions;
+using Jiangyu.Core.Code;
 using Jiangyu.Shared.Replacements;
 using Jiangyu.Shared.Templates;
 
@@ -208,8 +209,9 @@ public static class TemplateCatalogValidator
     /// <summary>
     /// Resolve the source ConversationTemplate's Roles list for an
     /// editor node. For clones, the source is <c>sourceId</c>. For
-    /// patches, the source is <c>templateId</c> itself. Lookup rule is
-    /// shared with the compile path via
+    /// patches, the source is <c>templateId</c> itself. A create has no
+    /// source (its roles are defined inline), so it resolves none. Lookup
+    /// rule is shared with the compile path via
     /// <see cref="ConversationRoleLookup.FindRoles"/>: Path-first,
     /// bare-name-fallback.
     /// </summary>
@@ -217,7 +219,12 @@ public static class TemplateCatalogValidator
         KdlEditorNode node,
         IReadOnlyList<Jiangyu.Core.Models.AssetEntry>? indexedAssets)
     {
-        var lookupKey = node.Kind == KdlEditorNodeKind.Clone ? node.SourceId : node.TemplateId;
+        var lookupKey = node.Kind switch
+        {
+            KdlEditorNodeKind.Clone => node.SourceId,
+            KdlEditorNodeKind.Create => null,
+            _ => node.TemplateId,
+        };
         return ConversationRoleLookup.FindRoles(lookupKey, indexedAssets);
     }
 
@@ -958,6 +965,29 @@ public static class TemplateCatalogValidator
         // confirmed it has subtypes above.
         Type subtype;
         var typeName = construction.TypeName;
+
+        // Mod-defined types are written ns:Name (a colon). When the catalog has the
+        // project's code DLLs scanned (the compile path), resolve the [JiangyuType] and
+        // validate the construction's fields against its members like any other subtype;
+        // when it does not, skip — ModCodeValidation cross-checks the type's existence.
+        if (!string.IsNullOrWhiteSpace(typeName) && typeName.Contains(':'))
+        {
+            if (ResolveCodeType(catalog, typeName) is not { } codeType)
+                return 0;
+            return ValidateInnerOperations(
+                construction.Operations,
+                codeType.FullName ?? typeName,
+                $"type= construction for '{FormatFullPath(op)}'",
+                catalog,
+                additions,
+                reportError,
+                gameAssets,
+                mode,
+                bankIdResolver,
+                roles,
+                freshInstance: string.IsNullOrWhiteSpace(construction.From));
+        }
+
         if (string.IsNullOrWhiteSpace(typeName))
         {
             if (isPolymorphicScalar
@@ -1022,6 +1052,13 @@ public static class TemplateCatalogValidator
             freshInstance: string.IsNullOrWhiteSpace(construction.From));
     }
 
+    // Resolve a mod ns:Name to the scanned code [JiangyuType] in the catalog, or null
+    // when no matching code type is present (no code DLLs scanned into this catalog).
+    private static Type? ResolveCodeType(TemplateTypeCatalog catalog, string qualifiedTypeName)
+        => CodeTypeResolver.ResolveFullName(catalog, CodeTypeResolver.BareName(qualifiedTypeName)) is { } fullName
+            ? catalog.ResolveType(fullName, out _, out _)
+            : null;
+
     private static int ValidateCompositeValue(
         CompiledTemplateComposite composite,
         string contextPath,
@@ -1037,6 +1074,28 @@ public static class TemplateCatalogValidator
     {
         var mutateHashableIds = mode == ValidationMode.Compile;
         var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
+
+        // Mod-defined types (ns:Name, a colon). With the project's code DLLs scanned
+        // (the compile path) resolve the [JiangyuType] and validate its fields; without
+        // them, skip — ModCodeValidation cross-checks the type's existence.
+        if (!string.IsNullOrWhiteSpace(composite.TypeName) && composite.TypeName.Contains(':'))
+        {
+            if (ResolveCodeType(catalog, composite.TypeName) is not { } codeType)
+                return 0;
+            return ValidateInnerOperations(
+                composite.Operations,
+                codeType.FullName ?? composite.TypeName,
+                $"composite '{contextPath}'",
+                catalog,
+                additions,
+                reportError,
+                gameAssets,
+                mode,
+                bankIdResolver,
+                roles,
+                freshInstance: string.IsNullOrWhiteSpace(composite.From));
+        }
+
         // Inferred value: the parser emits TypeName="" for child blocks
         // without an explicit type= property. Resolve from the destination's
         // element type when monomorphic, and reject when polymorphic so the

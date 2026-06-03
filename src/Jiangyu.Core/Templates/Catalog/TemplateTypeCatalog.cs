@@ -1,5 +1,6 @@
 using System.Reflection;
 using Jiangyu.Core.Il2Cpp;
+using Jiangyu.Core.Reflection;
 
 namespace Jiangyu.Core.Templates;
 
@@ -37,19 +38,34 @@ public sealed class TemplateTypeCatalog : IDisposable
 
     private readonly MetadataLoadContext _context;
     private readonly Type[] _allTypes;
+    private readonly IReadOnlySet<Type> _scannedExtraTypes;
     private readonly Il2CppMetadataSupplement? _supplement;
 
-    private TemplateTypeCatalog(MetadataLoadContext context, Type[] allTypes, Il2CppMetadataSupplement? supplement)
+    private TemplateTypeCatalog(
+        MetadataLoadContext context,
+        Type[] allTypes,
+        IReadOnlySet<Type> scannedExtraTypes,
+        Il2CppMetadataSupplement? supplement)
     {
         _context = context;
         _allTypes = allTypes;
+        _scannedExtraTypes = scannedExtraTypes;
         _supplement = supplement;
     }
+
+    /// <summary>
+    /// The types contributed by the <c>additionalAssembliesToScan</c> passed to
+    /// <see cref="Load"/> (e.g. a mod's compiled code DLLs), as distinct from the
+    /// game assemblies. Callers that need to treat these specially — naming them by
+    /// their own convention rather than the game friendly name — query this set.
+    /// </summary>
+    public IReadOnlySet<Type> ScannedExtraTypes => _scannedExtraTypes;
 
     public static TemplateTypeCatalog Load(
         string assemblyPath,
         IEnumerable<string>? additionalSearchDirectories = null,
-        Il2CppMetadataSupplement? supplement = null)
+        Il2CppMetadataSupplement? supplement = null,
+        IEnumerable<string>? additionalAssembliesToScan = null)
     {
         if (!File.Exists(assemblyPath))
             throw new FileNotFoundException($"Assembly not found: {assemblyPath}", assemblyPath);
@@ -72,6 +88,16 @@ public sealed class TemplateTypeCatalog : IDisposable
                 if (seen.Add(dll))
                     paths.Add(dll);
             }
+        }
+
+        // Extra assemblies whose own types the catalog should expose (mod code DLLs
+        // carrying [JiangyuType] subtypes). Their paths join the resolver so their
+        // game/SDK references resolve like any other dependency.
+        var extraAssemblies = additionalAssembliesToScan?.Where(File.Exists).ToList() ?? [];
+        foreach (var dll in extraAssemblies)
+        {
+            if (seen.Add(dll))
+                paths.Add(dll);
         }
 
         var resolver = new PathAssemblyResolver(paths);
@@ -109,19 +135,28 @@ public sealed class TemplateTypeCatalog : IDisposable
 
         var allTypes = new List<Type>();
         foreach (var asm in assembliesToScan)
+            allTypes.AddRange(SafeGetTypes(asm));
+
+        // Keep the extra-assembly types identifiable so callers can name them by their
+        // own convention (e.g. a mod's modId:Name) instead of the game friendly name,
+        // while they still take part in the normal subtype/member walks.
+        var scannedExtraTypes = new HashSet<Type>();
+        foreach (var dll in extraAssemblies)
         {
-            try
+            Assembly extra;
+            try { extra = context.LoadFromAssemblyPath(dll); }
+            catch { continue; } // Non-fatal: a mod DLL that fails to load shouldn't break the catalog.
+            foreach (var type in SafeGetTypes(extra))
             {
-                allTypes.AddRange(asm.GetTypes());
-            }
-            catch (ReflectionTypeLoadException ex)
-            {
-                allTypes.AddRange(ex.Types.Where(t => t != null)!);
+                allTypes.Add(type);
+                scannedExtraTypes.Add(type);
             }
         }
 
-        return new TemplateTypeCatalog(context, allTypes.ToArray(), supplement);
+        return new TemplateTypeCatalog(context, allTypes.ToArray(), scannedExtraTypes, supplement);
     }
+
+    private static IEnumerable<Type> SafeGetTypes(Assembly assembly) => AssemblyTypes.SafeGetTypes(assembly);
 
     /// <summary>
     /// Resolve <paramref name="nameOrFullName"/> to a non-abstract type in the

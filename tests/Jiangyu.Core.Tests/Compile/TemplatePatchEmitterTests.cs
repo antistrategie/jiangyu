@@ -219,6 +219,38 @@ public class TemplatePatchEmitterTests
     }
 
     [Fact]
+    public void EmitClones_Create_NullSourceId_Succeeds()
+    {
+        var log = new RecordingLogSink();
+        var clones = new List<CompiledTemplateClone>
+        {
+            new() { TemplateType = "PerkTemplate", SourceId = null, CloneId = "perk.brand_new" },
+        };
+
+        var result = TemplatePatchEmitter.EmitClones(clones, log);
+
+        Assert.True(result.Success);
+        var emitted = Assert.Single(result.Clones!);
+        Assert.Null(emitted.SourceId);
+        Assert.Equal("perk.brand_new", emitted.CloneId);
+        Assert.Empty(log.Errors);
+    }
+
+    [Fact]
+    public void EmitClones_Create_MissingId_IsError()
+    {
+        var log = new RecordingLogSink();
+        var clones = new List<CompiledTemplateClone>
+        {
+            new() { TemplateType = "PerkTemplate", SourceId = null, CloneId = "" },
+        };
+
+        var result = TemplatePatchEmitter.EmitClones(clones, log);
+
+        Assert.False(result.Success);
+    }
+
+    [Fact]
     public void EmitClones_HappyPath_TrimsTemplateType()
     {
         var log = new RecordingLogSink();
@@ -252,8 +284,11 @@ public class TemplatePatchEmitterTests
     }
 
     [Fact]
-    public void EmitClones_EmptySourceOrCloneId_Errors()
+    public void EmitClones_EmptyCloneId_Errors()
     {
+        // An empty sourceId is a valid 'create' directive; only an empty id is an
+        // error. The first entry (empty source, real id) is a create and succeeds;
+        // the second (real source, empty id) fails.
         var log = new RecordingLogSink();
         var clones = new List<CompiledTemplateClone>
         {
@@ -263,9 +298,8 @@ public class TemplatePatchEmitterTests
 
         var result = TemplatePatchEmitter.EmitClones(clones, log);
 
-        Assert.Equal(2, result.ErrorCount);
-        Assert.Contains("sourceId is empty", log.Errors[0]);
-        Assert.Contains("cloneId is empty", log.Errors[1]);
+        Assert.Equal(1, result.ErrorCount);
+        Assert.Contains("id is empty", log.Errors[0]);
     }
 
     [Fact]

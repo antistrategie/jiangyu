@@ -1,4 +1,3 @@
-using System.Reflection;
 using Jiangyu.Core.Abstractions;
 
 namespace Jiangyu.Core.Unity;
@@ -56,7 +55,7 @@ public sealed class UnityProjectScaffolder
         var unityDir = Path.Combine(projectRoot, "unity");
         Directory.CreateDirectory(unityDir);
 
-        var result = new ScaffoldResult { UnityDir = unityDir };
+        var result = new ScaffoldResult { RootDir = unityDir };
 
         // Jiangyu-managed directories created (or confirmed) each run.
         Directory.CreateDirectory(Path.Combine(unityDir, "Assets", "Jiangyu", "Editor"));
@@ -82,7 +81,7 @@ public sealed class UnityProjectScaffolder
 
         // .gitkeep so the Prefabs dir survives a fresh git checkout even
         // when the modder has not committed any prefabs yet.
-        WriteIfMissing(
+        ScaffoldFiles.WriteIfMissing(
             Path.Combine(unityDir, "Assets", "Prefabs", ".gitkeep"),
             string.Empty,
             result);
@@ -118,7 +117,7 @@ public sealed class UnityProjectScaffolder
                 continue;
             }
 
-            var expected = LoadEmbeddedTemplate(templatePath);
+            var expected = ScaffoldFiles.LoadEmbeddedTemplate(templatePath);
             var actual = File.ReadAllText(destPath);
             if (!string.Equals(expected, actual, StringComparison.Ordinal))
                 drifted.Add(destPath);
@@ -132,9 +131,9 @@ public sealed class UnityProjectScaffolder
         string destRelative,
         ScaffoldResult result)
     {
-        var content = LoadEmbeddedTemplate(templateLogicalPath);
+        var content = ScaffoldFiles.LoadEmbeddedTemplate(templateLogicalPath);
         var destPath = Path.Combine(unityDir, destRelative);
-        WriteFile(destPath, content, overwrite: true, result);
+        ScaffoldFiles.WriteFile(destPath, content, overwrite: true, result);
     }
 
     private void WriteFromTemplateIfMissing(
@@ -144,63 +143,14 @@ public sealed class UnityProjectScaffolder
         ScaffoldResult result)
     {
         var destPath = Path.Combine(unityDir, destRelative);
-        if (File.Exists(destPath))
-        {
-            result.PreservedFiles.Add(destPath);
-            return;
-        }
-
-        var content = LoadEmbeddedTemplate(templateLogicalPath);
-        WriteFile(destPath, content, overwrite: false, result);
-    }
-
-    private void WriteIfMissing(string destPath, string content, ScaffoldResult result)
-    {
-        if (File.Exists(destPath))
-        {
-            result.PreservedFiles.Add(destPath);
-            return;
-        }
-        WriteFile(destPath, content, overwrite: false, result);
-    }
-
-    private static void WriteFile(string destPath, string content, bool overwrite, ScaffoldResult result)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
-        var existed = File.Exists(destPath);
-        if (existed)
-        {
-            // Avoid re-counting a no-op write as "updated"; the modder cares
-            // when a template's bytes actually drift, not when sync confirms
-            // the file is still in place.
-            var existing = File.ReadAllText(destPath);
-            if (string.Equals(existing, content, StringComparison.Ordinal)) return;
-            if (overwrite)
-            {
-                File.WriteAllText(destPath, content);
-                result.OverwrittenFiles.Add(destPath);
-            }
-            return;
-        }
-        File.WriteAllText(destPath, content);
-        result.CreatedFiles.Add(destPath);
-    }
-
-    private static string LoadEmbeddedTemplate(string logicalPath)
-    {
-        var assembly = typeof(UnityProjectScaffolder).Assembly;
-        using var stream = assembly.GetManifestResourceStream(logicalPath)
-            ?? throw new InvalidOperationException(
-                $"Embedded template not found: {logicalPath}. " +
-                $"Available resources: {string.Join(", ", assembly.GetManifestResourceNames())}");
-        using var reader = new StreamReader(stream);
-        return reader.ReadToEnd();
+        var content = ScaffoldFiles.LoadEmbeddedTemplate(templateLogicalPath);
+        ScaffoldFiles.WriteIfMissing(destPath, content, result);
     }
 }
 
 public sealed class ScaffoldResult
 {
-    public string UnityDir { get; set; } = string.Empty;
+    public string RootDir { get; set; } = string.Empty;
     public List<string> CreatedFiles { get; } = new();
     public List<string> OverwrittenFiles { get; } = new();
     public List<string> PreservedFiles { get; } = new();

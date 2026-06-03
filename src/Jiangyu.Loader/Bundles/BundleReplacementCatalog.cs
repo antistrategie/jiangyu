@@ -1,8 +1,10 @@
 using Il2CppInterop.Runtime;
+using Jiangyu.Sdk;
 using Jiangyu.Shared.Bundles;
 using MelonLoader;
 using UnityEngine;
 using Jiangyu.Loader.Replacements;
+using Jiangyu.Loader.Logging;
 
 namespace Jiangyu.Loader.Bundles;
 
@@ -11,6 +13,10 @@ internal sealed class BundleReplacementCatalog
     private static readonly Vector3 HiddenTemplateInstancePosition = new(0f, -10000f, 0f);
 
     private readonly List<UnityEngine.Object> _pinned;
+    // The loaded bundle handles per mod folder name (matches ModContext.ModId), so a
+    // mod can load its own bundled assets by name through ModContext.Assets.
+    private readonly Dictionary<string, List<Il2CppAssetBundle>> _bundlesByMod = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IModAssets> _assetsByMod = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _meshOwners = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _prefabOwners = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _textureOwners = new(StringComparer.Ordinal);
@@ -58,7 +64,21 @@ internal sealed class BundleReplacementCatalog
         _pinned = pinned;
     }
 
-    public BundleLoadSummary LoadBundles(ModLoadPlan plan, MelonLogger.Instance log)
+    /// <summary>The mod's own bundled assets, keyed by mod folder name. Mods that
+    /// ship no bundles get an empty view. Cached per mod so the name index is built once.</summary>
+    public IModAssets AssetsFor(string modFolder, IModHostLog hostLog)
+    {
+        if (_assetsByMod.TryGetValue(modFolder, out var existing))
+            return existing;
+
+        var assets = _bundlesByMod.TryGetValue(modFolder, out var bundles) && bundles.Count > 0
+            ? new ModAssetRegistry(modFolder, bundles, _pinned, hostLog)
+            : (IModAssets)NullModAssets.Instance;
+        _assetsByMod[modFolder] = assets;
+        return assets;
+    }
+
+    public BundleLoadSummary LoadBundles(ModLoadPlan plan, LoaderLog log)
     {
         var bundleCount = 0;
         var loadableModCount = 0;
@@ -71,15 +91,16 @@ internal sealed class BundleReplacementCatalog
         foreach (var mod in plan.LoadableMods)
         {
             loadableModCount++;
+            log.Mod = mod.Name;
             LogIgnoredConstraints(mod, log);
 
             if (mod.BundlePaths.Count == 0)
             {
-                log.Msg($"Mod '{mod.Name}' [{mod.RelativeDirectoryPath}] has no bundle files; treated as present for dependency checks.");
+                log.Msg($"No bundle files in [{mod.RelativeDirectoryPath}]; treated as present for dependency checks.");
                 continue;
             }
 
-            log.Msg($"Loading mod '{mod.Name}' from [{mod.RelativeDirectoryPath}]");
+            log.Msg($"Loading from [{mod.RelativeDirectoryPath}]");
             foreach (var bundlePath in mod.BundlePaths)
             {
                 try
@@ -97,7 +118,7 @@ internal sealed class BundleReplacementCatalog
         return new BundleLoadSummary(loadableModCount, plan.BlockedMods.Count, bundleCount);
     }
 
-    private static void LogIgnoredConstraints(DiscoveredMod mod, MelonLogger.Instance log)
+    private static void LogIgnoredConstraints(DiscoveredMod mod, LoaderLog log)
     {
         foreach (var dependency in mod.Dependencies)
         {
@@ -105,11 +126,11 @@ internal sealed class BundleReplacementCatalog
                 continue;
 
             log.Warning(
-                $"Mod '{mod.Name}' dependency '{dependency.Raw}' includes a version constraint that is not enforced yet; required presence only.");
+                $"Dependency '{dependency.Raw}' includes a version constraint that is not enforced yet; required presence only.");
         }
     }
 
-    private void LoadBundle(DiscoveredMod mod, string bundlePath, MelonLogger.Instance log)
+    private void LoadBundle(DiscoveredMod mod, string bundlePath, LoaderLog log)
     {
         var ownerLabel = $"{mod.Name}/{Path.GetFileName(bundlePath)}";
         log.Msg($"Loading bundle: {Path.GetFileName(bundlePath)}");
@@ -151,6 +172,11 @@ internal sealed class BundleReplacementCatalog
             log.Error($"  LoadFromFile returned null for {Path.GetFileName(bundlePath)}");
             return;
         }
+
+        var modFolder = Path.GetFileName(mod.DirectoryPath);
+        if (!_bundlesByMod.TryGetValue(modFolder, out var modBundles))
+            _bundlesByMod[modFolder] = modBundles = new List<Il2CppAssetBundle>();
+        modBundles.Add(bundle);
 
         Dictionary<string, string> bundleToGame = null;
         if (meshMappings != null)
@@ -233,7 +259,7 @@ internal sealed class BundleReplacementCatalog
         GameObject prefab,
         Dictionary<string, string> bundleToGame,
         Dictionary<string, CompiledMeshMetadata> meshMetadata,
-        MelonLogger.Instance log)
+        LoaderLog log)
     {
         _pinned.Add(prefab);
 
@@ -324,7 +350,7 @@ internal sealed class BundleReplacementCatalog
         }
     }
 
-    private void RegisterTextureAsset(string ownerLabel, IntPtr texturePtr, MelonLogger.Instance log)
+    private void RegisterTextureAsset(string ownerLabel, IntPtr texturePtr, LoaderLog log)
     {
         var loadedTexture = new Texture2D(texturePtr)
         {
@@ -335,7 +361,7 @@ internal sealed class BundleReplacementCatalog
         log.Msg($"  Registered texture asset: {loadedTexture.name} ({loadedTexture.width}x{loadedTexture.height})");
     }
 
-    private void RegisterAudioAsset(string ownerLabel, IntPtr audioClipPtr, MelonLogger.Instance log)
+    private void RegisterAudioAsset(string ownerLabel, IntPtr audioClipPtr, LoaderLog log)
     {
         var loadedClip = new AudioClip(audioClipPtr)
         {
@@ -346,7 +372,7 @@ internal sealed class BundleReplacementCatalog
         log.Msg($"  Registered audio asset: {loadedClip.name}");
     }
 
-    private void RegisterSpriteAsset(string ownerLabel, IntPtr spritePtr, MelonLogger.Instance log)
+    private void RegisterSpriteAsset(string ownerLabel, IntPtr spritePtr, LoaderLog log)
     {
         var loadedSprite = new Sprite(spritePtr)
         {
@@ -393,7 +419,7 @@ internal sealed class BundleReplacementCatalog
     // Phase 1 lookups. Object.name on the GameObject is irrelevant here so
     // modders can name prefabs whatever they want inside Unity without
     // affecting the lookup contract.
-    private void RegisterAdditionPrefab(string ownerLabel, GameObject prefab, string key, MelonLogger.Instance log)
+    private void RegisterAdditionPrefab(string ownerLabel, GameObject prefab, string key, LoaderLog log)
     {
         prefab.hideFlags = HideFlags.DontUnloadUnusedAsset;
         _pinned.Add(prefab);
@@ -436,7 +462,7 @@ internal sealed class BundleReplacementCatalog
             renderer.sharedMaterials = mats;
         }
 
-        var soldierScripts = HumanoidMirror.Queue(prefab, log);
+        var soldierScripts = HumanoidMirror.Queue(prefab, log.Raw);
 
         if (_additionPrefabOwners.TryGetValue(key, out var previousOwner))
             log.Warning($"  Override addition prefab '{key}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
@@ -454,7 +480,7 @@ internal sealed class BundleReplacementCatalog
         IntPtr meshPtr,
         Dictionary<string, string> bundleToGame,
         Dictionary<string, CompiledMeshMetadata> meshMetadata,
-        MelonLogger.Instance log)
+        LoaderLog log)
     {
         var loadedMesh = new Mesh(meshPtr);
         if (!meshMetadata.TryGetValue(loadedMesh.name, out var metadataForMesh))
@@ -483,7 +509,7 @@ internal sealed class BundleReplacementCatalog
         log.Msg($"  Registered mesh asset: {loadedMesh.name} -> {targetKey} ({metadataForMesh.BoneNames.Length} bones, materialBindings={metadataForMesh.Materials?.Count ?? 0})");
     }
 
-    private void RegisterMeshOverride(string targetName, ReplacementMesh mesh, string ownerLabel, MelonLogger.Instance log)
+    private void RegisterMeshOverride(string targetName, ReplacementMesh mesh, string ownerLabel, LoaderLog log)
     {
         if (_meshOwners.TryGetValue(targetName, out var previousOwner))
             log.Warning($"  Override mesh target '{targetName}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
@@ -492,7 +518,7 @@ internal sealed class BundleReplacementCatalog
         _meshOwners[targetName] = ownerLabel;
     }
 
-    private void RegisterPrefabOverride(string targetName, ReplacementPrefab prefab, string ownerLabel, MelonLogger.Instance log)
+    private void RegisterPrefabOverride(string targetName, ReplacementPrefab prefab, string ownerLabel, LoaderLog log)
     {
         if (_prefabOwners.TryGetValue(targetName, out var previousOwner))
             log.Warning($"  Override prefab target '{targetName}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
@@ -501,7 +527,7 @@ internal sealed class BundleReplacementCatalog
         _prefabOwners[targetName] = ownerLabel;
     }
 
-    private void RegisterTextureOverride(string textureName, Texture2D texture, string ownerLabel, MelonLogger.Instance log)
+    private void RegisterTextureOverride(string textureName, Texture2D texture, string ownerLabel, LoaderLog log)
     {
         if (_textureOwners.TryGetValue(textureName, out var previousOwner))
             log.Warning($"  Override texture '{textureName}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
@@ -510,7 +536,7 @@ internal sealed class BundleReplacementCatalog
         _textureOwners[textureName] = ownerLabel;
     }
 
-    private void RegisterSpriteOverride(string spriteName, Sprite sprite, string ownerLabel, MelonLogger.Instance log)
+    private void RegisterSpriteOverride(string spriteName, Sprite sprite, string ownerLabel, LoaderLog log)
     {
         if (_spriteOwners.TryGetValue(spriteName, out var previousOwner))
             log.Warning($"  Override sprite '{spriteName}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
@@ -519,7 +545,7 @@ internal sealed class BundleReplacementCatalog
         _spriteOwners[spriteName] = ownerLabel;
     }
 
-    private void RegisterAudioOverride(string clipName, AudioClip clip, string ownerLabel, MelonLogger.Instance log)
+    private void RegisterAudioOverride(string clipName, AudioClip clip, string ownerLabel, LoaderLog log)
     {
         if (_audioOwners.TryGetValue(clipName, out var previousOwner))
             log.Warning($"  Override audio '{clipName}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
@@ -565,7 +591,7 @@ internal sealed class BundleReplacementCatalog
         return names.OrderBy(x => x, StringComparer.Ordinal).ToArray();
     }
 
-    private static LoaderManifest OpenManifest(string manifestPath, MelonLogger.Instance log)
+    private static LoaderManifest OpenManifest(string manifestPath, LoaderLog log)
     {
         if (!File.Exists(manifestPath))
             return null;
@@ -580,7 +606,7 @@ internal sealed class BundleReplacementCatalog
         }
     }
 
-    private static Dictionary<string, CompiledMeshMetadata> LoadCompiledMeshMetadata(LoaderManifest manifest, MelonLogger.Instance log)
+    private static Dictionary<string, CompiledMeshMetadata> LoadCompiledMeshMetadata(LoaderManifest manifest, LoaderLog log)
     {
         if (manifest.Meshes == null || manifest.Meshes.Count == 0)
             return null;
@@ -629,7 +655,7 @@ internal sealed class BundleReplacementCatalog
         return set;
     }
 
-    private static Dictionary<string, string> LoadMeshMappings(LoaderManifest manifest, MelonLogger.Instance log)
+    private static Dictionary<string, string> LoadMeshMappings(LoaderManifest manifest, LoaderLog log)
     {
         if (manifest.Meshes == null)
             return null;

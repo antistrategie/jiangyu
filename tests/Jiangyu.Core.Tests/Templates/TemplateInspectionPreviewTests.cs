@@ -45,6 +45,34 @@ public sealed class TemplateInspectionPreviewTests : IDisposable
     }
 
     [Fact]
+    public void PreviewPlan_ResolvesACreatedTemplateToItself()
+    {
+        Directory.CreateDirectory(_tempRoot);
+        File.WriteAllText(
+            Path.Combine(_tempRoot, ModManifest.FileName),
+            """
+            {
+              "name": "CreateFixture",
+              "templateClones": [
+                { "templateType": "PerkTemplate", "cloneId": "perk.fresh" },
+                { "templateType": "PerkTemplate", "sourceId": "perk.fresh", "cloneId": "perk.derived" }
+              ]
+            }
+            """);
+
+        TemplateModPreviewPlan plan = TemplateModPreviewPlan.Load(_tempRoot, NullLogSink.Instance);
+
+        // A 'create' (no sourceId) is its own ultimate source — not a null-id key.
+        Assert.Equal(
+            new TemplatePreviewKey("PerkTemplate", "perk.fresh"),
+            plan.ResolveUltimateSource(new TemplatePreviewKey("PerkTemplate", "perk.fresh")));
+        // A clone of a created template resolves up to the create and stops there.
+        Assert.Equal(
+            new TemplatePreviewKey("PerkTemplate", "perk.fresh"),
+            plan.ResolveUltimateSource(new TemplatePreviewKey("PerkTemplate", "perk.derived")));
+    }
+
+    [Fact]
     public void PreviewApplier_ClonesAndAppliesScalarAndReferenceOps()
     {
         ObjectInspectionResult source = CreateUnitLeaderResult("base.alpha");

@@ -28,6 +28,7 @@ public static class KdlTemplateSerialiser
                     WritePatch(sb, node);
                     break;
                 case KdlEditorNodeKind.Clone:
+                case KdlEditorNodeKind.Create:
                     WriteClone(sb, node);
                     break;
             }
@@ -101,7 +102,9 @@ public static class KdlTemplateSerialiser
 
     private static void WriteClone(StringBuilder sb, KdlEditorNode node)
     {
-        sb.Append($"clone \"{Esc(node.TemplateType)}\" from=\"{Esc(node.SourceId ?? "")}\" id=\"{Esc(node.CloneId ?? "")}\"");
+        sb.Append(node.Kind == KdlEditorNodeKind.Create
+            ? $"create \"{Esc(node.TemplateType)}\" id=\"{Esc(node.CloneId ?? "")}\""
+            : $"clone \"{Esc(node.TemplateType)}\" from=\"{Esc(node.SourceId ?? "")}\" id=\"{Esc(node.CloneId ?? "")}\"");
 
         if (node.Directives.Count == 0)
         {

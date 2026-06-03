@@ -19,6 +19,10 @@ function clone(uiId: string, templateType: string, cloneId: string): EditorNode 
   return { kind: "Clone", templateType, sourceId: "src", cloneId, directives: [], _uiId: uiId };
 }
 
+function create(uiId: string, templateType: string, cloneId: string): EditorNode {
+  return { kind: "Create", templateType, cloneId, directives: [], _uiId: uiId };
+}
+
 // In-memory localStorage stub. Each test starts with a fresh store so the
 // global key namespace doesn't leak between cases.
 function stubLocalStorage(): Map<string, string> {
@@ -45,6 +49,13 @@ describe("computeNodeKeyByUiId", () => {
     const m = computeNodeKeyByUiId(nodes);
     expect(m.get("u1")).toBe("Patch:Attack:Soldier_Rifle#0");
     expect(m.get("u2")).toBe("Clone:Effect:MyEffect#0");
+  });
+
+  it("keys creates by their new id (cloneId), distinct from a clone of the same id", () => {
+    const nodes = [create("u1", "SoundBank", "my_bank"), clone("u2", "SoundBank", "my_bank")];
+    const m = computeNodeKeyByUiId(nodes);
+    expect(m.get("u1")).toBe("Create:SoundBank:my_bank#0");
+    expect(m.get("u2")).toBe("Clone:SoundBank:my_bank#0");
   });
 
   it("disambiguates duplicates with an occurrence index", () => {

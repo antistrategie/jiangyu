@@ -78,6 +78,55 @@ public class KdlTemplateParserTests
     }
 
     [Fact]
+    public void ParseAll_Create_ProducesCloneWithNullSourceAndInlinePatch()
+    {
+        var dir = SetupKdl("create.kdl", """
+            create "PerkTemplate" id="perk.brand_new" {
+                set "InitialAttributes.Vitality" 50
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.Equal(0, result.ErrorCount);
+        Assert.Single(result.Clones);
+        Assert.Single(result.Patches);
+
+        var clone = result.Clones[0];
+        Assert.Equal("PerkTemplate", clone.TemplateType);
+        Assert.Null(clone.SourceId); // create = no source
+        Assert.Equal("perk.brand_new", clone.CloneId);
+
+        var patch = result.Patches[0];
+        Assert.Equal("perk.brand_new", patch.TemplateId);
+        Assert.Single(patch.Set);
+    }
+
+    [Fact]
+    public void ParseAll_CreateWithFrom_IsError()
+    {
+        var dir = SetupKdl("create-from.kdl", """
+            create "PerkTemplate" from="perk.fury" id="perk.bad"
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.True(result.ErrorCount > 0);
+    }
+
+    [Fact]
+    public void ParseAll_CreateWithoutId_IsError()
+    {
+        var dir = SetupKdl("create-noid.kdl", """
+            create "PerkTemplate"
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+
+        Assert.True(result.ErrorCount > 0);
+    }
+
+    [Fact]
     public void ParseAll_AllValueKinds()
     {
         var dir = SetupKdl("values.kdl", """

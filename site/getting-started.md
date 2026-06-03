@@ -12,6 +12,7 @@ You need:
     - [`Jiangyu.Loader.dll`](https://github.com/antistrategie/jiangyu/releases/latest/download/Jiangyu.Loader.dll), the in-game loader.
     - **Studio** for your platform: [Windows](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-studio-win-x64.zip) or [Linux](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-studio-linux-x64.zip).
     - **CLI** (optional, for scripting): [Windows](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-cli-win-x64.zip) or [Linux](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-cli-linux-x64.zip).
+- **.NET SDK** to build mods: the [.NET 10 SDK](https://dotnet.microsoft.com/download) runs Jiangyu's toolchain, and the [.NET 6 SDK](https://dotnet.microsoft.com/download/dotnet/6.0) is needed because a mod's `code/` and the loader target `net6.0`. Both are required to compile.
 - **Unity Editor**. Install via [Unity Hub](https://unity.com/download), download `6000.0.72f1` from the [Unity archive](https://unity.com/releases/editor/archive), and add it to Hub. Studio shows the exact version Jiangyu expects and you should trust it over these docs if they differ. The expected version tracks MENACE's Unity build, so an editor update may be needed when MENACE updates.
 - **An image editor** (anything that exports PNG: GIMP, Photoshop, Krita).
 
@@ -43,10 +44,11 @@ From the Welcome screen, click **New project**. Pick a directory and a name (for
 RedLogo/
   jiangyu.json
   .gitignore
+  code/                  # per-mod C# project
   unity/                 # per-mod Unity Editor project
 ```
 
-`jiangyu.json` is the manifest. See [Manifest](./reference/manifest.md) for the full reference. For now the defaults are fine. `unity/` is the per-mod Unity Editor project where modders author prefabs under `Assets/Prefabs/`.
+`jiangyu.json` is the manifest. See [Manifest](./reference/manifest.md) for the full reference. For now the defaults are fine. `code/` is the per-mod C# project for [code mods](./sdk/template-types.md), and `unity/` is the per-mod Unity Editor project where modders author prefabs under `Assets/Prefabs/`. Both stay dormant until you use them, so an empty `code/` or `unity/` ships nothing.
 
 ## Find a target asset
 

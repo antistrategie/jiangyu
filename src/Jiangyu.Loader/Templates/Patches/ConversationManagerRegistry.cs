@@ -513,7 +513,7 @@ internal static class ConversationManagerRegistry
                 var sourceRole = indexer.GetValue(roles, readArgs);
                 if (sourceRole == null) continue;
                 var freshRole = TemplateCloneApplier.CloneValueObjectByFieldReflection(
-                    sourceRole, elementType, "Conversation clone Role copy", _log);
+                    sourceRole, elementType, "Conversation clone Role copy", new Jiangyu.Loader.Logging.LoaderLog(_log));
                 if (freshRole == null) continue;
                 setItem.Invoke(roles, new[] { i, freshRole });
             }

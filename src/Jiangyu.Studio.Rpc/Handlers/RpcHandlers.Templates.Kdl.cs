@@ -70,7 +70,7 @@ public static partial class RpcHandlers
                     }
                     foreach (var node in document.Nodes)
                     {
-                        if (node.Kind != KdlEditorNodeKind.Clone) continue;
+                        if (!node.DefinesNewTemplate) continue;
                         if (!string.Equals(node.TemplateType, "SoundBank", StringComparison.Ordinal)) continue;
                         AddBankClone(node.CloneId ?? string.Empty);
                     }

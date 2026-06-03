@@ -24,6 +24,14 @@ public sealed class ModManifest
     public List<string>? Depends { get; set; }
 
     /// <summary>
+    /// The game's Unity version at compile time, stamped by the compiler. The
+    /// loader compares it to the running game so it can warn when a mod was built
+    /// against a different game build. Authoring manifests leave it null.
+    /// </summary>
+    [JsonPropertyName("compiledForUnity")]
+    public string? CompiledForUnity { get; set; }
+
+    /// <summary>
     /// Host-game prefab names that the mod's bake outputs reference at
     /// compile time (shaders, materials, avatars, etc.). Compile auto-rips
     /// these from the user's game install into
@@ -80,6 +88,20 @@ public sealed class ModManifest
     public static ModManifest FromJson(string json) =>
         JsonSerializer.Deserialize<ModManifest>(json, JsonOptions.PrettyRelaxedEscape)
         ?? throw new InvalidOperationException("Failed to deserialise jiangyu.json");
+
+    /// <summary>
+    /// Load the manifest sitting in <paramref name="directory"/>, or null when it is
+    /// absent or unreadable. For callers that treat a missing or malformed manifest
+    /// as "no manifest" rather than an error to surface.
+    /// </summary>
+    public static ModManifest? TryLoad(string directory)
+    {
+        var path = Path.Combine(directory, FileName);
+        if (!File.Exists(path))
+            return null;
+        try { return FromJson(File.ReadAllText(path)); }
+        catch { return null; }
+    }
 
     public const string FileName = "jiangyu.json";
 }

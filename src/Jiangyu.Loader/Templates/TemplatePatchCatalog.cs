@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Jiangyu.Shared.Bundles;
 using Jiangyu.Shared.Templates;
-using MelonLoader;
+using Jiangyu.Loader.Logging;
 
 namespace Jiangyu.Loader.Templates;
 
@@ -35,10 +35,15 @@ internal sealed class TemplatePatchCatalog
     public IEnumerable<KeyValuePair<string, Dictionary<string, List<LoadedPatchOperation>>>> EnumerateByType()
         => _patches;
 
-    public void Load(IReadOnlyList<DiscoveredMod> loadableMods, MelonLogger.Instance log)
+    public void Load(IReadOnlyList<DiscoveredMod> loadableMods, LoaderLog log)
     {
         foreach (var mod in loadableMods)
+        {
+            log.Mod = mod.Name;
             LoadFromMod(mod, log);
+        }
+
+        log.Mod = null;
 
         if (_patches.Count == 0)
             return;
@@ -56,7 +61,7 @@ internal sealed class TemplatePatchCatalog
             $"Loaded {PatchCount} template patch operation(s): {string.Join("; ", typeSummaries)}.");
     }
 
-    private void LoadFromMod(DiscoveredMod mod, MelonLogger.Instance log)
+    private void LoadFromMod(DiscoveredMod mod, LoaderLog log)
     {
         if (string.IsNullOrEmpty(mod.ManifestPath) || !File.Exists(mod.ManifestPath))
             return;
@@ -69,7 +74,7 @@ internal sealed class TemplatePatchCatalog
         }
         catch (Exception ex)
         {
-            log.Error($"Mod '{mod.Name}': failed to read template patches: {ex.Message}");
+            log.Error($"Failed to read template patches: {ex.Message}");
             return;
         }
 
@@ -104,7 +109,7 @@ internal sealed class TemplatePatchCatalog
 
     private void TryMergeOperation(
         DiscoveredMod mod, string templateType, string templateId,
-        CompiledTemplateSetOperation op, MelonLogger.Instance log)
+        CompiledTemplateSetOperation op, LoaderLog log)
     {
         if (op == null)
             return;

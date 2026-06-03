@@ -240,7 +240,7 @@ public static class TemplatesFormatCommand
             var doc = KdlTemplateParser.ParseText(text);
             foreach (var node in doc.Nodes)
             {
-                if (node.Kind != KdlEditorNodeKind.Clone) continue;
+                if (!node.DefinesNewTemplate) continue;
                 if (!string.Equals(node.TemplateType, "SoundBank", StringComparison.Ordinal)) continue;
                 var name = node.CloneId ?? string.Empty;
                 if (string.IsNullOrEmpty(name) || !seenBankNames.Add(name)) continue;

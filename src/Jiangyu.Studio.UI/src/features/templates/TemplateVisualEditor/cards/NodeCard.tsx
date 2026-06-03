@@ -19,7 +19,15 @@ import {
 } from "../shared/rpcHelpers";
 import { DirectiveBody } from "./DirectiveBody";
 import { MatrixFieldEditor } from "./MatrixEditor";
+import type { EditorNodeKind } from "../types";
 import styles from "../TemplateVisualEditor.module.css";
+
+// Header badge colour + label per node kind, paired in one place.
+const NODE_BADGE: Record<EditorNodeKind, { className: string; label: string }> = {
+  Patch: { className: styles.cardBadgePatch, label: "patch" },
+  Clone: { className: styles.cardBadgeClone, label: "clone" },
+  Create: { className: styles.cardBadgeCreate, label: "create" },
+};
 
 export interface NodeCardProps {
   node: StampedNode;
@@ -47,11 +55,13 @@ function NodeCardImpl({
   const dispatch = useEditorDispatch();
   const nodeIndex = useNodeIndex();
   const isPatch = node.kind === "Patch";
+  const isCreate = node.kind === "Create";
   const justDraggedRef = useRef(false);
   const { members, loaded: membersLoaded } = useTemplateMembers(node.templateType, !collapsed);
 
   // Vanilla values for pre-filling newly-added directives. Patch targets the
-  // node's templateId; Clone targets the source the new clone copies from.
+  // node's templateId; Clone targets the source the new clone copies from. A
+  // Create has no vanilla source, so nothing pre-fills.
   const vanillaTargetId = isPatch ? node.templateId : node.sourceId;
   const vanillaFields = useVanillaFields(node.templateType, vanillaTargetId);
 
@@ -231,10 +241,8 @@ function NodeCardImpl({
         >
           <GripVertical size={12} />
         </span>
-        <span
-          className={`${styles.cardBadge} ${isPatch ? styles.cardBadgePatch : styles.cardBadgeClone}`}
-        >
-          {isPatch ? "patch" : "clone"}
+        <span className={`${styles.cardBadge} ${NODE_BADGE[node.kind].className}`}>
+          {NODE_BADGE[node.kind].label}
         </span>
         <SuggestionCombobox
           value={node.templateType}
@@ -257,16 +265,20 @@ function NodeCardImpl({
           />
         ) : (
           <>
-            <span className={styles.cardProp}>from</span>
-            <SuggestionCombobox
-              value={node.sourceId ?? ""}
-              placeholder="Source ID"
-              fetchSuggestions={fetchInstances}
-              onChange={(v) =>
-                dispatch({ type: "updateNode", nodeIndex, node: { ...node, sourceId: v } })
-              }
-              className={styles.cardIdInput}
-            />
+            {!isCreate && (
+              <>
+                <span className={styles.cardProp}>from</span>
+                <SuggestionCombobox
+                  value={node.sourceId ?? ""}
+                  placeholder="Source ID"
+                  fetchSuggestions={fetchInstances}
+                  onChange={(v) =>
+                    dispatch({ type: "updateNode", nodeIndex, node: { ...node, sourceId: v } })
+                  }
+                  className={styles.cardIdInput}
+                />
+              </>
+            )}
             <span className={styles.cardProp}>id</span>
             <div
               className={styles.cardIdInput}
@@ -277,7 +289,7 @@ function NodeCardImpl({
                 type="text"
                 className={styles.setValueInput}
                 value={node.cloneId ?? ""}
-                placeholder="Clone ID"
+                placeholder={isCreate ? "New ID" : "Clone ID"}
                 onCommit={(v) =>
                   dispatch({ type: "updateNode", nodeIndex, node: { ...node, cloneId: v } })
                 }

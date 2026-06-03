@@ -179,12 +179,24 @@ export interface AssetPreviewResult {
   mimeType: string;
 }
 
+export interface CodeSyncResult {
+  createdCount: number;
+  updatedCount: number;
+  preservedCount: number;
+  sdkResolved: boolean;
+}
+
 export interface FileEntry {
   name: string;
   path: string;
   isDirectory: boolean;
   isIgnored: boolean;
   size: number;
+}
+
+export interface DeployResult {
+  modName: string;
+  destDir: string;
 }
 
 export interface DocsListResult {

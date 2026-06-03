@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Jiangyu.Shared\Jiangyu.Shared.csproj" />
+    <ProjectReference Include="..\Jiangyu.Sdk\Jiangyu.Sdk.csproj" />
   </ItemGroup>
 
   <ItemGroup>

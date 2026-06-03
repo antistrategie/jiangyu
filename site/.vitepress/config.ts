@@ -49,6 +49,7 @@ export default defineConfig({
       { text: "Concepts", link: "/concepts/" },
       { text: "Assets", link: "/assets/" },
       { text: "Templates", link: "/templates" },
+      { text: "SDK", link: "/sdk/template-types" },
       { text: "Studio", link: "/studio" },
       { text: "Troubleshooting", link: "/troubleshooting" },
     ],
@@ -96,6 +97,13 @@ export default defineConfig({
       {
         text: "Templates",
         items: [{ text: "Templates (KDL)", link: "/templates" }],
+      },
+      {
+        text: "SDK",
+        items: [
+          { text: "Template types", link: "/sdk/template-types" },
+          { text: "Hooks and the mod API", link: "/sdk/hooks" },
+        ],
       },
       {
         text: "Studio",

@@ -37,6 +37,30 @@ public class TemplateTypeCatalogTests
         Assert.Equal("FixtureEntity", type!.Name);
     }
 
+    // The primary fixture assembly does not contain Jiangyu.Core types, so they are
+    // only resolvable when their assembly is explicitly handed to the scan list.
+    private const string ExtraAssemblyType = "Jiangyu.Core.Code.JiangyuTypeInfo";
+
+    [Fact]
+    public void Load_WithoutExtraAssemblies_DoesNotResolveTheirTypes()
+    {
+        using var catalog = Load();
+        Assert.Null(catalog.ResolveType(ExtraAssemblyType, out _, out _));
+    }
+
+    [Fact]
+    public void Load_ScansAdditionalAssemblies_SoTheirTypesResolve()
+    {
+        var extra = typeof(Jiangyu.Core.Code.JiangyuTypeInfo).Assembly.Location;
+        using var catalog = TemplateTypeCatalog.Load(
+            FixtureAssemblyPath, additionalAssembliesToScan: new[] { extra });
+
+        var resolved = catalog.ResolveType(ExtraAssemblyType, out _, out var error);
+        Assert.Null(error);
+        Assert.NotNull(resolved);
+        Assert.Equal("JiangyuTypeInfo", resolved!.Name);
+    }
+
     [Fact]
     public void ResolveType_ReportsAmbiguousShortName()
     {

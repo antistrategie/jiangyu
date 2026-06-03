@@ -2,8 +2,8 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
-using MelonLoader;
 using UnityEngine;
+using Jiangyu.Loader.Logging;
 using DataTemplate = Il2CppMenace.Tools.DataTemplate;
 using DataTemplateLoader = Il2CppMenace.Tools.DataTemplateLoader;
 using Il2CppDictionary = Il2CppSystem.Collections.Generic.Dictionary<string, Il2CppMenace.Tools.DataTemplate>;
@@ -72,7 +72,7 @@ internal sealed class TemplateCloneApplier
     /// after <c>_templatePatchApplier.TryApply</c> finishes, so any patches
     /// the modder applied (in particular SoundBank.bankId rewrites) have
     /// already landed.</summary>
-    public void RunPostPatchHooks(MelonLogger.Instance log)
+    public void RunPostPatchHooks(LoaderLog log)
     {
         // Re-deserialise typed Requirements/m_Nodes on every registered
         // ConversationTemplate clone against its now-patched serialised
@@ -90,7 +90,7 @@ internal sealed class TemplateCloneApplier
         _pendingSoundBankRegistrations.Clear();
     }
 
-    public int TryApply(MelonLogger.Instance log)
+    public int TryApply(LoaderLog log)
     {
         if (!_catalog.HasClones)
             return 0;
@@ -110,7 +110,7 @@ internal sealed class TemplateCloneApplier
     private int TryApplyType(
         string templateTypeName,
         Dictionary<string, LoadedCloneDirective> directives,
-        MelonLogger.Instance log)
+        LoaderLog log)
     {
         // Call GetAllTemplates once for two reasons: resolve the managed Type
         // for Il2CppType.From below, and trigger DataTemplateLoader.GetAll<T>()
@@ -152,43 +152,55 @@ internal sealed class TemplateCloneApplier
         var applied = 0;
         foreach (var directive in directives.Values)
         {
+            log.Mod = directive.OwnerLabel;
             if (!innerMap.TryGetValue(directive.CloneId, out var clone))
             {
-                if (!innerMap.TryGetValue(directive.SourceId, out var source))
+                // An empty sourceId is a 'create' directive: instantiate a fresh
+                // template of this type rather than copying a source.
+                var isCreate = string.IsNullOrEmpty(directive.SourceId);
+                if (isCreate)
                 {
-                    log.Warning(
-                        $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
-                        + "source template not found in DataTemplateLoader.");
-                    continue;
+                    if (!TryCreateTemplate(resolvedType, directive.CloneId, log, out clone))
+                        continue;
                 }
+                else
+                {
+                    if (!innerMap.TryGetValue(directive.SourceId, out var source))
+                    {
+                        log.Warning(
+                            $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
+                            + "source template not found in DataTemplateLoader.");
+                        continue;
+                    }
 
-                if (!TryCloneTemplate(source, directive.CloneId, log, out clone))
-                    continue;
+                    if (!TryCloneTemplate(source, directive.CloneId, log, out clone))
+                        continue;
 
-                // Object.Instantiate shallow-copies the clone's collection
-                // containers: clone.List<T> / clone.T[] field instances are
-                // the SAME object as the source's. Any clear/append/index-set
-                // on the clone leaks straight into the source. Reallocate
-                // each container with the same element refs so the clone
-                // mutates its own data.
-                DeepCopyCollectionContainers(clone, resolvedType, directive.CloneId, log);
+                    // Object.Instantiate shallow-copies the clone's collection
+                    // containers: clone.List<T> / clone.T[] field instances are
+                    // the SAME object as the source's. Any clear/append/index-set
+                    // on the clone leaks straight into the source. Reallocate
+                    // each container with the same element refs so the clone
+                    // mutates its own data.
+                    DeepCopyCollectionContainers(clone, resolvedType, directive.CloneId, log);
 
-                // Object.Instantiate also shallow-copies PPtr element refs,
-                // so abstract-polymorphic ScriptableObject elements
-                // (EventHandlers and similar) are still shared. Patches
-                // through the clone would mutate the source's handlers.
-                // Deep-copy each owned element so the clone has its own.
-                // resolvedType is the concrete managed wrapper type (e.g.
-                // PerkTemplate); the clone variable is DataTemplate-typed,
-                // so reflection on it sees only base-class members. We
-                // re-cast inside the helper.
-                DeepCopyOwnedReferences(clone, resolvedType, directive.CloneId, log);
+                    // Object.Instantiate also shallow-copies PPtr element refs,
+                    // so abstract-polymorphic ScriptableObject elements
+                    // (EventHandlers and similar) are still shared. Patches
+                    // through the clone would mutate the source's handlers.
+                    // Deep-copy each owned element so the clone has its own.
+                    // resolvedType is the concrete managed wrapper type (e.g.
+                    // PerkTemplate); the clone variable is DataTemplate-typed,
+                    // so reflection on it sees only base-class members. We
+                    // re-cast inside the helper.
+                    DeepCopyOwnedReferences(clone, resolvedType, directive.CloneId, log);
+                }
 
                 RegisterCloneIntoSlot(resolvedType, innerMap, resolvedType, directive.CloneId, clone, log);
 
-                log.Msg(
-                    $"Template clone registered: {templateTypeName}:{directive.SourceId} -> {directive.CloneId} "
-                    + $"(mod '{directive.OwnerLabel}').");
+                log.Msg(isCreate
+                    ? $"Template create registered: {templateTypeName}:{directive.CloneId}."
+                    : $"Template clone registered: {templateTypeName}:{directive.SourceId} -> {directive.CloneId}.");
                 applied++;
             }
 
@@ -214,54 +226,82 @@ internal sealed class TemplateCloneApplier
         Type resolvedType,
         IReadOnlyList<Il2CppObjectBase> liveTemplates,
         Dictionary<string, LoadedCloneDirective> directives,
-        MelonLogger.Instance log)
+        LoaderLog log)
     {
         var identityField = NonDataTemplateIdentityRegistry.GetIdentityField(templateTypeName, resolvedType);
 
         var applied = 0;
         foreach (var directive in directives.Values)
         {
+            log.Mod = directive.OwnerLabel;
             // Idempotency: skip if a clone with this id already exists
             // (e.g. session re-registration after a save reload).
             if (FindBySourceId(liveTemplates, directive.CloneId, identityField, resolvedType) != null)
                 continue;
 
-            var source = FindBySourceId(liveTemplates, directive.SourceId, identityField, resolvedType);
-            if (source == null)
-            {
-                var lookupNote = identityField != null
-                    ? $"source ScriptableObject not found by name or by {identityField}."
-                    : "source ScriptableObject not found by name.";
-                log.Warning(
-                    $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
-                    + lookupNote);
-                continue;
-            }
+            // An empty sourceId is a 'create' directive: a fresh ScriptableObject
+            // of this type rather than a copy of a source.
+            var isCreate = string.IsNullOrEmpty(directive.SourceId);
 
             UnityEngine.Object cloneObj;
-            try
+            if (isCreate)
             {
-                cloneObj = UnityEngine.Object.Instantiate(source.Cast<UnityEngine.Object>());
+                try
+                {
+                    cloneObj = UnityEngine.ScriptableObject.CreateInstance(Il2CppType.From(resolvedType));
+                }
+                catch (Exception ex)
+                {
+                    log.Warning(
+                        $"Template create '{templateTypeName}:{directive.CloneId}': "
+                        + $"ScriptableObject.CreateInstance threw: {ex.Message}.");
+                    continue;
+                }
+                if (cloneObj == null)
+                {
+                    log.Warning($"Template create '{templateTypeName}:{directive.CloneId}': CreateInstance returned null.");
+                    continue;
+                }
             }
-            catch (Exception ex)
+            else
             {
-                log.Warning(
-                    $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
-                    + $"Object.Instantiate threw: {ex.Message}.");
-                continue;
+                var source = FindBySourceId(liveTemplates, directive.SourceId, identityField, resolvedType);
+                if (source == null)
+                {
+                    var lookupNote = identityField != null
+                        ? $"source ScriptableObject not found by name or by {identityField}."
+                        : "source ScriptableObject not found by name.";
+                    log.Warning(
+                        $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
+                        + lookupNote);
+                    continue;
+                }
+
+                try
+                {
+                    cloneObj = UnityEngine.Object.Instantiate(source.Cast<UnityEngine.Object>());
+                }
+                catch (Exception ex)
+                {
+                    log.Warning(
+                        $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
+                        + $"Object.Instantiate threw: {ex.Message}.");
+                    continue;
+                }
             }
 
             cloneObj.name = directive.CloneId;
             cloneObj.hideFlags = UnityEngine.HideFlags.DontUnloadUnusedAsset;
             UnityEngine.Object.DontDestroyOnLoad(cloneObj);
 
-            // Reallocate every collection container so the clone owns its
-            // own List<T>/T[] instances. Without this, Object.Instantiate
-            // leaves the clone sharing the source's container references,
-            // and SoundBank.sounds.clear() / .append() on the clone wipes
-            // the source's vanilla sound list. See DeepCopyCollectionContainers
-            // for the full rationale.
-            DeepCopyCollectionContainers(cloneObj, resolvedType, directive.CloneId, log);
+            // Reallocate every collection container so a clone owns its own
+            // List<T>/T[] instances. Without this, Object.Instantiate leaves the
+            // clone sharing the source's container references, and a clear/append
+            // on the clone wipes the source's vanilla data. A freshly-created
+            // template already owns its own (empty) containers, so this is
+            // clone-only. See DeepCopyCollectionContainers for the full rationale.
+            if (!isCreate)
+                DeepCopyCollectionContainers(cloneObj, resolvedType, directive.CloneId, log);
 
             // Types with an override identity field (e.g. ConversationTemplate.Path)
             // need that field set to the new CloneId too, so the matcher can
@@ -278,9 +318,9 @@ internal sealed class TemplateCloneApplier
                 }
             }
 
-            log.Msg(
-                $"Template clone registered: {templateTypeName}:{directive.SourceId} -> {directive.CloneId} "
-                + $"(mod '{directive.OwnerLabel}').");
+            log.Msg(isCreate
+                ? $"Template create registered: {templateTypeName}:{directive.CloneId}."
+                : $"Template clone registered: {templateTypeName}:{directive.SourceId} -> {directive.CloneId}.");
             applied++;
 
             // For ConversationTemplate, hand the clone to the registry so it
@@ -323,7 +363,7 @@ internal sealed class TemplateCloneApplier
     }
 
     private static void TryRegisterSoundBankWithStem(
-        UnityEngine.Object cloneObj, Type resolvedType, MelonLogger.Instance log)
+        UnityEngine.Object cloneObj, Type resolvedType, LoaderLog log)
     {
         if (cloneObj == null || resolvedType == null) return;
 
@@ -373,7 +413,7 @@ internal sealed class TemplateCloneApplier
         }
     }
 
-    private static void InvalidateConversationTemplateCache(Type resolvedType, MelonLogger.Instance log)
+    private static void InvalidateConversationTemplateCache(Type resolvedType, LoaderLog log)
     {
         if (resolvedType == null) return;
         // Il2CppInterop wraps native static fields as PUBLIC static properties
@@ -487,7 +527,7 @@ internal sealed class TemplateCloneApplier
         Type declaredType,
         string cloneId,
         DataTemplate clone,
-        MelonLogger.Instance log)
+        LoaderLog log)
     {
         slotMap[cloneId] = clone;
 
@@ -514,7 +554,7 @@ internal sealed class TemplateCloneApplier
     /// independently gated on <c>ContainsKey(cloneId)</c>.
     /// </summary>
     private static void MirrorCloneToAncestors(
-        Type resolvedType, string cloneId, DataTemplate clone, MelonLogger.Instance log)
+        Type resolvedType, string cloneId, DataTemplate clone, LoaderLog log)
     {
         var dataTemplateType = typeof(DataTemplate);
         var current = resolvedType.BaseType;
@@ -581,7 +621,7 @@ internal sealed class TemplateCloneApplier
     /// the new container with fresh Instantiated copies.
     /// </summary>
     private static void DeepCopyCollectionContainers(
-        Il2CppObjectBase clone, Type concreteType, string cloneId, MelonLogger.Instance log)
+        Il2CppObjectBase clone, Type concreteType, string cloneId, LoaderLog log)
     {
         if (clone == null) return;
 
@@ -626,7 +666,7 @@ internal sealed class TemplateCloneApplier
         Type memberType,
         string memberName,
         string cloneId,
-        MelonLogger.Instance log)
+        LoaderLog log)
     {
         var listElement = Il2CppCollectionReflection.GetListElementType(memberType);
         if (listElement != null)
@@ -658,7 +698,7 @@ internal sealed class TemplateCloneApplier
         string kind,
         string memberName,
         string cloneId,
-        MelonLogger.Instance log)
+        LoaderLog log)
     {
         object source;
         try { source = reader(); }
@@ -684,7 +724,7 @@ internal sealed class TemplateCloneApplier
     }
 
     private static object ReflectionTargetForConcreteType(
-        Il2CppObjectBase clone, Type concreteType, string cloneId, MelonLogger.Instance log)
+        Il2CppObjectBase clone, Type concreteType, string cloneId, LoaderLog log)
     {
         object target = clone;
         if (concreteType == null || concreteType == clone.GetType()) return target;
@@ -720,7 +760,7 @@ internal sealed class TemplateCloneApplier
     /// wrapper lists (SkillGroups, DefectGroups) stay shared because those
     /// are intentional registry references.
     /// </summary>
-    private static void DeepCopyOwnedReferences(DataTemplate clone, Type concreteType, string cloneId, MelonLogger.Instance log)
+    private static void DeepCopyOwnedReferences(DataTemplate clone, Type concreteType, string cloneId, LoaderLog log)
     {
         if (clone == null)
         {
@@ -815,7 +855,7 @@ internal sealed class TemplateCloneApplier
         Func<object> reader,
         string memberName,
         string cloneId,
-        MelonLogger.Instance log,
+        LoaderLog log,
         out int copiedCount)
     {
         copiedCount = 0;
@@ -1001,7 +1041,7 @@ internal sealed class TemplateCloneApplier
     /// this from a structurally appropriate pass.
     /// </summary>
     internal static object CloneValueObjectByFieldReflection(
-        object source, Type type, string contextLabel, MelonLogger.Instance log)
+        object source, Type type, string contextLabel, LoaderLog log)
     {
         if (source == null || type == null) return null;
 
@@ -1059,7 +1099,7 @@ internal sealed class TemplateCloneApplier
     private static bool TryCloneTemplate(
         Il2CppObjectBase source,
         string cloneId,
-        MelonLogger.Instance log,
+        LoaderLog log,
         out DataTemplate clone)
     {
         clone = null;
@@ -1091,9 +1131,51 @@ internal sealed class TemplateCloneApplier
         }
     }
 
+    // Create a fresh DataTemplate (no source to copy) for a 'create' directive:
+    // instantiate the ScriptableObject-rooted type via the Il2CppType factory
+    // (raw il2cpp_object_new corrupts SO-rooted types), stamp m_ID, and cast.
+    // Required fields are left at their defaults for the modder's patch to set.
+    private static bool TryCreateTemplate(
+        Type templateType,
+        string templateId,
+        LoaderLog log,
+        out DataTemplate template)
+    {
+        template = null;
+        try
+        {
+            var fresh = UnityEngine.ScriptableObject.CreateInstance(Il2CppType.From(templateType));
+            if (fresh == null)
+            {
+                log.Warning($"Template create '{templateId}': ScriptableObject.CreateInstance returned null.");
+                return false;
+            }
+
+            fresh.name = templateId;
+            fresh.hideFlags = HideFlags.DontUnloadUnusedAsset;
+
+            if (!TryWriteTemplateId(fresh, templateId, log))
+                return false;
+
+            template = fresh.TryCast<DataTemplate>();
+            if (template == null)
+            {
+                log.Warning($"Template create '{templateId}': fresh instance does not cast to DataTemplate.");
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Template create '{templateId}' threw: {ex.Message}");
+            return false;
+        }
+    }
+
     // Walks the class hierarchy to find m_ID (inherited from DataTemplate base),
     // reads its IL2CPP offset by name, and writes the new Il2Cpp string pointer.
-    private static bool TryWriteTemplateId(Il2CppObjectBase clone, string cloneId, MelonLogger.Instance log)
+    private static bool TryWriteTemplateId(Il2CppObjectBase clone, string cloneId, LoaderLog log)
     {
         try
         {
@@ -1153,7 +1235,7 @@ internal sealed class TemplateCloneApplier
     // game stores base-typed (Il2CppReferenceArray<DataTemplate>) or
     // concrete-typed wrappers.
     private static bool TryExtendTemplateArray(
-        Type resolvedType, Il2CppObjectBase clone, MelonLogger.Instance log)
+        Type resolvedType, Il2CppObjectBase clone, LoaderLog log)
     {
         var singleton = DataTemplateLoader.GetSingleton();
         if (singleton == null)

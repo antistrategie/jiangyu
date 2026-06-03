@@ -1,5 +1,6 @@
 using System.Reflection;
 using Il2CppInterop.Runtime;
+using Jiangyu.Loader.Sdk;
 using Il2CppInterop.Runtime.InteropTypes;
 using UnityEngine;
 using DataTemplate = Il2CppMenace.Tools.DataTemplate;
@@ -237,6 +238,10 @@ internal static class TemplateRuntimeAccess
     public static Type ResolveTemplateType(string templateTypeName, out string error)
     {
         error = null;
+
+        // A ns:Name names a code-defined [JiangyuType] injected at mod load.
+        if (JiangyuTypeRegistry.TryResolve(templateTypeName, out var injected))
+            return injected;
 
         var primaryMatch = ResolveInAssembly(typeof(DataTemplateLoader).Assembly, templateTypeName, out var primaryAmbiguous, out var primaryCandidates);
         if (primaryMatch != null)

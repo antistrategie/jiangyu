@@ -10,6 +10,16 @@
 		<VersionPrefix>1.3.14</VersionPrefix>
 		<Copyright>Copyright © ds5678</Copyright>
 		<Authors>ds5678</Authors>
+
+		<!--
+			Quiet warnings that belong to this vendored AssetRipper tree, not to
+			Jiangyu, so the solution builds clean. Scoped to vendor only.
+			NU1902: moderate advisory on the SharpCompress 0.47.4 dependency
+			(high and critical severities still surface).
+			CS1030: the AssetRipper authors' own #warning notes in their source.
+			Resolve by updating the vendored AssetRipper.
+		-->
+		<NoWarn>$(NoWarn);NU1902;CS1030</NoWarn>
 	</PropertyGroup>
 
 	<ItemGroup>

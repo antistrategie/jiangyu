@@ -8,9 +8,15 @@ All commands run from your project directory. Run `jiangyu <command> --help` for
 
 ### `jiangyu init`
 
-Scaffolds a new mod project in the current directory. Writes `jiangyu.json` (with `name` derived from the directory) and a `.gitignore` excluding `.jiangyu/` and `compiled/`.
+Scaffolds a new mod project in the current directory: `jiangyu.json` (with `name` derived from the directory), a `.gitignore` excluding `.jiangyu/` and `compiled/`, and the dormant [`code/`](/sdk/template-types) C# project and [`unity/`](/assets/additions/prefabs) Editor project so a code or prefab mod needs no extra setup. An empty `code/` or `unity/` ships nothing.
 
 Equivalent to Studio's "New project" dialog. See [Manifest](/reference/manifest) for the scaffolded shape.
+
+### `jiangyu code sync`
+
+Refreshes the per-mod C# project at `code/`, which `jiangyu init` already scaffolds and which compiles against the Jiangyu SDK and the game's IL2CPP assemblies. Idempotent: rewrites the Jiangyu-managed build files and `local.props`, recreates `code/` if it is missing, and preserves your `.csproj` and source.
+
+Run it after a Jiangyu update, or on a project scaffolded by an older version. `jiangyu compile` builds `code/` automatically when present, so day to day you rarely need this.
 
 ### `jiangyu compile`
 
@@ -24,6 +30,12 @@ Compile bootstraps two preconditions on first run so the modder doesn't need to 
 Game data is loaded once and reused for both steps. Compile also verifies that every `Imported/<X>/` GUID referenced from authored content has `X` listed in `importedPrefabs`, and fails with the unlisted names if not.
 
 Equivalent to Studio's Compile dossier. Returns non-zero on any compile error.
+
+### `jiangyu deploy`
+
+Copies the compiled mod from `compiled/` into the game's `Mods/<name>/` folder, where `<name>` is the manifest `name`. Clean: the existing deployed folder is removed first so stale artifacts from a previous build never linger. Run `jiangyu compile` first.
+
+Equivalent to Studio's "Deploy Mod" palette command.
 
 ### `jiangyu unity sync`
 
@@ -141,7 +153,14 @@ jiangyu templates query 'UnitLeaderTemplate.InitialAttributes[0]'
 jiangyu templates query EntityTemplate.Skills        # auto-unwraps to SkillTemplate
 ```
 
-For leaf fields it emits a copy-pasteable KDL snippet you can drop into a `templates/*.kdl` file.
+A qualified `modId:Name` in the type position resolves one of your own `[JiangyuType]` code types instead of a game type. It reads the built DLLs under `compiled/code` (so run `jiangyu compile` first) from the current project directory, and lists the type's own fields alongside the inherited game-base members:
+
+```sh
+jiangyu templates query WOMENACE:WomenaceFocus              # the code type's fields
+jiangyu templates query WOMENACE:WomenaceFocus.DamageBonus  # drill into one
+```
+
+For leaf fields it emits a copy-pasteable KDL snippet you can drop into a `templates/*.kdl` file (omitted for code-type fields, which are set through a `type=` construction rather than patched by template id).
 
 ### `jiangyu templates format`
 

@@ -9,7 +9,7 @@ See the [Jiangyu docs site](https://antistrategie.github.io/jiangyu/) for the fu
 ## Requirements
 
 - MENACE
-- .NET 10 SDK (CLI), .NET 6 runtime (Loader)
+- .NET 10 SDK (Toolchain), .NET 6 runtime (Loader)
 - MelonLoader 0.7.3
 - Unity Editor 6000.0.72f1
 - Bun (Studio UI and docs site)

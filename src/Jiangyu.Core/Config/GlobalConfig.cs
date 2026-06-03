@@ -13,6 +13,14 @@ public sealed class GlobalConfig
     public string? UnityEditor { get; set; }
 
     /// <summary>
+    /// Directory containing <c>Jiangyu.Sdk.dll</c> that mod <c>code/</c> projects
+    /// reference. When unset it is resolved next to the running CLI, then from the
+    /// dev source tree. See <see cref="ResolveSdkDir"/>.
+    /// </summary>
+    [JsonPropertyName("sdk")]
+    public string? Sdk { get; set; }
+
+    /// <summary>
     /// Asset pipeline cache root. Contains:
     ///   asset-index.json             — searchable asset catalogue (from 'assets index')
     ///   asset-index-manifest.json    — asset cache validity metadata
@@ -92,19 +100,9 @@ public sealed class GlobalConfig
     /// </summary>
     public static (string? gameDataPath, string? error) ResolveGameDataPath(GlobalConfig config)
     {
-        var gamePath = !string.IsNullOrEmpty(config.Game)
-            ? ExpandHome(config.Game)
-            : DiscoverGamePath();
-
+        var (gamePath, error) = ResolveGamePath(config);
         if (gamePath is null)
-        {
-            return (null, $"Error: game path not found. Set it in {ConfigPath}\n\nExample:\n  {{\n    \"game\": \"~/.steam/steam/steamapps/common/Menace\"\n  }}");
-        }
-
-        if (!Directory.Exists(gamePath))
-        {
-            return (null, $"Error: game directory not found: {gamePath}");
-        }
+            return (null, error);
 
         foreach (var dir in Directory.EnumerateDirectories(gamePath))
         {
@@ -115,6 +113,74 @@ public sealed class GlobalConfig
         }
 
         return (null, $"Error: could not find game data directory in: {gamePath}\nExpected a directory ending in _Data (e.g. Menace_Data)");
+    }
+
+    /// <summary>
+    /// Resolves the game install root (the directory containing the <c>_Data</c>
+    /// folder and <c>MelonLoader/</c>), used to inject <c>GameDir</c> into a mod's
+    /// <c>code/</c> build. Falls back to well-known Steam locations.
+    /// </summary>
+    public static (string? gamePath, string? error) ResolveGamePath(GlobalConfig config)
+    {
+        var gamePath = !string.IsNullOrEmpty(config.Game)
+            ? ExpandHome(config.Game)
+            : DiscoverGamePath();
+
+        if (gamePath is null)
+            return (null, $"Error: game path not found. Set it in {ConfigPath}\n\nExample:\n  {{\n    \"game\": \"~/.steam/steam/steamapps/common/Menace\"\n  }}");
+        if (!Directory.Exists(gamePath))
+            return (null, $"Error: game directory not found: {gamePath}");
+
+        return (gamePath, null);
+    }
+
+    /// <summary>
+    /// Resolves the directory containing <c>Jiangyu.Sdk.dll</c>. Order: explicit
+    /// config (<c>sdk</c>, either the directory or the dll path), then next to the
+    /// running CLI (published layout), then the dev source tree
+    /// (<c>src/Jiangyu.Sdk/bin/{Release,Debug}/net6.0</c>).
+    /// </summary>
+    public static (string? sdkDir, string? error) ResolveSdkDir(GlobalConfig config)
+    {
+        if (!string.IsNullOrEmpty(config.Sdk))
+        {
+            var configured = ExpandHome(config.Sdk);
+            if (Directory.Exists(configured) && File.Exists(Path.Combine(configured, "Jiangyu.Sdk.dll")))
+                return (configured, null);
+            if (File.Exists(configured) && Path.GetFileName(configured) == "Jiangyu.Sdk.dll")
+                return (Path.GetDirectoryName(configured), null);
+            return (null, $"configured sdk path has no Jiangyu.Sdk.dll: {configured}");
+        }
+
+        var baseDir = AppContext.BaseDirectory;
+        if (File.Exists(Path.Combine(baseDir, "Jiangyu.Sdk.dll")))
+            return (baseDir, null);
+
+        var devSdk = FindDevSdkDir(baseDir);
+        if (devSdk is not null)
+            return (devSdk, null);
+
+        return (null, $"could not locate Jiangyu.Sdk.dll. Set \"sdk\" in {ConfigPath}, or build src/Jiangyu.Sdk.");
+    }
+
+    /// <summary>
+    /// Walks up from a starting directory looking for the dev SDK build output
+    /// under <c>src/Jiangyu.Sdk/bin/{Release,Debug}/net6.0/Jiangyu.Sdk.dll</c>.
+    /// </summary>
+    private static string? FindDevSdkDir(string startDir)
+    {
+        var dir = new DirectoryInfo(startDir);
+        while (dir is not null)
+        {
+            foreach (var configuration in new[] { "Release", "Debug" })
+            {
+                var candidate = Path.Combine(dir.FullName, "src", "Jiangyu.Sdk", "bin", configuration, "net6.0");
+                if (File.Exists(Path.Combine(candidate, "Jiangyu.Sdk.dll")))
+                    return candidate;
+            }
+            dir = dir.Parent;
+        }
+        return null;
     }
 
     /// <summary>

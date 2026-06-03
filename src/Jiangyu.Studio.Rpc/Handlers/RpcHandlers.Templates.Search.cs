@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Assets;
+using Jiangyu.Core.Code;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Il2Cpp;
 using Jiangyu.Core.Models;
@@ -87,8 +88,29 @@ public static partial class RpcHandlers
         if (Directory.Exists(melonNet6))
             additionalSearchDirs.Add(melonNet6);
 
+        // Scan the open project's compiled code DLLs into the catalog so the mod's
+        // [JiangyuType]s take part in the normal subtype/member walks: they surface in
+        // a polymorphic field's subtype choices (named modId:Name below) and resolve as
+        // first-class types when one is queried directly.
+        IReadOnlyList<string> codeAssemblies = [];
+        string? modId = null;
+        if (RpcContext.ProjectRoot is { } projectRoot)
+        {
+            var (assemblies, searchDirs) = CodeTypeResolver.LoadInputs(Path.Combine(projectRoot, "compiled", "code"));
+            codeAssemblies = assemblies;
+            // No code DLLs means no mod types to scan or label, so skip the search-dir
+            // wiring and the manifest read that only the modId:Name labelling needs.
+            if (assemblies.Count > 0)
+            {
+                additionalSearchDirs.AddRange(searchDirs);
+                modId = ModManifest.TryLoad(projectRoot)?.Name;
+            }
+        }
+
         var supplement = Il2CppMetadataCache.LoadIfPresent(RpcHelpers.RequireEnvironment().CachePath);
-        using var catalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirs, supplement);
+        // Cached + reused across queries; reloads when the game assembly or any code DLL
+        // changes (mtime in the key). The cache owns the catalog's lifetime, so no using.
+        var catalog = GetOrLoadQueryCatalog(assemblyPath, additionalSearchDirs, supplement, codeAssemblies);
 
         // Make sure the discriminator allowlist is installed BEFORE
         // ResolveTaggedDiscriminator runs (otherwise the validator's
@@ -115,6 +137,12 @@ public static partial class RpcHandlers
             typeName = resolved.FullName ?? resolved.Name;
         }
 
+        // A qualified modId:Name is a mod [JiangyuType]: resolve it to the CLR FullName
+        // the member walk understands (its own fields plus the inherited game members).
+        if (typeName.Contains(':')
+            && CodeTypeResolver.ResolveFullName(catalog, CodeTypeResolver.BareName(typeName)) is { } codeFullName)
+            typeName = codeFullName;
+
         var queryPath = string.IsNullOrWhiteSpace(fieldPath)
             ? typeName
             : $"{typeName}.{fieldPath}";
@@ -134,7 +162,7 @@ public static partial class RpcHandlers
         // common entry that surfaces these schemas to the UI.
         EnsureValuesCached(RpcHelpers.RequireEnvironment());
         return JsonSerializer.SerializeToElement(
-            MapQueryResult(catalog, result, _cachedInstantiatedClassNames, _cachedOdinMatrixSchemas),
+            MapQueryResult(catalog, result, _cachedInstantiatedClassNames, _cachedOdinMatrixSchemas, modId),
             TemplatesJsonOptions);
     }
     private static bool IsCatchAllRuntimeType(Type type)
@@ -152,7 +180,8 @@ public static partial class RpcHandlers
         TemplateTypeCatalog catalog,
         QueryResult result,
         IReadOnlySet<string> instantiatedClassNames,
-        IReadOnlyDictionary<string, Dictionary<string, OdinMatrixFieldSchema>> odinMatrixSchemas)
+        IReadOnlyDictionary<string, Dictionary<string, OdinMatrixFieldSchema>> odinMatrixSchemas,
+        string? modId)
     {
         // Owner type for the members list — used as the registry key.
         // Type.Name strips the IL2CPP namespace prefix so it matches the
@@ -212,8 +241,8 @@ public static partial class RpcHandlers
                     EnumTypeName = ComputeEnumTypeName(catalog, m),
                     ReferenceTypeName = ComputeReferenceTypeName(catalog, m),
                     IsReferenceTypePolymorphic = ComputeReferenceTypeIsPolymorphic(catalog, m, instantiatedClassNames),
-                    ElementSubtypes = ComputeElementSubtypes(catalog, m),
-                    ScalarSubtypes = ComputeScalarSubtypes(catalog, m),
+                    ElementSubtypes = ComputeElementSubtypes(catalog, m, modId),
+                    ScalarSubtypes = ComputeScalarSubtypes(catalog, m, modId),
                     TaggedPolymorphicBase = m.TaggedPolymorphicBase is { } baseType
                         ? catalog.FriendlyName(baseType)
                         : null,

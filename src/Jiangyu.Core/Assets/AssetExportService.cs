@@ -203,8 +203,8 @@ public sealed class AssetExportService(string gameDataPath, AssetIndex? index, I
                     string.Equals(a.ClassName, "Sprite", StringComparison.Ordinal) &&
                     a.Sprite?.BackingTexturePathId == pathId &&
                     string.Equals(a.Sprite?.BackingTextureCollection, collection, StringComparison.Ordinal) &&
-                    a.Sprite.TextureRectWidth.HasValue &&
-                    a.Sprite.TextureRectHeight.HasValue)
+                    a.Sprite?.TextureRectWidth.HasValue == true &&
+                    a.Sprite?.TextureRectHeight.HasValue == true)
                 .OrderBy(a => a.Name, StringComparer.Ordinal)
                 .ToList()
                 ?? [];

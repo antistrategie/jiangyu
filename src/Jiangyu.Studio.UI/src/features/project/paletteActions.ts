@@ -6,11 +6,13 @@ export interface ProjectActionHandlers {
   readonly openProject: () => void;
   readonly closeProject: () => void;
   readonly revealProject: () => void;
+  readonly deployMod: () => void;
 }
 
 /**
  * Build the PROJECT palette actions for the current app state: always-present
- * "Open Project…", and "Close Project" / "Reveal Project" when a project is open.
+ * "Open Project…", and "Close Project" / "Reveal Project" / "Deploy Mod" when a
+ * project is open.
  */
 export function buildProjectActions(
   projectPath: string | null,
@@ -39,6 +41,14 @@ export function buildProjectActions(
       scope: PROJECT_SCOPE,
       cn: "显示",
       run: handlers.revealProject,
+    });
+    actions.push({
+      id: "project.deploy",
+      label: "Deploy Mod",
+      scope: PROJECT_SCOPE,
+      cn: "部署",
+      desc: "Copy compiled/ into the game's Mods folder.",
+      run: handlers.deployMod,
     });
   }
   return actions;

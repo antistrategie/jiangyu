@@ -32,11 +32,23 @@ internal sealed partial class TemplatePatchApplier
     private readonly ModAssetResolver _assetResolver;
     private readonly HashSet<string> _appliedTypes = new(StringComparer.Ordinal);
 
+    private int _appliedTotal;
+    private int _unresolvedTypeTotal;
+    private int _missingTemplateTotal;
+    private int _missingMemberTotal;
+    private int _conversionFailedTotal;
+
     public TemplatePatchApplier(TemplatePatchCatalog catalog, ModAssetResolver assetResolver = null)
     {
         _catalog = catalog;
         _assetResolver = assetResolver;
     }
+
+    /// <summary>Running tally of how the patch ops fared against the live game,
+    /// accumulated as each type latches. A non-zero mismatch count means the live
+    /// game no longer matches what the mods were compiled against.</summary>
+    public TemplateApplySelfCheck SelfCheck =>
+        new(_appliedTotal, _unresolvedTypeTotal, _missingTemplateTotal, _missingMemberTotal, _conversionFailedTotal);
 
     public bool HasPendingPatches
     {
@@ -91,6 +103,7 @@ internal sealed partial class TemplatePatchApplier
             log.Warning(
                 $"Template patch: cannot resolve type '{templateTypeName}' ({resolveError}); "
                 + $"skipping {expectedOps} op(s).");
+            _unresolvedTypeTotal++;
             _appliedTypes.Add(templateTypeName);
             return 0;
         }
@@ -171,6 +184,10 @@ internal sealed partial class TemplatePatchApplier
             }
         }
 
+        _appliedTotal += applied;
+        _missingTemplateTotal += missingTemplate;
+        _missingMemberTotal += missingMember;
+        _conversionFailedTotal += conversionFailed;
         _appliedTypes.Add(templateTypeName);
         log.Msg(
             $"Applied {applied} {templateTypeName} patch op(s). "
@@ -180,7 +197,7 @@ internal sealed partial class TemplatePatchApplier
     }
 
     private static string FormatPrefix(string templateTypeName, string templateId, LoadedPatchOperation op)
-        => $"Template patch '{templateTypeName}:{templateId}.{op.FieldPath}' (mod '{op.OwnerLabel}'): ";
+        => $"[{op.OwnerLabel}] Template patch '{templateTypeName}:{templateId}.{op.FieldPath}': ";
 
     // SoundBank-specific pre-OnAfterDeserialize alignment. busIndices is a
     // parallel array to sounds (one int per sound, pointing into buses[]).
@@ -399,4 +416,17 @@ internal sealed partial class TemplatePatchApplier
         MemberMissing,
         ConversionFailed,
     }
+}
+
+/// <summary>How the template patch ops fared against the live game. A non-zero
+/// <see cref="Mismatches"/> means the running game no longer matches the templates
+/// the mods were built against (a type, template id, field, or value type changed).</summary>
+internal readonly record struct TemplateApplySelfCheck(
+    int Applied,
+    int UnresolvedTypes,
+    int MissingTemplates,
+    int MissingMembers,
+    int ConversionFailures)
+{
+    public int Mismatches => UnresolvedTypes + MissingTemplates + MissingMembers + ConversionFailures;
 }

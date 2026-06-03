@@ -2,6 +2,7 @@ using Il2CppInterop.Runtime;
 using Jiangyu.Loader.Bundles;
 using Jiangyu.Loader.Replacements;
 using Jiangyu.Loader.Runtime.Patching;
+using Jiangyu.Loader.Logging;
 using Jiangyu.Loader.Templates;
 using Jiangyu.Shared.Bundles;
 using MelonLoader;
@@ -31,6 +32,13 @@ internal class ReplacementCoordinator
     // still cheap insurance against the spawn monitor re-firing driven creation every tick.
     private readonly HashSet<int> _processedSmrInstanceIds = new();
 
+    private bool _templateWorkSeen;
+    private bool _templatesAppliedRaised;
+
+    /// <summary>Invoked once, after the last authored template clone or patch has been
+    /// applied to the live templates. Null until the runtime binds the mod host.</summary>
+    public Action TemplatesApplied { get; set; }
+
     public ReplacementCoordinator()
     {
         _catalog = new BundleReplacementCatalog(_pinned);
@@ -51,8 +59,14 @@ internal class ReplacementCoordinator
                 new AudioReplacementPatch(_catalog.ReplacementAudioClips),
                 new ConversationManagerTrackingPatch(),
                 new InventoryFilterPatch(),
+                new Jiangyu.Loader.Sdk.StrategyHarmonyPatch(),
+                new Jiangyu.Loader.Sdk.ModStatePersistencePatch(),
             });
     }
+
+    /// <summary>The mod's own bundled assets, keyed by mod folder name.</summary>
+    public Jiangyu.Sdk.IModAssets AssetsFor(string modFolder, IModHostLog hostLog)
+        => _catalog.AssetsFor(modFolder, hostLog);
 
     public BundleLoadSummary LoadBundles(string modsDir, MelonLogger.Instance log)
     {
@@ -60,9 +74,9 @@ internal class ReplacementCoordinator
             return new BundleLoadSummary(0, 0, 0);
 
         var plan = ModLoadPlanBuilder.Build(modsDir);
-        var summary = _catalog.LoadBundles(plan, log);
-        _templateClones.Load(plan.LoadableMods, log);
-        _templatePatches.Load(plan.LoadableMods, log);
+        var summary = _catalog.LoadBundles(plan, new LoaderLog(log));
+        _templateClones.Load(plan.LoadableMods, new LoaderLog(log));
+        _templatePatches.Load(plan.LoadableMods, new LoaderLog(log));
         return summary;
     }
 
@@ -149,7 +163,9 @@ internal class ReplacementCoordinator
             log.Msg($"Applied {visualReplacements} visual replacement(s) and {textureMutations} texture mutation(s).");
 
         // Clones first: patches may target the newly registered cloneIds.
-        var clonesApplied = _templateCloneApplier.TryApply(log);
+        if (_templatePatchApplier.HasPendingPatches || _templateCloneApplier.HasPendingClones)
+            _templateWorkSeen = true;
+        var clonesApplied = _templateCloneApplier.TryApply(new LoaderLog(log));
         var patchesApplied = _templatePatchApplier.TryApply(log);
 
         // Type-specific post-patch registration. SoundBank clones need to
@@ -160,7 +176,7 @@ internal class ReplacementCoordinator
         // applier did work avoids re-deserialising every clone on each of
         // the ~25 post-scene-load polls.
         if (clonesApplied > 0 || patchesApplied > 0)
-            _templateCloneApplier.RunPostPatchHooks(log);
+            _templateCloneApplier.RunPostPatchHooks(new LoaderLog(log));
 
         // Humanoid-addition prefab script-config mirrors deferred from
         // addition-prefab loading. Resources is populated by this pass
@@ -169,6 +185,34 @@ internal class ReplacementCoordinator
         // that missed during early boot will now resolve. Drains the
         // queue on success.
         _catalog.HumanoidMirror.DrainPending(log);
+
+        if (_templateWorkSeen && !_templatesAppliedRaised
+            && !_templatePatchApplier.HasPendingPatches && !_templateCloneApplier.HasPendingClones)
+        {
+            _templatesAppliedRaised = true;
+            ReportSelfCheck(log);
+            TemplatesApplied?.Invoke();
+        }
+    }
+
+    // One consolidated line once every patch has been tried against the live game.
+    // A non-zero mismatch count is the structural self-check's signal that the game
+    // changed since the mods were built, framed so scattered per-type skip lines
+    // above read as one cause rather than unrelated failures.
+    private void ReportSelfCheck(MelonLogger.Instance log)
+    {
+        var check = _templatePatchApplier.SelfCheck;
+        if (check.Mismatches == 0)
+        {
+            log.Msg($"Template self-check: all {check.Applied} patch op(s) matched the current game.");
+            return;
+        }
+
+        log.Warning(
+            $"Template self-check: {check.Applied} op(s) applied, {check.Mismatches} did not match the current game "
+            + $"(unresolved types {check.UnresolvedTypes}, missing templates {check.MissingTemplates}, "
+            + $"missing fields {check.MissingMembers}, value conversions {check.ConversionFailures}). "
+            + "If the game updated since these mods were built, that is expected.");
     }
 
     public bool HasReplacementTargets()

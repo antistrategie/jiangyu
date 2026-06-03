@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Jiangyu.Shared.Bundles;
 using Jiangyu.Shared.Templates;
-using MelonLoader;
+using Jiangyu.Loader.Logging;
 
 namespace Jiangyu.Loader.Templates;
 
@@ -28,10 +28,15 @@ internal sealed class TemplateCloneCatalog
     public IEnumerable<KeyValuePair<string, Dictionary<string, LoadedCloneDirective>>> EnumerateByType()
         => _clonesByType;
 
-    public void Load(IReadOnlyList<DiscoveredMod> loadableMods, MelonLogger.Instance log)
+    public void Load(IReadOnlyList<DiscoveredMod> loadableMods, LoaderLog log)
     {
         foreach (var mod in loadableMods)
+        {
+            log.Mod = mod.Name;
             LoadFromMod(mod, log);
+        }
+
+        log.Mod = null;
 
         if (_clonesByType.Count == 0)
             return;
@@ -44,7 +49,7 @@ internal sealed class TemplateCloneCatalog
             $"Loaded {CloneCount} template clone directive(s): {string.Join("; ", typeSummaries)}.");
     }
 
-    private void LoadFromMod(DiscoveredMod mod, MelonLogger.Instance log)
+    private void LoadFromMod(DiscoveredMod mod, LoaderLog log)
     {
         if (string.IsNullOrEmpty(mod.ManifestPath) || !File.Exists(mod.ManifestPath))
             return;
@@ -57,7 +62,7 @@ internal sealed class TemplateCloneCatalog
         }
         catch (Exception ex)
         {
-            log.Error($"Mod '{mod.Name}': failed to read template clones: {ex.Message}");
+            log.Error($"Failed to read template clones: {ex.Message}");
             return;
         }
 
@@ -69,7 +74,7 @@ internal sealed class TemplateCloneCatalog
             TryMergeClone(mod, directive, log);
     }
 
-    private void TryMergeClone(DiscoveredMod mod, CompiledTemplateClone directive, MelonLogger.Instance log)
+    private void TryMergeClone(DiscoveredMod mod, CompiledTemplateClone directive, LoaderLog log)
     {
         if (directive == null)
             return;
@@ -82,21 +87,18 @@ internal sealed class TemplateCloneCatalog
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(directive.SourceId))
-        {
-            log.Warning(
-                $"Mod '{mod.Name}': template clone on '{templateType}' has empty sourceId; skipped.");
-            return;
-        }
+        // An empty sourceId marks a 'create' directive (a fresh template), which
+        // is valid; only a clone (sourceId present) needs the differ-from-clone check.
+        var isCreate = string.IsNullOrWhiteSpace(directive.SourceId);
 
         if (string.IsNullOrWhiteSpace(directive.CloneId))
         {
             log.Warning(
-                $"Mod '{mod.Name}': template clone on '{templateType}' has empty cloneId; skipped.");
+                $"Mod '{mod.Name}': template {(isCreate ? "create" : "clone")} on '{templateType}' has empty id; skipped.");
             return;
         }
 
-        if (string.Equals(directive.SourceId, directive.CloneId, StringComparison.Ordinal))
+        if (!isCreate && string.Equals(directive.SourceId, directive.CloneId, StringComparison.Ordinal))
         {
             log.Warning(
                 $"Mod '{mod.Name}': template clone '{templateType}:{directive.SourceId}' has cloneId equal to sourceId; skipped.");

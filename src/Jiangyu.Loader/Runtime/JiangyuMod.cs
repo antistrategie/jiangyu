@@ -1,5 +1,9 @@
 using System.Collections;
+using System.Reflection;
 using Jiangyu.Loader.Diagnostics;
+using Jiangyu.Loader.Diagnostics.InjectionGate;
+using Jiangyu.Loader.Logging;
+using Jiangyu.Loader.Sdk;
 using MelonLoader;
 using MelonLoader.Utils;
 
@@ -51,9 +55,17 @@ public class JiangyuMod : MelonMod
     private readonly HashSet<int> _inspectedFrames = new();
     private readonly HashSet<int> _templatesInspectAttempts = new();
     private bool _templatesDumpSucceededThisScene;
+    private bool _gateLiveDone;
+    private ModHost _modHost;
+    private InProcessHookBus _hookBus;
+    private TacticalHookPublisher _tacticalHooks;
+    private StrategyHookPublisher _strategyHooks;
 
     public override void OnInitializeMelon()
     {
+        SdkAssemblyResolver.Install();
+        BindSdkLog();
+
         LoggerInstance.Msg($"Jiangyu loader v{Info.Version} initialising...");
 
         var modsDir = Path.Combine(MelonEnvironment.MelonBaseDirectory, "Mods");
@@ -62,7 +74,121 @@ public class JiangyuMod : MelonMod
         LoggerInstance.Msg(
             $"Resolved {loadSummary.LoadableModCount} loadable mod(s), skipped {loadSummary.BlockedModCount} blocked mod(s), loaded {loadSummary.LoadedBundleCount} bundle(s).");
 
+        GameVersionGate.Check(UnityEngine.Application.unityVersion, ReadCompiledForUnity(modsDir), LoggerInstance.Warning);
+
         _replacementCoordinator.InstallHarmonyPatches(HarmonyInstance, LoggerInstance);
+
+        if (InjectionGateInspector.IsEnabled())
+        {
+            InjectionGateInspector.Run("init", live: false, LoggerInstance);
+        }
+
+        InitialiseCodeMods(modsDir);
+    }
+
+    // Route the SDK's static Jiangyu.Sdk.Log (used by injected handlers and other
+    // context-less mod code) into the loader log. Debug is enabled only when the
+    // dev opt-in flag jiangyu-debug.flag is present in UserData, so mods can leave
+    // Log.Debug calls in without spamming a player's log.
+    private void BindSdkLog()
+    {
+        Jiangyu.Sdk.Log.Bind((level, message) =>
+        {
+            switch (level)
+            {
+                case Jiangyu.Sdk.LogLevel.Error: LoggerInstance.Error(message); break;
+                case Jiangyu.Sdk.LogLevel.Warn: LoggerInstance.Warning(message); break;
+                case Jiangyu.Sdk.LogLevel.Debug: LoggerInstance.Msg($"[debug] {message}"); break;
+                default: LoggerInstance.Msg(message); break;
+            }
+        });
+
+        var debugFlag = Path.Combine(MelonEnvironment.UserDataDirectory, "jiangyu-debug.flag");
+        Jiangyu.Sdk.Log.MinLevel = File.Exists(debugFlag)
+            ? Jiangyu.Sdk.LogLevel.Debug
+            : Jiangyu.Sdk.LogLevel.Info;
+    }
+
+    private void InitialiseCodeMods(string modsDir)
+    {
+        try
+        {
+            var hostLog = new MelonHostLog(LoggerInstance);
+            _hookBus = new InProcessHookBus(hostLog);
+            ModPatchCoordinator.Initialise(HarmonyInstance);
+            _modHost = new ModHost(hostLog, LoaderModContext.Factory(
+                hostLog, _hookBus, modsDir,
+                assetsProvider: modId => _replacementCoordinator.AssetsFor(modId, hostLog),
+                coroutineStart: MelonCoroutines.Start,
+                coroutineStop: MelonCoroutines.Stop,
+                patchingEnabled: true));
+            _tacticalHooks = new TacticalHookPublisher(_hookBus, hostLog);
+            _strategyHooks = new StrategyHookPublisher(_hookBus, hostLog);
+            StrategyHarmonyPatch.Bus = _hookBus;
+            ModStatePersistencePatch.Store = new ModStateStore(_modHost, hostLog);
+            _replacementCoordinator.TemplatesApplied = () => _modHost.TemplatesApplied();
+
+            foreach (var modDir in Directory.GetDirectories(modsDir))
+            {
+                var codeDir = Path.Combine(modDir, "code");
+                if (!Directory.Exists(codeDir))
+                    continue;
+
+                var modId = ResolveModId(modDir);
+                foreach (var dll in Directory.GetFiles(codeDir, "*.dll"))
+                {
+                    try
+                    {
+                        var asm = Assembly.LoadFrom(dll);
+                        _modHost.Register(asm, modId);
+                        JiangyuTypeRegistry.Register(JiangyuTypeCatalog.Scan(asm, modId), hostLog);
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerInstance.Error($"Code mod load failed for {dll}: {ex.Message}");
+                    }
+                }
+            }
+
+            // Injected [JiangyuType] handlers the game constructs have no context of
+            // their own; ModContext.For(this) resolves one by the handler's assembly,
+            // and the static Log tags each line with the mod that emitted it.
+            Jiangyu.Sdk.ModContext.BindResolver(_modHost.ResolveContext);
+            Jiangyu.Sdk.Log.BindModResolver(_modHost.ModIdForAssembly);
+
+            _modHost.InitAll();
+        }
+        catch (Exception ex)
+        {
+            LoggerInstance.Error($"Code-mod initialisation failed: {ex}");
+        }
+    }
+
+    // The mod id namespacing every [JiangyuType] as 'modId:Name'. It must match the ns:
+    // prefix the compiler baked into the template type= references, which is the manifest
+    // Name, so prefer that over the folder name: a renamed Mods/<folder> still resolves
+    // its types. Fall back to the folder name when there is no manifest.
+    internal static string ResolveModId(string modDir)
+    {
+        if (Jiangyu.Shared.Bundles.LoaderManifest.TryRead(modDir, out var manifest)
+            && !string.IsNullOrWhiteSpace(manifest.Name))
+            return manifest.Name;
+        return Path.GetFileName(modDir);
+    }
+
+    // Each deployed mod's folder name paired with the game Unity version it was
+    // compiled against, read from its jiangyu.json. Null when the manifest predates
+    // the stamp or was hand-written.
+    private static IEnumerable<(string ModId, string CompiledForUnity)> ReadCompiledForUnity(string modsDir)
+    {
+        if (!Directory.Exists(modsDir))
+            yield break;
+
+        foreach (var modDir in Directory.GetDirectories(modsDir))
+        {
+            if (Jiangyu.Shared.Bundles.LoaderManifest.TryRead(modDir, out var manifest))
+                yield return (Path.GetFileName(modDir), manifest.CompiledForUnity);
+        }
     }
 
     public override void OnSceneWasLoaded(int buildIndex, string sceneName)
@@ -74,10 +200,14 @@ public class JiangyuMod : MelonMod
         _inspectedFrames.Clear();
         _templatesInspectAttempts.Clear();
         _templatesDumpSucceededThisScene = false;
+        _gateLiveDone = false;
+        _tacticalHooks?.Reset();
         _replacementCoordinator.OnSceneUnloaded();
         InspectionSink.RefreshFlagCache();
 
         LoggerInstance.Msg($"Scene loaded: {sceneName} ({buildIndex})");
+
+        _modHost?.SceneLoaded(buildIndex, sceneName);
 
         if (InspectionSink.IsEnabled())
         {
@@ -91,6 +221,15 @@ public class JiangyuMod : MelonMod
     public override void OnUpdate()
     {
         _frameInScene++;
+
+        // Injection gate live phase: retry every ~120 frames in Tactical until an
+        // active actor is present, then run once. Gated by jiangyu-gate.flag.
+        if (!_gateLiveDone && _currentScene == "Tactical"
+            && _frameInScene >= 300 && _frameInScene % 300 == 0
+            && InjectionGateInspector.IsEnabled())
+        {
+            _gateLiveDone = InjectionGateInspector.RunLiveIfReady($"Tactical-t{_frameInScene}f", LoggerInstance);
+        }
 
         if (InspectionSink.IsEnabled() && !string.IsNullOrEmpty(_currentScene))
         {
@@ -138,6 +277,13 @@ public class JiangyuMod : MelonMod
         }
 
         _replacementCoordinator.UpdateDrivenReplacements(LoggerInstance);
+
+        if (_currentScene == "Tactical")
+            _tacticalHooks?.EnsureAttached();
+        else if (_currentScene == "Strategy")
+            _strategyHooks?.EnsureAttached();
+
+        _modHost?.Update();
     }
 
     private IEnumerator FollowUpPoll()

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus } from "lucide-react";
-import type { EditorError } from "./types";
+import type { EditorError, EditorNodeKind } from "./types";
 import { parseCrossMemberPayload } from "@features/templates/crossMember";
 import {
   parseCrossInstancePayload,
@@ -270,7 +270,7 @@ export function TemplateVisualEditor({
   }, [keyByUiId, persistCollapsed]);
 
   const handleAddNode = useCallback(
-    (kind: "Patch" | "Clone") => {
+    (kind: EditorNodeKind) => {
       dispatch({
         type: "addNode",
         node: { kind, templateType: "", directives: [], _uiId: uiId() },
@@ -475,6 +475,18 @@ export function TemplateVisualEditor({
                   </button>
                 </div>
               ))}
+              {/* Create makes a fresh template with no source, so it is a
+                  button only — there is no instance to drag onto it. */}
+              <div className={styles.addNodeZone}>
+                <button
+                  type="button"
+                  className={styles.addNodeBtn}
+                  onClick={() => handleAddNode("Create")}
+                >
+                  <Plus size={12} />
+                  Add Create
+                </button>
+              </div>
             </div>
           </div>
         </CompositeCollapseContext>

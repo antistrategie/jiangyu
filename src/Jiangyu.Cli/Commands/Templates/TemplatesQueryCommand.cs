@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Jiangyu.Core.Code;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Il2Cpp;
 using Jiangyu.Core.Templates;
@@ -25,7 +26,7 @@ public static class TemplatesQueryCommand
     {
         var pathArgument = new Argument<string>("path")
         {
-            Description = "jq-like path: TypeName, TypeName.Member, TypeName.Member[0], etc.",
+            Description = "jq-like path: TypeName, TypeName.Member, TypeName.Member[0], etc. A qualified modId:Name (e.g. \"WOMENACE:WomenaceFocus\") resolves a mod [JiangyuType] from compiled/code under the current directory.",
         };
         var assemblyOption = new Option<string?>("--assembly")
         {
@@ -113,10 +114,40 @@ public static class TemplatesQueryCommand
                     additionalSearchDirectories.Add(melonLoaderNet6);
             }
 
+            // A qualified modId:Name in the type position is a mod [JiangyuType], not a
+            // game type. Scan the project's compiled code DLLs (under the current
+            // directory) into the catalog so the type token resolves to the code type's
+            // CLR FullName below, and the member walk treats it like any other type: its
+            // own fields plus the inherited game-base members.
+            var isQualifiedCodeType = path.Contains(':');
+            IReadOnlyList<string> codeAssemblies = [];
+            if (isQualifiedCodeType)
+            {
+                var (assemblies, searchDirs) = CodeTypeResolver.LoadInputs(
+                    Path.Combine(Directory.GetCurrentDirectory(), "compiled", "code"));
+                codeAssemblies = assemblies;
+                additionalSearchDirectories.AddRange(searchDirs);
+            }
+
             try
             {
                 var supplement = cachePath is not null ? Il2CppMetadataCache.LoadIfPresent(cachePath) : null;
-                using var catalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirectories, supplement);
+                using var catalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirectories, supplement, codeAssemblies);
+
+                var resolvedCodeType = false;
+                if (isQualifiedCodeType)
+                {
+                    var dotIndex = path.IndexOf('.');
+                    var typeToken = dotIndex < 0 ? path : path[..dotIndex];
+                    var rest = dotIndex < 0 ? string.Empty : path[dotIndex..];
+                    var bareName = CodeTypeResolver.BareName(typeToken);
+                    if (CodeTypeResolver.ResolveFullName(catalog, bareName) is { } fullName)
+                    {
+                        path = fullName + rest;
+                        resolvedCodeType = true;
+                    }
+                }
+
                 var result = TemplateMemberQuery.Run(catalog, path, namespaceHint: namespaceHint);
 
                 return result.Kind switch
@@ -125,7 +156,7 @@ public static class TemplatesQueryCommand
                     QueryResultKind.TypeNode when emitJson => WriteTypeNodeJson(catalog, result, includeReadOnly),
                     QueryResultKind.TypeNode => WriteTypeNodeText(catalog, result, includeReadOnly),
                     QueryResultKind.Leaf when emitJson => WriteLeafJson(result),
-                    QueryResultKind.Leaf => WriteLeafText(catalog, result),
+                    QueryResultKind.Leaf => WriteLeafText(catalog, result, resolvedCodeType),
                     _ => WriteError($"unexpected result kind: {result.Kind}"),
                 };
             }
@@ -231,7 +262,7 @@ public static class TemplatesQueryCommand
         return 0;
     }
 
-    private static int WriteLeafText(TemplateTypeCatalog catalog, QueryResult result)
+    private static int WriteLeafText(TemplateTypeCatalog catalog, QueryResult result, bool isCodeType)
     {
         var type = result.CurrentType!;
         Console.WriteLine($"{result.ResolvedPath}");
@@ -246,7 +277,9 @@ public static class TemplatesQueryCommand
         if (result.IsLikelyOdinOnly)
             Console.WriteLine("  warning:   likely Odin-routed; not in Unity asset data. Runtime writes may work; verify in-game.");
 
-        var example = BuildPatchExample(result);
+        // A [JiangyuType] is constructed via a type= reference, not patched by
+        // template id, so the flat templatePatches example does not apply.
+        var example = isCodeType ? null : BuildPatchExample(result);
         if (example != null)
         {
             Console.WriteLine();

@@ -117,22 +117,20 @@ public static class TemplatePatchEmitter
                 continue;
             }
 
-            if (string.IsNullOrWhiteSpace(clone.SourceId))
-            {
-                log.Error($"Template clone '{templateType}': sourceId is empty.");
-                errorCount++;
-                continue;
-            }
+            // An empty sourceId marks a 'create' directive (a fresh template),
+            // which is valid; only a clone (sourceId present) needs the
+            // differ-from-clone check.
+            var isCreate = string.IsNullOrWhiteSpace(clone.SourceId);
 
             if (string.IsNullOrWhiteSpace(clone.CloneId))
             {
-                log.Error(
-                    $"Template clone '{templateType}:{clone.SourceId}': cloneId is empty.");
+                var label = isCreate ? templateType : $"{templateType}:{clone.SourceId}";
+                log.Error($"Template {(isCreate ? "create" : "clone")} '{label}': id is empty.");
                 errorCount++;
                 continue;
             }
 
-            if (string.Equals(clone.SourceId, clone.CloneId, StringComparison.Ordinal))
+            if (!isCreate && string.Equals(clone.SourceId, clone.CloneId, StringComparison.Ordinal))
             {
                 log.Error(
                     $"Template clone '{templateType}:{clone.SourceId}': cloneId must differ from sourceId.");

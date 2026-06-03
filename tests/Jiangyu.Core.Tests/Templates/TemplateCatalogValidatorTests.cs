@@ -13,6 +13,57 @@ public class TemplateCatalogValidatorTests
     private static string FixtureAssemblyPath => typeof(FixtureEntity).Assembly.Location;
     private static TemplateTypeCatalog Load() => TemplateTypeCatalog.Load(FixtureAssemblyPath);
 
+    // A catalog with the test assembly scanned as a code DLL (a stand-in primary keeps
+    // the test fixtures in the extra-types set), so a type="modId:Name" construction
+    // resolves the [JiangyuType] ValidatorCodeFixture and its fields are validated.
+    private static TemplateTypeCatalog LoadWithCodeFixtures()
+        => TemplateTypeCatalog.Load(
+            typeof(TemplateTypeCatalog).Assembly.Location,
+            additionalAssembliesToScan: new[] { typeof(ValidatorCodeFixture).Assembly.Location });
+
+    private static CompiledTemplatePatch CodeConstructionPatch(string fieldOnCodeType)
+        => new()
+        {
+            TemplateType = "FixtureEntity",
+            TemplateId = "unit.x",
+            Set = [new CompiledTemplateSetOperation
+            {
+                Op = CompiledTemplateOp.Set,
+                FieldPath = "Properties",
+                Value = new CompiledTemplateValue
+                {
+                    Kind = CompiledTemplateValueKind.Composite,
+                    Composite = new CompiledTemplateComposite
+                    {
+                        TypeName = "testmod:ValidatorCodeFixture",
+                        Operations = SetOps(
+                            (fieldOnCodeType, new() { Kind = CompiledTemplateValueKind.Int32, Int32 = 1 })),
+                    },
+                },
+            }],
+        };
+
+    [Fact]
+    public void CodeTypeConstruction_ValidatesAKnownField()
+    {
+        using var catalog = LoadWithCodeFixtures();
+        var log = new RecordingLog();
+        var errors = TemplateCatalogValidator.Validate(
+            new[] { CodeConstructionPatch("GoodField") }, clones: null, catalog, log);
+        Assert.Equal(0, errors);
+    }
+
+    [Fact]
+    public void CodeTypeConstruction_RejectsAnUnknownField()
+    {
+        using var catalog = LoadWithCodeFixtures();
+        var log = new RecordingLog();
+        var errors = TemplateCatalogValidator.Validate(
+            new[] { CodeConstructionPatch("Nope") }, clones: null, catalog, log);
+        Assert.Equal(1, errors);
+        Assert.Contains("Nope", log.Errors[0]);
+    }
+
     private sealed class RecordingLog : ILogSink
     {
         public readonly List<string> Errors = new();
@@ -2725,4 +2776,13 @@ public class TemplateCatalogValidatorTests
         public bool Contains(string category, string name)
             => category == _category && name == _name;
     }
+}
+
+// A mod [JiangyuType] (via the test-local attribute) with one settable field. Scanned
+// into the catalog as a code DLL would be, so a type="modId:ValidatorCodeFixture"
+// construction resolves it and the validator checks the fields set on it.
+[Jiangyu.Core.Tests.Code.JiangyuType]
+internal sealed class ValidatorCodeFixture
+{
+    public int GoodField = 1;
 }

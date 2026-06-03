@@ -16,6 +16,14 @@
     <MelonLoaderDir Condition="'$(MelonLoaderDir)' == ''">$(GameDir)/MelonLoader/net6</MelonLoaderDir>
     <GameAssembliesDir Condition="'$(GameAssembliesDir)' == ''">$(GameDir)/MelonLoader/Il2CppAssemblies</GameAssembliesDir>
     <MinVerTagPrefix>v</MinVerTagPrefix>
+    <!--
+      Audit only direct package references. The vendored AssetRipper pulls a
+      transitive SharpCompress with a moderate advisory (NU1902); auditing the
+      whole transitive graph flags it in every project that references AssetRipper.
+      Direct-mode keeps advisories on the packages we actually choose, and still
+      surfaces high and critical severities.
+    -->
+    <NuGetAuditMode>direct</NuGetAuditMode>
   </PropertyGroup>
 
   <ItemGroup>

@@ -6,6 +6,7 @@ export const PALETTE_SCOPE = {
   App: "APP · 应用",
   Project: "PROJECT · 项目",
   Unity: "UNITY · 引擎",
+  Code: "CODE · 代码",
   View: "VIEW · 视图",
   File: "FILE · 文件",
   Editor: "EDITOR · 编辑",

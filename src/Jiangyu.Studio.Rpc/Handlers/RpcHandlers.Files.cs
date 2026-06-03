@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using AssetRipper.Primitives;
 using Jiangyu.Core.Config;
+using Jiangyu.Core.IO;
 using Jiangyu.Core.Unity;
 using Jiangyu.Core.Rpc;
 using static Jiangyu.Studio.Rpc.RpcHelpers;
@@ -276,7 +277,8 @@ public static partial class RpcHandlers
         {
             if (IsStrictDescendantPath(src, dest))
                 throw new IOException("Cannot copy a directory into itself");
-            CopyDirectoryRecursive(src, dest);
+            // overwrite: false — the destination was just checked not to exist.
+            DirectoryCopier.Copy(src, dest, overwrite: false);
         }
         else if (File.Exists(src))
         {
@@ -288,19 +290,6 @@ public static partial class RpcHandlers
         }
 
         return NullElement;
-    }
-
-    private static void CopyDirectoryRecursive(string src, string dest)
-    {
-        // Sequential: project copies are small enough that thread-pool overhead
-        // outweighs any parallelism win, and concurrent writes are a regression
-        // on HDDs. Sharing a queue across sibling directories would matter only
-        // at much larger scales than this tool handles.
-        Directory.CreateDirectory(dest);
-        foreach (var file in Directory.EnumerateFiles(src))
-            File.Copy(file, Path.Combine(dest, Path.GetFileName(file)));
-        foreach (var dir in Directory.EnumerateDirectories(src))
-            CopyDirectoryRecursive(dir, Path.Combine(dest, Path.GetFileName(dir)));
     }
 
     [McpTool("jiangyu_delete_path",

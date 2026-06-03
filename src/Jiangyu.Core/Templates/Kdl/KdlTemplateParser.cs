@@ -180,11 +180,13 @@ public static class KdlTemplateParser
                     break;
 
                 case "clone":
-                    if (TryParseCloneNode(node, pos, log, out var clone, out var clonePatches))
+                case "create":
+                    var isCreate = node.Name == "create";
+                    if (TryParseCloneNode(node, pos, log, isCreate, out var clone, out var clonePatches))
                     {
                         var editorNode = new KdlEditorNode
                         {
-                            Kind = KdlEditorNodeKind.Clone,
+                            Kind = isCreate ? KdlEditorNodeKind.Create : KdlEditorNodeKind.Clone,
                             TemplateType = clone.TemplateType ?? string.Empty,
                             SourceId = clone.SourceId,
                             CloneId = clone.CloneId,
@@ -207,7 +209,7 @@ public static class KdlTemplateParser
                 default:
                     doc.Errors.Add(new KdlEditorError
                     {
-                        Message = $"Unknown top-level node '{node.Name}'. Expected 'patch' or 'clone'.",
+                        Message = $"Unknown top-level node '{node.Name}'. Expected 'patch', 'clone' or 'create'.",
                         Line = line,
                     });
                     break;
@@ -592,7 +594,8 @@ public static class KdlTemplateParser
                     break;
 
                 case "clone":
-                    if (!TryParseCloneNode(node, pos, log, out var clone, out var clonePatches))
+                case "create":
+                    if (!TryParseCloneNode(node, pos, log, isCreate: node.Name == "create", out var clone, out var clonePatches))
                     {
                         errorCount++;
                         break;
@@ -604,7 +607,7 @@ public static class KdlTemplateParser
                     break;
 
                 default:
-                    log.Error($"{pos}: unknown top-level node '{node.Name}'. Expected 'patch' or 'clone'.");
+                    log.Error($"{pos}: unknown top-level node '{node.Name}'. Expected 'patch', 'clone' or 'create'.");
                     errorCount++;
                     break;
             }
@@ -659,30 +662,41 @@ public static class KdlTemplateParser
     }
 
     // clone "TemplateType" from="sourceId" id="cloneId" { ... }
+    // clone "TemplateType" from="sourceId" id="cloneId" { ... }  (copies a source)
+    // create "TemplateType" id="newId" { ... }                   (fresh template)
     private static bool TryParseCloneNode(
-        KdlNode node, string pos, ILogSink log,
+        KdlNode node, string pos, ILogSink log, bool isCreate,
         out CompiledTemplateClone clone, out CompiledTemplatePatch? inlinePatches)
     {
         clone = null!;
         inlinePatches = null;
+        var keyword = isCreate ? "create" : "clone";
 
         if (node.Arguments.Count < 1)
         {
-            log.Error($"{pos}: 'clone' requires at least one argument: templateType.");
+            log.Error($"{pos}: '{keyword}' requires at least one argument: templateType.");
             return false;
         }
 
         var templateType = node.Arguments[0].AsString();
         if (string.IsNullOrWhiteSpace(templateType))
         {
-            log.Error($"{pos}: 'clone' templateType must be a non-empty string.");
+            log.Error($"{pos}: '{keyword}' templateType must be a non-empty string.");
             return false;
         }
 
         var from = GetProperty(node, "from");
         var id = GetProperty(node, "id");
 
-        if (string.IsNullOrWhiteSpace(from))
+        if (isCreate)
+        {
+            if (!string.IsNullOrWhiteSpace(from))
+            {
+                log.Error($"{pos}: 'create' makes a fresh template and takes no from= property (use 'clone' to copy a source).");
+                return false;
+            }
+        }
+        else if (string.IsNullOrWhiteSpace(from))
         {
             log.Error($"{pos}: 'clone' requires from=\"sourceId\" property.");
             return false;
@@ -690,14 +704,14 @@ public static class KdlTemplateParser
 
         if (string.IsNullOrWhiteSpace(id))
         {
-            log.Error($"{pos}: 'clone' requires id=\"cloneId\" property.");
+            log.Error($"{pos}: '{keyword}' requires id=\"{(isCreate ? "newId" : "cloneId")}\" property.");
             return false;
         }
 
         clone = new CompiledTemplateClone
         {
             TemplateType = templateType,
-            SourceId = from!,
+            SourceId = isCreate ? null : from!,
             CloneId = id!,
         };
 
