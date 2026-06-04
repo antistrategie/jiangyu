@@ -28,7 +28,7 @@ jobs:
           path: menace-ci-dependencies
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v5.2.0
         with:
           dotnet-version: "10.0.x"
 
@@ -110,7 +110,7 @@ jobs:
           path: menace-ci-dependencies
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v5.2.0
         with:
           dotnet-version: "10.0.x"
 
@@ -154,7 +154,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v5.2.0
         with:
           dotnet-version: "10.0.x"
 
@@ -183,7 +183,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v5.2.0
         with:
           dotnet-version: "10.0.x"
 
