@@ -155,6 +155,9 @@ internal sealed class BridgeServer
         }
     }
 
+    // camelCase to match Studio's generated [RpcType] types; the envelope keeps its [JsonPropertyName] names.
+    private static readonly JsonSerializerOptions ResponseOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
     private static void WriteResponse(NetworkStream stream, object writeLock, string id, object result, string error)
     {
         // The client may have disconnected between enqueue and this (main-thread) write,
@@ -162,7 +165,7 @@ internal sealed class BridgeServer
         if (!stream.CanWrite)
             return;
         var response = new BridgeResponse { Id = id, Ok = error == null, Result = result, Error = error };
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(response);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(response, ResponseOptions);
         lock (writeLock)
             BridgeFraming.WriteMessage(stream, bytes);
     }

@@ -30,7 +30,8 @@ import {
   type EditorWordWrap,
   type TemplateEditorMode,
 } from "@features/settings/settings";
-import { bridgeSetEnabled, bridgeStatus, type BridgeStatusResult } from "@features/bridge/bridge";
+import { bridgeSetEnabled } from "@features/bridge/bridge";
+import { useBridgeStatus } from "@features/bridge/useBridgeStatus";
 import styles from "./SettingsModal.module.css";
 
 type SectionId = "appearance" | "session" | "editor" | "ai" | "paths" | "bridge" | "about";
@@ -544,27 +545,7 @@ function PathRow({ label, hint, path, missingIcon, onChange }: PathRowProps) {
 // --- Game bridge section ---------------------------------------------------
 
 function BridgeSection() {
-  const [status, setStatus] = useState<BridgeStatusResult | null>(null);
-
-  // Poll the bridge so the indicator goes live when the game connects/disconnects.
-  useEffect(() => {
-    let alive = true;
-    const tick = () => {
-      void bridgeStatus()
-        .then((s) => {
-          if (alive) setStatus(s);
-        })
-        .catch(() => {
-          if (alive) setStatus(null);
-        });
-    };
-    tick();
-    const interval = window.setInterval(tick, 2000);
-    return () => {
-      alive = false;
-      window.clearInterval(interval);
-    };
-  }, []);
+  const { status, setStatus } = useBridgeStatus();
 
   const enabled = status?.enabled ?? false;
   const connected = status?.connected ?? false;

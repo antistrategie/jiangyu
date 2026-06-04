@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AssetBrowser } from "@features/assets/AssetBrowser/AssetBrowser";
 import { TemplateBrowser } from "@features/templates/TemplateBrowser/TemplateBrowser";
+import { SimplePaneView } from "@features/panes/paneComponents";
 import { TabbedMonacoEditor } from "@features/editor/CodeEditor/TabbedMonacoEditor";
 import { rpcCall, subscribe } from "@shared/rpc";
 import { useApplyUiFontScale } from "@features/settings/settings";
@@ -83,14 +84,20 @@ export function PaneWindow({
     );
   }
 
-  if (filePaths.length === 0) return <Placeholder text="Pane window · 副窗口" />;
-  return <CodePaneShell filePaths={filePaths} initialActive={activeFilePath} />;
+  if (paneKind === "code") {
+    if (filePaths.length === 0) return <Placeholder text="Pane window · 副窗口" />;
+    return <CodePaneShell filePaths={filePaths} initialActive={activeFilePath} />;
+  }
+
+  if (paneKind !== null) return <SimplePaneView kind={paneKind} />;
+  return <Placeholder text="Pane window · 副窗口" />;
 }
 
 function titleFor(kind: PaneKind | null, activeFilePath: string | null): string {
   if (kind === "assetBrowser") return "Jiangyu Studio — Asset Browser";
   if (kind === "templateBrowser") return "Jiangyu Studio — Template Browser";
   if (kind === "agent") return "Jiangyu Studio — Agent";
+  if (kind === "uiInspector") return "Jiangyu Studio — UI Inspector";
   if (kind === "code" && activeFilePath !== null) {
     return `Jiangyu Studio — ${basename(activeFilePath)}`;
   }

@@ -323,6 +323,8 @@ public static partial class RpcDispatcher
         {
             "assetBrowser" => "Jiangyu Studio — Asset Browser",
             "templateBrowser" => "Jiangyu Studio — Template Browser",
+            "agent" => "Jiangyu Studio — Agent",
+            "uiInspector" => "Jiangyu Studio — UI Inspector",
             "code" when !string.IsNullOrEmpty(activeFilePath) =>
                 $"Jiangyu Studio — {Path.GetFileName(activeFilePath)}",
             "code" => "Jiangyu Studio — Code",

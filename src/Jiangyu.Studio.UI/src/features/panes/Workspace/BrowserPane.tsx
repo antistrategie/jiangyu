@@ -5,7 +5,7 @@ import type { AssetBrowserState, TemplateBrowserState } from "@features/panes/br
 import { useLayoutStore } from "@features/panes/layoutStore";
 import { AssetBrowser } from "@features/assets/AssetBrowser/AssetBrowser";
 import { TemplateBrowser } from "@features/templates/TemplateBrowser/TemplateBrowser";
-import { AgentPanel } from "@features/agent/AgentPanel/AgentPanel";
+import { SimplePaneView } from "@features/panes/paneComponents";
 import { ContextMenu } from "@shared/ui/ContextMenu/ContextMenu";
 import { DropOverlay } from "./DropOverlay";
 import type { DropZone } from "./dropZone";
@@ -133,9 +133,7 @@ export function BrowserPane({
             initialState={pane.state as AssetBrowserState | undefined}
             onStateChange={(state) => useLayoutStore.getState().setBrowserPaneState(pane.id, state)}
           />
-        ) : pane.kind === "agent" ? (
-          <AgentPanel />
-        ) : (
+        ) : pane.kind === "templateBrowser" ? (
           <TemplateBrowser
             projectPath={projectPath}
             fileEntries={fileEntries}
@@ -146,6 +144,8 @@ export function BrowserPane({
             initialState={pane.state as TemplateBrowserState | undefined}
             onStateChange={(state) => useLayoutStore.getState().setBrowserPaneState(pane.id, state)}
           />
+        ) : (
+          <SimplePaneView kind={pane.kind} />
         )}
         <DropOverlay
           active={dragActive}

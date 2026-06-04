@@ -203,6 +203,9 @@ internal static class UiTreeProbe
         }
     }
 
+    // Over the bridge this serialises camelCase and Studio reads it through the [RpcType]
+    // mirror in Jiangyu.Studio.Rpc/Handlers/RpcHandlers.Bridge.cs (UiDump/UiNode). The
+    // ActiveScreen..Children fields below are that contract; Timestamp/SceneTag are file-dump only.
     private sealed class UiDump
     {
         public DateTimeOffset Timestamp { get; set; }

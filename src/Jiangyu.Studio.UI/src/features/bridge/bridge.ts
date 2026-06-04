@@ -1,6 +1,6 @@
-import { rpcCall, type BridgeStatusResult } from "@shared/rpc";
+import { rpcCall, type BridgeStatusResult, type UiDump, type UiNode } from "@shared/rpc";
 
-export type { BridgeStatusResult };
+export type { BridgeStatusResult, UiDump, UiNode };
 
 /** Current bridge state: enabled (the game's `bridge` flag is set) and connected (socket up). */
 export function bridgeStatus(): Promise<BridgeStatusResult> {
@@ -12,7 +12,7 @@ export function bridgeSetEnabled(enabled: boolean): Promise<BridgeStatusResult> 
   return rpcCall<BridgeStatusResult>("bridgeSetEnabled", { enabled });
 }
 
-/** Capture the game's live UI tree (the inspector feed). Rejects when not connected. */
-export function bridgeUiCapture<T = unknown>(): Promise<T> {
-  return rpcCall<T>("bridgeUiCapture");
+/** Capture the game's live UI tree (the inspector feed). Rejects when not connected, null when no UI is up. */
+export function bridgeUiCapture(): Promise<UiDump | null> {
+  return rpcCall<UiDump | null>("bridgeUiCapture");
 }

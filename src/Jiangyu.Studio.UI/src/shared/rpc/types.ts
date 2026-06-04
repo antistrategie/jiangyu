@@ -184,6 +184,23 @@ export interface BridgeStatusResult {
   connected: boolean;
 }
 
+export interface UiDump {
+  activeScreen: string | null;
+  currentDialog: string | null;
+  nodeCount: number;
+  truncated: boolean;
+  screenTree: UiNode | null;
+  dialogTree: UiNode | null;
+}
+
+export interface UiNode {
+  type: string | null;
+  name: string | null;
+  text: string | null;
+  classes: string[] | null;
+  children: UiNode[] | null;
+}
+
 export interface CodeSyncResult {
   createdCount: number;
   updatedCount: number;

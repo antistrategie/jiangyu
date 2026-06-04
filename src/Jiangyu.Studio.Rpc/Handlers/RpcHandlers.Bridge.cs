@@ -68,4 +68,50 @@ public static partial class RpcHandlers
         [JsonPropertyName("connected")]
         public required bool Connected { get; set; }
     }
+
+    // UiDump/UiNode define the ui.capture wire contract. The loader emits this shape (camelCase)
+    // and BridgeUiCapture passes it through verbatim; [RpcType] generates the matching TS in the UI.
+    // Mirror of the loader's UiTreeProbe dump (Jiangyu.Loader/Diagnostics/UiProbe/UiTreeProbe.cs).
+    /// <summary>A live capture of the game's UI tree: the active screen and any open dialog.</summary>
+    [RpcType]
+    internal sealed class UiDump
+    {
+        [JsonPropertyName("activeScreen")]
+        public required string? ActiveScreen { get; set; }
+
+        [JsonPropertyName("currentDialog")]
+        public required string? CurrentDialog { get; set; }
+
+        [JsonPropertyName("nodeCount")]
+        public required int NodeCount { get; set; }
+
+        [JsonPropertyName("truncated")]
+        public required bool Truncated { get; set; }
+
+        [JsonPropertyName("screenTree")]
+        public required UiNode? ScreenTree { get; set; }
+
+        [JsonPropertyName("dialogTree")]
+        public required UiNode? DialogTree { get; set; }
+    }
+
+    /// <summary>A node in a captured UI tree.</summary>
+    [RpcType]
+    internal sealed class UiNode
+    {
+        [JsonPropertyName("type")]
+        public required string? Type { get; set; }
+
+        [JsonPropertyName("name")]
+        public required string? Name { get; set; }
+
+        [JsonPropertyName("text")]
+        public required string? Text { get; set; }
+
+        [JsonPropertyName("classes")]
+        public required List<string>? Classes { get; set; }
+
+        [JsonPropertyName("children")]
+        public required List<UiNode>? Children { get; set; }
+    }
 }

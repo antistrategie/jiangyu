@@ -7,7 +7,20 @@ export interface Tab {
   readonly name: string;
 }
 
-export type PaneKind = "code" | "assetBrowser" | "templateBrowser" | "agent";
+// Pane kinds are classified once here so the types, the runtime list, and the renderers all
+// derive from a single source. To add a kind, put it in exactly one array:
+//   SIMPLE_PANE_KINDS    — self-contained, no props; renders the same docked or torn out.
+//   DATA_BROWSER_KINDS   — backed by the project + persisted state (torn out via a shell).
+export const SIMPLE_PANE_KINDS = ["agent", "uiInspector"] as const;
+export const DATA_BROWSER_KINDS = ["assetBrowser", "templateBrowser"] as const;
+export const BROWSER_KINDS = [...DATA_BROWSER_KINDS, ...SIMPLE_PANE_KINDS] as const;
+export const PANE_KINDS = ["code", ...BROWSER_KINDS] as const;
+
+export type SimplePaneKind = (typeof SIMPLE_PANE_KINDS)[number];
+export type DataBrowserKind = (typeof DATA_BROWSER_KINDS)[number];
+/** Every non-code pane kind a BrowserPane can hold. */
+export type BrowserKind = DataBrowserKind | SimplePaneKind;
+export type PaneKind = (typeof PANE_KINDS)[number];
 
 export interface CodePane {
   readonly id: string;
@@ -20,7 +33,7 @@ export interface CodePane {
 
 export interface BrowserPane {
   readonly id: string;
-  readonly kind: "assetBrowser" | "templateBrowser" | "agent";
+  readonly kind: BrowserKind;
   /** Flex weight relative to siblings in the same column. Treated as 1 when absent. */
   readonly weight?: number | undefined;
   /**
@@ -53,9 +66,10 @@ export interface Layout {
 export const EMPTY_LAYOUT: Layout = { columns: [], activePaneId: null };
 
 /** Human-facing metadata for non-code pane kinds (used by the palette). */
-export const BROWSER_KIND_META: Record<BrowserPane["kind"], { label: string }> = {
+export const BROWSER_KIND_META: Record<BrowserKind, { label: string }> = {
   assetBrowser: { label: "Asset Browser" },
   templateBrowser: { label: "Template Browser" },
+  uiInspector: { label: "UI Inspector" },
   agent: { label: "Agent" },
 };
 
@@ -769,7 +783,7 @@ function isValidPane(p: unknown): p is Pane {
         typeof (t as Tab).name === "string",
     );
   }
-  return obj.kind === "assetBrowser" || obj.kind === "templateBrowser" || obj.kind === "agent";
+  return typeof obj.kind === "string" && (BROWSER_KINDS as readonly string[]).includes(obj.kind);
 }
 
 function isValidLayout(value: unknown): value is Layout {

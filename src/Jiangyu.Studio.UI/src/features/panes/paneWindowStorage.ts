@@ -1,4 +1,4 @@
-import type { PaneKind } from "@features/panes/layout";
+import { PANE_KINDS, type PaneKind } from "@features/panes/layout";
 import type { AssetBrowserState, TemplateBrowserState } from "@features/panes/browserState";
 import { loadJson, removeKey, saveJson } from "@shared/storage";
 
@@ -44,14 +44,7 @@ export function savePaneWindows(
 function isDescriptor(value: unknown): value is PaneWindowDescriptor {
   if (typeof value !== "object" || value === null) return false;
   const d = value as Partial<PaneWindowDescriptor>;
-  if (
-    d.kind !== "code" &&
-    d.kind !== "assetBrowser" &&
-    d.kind !== "templateBrowser" &&
-    d.kind !== "agent"
-  ) {
-    return false;
-  }
+  if (!(PANE_KINDS as readonly string[]).includes(d.kind ?? "")) return false;
   if (!Array.isArray(d.filePaths) || !d.filePaths.every((p) => typeof p === "string")) return false;
   if (d.activeFilePath !== null && typeof d.activeFilePath !== "string") return false;
   // browserState is opaque — trust the shape if present (the browsers fall
