@@ -121,9 +121,9 @@ internal sealed class ModAssetRegistry : IModAssets
         return null;
     }
 
-    // The asset names to try for a request, most specific first: an exact full-path
-    // match, then any asset whose short name matches, then the raw request so Unity's
-    // own short-name resolution still gets a chance.
+    // The asset names to try for a request: the indexed match (full path, the path under
+    // the category folder such as "dir/bar", or the leaf name), then the raw request so
+    // Unity's own short-name resolution still gets a chance.
     private IEnumerable<string> ResolveCandidates(int bundleIndex, string name)
     {
         var index = _nameIndex[bundleIndex];
@@ -149,20 +149,45 @@ internal sealed class ModAssetRegistry : IModAssets
                 foreach (var full in assetNames)
                 {
                     _names.Add(full);
-                    var lowerFull = full.ToLowerInvariant();
-                    map[lowerFull] = full;
-                    var slash = lowerFull.LastIndexOf('/');
-                    var stem = slash >= 0 ? lowerFull[(slash + 1)..] : lowerFull;
-                    var dot = stem.LastIndexOf('.');
-                    if (dot > 0)
-                        stem = stem[..dot];
-                    // First writer wins so a duplicate stem resolves deterministically.
-                    if (!map.ContainsKey(stem))
-                        map[stem] = full;
+                    // First writer wins so a duplicate key resolves deterministically; the
+                    // full-path key is unique per asset, so it always lands.
+                    foreach (var key in NameKeys(full))
+                    {
+                        if (!map.ContainsKey(key))
+                            map[key] = full;
+                    }
                 }
             }
             _nameIndex[i] = map;
         }
+    }
+
+    /// <summary>
+    /// The lowercased lookup keys an asset answers to, so a UXML or prefab at
+    /// <c>Assets/UI/dir/bar.uxml</c> resolves by its full path, by the category-relative
+    /// path <c>dir/bar</c> (the <c>asset="dir/name"</c> convention), or by the leaf
+    /// <c>bar</c>. Pure string work, exercised directly by the tests.
+    /// </summary>
+    internal static IEnumerable<string> NameKeys(string assetPath)
+    {
+        var lower = assetPath.ToLowerInvariant();
+        yield return lower;
+
+        var slash = lower.LastIndexOf('/');
+        yield return StripExtension(slash >= 0 ? lower[(slash + 1)..] : lower);
+
+        // The path under the category folder (after "Assets/<category>/"), so nested
+        // assets get a stable, collision-free name that mirrors their subfolders.
+        var firstSlash = lower.IndexOf('/');
+        var secondSlash = firstSlash >= 0 ? lower.IndexOf('/', firstSlash + 1) : -1;
+        if (secondSlash >= 0)
+            yield return StripExtension(lower[(secondSlash + 1)..]);
+    }
+
+    private static string StripExtension(string name)
+    {
+        var dot = name.LastIndexOf('.');
+        return dot > 0 ? name[..dot] : name;
     }
 }
 
