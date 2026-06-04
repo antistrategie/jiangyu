@@ -5,6 +5,10 @@ using Jiangyu.Loader.Diagnostics.InjectionGate;
 using Jiangyu.Loader.Diagnostics.VerbProbe;
 using Jiangyu.Loader.Logging;
 using Jiangyu.Loader.Sdk;
+using Jiangyu.Loader.Sdk.Hooks;
+using Jiangyu.Loader.Sdk.Patches;
+using Jiangyu.Loader.Sdk.State;
+using Jiangyu.Loader.Sdk.Types;
 using MelonLoader;
 using MelonLoader.Utils;
 

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Jiangyu.Loader.Logging;
 using Jiangyu.Sdk;
 
-namespace Jiangyu.Loader.Sdk;
+namespace Jiangyu.Loader.Sdk.Hooks;
 
 /// <summary>
 /// A shared in-process publish-subscribe bus backing <see cref="IHookBus"/>.

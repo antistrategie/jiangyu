@@ -59,8 +59,8 @@ internal class ReplacementCoordinator
                 new AudioReplacementPatch(_catalog.ReplacementAudioClips),
                 new ConversationManagerTrackingPatch(),
                 new InventoryFilterPatch(),
-                new Jiangyu.Loader.Sdk.StrategyHarmonyPatch(),
-                new Jiangyu.Loader.Sdk.ModStatePersistencePatch(),
+                new Jiangyu.Loader.Sdk.Hooks.StrategyHarmonyPatch(),
+                new Jiangyu.Loader.Sdk.State.ModStatePersistencePatch(),
             });
     }
 

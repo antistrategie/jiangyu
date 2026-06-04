@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Il2CppInterop.Runtime;
 using Jiangyu.Loader.Logging;
 
-namespace Jiangyu.Loader.Sdk;
+namespace Jiangyu.Loader.Sdk.Hooks;
 
 /// <summary>
 /// Shared marshalling for the hook publishers that bridge IL2CPP game events onto the

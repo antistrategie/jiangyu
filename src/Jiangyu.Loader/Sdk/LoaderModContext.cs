@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using Jiangyu.Loader.Bundles;
 using Jiangyu.Loader.Logging;
+using Jiangyu.Loader.Sdk.Hooks;
+using Jiangyu.Loader.Sdk.Patches;
+using Jiangyu.Loader.Sdk.State;
 using Jiangyu.Sdk;
 using Jiangyu.Shared.Bundles;
 

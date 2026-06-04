@@ -1,6 +1,7 @@
 using System.Reflection;
 using Il2CppInterop.Runtime;
 using Jiangyu.Loader.Sdk;
+using Jiangyu.Loader.Sdk.Types;
 using Il2CppInterop.Runtime.InteropTypes;
 using UnityEngine;
 using DataTemplate = Il2CppMenace.Tools.DataTemplate;

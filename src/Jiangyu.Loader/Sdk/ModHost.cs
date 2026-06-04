@@ -3,6 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Jiangyu.Loader.Logging;
+using Jiangyu.Loader.Sdk.Hooks;
+using Jiangyu.Loader.Sdk.Patches;
+using Jiangyu.Loader.Sdk.State;
+using Jiangyu.Loader.Sdk.Types;
 using Jiangyu.Sdk;
 
 namespace Jiangyu.Loader.Sdk;

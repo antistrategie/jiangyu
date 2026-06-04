@@ -5,7 +5,7 @@ using System.Reflection;
 using Il2CppInterop.Runtime.Injection;
 using Jiangyu.Loader.Logging;
 
-namespace Jiangyu.Loader.Sdk;
+namespace Jiangyu.Loader.Sdk.Types;
 
 /// <summary>
 /// Injects a mod's <c>[JiangyuType]</c> subtypes into the IL2CPP type system and

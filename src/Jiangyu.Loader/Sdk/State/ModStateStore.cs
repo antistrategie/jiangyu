@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using Jiangyu.Loader.Logging;
 
-namespace Jiangyu.Loader.Sdk;
+namespace Jiangyu.Loader.Sdk.State;
 
 /// <summary>
 /// Persists every mod's <see cref="PersistentModState"/> to a per-save-slot sidecar

@@ -7,7 +7,7 @@ using Il2CppMenace.Tactical.Skills;
 using Jiangyu.Loader.Logging;
 using Jiangyu.Sdk;
 
-namespace Jiangyu.Loader.Sdk;
+namespace Jiangyu.Loader.Sdk.Hooks;
 
 /// <summary>
 /// Bridges the game's no-anchor tactical moments onto the hook bus: subscribes to

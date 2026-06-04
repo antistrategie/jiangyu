@@ -4,7 +4,7 @@ using System.Linq;
 using Jiangyu.Loader.Logging;
 using Jiangyu.Sdk;
 
-namespace Jiangyu.Loader.Sdk;
+namespace Jiangyu.Loader.Sdk.Patches;
 
 /// <summary>
 /// The per-target handler lists behind <see cref="IModPatches"/>: each game method

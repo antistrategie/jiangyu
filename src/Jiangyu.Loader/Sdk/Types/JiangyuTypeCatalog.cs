@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using Jiangyu.Sdk;
 
-namespace Jiangyu.Loader.Sdk;
+namespace Jiangyu.Loader.Sdk.Types;
 
 /// <summary>A discovered <c>[JiangyuType]</c> in a mod assembly, with its ns:Name resolved.</summary>
 internal sealed class JiangyuTypeEntry

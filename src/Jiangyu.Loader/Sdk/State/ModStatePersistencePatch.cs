@@ -5,7 +5,7 @@ using Il2CppMenace.Strategy;
 using Jiangyu.Loader.Runtime.Patching;
 using MelonLoader;
 
-namespace Jiangyu.Loader.Sdk;
+namespace Jiangyu.Loader.Sdk.State;
 
 /// <summary>
 /// Persists mod state across save/load by Harmony-patching the game's save system:

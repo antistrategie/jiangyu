@@ -4,7 +4,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using Jiangyu.Sdk;
 
-namespace Jiangyu.Loader.Sdk;
+namespace Jiangyu.Loader.Sdk.State;
 
 /// <summary>
 /// A mod's per-save-slot state. The mod mutates the live blobs returned by

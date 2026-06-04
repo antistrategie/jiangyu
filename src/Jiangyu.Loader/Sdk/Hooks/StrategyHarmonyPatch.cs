@@ -6,7 +6,7 @@ using Il2CppMenace.Strategy;
 using Jiangyu.Loader.Runtime.Patching;
 using MelonLoader;
 
-namespace Jiangyu.Loader.Sdk;
+namespace Jiangyu.Loader.Sdk.Hooks;
 
 /// <summary>
 /// Publishes the strategy-layer moments that have no C# event (leader hired /

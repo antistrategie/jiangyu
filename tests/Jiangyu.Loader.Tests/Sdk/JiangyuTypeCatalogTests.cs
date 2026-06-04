@@ -1,5 +1,6 @@
 using System.Linq;
 using Jiangyu.Loader.Sdk;
+using Jiangyu.Loader.Sdk.Types;
 using Jiangyu.Sdk;
 using Xunit;
 

@@ -7,7 +7,7 @@ using Jiangyu.Loader.Logging;
 using Jiangyu.Sdk;
 using PatchInfo = Jiangyu.Sdk.PatchInfo;
 
-namespace Jiangyu.Loader.Sdk;
+namespace Jiangyu.Loader.Sdk.Patches;
 
 /// <summary>
 /// Owns the one shared Harmony dispatcher behind every mod patch. Each distinct

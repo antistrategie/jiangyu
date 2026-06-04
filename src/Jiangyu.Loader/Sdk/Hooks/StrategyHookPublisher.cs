@@ -5,7 +5,7 @@ using Il2CppMenace.Strategy;
 using Jiangyu.Loader.Logging;
 using Jiangyu.Sdk;
 
-namespace Jiangyu.Loader.Sdk;
+namespace Jiangyu.Loader.Sdk.Hooks;
 
 /// <summary>
 /// Bridges the strategy-layer (campaign meta-game) moments onto the hook bus. Unlike
