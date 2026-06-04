@@ -108,4 +108,84 @@ public class GlobalConfigTests
                 Directory.Delete(root, recursive: true);
         }
     }
+
+    [Fact]
+    public void FindSdkDirInRoots_PrefersSdkSubfolderOverLooseRoot()
+    {
+        var root = NewTempDir();
+        try
+        {
+            WriteSdkDll(root);                                  // loose at the root
+            var sub = Path.Combine(root, "sdk");
+            WriteSdkDll(sub);                                   // and in sdk/
+            Assert.Equal(sub, GlobalConfig.FindSdkDirInRoots(new[] { root }));
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public void FindSdkDirInRoots_FallsBackToLooseRoot_WhenNoSdkSubfolder()
+    {
+        var root = NewTempDir();
+        try
+        {
+            WriteSdkDll(root);
+            Assert.Equal(root, GlobalConfig.FindSdkDirInRoots(new[] { root }));
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public void FindSdkDirInRoots_FirstRootWithSdkWins()
+    {
+        var first = NewTempDir();
+        var second = NewTempDir();
+        try
+        {
+            var sub = Path.Combine(second, "sdk");
+            WriteSdkDll(sub);                                   // only the second root has it
+            Assert.Equal(sub, GlobalConfig.FindSdkDirInRoots(new[] { first, second }));
+        }
+        finally { Cleanup(first); Cleanup(second); }
+    }
+
+    [Fact]
+    public void FindSdkDirInRoots_NullWhenNoRootHasSdk()
+    {
+        var root = NewTempDir();
+        try { Assert.Null(GlobalConfig.FindSdkDirInRoots(new[] { root })); }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public void FindSdkDirInRoots_SkipsNullAndEmptyRoots()
+    {
+        var root = NewTempDir();
+        try
+        {
+            var sub = Path.Combine(root, "sdk");
+            WriteSdkDll(sub);
+            Assert.Equal(sub, GlobalConfig.FindSdkDirInRoots(new string?[] { null, "", root }));
+        }
+        finally { Cleanup(root); }
+    }
+
+    private static string NewTempDir()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"jiangyu-sdk-{Guid.NewGuid()}");
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    private static void WriteSdkDll(string dir)
+    {
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "Jiangyu.Sdk.dll"), "");
+    }
+
+    private static void Cleanup(string dir)
+    {
+        if (Directory.Exists(dir))
+            Directory.Delete(dir, recursive: true);
+    }
 }

@@ -23,6 +23,12 @@
       <HintPath>$(JiangyuSdkDir)/Jiangyu.Sdk.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- The game-bound verb surface (Jiangyu.Game.*). Ships beside Jiangyu.Sdk.dll
+         and is provided at runtime by the loader, like the SDK itself. -->
+    <Reference Include="Jiangyu.Sdk.Menace">
+      <HintPath>$(JiangyuSdkDir)/Jiangyu.Sdk.Menace.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="MelonLoader">
       <HintPath>$(MelonLoaderDir)/MelonLoader.dll</HintPath>
       <Private>false</Private>

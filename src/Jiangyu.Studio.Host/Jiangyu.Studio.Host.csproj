@@ -92,4 +92,9 @@
     </ItemGroup>
   </Target>
 
+  <!-- Ship the modder SDK beside the published `jiangyu-studio` so Studio resolves
+       its SDK directory to its own folder when it drives a mod's code build. See
+       ..\SdkDistribution.targets. -->
+  <Import Project="..\SdkDistribution.targets" />
+
 </Project>

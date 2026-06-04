@@ -2,7 +2,7 @@
 
 Most mods need no code. Stat tweaks, new variants, asset swaps, and audio are all data and live in [templates](/templates) and [assets](/assets/). Reach for C# only when you want something the data layer cannot express.
 
-When you do, the common case by far is a **custom template type**: your own effect, condition, or value provider that the game constructs from a KDL `type=` slot, exactly like it constructs its built-in ones. This is the first thing to learn, and it needs no entry point, just the class. The other, rarer case is a behaviour mod that reacts to game moments at runtime, covered in [Hooks](./hooks).
+When you do, the common case by far is a **custom template type**: your own effect, condition, or value provider that the game constructs from a KDL `type=` slot, exactly like it constructs its built-in ones. This is the first thing to learn, and it needs no entry point, just the class. The other, rarer case is a behaviour mod that reacts to game moments at runtime, covered in [Hooks](./hooks). From inside either, your code can read and command the live game with [game verbs](./verbs).
 
 A code mod compiles against `Jiangyu.Sdk` plus the game's IL2CPP proxy assemblies and ships as a DLL the loader injects at runtime.
 

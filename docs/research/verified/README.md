@@ -27,6 +27,7 @@ just the local index for promoted findings.
 - [Conversation cloning](conversation-cloning.md) — runtime injection of cloned `ConversationTemplate`s into live `BaseConversationManager` indexes, including Path-keyed lookup, typed-state refresh, and per-trigger bucket mutation
 - [SoundBank runtime registration](soundbank-runtime-registration.md) — `Stem.SoundManager.RegisterBank` for cloned banks, ordered after patches so `bankId` is final; resolver populated from the asset index, no hardcoded data
 - [JiangyuType injection and dispatch](jiangyutype-injection.md) — code-defined IL2CPP subtypes (handler, condition, template) register, are runtime-assignable, and the game's own dispatch calls their overrides; the required practices and the Odin-binder limitation
+- [Tactical game-API verbs](tactical-game-api-verbs.md) — live-proven typed call sequences for imperative verbs (acquire managers/map, read tiles/factions/properties/LOS/hit-chance, query path, spawn and despawn a unit) with no offsets or reflection
 
 ## Authoring shapes
 

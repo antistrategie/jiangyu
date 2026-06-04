@@ -59,7 +59,7 @@ Context.Hooks.Subscribe<EntityDiedContext>(ctx =>
 
 Every moment is a context type. The [hook reference](#hook-reference) below lists all of them with their payloads, split into a tactical family (combat, turns, movement, skills) and a strategy family (factions, leaders, operations). Game-typed payloads are held as `object` to keep the SDK game-agnostic, so you cast them in your handler (the reference notes which game type each is). Primitive payloads, a round number or a count, are typed directly.
 
-The bus is observer-only: it tells you a moment happened, it does not let you cancel it. To change what a skill or effect does, write a [template type](./template-types). To intercept a method with no hook, use [Patches](#patches).
+The bus is observer-only: it tells you a moment happened, it does not let you cancel it. To change what a skill or effect does, write a [template type](./template-types). To read or command the live game from a handler (spawn a unit, query a path), use [game verbs](./verbs). To intercept a method with no hook, use [Patches](#patches).
 
 ## State
 

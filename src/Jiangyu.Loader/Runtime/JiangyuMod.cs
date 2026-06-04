@@ -2,6 +2,7 @@ using System.Collections;
 using System.Reflection;
 using Jiangyu.Loader.Diagnostics;
 using Jiangyu.Loader.Diagnostics.InjectionGate;
+using Jiangyu.Loader.Diagnostics.VerbProbe;
 using Jiangyu.Loader.Logging;
 using Jiangyu.Loader.Sdk;
 using MelonLoader;
@@ -56,6 +57,7 @@ public class JiangyuMod : MelonMod
     private readonly HashSet<int> _templatesInspectAttempts = new();
     private bool _templatesDumpSucceededThisScene;
     private bool _gateLiveDone;
+    private bool _verbsLiveDone;
     private ModHost _modHost;
     private InProcessHookBus _hookBus;
     private TacticalHookPublisher _tacticalHooks;
@@ -88,8 +90,8 @@ public class JiangyuMod : MelonMod
 
     // Route the SDK's static Jiangyu.Sdk.Log (used by injected handlers and other
     // context-less mod code) into the loader log. Debug is enabled only when the
-    // dev opt-in flag jiangyu-debug.flag is present in UserData, so mods can leave
-    // Log.Debug calls in without spamming a player's log.
+    // dev file's `debug` toggle is set, so mods can leave Log.Debug calls in
+    // without spamming a player's log.
     private void BindSdkLog()
     {
         Jiangyu.Sdk.Log.Bind((level, message) =>
@@ -103,8 +105,7 @@ public class JiangyuMod : MelonMod
             }
         });
 
-        var debugFlag = Path.Combine(MelonEnvironment.UserDataDirectory, "jiangyu-debug.flag");
-        Jiangyu.Sdk.Log.MinLevel = File.Exists(debugFlag)
+        Jiangyu.Sdk.Log.MinLevel = DevFlags.IsEnabled("debug")
             ? Jiangyu.Sdk.LogLevel.Debug
             : Jiangyu.Sdk.LogLevel.Info;
     }
@@ -201,6 +202,7 @@ public class JiangyuMod : MelonMod
         _templatesInspectAttempts.Clear();
         _templatesDumpSucceededThisScene = false;
         _gateLiveDone = false;
+        _verbsLiveDone = false;
         _tacticalHooks?.Reset();
         _replacementCoordinator.OnSceneUnloaded();
         InspectionSink.RefreshFlagCache();
@@ -223,12 +225,21 @@ public class JiangyuMod : MelonMod
         _frameInScene++;
 
         // Injection gate live phase: retry every ~120 frames in Tactical until an
-        // active actor is present, then run once. Gated by jiangyu-gate.flag.
+        // active actor is present, then run once. Gated by the `gate` dev toggle.
         if (!_gateLiveDone && _currentScene == "Tactical"
             && _frameInScene >= 300 && _frameInScene % 300 == 0
             && InjectionGateInspector.IsEnabled())
         {
             _gateLiveDone = InjectionGateInspector.RunLiveIfReady($"Tactical-t{_frameInScene}f", LoggerInstance);
+        }
+
+        // Verb-surface live spike: same cadence and active-actor gate as the
+        // injection gate, latched once per scene. Gated by the `verbs` dev toggle.
+        if (!_verbsLiveDone && _currentScene == "Tactical"
+            && _frameInScene >= 300 && _frameInScene % 300 == 0
+            && VerbSurfaceProbe.IsEnabled())
+        {
+            _verbsLiveDone = VerbSurfaceProbe.RunLiveIfReady($"Tactical-t{_frameInScene}f", LoggerInstance);
         }
 
         if (InspectionSink.IsEnabled() && !string.IsNullOrEmpty(_currentScene))

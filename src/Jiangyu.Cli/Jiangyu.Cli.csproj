@@ -22,4 +22,8 @@
     <ProjectReference Include="..\Jiangyu.Core\Jiangyu.Core.csproj" />
   </ItemGroup>
 
+  <!-- Ship the modder SDK beside the published `jiangyu` so it resolves its SDK
+       directory to its own folder. See ..\SdkDistribution.targets. -->
+  <Import Project="..\SdkDistribution.targets" />
+
 </Project>

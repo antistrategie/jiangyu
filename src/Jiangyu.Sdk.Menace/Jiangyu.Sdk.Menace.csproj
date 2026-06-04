@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <RootNamespace>Jiangyu.Game</RootNamespace>
+    <AssemblyName>Jiangyu.Sdk.Menace</AssemblyName>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <!--
+    The game-bound verb surface. Mods compile against this DLL alongside
+    Jiangyu.Sdk; at runtime its types are merged into Jiangyu.Loader.dll (see
+    Jiangyu.Loader/ILRepack.targets) and a mod's reference is redirected by
+    SdkAssemblyResolver, exactly like Jiangyu.Sdk. Verbs return real
+    Il2CppMenace types, so this assembly cannot live in the game-agnostic
+    Jiangyu.Sdk.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Jiangyu.Sdk\Jiangyu.Sdk.csproj" />
+  </ItemGroup>
+
+  <!--
+    Co-locate beside Jiangyu.Sdk.dll so a mod's code/ project resolves it from
+    JiangyuSdkDir (which points at the Jiangyu.Sdk build output in dev). This
+    project references Jiangyu.Sdk, so it builds after it: copying our output into
+    the SDK's bin afterwards is safe and not circular. Mirrors the analyzer
+    co-location in Jiangyu.Sdk.csproj.
+  -->
+  <Target Name="CopyMenaceBesideSdk" AfterTargets="Build">
+    <Copy SourceFiles="$(OutputPath)Jiangyu.Sdk.Menace.dll"
+          DestinationFolder="$(MSBuildThisFileDirectory)..\Jiangyu.Sdk\bin\$(Configuration)\net6.0"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\Jiangyu.Sdk\bin\$(Configuration)\net6.0')" />
+  </Target>
+
+  <ItemGroup>
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>$(MelonLoaderDir)/Il2CppInterop.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>$(GameAssembliesDir)/Il2Cppmscorlib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameAssembliesDir)/Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppSirenix.Serialization">
+      <HintPath>$(GameAssembliesDir)/Il2CppSirenix.Serialization.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameAssembliesDir)/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

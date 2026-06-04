@@ -11,13 +11,15 @@ using Il2CppSirenix.Serialization;
 using MelonLoader;
 using MelonLoader.Utils;
 using UnityEngine;
+using GateReport = Jiangyu.Loader.Diagnostics.InspectionReport;
+using GateCheck = Jiangyu.Loader.Diagnostics.InspectionCheck;
 
 namespace Jiangyu.Loader.Diagnostics.InjectionGate;
 
 /// <summary>
 /// The Phase 0 injection go/no-go, run as a re-runnable diagnostic rather than
-/// throwaway spike code. Gated by a <c>jiangyu-gate.flag</c> file in
-/// <c>&lt;UserData&gt;</c> so it never runs in a normal session. Writes a
+/// throwaway spike code. Gated by the <c>gate</c> toggle in the <c>jiangyu-flags</c>
+/// file so it never runs in a normal session. Writes a
 /// timestamped JSON report alongside the other inspector dumps and logs a
 /// per-check summary to the MelonLoader console.
 ///
@@ -31,29 +33,15 @@ namespace Jiangyu.Loader.Diagnostics.InjectionGate;
 /// </summary>
 internal static class InjectionGateInspector
 {
-    private const string FlagFileName = "jiangyu-gate.flag";
+    private const string Pass = DiagnosticStatus.Pass;
+    private const string Fail = DiagnosticStatus.Fail;
+    private const string Skipped = DiagnosticStatus.Skipped;
 
-    // The damage check drives a self-hit through the real damage pipeline, the
-    // riskiest operation in the harness. It is opt-in behind its own flag so the
-    // default armed run proves dispatch without it.
-    private const string DamageFlagFileName = "jiangyu-gate-damage.flag";
-
-    private const string Pass = "pass";
-    private const string Fail = "fail";
-    private const string Error = "error";
-    private const string Skipped = "skipped";
-
-    public static bool IsEnabled()
-    {
-        try
-        {
-            return File.Exists(System.IO.Path.Combine(MelonEnvironment.UserDataDirectory, FlagFileName));
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    // Gated by the `gate` toggle in the dev file. The damage check drives a self-hit
+    // through the real damage pipeline, the riskiest operation in the harness, so it
+    // is opt-in behind its own `gate-damage` toggle: the default armed run proves
+    // dispatch without it.
+    public static bool IsEnabled() => DevFlags.IsEnabled("gate");
 
     /// <summary>Structural phase. Safe anywhere, no mission required.</summary>
     public static void Run(string sceneTag, bool live, MelonLogger.Instance log)
@@ -372,7 +360,7 @@ internal static class InjectionGateInspector
             return new GateCheck { Name = "damage.clampHonoured", Status = Skipped, Detail = "structural phase" };
 
         if (!IsDamageEnabled())
-            return new GateCheck { Name = "damage.clampHonoured", Status = Skipped, Detail = "opt-in: drives a self-hit through the real damage pipeline. Create jiangyu-gate-damage.flag to enable." };
+            return new GateCheck { Name = "damage.clampHonoured", Status = Skipped, Detail = "opt-in: drives a self-hit through the real damage pipeline. Enable the gate-damage toggle in the dev file." };
 
         try
         {
@@ -530,88 +518,18 @@ internal static class InjectionGateInspector
         }
     }
 
-    private static bool TryGetActiveActor(out Actor actor)
-    {
-        actor = null;
-        try
-        {
-            var tm = TacticalManager.Get();
-            actor = tm != null ? tm.m_ActiveActor : null;
-            return actor != null;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    private static bool TryGetActiveActor(out Actor actor) => InspectionReporter.TryGetActiveActor(out actor);
 
-    private static string SafeGameVersion()
-    {
-        try { return Application.version; }
-        catch { return "<unknown>"; }
-    }
+    private static string SafeGameVersion() => InspectionReporter.SafeGameVersion();
 
-    private static GateCheck Errored(string name, Exception ex)
-        => new() { Name = name, Status = Error, Detail = $"{ex.GetType().Name}: {ex.Message}" };
+    private static GateCheck Errored(string name, Exception ex) => InspectionReporter.Errored(name, ex);
 
-    private static bool IsDamageEnabled()
-    {
-        try
-        {
-            return File.Exists(System.IO.Path.Combine(MelonEnvironment.UserDataDirectory, DamageFlagFileName));
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    private static bool IsDamageEnabled() => DevFlags.IsEnabled("gate-damage");
 
     // Append and log immediately, so the result survives a later native crash.
     private static void Emit(GateReport report, GateCheck check, MelonLogger.Instance log)
-    {
-        report.Checks.Add(check);
-        log.Msg($"[gate] {check.Name}: {check.Status.ToUpperInvariant()}  {check.Detail}");
-    }
+        => InspectionReporter.Emit(report, check, log, "gate");
 
     private static void Write(GateReport report, string sceneTag, MelonLogger.Instance log)
-    {
-        var passes = 0;
-        var fails = 0;
-        foreach (var c in report.Checks)
-        {
-            if (c.Status == Pass) passes++;
-            else if (c.Status == Fail || c.Status == Error) fails++;
-        }
-
-        try
-        {
-            var timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd-HH-mm-ss");
-            var safeTag = InspectionSink.SanitiseForFileName(sceneTag);
-            var path = System.IO.Path.Combine(InspectionSink.GetOutputDirectory(), $"{timestamp}-gate-{safeTag}.json");
-            File.WriteAllText(path, JsonSerializer.Serialize(report, InspectionSink.JsonOptions));
-            log.Msg($"[gate] {passes} passed, {fails} failed/errored, {report.Checks.Count} total. Report: {path}");
-        }
-        catch (Exception ex)
-        {
-            log.Error($"[gate] report write failed: {ex}");
-        }
-    }
-
-    private sealed class GateReport
-    {
-        public DateTimeOffset Timestamp { get; set; }
-        public string SceneTag { get; set; }
-        public bool Live { get; set; }
-        public string SdkLoaderVersion { get; set; }
-        public string GameVersion { get; set; }
-        public List<GateCheck> Checks { get; } = new();
-    }
-
-    private sealed class GateCheck
-    {
-        public string Name { get; set; }
-        public string Status { get; set; }
-        public string Detail { get; set; }
-        public Dictionary<string, object> Evidence { get; } = new(StringComparer.Ordinal);
-    }
+        => InspectionReporter.Write(report, sceneTag, log, "gate");
 }

@@ -136,9 +136,9 @@ public sealed class GlobalConfig
 
     /// <summary>
     /// Resolves the directory containing <c>Jiangyu.Sdk.dll</c>. Order: explicit
-    /// config (<c>sdk</c>, either the directory or the dll path), then next to the
-    /// running CLI (published layout), then the dev source tree
-    /// (<c>src/Jiangyu.Sdk/bin/{Release,Debug}/net6.0</c>).
+    /// config (<c>sdk</c>, either the directory or the dll path), then the <c>sdk/</c>
+    /// folder beside the running executable (published layout), then the dev source
+    /// tree (<c>src/Jiangyu.Sdk/bin/{Release,Debug}/net6.0</c>).
     /// </summary>
     public static (string? sdkDir, string? error) ResolveSdkDir(GlobalConfig config)
     {
@@ -152,15 +152,40 @@ public sealed class GlobalConfig
             return (null, $"configured sdk path has no Jiangyu.Sdk.dll: {configured}");
         }
 
-        var baseDir = AppContext.BaseDirectory;
-        if (File.Exists(Path.Combine(baseDir, "Jiangyu.Sdk.dll")))
-            return (baseDir, null);
+        // The published layout ships the SDK in an sdk/ folder beside the executable
+        // (jiangyu / jiangyu-studio). Anchor on the real executable directory via
+        // Environment.ProcessPath: a single-file self-extracting publish unpacks to a
+        // temp dir, so AppContext.BaseDirectory points there, not at the install folder.
+        var bundled = FindSdkDirInRoots(new[] { Path.GetDirectoryName(Environment.ProcessPath), AppContext.BaseDirectory });
+        if (bundled is not null)
+            return (bundled, null);
 
-        var devSdk = FindDevSdkDir(baseDir);
+        var devSdk = FindDevSdkDir(AppContext.BaseDirectory);
         if (devSdk is not null)
             return (devSdk, null);
 
         return (null, $"could not locate Jiangyu.Sdk.dll. Set \"sdk\" in {ConfigPath}, or build src/Jiangyu.Sdk.");
+    }
+
+    /// <summary>
+    /// Locates the bundled SDK in the published layout: an <c>sdk/</c> subfolder beside
+    /// one of the candidate <paramref name="roots"/> (preferred), else the root itself.
+    /// Pure file probing in declared order, so the first root with the SDK wins and the
+    /// resolution is testable without a real published executable. Null when none has it.
+    /// </summary>
+    internal static string? FindSdkDirInRoots(IEnumerable<string?> roots)
+    {
+        foreach (var root in roots)
+        {
+            if (string.IsNullOrEmpty(root))
+                continue;
+            var sdkSub = Path.Combine(root, "sdk");
+            if (File.Exists(Path.Combine(sdkSub, "Jiangyu.Sdk.dll")))
+                return sdkSub;
+            if (File.Exists(Path.Combine(root, "Jiangyu.Sdk.dll")))
+                return root;
+        }
+        return null;
     }
 
     /// <summary>

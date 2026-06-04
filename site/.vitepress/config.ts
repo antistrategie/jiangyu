@@ -103,6 +103,7 @@ export default defineConfig({
         items: [
           { text: "Template types", link: "/sdk/template-types" },
           { text: "Hooks and the mod API", link: "/sdk/hooks" },
+          { text: "Game verbs", link: "/sdk/verbs" },
         ],
       },
       {

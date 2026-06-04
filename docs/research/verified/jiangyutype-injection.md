@@ -3,8 +3,8 @@
 Status: **verified** (Jiangyu live-game runs, game `v0.7.4+18448`, 2026-06-02).
 
 Reproduced by the re-runnable `InjectionGate` diagnostic
-(`src/Jiangyu.Loader/Diagnostics/InjectionGate/`, gated by a `jiangyu-gate.flag`
-file in `<UserData>`). Draws from
+(`src/Jiangyu.Loader/Diagnostics/InjectionGate/`, gated by the `gate` toggle in the
+`<UserData>/jiangyu-flags` file). Draws from
 [`../investigations/2026-06-02-jiangyutype-injection-and-dispatch-spike.md`](../investigations/2026-06-02-jiangyutype-injection-and-dispatch-spike.md).
 
 ## Contract
@@ -63,7 +63,7 @@ Verified on the live game:
 
 The explicit damage-clamp behaviour (an `OnBeforeDamageReceived` override
 reducing lethal damage so the target survives) is not run by the diagnostic by
-default (it drives a self-hit, opt-in behind `jiangyu-gate-damage.flag`). It is
+default (it drives a self-hit, opt-in behind the `gate-damage` toggle). It is
 strongly implied by the verified dispatch plus the stock `IgnoreDamage` handler,
 which absorbs damage through this same path, and will be proven in context when
 the perk is built.

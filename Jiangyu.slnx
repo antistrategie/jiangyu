@@ -6,6 +6,7 @@
     <Project Path="src/Jiangyu.Loader/Jiangyu.Loader.csproj" />
     <Project Path="src/Jiangyu.Mcp/Jiangyu.Mcp.csproj" />
     <Project Path="src/Jiangyu.Sdk/Jiangyu.Sdk.csproj" />
+    <Project Path="src/Jiangyu.Sdk.Menace/Jiangyu.Sdk.Menace.csproj" />
     <Project Path="src/Jiangyu.Sdk.Analyzers/Jiangyu.Sdk.Analyzers.csproj" />
     <Project Path="src/Jiangyu.Studio.Rpc/Jiangyu.Studio.Rpc.csproj" />
     <Project Path="src/Jiangyu.Studio.Rpc.Generators/Jiangyu.Studio.Rpc.Generators.csproj" />
