@@ -63,8 +63,14 @@ jobs:
       - name: Test Jiangyu.Acp.Tests
         run: dotnet test jiangyu/tests/Jiangyu.Acp.Tests/Jiangyu.Acp.Tests.csproj
 
+      # Studio.Host imports SdkDistribution.targets, whose reference-only
+      # ProjectReferences build the SDK projects (Jiangyu.Sdk + .Menace) so they
+      # bundle beside the published executable. That makes any Host build — this
+      # test build included — transitively compile the net6, game-coupled
+      # Jiangyu.Sdk.Menace, so the game assemblies must be on hand here just as
+      # they are for the Loader build and Loader.Tests.
       - name: Test Jiangyu.Studio.Host.Tests
-        run: dotnet test jiangyu/tests/Jiangyu.Studio.Host.Tests/Jiangyu.Studio.Host.Tests.csproj
+        run: dotnet test jiangyu/tests/Jiangyu.Studio.Host.Tests/Jiangyu.Studio.Host.Tests.csproj -p:MelonLoaderDir=${{ github.workspace }}/jiangyu/.ci/melonloader -p:GameAssembliesDir=${{ github.workspace }}/menace-ci-dependencies
 
       - name: Test Jiangyu.Loader.Tests
         run: dotnet test jiangyu/tests/Jiangyu.Loader.Tests/Jiangyu.Loader.Tests.csproj -p:MelonLoaderDir=${{ github.workspace }}/jiangyu/.ci/melonloader -p:GameAssembliesDir=${{ github.workspace }}/menace-ci-dependencies
