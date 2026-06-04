@@ -30,9 +30,10 @@ import {
   type EditorWordWrap,
   type TemplateEditorMode,
 } from "@features/settings/settings";
+import { bridgeSetEnabled, bridgeStatus, type BridgeStatusResult } from "@features/bridge/bridge";
 import styles from "./SettingsModal.module.css";
 
-type SectionId = "appearance" | "session" | "editor" | "ai" | "paths" | "about";
+type SectionId = "appearance" | "session" | "editor" | "ai" | "paths" | "bridge" | "about";
 
 interface SettingsModalProps {
   readonly onClose: () => void;
@@ -44,6 +45,7 @@ const NAV_SECTIONS: readonly { readonly id: SectionId; readonly label: string }[
   { id: "editor", label: "Editor · 编辑器" },
   { id: "ai", label: "AI · 智能" },
   { id: "paths", label: "Paths · 路径" },
+  { id: "bridge", label: "Game bridge · 桥接" },
   { id: "about", label: "About · 关于" },
 ];
 
@@ -115,6 +117,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           <div id="setting-paths">
             <PathsSection />
           </div>
+          <div id="setting-bridge">
+            <BridgeSection />
+          </div>
           <div id="setting-about">
             <AboutSection />
           </div>
@@ -151,6 +156,7 @@ function Field({
   label,
   hint,
   onReset,
+  labelAfter,
   children,
 }: {
   label: string;
@@ -160,6 +166,8 @@ function Field({
    *  value differs from the setting's default, so the icon doubles as a
    *  "non-default" indicator. */
   onReset?: (() => void) | undefined;
+  /** Optional node rendered inline right after the label text (e.g. a status dot). */
+  labelAfter?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -167,6 +175,7 @@ function Field({
       <div className={styles.fieldLabel}>
         <span className={styles.fieldLabelRow}>
           <span className={styles.fieldLabelText}>{label}</span>
+          {labelAfter}
           {onReset !== undefined && (
             <button
               type="button"
@@ -529,6 +538,81 @@ function PathRow({ label, hint, path, missingIcon, onChange }: PathRowProps) {
         </button>
       </div>
     </Field>
+  );
+}
+
+// --- Game bridge section ---------------------------------------------------
+
+function BridgeSection() {
+  const [status, setStatus] = useState<BridgeStatusResult | null>(null);
+
+  // Poll the bridge so the indicator goes live when the game connects/disconnects.
+  useEffect(() => {
+    let alive = true;
+    const tick = () => {
+      void bridgeStatus()
+        .then((s) => {
+          if (alive) setStatus(s);
+        })
+        .catch(() => {
+          if (alive) setStatus(null);
+        });
+    };
+    tick();
+    const interval = window.setInterval(tick, 2000);
+    return () => {
+      alive = false;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  const enabled = status?.enabled ?? false;
+  const connected = status?.connected ?? false;
+
+  const handleToggle = async (next: boolean) => {
+    try {
+      setStatus(await bridgeSetEnabled(next));
+    } catch (err) {
+      console.error("[Settings] bridgeSetEnabled failed:", err);
+    }
+  };
+
+  const color = connected ? "#3fb950" : enabled ? "#d29922" : "#6e7681";
+  const stateLabel = connected ? "Live" : enabled ? "Waiting for game" : "Off";
+
+  return (
+    <>
+      <SectionHeader title="Game bridge · 桥接" />
+      <Field
+        label="Live game bridge"
+        hint="Open a live connection between Studio and the running game."
+        labelAfter={
+          <span
+            role="img"
+            aria-label={stateLabel}
+            title={stateLabel}
+            style={{
+              display: "inline-block",
+              width: 8,
+              height: 8,
+              marginLeft: 6,
+              borderRadius: "50%",
+              backgroundColor: color,
+              boxShadow: connected ? `0 0 6px ${color}` : "none",
+            }}
+          />
+        }
+      >
+        <SegmentedControl<"on" | "off">
+          value={enabled ? "on" : "off"}
+          onChange={(v) => void handleToggle(v === "on")}
+          options={[
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
+          ]}
+        />
+      </Field>
+    </>
   );
 }
 

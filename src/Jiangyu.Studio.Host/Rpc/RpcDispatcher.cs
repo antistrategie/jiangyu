@@ -109,6 +109,11 @@ public static partial class RpcDispatcher
         Register("templatesConversationRoles", (_, p) => RpcHandlers.TemplatesConversationRoles(p));
         Register("templatesCloneSources", (_, p) => RpcHandlers.TemplatesCloneSources(p));
 
+        // Studio<->game bridge (live connection to the running game).
+        Register("bridgeStatus", (_, p) => RpcHandlers.BridgeStatus(p));
+        Register("bridgeSetEnabled", (_, p) => RpcHandlers.BridgeSetEnabled(p));
+        Register("bridgeUiCapture", (_, p) => RpcHandlers.BridgeUiCapture(p));
+
         RegisterAgentHandlers();
     }
 

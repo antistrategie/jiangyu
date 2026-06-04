@@ -20,6 +20,7 @@
   -->
   <ItemGroup>
     <ProjectReference Include="..\Jiangyu.Sdk\Jiangyu.Sdk.csproj" />
+    <InternalsVisibleTo Include="Jiangyu.Loader" />
   </ItemGroup>
 
   <!--
@@ -55,6 +56,10 @@
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>$(GameAssembliesDir)/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIElementsModule">
+      <HintPath>$(GameAssembliesDir)/UnityEngine.UIElementsModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

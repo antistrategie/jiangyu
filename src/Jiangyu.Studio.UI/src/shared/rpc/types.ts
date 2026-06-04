@@ -179,6 +179,11 @@ export interface AssetPreviewResult {
   mimeType: string;
 }
 
+export interface BridgeStatusResult {
+  enabled: boolean;
+  connected: boolean;
+}
+
 export interface CodeSyncResult {
   createdCount: number;
   updatedCount: number;

@@ -27,7 +27,6 @@ namespace Jiangyu.Mod
     public static class BuildBundles
     {
         private const string ExpectedUnityVersion = "6000.0.72f1";
-        private const string PrefabsRoot = "Assets/Prefabs/";
 
         public static void BuildAll()
         {
@@ -52,25 +51,13 @@ namespace Jiangyu.Mod
                 return false;
             }
 
-            var prefabGuids = AssetDatabase.FindAssets("t:Prefab", new[] { "Assets/Prefabs" });
-            if (prefabGuids.Length == 0)
+            var assigned =
+                AssignBundleNames("t:Prefab", "Assets/Prefabs", ".prefab") +
+                AssignBundleNames("t:VisualTreeAsset", "Assets/UI", ".uxml");
+            if (assigned == 0)
             {
-                Debug.LogWarning("Jiangyu BuildBundles: no prefabs found under Assets/Prefabs/. Nothing to build.");
+                Debug.LogWarning("Jiangyu BuildBundles: no prefabs under Assets/Prefabs/ or UXML under Assets/UI/. Nothing to build.");
                 return true;
-            }
-
-            foreach (var guid in prefabGuids)
-            {
-                var path = AssetDatabase.GUIDToAssetPath(guid);
-                var importer = AssetImporter.GetAtPath(path);
-                if (importer == null) continue;
-
-                var relative = path.StartsWith(PrefabsRoot)
-                    ? path.Substring(PrefabsRoot.Length)
-                    : Path.GetFileName(path);
-                var stem = relative.Substring(0, relative.Length - ".prefab".Length);
-                var bundleKey = stem.Replace("/", "__").Replace("\\", "__");
-                importer.assetBundleName = bundleKey + ".bundle";
             }
             AssetDatabase.SaveAssets();
 
@@ -94,6 +81,42 @@ namespace Jiangyu.Mod
             var built = manifest.GetAllAssetBundles();
             Debug.Log("Jiangyu BuildBundles: built " + built.Length + " bundle(s) into " + outputDir);
             return true;
+        }
+
+        /// <summary>
+        /// Give every asset of the matched type under <paramref name="root"/> its own
+        /// AssetBundle, keyed by the asset's path under the root with the extension
+        /// stripped and <c>/</c> translated to <c>__</c> (the KDL <c>asset="dir/name"</c>
+        /// convention). A USS linked from a UXML by a <c>&lt;Style&gt;</c> tag rides
+        /// inside that UXML's bundle as a dependency, so only the UXML is keyed.
+        /// Returns the number of assets assigned. A missing root contributes zero.
+        /// </summary>
+        private static int AssignBundleNames(string filter, string root, string extension)
+        {
+            if (!AssetDatabase.IsValidFolder(root))
+                return 0;
+
+            var rootPrefix = root.EndsWith("/") ? root : root + "/";
+            var guids = AssetDatabase.FindAssets(filter, new[] { root });
+            var count = 0;
+            foreach (var guid in guids)
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                if (!path.EndsWith(extension))
+                    continue;
+                var importer = AssetImporter.GetAtPath(path);
+                if (importer == null)
+                    continue;
+
+                var relative = path.StartsWith(rootPrefix)
+                    ? path.Substring(rootPrefix.Length)
+                    : Path.GetFileName(path);
+                var stem = relative.Substring(0, relative.Length - extension.Length);
+                var bundleKey = stem.Replace("/", "__").Replace("\\", "__");
+                importer.assetBundleName = bundleKey + ".bundle";
+                count++;
+            }
+            return count;
         }
     }
 }

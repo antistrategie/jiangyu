@@ -57,6 +57,11 @@
       <HintPath>$(GameAssembliesDir)/UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- UI Toolkit, for the Game.UI injection surface (VisualElement and friends). -->
+    <Reference Include="UnityEngine.UIElementsModule">
+      <HintPath>$(GameAssembliesDir)/UnityEngine.UIElementsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
 </Project>

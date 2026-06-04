@@ -1,7 +1,9 @@
 using System.Collections;
 using System.Reflection;
+using Jiangyu.Loader.Bridge;
 using Jiangyu.Loader.Diagnostics;
 using Jiangyu.Loader.Diagnostics.InjectionGate;
+using Jiangyu.Loader.Diagnostics.UiProbe;
 using Jiangyu.Loader.Diagnostics.VerbProbe;
 using Jiangyu.Loader.Logging;
 using Jiangyu.Loader.Sdk;
@@ -52,6 +54,12 @@ public class JiangyuMod : MelonMod
     };
     private const int PeriodicInspectIntervalFrames = 300; // ~5s; dumps continue indefinitely while flag set
 
+    // After the active screen changes, re-apply UI injections each frame for this
+    // long so an injection lands once the screen's content (e.g. the unit slots)
+    // finishes building, then goes idle. Re-apply is idempotent, so a window that
+    // outlasts the build costs nothing once the injection is in place.
+    private const int UiSettleWindowFrames = 60;
+
     private readonly ReplacementCoordinator _replacementCoordinator = new();
     private int _frameInScene;
     private int _frameOfLastPeriodicDump;
@@ -62,6 +70,9 @@ public class JiangyuMod : MelonMod
     private bool _templatesDumpSucceededThisScene;
     private bool _gateLiveDone;
     private bool _verbsLiveDone;
+    private IntPtr _lastUiScreenPtr;
+    private int _uiSettleFrames;
+    private BridgeServer _bridge;
     private ModHost _modHost;
     private InProcessHookBus _hookBus;
     private TacticalHookPublisher _tacticalHooks;
@@ -90,6 +101,31 @@ public class JiangyuMod : MelonMod
         }
 
         InitialiseCodeMods(modsDir);
+        InitialiseBridge();
+    }
+
+    // The Studio bridge: a localhost socket Studio connects to, opened only while the
+    // `bridge` dev flag is set (Studio writes that flag when its toggle is on). Handlers
+    // run on the main thread via Pump. Start/stop is driven by the flag on scene load.
+    private void InitialiseBridge()
+    {
+        _bridge = new BridgeServer(LoggerInstance);
+        _bridge.On("ping", _ => new { ok = true, version = Info.Version, protocol = Jiangyu.Shared.Bridge.BridgeProtocol.Version });
+        _bridge.On("ui.capture", _ => UiTreeProbe.CaptureCurrent("bridge"));
+    }
+
+    // Start/stop the bridge to match the `bridge` flag. Reads the flag fresh (not the
+    // scene-cached DevFlags) so toggling it in Studio mid-session takes effect on the
+    // next periodic check, without needing a scene change.
+    private void UpdateBridge()
+    {
+        if (_bridge == null)
+            return;
+        var enabled = Jiangyu.Shared.Dev.DevFlagFile.IsEnabled(MelonEnvironment.UserDataDirectory, "bridge");
+        if (enabled && !_bridge.IsRunning)
+            _bridge.Start();
+        else if (!enabled && _bridge.IsRunning)
+            _bridge.Stop();
     }
 
     // Route the SDK's static Jiangyu.Sdk.Log (used by injected handlers and other
@@ -161,6 +197,16 @@ public class JiangyuMod : MelonMod
             Jiangyu.Sdk.ModContext.BindResolver(_modHost.ResolveContext);
             Jiangyu.Sdk.Log.BindModResolver(_modHost.ModIdForAssembly);
 
+            // Game.UI resolves a UXML name against the calling mod's own bundles.
+            Jiangyu.Game.UI.BindUxmlResolver((assembly, name) =>
+            {
+                var modId = _modHost.ModIdForAssembly(assembly);
+                if (string.IsNullOrEmpty(modId))
+                    return null;
+                return _replacementCoordinator.AssetsFor(modId, hostLog)
+                    ?.Load<UnityEngine.UIElements.VisualTreeAsset>(name);
+            });
+
             _modHost.InitAll();
         }
         catch (Exception ex)
@@ -207,9 +253,13 @@ public class JiangyuMod : MelonMod
         _templatesDumpSucceededThisScene = false;
         _gateLiveDone = false;
         _verbsLiveDone = false;
+        _lastUiScreenPtr = IntPtr.Zero;
+        _uiSettleFrames = 0;
+        UiTreeProbe.Reset();
         _tacticalHooks?.Reset();
         _replacementCoordinator.OnSceneUnloaded();
         InspectionSink.RefreshFlagCache();
+        UpdateBridge();
 
         LoggerInstance.Msg($"Scene loaded: {sceneName} ({buildIndex})");
 
@@ -245,6 +295,22 @@ public class JiangyuMod : MelonMod
         {
             _verbsLiveDone = VerbSurfaceProbe.RunLiveIfReady($"Tactical-t{_frameInScene}f", LoggerInstance);
         }
+
+        // UI-tree probe: dump the live screen/dialog VisualElement tree on change so
+        // a modder can find injection attach points. Not latched (navigation
+        // captures each screen). Any scene with a UIManager. Gated by the `ui` toggle.
+        if (_frameInScene >= 120 && _frameInScene % 120 == 0 && UiTreeProbe.IsEnabled())
+        {
+            UiTreeProbe.Tick($"{_currentScene}-t{_frameInScene}f", LoggerInstance);
+        }
+
+        DriveUiInjections();
+
+        // Pick up a mid-session bridge toggle (Studio writing the flag) within ~2s,
+        // rather than only on scene load.
+        if (_frameInScene % 120 == 0)
+            UpdateBridge();
+        _bridge?.Pump();
 
         if (InspectionSink.IsEnabled() && !string.IsNullOrEmpty(_currentScene))
         {
@@ -315,6 +381,37 @@ public class JiangyuMod : MelonMod
                 scheduleIndex++;
             }
         }
+    }
+
+    // Re-apply registered mod-UI injections when the active screen changes, so an
+    // injected element re-lands after the game tears down and rebuilds a screen.
+    // Skipped entirely until a mod registers an injection.
+    private void DriveUiInjections()
+    {
+        if (!Jiangyu.Game.UI.HasInjections)
+            return;
+        var ptr = ActiveScreenPointer();
+        if (ptr != _lastUiScreenPtr)
+        {
+            _lastUiScreenPtr = ptr;
+            _uiSettleFrames = UiSettleWindowFrames;
+        }
+        if (_uiSettleFrames > 0)
+        {
+            _uiSettleFrames--;
+            Jiangyu.Game.UI.ReapplyAll();
+        }
+    }
+
+    private static IntPtr ActiveScreenPointer()
+    {
+        try
+        {
+            var manager = Il2CppMenace.UI.UIManager.Get();
+            var screen = manager != null ? manager.GetActiveScreen() : null;
+            return screen != null ? screen.Pointer : IntPtr.Zero;
+        }
+        catch { return IntPtr.Zero; }
     }
 
     private void TryApply(bool includeTextures = true)
