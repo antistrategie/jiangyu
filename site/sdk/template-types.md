@@ -1,32 +1,8 @@
 # Template types
 
-Most mods need no code. Stat tweaks, new variants, asset swaps, and audio are all data and live in [templates](/templates) and [assets](/assets/). Reach for C# only when you want something the data layer cannot express.
+A **custom template type** is your own effect, condition, or value provider that the game constructs from a KDL `type=` slot, exactly like it constructs its built-in ones. It is the common reason to write C#, and the one SDK surface that needs no [entry point](/sdk/#the-entry-point), just a `[JiangyuType]` class.
 
-When you do, the common case by far is a **custom template type**: your own effect, condition, or value provider that the game constructs from a KDL `type=` slot, exactly like it constructs its built-in ones. This is the first thing to learn, and it needs no entry point, just the class. The other, rarer case is a behaviour mod that reacts to game moments at runtime, covered in [Hooks](./hooks). From inside either, your code can read and command the live game with [game verbs](./verbs).
-
-A code mod compiles against `Jiangyu.Sdk` plus the game's IL2CPP proxy assemblies and ships as a DLL the loader injects at runtime.
-
-## The `code/` project
-
-`jiangyu init` already scaffolds `code/`: a C# project that references the SDK and the game assemblies. It stays dormant until you add a class, so an empty `code/` ships nothing, and `jiangyu compile` builds it for you when it is present. Open the **mod root** (the folder with the `.slnx`) in your IDE, not `code/`, so the language server loads the project.
-
-## The game's types (`Il2CppMenace`)
-
-Your code references the game's own types. IL2CPP exposes them to C# as proxy assemblies the loader ships under `<game>/MelonLoader/Il2CppAssemblies/`, and `code/` already references them. The game's `Menace` namespace appears under an `Il2Cpp` prefix, so `Menace.Tactical.Actor` is `Il2CppMenace.Tactical.Actor`; Unity's own types keep their `UnityEngine.*` names. These proxies are what your type's base class, hook casts, and patch targets name.
-
-To discover what is there, you read the proxy assemblies. The convenient way is your IDE, since `code/` already references them: let autocomplete walk the `Il2CppMenace.*` namespace, and go-to-definition on a type or method to read its members. They ship as DLLs with no source, so enable decompiled-source navigation to step into them:
-
-- Rider, Visual Studio, and VS Code (C# Dev Kit) have it on by default.
-- Zed (Roslyn) needs it in `settings.json`:
-  ```json
-  { "lsp": { "roslyn": { "settings": {
-    "csharp|navigation": { "dotnet_navigate_to_decompiled_sources": true }
-  } } } }
-  ```
-
-They are ordinary .NET assemblies, so you can also open the DLLs under `MelonLoader/Il2CppAssemblies/` directly in any decompiler (ILSpy, dotPeek, dnSpy) without the project loaded.
-
-For the data side of the game, the [`jiangyu templates`](/reference/cli#templates) commands surface the same types from the angle you author against: `templates inspect` shows a template subtype's fields and their types, and `templates query` reads a field off a live instance. `jiangyu assets search` finds bundled assets by name and type. Studio's asset and template browsers are the same discovery, with search.
+Set up the [`code/` project](/sdk/#the-code-project) and read the game's types as the [SDK overview](/sdk/) describes. From inside a type, your code can read and command the live game with [game verbs](./verbs).
 
 ## Defining a type
 

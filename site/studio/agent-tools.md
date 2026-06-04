@@ -11,6 +11,10 @@ These are the tools Studio exposes to AI agents via the Model Context Protocol (
 | `jiangyu_templates_inspect` | Inspect a template instance's vanilla field values |
 | `jiangyu_templates_value` | Read a single field value from a template instance |
 | `jiangyu_templates_enum_members` | List all members of a game enum type |
+| `jiangyu_templates_clone_sources` | List the source ids a template type can be cloned from |
+| `jiangyu_templates_conversation_roles` | List a `ConversationTemplate`'s roles (name and Guid) |
+| `jiangyu_templates_prototype_supported_types` | List composite types that support `from=` prototype lookups |
+| `jiangyu_templates_prototype_candidates` | List the `from=` prototype-source names for a constructed type |
 | `jiangyu_templates_parse` | Parse a KDL string and return structured AST or errors |
 | `jiangyu_templates_serialise` | Serialise a template document back to KDL text |
 | `jiangyu_templates_index_status` | Check whether the template index is current |
@@ -24,8 +28,31 @@ These are the tools Studio exposes to AI agents via the Model Context Protocol (
 | `jiangyu_assets_search` | Search game assets by name, type, or category |
 | `jiangyu_assets_preview` | Get a preview of an asset |
 | `jiangyu_assets_export` | Export an asset for editing |
+| `jiangyu_assets_project_additions` | List the asset additions the project ships, by category |
 | `jiangyu_assets_index_status` | Check whether the asset index is current |
 | `jiangyu_assets_index` | Rebuild the asset index |
+
+## Code tools
+
+| Tool | What it does |
+|---|---|
+| `jiangyu_code_sync` | Scaffold or refresh the `code/` C# project (idempotent) |
+| `jiangyu_code_types` | List the `[JiangyuType]` types the project defines, with base type and fields |
+
+## Cross-reference tools
+
+| Tool | What it does |
+|---|---|
+| `jiangyu_xref_type` | Find template directives that reference a mod `[JiangyuType]` by name |
+| `jiangyu_xref_asset` | Find template directives that reference a bundled asset by its logical name |
+
+## Unity tools
+
+| Tool | What it does |
+|---|---|
+| `jiangyu_unity_init` | Scaffold the `unity/` project for prefab and UXML authoring |
+| `jiangyu_unity_open` | Launch Unity Editor on the project's `unity/`, version-matched to the game |
+| `jiangyu_unity_import_prefab` | Extract a vanilla game prefab into `unity/Assets/Imported/` |
 
 ## File tools
 
@@ -41,12 +68,13 @@ These are the tools Studio exposes to AI agents via the Model Context Protocol (
 | `jiangyu_delete_path` | Delete a file or directory |
 | `jiangyu_grep` | Search file contents by pattern |
 
-## Compile tools
+## Build tools
 
 | Tool | What it does |
 |---|---|
 | `jiangyu_compile` | Compile the mod (blocks until complete, returns full result) |
 | `jiangyu_compile_summary` | Get the result of the last compile |
+| `jiangyu_deploy` | Deploy the compiled mod into the game's `Mods/` folder |
 
 ## Config tools
 

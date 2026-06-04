@@ -36,7 +36,7 @@ Two files sharing the same logical name with different extensions in the same fo
 
 There's no atlas compositing for additions. The Sprite is created from the full PNG, with the pivot at `(0.5, 0.5)` and a default `pixelsPerUnit` of 100. Author the file at the size you want the icon to render in-game.
 
-If you're starting from a vanilla asset to use as reference, [export it as a texture](/assets/replacements/textures#cli-alternative) first:
+If you're starting from a vanilla asset to use as reference, [export it as a texture](/assets/replacements/textures) first:
 
 ```sh
 jiangyu assets export texture <vanilla-name> --output assets/additions/sprites/my-icon.png

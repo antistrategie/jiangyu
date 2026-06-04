@@ -1,6 +1,6 @@
 # Audio additions
 
-Ship a new `AudioClip` and add it to the appropriate `SoundBank`. The game routes every sound (weapon, skill, UI, ambient, voice) through `(bankId, itemId)` indirection, so a new clip lands by extending a bank rather than being assigned to a template field directly. Banks are namespaced by purpose: `weapons_soundbank`, `ui_soundbank`, `ambience_soundbank`, and so on. `jiangyu assets list --type SoundBank` lists them.
+Ship a new `AudioClip` and add it to the appropriate `SoundBank`. The game routes every sound (weapon, skill, UI, ambient, voice) through `(bankId, itemId)` indirection, so a new clip lands by extending a bank rather than being assigned to a template field directly. Banks are namespaced by purpose: `weapons_soundbank`, `ui_soundbank`, `ambience_soundbank`, and so on. `jiangyu assets search _soundbank` lists them.
 
 ## File layout
 
@@ -32,7 +32,7 @@ patch "SoundBank" "weapons_soundbank" {
 
 The two `asset=` references point at files the mod ships at `assets/additions/audio/weapons/custom_rifle/fire_01.wav` and `..._02.wav`. The same shape works for any bank: pick a `from=` entry whose playback feel you want to inherit, override `id`/`name`/`variations`, and the new sound is available for templates to reference.
 
-To make a template use the new sound, point its bank-id field at the new name. The field name varies by template family; on `SkillTemplate` it's `SoundsOnAttack`:
+To make a template use the new sound, point its bank-id field at the new name. The field name varies by template family. On `SkillTemplate` it's `SoundsOnAttack`:
 
 ```kdl
 clone "SkillTemplate" from="active.fire_battle_rifle_tier_1" id="active.fire_custom_rifle" {

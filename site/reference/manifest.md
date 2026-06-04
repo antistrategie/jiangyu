@@ -77,10 +77,11 @@ The compiler writes additional fields into `compiled/jiangyu.json`. **Don't auth
 
 | Field               | Source                                                                       |
 | ------------------- | ---------------------------------------------------------------------------- |
-| `meshes`            | mesh compilation; one entry per replaced skinned-renderer path               |
+| `meshes`            | mesh compilation, one entry per replaced skinned-renderer path               |
 | `templatePatches`   | emitted from `templates/*.kdl`                                               |
 | `templateClones`    | emitted from `templates/*.kdl`                                               |
 | `additionPrefabs`   | logical names of prefab addition bundles staged into the compiled output (see [Prefabs](/assets/additions/prefabs)) |
+| `compiledForUnity`  | the game's Unity version stamped at compile time, so the loader can compare it to the running game and warn on a build mismatch |
 
 `compiled/jiangyu.json` ships inside the compiled mod folder. Modders read it for debugging compiled output, never edit it.
 

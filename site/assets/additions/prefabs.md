@@ -8,36 +8,9 @@ Two ways to produce the bundle. Pick one per prefab.
 
 ### Unity Editor project (primary)
 
-Jiangyu scaffolds a per-mod Unity project at `<mod>/unity/`. You author prefabs in Unity Editor; `jiangyu compile` invokes Unity in batchmode to build them into AssetBundles automatically.
+Author prefabs in the mod's [Unity project](/unity-project) under `Assets/Prefabs/`. See that page for the layout and the build that turns each prefab into its own AssetBundle.
 
-```sh
-jiangyu unity sync
-```
-
-This creates:
-
-```text
-<mod>/unity/
-├── Assets/
-│   ├── Jiangyu/              jiangyu-managed (re-sync refreshes)
-│   │   ├── Editor/BuildBundles.cs
-│   │   ├── Editor/ImportedPrefabPostProcessor.cs
-│   │   ├── Editor/BakeHumanoid.cs
-│   │   └── README.md
-│   └── Prefabs/              your prefabs go here
-├── Packages/manifest.json    seeded with no dependencies, extend as needed
-└── .gitignore
-```
-
-Open the project in Unity Editor. On first open Unity creates `ProjectSettings/`, `Library/`, `ProjectVersion.txt`.
-
-Author a prefab. Save it under `Assets/Prefabs/<asset-name>.prefab`, where `<asset-name>` is what your KDL will reference via `asset="..."`. The filename (and its relative path under `Assets/Prefabs/`) is the identity, and the Unity Object.name on the prefab can be whatever you set inside Unity.
-
-Subfolders are supported. `Assets/Prefabs/dir/test_cube.prefab` becomes a bundle keyed under `dir/test_cube`, and a KDL reference of `asset="dir/test_cube"` resolves to it. Use folders to organise prefabs without affecting the asset names you reference.
-
-`jiangyu compile` invokes Unity batchmode against the project, builds one AssetBundle per prefab, and stages them into `compiled/`.
-
-Re-running `jiangyu unity sync` is idempotent. It refreshes `Assets/Jiangyu/` and `.gitignore` (Jiangyu owns those) and leaves your prefabs, custom packages, and `ProjectSettings/` untouched.
+Save a prefab under `Assets/Prefabs/<asset-name>.prefab`, where `<asset-name>` is what your KDL references via `asset="..."`. The filename and its relative path under `Assets/Prefabs/` are the identity. The Unity Object.name on the prefab can be whatever you set inside Unity. Subfolders are supported and become part of the name, so `Assets/Prefabs/dir/test_cube.prefab` is `asset="dir/test_cube"`. See [naming and subfolders](/unity-project#naming-and-subfolders).
 
 #### Importing a vanilla prefab to start from
 

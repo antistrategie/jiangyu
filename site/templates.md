@@ -57,7 +57,7 @@ Clones run before patches at load time, so the clone's id is targetable by `ref=
 You almost never want `create`. A `create` starts from a blank template with every field at its type default, so you have to set everything the game expects and it is easy to miss one, leaving a broken or inert template. `clone` deep-copies a real template instead, so the new id inherits all of the source's Inspector-baked defaults and you set only what differs. Use `create` only when no existing template of that type is a sensible base.
 :::
 
-A `create` block makes a fresh template of a given type and registers it under a new id, with no source to copy from. It takes no `from=`; everything is set inside the block.
+A `create` block makes a fresh template of a given type and registers it under a new id, with no source to copy from. It takes no `from=`, and everything is set inside the block.
 
 ```kdl
 create "PerkTemplate" id="my_mod.brand_new_perk" {
@@ -69,7 +69,7 @@ Like clones, creates run before patches, so the new id is targetable by `ref="..
 
 ## Operations
 
-Inside a `patch` or `clone` block, operations modify fields on the targeted template. A patch is a list of operations rather than a desired final state: `set "Damage" 50` only changes `Damage`; `append "Perks" ref="..."` only adds an entry. This keeps each modder's intent intact when patches from different mods stack (see [Composition](#composition-across-installed-mods)).
+Inside a `patch` or `clone` block, operations modify fields on the targeted template. A patch is a list of operations rather than a desired final state: `set "Damage" 50` only changes `Damage`, and `append "Perks" ref="..."` only adds an entry. This keeps each modder's intent intact when patches from different mods stack (see [Composition](#composition-across-installed-mods)).
 
 For the apply-order model (clones before patches, source order within a template) and how operations compose conceptually, see [Concepts](/concepts/#template-operations).
 
@@ -79,18 +79,20 @@ For the apply-order model (clones before patches, source order within a template
 | `set "<field>" { ... }`                              | Descend into the object/struct at the field to edit its sub-fields in place. |
 | `set "<field>" index=N <value>`                      | Set element N of a collection field.                 |
 | `set "<field>" index=N { ... }`                      | Descend into element N to edit its sub-fields. The element's type is inferred. |
+| `set "<field>" cell="r,c" <value>`                   | Set one cell of a multi-dimensional array field. |
 | `set "<field>" type="<X>" { ... }`                   | Construct a fresh X for a **polymorphic** field (names the subtype). |
 | `set "<field>" index=N type="<X>" { ... }`           | Construct a fresh X and replace **polymorphic** element N.            |
 | `append "<field>" <value>`                           | Append to a collection field.                        |
 | `append "<field>" type="<X>" { ... }`                | Construct a new X and append it.                     |
 | `insert "<field>" index=N <value>`                   | Insert into a collection field at position N.        |
 | `insert "<field>" index=N type="<X>" { ... }`        | Construct a new X and insert it at N.                |
-| `remove "<field>" index=N`                           | Remove element N from a collection field.            |
+| `remove "<field>" index=N`                           | Remove element N from a `List<T>` field.             |
+| `remove "<field>" <value>`                           | Remove a matching entry from a set-style (`HashSet`) field. |
 | `clear "<field>"`                                    | Empty a collection, or reset an inline object to its defaults. Composes with `append` ("replace the whole list") or with a descent block ("reset, then set a few fields"). |
 
 Indexes are zero-based. `append` doesn't take an `index=` property, so use `insert` for positional writes. `clear` takes neither index nor value.
 
-`type=` names a concrete subtype and only applies where there's a choice to make — a **polymorphic** field or list element. On a monomorphic field `type=` is an error: edit it in place with `set "<field>" { ... }`, reset it with `clear`, or replace a monomorphic element with `remove` + `insert`. References (`GameObject`, `ScriptableObject`, another template) are nulled with `#null`, not `clear`.
+`type=` names a concrete subtype and only applies where there's a choice to make, a **polymorphic** field or list element. On a monomorphic field `type=` is an error: edit it in place with `set "<field>" { ... }`, reset it with `clear`, or replace a monomorphic element with `remove` + `insert`. References (`GameObject`, `ScriptableObject`, another template) are nulled with `#null`, not `clear`.
 
 ## Composition across installed mods
 
@@ -116,7 +118,7 @@ To reach fields *inside* a nested object or a collection element, use a [descent
 
 ## Descent: editing inside an object or element
 
-When you need to edit fields *inside* a nested object or a collection element, wrap the inner edits in a descent block. The outer `set` carries no value of its own and just navigates, while inner directives operate in place on the target's own fields — every other field is left untouched.
+When you need to edit fields *inside* a nested object or a collection element, wrap the inner edits in a descent block. The outer `set` carries no value of its own and just navigates, while inner directives operate in place on the target's own fields, and every other field is left untouched.
 
 - `set "<field>" { ... }` descends into the **object/struct** at `<field>`.
 - `set "<field>" index=N { ... }` descends into **element N** of a collection.
@@ -131,7 +133,7 @@ patch "EntityTemplate" "player_squad.darby" {
 }
 ```
 
-The descent block is purely an authoring shape; it edits the existing value in place. To build a fresh one instead, see [Construction](#construction) (`clear`, `remove`/`insert`, or `type=`).
+The descent block is purely an authoring shape: it edits the existing value in place. To build a fresh one instead, see [Construction](#construction) (`clear`, `remove`/`insert`, or `type=`).
 
 ### Editing a polymorphic element
 
@@ -153,11 +155,11 @@ Value-type (struct) elements are the one exception: a `List<SomeStruct>` element
 
 ## Construction
 
-Editing keeps what's there; **construction** builds a fresh value. Which tool you reach for depends on whether there's a *type choice* to make.
+Editing keeps what's there. **Construction** builds a fresh value. Which tool you reach for depends on whether there's a *type choice* to make.
 
 ### `type=`: pick a polymorphic subtype
 
-`type="X"` names the concrete subtype to build, and only applies where there's a choice — a **polymorphic** field or list element (an abstract base with multiple concrete subclasses), or a tagged-string field. The most common case is adding an event handler:
+`type="X"` names the concrete subtype to build, and only applies where there's a choice, a **polymorphic** field or list element (an abstract base with multiple concrete subclasses), or a tagged-string field. The most common case is adding an event handler:
 
 ```kdl
 patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
@@ -173,23 +175,23 @@ patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
 - `set "F" index=N type="X" { ... }`: build a fresh X and replace polymorphic element N.
 - `set "F" type="X" { ... }`: build a fresh X for a polymorphic scalar field (an Odin-routed interface such as `Attack.DamageFilterCondition`).
 
-The inner `set` directives provide the new instance's fields; everything else takes its type default (`0`, `null`, empty list, …). Nothing carries over, so set every field the new instance needs to function, including its trigger — a passive perk's `AddSkill`, for example, needs `set "Event" enum="AddEvent" "OnMissionStart"` or it never grants the skill. Inner directives accept the full `set` / `append` / `insert` / `remove` / `clear` vocabulary against the new instance.
+The inner `set` directives provide the new instance's fields, and everything else takes its type default (`0`, `null`, empty list, …). Nothing carries over, so set every field the new instance needs to function, including its trigger. A passive perk's `AddSkill`, for example, needs `set "Event" enum="AddEvent" "OnMissionStart"` or it never grants the skill. Inner directives accept the full `set` / `append` / `insert` / `remove` / `clear` vocabulary against the new instance.
 
-`type=` is an **error on a monomorphic destination** — there's no subtype to pick. The compiler also errors when the named subtype isn't a subclass of the destination's element type, or when an inner field doesn't exist on it.
+`type=` is an **error on a monomorphic destination**: there's no subtype to pick. The compiler also errors when the named subtype isn't a subclass of the destination's element type, or when an inner field doesn't exist on it.
 
 ### Monomorphic: `clear` and `remove`/`insert`
 
 A monomorphic field has only one possible type, so there's nothing for `type=` to name. To build a fresh one:
 
-- **Object/struct field** — `clear "F"` resets it to defaults; follow with a descent block to set the fields you want:
+- **Object/struct field**: `clear "F"` resets it to defaults, then a descent block sets the fields you want:
   ```kdl
   clear "AIRole"
   set "AIRole" { set "AvoidOpponents" #true }   // fresh RoleData, only AvoidOpponents changed
   ```
-- **Collection element** — `remove "F" index=N` then `insert "F" index=N { ... }` (the element analog of `clear` + `set`).
-- **Append a monomorphic element** — `append "F" { ... }` infers the only element type; no `type=` needed.
+- **Collection element**: `remove "F" index=N` then `insert "F" index=N { ... }` (the element analogue of `clear` + `set`).
+- **Append a monomorphic element**: `append "F" { ... }` infers the only element type, no `type=` needed.
 
-`clear` is the mirror image of `type=`: it resets a **monomorphic** inline object, and is an **error on a polymorphic one** — there's no single default to pick, so reconstruct it with `type="<Subtype>"` instead. A **reference** field (a `GameObject`, `ScriptableObject`, or another template) is pointed with `ref=`/`asset=` and nulled with `#null` — `clear` doesn't apply to it.
+`clear` is the mirror image of `type=`: it resets a **monomorphic** inline object, and is an **error on a polymorphic one**: there's no single default to pick, so reconstruct it with `type="<Subtype>"` instead. A **reference** field (a `GameObject`, `ScriptableObject`, or another template) is pointed with `ref=`/`asset=` and nulled with `#null`, so `clear` doesn't apply to it.
 
 ### `from=`: inherit an existing element's fields
 
@@ -208,7 +210,7 @@ patch "SoundBank" "weapons_soundbank" {
 }
 ```
 
-This copies every field of the `aimed_shot` sound (volume, pitch, retrigger mode, distance falloff, etc.) and then overrides `id`, `name`, and `variations` on the copy. Without `from=`, every scalar field defaults to zero and the modder has to remember to set sensible playback parameters. The `from=` name matches the source element's `name` property; the destination type doesn't need to be named explicitly when only one type is possible.
+This copies every field of the `aimed_shot` sound (volume, pitch, retrigger mode, distance falloff, etc.) and then overrides `id`, `name`, and `variations` on the copy. Without `from=`, every scalar field defaults to zero and the modder has to remember to set sensible playback parameters. The `from=` name matches the source element's `name` property, and the destination type doesn't need to be named explicitly when only one type is possible.
 
 ## Value kinds
 
@@ -224,7 +226,7 @@ A value at the end of a `set`, `append`, or `insert` line is one of:
 | Construction        | `type="<TypeName>" { ...nested set ops... }`             | build a polymorphic element/scalar or tagged string (see [Construction](#construction)) |
 | Null                | `#null`                                                  | `set "CustomHead" #null` (null a reference field)        |
 
-`type=` names a polymorphic subtype (or a tagged-string discriminator); on a monomorphic destination it's an error.
+`type=` names a polymorphic subtype (or a tagged-string discriminator). On a monomorphic destination it's an error.
 
 A bare child block with no `type=` is a **descent**: it edits the existing object/struct in place (see [Descent](#descent-editing-inside-an-object-or-element)). It's also what `append`/`insert` use to build a monomorphic element, where the element type is inferred from the destination:
 
@@ -236,9 +238,9 @@ patch "UnitLeaderTemplate" "squad_leader.darby_clone" {
 }
 ```
 
-Here `UnitTitle` is a monomorphic `LocalizedLine`, so the block edits it in place — `m_DefaultTranslation` changes and its other fields stay. (To wipe it first, `clear "UnitTitle"` then set the fields you want.)
+Here `UnitTitle` is a monomorphic `LocalizedLine`, so the block edits it in place: `m_DefaultTranslation` changes and its other fields stay. (To wipe it first, `clear "UnitTitle"` then set the fields you want.)
 
-`#null` clears a reference-typed scalar field (GameObject, ScriptableObject, MonoBehaviour, etc.) so the runtime falls back to its default-when-null behaviour. Useful on cloned templates where the source's field holds an overlay you don't want; e.g. dropping a soldier clone's `CustomHead` so the body mesh's own head shows through. Value-typed fields (numbers, enums, structs) reject `#null` at compile time.
+`#null` clears a reference-typed scalar field (GameObject, ScriptableObject, MonoBehaviour, etc.) so the runtime falls back to its default-when-null behaviour. Useful on cloned templates where the source's field holds an overlay you don't want, for example dropping a soldier clone's `CustomHead` so the body mesh's own head shows through. Value-typed fields (numbers, enums, structs) reject `#null` at compile time.
 
 Strings containing newlines emit as KDL v2 triple-quoted multi-line literals. The visual editor flips to a textarea when a value has any newline in it, and Studio's source view round-trips both forms without rewriting:
 
@@ -297,7 +299,7 @@ Recursion is automatic. The inner `type="SetFlag"` packs first to `"SetFlag|{...
 
 Four common omissions are filled automatically:
 
-- **Node Guids.** Every `BaseConversationNode` subtype and `ConversationNodeContainer` carries an `int Guid`. When omitted, the compiler emits `FNV-1a("{patchId}#node_{counter}")` — stable across rebuilds, distinct from the source's Guids. Modders can still write `set "Guid" N` to force a value.
+- **Node Guids.** Every `BaseConversationNode` subtype and `ConversationNodeContainer` carries an `int Guid`. When omitted, the compiler emits `FNV-1a("{patchId}#node_{counter}")`, stable across rebuilds and distinct from the source's Guids. Modders can still write `set "Guid" N` to force a value.
 - **Clone identity.** `clone "SoundBank" id="X"` implies `set "bankId" "X"`. `clone "ConversationTemplate" id="X"` implies `set "Path" "X"`. Skipped when the modder set the field explicitly.
 - **`Stem.Sound.id` from `name`.** A `Stem.Sound` composite with `set "name" "X"` and no `set "id"` defaults `id` to FNV-1a(`X`). Within-bank uniqueness only requires distinct names.
 - **`VariationCopyCount` sync.** `VariationConversationNode`'s parallel `VariationCopyCount` array is padded with `1`s to match the number of `append "Variations"` ops. Branches without a matching copy-count entry play silently in MENACE's engine.
@@ -324,7 +326,7 @@ jiangyu templates inspect --type UnitLeaderTemplate \
     --name squad_leader.darby --output text
 ```
 
-`templates inspect --output text` is the scan-friendly view. The default JSON output is for scripting. Pass `--with-mod <project-path>` to inspect the effective template state after your project's clones and patches apply, before you launch MENACE.
+`templates inspect --output text` is the scan-friendly view. The default is `pretty`, and `--output json` is for scripting. Pass `--with-mod <project-path>` to inspect the effective template state after your project's clones and patches apply, before you launch MENACE.
 
 ## Compile-time errors
 

@@ -1,12 +1,14 @@
 # What is Jiangyu?
 
-Jiangyu is a modding platform for MENACE (Unity 6, IL2CPP). It lets you replace assets (textures, sprites, models, audio) and patch the data MENACE ships with (unit stats, weapon damage, perk trees, and so on).
+Jiangyu is a modding platform for MENACE (Unity 6, IL2CPP). It runs the whole range: replace assets (textures, sprites, models, audio), patch the data MENACE ships with (unit stats, weapon damage, perk trees), add your own assets and characters, and write C# that runs inside the game.
 
 The toolkit has three pieces:
 
 - **Studio**, a desktop editor for browsing assets, editing replacements and KDL patches, and compiling projects.
 - **CLI** (`jiangyu`), the same operations from the terminal, for scripted workflows.
 - **Loader** (`Jiangyu.Loader.dll`), a MelonLoader plugin that applies mods inside MENACE at runtime.
+
+You go only as far as a mod needs: a re-skin is a dropped file, a rebalance is a KDL patch, and a new system is C# against the [SDK](/sdk/). [Concepts](/concepts/) lays out the layers.
 
 ## Compared to MenaceAssetPacker
 

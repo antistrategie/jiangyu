@@ -24,7 +24,7 @@ AI features are off by default. To enable them:
 
 Before you can chat, you need an agent installed:
 
-1. Open the agent panel (command palette → "Open Agent Panel", or split a pane and pick "Agent").
+1. Open the agent panel (command palette → "Open Agent", or split a pane and pick "Agent").
 2. Click the agent dropdown in the panel header.
 3. Click **Add more agents…** to open the registry browser.
 4. Browse available agents, then click **Install** on the one you want.

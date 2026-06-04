@@ -49,7 +49,8 @@ export default defineConfig({
       { text: "Concepts", link: "/concepts/" },
       { text: "Assets", link: "/assets/" },
       { text: "Templates", link: "/templates" },
-      { text: "SDK", link: "/sdk/template-types" },
+      { text: "Unity project", link: "/unity-project" },
+      { text: "SDK", link: "/sdk/" },
       { text: "Studio", link: "/studio" },
       { text: "Troubleshooting", link: "/troubleshooting" },
     ],
@@ -60,11 +61,8 @@ export default defineConfig({
         items: [
           { text: "What is Jiangyu?", link: "/what-is-jiangyu" },
           { text: "Getting started", link: "/getting-started" },
+          { text: "Concepts", link: "/concepts/" },
         ],
-      },
-      {
-        text: "Concepts",
-        items: [{ text: "Overview", link: "/concepts/" }],
       },
       {
         text: "Assets",
@@ -72,7 +70,7 @@ export default defineConfig({
           { text: "Overview", link: "/assets/" },
           {
             text: "Replacements",
-            collapsed: false,
+            collapsed: true,
             items: [
               { text: "Overview", link: "/assets/replacements/" },
               { text: "Textures", link: "/assets/replacements/textures" },
@@ -83,7 +81,7 @@ export default defineConfig({
           },
           {
             text: "Additions",
-            collapsed: false,
+            collapsed: true,
             items: [
               { text: "Overview", link: "/assets/additions/" },
               { text: "Sprites", link: "/assets/additions/sprites" },
@@ -99,11 +97,17 @@ export default defineConfig({
         items: [{ text: "Templates (KDL)", link: "/templates" }],
       },
       {
+        text: "Unity project",
+        items: [{ text: "Overview", link: "/unity-project" }],
+      },
+      {
         text: "SDK",
         items: [
+          { text: "Overview", link: "/sdk/" },
           { text: "Template types", link: "/sdk/template-types" },
-          { text: "Hooks and the mod API", link: "/sdk/hooks" },
+          { text: "Hooks", link: "/sdk/hooks" },
           { text: "Game verbs", link: "/sdk/verbs" },
+          { text: "Game UI", link: "/sdk/ui" },
         ],
       },
       {
@@ -112,7 +116,7 @@ export default defineConfig({
           { text: "Overview", link: "/studio" },
           {
             text: "AI agent",
-            collapsed: false,
+            collapsed: true,
             items: [
               { text: "Overview", link: "/studio/agent" },
               { text: "Available tools", link: "/studio/agent-tools" },

@@ -14,11 +14,12 @@ A loaded project shows in the topbar with its directory name and current git bra
 
 ## The pane workspace
 
-The main editing area is a grid of panes. Each pane has tabs, and each tab is one of three kinds:
+The main editing area is a grid of panes. Each pane has tabs, and each tab is one of a few kinds:
 
 - **Code**: a text editor for any project file. Used for `jiangyu.json`, `templates/*.kdl`, and any other file you want to edit by hand.
 - **Asset Browser**: search and preview game assets. See [below](#asset-browser).
 - **Template Browser**: search MENACE templates and scaffold patches or clones. See [below](#template-browser).
+- **UI Inspector**: browse the running game's live UI tree to find injection selectors. See [below](#ui-inspector).
 
 The workspace is built around drag-and-drop. Most layout work is done by grabbing things and moving them, not by clicking menu items.
 
@@ -49,7 +50,7 @@ What happens on drop depends on what you grabbed:
   - Edge → moves the dragged pane to that side of the target.
   - Centre → swaps positions with the target pane.
 
-`F11` (or **Toggle fullscreen** from the palette) maximises the focused pane to the full window.
+The maximise button in a pane's tab strip fills the window with that pane. Press **Escape** to exit.
 
 ### Sidebar and status bar
 
@@ -71,7 +72,7 @@ Key uses:
 - **Compile** the project, then **Deploy Mod** to copy the build into the game's `Mods/` folder.
 - **Sync Code Project** to scaffold or refresh `code/`, and **Sync Unity Project** / **Open Unity Editor** for prefab authoring.
 - **Switch project** or open a recent project.
-- **Layout actions**: split right or down, focus the next or previous pane, toggle fullscreen, toggle the sidebar.
+- **Layout actions**: split right or down, focus the next or previous pane, move a pane to a new window, toggle the sidebar.
 - **Go to file**: fuzzy navigation across the project tree.
 
 Actions are grouped by scope (**App**, **Project**, **Code**, **Unity**, **View**, **File**, **Editor**, **AI**, **Go to file**). Some show a keyboard shortcut on the right. Running the palette entry is equivalent to pressing the shortcut.
@@ -85,7 +86,7 @@ The Asset Browser searches the asset index built by `jiangyu assets index` (or b
 - **Results list**: each row shows the asset name, class, collection, and pathId.
 - **Detail panel**: when you select a result, a side panel shows class, collection, pathId, and asset-specific metadata (frequency and channels for audio, atlas and rect for sprites). The `Replace` row gives the path under `assets/replacements/` to drop your replacement at. The `Affects` row shows the count when the name is shared.
 - **Preview pane**: textures and sprites render inline, audio shows an inline player, and models render in a 3D viewer with orbit controls.
-- **Export**: pulls the vanilla asset out as a starting point. The dropdown picks the destination: **Project** (your project's configured export path), **Default** (`<project>/.jiangyu/exports/`), or **Browse** to choose elsewhere. Multi-select to export several at once. Successful exports push a toast with a Reveal action that opens the file location.
+- **Export**: pulls the vanilla asset out as a starting point. The dropdown picks the destination: **Export to default** (`<project>/exported/`), **Export to project defined** (the per-project path, set from the dropdown's **Configure project path…**), or **Export to custom…** to pick a directory. Multi-select to export several at once. Successful exports push a toast with a Reveal action that opens the file location.
 
 ## Template Browser
 
@@ -113,6 +114,18 @@ The fastest way to author is by **dragging from the Template Browser** into the 
 
 See [Templates](/templates) for the KDL grammar.
 
+## UI Inspector
+
+The UI Inspector captures the running game's live UI tree, so you can find the selectors to target with the [Game UI](/sdk/ui) injection API. Open it from the palette (**Open UI Inspector**), and it opens in a new pane.
+
+It reads the game over the **live game bridge**, a localhost connection enabled in [Settings](#settings) and off by default. With the bridge on and the game running, the status chip in the toolbar reads **Live**. Until then it reads **Waiting for game** or **Bridge off**, and the empty state says which.
+
+- **Capture**: pulls the current screen's UI tree. Navigate to the screen you want in the game first, then capture.
+- **Tree**: each node shows its type, `#name`, `.class` list, and any text. Expand and collapse with the chevrons, or search by type, name, or class to filter the tree to matching nodes and their ancestors.
+- **Copy a selector**: the copy button on a node copies its best `UiSelector` snippet. Right-click a node for the full menu of `UiSelector.Name`, `UiSelector.TypeName`, and `UiSelector.Class` snippets to paste into your mod.
+
+The inspector is read-only. It never changes the running game.
+
 ## Compile
 
 Compile runs the same pipeline as `jiangyu compile`, with a UI that shows you what's going to happen before it does.
@@ -128,8 +141,8 @@ The Settings dialog (palette → **Settings**) configures both global and per-pr
 
 - **Game path**: directory containing `MENACE.exe`. Required for indexing and compilation. Studio detects the game's Unity version and shows it next to the field.
 - **Unity Editor path**: a Unity Editor binary. The compile step uses it to build AssetBundles. Studio shows the expected version next to the field and warns if your install doesn't match.
-- **Asset export path** (per-project): default destination for `Export → Project` in the Asset Browser. Stored in the project's local config, not global.
 - **Template editor**: default mode for `.kdl` template files in the editor pane (Visual or Source). Per-file toggles in the editor bar override this.
 - **Restore open tabs**: when on, Studio reopens the panes and tabs from your last session.
+- **Live game bridge**: opens a localhost connection between Studio and the running game, used by the [UI Inspector](#ui-inspector). Off by default. The indicator beside the toggle shows the connection state: live, waiting for the game, or off.
 
 The same global config is what `jiangyu` CLI reads. Edits in Studio and the CLI share one file.

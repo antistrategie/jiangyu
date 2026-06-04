@@ -1,6 +1,6 @@
 # Game verbs
 
-Hooks tell you a moment happened. [Template types](./template-types) change what the game's data does. **Game verbs** are the third surface: they let your code *read* and *command* the live game directly. Spawn a unit, query a path, list the actors on the field, ask a skill's hit chance.
+[Hooks](./hooks) tell you a moment happened. [Template types](./template-types) change what the game's data does. **Game verbs** are the third surface: they let your code *read* and *command* the live game directly. Spawn a unit, query a path, list the actors on the field, ask a skill's hit chance.
 
 The verbs live in the `Jiangyu.Game` namespace and are plain static calls, like `Log`. They need no `Context`, so any code the loader runs can use them:
 
@@ -22,7 +22,7 @@ Anywhere the loader dispatches into your code:
 - in a `JiangyuMod` lifecycle method (`OnInit`, `OnSceneLoaded`, ...),
 - inside a [template type](./template-types) override the game invokes (a condition's `IsTrue`, a handler's `OnTurnStart`, an effect's `Create`).
 
-A pure-data mod (templates only, no `code/`) cannot use verbs, because there is no code to call them. The moment you want one, you have a [code project](./template-types#the-code-project).
+A pure-data mod (templates only, no `code/`) cannot use verbs, because there is no code to call them. The moment you want one, you have a [code project](/sdk/#the-code-project).
 
 The tactical verbs need a tactical mission. Outside one they return null or empty rather than throwing, so a verb called from the strategy layer or a mistimed handler quietly does nothing instead of crashing.
 
@@ -91,7 +91,7 @@ A condition's `IsTrue` runs while the AI is *evaluating* its options. Spawning o
 
 ### Guard for repetition
 
-A polling override (`OnUpdate`, `OnTurnStart`) fires every frame or every turn, and your injected type is re-applied every time the game loads. So a `Units.Spawn` in `OnTurnStart` spawns again each turn and again on reload. Prefer expressing a one-off as an effect on the game's own trigger (which fires once), or guard it with [per-save state](./hooks#state):
+A polling override (`OnUpdate`, `OnTurnStart`) fires every frame or every turn, and your injected type is re-applied every time the game loads. So a `Units.Spawn` in `OnTurnStart` spawns again each turn and again on reload. Prefer expressing a one-off as an effect on the game's own trigger (which fires once), or guard it with [per-save state](/sdk/#state):
 
 ```csharp
 var state = Context.State.Get<MyState>();
@@ -128,7 +128,7 @@ System.Collections.IEnumerator Later(Entity victim)
 You do not have to remember all of this. The Jiangyu analyzer flags the mistakes as you type:
 
 - **JIA007** if you call `base.Something()` from a [template type](./template-types) override (it crashes the game).
-- **JIA008** if you `Subscribe` to a hook from `OnSceneLoaded` or `OnUpdate` (it stacks duplicate handlers, [subscribe in `OnInit`](./hooks#the-entry-point)).
+- **JIA008** if you `Subscribe` to a hook from `OnSceneLoaded` or `OnUpdate` (it stacks duplicate handlers, [subscribe in `OnInit`](/sdk/#the-entry-point)).
 - **JIA009** if you put a mutating verb in a predicate or polling override.
 
 ## A worked example
@@ -136,14 +136,14 @@ You do not have to remember all of this. The Jiangyu analyzer flags the mistakes
 Verbs come into their own when a [template type](./template-types) drives them. The template says *when* in KDL, the type's code says *what* with verbs, and the game's own pipeline fires it.
 
 ```kdl
-// templates/skills.kdl — references your type by name
+// templates/skills.kdl, references your type by name
 patch "skill.reinforce" {
     append "EventHandlers" type="MyMod:SpawnSquad" { count 2 }
 }
 ```
 
 ```csharp
-// code/ — the type the template names
+// code/, the type the template names
 using Jiangyu.Sdk;
 using Jiangyu.Game;
 using Il2CppMenace.Tactical;

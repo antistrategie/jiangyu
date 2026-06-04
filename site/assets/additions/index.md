@@ -15,12 +15,13 @@ assets/additions/
   sprites/
   textures/
   audio/
-  prefabs/         (also produced by unity/ batchmode build)
 ```
 
 Each category folder is walked recursively. The asset's runtime name is its **path under the category folder, with the extension stripped**. So `assets/additions/sprites/lrm5/icon.png` becomes a `Sprite` referenced as `asset="lrm5/icon"`.
 
 Forward slashes (`/`) in the reference mirror the folder layout. Use them whenever you want to organise files by feature, weapon family, or any other grouping.
+
+Prefab additions work differently. You author them in the mod's [Unity project](/unity-project) under `unity/Assets/Prefabs`, and the compiler builds them into bundles. See [Prefabs](/assets/additions/prefabs).
 
 ## KDL syntax
 

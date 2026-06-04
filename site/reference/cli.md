@@ -8,7 +8,7 @@ All commands run from your project directory. Run `jiangyu <command> --help` for
 
 ### `jiangyu init`
 
-Scaffolds a new mod project in the current directory: `jiangyu.json` (with `name` derived from the directory), a `.gitignore` excluding `.jiangyu/` and `compiled/`, and the dormant [`code/`](/sdk/template-types) C# project and [`unity/`](/assets/additions/prefabs) Editor project so a code or prefab mod needs no extra setup. An empty `code/` or `unity/` ships nothing.
+Scaffolds a new mod project in the current directory: `jiangyu.json` (with `name` derived from the directory), a `.gitignore` excluding `.jiangyu/` and `compiled/`, and the dormant [`code/`](/sdk/) C# project and [`unity/`](/unity-project) project so a code, prefab, or UI mod needs no extra setup. An empty `code/` or `unity/` ships nothing.
 
 Equivalent to Studio's "New project" dialog. See [Manifest](/reference/manifest) for the scaffolded shape.
 
@@ -39,9 +39,9 @@ Equivalent to Studio's "Deploy Mod" palette command.
 
 ### `jiangyu unity sync`
 
-Scaffolds the per-mod Unity Editor project at `unity/` for [prefab addition](/assets/additions/prefabs) authoring. Idempotent: re-running refreshes Jiangyu-managed files under `unity/Assets/Jiangyu/` and `.gitignore`, and modder content elsewhere is preserved.
+Refreshes the per-mod [Unity project](/unity-project) at `unity/`, which `jiangyu init` already scaffolds. Idempotent: re-running rewrites the Jiangyu-managed files under `unity/Assets/Jiangyu/` and `.gitignore`, recreates `unity/` if it is missing, and preserves your own assets and packages.
 
-Only needed for mods that ship prefab additions. Data-only and replacement-only mods never need to run this.
+Run it after a Jiangyu update. `jiangyu compile` builds `unity/` automatically when it has prefabs or UXML, so day to day you rarely need this.
 
 ### `jiangyu unity open`
 
@@ -83,14 +83,15 @@ The output includes each match's pathId, collection, and the suggested replaceme
 
 ### `jiangyu assets export <kind> <name>`
 
-Exports a vanilla asset as a starting point for your replacement. Four kinds:
+Exports a vanilla asset as a starting point for your replacement. Five kinds:
 
 | Kind                                     | Output                                                    |
 | ---------------------------------------- | --------------------------------------------------------- |
 | `jiangyu assets export model <name>`     | Self-contained model package directory (cleaned glTF + auxiliary textures). |
 | `jiangyu assets export texture <name>`   | PNG file.                                                 |
 | `jiangyu assets export sprite <name>`    | PNG file.                                                 |
-| `jiangyu assets export audio <name>`     | Audio file in whatever format Unity embedded (typically `.ogg`). |
+| `jiangyu assets export atlas <name>`     | PNG of the atlas with sprite outlines drawn on.           |
+| `jiangyu assets export audio <name>`     | Audio file in whatever format Unity embedded (usually `.ogg`, sometimes `.wav`). |
 
 Common options:
 
@@ -141,7 +142,7 @@ jiangyu templates inspect --type UnitLeaderTemplate \
     --name squad_leader.darby --output text
 ```
 
-`--output text` is the scan-friendly view, and the default JSON output is for scripting. Pass `--with-mod <project-path>` to preview the effective state after your project's clones and patches apply, before launching MENACE.
+`--output text` is the scan-friendly view. The default is `pretty`, and `--output json` is for scripting. Pass `--with-mod <project-path>` to preview the effective state after your project's clones and patches apply, before launching MENACE.
 
 ### `jiangyu templates query`
 
@@ -164,7 +165,7 @@ For leaf fields it emits a copy-pasteable KDL snippet you can drop into a `templ
 
 ### `jiangyu templates format`
 
-Canonicalises every `*.kdl` under `templates/` (or a path you pass). Runs the same parse → validate → normalise → serialise pipeline Studio uses on save, so the on-disk text matches what the visual editor would write. Comments — leading and inline — round-trip through the format.
+Canonicalises every `*.kdl` under `templates/` (or a path you pass). Runs the same parse → validate → normalise → serialise pipeline Studio uses on save, so the on-disk text matches what the visual editor would write. Comments, leading and inline, round-trip through the format.
 
 ```sh
 jiangyu templates format                  # rewrite every templates/*.kdl

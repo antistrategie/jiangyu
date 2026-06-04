@@ -13,7 +13,7 @@ hero:
       text: Get started
       link: /getting-started
     - theme: alt
-      text: Reference
+      text: Studio
       link: /studio
 
 features:

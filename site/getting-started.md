@@ -48,7 +48,7 @@ RedLogo/
   unity/                 # per-mod Unity Editor project
 ```
 
-`jiangyu.json` is the manifest. See [Manifest](./reference/manifest.md) for the full reference. For now the defaults are fine. `code/` is the per-mod C# project for [code mods](./sdk/template-types.md), and `unity/` is the per-mod Unity Editor project where modders author prefabs under `Assets/Prefabs/`. Both stay dormant until you use them, so an empty `code/` or `unity/` ships nothing.
+`jiangyu.json` is the manifest. See [Manifest](./reference/manifest.md) for the full reference. For now the defaults are fine. `code/` is the per-mod C# project for the [SDK](./sdk/), and `unity/` is the per-mod [Unity project](./unity-project) for prefabs and UXML. Both stay dormant until you use them, so an empty `code/` or `unity/` ships nothing.
 
 ## Find a target asset
 
@@ -69,7 +69,7 @@ That `Replace` row tells you exactly where to drop your replacement, under your 
 
 ## Export the vanilla pixels
 
-Click **Export** in the detail panel and choose **Project** as the destination. Studio pulls the vanilla `menace_logo_main_menue` out of the game and writes it as a PNG. A success toast shows up with a **Reveal** action that opens the file location.
+Click **Export** in the detail panel and choose **Export to default** as the destination. Studio pulls the vanilla `menace_logo_main_menue` out of the game and writes it as a PNG under `exported/`. A success toast shows up with a **Reveal** action that opens the file location.
 
 ## Edit it
 
