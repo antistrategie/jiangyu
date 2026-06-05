@@ -27,10 +27,13 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
     private const string IndexFileName = "template-index.json";
     private const string ManifestFileName = "template-index-manifest.json";
     private const string ValuesFileName = "template-values.json";
-    // v7: TemplateInstanceEntry carries the script's CLR namespace so the
-    // member-query catalogue can disambiguate short-name collisions like
-    // Effects.Attack vs AI.Behaviors.Attack. Older caches lack the field.
-    internal const int CurrentFormatVersion = 7;
+    // Cached collection-element references carry the handler's concrete
+    // class (JumpIntoMelee, Attack), letting the visual editor offer that
+    // subtype's fields when a slot is edited. TemplateInstanceEntry carries
+    // the script's CLR namespace so the member-query catalogue can
+    // disambiguate short-name collisions like Effects.Attack vs
+    // AI.Behaviors.Attack.
+    internal const int CurrentFormatVersion = 8;
     private const int ValuesInspectDepth = 6;
 
     private static readonly JsonSerializerOptions JsonOptions = new()

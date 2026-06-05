@@ -4,6 +4,7 @@ using AssetRipper.Assets.Metadata;
 using AssetRipper.Assets.Traversal;
 using AssetRipper.Import.Structure.Assembly.Serializable;
 using AssetRipper.Primitives;
+using AssetRipper.SourceGenerated.Classes.ClassID_114;
 using Jiangyu.Core.Models;
 
 namespace Jiangyu.Core.Assets;
@@ -356,10 +357,26 @@ public static class ObjectFieldInspector
                 PathId = pptr.PathID,
                 IsNull = pptr.FileID == 0 && pptr.PathID == 0,
                 ReferenceName = target?.GetBestName(),
-                ReferenceClassName = target?.ClassName,
+                ReferenceClassName = ResolveReferenceClassName(target),
             };
 
             AttachNode(node);
+        }
+
+        // A ScriptableObject/MonoBehaviour serialises as ClassID 114, so its
+        // ClassName is the base "MonoBehaviour". Resolve m_Script to the concrete
+        // managed class instead, so a polymorphic element reference (e.g. an
+        // EventHandlers entry) reports its real subtype for the visual editor.
+        private static string? ResolveReferenceClassName(IUnityObjectBase? target)
+        {
+            if (target is IMonoBehaviour mono
+                && mono.ScriptP is { } script
+                && script.ClassName_R.String is { Length: > 0 } scriptClass)
+            {
+                return scriptClass;
+            }
+
+            return target?.ClassName;
         }
 
         private bool EnterPairObject(string typeName)
