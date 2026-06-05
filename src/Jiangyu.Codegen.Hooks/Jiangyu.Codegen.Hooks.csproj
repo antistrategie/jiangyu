@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>jiangyu-codegen-hooks</AssemblyName>
+    <!-- Dev/CI-only tool, one of the Jiangyu.Codegen.* generators (Verbs, Hooks). Resolves
+         each hook anchor against the game's Il2CppInterop assembly to contract-check the
+         hook surface against a game update, and emits the shipped HookCatalog. Never
+         shipped itself; the generated HookCatalog.g.cs is committed and compiles without
+         the generator. The game-assembly load and the surface baseline live in
+         Jiangyu.Core.Validation. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Jiangyu.Core\Jiangyu.Core.csproj" />
+  </ItemGroup>
+
+</Project>

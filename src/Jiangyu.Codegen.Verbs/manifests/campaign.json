@@ -1,0 +1,54 @@
+{
+  "_comment": "Campaign-state verbs over StrategyState. Trivial passthroughs only; the receiver expression resolves the singleton so each verb takes the method's own parameters. Bespoke campaign verbs (the conversation-var read, which takes a span) live in Strategy/Campaign.cs.",
+  "verbs": [
+    {
+      "group": "Strategy.Campaign",
+      "name": "ResourceRaw",
+      "onType": "Il2CppMenace.States.StrategyState",
+      "method": "GetVarRaw",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get()",
+      "summary": "Read a campaign resource/variable's raw stored value, before the game's effects are applied."
+    },
+    {
+      "group": "Strategy.Campaign",
+      "name": "Seed",
+      "onType": "Il2CppMenace.States.StrategyState",
+      "method": "GetSeed",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get()",
+      "summary": "The campaign's generation seed."
+    },
+    {
+      "group": "Strategy.Campaign",
+      "name": "IsIronman",
+      "onType": "Il2CppMenace.States.StrategyState",
+      "method": "IsIronman",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get()",
+      "summary": "Whether the campaign is an ironman run."
+    },
+    {
+      "group": "Strategy.Campaign",
+      "name": "Difficulty",
+      "onType": "Il2CppMenace.States.StrategyState",
+      "method": "GetGlobalDifficulty",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get()",
+      "summary": "The campaign's global difficulty template."
+    },
+    {
+      "group": "Strategy.Campaign",
+      "name": "Progress",
+      "onType": "Il2CppMenace.States.StrategyState",
+      "method": "GetCampaignProgress",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get()",
+      "summary": "A campaign-progress measure for the given progress type."
+    },
+    {
+      "group": "Strategy.Campaign",
+      "name": "SetConversationVar",
+      "onType": "Il2CppMenace.States.StrategyState",
+      "method": "SetConversationVarValue",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get()",
+      "summary": "Set a conversation variable by name.",
+      "mutating": true
+    }
+  ]
+}

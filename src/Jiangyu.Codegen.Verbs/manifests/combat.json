@@ -1,0 +1,14 @@
+{
+  "_comment": "Combat verbs. Trivial passthroughs only; the EntityProperties stat reads route through Actor.GetCurrentProperties() and live as hand-written bespoke members in Tactical/Combat.cs.",
+  "verbs": [
+    {
+      "group": "Tactical.Combat",
+      "name": "InflictDefect",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "ApplyRandomDamageEffect",
+      "receiver": "self",
+      "summary": "Apply a random damage effect (defect) of the given severity to the actor.",
+      "mutating": true
+    }
+  ]
+}

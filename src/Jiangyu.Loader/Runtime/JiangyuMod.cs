@@ -80,6 +80,7 @@ public class JiangyuMod : MelonMod
         _bridge.On(BridgeMethods.InspectTemplates, _ => TemplateStateInspector.Capture(_currentScene));
         _bridge.On(BridgeMethods.GateRun, _ => InjectionGateInspector.Capture(_currentScene, LoggerInstance));
         _bridge.On(BridgeMethods.VerbsRun, _ => VerbSurfaceProbe.Capture(_currentScene, LoggerInstance));
+        _bridge.On(BridgeMethods.StrategyRun, _ => StrategyProbe.Capture(LoggerInstance));
     }
 
     // Start/stop the bridge to match the `bridge` flag. Reads the flag fresh (not the

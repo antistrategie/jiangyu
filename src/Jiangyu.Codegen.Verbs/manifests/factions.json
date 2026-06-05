@@ -1,0 +1,88 @@
+{
+  "_comment": "Story-faction verbs. GetFaction is overloaded, so it is hand-written in Strategy/Factions.cs; the per-faction reads/mutations here are receiver \"self\" on Il2CppMenace.Strategy.StoryFaction.",
+  "verbs": [
+    {
+      "group": "Strategy.Factions",
+      "name": "Trust",
+      "onType": "Il2CppMenace.Strategy.StoryFaction",
+      "method": "GetTotalTrust",
+      "receiver": "self",
+      "summary": "The faction's total accumulated trust."
+    },
+    {
+      "group": "Strategy.Factions",
+      "name": "TrustLevel",
+      "onType": "Il2CppMenace.Strategy.StoryFaction",
+      "method": "GetTrustLevel",
+      "receiver": "self",
+      "summary": "The faction's current trust level."
+    },
+    {
+      "group": "Strategy.Factions",
+      "name": "Status",
+      "onType": "Il2CppMenace.Strategy.StoryFaction",
+      "method": "GetStatus",
+      "receiver": "self",
+      "summary": "The faction's current status."
+    },
+    {
+      "group": "Strategy.Factions",
+      "name": "Template",
+      "onType": "Il2CppMenace.Strategy.StoryFaction",
+      "method": "GetTemplate",
+      "receiver": "self",
+      "summary": "The faction's defining template."
+    },
+    {
+      "group": "Strategy.Factions",
+      "name": "HomePlanet",
+      "onType": "Il2CppMenace.Strategy.StoryFaction",
+      "method": "GetHomePlanet",
+      "receiver": "self",
+      "summary": "The faction's home planet."
+    },
+    {
+      "group": "Strategy.Factions",
+      "name": "UnlockedUpgradeCount",
+      "onType": "Il2CppMenace.Strategy.StoryFaction",
+      "method": "GetUnlockedUpgradeCount",
+      "receiver": "self",
+      "summary": "How many ship upgrades the faction has unlocked."
+    },
+    {
+      "group": "Strategy.Factions",
+      "name": "IsUpgradeUnlocked",
+      "onType": "Il2CppMenace.Strategy.StoryFaction",
+      "method": "IsUpgradeUnlocked",
+      "receiver": "self",
+      "summary": "Whether the faction has unlocked the given ship upgrade."
+    },
+    {
+      "group": "Strategy.Factions",
+      "name": "ChangeTrust",
+      "onType": "Il2CppMenace.Strategy.StoryFaction",
+      "method": "ChangeTrust",
+      "receiver": "self",
+      "summary": "Add the given delta to the faction's trust (negative to lose trust).",
+      "mutating": true
+    },
+    {
+      "group": "Strategy.Factions",
+      "name": "SetStatus",
+      "onType": "Il2CppMenace.Strategy.StoryFaction",
+      "method": "SetStatus",
+      "receiver": "self",
+      "summary": "Set the faction's status.",
+      "mutating": true
+    },
+    {
+      "group": "Strategy.Factions",
+      "name": "UnlockUpgrade",
+      "onType": "Il2CppMenace.Strategy.StoryFaction",
+      "method": "UnlockUpgrade",
+      "receiver": "self",
+      "summary": "Unlock the given ship upgrade for the faction.",
+      "mutating": true
+    }
+  ]
+}

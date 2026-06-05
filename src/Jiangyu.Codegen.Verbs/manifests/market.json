@@ -1,0 +1,49 @@
+{
+  "_comment": "Black-market verbs over StrategyState.Get().BlackMarket (Il2CppMenace.Strategy.BlackMarket). The bespoke Refresh verb lives in Strategy/Market.cs; these are the trivial reads and mutations.",
+  "verbs": [
+    {
+      "group": "Strategy.Market",
+      "name": "CountItemInstances",
+      "onType": "Il2CppMenace.Strategy.BlackMarket",
+      "method": "CountItemInstances",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().BlackMarket",
+      "summary": "How many instances of the given template, stack type and remaining timeout the market holds."
+    },
+    {
+      "group": "Strategy.Market",
+      "name": "FillUp",
+      "onType": "Il2CppMenace.Strategy.BlackMarket",
+      "method": "FillUp",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().BlackMarket",
+      "summary": "Fill the black market up to its configured stock.",
+      "mutating": true
+    },
+    {
+      "group": "Strategy.Market",
+      "name": "FillBlueprintVouchers",
+      "onType": "Il2CppMenace.Strategy.BlackMarket",
+      "method": "TryFillupBlueprintVouchers",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().BlackMarket",
+      "summary": "Top up the market's blueprint vouchers. Returns false when none were added.",
+      "mutating": true
+    },
+    {
+      "group": "Strategy.Market",
+      "name": "AddItem",
+      "onType": "Il2CppMenace.Strategy.BlackMarket",
+      "method": "AddItem",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().BlackMarket",
+      "summary": "Add an existing item instance to the black market with an optional remaining timeout.",
+      "mutating": true
+    },
+    {
+      "group": "Strategy.Market",
+      "name": "RemoveItem",
+      "onType": "Il2CppMenace.Strategy.BlackMarket",
+      "method": "RemoveItem",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().BlackMarket",
+      "summary": "Remove an item instance from the black market. Returns false when it is not present.",
+      "mutating": true
+    }
+  ]
+}

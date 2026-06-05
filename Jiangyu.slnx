@@ -3,6 +3,9 @@
     <Project Path="src/Jiangyu.Acp/Jiangyu.Acp.csproj" />
     <Project Path="src/Jiangyu.Core/Jiangyu.Core.csproj" />
     <Project Path="src/Jiangyu.Cli/Jiangyu.Cli.csproj" />
+    <Project Path="src/Jiangyu.Codegen.Docs/Jiangyu.Codegen.Docs.csproj" />
+    <Project Path="src/Jiangyu.Codegen.Hooks/Jiangyu.Codegen.Hooks.csproj" />
+    <Project Path="src/Jiangyu.Codegen.Verbs/Jiangyu.Codegen.Verbs.csproj" />
     <Project Path="src/Jiangyu.Loader/Jiangyu.Loader.csproj" />
     <Project Path="src/Jiangyu.Mcp/Jiangyu.Mcp.csproj" />
     <Project Path="src/Jiangyu.Sdk/Jiangyu.Sdk.csproj" />
@@ -15,6 +18,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Jiangyu.Acp.Tests/Jiangyu.Acp.Tests.csproj" />
+    <Project Path="tests/Jiangyu.Codegen.Tests/Jiangyu.Codegen.Tests.csproj" />
     <Project Path="tests/Jiangyu.Core.Tests/Jiangyu.Core.Tests.csproj" />
     <Project Path="tests/Jiangyu.Loader.Tests/Jiangyu.Loader.Tests.csproj" />
     <Project Path="tests/Jiangyu.Sdk.Analyzers.Tests/Jiangyu.Sdk.Analyzers.Tests.csproj" />

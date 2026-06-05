@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>jiangyu-codegen-docs</AssemblyName>
+    <!-- Dev/CI-only tool, one of the Jiangyu.Codegen.* generators. Renders the generated
+         modder reference (site/reference/verbs.md, hooks.md) from the SDK's XML doc and
+         the shipped HookCatalog, so the reference stays in sync with the surface. Never
+         shipped; the .md it emits are committed. References Jiangyu.Sdk for HookCatalog
+         (game-agnostic: strings and typeof, no game assemblies). -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Jiangyu.Sdk\Jiangyu.Sdk.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,47 @@
+{
+  "_comment": "The verb manifest: the one hand-maintained artifact. Each entry binds a Jiangyu verb (group.name) to a game method; the generator reflects the game assembly, resolves the method (a missing one is a game-update regression, reported at gen time), and emits a thin wrapper into a partial class in Jiangyu.Sdk.Menace. 'receiver' is either \"self\" (the verb takes the onType as its first arg and calls the method on it) or a literal expression yielding the instance. 'mutating' tags state-changing verbs so the generator emits [MutatingVerb]. Bespoke verbs (out-params, brackets, transforms) are hand-written as partial-class additions, not listed here. Tactical entries are added as that layer migrates.",
+  "verbs": [
+    {
+      "group": "Strategy.Campaign",
+      "name": "Resource",
+      "onType": "Il2CppMenace.States.StrategyState",
+      "method": "GetVar",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get()",
+      "summary": "Read a campaign resource/variable with the game's effects applied."
+    },
+    {
+      "group": "Strategy.Leaders",
+      "name": "Hire",
+      "onType": "Il2CppMenace.Strategy.Roster",
+      "method": "HireLeader",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Roster",
+      "summary": "Hire a leader into the campaign roster.",
+      "mutating": true
+    },
+    {
+      "group": "Strategy.Leaders",
+      "name": "Dismiss",
+      "onType": "Il2CppMenace.Strategy.Roster",
+      "method": "TryDismissLeader",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Roster",
+      "summary": "Dismiss a leader from the campaign roster (false if not present).",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "Hitpoints",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "GetHitpoints",
+      "receiver": "self",
+      "summary": "The actor's current hitpoints."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "Morale",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "GetMorale",
+      "receiver": "self",
+      "summary": "The actor's current morale."
+    }
+  ]
+}

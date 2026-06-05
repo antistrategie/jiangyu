@@ -1,0 +1,58 @@
+{
+  "hooks": [
+    {
+      "layer": "Strategy", "name": "LeaderHired", "context": "LeaderHiredContext", "kind": "postfix",
+      "owner": "Il2CppMenace.Strategy.Roster", "member": "HireLeader",
+      "summary": "A leader was hired into the roster.",
+      "payload": [ { "name": "Leader", "type": "BaseUnitLeader", "summary": "The hired leader." } ]
+    },
+    {
+      "layer": "Strategy", "name": "LeaderDismissed", "context": "LeaderDismissedContext", "kind": "postfix",
+      "owner": "Il2CppMenace.Strategy.Roster", "member": "TryDismissLeader",
+      "summary": "A leader was dismissed from the roster.",
+      "payload": [ { "name": "Leader", "type": "BaseUnitLeader", "summary": "The dismissed leader." } ]
+    },
+    {
+      "layer": "Strategy", "name": "LeaderPermadeath", "context": "LeaderPermadeathContext", "kind": "postfix",
+      "owner": "Il2CppMenace.Strategy.Roster", "member": "OnPermanentDeath",
+      "summary": "A leader permanently died.",
+      "payload": [ { "name": "Leader", "type": "BaseUnitLeader", "summary": "The leader that died." } ]
+    },
+    {
+      "layer": "Strategy", "name": "LeaderPerkAdded", "context": "LeaderPerkAddedContext", "kind": "postfix",
+      "owner": "Il2CppMenace.Strategy.BaseUnitLeader", "member": "AddPerk",
+      "summary": "A leader gained a perk (levelled up).",
+      "payload": [
+        { "name": "Leader", "type": "BaseUnitLeader", "summary": "The leader." },
+        { "name": "Perk", "type": "PerkTemplate", "summary": "The perk gained." }
+      ]
+    },
+    {
+      "layer": "Strategy", "name": "OperationFinished", "context": "OperationFinishedContext", "kind": "postfix",
+      "owner": "Il2CppMenace.Strategy.OperationsManager", "member": "OnOperationFinished",
+      "summary": "A strategic operation concluded.",
+      "payload": [ { "name": "Operation", "type": "Operation", "summary": "The operation that finished." } ]
+    },
+    {
+      "layer": "Strategy", "name": "OperationStarted", "context": "OperationStartedContext", "kind": "postfix",
+      "owner": "Il2CppMenace.Strategy.Operation", "member": "StartOperation",
+      "summary": "A strategic operation began.",
+      "payload": [
+        { "name": "Operation", "type": "Operation", "summary": "The operation that started." },
+        { "name": "Mission", "type": "Mission", "summary": "The first mission of the operation." }
+      ]
+    },
+    {
+      "layer": "Strategy", "name": "BlackMarketItemAdded", "context": "BlackMarketItemAddedContext", "kind": "postfix",
+      "owner": "Il2CppMenace.Strategy.BlackMarket", "member": "AddItem",
+      "summary": "An item was added to the Black Market.",
+      "payload": [ { "name": "Item", "type": "BaseItem", "summary": "The item added." } ]
+    },
+    {
+      "layer": "Strategy", "name": "BlackMarketRestocked", "context": "BlackMarketRestockedContext", "kind": "postfix",
+      "owner": "Il2CppMenace.Strategy.BlackMarket", "member": "FillUp",
+      "summary": "The Black Market restocked its inventory.",
+      "payload": []
+    }
+  ]
+}

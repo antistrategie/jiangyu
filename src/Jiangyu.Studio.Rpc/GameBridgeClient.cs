@@ -51,28 +51,45 @@ internal sealed class GameBridgeClient
     {
         lock (_lock)
         {
-            if (!EnsureConnected())
-                throw new InvalidOperationException("game bridge not connected (is the game running with the bridge flag?)");
-
             try
             {
-                var id = (++_nextId).ToString();
-                var requestBytes = JsonSerializer.SerializeToUtf8Bytes(
-                    new BridgeRequest { Id = id, Method = method, Params = parameters });
-                BridgeFraming.WriteMessage(_stream!, requestBytes);
-
-                var raw = BridgeFraming.ReadMessage(_stream!) ?? throw new IOException("bridge connection closed");
-                var response = JsonSerializer.Deserialize<BridgeResponse>(raw)
-                    ?? throw new InvalidOperationException("game bridge returned an empty response");
-                if (!response.Ok)
-                    throw new InvalidOperationException($"game bridge error: {response.Error ?? "unknown error"}");
-                return response.Result is JsonElement element ? element : NullResult;
+                return Send(method, parameters);
             }
-            catch
+            catch (Exception ex) when (ex is IOException or SocketException)
             {
+                // A connection the game closed on its previous exit only faults on use
+                // (TcpClient.Connected lags a half-closed socket), so drop the stale socket
+                // and try once more against the port the relaunched game just published.
                 Cleanup();
-                throw;
+                return Send(method, parameters);
             }
+        }
+    }
+
+    // Assumes the lock is held.
+    private JsonElement Send(string method, object? parameters)
+    {
+        if (!EnsureConnected())
+            throw new InvalidOperationException("game bridge not connected (is the game running with the bridge flag?)");
+
+        try
+        {
+            var id = (++_nextId).ToString();
+            var requestBytes = JsonSerializer.SerializeToUtf8Bytes(
+                new BridgeRequest { Id = id, Method = method, Params = parameters });
+            BridgeFraming.WriteMessage(_stream!, requestBytes);
+
+            var raw = BridgeFraming.ReadMessage(_stream!) ?? throw new IOException("bridge connection closed");
+            var response = JsonSerializer.Deserialize<BridgeResponse>(raw)
+                ?? throw new InvalidOperationException("game bridge returned an empty response");
+            if (!response.Ok)
+                throw new InvalidOperationException($"game bridge error: {response.Error ?? "unknown error"}");
+            return response.Result is JsonElement element ? element : NullResult;
+        }
+        catch
+        {
+            Cleanup();
+            throw;
         }
     }
 

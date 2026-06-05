@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using Jiangyu.Core.Assets;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
+using Jiangyu.Core.Validation;
 
 namespace Jiangyu.Cli.Commands.Templates;
 

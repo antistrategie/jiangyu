@@ -1,0 +1,438 @@
+{
+  "_comment": "Tile and Map verbs. Tile reads/mutations take the Tile as their first arg (receiver \"self\"); Map queries route through TacticalManager.Get().GetMap(). Overloaded, out-param, list-returning and static map lookups are hand-written in Tactical/Tiles.cs, not here.",
+  "verbs": [
+    {
+      "group": "Tactical.Tiles",
+      "name": "HasActor",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "HasActor",
+      "receiver": "self",
+      "summary": "Whether an actor stands on the tile."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "IsEmpty",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "IsEmpty",
+      "receiver": "self",
+      "summary": "Whether the tile holds no entity."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "HasStructure",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "HasStructure",
+      "receiver": "self",
+      "summary": "Whether the tile holds a structure."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "IsValidMovementDestination",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "IsValidMovementDestination",
+      "receiver": "self",
+      "summary": "Whether the tile is a valid destination for a move."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "IsBlocked",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "IsBlocked",
+      "receiver": "self",
+      "summary": "Whether the tile is blocked (impassable)."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "IsBlockingLineOfSight",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "IsBlockingLineOfSight",
+      "receiver": "self",
+      "summary": "Whether the tile currently blocks line of sight."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "IsIsolated",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "IsIsolated",
+      "receiver": "self",
+      "summary": "Whether the tile is isolated (unreachable by movement)."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "IsTemporarilyOccupied",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "IsTemporarilyOccupied",
+      "receiver": "self",
+      "summary": "Whether the tile is temporarily occupied (e.g. mid-move)."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "CanBeEntered",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "CanBeEntered",
+      "receiver": "self",
+      "summary": "Whether the tile can be entered at all."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "CanBeEnteredBy",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "CanBeEnteredBy",
+      "receiver": "self",
+      "summary": "Whether the given actor can enter the tile."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "HasCover",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "HasCover",
+      "receiver": "self",
+      "summary": "Whether the tile provides any cover."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "HasHalfCover",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "HasHalfCover",
+      "receiver": "self",
+      "summary": "Whether the tile provides half cover."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "HasHalfCoverInDir",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "HasHalfCoverInDir",
+      "receiver": "self",
+      "summary": "Whether the tile has half cover facing the given direction."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "HasEnvironmentFeature",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "HasEnvironmentFeature",
+      "receiver": "self",
+      "summary": "Whether the tile carries an environment feature."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "HasEffect",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "HasEffect",
+      "receiver": "self",
+      "summary": "Whether the tile carries any active tile effect."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "Actor",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "GetActor",
+      "receiver": "self",
+      "summary": "The actor on the tile, or null."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "Entity",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "GetEntity",
+      "receiver": "self",
+      "summary": "The entity occupying the tile, or null."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "X",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "GetX",
+      "receiver": "self",
+      "summary": "The tile's X grid coordinate."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "Z",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "GetZ",
+      "receiver": "self",
+      "summary": "The tile's Z grid coordinate."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "Elevation",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "GetElevation",
+      "receiver": "self",
+      "summary": "The tile's elevation."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "SurfaceType",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "GetSurfaceType",
+      "receiver": "self",
+      "summary": "The tile's surface type."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "Concealment",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "GetConcealment",
+      "receiver": "self",
+      "summary": "The tile's concealment value."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "InherentCover",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "GetInherentCover",
+      "receiver": "self",
+      "summary": "The tile's inherent cover type."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "CoverMask",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "GetCoverMask",
+      "receiver": "self",
+      "summary": "The tile's per-direction cover bitmask."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "VisibleMask",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "GetVisibleMask",
+      "receiver": "self",
+      "summary": "The bitmask of factions that can currently see the tile."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "IsVisibleToPlayer",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "IsVisibleToPlayer",
+      "receiver": "self",
+      "summary": "Whether the player can currently see the tile."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "IsVisibleToFaction",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "IsVisibleToFaction",
+      "receiver": "self",
+      "summary": "Whether the given faction can currently see the tile."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "HasLineOfSightTo",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "HasLineOfSightTo",
+      "receiver": "self",
+      "summary": "Whether the tile has line of sight to another tile under the given flags."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "IsDirectNeighbor",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "IsDirectNeighbor",
+      "receiver": "self",
+      "summary": "Whether the other tile is a direct (adjacent) neighbour."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "DirectionTo",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "GetDirectionTo",
+      "receiver": "self",
+      "summary": "The direction from this tile to another."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "ManhattanDistanceTo",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "GetManhattanDistanceTo",
+      "receiver": "self",
+      "summary": "The Manhattan distance from this tile to another."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "DiagonalManhattanDistanceTo",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "GetDiagonalManhattanDistanceTo",
+      "receiver": "self",
+      "summary": "The diagonal Manhattan distance from this tile to another."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "HasNextTile",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "HasNextTile",
+      "receiver": "self",
+      "summary": "Whether a tile exists in the given direction."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "SetConcealment",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "SetConcealment",
+      "receiver": "self",
+      "summary": "Set the tile's concealment value.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "SetSurfaceType",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "SetSurfaceType",
+      "receiver": "self",
+      "summary": "Set the tile's surface type.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "SetElevation",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "SetElevation",
+      "receiver": "self",
+      "summary": "Set the tile's elevation.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "SetBlocked",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "SetBlocked",
+      "receiver": "self",
+      "summary": "Set whether the tile is blocked (impassable).",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "SetInherentCover",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "SetInherentCover",
+      "receiver": "self",
+      "summary": "Set the tile's inherent cover type.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "BlockLineOfSight",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "BlockLineOfSight",
+      "receiver": "self",
+      "summary": "Push a line-of-sight block onto the tile.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "UnblockLineOfSight",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "UnblockLineOfSight",
+      "receiver": "self",
+      "summary": "Pop a line-of-sight block off the tile.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "AddVisibility",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "AddVisibility",
+      "receiver": "self",
+      "summary": "Mark the tile as visible to the given faction.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "RemoveVisibility",
+      "onType": "Il2CppMenace.Tactical.Tile",
+      "method": "RemoveVisibility",
+      "receiver": "self",
+      "summary": "Clear the tile's visibility for the given faction.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "TileAtPos",
+      "onType": "Il2CppMenace.Tactical.Map",
+      "method": "GetTileAtPos",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap()",
+      "summary": "The tile under a world-space position."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "SurfaceTypeAtPos",
+      "onType": "Il2CppMenace.Tactical.Map",
+      "method": "GetSurfaceTypeAtPos",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap()",
+      "summary": "The surface type under a world-space position."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "CenterWorldPos",
+      "onType": "Il2CppMenace.Tactical.Map",
+      "method": "GetCenterWorldPos",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap()",
+      "summary": "The world-space centre of the map."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "TerrainHeight",
+      "onType": "Il2CppMenace.Tactical.Map",
+      "method": "GetTerrainHeight",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap()",
+      "summary": "The map's terrain height."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "Slope",
+      "onType": "Il2CppMenace.Tactical.Map",
+      "method": "GetSlope",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap()",
+      "summary": "The terrain slope at a world-space position."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "MapIsReady",
+      "onType": "Il2CppMenace.Tactical.Map",
+      "method": "IsReady",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap()",
+      "summary": "Whether the tactical map has finished generating."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "MapUsesFogOfWar",
+      "onType": "Il2CppMenace.Tactical.Map",
+      "method": "IsUsingFogOfWar",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap()",
+      "summary": "Whether the map is using fog of war."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "MapSizeX",
+      "onType": "Il2CppMenace.Tactical.Map",
+      "method": "GetSizeX",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap()",
+      "summary": "The map's tile count along X."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "MapSizeZ",
+      "onType": "Il2CppMenace.Tactical.Map",
+      "method": "GetSizeZ",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap()",
+      "summary": "The map's tile count along Z."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "IsValidTile",
+      "onType": "Il2CppMenace.Tactical.Map",
+      "method": "IsValidTile",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap()",
+      "summary": "Whether the given grid coordinate is a valid tile."
+    },
+    {
+      "group": "Tactical.Tiles",
+      "name": "IsValidPosition",
+      "onType": "Il2CppMenace.Tactical.Map",
+      "method": "IsValidPosition",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap()",
+      "summary": "Whether the given world-space position lies on the map."
+    }
+  ]
+}

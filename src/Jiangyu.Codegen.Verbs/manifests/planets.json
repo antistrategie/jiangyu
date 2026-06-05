@@ -1,0 +1,145 @@
+{
+  "_comment": "Planet verbs. Manager-level lookups route through StrategyState.Get().Planets; per-planet reads/mutations are receiver \"self\" on Il2CppMenace.Strategy.Planet. GetName (LocalizedLine) and GetLocalFaction (nullable-struct default) are skipped or hand-written in Strategy/Planets.cs.",
+  "verbs": [
+    {
+      "group": "Strategy.Planets",
+      "name": "ByType",
+      "onType": "Il2CppMenace.Strategy.PlanetManager",
+      "method": "GetPlanetByType",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Planets",
+      "summary": "The planet of the given type, or null."
+    },
+    {
+      "group": "Strategy.Planets",
+      "name": "ByTemplate",
+      "onType": "Il2CppMenace.Strategy.PlanetManager",
+      "method": "GetPlanetByTemplate",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Planets",
+      "summary": "The planet for the given template, or null."
+    },
+    {
+      "group": "Strategy.Planets",
+      "name": "SummedMenace",
+      "onType": "Il2CppMenace.Strategy.PlanetManager",
+      "method": "GetSummedMenacePresence",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Planets",
+      "summary": "The total menace presence summed across all planets."
+    },
+    {
+      "group": "Strategy.Planets",
+      "name": "AllCorrupted",
+      "onType": "Il2CppMenace.Strategy.PlanetManager",
+      "method": "AreAllPlanetsFullyCorruptedByMenace",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Planets",
+      "summary": "Whether every planet is fully corrupted by menace."
+    },
+    {
+      "group": "Strategy.Planets",
+      "name": "Random",
+      "onType": "Il2CppMenace.Strategy.PlanetManager",
+      "method": "GetRandomPlanet",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Planets",
+      "summary": "A random planet."
+    },
+    {
+      "group": "Strategy.Planets",
+      "name": "RandomWithMenace",
+      "onType": "Il2CppMenace.Strategy.PlanetManager",
+      "method": "GetRandomPlanetWithMenacePresence",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Planets",
+      "summary": "A random planet that currently has menace presence."
+    },
+    {
+      "group": "Strategy.Planets",
+      "name": "MenacePresence",
+      "onType": "Il2CppMenace.Strategy.Planet",
+      "method": "GetMenacePresence",
+      "receiver": "self",
+      "summary": "The planet's current menace presence."
+    },
+    {
+      "group": "Strategy.Planets",
+      "name": "MaxMenace",
+      "onType": "Il2CppMenace.Strategy.Planet",
+      "method": "GetMaxMenace",
+      "receiver": "self",
+      "summary": "The planet's maximum menace presence."
+    },
+    {
+      "group": "Strategy.Planets",
+      "name": "MenaceFraction",
+      "onType": "Il2CppMenace.Strategy.Planet",
+      "method": "GetMenacePresenceFraction",
+      "receiver": "self",
+      "summary": "The planet's menace presence as a 0..1 fraction of its maximum."
+    },
+    {
+      "group": "Strategy.Planets",
+      "name": "OperationCooldown",
+      "onType": "Il2CppMenace.Strategy.Planet",
+      "method": "GetRemainingOperationCooldown",
+      "receiver": "self",
+      "summary": "The planet's remaining operation cooldown."
+    },
+    {
+      "group": "Strategy.Planets",
+      "name": "IsFullyCorrupted",
+      "onType": "Il2CppMenace.Strategy.Planet",
+      "method": "IsFullyCorruptedByMenace",
+      "receiver": "self",
+      "summary": "Whether the planet is fully corrupted by menace."
+    },
+    {
+      "group": "Strategy.Planets",
+      "name": "HasLocalFaction",
+      "onType": "Il2CppMenace.Strategy.Planet",
+      "method": "HasLocalFaction",
+      "receiver": "self",
+      "summary": "Whether the planet hosts a local faction of the given type."
+    },
+    {
+      "group": "Strategy.Planets",
+      "name": "Template",
+      "onType": "Il2CppMenace.Strategy.Planet",
+      "method": "GetTemplate",
+      "receiver": "self",
+      "summary": "The planet's defining template."
+    },
+    {
+      "group": "Strategy.Planets",
+      "name": "SetMenacePresence",
+      "onType": "Il2CppMenace.Strategy.Planet",
+      "method": "SetMenacePresence",
+      "receiver": "self",
+      "summary": "Set the planet's menace presence to an absolute value.",
+      "mutating": true
+    },
+    {
+      "group": "Strategy.Planets",
+      "name": "IncreaseMenace",
+      "onType": "Il2CppMenace.Strategy.Planet",
+      "method": "TryIncreaseMenacePresence",
+      "receiver": "self",
+      "summary": "Increase the planet's menace presence by the given amount. Returns false when the game refuses.",
+      "mutating": true
+    },
+    {
+      "group": "Strategy.Planets",
+      "name": "DecreaseMenace",
+      "onType": "Il2CppMenace.Strategy.Planet",
+      "method": "TryDecreaseMenacePresence",
+      "receiver": "self",
+      "summary": "Decrease the planet's menace presence by the given amount. Returns false when the game refuses.",
+      "mutating": true
+    },
+    {
+      "group": "Strategy.Planets",
+      "name": "SetOperationCooldown",
+      "onType": "Il2CppMenace.Strategy.Planet",
+      "method": "SetRemainingOperationCooldown",
+      "receiver": "self",
+      "summary": "Set the planet's remaining operation cooldown.",
+      "mutating": true
+    }
+  ]
+}

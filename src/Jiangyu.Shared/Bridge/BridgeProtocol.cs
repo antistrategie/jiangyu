@@ -35,6 +35,7 @@ public static class BridgeMethods
     public const string InspectTemplates = "inspect.templates";
     public const string GateRun = "gate.run";
     public const string VerbsRun = "verbs.run";
+    public const string StrategyRun = "strategy.run";
 }
 
 /// <summary>A bridge request: <c>{ id, method, params }</c>.</summary>

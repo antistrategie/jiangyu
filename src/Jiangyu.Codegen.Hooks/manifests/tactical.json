@@ -1,0 +1,293 @@
+{
+  "hooks": [
+    {
+      "layer": "Tactical", "name": "MissionStarted", "context": "MissionStartedContext", "kind": "synthetic",
+      "owner": "", "member": "",
+      "summary": "A tactical mission loaded and is ready.",
+      "payload": []
+    },
+    {
+      "layer": "Tactical", "name": "RoundStarted", "context": "RoundStartedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnRoundStart",
+      "summary": "A new tactical round began.",
+      "payload": [ { "name": "Round", "type": "int", "summary": "The round number that just started." } ]
+    },
+    {
+      "layer": "Tactical", "name": "MissionFinished", "context": "MissionFinishedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnFinished",
+      "summary": "A tactical mission concluded.",
+      "payload": []
+    },
+    {
+      "layer": "Tactical", "name": "ObjectiveStateChanged", "context": "ObjectiveStateChangedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnObjectiveStateChanged",
+      "summary": "A mission objective changed state (e.g. completed or failed).",
+      "payload": [
+        { "name": "Objective", "type": "Objective", "summary": "The objective." },
+        { "name": "OldState", "type": "ObjectiveState", "summary": "The previous state." },
+        { "name": "NewState", "type": "ObjectiveState", "summary": "The new state." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "EntitySpawned", "context": "EntitySpawnedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnEntitySpawned",
+      "summary": "An entity was spawned into the mission.",
+      "payload": [ { "name": "Entity", "type": "Entity", "summary": "The spawned entity." } ]
+    },
+    {
+      "layer": "Tactical", "name": "TurnStarted", "context": "TurnStartedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnTurnStart",
+      "summary": "An actor's turn began.",
+      "payload": [ { "name": "Actor", "type": "Actor", "summary": "The actor whose turn started." } ]
+    },
+    {
+      "layer": "Tactical", "name": "TurnEnded", "context": "TurnEndedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnTurnEnd",
+      "summary": "An actor's turn concluded.",
+      "payload": [ { "name": "Actor", "type": "Actor", "summary": "The actor whose turn ended." } ]
+    },
+    {
+      "layer": "Tactical", "name": "ActiveActorChanged", "context": "ActiveActorChangedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnActiveActorChanged",
+      "summary": "The active actor changed (turn passed to a new actor).",
+      "payload": [ { "name": "Actor", "type": "Actor", "summary": "The new active actor." } ]
+    },
+    {
+      "layer": "Tactical", "name": "ActorActed", "context": "ActorActedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnActorActed",
+      "summary": "An actor finished acting.",
+      "payload": [ { "name": "Actor", "type": "Actor", "summary": "The actor that acted." } ]
+    },
+    {
+      "layer": "Tactical", "name": "PlayerTurn", "context": "PlayerTurnContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnPlayerTurn",
+      "summary": "The player gained control for the turn.",
+      "payload": []
+    },
+    {
+      "layer": "Tactical", "name": "AITurn", "context": "AITurnContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnAITurn",
+      "summary": "An AI faction gained control for the turn.",
+      "payload": [ { "name": "Faction", "type": "int", "summary": "The faction identifier taking the turn." } ]
+    },
+    {
+      "layer": "Tactical", "name": "EntityDied", "context": "EntityDiedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnDeath",
+      "summary": "An entity died.",
+      "payload": [
+        { "name": "Victim", "type": "Entity", "summary": "The entity that died." },
+        { "name": "Killer", "type": "Entity", "summary": "The entity credited with the kill, or null." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "DamageReceived", "context": "DamageReceivedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnDamageReceived",
+      "summary": "An entity received damage.",
+      "payload": [
+        { "name": "Victim", "type": "Entity", "summary": "The entity that took the damage." },
+        { "name": "Source", "type": "Entity", "summary": "The entity that dealt it, or null." },
+        { "name": "Skill", "type": "Skill", "summary": "The skill that dealt it, or null." },
+        { "name": "Damage", "type": "DamageInfo", "summary": "The damage detail." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "AttackMissed", "context": "AttackMissedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnAttackMissed",
+      "summary": "An attack missed its target.",
+      "payload": [
+        { "name": "Target", "type": "Entity", "summary": "The intended target." },
+        { "name": "Attacker", "type": "Entity", "summary": "The attacker." },
+        { "name": "Skill", "type": "Skill", "summary": "The skill used." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "AttackTileStarted", "context": "AttackTileStartedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnAttackTileStart",
+      "summary": "A tile-targeted attack began.",
+      "payload": [
+        { "name": "Attacker", "type": "Actor", "summary": "The attacker." },
+        { "name": "Skill", "type": "Skill", "summary": "The skill used." },
+        { "name": "Tile", "type": "Tile", "summary": "The targeted tile." },
+        { "name": "DurationSeconds", "type": "float", "summary": "The attack's duration in seconds." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "ElementDied", "context": "ElementDiedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnElementDeath",
+      "summary": "A sub-element of an entity was destroyed (e.g. a vehicle part).",
+      "payload": [
+        { "name": "Entity", "type": "Entity", "summary": "The owning entity." },
+        { "name": "Element", "type": "Element", "summary": "The destroyed element." },
+        { "name": "Attacker", "type": "Entity", "summary": "The attacker, or null." },
+        { "name": "Damage", "type": "DamageInfo", "summary": "The damage detail." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "ElementMalfunction", "context": "ElementMalfunctionContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnElementMalfunction",
+      "summary": "A sub-element malfunctioned.",
+      "payload": [
+        { "name": "Element", "type": "Element", "summary": "The element." },
+        { "name": "Skill", "type": "Skill", "summary": "The skill involved, or null." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "Suppressed", "context": "SuppressedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnSuppressed",
+      "summary": "An actor became suppressed.",
+      "payload": [ { "name": "Actor", "type": "Actor", "summary": "The suppressed actor." } ]
+    },
+    {
+      "layer": "Tactical", "name": "SuppressionApplied", "context": "SuppressionAppliedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnSuppressionApplied",
+      "summary": "Suppression was applied to an actor with a specific amount.",
+      "payload": [
+        { "name": "Actor", "type": "Actor", "summary": "The actor." },
+        { "name": "Change", "type": "float", "summary": "The suppression change applied." },
+        { "name": "Suppressor", "type": "Entity", "summary": "The source entity, or null." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "MoraleStateChanged", "context": "MoraleStateChangedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnMoraleStateChanged",
+      "summary": "An actor's morale state changed.",
+      "payload": [
+        { "name": "Actor", "type": "Actor", "summary": "The actor." },
+        { "name": "State", "type": "MoraleState", "summary": "The new morale state." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "BleedingOut", "context": "BleedingOutContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnBleedingOut",
+      "summary": "A leader entered the bleeding-out state.",
+      "payload": [
+        { "name": "Leader", "type": "BaseUnitLeader", "summary": "The leader." },
+        { "name": "RemainingRounds", "type": "int", "summary": "Rounds remaining before death." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "Stabilized", "context": "StabilizedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnStabilized",
+      "summary": "A bleeding leader was stabilised.",
+      "payload": [
+        { "name": "Leader", "type": "BaseUnitLeader", "summary": "The stabilised leader." },
+        { "name": "Savior", "type": "Actor", "summary": "The actor that stabilised them." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "ActorStateChanged", "context": "ActorStateChangedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnActorStateChanged",
+      "summary": "An actor's state changed (idle / moving / dead, etc.).",
+      "payload": [
+        { "name": "Actor", "type": "Actor", "summary": "The actor." },
+        { "name": "OldState", "type": "ActorState", "summary": "The previous state." },
+        { "name": "NewState", "type": "ActorState", "summary": "The new state." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "HitpointsChanged", "context": "HitpointsChangedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnHitpointsChanged",
+      "summary": "An entity's hitpoints changed.",
+      "payload": [
+        { "name": "Entity", "type": "Entity", "summary": "The entity." },
+        { "name": "Percent", "type": "float", "summary": "The new hitpoints as a fraction (0..1)." },
+        { "name": "AnimationMs", "type": "int", "summary": "The bar animation duration in milliseconds." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "ArmorChanged", "context": "ArmorChangedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnArmorChanged",
+      "summary": "An entity's armour changed.",
+      "payload": [
+        { "name": "Entity", "type": "Entity", "summary": "The entity." },
+        { "name": "Durability", "type": "float", "summary": "The armour durability remaining." },
+        { "name": "Armor", "type": "int", "summary": "The armour value." },
+        { "name": "AnimationMs", "type": "int", "summary": "The bar animation duration in milliseconds." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "Discovered", "context": "DiscoveredContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnDiscovered",
+      "summary": "A hidden entity was discovered.",
+      "payload": [
+        { "name": "Entity", "type": "Entity", "summary": "The discovered entity." },
+        { "name": "Discoverer", "type": "Actor", "summary": "The actor that discovered it." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "VisibleToPlayer", "context": "VisibleToPlayerContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnVisibleToPlayer",
+      "summary": "An actor became visible to the player.",
+      "payload": [ { "name": "Actor", "type": "Actor", "summary": "The actor." } ]
+    },
+    {
+      "layer": "Tactical", "name": "HiddenToPlayer", "context": "HiddenToPlayerContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnHiddenToPlayer",
+      "summary": "An actor became hidden from the player.",
+      "payload": [ { "name": "Actor", "type": "Actor", "summary": "The actor." } ]
+    },
+    {
+      "layer": "Tactical", "name": "MovementStarted", "context": "MovementStartedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnMovement",
+      "summary": "An actor started moving.",
+      "payload": [
+        { "name": "Actor", "type": "Actor", "summary": "The moving actor." },
+        { "name": "FromTile", "type": "Tile", "summary": "The tile moved from." },
+        { "name": "ToTile", "type": "Tile", "summary": "The tile moved to." },
+        { "name": "MovementAction", "type": "MovementAction", "summary": "The movement action." },
+        { "name": "Container", "type": "Entity", "summary": "The carrying entity, or null." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "MovementFinished", "context": "MovementFinishedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnMovementFinished",
+      "summary": "An actor finished moving.",
+      "payload": [
+        { "name": "Actor", "type": "Actor", "summary": "The actor." },
+        { "name": "Tile", "type": "Tile", "summary": "The destination tile." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "SkillUsed", "context": "SkillUsedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnSkillUse",
+      "summary": "An actor used a skill.",
+      "payload": [
+        { "name": "User", "type": "Actor", "summary": "The actor that used the skill." },
+        { "name": "Skill", "type": "Skill", "summary": "The skill used." },
+        { "name": "Tile", "type": "Tile", "summary": "The targeted tile." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "SkillCompleted", "context": "SkillCompletedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnAfterSkillUse",
+      "summary": "A skill finished executing.",
+      "payload": [ { "name": "Skill", "type": "Skill", "summary": "The skill." } ]
+    },
+    {
+      "layer": "Tactical", "name": "SkillAdded", "context": "SkillAddedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnSkillAdded",
+      "summary": "A skill was granted to an actor.",
+      "payload": [
+        { "name": "Receiver", "type": "Actor", "summary": "The actor that received the skill." },
+        { "name": "Skill", "type": "Skill", "summary": "The skill granted." },
+        { "name": "Source", "type": "Actor", "summary": "The granting actor, or null." },
+        { "name": "Success", "type": "bool", "summary": "Whether the grant succeeded." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "OffmapAbilityUsed", "context": "OffmapAbilityUsedContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnOffmapAbilityUsed",
+      "summary": "An offmap ability was used.",
+      "payload": [
+        { "name": "Ability", "type": "OffmapAbilityTemplate", "summary": "The ability template." },
+        { "name": "Tile", "type": "Tile", "summary": "The targeted tile." }
+      ]
+    },
+    {
+      "layer": "Tactical", "name": "OffmapAbilityCanceled", "context": "OffmapAbilityCanceledContext", "kind": "event",
+      "owner": "Il2CppMenace.Tactical.TacticalManager", "member": "OnOffmapAbilityCanceled",
+      "summary": "An offmap ability was cancelled.",
+      "payload": [ { "name": "Ability", "type": "OffmapAbilityTemplate", "summary": "The ability template." } ]
+    }
+  ]
+}

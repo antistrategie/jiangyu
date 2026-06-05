@@ -48,12 +48,6 @@ jobs:
           cp /tmp/ml/MelonLoader/net6/Il2CppInterop.Runtime.dll jiangyu/.ci/melonloader/
           cp /tmp/ml/MelonLoader/net6/UnityEngine.Il2CppAssetBundleManager.dll jiangyu/.ci/melonloader/
 
-      # Build the loader in Release so MergedLoaderDependencyGuardTests
-      # actually runs against a merged Jiangyu.Loader.dll. Without this,
-      # the guard test silently SkippableFact-skips in CI and forbidden-
-      # reference regressions (e.g. an inadvertent System.IO.Pipelines
-      # transitive dep) only get caught at tag-push time during the
-      # build-loader job below.
       - name: Build Jiangyu.Loader (Release) for guard test
         run: dotnet build jiangyu/src/Jiangyu.Loader/Jiangyu.Loader.csproj -c Release -p:MelonLoaderDir=${{ github.workspace }}/jiangyu/.ci/melonloader -p:GameAssembliesDir=${{ github.workspace }}/menace-ci-dependencies
 
@@ -63,12 +57,9 @@ jobs:
       - name: Test Jiangyu.Acp.Tests
         run: dotnet test jiangyu/tests/Jiangyu.Acp.Tests/Jiangyu.Acp.Tests.csproj
 
-      # Studio.Host imports SdkDistribution.targets, whose reference-only
-      # ProjectReferences build the SDK projects (Jiangyu.Sdk + .Menace) so they
-      # bundle beside the published executable. That makes any Host build — this
-      # test build included — transitively compile the net6, game-coupled
-      # Jiangyu.Sdk.Menace, so the game assemblies must be on hand here just as
-      # they are for the Loader build and Loader.Tests.
+      - name: Test Jiangyu.Codegen.Tests
+        run: dotnet test jiangyu/tests/Jiangyu.Codegen.Tests/Jiangyu.Codegen.Tests.csproj
+
       - name: Test Jiangyu.Studio.Host.Tests
         run: dotnet test jiangyu/tests/Jiangyu.Studio.Host.Tests/Jiangyu.Studio.Host.Tests.csproj -p:MelonLoaderDir=${{ github.workspace }}/jiangyu/.ci/melonloader -p:GameAssembliesDir=${{ github.workspace }}/menace-ci-dependencies
 

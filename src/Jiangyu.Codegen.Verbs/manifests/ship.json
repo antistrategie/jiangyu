@@ -1,0 +1,63 @@
+{
+  "_comment": "Ship-upgrade verbs over StrategyState.Get().ShipUpgrades (Il2CppMenace.Strategy.ShipUpgrades). Bespoke ship verbs, if any, live in Strategy/Ship.cs.",
+  "verbs": [
+    {
+      "group": "Strategy.Ship",
+      "name": "EquippedUpgrade",
+      "onType": "Il2CppMenace.Strategy.ShipUpgrades",
+      "method": "GetEquippedUpgrade",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().ShipUpgrades",
+      "summary": "The upgrade template equipped in the given ship slot index, or null when empty."
+    },
+    {
+      "group": "Strategy.Ship",
+      "name": "EmptySlotCount",
+      "onType": "Il2CppMenace.Strategy.ShipUpgrades",
+      "method": "GetEmptySlotCount",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().ShipUpgrades",
+      "summary": "How many ship-upgrade slots of the given type are empty."
+    },
+    {
+      "group": "Strategy.Ship",
+      "name": "FilledSlotCount",
+      "onType": "Il2CppMenace.Strategy.ShipUpgrades",
+      "method": "GetFilledSlotCount",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().ShipUpgrades",
+      "summary": "How many ship-upgrade slots of the given type are filled."
+    },
+    {
+      "group": "Strategy.Ship",
+      "name": "SlotType",
+      "onType": "Il2CppMenace.Strategy.ShipUpgrades",
+      "method": "GetSlotType",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().ShipUpgrades",
+      "summary": "The slot-type template for the given ship slot index."
+    },
+    {
+      "group": "Strategy.Ship",
+      "name": "SpentComponents",
+      "onType": "Il2CppMenace.Strategy.ShipUpgrades",
+      "method": "GetSpentOciComponentsBySlotType",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().ShipUpgrades",
+      "summary": "The OCI components spent on ship-upgrade slots of the given type."
+    },
+    {
+      "group": "Strategy.Ship",
+      "name": "EquipUpgrade",
+      "onType": "Il2CppMenace.Strategy.ShipUpgrades",
+      "method": "TryEquipUpgrade",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().ShipUpgrades",
+      "summary": "Equip an upgrade into a slot for the paid OCI components. Returns false when the game refuses.",
+      "mutating": true
+    },
+    {
+      "group": "Strategy.Ship",
+      "name": "UnequipUpgrade",
+      "onType": "Il2CppMenace.Strategy.ShipUpgrades",
+      "method": "TryUnequipUpgrade",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().ShipUpgrades",
+      "summary": "Unequip an equipped ship upgrade. Returns false when it is not equipped.",
+      "mutating": true
+    }
+  ]
+}

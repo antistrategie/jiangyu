@@ -14,7 +14,7 @@ Jiangyu is built around progressive layers. You only learn the next tier when yo
 
 4. **Unity content.** New prefabs and custom UI markup (UXML), built through the mod's [Unity project](/unity-project). Prefabs need the Unity Editor, but UXML is plain text.
 
-5. **Runtime SDK.** Custom C# the game runs: your own [template types](/sdk/template-types) (effects, conditions, values, the common case), [hooks](/sdk/hooks) that react to game moments, [game verbs](/sdk/verbs) that command the live game, and [UI injection](/sdk/ui). For anything the data layers can't express.
+5. **Runtime SDK.** Custom C# the game runs: your own [template types](/sdk/template-types) (effects, conditions, values, the common case), [hooks](/sdk/#hooks) that react to game moments, [game verbs](/sdk/verbs) that command the live game, and [UI injection](/sdk/ui). For anything the data layers can't express.
 
 The lower tiers stay simple. You don't pay the cost of the SDK to ship a re-skin.
 

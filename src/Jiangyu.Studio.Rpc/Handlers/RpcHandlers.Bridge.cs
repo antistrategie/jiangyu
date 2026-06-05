@@ -75,6 +75,12 @@ public static partial class RpcHandlers
         RequiresBridge = true)]
     internal static JsonElement BridgeVerbsRun(JsonElement? __) => Bridge.Request(BridgeMethods.VerbsRun);
 
+    /// <summary>Run the strategy-layer (campaign) probe against the running game over the bridge. Throws when not connected.</summary>
+    [McpTool("jiangyu_strategy_run",
+        "Run the strategy-layer (campaign) probe against the running game and return its report: campaign resources (OCI components, promotion points, intelligence, authority), a net-zero ChangeVar round-trip that validates the resource-mutation path without a lasting change, and roster counts (available units, hired and hirable leaders). Needs the game in the Strategy layer (between missions), not a tactical mission.",
+        RequiresBridge = true)]
+    internal static JsonElement BridgeStrategyRun(JsonElement? __) => Bridge.Request(BridgeMethods.StrategyRun);
+
     private static bool IsBridgeEnabled()
     {
         var dir = UserDataDir();

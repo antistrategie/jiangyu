@@ -15,9 +15,9 @@ A code mod compiles against `Jiangyu.Sdk` plus the game's IL2CPP proxy assemblie
 | Surface | Use it to | Entry point |
 | --- | --- | --- |
 | [Template types](./template-types) | add your own effect, condition, or value the game constructs from data | not needed |
-| [Hooks](./hooks) | react to game moments (a kill, a round boundary, a leader hired) | needed |
+| [Hooks](#hooks) | react to game moments (a kill, a round boundary, a leader hired) | needed |
 | [Game verbs](./verbs) | read and command the live game (spawn a unit, query a path) | not needed |
-| [Game UI](./ui) | inject your own elements into the game's screens | needed |
+| [Game UI](./ui) | inject your own elements into the game's screens | not needed |
 
 Template types are the data-shaped surface. The other three are runtime behaviour. Verbs and UI can be called from inside any of them.
 
@@ -89,13 +89,29 @@ A dependency that is not a system of the same mod is ignored with a warning, as 
 | Member | What it gives you |
 | --- | --- |
 | `Log` | Per-mod logging (`Info`, `Warn`, `Error`, `Debug`), auto-tagged with your mod id. The static `Jiangyu.Sdk.Log` is the same logger and needs no `Context`, so most code just calls `Log.Info(...)`. `Debug` is dropped unless the dev opts in. |
-| `Hooks` | Subscribe to global game moments. See [Hooks](./hooks). |
+| `Hooks` | Subscribe to global game moments. See [Hooks](#hooks). |
 | `State` | Per-save-slot persistent state. See [State](#state). |
 | `Assets` | Load the mod's own bundled assets by name. See [Assets](#assets). |
 | `Coroutines` | Run multi-frame or timed logic. See [Coroutines](#coroutines). |
 | `Patches` | Patch a game method no hook covers. The escape hatch. See [Patches](#patches). |
 | `ModFolder` | Absolute path to the deployed `Mods/<ModId>` folder. |
 | `ModId`, `Version` | The mod id and the version from `jiangyu.json`. |
+
+### Hooks
+
+`Context.Hooks` is the SDK's event bus: global game moments your code reacts to, a kill, a round boundary, a leader hired, a save or load. Subscribe by context type from a system's [`OnInit`](#systems), and the subscription lives for the mod's lifetime.
+
+```csharp
+Context.Hooks.Subscribe<EntityDiedContext>(ctx =>
+{
+    var victim = ctx.Victim as Entity;   // game-typed payloads are object, cast them
+    Log.Info($"{victim?.GetName()} died");
+});
+```
+
+Every moment is a context type, split into a tactical family (combat, turns, movement, skills) and a strategy family (factions, leaders, operations). The [hook reference](/reference/hooks) lists them all with their payloads. Game-typed payloads are held as `object` to keep the SDK game-agnostic, so you cast them in your handler. Primitive payloads, a round number or a count, are typed directly.
+
+The bus is observer-only: it tells you a moment happened, it does not let you cancel it. To change what a skill or effect does, write a [template type](./template-types). To read or command the live game from a handler, use [game verbs](./verbs). To intercept a method with no hook, use [Patches](#patches).
 
 ### State
 

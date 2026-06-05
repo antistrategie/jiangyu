@@ -46,12 +46,9 @@ export default defineConfig({
 
     nav: [
       { text: "Get started", link: "/getting-started" },
-      { text: "Concepts", link: "/concepts/" },
       { text: "Assets", link: "/assets/" },
       { text: "Templates", link: "/templates" },
-      { text: "Unity project", link: "/unity-project" },
       { text: "SDK", link: "/sdk/" },
-      { text: "Studio", link: "/studio" },
       { text: "Troubleshooting", link: "/troubleshooting" },
     ],
 
@@ -105,9 +102,8 @@ export default defineConfig({
         items: [
           { text: "Overview", link: "/sdk/" },
           { text: "Template types", link: "/sdk/template-types" },
-          { text: "Hooks", link: "/sdk/hooks" },
           { text: "Game verbs", link: "/sdk/verbs" },
-          { text: "Game UI", link: "/sdk/ui" },
+          { text: "UI", link: "/sdk/ui" },
         ],
       },
       {
@@ -127,6 +123,14 @@ export default defineConfig({
       {
         text: "Reference",
         items: [
+          {
+            text: "SDK",
+            collapsed: true,
+            items: [
+              { text: "Hooks", link: "/reference/hooks" },
+              { text: "Verbs", link: "/reference/verbs" },
+            ],
+          },
           { text: "Manifest (jiangyu.json)", link: "/reference/manifest" },
           { text: "CLI", link: "/reference/cli" },
         ],

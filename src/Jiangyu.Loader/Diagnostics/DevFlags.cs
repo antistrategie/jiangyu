@@ -14,9 +14,10 @@ namespace Jiangyu.Loader.Diagnostics;
 /// <para>Toggles: <c>debug</c> (verbose logging), <c>bridge</c> (the Studio/agent
 /// socket, normally written by Studio's toggle), <c>gate</c> / <c>gate-damage</c> (the
 /// load-time injection-gate structural check and its opt-in self-hit), and
-/// <c>verbs-spawn</c> (the opt-in spawns in the on-demand verb probe). The on-demand
-/// scene, template, UI, gate, and verb inspectors run over the bridge and need no
-/// toggle of their own.</para>
+/// <c>verbs-spawn</c> (the opt-in spawns in the on-demand verb probe), and
+/// <c>strategy-mutate</c> (the opt-in hire/dismiss characterisation in the strategy
+/// probe). The on-demand scene, template, UI, gate, verb, and strategy inspectors run
+/// over the bridge and need no toggle of their own.</para>
 /// </summary>
 internal static class DevFlags
 {

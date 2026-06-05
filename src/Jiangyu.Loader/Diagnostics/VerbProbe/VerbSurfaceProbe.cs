@@ -64,8 +64,154 @@ internal static class VerbSurfaceProbe
         Emit(report, CheckSpawnOnBlockedTile(actor), log);
         Emit(report, CheckSpawnForeignFaction(actor), log);
         Emit(report, CheckDieBehaviour(actor), log);
+        Emit(report, CheckDamageAndHeal(actor), log);
+        Emit(report, CheckMoveCommit(actor), log);
+        Emit(report, CheckSuppression(actor), log);
 
         return report;
+    }
+
+    // Characterise the suppression path a future Combat.Suppress verb would call:
+    // ApplySuppression on a throwaway unit in both direct modes with a null suppressor
+    // and skill, recording whether either throws. Opt-in; despawns the unit it spawns.
+    private static ProbeCheck CheckSuppression(Actor actor)
+    {
+        if (!IsSpawnEnabled())
+            return new ProbeCheck { Name = "verb.suppression", Status = Skipped, Detail = "opt-in: needs the verbs-spawn toggle" };
+
+        try
+        {
+            if (!TryTacticalContext(actor, out var tm, out var map, out var from))
+                return new ProbeCheck { Name = "verb.suppression", Status = Skipped, Detail = "no manager, map, or tile" };
+            var tile = FindAdjacentFreeTile(map, from);
+            if (tile == null)
+                return new ProbeCheck { Name = "verb.suppression", Status = Skipped, Detail = "no free adjacent tile" };
+            if (!tm.TrySpawnUnit(actor.GetFaction(), actor.GetTemplate(), tile, out var dummy) || dummy == null)
+                return new ProbeCheck { Name = "verb.suppression", Status = Skipped, Detail = "spawn for the probe failed" };
+
+            var check = new ProbeCheck
+            {
+                Name = "verb.suppression",
+                Status = Pass,
+                Detail = "ApplySuppression(amount, direct, suppressor=null, skill=null) on a throwaway unit in both direct modes: whether a Combat.Suppress verb is safe with a null suppressor/skill",
+            };
+            try { dummy.ApplySuppression(5f, false, null, null); check.Evidence["directFalseOk"] = true; }
+            catch (Exception ex) { check.Evidence["directFalseError"] = $"{ex.GetType().Name}: {ex.Message}"; check.Status = Fail; }
+            try { dummy.ApplySuppression(5f, true, null, null); check.Evidence["directTrueOk"] = true; }
+            catch (Exception ex) { check.Evidence["directTrueError"] = $"{ex.GetType().Name}: {ex.Message}"; check.Status = Fail; }
+
+            dummy.Die(true);
+            return check;
+        }
+        catch (Exception ex) { return Errored("verb.suppression", ex); }
+    }
+
+    // Characterise the imperative damage path the way Combat.Damage calls it: drive a
+    // small DamageInfo through a throwaway unit's OnDamageReceived with a null attacker
+    // and null skill, then a negative DamageInfo, to learn whether negative damage heals
+    // or is clamped (the open question gating a future Combat.Heal). Opt-in; despawns the
+    // unit it spawns.
+    private static ProbeCheck CheckDamageAndHeal(Actor actor)
+    {
+        if (!IsSpawnEnabled())
+            return new ProbeCheck { Name = "verb.damageAndHeal", Status = Skipped, Detail = "opt-in: needs the verbs-spawn toggle" };
+
+        try
+        {
+            if (!TryTacticalContext(actor, out var tm, out var map, out var from))
+                return new ProbeCheck { Name = "verb.damageAndHeal", Status = Skipped, Detail = "no manager, map, or tile" };
+            var tile = FindAdjacentFreeTile(map, from);
+            if (tile == null)
+                return new ProbeCheck { Name = "verb.damageAndHeal", Status = Skipped, Detail = "no free adjacent tile" };
+            if (!tm.TrySpawnUnit(actor.GetFaction(), actor.GetTemplate(), tile, out var dummy) || dummy == null)
+                return new ProbeCheck { Name = "verb.damageAndHeal", Status = Skipped, Detail = "spawn for the probe failed" };
+
+            var check = new ProbeCheck
+            {
+                Name = "verb.damageAndHeal",
+                Status = Pass,
+                Detail = "OnDamageReceived(attacker=null, skill=null, DamageInfo) on a throwaway unit: validates Combat.Damage's null-skill path, then a negative Damage to learn whether it heals or clamps",
+            };
+            check.Evidence["hpFull"] = dummy.GetHitpoints();
+
+            try
+            {
+                var dealt = dummy.OnDamageReceived(null, null, new DamageInfo { Damage = 5 });
+                check.Evidence["damageResolved"] = dealt != null ? dealt.Damage : -1;
+                check.Evidence["hpAfterDamage"] = SafeHp(dummy);
+            }
+            catch (Exception ex) { check.Evidence["damageError"] = $"{ex.GetType().Name}: {ex.Message}"; check.Status = Fail; }
+
+            try
+            {
+                var hpBeforeHeal = SafeHp(dummy);
+                var healed = dummy.OnDamageReceived(null, null, new DamageInfo { Damage = -5 });
+                var hpAfterHeal = SafeHp(dummy);
+                check.Evidence["negativeDamageResolved"] = healed != null ? healed.Damage : -1;
+                check.Evidence["hpBeforeHeal"] = hpBeforeHeal;
+                check.Evidence["hpAfterHeal"] = hpAfterHeal;
+                check.Evidence["negativeDamageHeals"] = hpAfterHeal > hpBeforeHeal;
+            }
+            catch (Exception ex) { check.Evidence["healError"] = $"{ex.GetType().Name}: {ex.Message}"; }
+
+            dummy.Die(true);
+            return check;
+        }
+        catch (Exception ex) { return Errored("verb.damageAndHeal", ex); }
+    }
+
+    // Characterise the imperative move path the way Units.Move calls it: spawn a throwaway
+    // unit and MoveTo an adjacent free tile, recording the return and whether the unit's
+    // tile actually changed (does the move commit synchronously?). Opt-in; despawns the
+    // unit it spawns.
+    private static ProbeCheck CheckMoveCommit(Actor actor)
+    {
+        if (!IsSpawnEnabled())
+            return new ProbeCheck { Name = "verb.moveCommit", Status = Skipped, Detail = "opt-in: needs the verbs-spawn toggle" };
+
+        try
+        {
+            if (!TryTacticalContext(actor, out var tm, out var map, out var from))
+                return new ProbeCheck { Name = "verb.moveCommit", Status = Skipped, Detail = "no manager, map, or tile" };
+            var spawnTile = FindAdjacentFreeTile(map, from);
+            if (spawnTile == null)
+                return new ProbeCheck { Name = "verb.moveCommit", Status = Skipped, Detail = "no free adjacent tile to spawn onto" };
+            if (!tm.TrySpawnUnit(actor.GetFaction(), actor.GetTemplate(), spawnTile, out var dummy) || dummy == null)
+                return new ProbeCheck { Name = "verb.moveCommit", Status = Skipped, Detail = "spawn for the probe failed" };
+
+            var dest = FindAdjacentFreeTile(map, spawnTile);
+            if (dest == null)
+            {
+                dummy.Die(true);
+                return new ProbeCheck { Name = "verb.moveCommit", Status = Skipped, Detail = "no free tile adjacent to the spawned unit" };
+            }
+
+            var check = new ProbeCheck
+            {
+                Name = "verb.moveCommit",
+                Detail = "MoveTo(adjacentFreeTile, ref default MovementAction, MovementFlags.None) on a throwaway unit: validates Units.Move and whether the move commits synchronously",
+            };
+            try
+            {
+                var action = default(MovementAction);
+                var returned = dummy.MoveTo(dest, ref action, MovementFlags.None);
+                var landed = dummy.GetTile();
+                check.Status = returned ? Pass : Fail;
+                check.Evidence["moveToReturned"] = returned;
+                check.Evidence["movedSynchronously"] = landed != null && landed.Pointer == dest.Pointer;
+                check.Evidence["destX"] = dest.GetX();
+                check.Evidence["destZ"] = dest.GetZ();
+            }
+            catch (Exception ex)
+            {
+                check.Status = Fail;
+                check.Evidence["moveError"] = $"{ex.GetType().Name}: {ex.Message}";
+            }
+
+            dummy.Die(true);
+            return check;
+        }
+        catch (Exception ex) { return Errored("verb.moveCommit", ex); }
     }
 
     // The shared prerequisite: manager singleton non-null and a live map handle.

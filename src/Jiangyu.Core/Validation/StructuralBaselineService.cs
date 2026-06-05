@@ -15,9 +15,10 @@ using AssetRipper.Processing.Scenes;
 using AssetRipper.SourceGenerated.Classes.ClassID_114;
 using AssetRipper.SourceGenerated.Extensions;
 using Jiangyu.Core.Abstractions;
+using Jiangyu.Core.Assets;
 using Jiangyu.Core.Models;
 
-namespace Jiangyu.Core.Assets;
+namespace Jiangyu.Core.Validation;
 
 public sealed class StructuralBaselineService(string gameDataPath, string cachePath, IProgressSink progress, ILogSink log)
 {

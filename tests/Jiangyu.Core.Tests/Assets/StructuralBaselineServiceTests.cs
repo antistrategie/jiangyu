@@ -3,6 +3,7 @@ using Jiangyu.Core.Models;
 using Jiangyu.Core.Abstractions;
 using System.Text.Json;
 using Jiangyu.Core.Il2Cpp;
+using Jiangyu.Core.Validation;
 
 namespace Jiangyu.Core.Tests.Assets;
 

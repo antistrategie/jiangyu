@@ -1,0 +1,207 @@
+{
+  "_comment": "Strategy.Operations verbs. Trivial passthroughs to OperationsManager (reached via StrategyState.Get().Operations) and to Operation methods (receiver \"self\"). List-returning reads (GetAvailableOperations, GetPreviousOperationResults, Operation.GetMissions) are bespoke and live in Strategy/Operations.cs.",
+  "verbs": [
+    {
+      "group": "Strategy.Operations",
+      "name": "Current",
+      "onType": "Il2CppMenace.Strategy.OperationsManager",
+      "method": "GetCurrentOperation",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Operations",
+      "summary": "The campaign's currently selected operation, or null."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "Previous",
+      "onType": "Il2CppMenace.Strategy.OperationsManager",
+      "method": "GetPreviousOperation",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Operations",
+      "summary": "The campaign's most recently finished operation, or null."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "ByIndex",
+      "onType": "Il2CppMenace.Strategy.OperationsManager",
+      "method": "GetAvailableOperationByIdx",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Operations",
+      "summary": "The available operation at the given index, or null."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "StoryAvailable",
+      "onType": "Il2CppMenace.Strategy.OperationsManager",
+      "method": "IsStoryOperationAvailable",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Operations",
+      "summary": "Whether a story operation is currently available."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "EnemyFactionAvailable",
+      "onType": "Il2CppMenace.Strategy.OperationsManager",
+      "method": "IsOperationWithEnemyFactionAvailable",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Operations",
+      "summary": "Whether an operation against the given enemy faction is available."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "IsActive",
+      "onType": "Il2CppMenace.Strategy.OperationsManager",
+      "method": "IsOperationActive",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Operations",
+      "summary": "Whether an operation of the given template is currently active."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "FinishedCount",
+      "onType": "Il2CppMenace.Strategy.OperationsManager",
+      "method": "GetFinishedCountAgainst",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Operations",
+      "summary": "How many operations have finished against the given faction type."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "FinishedCountWithResult",
+      "onType": "Il2CppMenace.Strategy.OperationsManager",
+      "method": "GetFinishedCountWithResultAgainst",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Operations",
+      "summary": "How many operations have finished against the given faction type with the given status."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "AvailableOfClient",
+      "onType": "Il2CppMenace.Strategy.OperationsManager",
+      "method": "GetAvailableOperationsOfClient",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Operations",
+      "summary": "How many operations of the given client faction are available, filtered by operation type."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "SetCurrent",
+      "onType": "Il2CppMenace.Strategy.OperationsManager",
+      "method": "SetCurrentOperation",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Operations",
+      "summary": "Select the given operation as the campaign's current operation.",
+      "mutating": true
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "Finish",
+      "onType": "Il2CppMenace.Strategy.OperationsManager",
+      "method": "OnOperationFinished",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Operations",
+      "summary": "Run the game's operation-finished handling for the given operation.",
+      "mutating": true
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "Template",
+      "onType": "Il2CppMenace.Strategy.Operation",
+      "method": "GetTemplate",
+      "receiver": "self",
+      "summary": "The operation's template."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "Result",
+      "onType": "Il2CppMenace.Strategy.Operation",
+      "method": "GetResult",
+      "receiver": "self",
+      "summary": "The operation's result."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "CurrentMission",
+      "onType": "Il2CppMenace.Strategy.Operation",
+      "method": "GetCurrentMission",
+      "receiver": "self",
+      "summary": "The operation's current mission, or null."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "PreviousMission",
+      "onType": "Il2CppMenace.Strategy.Operation",
+      "method": "GetPreviousMission",
+      "receiver": "self",
+      "summary": "The operation's previous mission, or null."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "Name",
+      "onType": "Il2CppMenace.Strategy.Operation",
+      "method": "GetTranslatedName",
+      "receiver": "self",
+      "summary": "The operation's translated display name."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "Description",
+      "onType": "Il2CppMenace.Strategy.Operation",
+      "method": "GetTranslatedDescription",
+      "receiver": "self",
+      "summary": "The operation's translated description."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "Type",
+      "onType": "Il2CppMenace.Strategy.Operation",
+      "method": "GetOperationType",
+      "receiver": "self",
+      "summary": "The operation's type."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "RemainingTime",
+      "onType": "Il2CppMenace.Strategy.Operation",
+      "method": "GetRemainingTime",
+      "receiver": "self",
+      "summary": "The operation's remaining time before it times out."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "Length",
+      "onType": "Il2CppMenace.Strategy.Operation",
+      "method": "GetLength",
+      "receiver": "self",
+      "summary": "The operation's length."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "Seed",
+      "onType": "Il2CppMenace.Strategy.Operation",
+      "method": "GetSeed",
+      "receiver": "self",
+      "summary": "The operation's generation seed."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "CanTimeOut",
+      "onType": "Il2CppMenace.Strategy.Operation",
+      "method": "CanTimeOut",
+      "receiver": "self",
+      "summary": "Whether the operation can time out."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "Planet",
+      "onType": "Il2CppMenace.Strategy.Operation",
+      "method": "GetPlanetTemplate",
+      "receiver": "self",
+      "summary": "The operation's planet template."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "ClientFaction",
+      "onType": "Il2CppMenace.Strategy.Operation",
+      "method": "GetClientFaction",
+      "receiver": "self",
+      "summary": "The operation's client (story) faction template."
+    },
+    {
+      "group": "Strategy.Operations",
+      "name": "EnemyFaction",
+      "onType": "Il2CppMenace.Strategy.Operation",
+      "method": "GetEnemyFaction",
+      "receiver": "self",
+      "summary": "The operation's enemy faction template."
+    }
+  ]
+}

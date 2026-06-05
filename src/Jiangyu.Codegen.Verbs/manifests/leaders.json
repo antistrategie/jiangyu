@@ -1,0 +1,113 @@
+{
+  "_comment": "Roster-and-squaddie verbs for the Strategy.Leaders group: roster-wide queries through the campaign roster, plus per-leader reads and mutations that take the BaseUnitLeader as their first argument. Hire and Dismiss live in core.json.",
+  "verbs": [
+    {
+      "group": "Strategy.Leaders",
+      "name": "AvailableUnits",
+      "onType": "Il2CppMenace.Strategy.Roster",
+      "method": "GetAvailableUnits",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Roster",
+      "summary": "The number of units currently available for deployment across the roster."
+    },
+    {
+      "group": "Strategy.Leaders",
+      "name": "HasAliveAvailableLeader",
+      "onType": "Il2CppMenace.Strategy.Roster",
+      "method": "HasAliveAvailableLeader",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Roster",
+      "summary": "Whether the roster holds at least one alive, available leader."
+    },
+    {
+      "group": "Strategy.Leaders",
+      "name": "CountByStatus",
+      "onType": "Il2CppMenace.Strategy.Roster",
+      "method": "GetCount",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Roster",
+      "summary": "The number of leaders in the roster with the given status."
+    },
+    {
+      "group": "Strategy.Leaders",
+      "name": "Rank",
+      "onType": "Il2CppMenace.Strategy.BaseUnitLeader",
+      "method": "GetRank",
+      "receiver": "self",
+      "summary": "The leader's current rank."
+    },
+    {
+      "group": "Strategy.Leaders",
+      "name": "PerkCount",
+      "onType": "Il2CppMenace.Strategy.BaseUnitLeader",
+      "method": "GetPerkCount",
+      "receiver": "self",
+      "summary": "The number of perks the leader has taken."
+    },
+    {
+      "group": "Strategy.Leaders",
+      "name": "HitpointsPct",
+      "onType": "Il2CppMenace.Strategy.BaseUnitLeader",
+      "method": "GetHitpointsPct",
+      "receiver": "self",
+      "summary": "The leader's hitpoints as a 0..1 fraction of maximum."
+    },
+    {
+      "group": "Strategy.Leaders",
+      "name": "IsDeployable",
+      "onType": "Il2CppMenace.Strategy.BaseUnitLeader",
+      "method": "IsDeployable",
+      "receiver": "self",
+      "summary": "Whether the leader can currently be deployed on an operation."
+    },
+    {
+      "group": "Strategy.Leaders",
+      "name": "IsUnavailable",
+      "onType": "Il2CppMenace.Strategy.BaseUnitLeader",
+      "method": "IsUnavailable",
+      "receiver": "self",
+      "summary": "Whether the leader is unavailable (e.g. recovering for a strategic duration)."
+    },
+    {
+      "group": "Strategy.Leaders",
+      "name": "HealthStatus",
+      "onType": "Il2CppMenace.Strategy.BaseUnitLeader",
+      "method": "GetHealthStatus",
+      "receiver": "self",
+      "summary": "The leader's current health status."
+    },
+    {
+      "group": "Strategy.Leaders",
+      "name": "SetHealthStatus",
+      "onType": "Il2CppMenace.Strategy.BaseUnitLeader",
+      "method": "SetHealthStatus",
+      "receiver": "self",
+      "summary": "Set the leader's health status.",
+      "mutating": true
+    },
+    {
+      "group": "Strategy.Leaders",
+      "name": "AddPerk",
+      "onType": "Il2CppMenace.Strategy.BaseUnitLeader",
+      "method": "AddPerk",
+      "receiver": "self",
+      "summary": "Add a perk to the leader; the second argument spends promotion points when true.",
+      "mutating": true
+    },
+    {
+      "group": "Strategy.Leaders",
+      "name": "AddSquaddie",
+      "onType": "Il2CppMenace.Strategy.BaseUnitLeader",
+      "method": "TryAddSquaddie",
+      "receiver": "self",
+      "summary": "Add the squaddie with the given id to the leader's squad (false if rejected).",
+      "mutating": true
+    },
+    {
+      "group": "Strategy.Leaders",
+      "name": "RemoveSquaddie",
+      "onType": "Il2CppMenace.Strategy.BaseUnitLeader",
+      "method": "TryRemoveSquaddie",
+      "receiver": "self",
+      "summary": "Remove the squaddie with the given id from the leader's squad (false if absent).",
+      "mutating": true
+    }
+  ]
+}

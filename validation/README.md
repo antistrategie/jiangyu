@@ -29,10 +29,20 @@ Short version:
   - structural snapshot produced from the curated source list
   - intended for diffing and re-audit work
 
+- `verb-surface-baseline.json`
+  - machine-generated output
+  - the public method surface of the game types the verb manifest binds to
+  - the codegen contract check fails the build when a bound target is removed or renamed. This baseline is the complementary half: it reports what an update added to those types (candidate new verbs)
+
+- `hook-surface-baseline.json`
+  - machine-generated output
+  - the public method and event surface of the game types the hook manifest binds to
+  - same role for hooks: a game update that adds an event or method to a hooked type shows up as a candidate new hook
+
 ## Workflow
 
-- edit `*.sources.json` intentionally when Jiangyu promotes new validated contracts
-- regenerate the matching baseline with `jiangyu templates baseline generate`
+- structural baseline: edit `template-structure-baseline.sources.json` intentionally when Jiangyu promotes new validated contracts, regenerate with `jiangyu templates baseline generate`, review the diff before committing
+- surface baselines: regenerate with the codegen generators (`dotnet run --project src/Jiangyu.Codegen.Verbs -- src/Jiangyu.Codegen.Verbs/manifests src/Jiangyu.Sdk.Menace/Generated --update-surface`, and the matching `Jiangyu.Codegen.Hooks` invocation). Without `--update-surface` the generators print the drift report instead of rewriting the baseline
 - review the diff before committing changes
 
 ## When To Add Files Here

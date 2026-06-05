@@ -1,0 +1,229 @@
+{
+  "_comment": "Per-actor state verbs for Tactical.Units. Reads and safe single-call mutations on Il2CppMenace.Tactical.Actor and its base Entity. Spawn/Despawn/Move and Hitpoints/Morale live elsewhere (Units.cs and core.json) and are not duplicated here. Bespoke members (RefillAmmo's null skill filter) are hand-written in Tactical/Units.cs.",
+  "verbs": [
+    {
+      "group": "Tactical.Units",
+      "name": "MaxHitpoints",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "GetHitpointsMax",
+      "receiver": "self",
+      "summary": "The actor's maximum hitpoints."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "ArmorDurability",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "GetArmorDurability",
+      "receiver": "self",
+      "summary": "The actor's current armour durability."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "MaxArmorDurability",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "GetArmorDurabilityMax",
+      "receiver": "self",
+      "summary": "The actor's maximum armour durability."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "ArmorDurabilityPct",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "GetArmorDurabilityPct",
+      "receiver": "self",
+      "summary": "The actor's armour durability as a 0..1 fraction of its maximum."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "SetArmorDurability",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "SetArmorDurability",
+      "receiver": "self",
+      "summary": "Set the actor's armour durability.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "MoralePct",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "GetMoralePct",
+      "receiver": "self",
+      "summary": "The actor's morale as a 0..1 fraction of its maximum."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "MaxMorale",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "GetMoraleMax",
+      "receiver": "self",
+      "summary": "The actor's maximum morale."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "SetMorale",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "SetMorale",
+      "receiver": "self",
+      "summary": "Set the actor's morale.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "Suppression",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "GetSuppression",
+      "receiver": "self",
+      "summary": "The actor's current suppression."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "SuppressionPct",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "GetSuppressionPct",
+      "receiver": "self",
+      "summary": "The actor's suppression as a 0..1 fraction of its maximum."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "SetSuppression",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "SetSuppression",
+      "receiver": "self",
+      "summary": "Set the actor's suppression.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "ActionPoints",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "GetActionPoints",
+      "receiver": "self",
+      "summary": "The actor's current action points."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "ActionPointsAtTurnStart",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "GetActionPointsAtTurnStart",
+      "receiver": "self",
+      "summary": "The action points the actor had at the start of its turn."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "SetActionPoints",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "SetActionPoints",
+      "receiver": "self",
+      "summary": "Set the actor's action points.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "Stance",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "GetStance",
+      "receiver": "self",
+      "summary": "The actor's current stance."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "SetStance",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "SetStance",
+      "receiver": "self",
+      "summary": "Set the actor's stance.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "MovementMode",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "GetMovementMode",
+      "receiver": "self",
+      "summary": "The actor's current movement mode."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "SetMovementMode",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "SetMovementMode",
+      "receiver": "self",
+      "summary": "Set the actor's movement mode.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "IsAlive",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "IsAlive",
+      "receiver": "self",
+      "summary": "Whether the actor is alive."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "IsDying",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "IsDying",
+      "receiver": "self",
+      "summary": "Whether the actor is in its dying animation."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "IsStunned",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "IsStunned",
+      "receiver": "self",
+      "summary": "Whether the actor is stunned."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "HasActed",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "HasActed",
+      "receiver": "self",
+      "summary": "Whether the actor has acted this turn."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "IsTurnDone",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "IsTurnDone",
+      "receiver": "self",
+      "summary": "Whether the actor has finished its turn."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "SkipTurn",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "SkipTurn",
+      "receiver": "self",
+      "summary": "Skip the actor's turn.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "SetTurnDone",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "SetTurnDone",
+      "receiver": "self",
+      "summary": "Mark the actor's turn as done (or not).",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "ActiveSkill",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "GetActiveSkill",
+      "receiver": "self",
+      "summary": "The actor's currently active skill, or null."
+    },
+    {
+      "group": "Tactical.Units",
+      "name": "FactionID",
+      "onType": "Il2CppMenace.Tactical.Actor",
+      "method": "GetFactionID",
+      "receiver": "self",
+      "summary": "The actor's faction identifier."
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "_comment": "Owned-inventory verbs over StrategyState.Get().OwnedItems (Il2CppMenace.Strategy.OwnedItems). AddItem/RemoveItem/GetInstances are overloaded or list-returning, so they live in Strategy/Inventory.cs.",
+  "verbs": [
+    {
+      "group": "Strategy.Inventory",
+      "name": "InstanceCount",
+      "onType": "Il2CppMenace.Strategy.OwnedItems",
+      "method": "GetInstanceCount",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().OwnedItems",
+      "summary": "How many owned instances of the given item template the campaign holds."
+    },
+    {
+      "group": "Strategy.Inventory",
+      "name": "UnlockedItemsWithTag",
+      "onType": "Il2CppMenace.Strategy.OwnedItems",
+      "method": "GetUnlockedItemsWithTag",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().OwnedItems",
+      "summary": "How many unlocked owned items carry the given tag."
+    },
+    {
+      "group": "Strategy.Inventory",
+      "name": "PurchasedDossiers",
+      "onType": "Il2CppMenace.Strategy.OwnedItems",
+      "method": "GetPurchasedDossiers",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().OwnedItems",
+      "summary": "How many dossiers of the given actor type the campaign has purchased."
+    },
+    {
+      "group": "Strategy.Inventory",
+      "name": "IsNew",
+      "onType": "Il2CppMenace.Strategy.OwnedItems",
+      "method": "IsNew",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().OwnedItems",
+      "summary": "Whether the given owned item template is still flagged as new (unseen)."
+    },
+    {
+      "group": "Strategy.Inventory",
+      "name": "ItemByGuid",
+      "onType": "Il2CppMenace.Strategy.OwnedItems",
+      "method": "GetItemByGuid",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().OwnedItems",
+      "summary": "The owned item instance with the given guid, or null."
+    },
+    {
+      "group": "Strategy.Inventory",
+      "name": "MarkAsSeen",
+      "onType": "Il2CppMenace.Strategy.OwnedItems",
+      "method": "MarkAsSeen",
+      "receiver": "global::Il2CppMenace.States.StrategyState.Get().OwnedItems",
+      "summary": "Clear the new (unseen) flag on the given owned item template.",
+      "mutating": true
+    }
+  ]
+}

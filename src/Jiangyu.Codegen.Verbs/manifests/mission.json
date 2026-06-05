@@ -1,0 +1,81 @@
+{
+  "_comment": "TacticalManager world/turn surface for the Tactical.Mission group. Trivial passthroughs on the live manager singleton; the count queries that take Il2CppSystem.Nullable<> arguments are hand-written in Tactical/Mission.cs so modders see clean nullable C# params.",
+  "verbs": [
+    {
+      "group": "Tactical.Mission",
+      "name": "IsPlayerTurn",
+      "onType": "Il2CppMenace.Tactical.TacticalManager",
+      "method": "IsPlayerTurn",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get()",
+      "summary": "Whether it is currently the player faction's turn."
+    },
+    {
+      "group": "Tactical.Mission",
+      "name": "IsFinished",
+      "onType": "Il2CppMenace.Tactical.TacticalManager",
+      "method": "IsFinished",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get()",
+      "summary": "Whether the mission has reached a finished state."
+    },
+    {
+      "group": "Tactical.Mission",
+      "name": "FinishReason",
+      "onType": "Il2CppMenace.Tactical.TacticalManager",
+      "method": "GetFinishReason",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get()",
+      "summary": "The reason the mission finished."
+    },
+    {
+      "group": "Tactical.Mission",
+      "name": "IsAnyPlayerUnitAlive",
+      "onType": "Il2CppMenace.Tactical.TacticalManager",
+      "method": "IsAnyPlayerUnitAlive",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get()",
+      "summary": "Whether any player unit is still alive."
+    },
+    {
+      "group": "Tactical.Mission",
+      "name": "IsAnyAIUnitAlive",
+      "onType": "Il2CppMenace.Tactical.TacticalManager",
+      "method": "IsAnyAIUnitAlive",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get()",
+      "summary": "Whether any AI unit is still alive."
+    },
+    {
+      "group": "Tactical.Mission",
+      "name": "NextRound",
+      "onType": "Il2CppMenace.Tactical.TacticalManager",
+      "method": "NextRound",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get()",
+      "summary": "Advance the mission to the next round.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Mission",
+      "name": "NextFaction",
+      "onType": "Il2CppMenace.Tactical.TacticalManager",
+      "method": "NextFaction",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get()",
+      "summary": "Hand the turn to the next faction.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Mission",
+      "name": "Finish",
+      "onType": "Il2CppMenace.Tactical.TacticalManager",
+      "method": "Finish",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get()",
+      "summary": "End the mission with the given finish reason.",
+      "mutating": true
+    },
+    {
+      "group": "Tactical.Mission",
+      "name": "SetActiveActor",
+      "onType": "Il2CppMenace.Tactical.TacticalManager",
+      "method": "SetActiveActor",
+      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get()",
+      "summary": "Make the given actor the active actor, ending the previous actor's turn.",
+      "mutating": true
+    }
+  ]
+}

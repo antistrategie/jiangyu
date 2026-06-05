@@ -1,0 +1,49 @@
+{
+  "hooks": [
+    {
+      "layer": "Strategy", "name": "ConversationVarChanged", "context": "ConversationVarChangedContext", "kind": "event",
+      "owner": "Il2CppMenace.States.StrategyState", "member": "OnConversationVarChanged",
+      "summary": "A campaign conversation variable changed.",
+      "payload": [
+        { "name": "Name", "type": "string", "summary": "The variable name." },
+        { "name": "OldValue", "type": "int", "summary": "The previous value." },
+        { "name": "NewValue", "type": "int", "summary": "The new value." }
+      ]
+    },
+    {
+      "layer": "Strategy", "name": "AliveSquaddiesChanged", "context": "AliveSquaddiesChangedContext", "kind": "event",
+      "owner": "Il2CppMenace.Strategy.Squaddies", "member": "OnAliveSquaddiesChanged",
+      "summary": "The count of alive squaddies changed (e.g. one was lost).",
+      "payload": [ { "name": "AliveCount", "type": "int", "summary": "The number of squaddies still alive." } ]
+    },
+    {
+      "layer": "Strategy", "name": "FactionTrustChanged", "context": "FactionTrustChangedContext", "kind": "event",
+      "owner": "Il2CppMenace.Strategy.StoryFaction", "member": "OnTrustChanged",
+      "summary": "A story faction's trust value changed.",
+      "payload": [
+        { "name": "Faction", "type": "StoryFaction", "summary": "The faction." },
+        { "name": "OldTrust", "type": "int", "summary": "The previous trust value." },
+        { "name": "NewTrust", "type": "int", "summary": "The new trust value." }
+      ]
+    },
+    {
+      "layer": "Strategy", "name": "FactionStatusChanged", "context": "FactionStatusChangedContext", "kind": "event",
+      "owner": "Il2CppMenace.Strategy.StoryFaction", "member": "OnStatusChanged",
+      "summary": "A story faction's status changed (allied / hostile / neutral, etc.).",
+      "payload": [
+        { "name": "Faction", "type": "StoryFaction", "summary": "The faction." },
+        { "name": "OldStatus", "type": "StoryFactionStatus", "summary": "The previous status." },
+        { "name": "NewStatus", "type": "StoryFactionStatus", "summary": "The new status." }
+      ]
+    },
+    {
+      "layer": "Strategy", "name": "FactionUpgradeUnlocked", "context": "FactionUpgradeUnlockedContext", "kind": "event",
+      "owner": "Il2CppMenace.Strategy.StoryFaction", "member": "OnUpgradeUnlocked",
+      "summary": "A story faction unlocked a ship upgrade.",
+      "payload": [
+        { "name": "Faction", "type": "StoryFaction", "summary": "The faction." },
+        { "name": "Upgrade", "type": "ShipUpgradeTemplate", "summary": "The unlocked upgrade." }
+      ]
+    }
+  ]
+}

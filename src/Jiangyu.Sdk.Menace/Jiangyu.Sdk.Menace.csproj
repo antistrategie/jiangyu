@@ -8,6 +8,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
+    <!-- The verb XML doc feeds the generated modder reference (Jiangyu.Codegen.Docs reads
+         it for site/reference/verbs.md, the one source that covers generated and bespoke
+         verbs alike). 1591 is off: not every internal helper needs a doc comment. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
 
   <!--
