@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Rpc;
+using Jiangyu.Shared.Bridge;
 using Jiangyu.Shared.Dev;
 
 namespace Jiangyu.Studio.Rpc;
@@ -45,7 +46,34 @@ public static partial class RpcHandlers
     }
 
     /// <summary>Capture the game's live UI tree over the bridge. Throws when not connected.</summary>
-    internal static JsonElement BridgeUiCapture(JsonElement? __) => Bridge.Request("ui.capture");
+    [McpTool("jiangyu_ui_capture",
+        "Capture the running game's live UI Toolkit tree over the bridge: the active screen and any open dialog, each node's concrete IL2CPP type, name, USS classes and text. Use to find the element to attach injected UI to.",
+        RequiresBridge = true)]
+    internal static JsonElement BridgeUiCapture(JsonElement? __) => Bridge.Request(BridgeMethods.UiCapture);
+
+    /// <summary>Inspect the running game's current scene over the bridge. Throws when not connected.</summary>
+    [McpTool("jiangyu_inspect_scene",
+        "Inspect the running game's current scene over the live bridge: every SpriteRenderer, UI Image, SpriteAsset, TextureAsset, SkinnedMeshRenderer, AudioSource and AudioClip live right now, each with its GameObject path. Answers 'what is actually live right now?' when a replacement or template patch is not landing.",
+        RequiresBridge = true)]
+    internal static JsonElement BridgeInspectScene(JsonElement? __) => Bridge.Request(BridgeMethods.InspectScene);
+
+    /// <summary>Snapshot the running game's registered DataTemplates over the bridge. Throws when not connected.</summary>
+    [McpTool("jiangyu_inspect_templates",
+        "Snapshot every DataTemplate registered in the running game: identity (id, map key, Unity name, hideFlags), a likely-Jiangyu-clone flag, and each serialised member classified (scalar/bytes/reference/collection/odinBlob/null/unreadable). Use to verify live template state after a clone or patch.",
+        RequiresBridge = true)]
+    internal static JsonElement BridgeInspectTemplates(JsonElement? __) => Bridge.Request(BridgeMethods.InspectTemplates);
+
+    /// <summary>Run the injection-gate diagnostic against the running game over the bridge. Throws when not connected.</summary>
+    [McpTool("jiangyu_gate_run",
+        "Run the injection-gate diagnostic against the running game and return its report: type registration, runtime assignability, blank-template allocation, Odin polymorphic survival, and (when an actor is live in a Tactical mission) game-dispatch-to-injected-handler plus the opt-in damage-clamp check.",
+        RequiresBridge = true)]
+    internal static JsonElement BridgeGateRun(JsonElement? __) => Bridge.Request(BridgeMethods.GateRun);
+
+    /// <summary>Run the game-API verb-surface probe against the running game over the bridge. Throws when not connected.</summary>
+    [McpTool("jiangyu_verbs_run",
+        "Run the game-API verb-surface probe against the running game and return its report: tile/faction/actor reads, line-of-sight, hit-chance, path queries, the movement-range task, and (behind the verbs-spawn opt-in) spawn/despawn behaviour. Needs an active actor in a live Tactical mission.",
+        RequiresBridge = true)]
+    internal static JsonElement BridgeVerbsRun(JsonElement? __) => Bridge.Request(BridgeMethods.VerbsRun);
 
     private static bool IsBridgeEnabled()
     {

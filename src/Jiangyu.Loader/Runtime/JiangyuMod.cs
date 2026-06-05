@@ -3,12 +3,14 @@ using Jiangyu.Loader.Bridge;
 using Jiangyu.Loader.Diagnostics;
 using Jiangyu.Loader.Diagnostics.InjectionGate;
 using Jiangyu.Loader.Diagnostics.UiProbe;
+using Jiangyu.Loader.Diagnostics.VerbProbe;
 using Jiangyu.Loader.Logging;
 using Jiangyu.Loader.Sdk;
 using Jiangyu.Loader.Sdk.Hooks;
 using Jiangyu.Loader.Sdk.Patches;
 using Jiangyu.Loader.Sdk.State;
 using Jiangyu.Loader.Sdk.Types;
+using Jiangyu.Shared.Bridge;
 using MelonLoader;
 using MelonLoader.Utils;
 
@@ -20,15 +22,16 @@ namespace Jiangyu.Loader.Runtime;
 // MelonLoader entry point. Owns the per-scene frame clock and the loader's subsystems,
 // and forwards the MelonLoader lifecycle (init, scene load, update) to each. The
 // per-scene and per-frame work lives in the drivers (replacement scheduling, UI
-// re-injection, dev inspection); this class wires and sequences them.
+// re-injection); dev inspection is served on demand over the Studio bridge. This class
+// wires and sequences them.
 public class JiangyuMod : MelonMod
 {
     private readonly ReplacementCoordinator _replacementCoordinator = new();
     private readonly ReplacementScheduler _replacement;
     private readonly UiInjectionDriver _ui = new();
-    private readonly InspectionDriver _inspection = new();
     private int _frameInScene;
     private string _currentScene;
+    private int _currentBuildIndex;
     private BridgeServer _bridge;
     private ModHost _modHost;
     private InProcessHookBus _hookBus;
@@ -71,8 +74,12 @@ public class JiangyuMod : MelonMod
     private void InitialiseBridge()
     {
         _bridge = new BridgeServer(LoggerInstance);
-        _bridge.On("ping", _ => new { ok = true, version = Info.Version, protocol = Jiangyu.Shared.Bridge.BridgeProtocol.Version });
-        _bridge.On("ui.capture", _ => UiTreeProbe.CaptureCurrent("bridge"));
+        _bridge.On(BridgeMethods.Ping, _ => new { ok = true, version = Info.Version, protocol = BridgeProtocol.Version });
+        _bridge.On(BridgeMethods.UiCapture, _ => UiTreeProbe.CaptureCurrent("bridge"));
+        _bridge.On(BridgeMethods.InspectScene, _ => SceneIdentityInspector.Capture(_currentScene, _currentBuildIndex));
+        _bridge.On(BridgeMethods.InspectTemplates, _ => TemplateStateInspector.Capture(_currentScene));
+        _bridge.On(BridgeMethods.GateRun, _ => InjectionGateInspector.Capture(_currentScene, LoggerInstance));
+        _bridge.On(BridgeMethods.VerbsRun, _ => VerbSurfaceProbe.Capture(_currentScene, LoggerInstance));
     }
 
     // Start/stop the bridge to match the `bridge` flag. Reads the flag fresh (not the
@@ -219,6 +226,7 @@ public class JiangyuMod : MelonMod
     public override void OnSceneWasLoaded(int buildIndex, string sceneName)
     {
         _currentScene = sceneName;
+        _currentBuildIndex = buildIndex;
         _frameInScene = 0;
 
         // Re-read the dev flags for the new scene (DevFlags caches the file, so per-frame
@@ -228,7 +236,6 @@ public class JiangyuMod : MelonMod
         LoaderDebug.SyncSdkLog();
 
         _replacement.Reset();
-        _inspection.OnSceneLoaded();
         _ui.OnSceneLoaded();
         _tacticalHooks?.Reset();
         UpdateBridge();
@@ -236,7 +243,6 @@ public class JiangyuMod : MelonMod
         LoggerInstance.Msg($"Scene loaded: {sceneName} ({buildIndex})");
 
         _modHost?.SceneLoaded(buildIndex, sceneName);
-        _inspection.DumpSceneLoad(buildIndex, sceneName, LoggerInstance);
 
         _replacement.Apply(LoggerInstance);
         MelonCoroutines.Start(_replacement.FollowUpPoll(LoggerInstance));
@@ -246,7 +252,6 @@ public class JiangyuMod : MelonMod
     {
         _frameInScene++;
 
-        _inspection.Tick(_frameInScene, _currentScene, LoggerInstance);
         _ui.Drive();
 
         // Pick up a mid-session bridge toggle (Studio writing the flag) within ~2s,

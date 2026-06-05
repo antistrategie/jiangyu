@@ -25,6 +25,15 @@ public sealed class McpToolAttribute(string name, string description) : Attribut
     /// Off by default.
     /// </summary>
     public bool LongRunning { get; set; }
+
+    /// <summary>
+    /// True for tools that drive the running game over the live Studio bridge
+    /// (the inspect/gate/verbs/ui-capture family). The MCP server appends a
+    /// standard "requires the live bridge" note to the tool's description so the
+    /// model knows the precondition, and the tool itself fails with a clear error
+    /// when MENACE isn't running with the <c>bridge</c> dev flag set. Off by default.
+    /// </summary>
+    public bool RequiresBridge { get; set; }
 }
 
 /// <summary>

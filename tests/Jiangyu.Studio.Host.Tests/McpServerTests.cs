@@ -132,6 +132,36 @@ public class McpServerTests
     }
 
     /// <summary>
+    /// A tool declared <c>RequiresBridge = true</c> (the inspect/gate/verbs/ui-capture
+    /// family) must carry the standard live-bridge requirement note in its tools/list
+    /// description, and a tool that does not require the bridge must not.
+    /// </summary>
+    [Fact]
+    public void ToolsList_BridgeTools_CarryLiveBridgeRequirementNote()
+    {
+        var server = CreateServer();
+        var response = server.HandleRequest(MakeRequest("tools/list"));
+        var doc = JsonDocument.Parse(response);
+        var tools = doc.RootElement.GetProperty("result").GetProperty("tools");
+
+        string? DescriptionOf(string toolName)
+        {
+            foreach (var tool in tools.EnumerateArray())
+                if (tool.GetProperty("name").GetString() == toolName)
+                    return tool.GetProperty("description").GetString();
+            return null;
+        }
+
+        var bridgeDesc = DescriptionOf("jiangyu_inspect_scene");
+        Assert.NotNull(bridgeDesc);
+        Assert.Contains("`bridge` dev flag", bridgeDesc!);
+
+        var staticDesc = DescriptionOf("jiangyu_compile_summary");
+        Assert.NotNull(staticDesc);
+        Assert.DoesNotContain("`bridge` dev flag", staticDesc!);
+    }
+
+    /// <summary>
     /// Regression: <c>jiangyu_edit_file</c> reaches
     /// <c>ProjectWatcher.SuppressFor(path, window.Id)</c>; under MCP the
     /// invocation passes a null window. The handler must guard the deref so

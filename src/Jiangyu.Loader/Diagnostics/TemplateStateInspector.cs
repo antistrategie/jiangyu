@@ -1,10 +1,8 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text.Json;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using Jiangyu.Loader.Templates;
-using MelonLoader;
 using DataTemplateLoader = Il2CppMenace.Tools.DataTemplateLoader;
 using DataTemplate = Il2CppMenace.Tools.DataTemplate;
 using Il2CppDictionary = Il2CppSystem.Collections.Generic.Dictionary<string, Il2CppMenace.Tools.DataTemplate>;
@@ -12,71 +10,38 @@ using Il2CppDictionary = Il2CppSystem.Collections.Generic.Dictionary<string, Il2
 namespace Jiangyu.Loader.Diagnostics;
 
 /// <summary>
-/// Opt-in dump of every DataTemplate subtype registered in
+/// On-demand snapshot of every DataTemplate subtype registered in
 /// <c>DataTemplateLoader.m_TemplateMaps</c>. Captures identity (m_ID, map
 /// key, Unity name, hideFlags, native pointer), flags likely Jiangyu clones
 /// via <c>hideFlags</c>, and snapshots each serialised member as a
 /// classified summary (scalar / bytes / reference / collection / odinBlob /
-/// null / unreadable). One JSON file per call, named
-/// <c>&lt;timestamp&gt;-&lt;scene&gt;-templates-&lt;seq&gt;.json</c>.
-/// Returns <c>false</c> when the loader's <c>m_TemplateMaps</c> singleton or
-/// entries aren't ready yet (caller can retry later in-scene).
+/// null / unreadable). Driven by the <c>inspect.templates</c> bridge request
+/// and returned to the caller; returns an <c>error</c> object when the loader's
+/// <c>m_TemplateMaps</c> singleton or entries aren't ready yet.
 /// </summary>
 internal static class TemplateStateInspector
 {
     private const int MaxByteArrayElements = 64;
     private const int MaxCollectionElementSummaries = 16;
-    private static int _templatesDumpSequence;
 
-    public static bool TryDumpTemplatesFromLoader(string sceneName, MelonLogger.Instance log)
+    // Build the templates snapshot and return it for an on-demand bridge request. The
+    // return type is object so the loader can hand it (or an error object) straight to
+    // the JSON serialiser. Must run on the Unity main thread.
+    internal static object Capture(string sceneName)
     {
-        var flag = InspectionSink.GetCachedFlag();
-        if (!flag.Enabled)
-            return false;
+        var singleton = DataTemplateLoader.GetSingleton();
+        if (singleton == null)
+            return new { error = "DataTemplateLoader.GetSingleton() returned null." };
 
-        try
-        {
-            var singleton = DataTemplateLoader.GetSingleton();
-            if (singleton == null)
-            {
-                log.Warning("[inspect] templates: DataTemplateLoader.GetSingleton() returned null.");
-                return false;
-            }
+        var templateMaps = singleton.m_TemplateMaps;
+        if (templateMaps == null || templateMaps.Count == 0)
+            return new { error = "DataTemplateLoader.m_TemplateMaps is null/empty (cache not ready)." };
 
-            var templateMaps = singleton.m_TemplateMaps;
-            if (templateMaps == null || templateMaps.Count == 0)
-            {
-                log.Warning("[inspect] templates: DataTemplateLoader.m_TemplateMaps is null/empty (cache not ready).");
-                return false;
-            }
+        var dump = BuildTemplatesDump(sceneName, templateMaps);
+        if (dump.TypeCount == 0)
+            return new { error = "materialised 0 template types." };
 
-            var dump = BuildTemplatesDump(sceneName, templateMaps);
-            if (dump.TypeCount == 0)
-            {
-                log.Warning("[inspect] templates: materialised 0 types.");
-                return false;
-            }
-
-            var sequence = Interlocked.Increment(ref _templatesDumpSequence);
-            var timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd-HH-mm-ss-fff");
-            var safeSceneName = InspectionSink.SanitiseForFileName(sceneName);
-            var filePath = Path.Combine(InspectionSink.GetOutputDirectory(), $"{timestamp}-{safeSceneName}-templates-{sequence:D2}.json");
-
-            File.WriteAllText(filePath, JsonSerializer.Serialize(dump, InspectionSink.JsonOptions));
-
-            log.Msg(
-                $"[inspect] Wrote templates dump: {filePath}  " +
-                $"(types={dump.TypeCount}  templates={dump.TemplateCount}  " +
-                $"likelyClones={dump.LikelyCloneCount}  odinFields={dump.OdinFieldCount})");
-
-            InspectionSink.EnforceRetention(flag.RetentionCap, log);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            log.Error($"[inspect] templates dump failed: {ex}");
-            return false;
-        }
+        return dump;
     }
 
     private static TemplatesDump BuildTemplatesDump(

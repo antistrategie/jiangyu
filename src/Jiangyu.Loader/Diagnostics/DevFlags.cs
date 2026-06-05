@@ -9,13 +9,14 @@ namespace Jiangyu.Loader.Diagnostics;
 /// <see cref="DevFlagFile"/> for the grammar) that gates the loader's diagnostics and
 /// verbose logging. The file is read once and cached; <see cref="Refresh"/> re-reads
 /// it (the loader calls it on scene load) so a dict lookup, not file I/O, backs the
-/// per-frame gate checks. An absent file means everything is off.
+/// gate checks. An absent file means everything is off.
 ///
-/// <para>Toggles: <c>debug</c> (verbose logging), <c>inspect</c> / <c>inspect=N</c>
-/// (runtime inspector dumps, optional retention cap), <c>gate</c> / <c>gate-damage</c>
-/// (the injection gate and its opt-in self-hit), <c>verbs</c> / <c>verbs-spawn</c>
-/// (the verb probe and its opt-in spawns), <c>ui</c> (live UI-tree dumps), and
-/// <c>bridge</c> (the Studio socket, normally written by Studio's toggle).</para>
+/// <para>Toggles: <c>debug</c> (verbose logging), <c>bridge</c> (the Studio/agent
+/// socket, normally written by Studio's toggle), <c>gate</c> / <c>gate-damage</c> (the
+/// load-time injection-gate structural check and its opt-in self-hit), and
+/// <c>verbs-spawn</c> (the opt-in spawns in the on-demand verb probe). The on-demand
+/// scene, template, UI, gate, and verb inspectors run over the bridge and need no
+/// toggle of their own.</para>
 /// </summary>
 internal static class DevFlags
 {

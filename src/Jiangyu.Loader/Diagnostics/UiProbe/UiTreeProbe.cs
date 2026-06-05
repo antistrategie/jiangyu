@@ -1,22 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using System.Text.Json;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using Il2CppMenace.UI;
-using MelonLoader;
 using UnityEngine.UIElements;
 
 namespace Jiangyu.Loader.Diagnostics.UiProbe;
 
 /// <summary>
-/// Dumps the live UI Toolkit <see cref="VisualElement"/> tree of the active
+/// Captures the live UI Toolkit <see cref="VisualElement"/> tree of the active
 /// <c>UIScreen</c> and any open dialog, so a modder can find the exact element to
-/// attach injected UI to (e.g. the squad menu's leader header). Gated by the
-/// <c>ui</c> toggle in the dev-flags file. Not latched: each distinct
-/// screen-plus-dialog state is dumped once as the player navigates, so opening the
-/// squad menu or the armory captures that screen without flooding the output.
+/// attach injected UI to (e.g. the squad menu's leader header). Driven on demand by
+/// the <c>ui.capture</c> bridge request and returned to the caller.
 ///
 /// <para>Concrete element types come from the IL2CPP class (a wrapper's managed
 /// type is only its static cast type), so the dump distinguishes a
@@ -27,61 +23,11 @@ internal static class UiTreeProbe
     private const int MaxDepth = 18;
     private const int MaxNodes = 5000;
 
-    private static string _lastSignature;
-
-    public static bool IsEnabled() => DevFlags.IsEnabled("ui");
-
-    /// <summary>Reset the dump-on-change latch so the next scene re-dumps.</summary>
-    public static void Reset() => _lastSignature = null;
-
     /// <summary>
-    /// Dump the current screen/dialog if it changed since the last dump. Cheap when
-    /// nothing changed (two IL2CPP calls plus a string compare).
-    /// </summary>
-    public static void Tick(string sceneTag, MelonLogger.Instance log)
-    {
-        if (!IsEnabled())
-            return;
-
-        UIManager manager;
-        try { manager = UIManager.Get(); }
-        catch { return; }
-        if (manager == null)
-            return;
-
-        UIScreen screen = null;
-        BaseDialog dialog = null;
-        try { screen = manager.GetActiveScreen(); } catch { /* none */ }
-        try { dialog = manager.GetCurrentDialog(); } catch { /* none */ }
-
-        var screenName = ConcreteName(screen);
-        var dialogName = ConcreteName(dialog);
-        var signature = $"{screenName}|{dialogName}";
-        if (signature == "|" || signature == _lastSignature)
-            return;
-        _lastSignature = signature;
-
-        try
-        {
-            var dump = BuildDump(sceneTag, screen, dialog, screenName, dialogName);
-            var timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd-HH-mm-ss");
-            var tag = InspectionSink.SanitiseForFileName($"{sceneTag}-{screenName}-{dialogName}");
-            var path = System.IO.Path.Combine(InspectionSink.GetOutputDirectory(), $"{timestamp}-uitree-{tag}.json");
-            System.IO.File.WriteAllText(path, JsonSerializer.Serialize(dump, InspectionSink.JsonOptions));
-            log.Msg($"[ui] dumped tree: screen={screenName} dialog={dialogName} nodes={dump.NodeCount}{(dump.Truncated ? " (TRUNCATED)" : "")} -> {path}");
-        }
-        catch (Exception ex)
-        {
-            log.Error($"[ui] tree dump failed: {ex.GetType().Name}: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// Capture the live screen-plus-dialog tree on demand and return it (the same dump
-    /// shape <see cref="Tick"/> writes). Used by the Studio bridge, so it ignores the
-    /// dev-flag gate and the change latch. Must run on the Unity main thread. Returns
-    /// null when no UI manager is up. The return type is <c>object</c> so the loader
-    /// can hand it straight to the JSON serialiser.
+    /// Capture the live screen-plus-dialog tree of the active UIScreen and any open
+    /// dialog, and return it. Driven by the <c>ui.capture</c> bridge request; must run
+    /// on the Unity main thread. Returns null when no UI manager is up. The return type
+    /// is <c>object</c> so the loader can hand it straight to the JSON serialiser.
     /// </summary>
     public static object CaptureCurrent(string sceneTag)
     {

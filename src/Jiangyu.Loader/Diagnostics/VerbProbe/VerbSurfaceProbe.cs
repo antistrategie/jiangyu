@@ -1,12 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Text.Json;
 using Il2CppMenace.Tactical;
 using Il2CppMenace.Tactical.Skills;
 using Jiangyu.Loader.Diagnostics;
 using MelonLoader;
-using MelonLoader.Utils;
 using UnityEngine;
 using ProbeReport = Jiangyu.Loader.Diagnostics.InspectionReport;
 using ProbeCheck = Jiangyu.Loader.Diagnostics.InspectionCheck;
@@ -21,13 +18,11 @@ namespace Jiangyu.Loader.Diagnostics.VerbProbe;
 /// end, what a path query returns, and whether the movement-range Task completes
 /// synchronously.
 ///
-/// <para>Gated by the <c>verbs</c> toggle in the <c>jiangyu-flags</c> file so it never
-/// runs in a normal session. The read-only probes run on that toggle alone. The
-/// state-mutating probes (spawn a unit, then despawn it) are opt-in behind a further
-/// <c>verbs-spawn</c> toggle, matching the injection gate's self-hit opt-in. Writes
-/// a timestamped JSON report alongside the other
-/// inspector dumps and logs each result the instant it completes so a later
-/// native crash still leaves a trail.</para>
+/// <para>Driven on demand by the <c>verbs.run</c> bridge request and returned to the
+/// caller. The read-only probes run on the request alone. The state-mutating probes
+/// (spawn a unit, then despawn it) are opt-in behind the <c>verbs-spawn</c> toggle,
+/// matching the injection gate's self-hit opt-in. Logs each result the instant it
+/// completes so a later native crash still leaves a trail.</para>
 /// </summary>
 internal static class VerbSurfaceProbe
 {
@@ -35,23 +30,18 @@ internal static class VerbSurfaceProbe
     private const string Fail = DiagnosticStatus.Fail;
     private const string Skipped = DiagnosticStatus.Skipped;
 
-    // Gated by the `verbs` toggle in the dev file; the state-mutating spawn probes are
-    // opt-in behind a further `verbs-spawn` toggle.
-    public static bool IsEnabled() => DevFlags.IsEnabled("verbs");
-
+    // The state-mutating spawn probes are opt-in behind the `verbs-spawn` toggle.
     private static bool IsSpawnEnabled() => DevFlags.IsEnabled("verbs-spawn");
 
-    /// <summary>
-    /// Live trigger. Returns false when there is no active actor yet so the caller
-    /// can retry on a later frame, true once the run has happened.
-    /// </summary>
-    public static bool RunLiveIfReady(string sceneTag, MelonLogger.Instance log)
+    // On-demand verb-surface run for the `verbs.run` bridge request: every read-only
+    // probe, plus (behind the verbs-spawn opt-in) the spawn/despawn probes, driven
+    // against the live mission and returned. The return type is object so the loader
+    // hands it (or a no-actor error) straight to the JSON serialiser. Must run on the
+    // Unity main thread.
+    internal static object Capture(string sceneTag, MelonLogger.Instance log)
     {
-        if (!IsEnabled())
-            return true;
-
         if (!TryGetActiveActor(out var actor))
-            return false;
+            return new { sceneTag, error = "no active actor (enter a Tactical mission first)" };
 
         var report = new ProbeReport
         {
@@ -75,8 +65,7 @@ internal static class VerbSurfaceProbe
         Emit(report, CheckSpawnForeignFaction(actor), log);
         Emit(report, CheckDieBehaviour(actor), log);
 
-        Write(report, sceneTag, log);
-        return true;
+        return report;
     }
 
     // The shared prerequisite: manager singleton non-null and a live map handle.
@@ -684,7 +673,4 @@ internal static class VerbSurfaceProbe
 
     private static void Emit(ProbeReport report, ProbeCheck check, MelonLogger.Instance log)
         => InspectionReporter.Emit(report, check, log, "verbs");
-
-    private static void Write(ProbeReport report, string sceneTag, MelonLogger.Instance log)
-        => InspectionReporter.Write(report, sceneTag, log, "verbs");
 }

@@ -43,12 +43,12 @@ internal static class InjectionGateInspector
     // dispatch without it.
     public static bool IsEnabled() => DevFlags.IsEnabled("gate");
 
-    /// <summary>Structural phase. Safe anywhere, no mission required.</summary>
-    public static void Run(string sceneTag, bool live, MelonLogger.Instance log)
+    // Run the full check sequence and return the report. Emit logs each result the
+    // instant it completes, so a later native crash still leaves a per-check trail in
+    // Latest.log. The order runs the safe checks first and the riskiest (the self-hit)
+    // last.
+    private static GateReport BuildReport(string sceneTag, bool live, MelonLogger.Instance log)
     {
-        if (!IsEnabled())
-            return;
-
         var report = new GateReport
         {
             Timestamp = DateTimeOffset.UtcNow,
@@ -58,9 +58,6 @@ internal static class InjectionGateInspector
             GameVersion = SafeGameVersion(),
         };
 
-        // Emit logs each result the instant it completes, so a later native
-        // crash still leaves a per-check trail in Latest.log. The order runs the
-        // safe checks first and the riskiest (the self-hit) last.
         Emit(report, CheckRegister(), log);
         Emit(report, CheckAssignable(), log);
         Emit(report, CheckMissingBindProbe(), log);
@@ -71,24 +68,23 @@ internal static class InjectionGateInspector
         Emit(report, CheckDispatchToInjected(live), log);
         Emit(report, CheckDamageClampHonoured(live), log);
 
-        Write(report, sceneTag, log);
+        return report;
     }
 
-    /// <summary>
-    /// Live phase trigger. Returns false when there is no active actor yet so the
-    /// caller can retry on a later frame, true once the live run has happened.
-    /// </summary>
-    public static bool RunLiveIfReady(string sceneTag, MelonLogger.Instance log)
+    /// <summary>The structural phase, written to disk at loader init. Safe anywhere, no mission required.</summary>
+    public static void Run(string sceneTag, bool live, MelonLogger.Instance log)
     {
         if (!IsEnabled())
-            return true;
-
-        if (!TryGetActiveActor(out _))
-            return false;
-
-        Run(sceneTag, live: true, log);
-        return true;
+            return;
+        Write(BuildReport(sceneTag, live, log), sceneTag, log);
     }
+
+    // On-demand gate run for the `gate.run` bridge request: the structural checks plus,
+    // when an actor is live, the dispatch and (opt-in) damage checks. Returns the report
+    // rather than writing it to disk. The return type is object so the loader hands it
+    // straight to the JSON serialiser. Must run on the Unity main thread.
+    internal static object Capture(string sceneTag, MelonLogger.Instance log)
+        => BuildReport(sceneTag, live: TryGetActiveActor(out _), log);
 
     private static GateCheck CheckRegister()
     {

@@ -1,54 +1,27 @@
-using System.Text.Json;
 using Il2CppInterop.Runtime;
-using MelonLoader;
 using UnityEngine;
 using UnityEngine.UI;
 
 namespace Jiangyu.Loader.Diagnostics;
 
 /// <summary>
-/// Opt-in dump of live scene identity: SpriteRenderer/Image/SpriteAsset/
+/// On-demand dump of live scene identity: SpriteRenderer/Image/SpriteAsset/
 /// TextureAsset/SkinnedMeshRenderer/AudioSource/AudioClip enumerated from
 /// the active scene plus <c>Resources.FindObjectsOfTypeAll</c>. Used to
 /// answer "what's actually live right now?" when a replacement or template
-/// patch isn't landing as expected.
+/// patch isn't landing as expected. Driven by the <c>inspect.scene</c> bridge
+/// request and returned to the caller.
 ///
-/// <para>Gated by <see cref="InspectionSink.IsEnabled"/>. Atlas-packed
-/// sprites and off-scene-cached assets are visible even though the main
-/// replacement sweeps can't see the latter.</para>
+/// <para>Atlas-packed sprites and off-scene-cached assets are visible even
+/// though the main replacement sweeps can't see the latter.</para>
 /// </summary>
 internal static class SceneIdentityInspector
 {
-    public static void Dump(string sceneName, int buildIndex, MelonLogger.Instance log)
-    {
-        var flag = InspectionSink.GetCachedFlag();
-        if (!flag.Enabled)
-            return;
-
-        try
-        {
-            var timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd-HH-mm-ss");
-            var safeSceneName = InspectionSink.SanitiseForFileName(sceneName);
-            var filePath = Path.Combine(InspectionSink.GetOutputDirectory(), $"{timestamp}-{safeSceneName}.json");
-
-            var dump = BuildDump(sceneName, buildIndex);
-            File.WriteAllText(filePath, JsonSerializer.Serialize(dump, InspectionSink.JsonOptions));
-
-            log.Msg(
-                $"[inspect] Wrote runtime dump: {filePath}  " +
-                $"(sprite renderers={dump.SpriteRenderers.Count}  " +
-                $"ui images={dump.UiImages.Count}  " +
-                $"sprite assets={dump.SpriteAssets.Count}  " +
-                $"audio sources={dump.AudioSources.Count}  " +
-                $"audio clips={dump.AudioClipAssets.Count})");
-
-            InspectionSink.EnforceRetention(flag.RetentionCap, log);
-        }
-        catch (Exception ex)
-        {
-            log.Error($"[inspect] dump failed: {ex}");
-        }
-    }
+    // Build and return the live-scene dump for an on-demand bridge request. No flag
+    // gate or disk write: the request itself is the opt-in, and the caller hands the
+    // dump straight back over the bridge. The return type is object so the dump's
+    // private type need not be exposed. Must run on the Unity main thread.
+    internal static object Capture(string sceneName, int buildIndex) => BuildDump(sceneName, buildIndex);
 
     private static RuntimeDump BuildDump(string sceneName, int buildIndex)
     {

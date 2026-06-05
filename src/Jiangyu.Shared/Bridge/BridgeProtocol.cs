@@ -22,6 +22,21 @@ public static class BridgeProtocol
     public const string PortFileName = "jiangyu-bridge.json";
 }
 
+/// <summary>
+/// The bridge method names, shared so the loader's handler registration and the client's
+/// request calls reference one spelling. A mismatch would otherwise fail silently as an
+/// "unknown method" response rather than at compile time.
+/// </summary>
+public static class BridgeMethods
+{
+    public const string Ping = "ping";
+    public const string UiCapture = "ui.capture";
+    public const string InspectScene = "inspect.scene";
+    public const string InspectTemplates = "inspect.templates";
+    public const string GateRun = "gate.run";
+    public const string VerbsRun = "verbs.run";
+}
+
 /// <summary>A bridge request: <c>{ id, method, params }</c>.</summary>
 public sealed class BridgeRequest
 {

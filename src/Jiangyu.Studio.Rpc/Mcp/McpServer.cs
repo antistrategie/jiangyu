@@ -26,7 +26,15 @@ public sealed class McpServer
         string Description,
         MethodInfo Method,
         IReadOnlyList<ParamEntry> Params,
-        bool LongRunning);
+        bool LongRunning,
+        bool RequiresBridge);
+
+    // Appended to the description of any tool that drives the running game over the
+    // live bridge, so the model sees the precondition in tools/list rather than only
+    // discovering it from a failed call.
+    private const string BridgeRequirementNote =
+        " Requires the live game bridge: MENACE must be running with the `bridge` dev flag set, " +
+        "or the call returns an error.";
 
     private readonly Dictionary<string, ToolEntry> _tools = new(StringComparer.Ordinal);
 
@@ -48,7 +56,7 @@ public sealed class McpServer
                 .Select(p => new ParamEntry(p.Name, p.Type, p.Description, p.Required))
                 .ToList();
 
-            _tools[attr.Name] = new ToolEntry(attr.Name, attr.Description, method, paramAttrs, attr.LongRunning);
+            _tools[attr.Name] = new ToolEntry(attr.Name, attr.Description, method, paramAttrs, attr.LongRunning, attr.RequiresBridge);
         }
     }
 
@@ -147,7 +155,7 @@ public sealed class McpServer
             tools.Add(new
             {
                 name = entry.Name,
-                description = entry.Description,
+                description = entry.RequiresBridge ? entry.Description + BridgeRequirementNote : entry.Description,
                 inputSchema = BuildInputSchema(entry.Params),
             });
         }
