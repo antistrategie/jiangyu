@@ -2,6 +2,7 @@ using System.Reflection;
 using Il2CppInterop.Runtime.InteropTypes;
 using Jiangyu.Shared.Templates;
 using MelonLoader;
+using Jiangyu.Loader.Logging;
 
 namespace Jiangyu.Loader.Templates;
 
@@ -173,7 +174,7 @@ internal sealed partial class TemplatePatchApplier
                             + $"'{terminalName}', read back {readback}: element size may be wrong.");
                         return ApplyOutcome.Applied;
                     }
-                    log.Msg(FormatPrefix(templateTypeName, templateId, op)
+                    log.Debug(FormatPrefix(templateTypeName, templateId, op)
                         + $"set {string.Join(",", op.IndexPath)}={value.Boolean == true} on "
                         + $"'{terminalName}' (native MD-array, dims={string.Join("x", dims)}).");
                     return ApplyOutcome.Applied;
@@ -191,7 +192,7 @@ internal sealed partial class TemplatePatchApplier
                             + $"'{terminalName}', read back {readback}.");
                         return ApplyOutcome.Applied;
                     }
-                    log.Msg(FormatPrefix(templateTypeName, templateId, op)
+                    log.Debug(FormatPrefix(templateTypeName, templateId, op)
                         + $"set {string.Join(",", op.IndexPath)}=0x{newByte:X2} on '{terminalName}' "
                         + $"(native MD-array, dims={string.Join("x", dims)}).");
                     return ApplyOutcome.Applied;
@@ -210,7 +211,7 @@ internal sealed partial class TemplatePatchApplier
                             + "(byte-backed enum stored in 1 byte? Use kind=Byte instead).");
                         return ApplyOutcome.Applied;
                     }
-                    log.Msg(FormatPrefix(templateTypeName, templateId, op)
+                    log.Debug(FormatPrefix(templateTypeName, templateId, op)
                         + $"set {string.Join(",", op.IndexPath)}={newInt} on '{terminalName}' "
                         + $"(native MD-array, dims={string.Join("x", dims)}).");
                     return ApplyOutcome.Applied;
@@ -283,7 +284,7 @@ internal sealed partial class TemplatePatchApplier
         try
         {
             var added = addMethod.Invoke(live, new[] { converted }) as bool?;
-            log.Msg(FormatPrefix(templateTypeName, templateId, op)
+            log.Debug(FormatPrefix(templateTypeName, templateId, op)
                 + (added == false
                     ? $"value {FormatValue(converted)} already present in {collectionType.Name}; no-op."
                     : $"appended {FormatValue(converted)} to {collectionType.Name}."));
@@ -349,7 +350,7 @@ internal sealed partial class TemplatePatchApplier
             try
             {
                 var removed = (bool?)removeMethod.Invoke(collection, new[] { converted });
-                log.Msg(FormatPrefix(templateTypeName, templateId, op)
+                log.Debug(FormatPrefix(templateTypeName, templateId, op)
                     + (removed == true
                         ? $"removed {FormatValue(converted)} from {collectionType.Name}."
                         : $"value {FormatValue(converted)} not present in {collectionType.Name}; no-op."));
@@ -390,7 +391,7 @@ internal sealed partial class TemplatePatchApplier
             return ApplyOutcome.ConversionFailed;
         }
 
-        log.Msg(FormatPrefix(templateTypeName, templateId, op)
+        log.Debug(FormatPrefix(templateTypeName, templateId, op)
             + $"removed element at {removeIndex} from {collectionType.Name}.");
         return ApplyOutcome.Applied;
     }
@@ -439,7 +440,7 @@ internal sealed partial class TemplatePatchApplier
                 return ApplyOutcome.ConversionFailed;
             }
 
-            log.Msg(FormatPrefix(templateTypeName, templateId, op)
+            log.Debug(FormatPrefix(templateTypeName, templateId, op)
                 + $"cleared {collectionType.Name}.");
             return ApplyOutcome.Applied;
         }
@@ -454,7 +455,7 @@ internal sealed partial class TemplatePatchApplier
         {
             if (collection == null || TryGetCollectionShape(memberType, out _, out _))
             {
-                log.Msg(FormatPrefix(templateTypeName, templateId, op)
+                log.Debug(FormatPrefix(templateTypeName, templateId, op)
                     + $"clear on '{terminalName}' ({memberType.FullName}) is a no-op: already empty.");
                 return ApplyOutcome.Applied;
             }
@@ -479,7 +480,7 @@ internal sealed partial class TemplatePatchApplier
                     + $"clear write-back of '{terminalName}' threw: {ex.Message}");
                 return ApplyOutcome.ConversionFailed;
             }
-            log.Msg(FormatPrefix(templateTypeName, templateId, op)
+            log.Debug(FormatPrefix(templateTypeName, templateId, op)
                 + $"reset {memberType.Name} to a default.");
             return ApplyOutcome.Applied;
         }

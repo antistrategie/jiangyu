@@ -29,10 +29,6 @@ internal static class InspectionSink
 
     public static bool IsEnabled() => DevFlags.IsEnabled("inspect");
 
-    // Re-read the dev file on scene load; DevFlags caches it so the per-frame gate
-    // checks are dict lookups, not file I/O.
-    public static void RefreshFlagCache() => DevFlags.Refresh();
-
     // The `inspect` toggle's optional `=N` value is a retention cap: keep at most N
     // dumps per kind. A missing or unparseable / non-positive value keeps all.
     internal static FlagState GetCachedFlag()

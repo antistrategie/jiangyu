@@ -20,6 +20,13 @@ internal sealed class LoaderLog
 
     public void Msg(string message) => _log.Msg(Format(message));
 
+    /// <summary>Verbose per-item detail, emitted only when the `debug` dev flag is set (see LoaderDebug).</summary>
+    public void Debug(string message)
+    {
+        if (LoaderDebug.Enabled)
+            Msg(LoaderDebug.Decorate(message));
+    }
+
     public void Warning(string message) => _log.Warning(Format(message));
 
     public void Error(string message) => _log.Error(Format(message));

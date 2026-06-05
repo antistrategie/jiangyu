@@ -8,7 +8,6 @@ namespace Jiangyu.Sdk;
 // primitives are typed directly.
 
 /// <summary>A story faction's trust value changed.</summary>
-[Hook("FactionTrustChanged")]
 public sealed class FactionTrustChangedContext
 {
     /// <summary>The faction (a game StoryFaction wrapper).</summary>
@@ -22,7 +21,6 @@ public sealed class FactionTrustChangedContext
 }
 
 /// <summary>A story faction's status changed (allied / hostile / neutral, etc.).</summary>
-[Hook("FactionStatusChanged")]
 public sealed class FactionStatusChangedContext
 {
     /// <summary>The faction (a game StoryFaction wrapper).</summary>
@@ -36,7 +34,6 @@ public sealed class FactionStatusChangedContext
 }
 
 /// <summary>A story faction unlocked a ship upgrade.</summary>
-[Hook("FactionUpgradeUnlocked")]
 public sealed class FactionUpgradeUnlockedContext
 {
     /// <summary>The faction (a game StoryFaction wrapper).</summary>
@@ -47,7 +44,6 @@ public sealed class FactionUpgradeUnlockedContext
 }
 
 /// <summary>The count of alive squaddies changed (e.g. one was lost).</summary>
-[Hook("AliveSquaddiesChanged")]
 public sealed class AliveSquaddiesChangedContext
 {
     /// <summary>The number of squaddies still alive.</summary>
@@ -55,7 +51,6 @@ public sealed class AliveSquaddiesChangedContext
 }
 
 /// <summary>A campaign conversation variable changed.</summary>
-[Hook("ConversationVarChanged")]
 public sealed class ConversationVarChangedContext
 {
     /// <summary>The variable name.</summary>
@@ -71,7 +66,6 @@ public sealed class ConversationVarChangedContext
 // --- No game event, published from a Harmony patch on the game method ---
 
 /// <summary>A leader was hired into the roster.</summary>
-[Hook("LeaderHired")]
 public sealed class LeaderHiredContext
 {
     /// <summary>The hired leader (a game BaseUnitLeader wrapper).</summary>
@@ -79,7 +73,6 @@ public sealed class LeaderHiredContext
 }
 
 /// <summary>A leader was dismissed from the roster.</summary>
-[Hook("LeaderDismissed")]
 public sealed class LeaderDismissedContext
 {
     /// <summary>The dismissed leader (a game BaseUnitLeader wrapper).</summary>
@@ -87,7 +80,6 @@ public sealed class LeaderDismissedContext
 }
 
 /// <summary>A leader permanently died.</summary>
-[Hook("LeaderPermadeath")]
 public sealed class LeaderPermadeathContext
 {
     /// <summary>The leader that died (a game BaseUnitLeader wrapper).</summary>
@@ -95,7 +87,6 @@ public sealed class LeaderPermadeathContext
 }
 
 /// <summary>A leader gained a perk (levelled up).</summary>
-[Hook("LeaderPerkAdded")]
 public sealed class LeaderPerkAddedContext
 {
     /// <summary>The leader (a game BaseUnitLeader wrapper).</summary>
@@ -106,7 +97,6 @@ public sealed class LeaderPerkAddedContext
 }
 
 /// <summary>A strategic operation concluded.</summary>
-[Hook("OperationFinished")]
 public sealed class OperationFinishedContext
 {
     /// <summary>The operation that finished (a game Operation wrapper).</summary>
@@ -114,7 +104,6 @@ public sealed class OperationFinishedContext
 }
 
 /// <summary>An item was added to the Black Market.</summary>
-[Hook("BlackMarketItemAdded")]
 public sealed class BlackMarketItemAddedContext
 {
     /// <summary>The item added (a game BaseItem wrapper).</summary>
@@ -122,7 +111,6 @@ public sealed class BlackMarketItemAddedContext
 }
 
 /// <summary>A strategic operation began.</summary>
-[Hook("OperationStarted")]
 public sealed class OperationStartedContext
 {
     /// <summary>The operation that started (a game Operation wrapper).</summary>
@@ -133,7 +121,6 @@ public sealed class OperationStartedContext
 }
 
 /// <summary>The Black Market restocked its inventory. No payload.</summary>
-[Hook("BlackMarketRestocked")]
 public sealed class BlackMarketRestockedContext
 {
 }

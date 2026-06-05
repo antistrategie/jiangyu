@@ -11,7 +11,6 @@ namespace Jiangyu.Sdk;
 // --- Round / mission ---
 
 /// <summary>A new tactical round began.</summary>
-[Hook("RoundStarted")]
 public sealed class RoundStartedContext
 {
     /// <summary>The round number that just started.</summary>
@@ -19,19 +18,16 @@ public sealed class RoundStartedContext
 }
 
 /// <summary>A tactical mission loaded and is ready. No payload.</summary>
-[Hook("MissionStarted")]
 public sealed class MissionStartedContext
 {
 }
 
 /// <summary>A tactical mission concluded. No payload.</summary>
-[Hook("MissionFinished")]
 public sealed class MissionFinishedContext
 {
 }
 
 /// <summary>A mission objective changed state (e.g. completed or failed).</summary>
-[Hook("ObjectiveStateChanged")]
 public sealed class ObjectiveStateChangedContext
 {
     /// <summary>The objective (a game Objective wrapper).</summary>
@@ -45,7 +41,6 @@ public sealed class ObjectiveStateChangedContext
 }
 
 /// <summary>An entity was spawned into the mission.</summary>
-[Hook("EntitySpawned")]
 public sealed class EntitySpawnedContext
 {
     /// <summary>The spawned entity (a game Entity wrapper).</summary>
@@ -55,7 +50,6 @@ public sealed class EntitySpawnedContext
 // --- Turn flow ---
 
 /// <summary>An actor's turn began.</summary>
-[Hook("TurnStarted")]
 public sealed class TurnStartedContext
 {
     /// <summary>The actor whose turn started (a game Actor wrapper).</summary>
@@ -63,7 +57,6 @@ public sealed class TurnStartedContext
 }
 
 /// <summary>An actor's turn concluded.</summary>
-[Hook("TurnEnded")]
 public sealed class TurnEndedContext
 {
     /// <summary>The actor whose turn ended (a game Actor wrapper).</summary>
@@ -71,7 +64,6 @@ public sealed class TurnEndedContext
 }
 
 /// <summary>The active actor changed (turn passed to a new actor).</summary>
-[Hook("ActiveActorChanged")]
 public sealed class ActiveActorChangedContext
 {
     /// <summary>The new active actor (a game Actor wrapper).</summary>
@@ -79,7 +71,6 @@ public sealed class ActiveActorChangedContext
 }
 
 /// <summary>An actor finished acting.</summary>
-[Hook("ActorActed")]
 public sealed class ActorActedContext
 {
     /// <summary>The actor that acted (a game Actor wrapper).</summary>
@@ -87,13 +78,11 @@ public sealed class ActorActedContext
 }
 
 /// <summary>The player gained control for the turn. No payload.</summary>
-[Hook("PlayerTurn")]
 public sealed class PlayerTurnContext
 {
 }
 
 /// <summary>An AI faction gained control for the turn.</summary>
-[Hook("AITurn")]
 public sealed class AITurnContext
 {
     /// <summary>The faction identifier taking the turn.</summary>
@@ -103,7 +92,6 @@ public sealed class AITurnContext
 // --- Combat ---
 
 /// <summary>An entity died.</summary>
-[Hook("EntityDied")]
 public sealed class EntityDiedContext
 {
     /// <summary>The entity that died (a game Entity wrapper).</summary>
@@ -114,7 +102,6 @@ public sealed class EntityDiedContext
 }
 
 /// <summary>An entity received damage.</summary>
-[Hook("DamageReceived")]
 public sealed class DamageReceivedContext
 {
     /// <summary>The entity that took the damage (a game Entity wrapper).</summary>
@@ -131,7 +118,6 @@ public sealed class DamageReceivedContext
 }
 
 /// <summary>An attack missed its target.</summary>
-[Hook("AttackMissed")]
 public sealed class AttackMissedContext
 {
     /// <summary>The intended target (a game Entity wrapper).</summary>
@@ -145,7 +131,6 @@ public sealed class AttackMissedContext
 }
 
 /// <summary>A tile-targeted attack began.</summary>
-[Hook("AttackTileStarted")]
 public sealed class AttackTileStartedContext
 {
     /// <summary>The attacker (a game Actor wrapper).</summary>
@@ -162,7 +147,6 @@ public sealed class AttackTileStartedContext
 }
 
 /// <summary>A sub-element of an entity was destroyed (e.g. a vehicle part).</summary>
-[Hook("ElementDied")]
 public sealed class ElementDiedContext
 {
     /// <summary>The owning entity (a game Entity wrapper).</summary>
@@ -179,7 +163,6 @@ public sealed class ElementDiedContext
 }
 
 /// <summary>A sub-element malfunctioned.</summary>
-[Hook("ElementMalfunction")]
 public sealed class ElementMalfunctionContext
 {
     /// <summary>The element (a game Element wrapper).</summary>
@@ -192,7 +175,6 @@ public sealed class ElementMalfunctionContext
 // --- Suppression / morale / bleeding ---
 
 /// <summary>An actor became suppressed.</summary>
-[Hook("Suppressed")]
 public sealed class SuppressedContext
 {
     /// <summary>The suppressed actor (a game Actor wrapper).</summary>
@@ -200,7 +182,6 @@ public sealed class SuppressedContext
 }
 
 /// <summary>Suppression was applied to an actor with a specific amount.</summary>
-[Hook("SuppressionApplied")]
 public sealed class SuppressionAppliedContext
 {
     /// <summary>The actor (a game Actor wrapper).</summary>
@@ -214,7 +195,6 @@ public sealed class SuppressionAppliedContext
 }
 
 /// <summary>An actor's morale state changed.</summary>
-[Hook("MoraleStateChanged")]
 public sealed class MoraleStateChangedContext
 {
     /// <summary>The actor (a game Actor wrapper).</summary>
@@ -225,7 +205,6 @@ public sealed class MoraleStateChangedContext
 }
 
 /// <summary>A leader entered the bleeding-out state.</summary>
-[Hook("BleedingOut")]
 public sealed class BleedingOutContext
 {
     /// <summary>The leader (a game BaseUnitLeader wrapper).</summary>
@@ -236,7 +215,6 @@ public sealed class BleedingOutContext
 }
 
 /// <summary>A bleeding leader was stabilised.</summary>
-[Hook("Stabilized")]
 public sealed class StabilizedContext
 {
     /// <summary>The stabilised leader (a game BaseUnitLeader wrapper).</summary>
@@ -249,7 +227,6 @@ public sealed class StabilizedContext
 // --- Actor / entity state ---
 
 /// <summary>An actor's state changed (idle / moving / dead, etc.).</summary>
-[Hook("ActorStateChanged")]
 public sealed class ActorStateChangedContext
 {
     /// <summary>The actor (a game Actor wrapper).</summary>
@@ -263,7 +240,6 @@ public sealed class ActorStateChangedContext
 }
 
 /// <summary>An entity's hitpoints changed.</summary>
-[Hook("HitpointsChanged")]
 public sealed class HitpointsChangedContext
 {
     /// <summary>The entity (a game Entity wrapper).</summary>
@@ -277,7 +253,6 @@ public sealed class HitpointsChangedContext
 }
 
 /// <summary>An entity's armour changed.</summary>
-[Hook("ArmorChanged")]
 public sealed class ArmorChangedContext
 {
     /// <summary>The entity (a game Entity wrapper).</summary>
@@ -296,7 +271,6 @@ public sealed class ArmorChangedContext
 // --- Visibility ---
 
 /// <summary>A hidden entity was discovered.</summary>
-[Hook("Discovered")]
 public sealed class DiscoveredContext
 {
     /// <summary>The discovered entity (a game Entity wrapper).</summary>
@@ -307,7 +281,6 @@ public sealed class DiscoveredContext
 }
 
 /// <summary>An actor became visible to the player.</summary>
-[Hook("VisibleToPlayer")]
 public sealed class VisibleToPlayerContext
 {
     /// <summary>The actor (a game Actor wrapper).</summary>
@@ -315,7 +288,6 @@ public sealed class VisibleToPlayerContext
 }
 
 /// <summary>An actor became hidden from the player.</summary>
-[Hook("HiddenToPlayer")]
 public sealed class HiddenToPlayerContext
 {
     /// <summary>The actor (a game Actor wrapper).</summary>
@@ -325,7 +297,6 @@ public sealed class HiddenToPlayerContext
 // --- Movement ---
 
 /// <summary>An actor started moving.</summary>
-[Hook("MovementStarted")]
 public sealed class MovementStartedContext
 {
     /// <summary>The moving actor (a game Actor wrapper).</summary>
@@ -345,7 +316,6 @@ public sealed class MovementStartedContext
 }
 
 /// <summary>An actor finished moving.</summary>
-[Hook("MovementFinished")]
 public sealed class MovementFinishedContext
 {
     /// <summary>The actor (a game Actor wrapper).</summary>
@@ -358,7 +328,6 @@ public sealed class MovementFinishedContext
 // --- Skills ---
 
 /// <summary>An actor used a skill.</summary>
-[Hook("SkillUsed")]
 public sealed class SkillUsedContext
 {
     /// <summary>The actor that used the skill (a game Actor wrapper).</summary>
@@ -372,7 +341,6 @@ public sealed class SkillUsedContext
 }
 
 /// <summary>A skill finished executing.</summary>
-[Hook("SkillCompleted")]
 public sealed class SkillCompletedContext
 {
     /// <summary>The skill (a game Skill wrapper).</summary>
@@ -380,7 +348,6 @@ public sealed class SkillCompletedContext
 }
 
 /// <summary>A skill was granted to an actor.</summary>
-[Hook("SkillAdded")]
 public sealed class SkillAddedContext
 {
     /// <summary>The actor that received the skill (a game Actor wrapper).</summary>
@@ -399,7 +366,6 @@ public sealed class SkillAddedContext
 // --- Offmap abilities ---
 
 /// <summary>An offmap ability was used.</summary>
-[Hook("OffmapAbilityUsed")]
 public sealed class OffmapAbilityUsedContext
 {
     /// <summary>The ability template (a game OffmapAbilityTemplate wrapper).</summary>
@@ -410,7 +376,6 @@ public sealed class OffmapAbilityUsedContext
 }
 
 /// <summary>An offmap ability was cancelled.</summary>
-[Hook("OffmapAbilityCanceled")]
 public sealed class OffmapAbilityCanceledContext
 {
     /// <summary>The ability template (a game OffmapAbilityTemplate wrapper).</summary>

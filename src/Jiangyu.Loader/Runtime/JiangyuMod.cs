@@ -1,10 +1,8 @@
-using System.Collections;
 using System.Reflection;
 using Jiangyu.Loader.Bridge;
 using Jiangyu.Loader.Diagnostics;
 using Jiangyu.Loader.Diagnostics.InjectionGate;
 using Jiangyu.Loader.Diagnostics.UiProbe;
-using Jiangyu.Loader.Diagnostics.VerbProbe;
 using Jiangyu.Loader.Logging;
 using Jiangyu.Loader.Sdk;
 using Jiangyu.Loader.Sdk.Hooks;
@@ -19,64 +17,27 @@ using MelonLoader.Utils;
 
 namespace Jiangyu.Loader.Runtime;
 
+// MelonLoader entry point. Owns the per-scene frame clock and the loader's subsystems,
+// and forwards the MelonLoader lifecycle (init, scene load, update) to each. The
+// per-scene and per-frame work lives in the drivers (replacement scheduling, UI
+// re-injection, dev inspection); this class wires and sequences them.
 public class JiangyuMod : MelonMod
 {
-    // Post-scene-load poll schedule (frame offsets from OnSceneWasLoaded). Dense
-    // every-5-frames window up to t=100 covers the initial load burst with at
-    // most ~83ms of visible popin on lazy-loaded textures. Exponential tail
-    // (150..600) catches late stragglers. After t=600 the steady-state spawn
-    // monitor below takes over so unit spawns arriving late (player-initiated
-    // deployment, reinforcement waves) also get their mesh/prefab swaps.
-    private static readonly int[] PostSceneLoadPollFrames =
-    {
-        5, 10, 15, 20, 25, 30, 35, 40, 45, 50,
-        55, 60, 65, 70, 75, 80, 85, 90, 95, 100,
-        150, 250, 400, 600,
-    };
-
-    // Steady-state spawn monitor: after the scheduled scene-load polls finish
-    // we keep sweeping at a low cadence so newly-spawned SMRs/prefabs (e.g.
-    // player-deployed soldiers) still receive their replacement. Mesh and
-    // prefab sweeps are cheap (O(active SMRs)). Texture mutation is NOT run in
-    // this monitor — textures don't appear on user-spawn events, only at scene
-    // or asset-stream time which the scheduled window already covers.
-    // 10 frames ≈ 170ms at 60fps — fast enough that the default mesh is barely
-    // visible before the swap lands.
-    private const int SpawnMonitorIntervalFrames = 10;
-
-    private static readonly int[] DelayedInspectFrames = { 60, 180, 600 };
-    private static readonly int[] TemplatesInspectFrames = { 180, 600 };
-    private static readonly HashSet<string> TemplatesInspectScenes = new(StringComparer.Ordinal)
-    {
-        "Strategy",
-        "MissionPreparation",
-        "Tactical",
-    };
-    private const int PeriodicInspectIntervalFrames = 300; // ~5s; dumps continue indefinitely while flag set
-
-    // After the active screen changes, re-apply UI injections each frame for this
-    // long so an injection lands once the screen's content (e.g. the unit slots)
-    // finishes building, then goes idle. Re-apply is idempotent, so a window that
-    // outlasts the build costs nothing once the injection is in place.
-    private const int UiSettleWindowFrames = 60;
-
     private readonly ReplacementCoordinator _replacementCoordinator = new();
+    private readonly ReplacementScheduler _replacement;
+    private readonly UiInjectionDriver _ui = new();
+    private readonly InspectionDriver _inspection = new();
     private int _frameInScene;
-    private int _frameOfLastPeriodicDump;
-    private int _frameOfLastSpawnMonitor;
     private string _currentScene;
-    private readonly HashSet<int> _inspectedFrames = new();
-    private readonly HashSet<int> _templatesInspectAttempts = new();
-    private bool _templatesDumpSucceededThisScene;
-    private bool _gateLiveDone;
-    private bool _verbsLiveDone;
-    private IntPtr _lastUiScreenPtr;
-    private int _uiSettleFrames;
     private BridgeServer _bridge;
     private ModHost _modHost;
     private InProcessHookBus _hookBus;
     private TacticalHookPublisher _tacticalHooks;
     private StrategyHookPublisher _strategyHooks;
+
+    // A field initialiser cannot reference _replacementCoordinator, so wire the scheduler
+    // here. MelonLoader constructs the mod through this parameterless constructor.
+    public JiangyuMod() => _replacement = new ReplacementScheduler(_replacementCoordinator);
 
     public override void OnInitializeMelon()
     {
@@ -140,14 +101,12 @@ public class JiangyuMod : MelonMod
             {
                 case Jiangyu.Sdk.LogLevel.Error: LoggerInstance.Error(message); break;
                 case Jiangyu.Sdk.LogLevel.Warn: LoggerInstance.Warning(message); break;
-                case Jiangyu.Sdk.LogLevel.Debug: LoggerInstance.Msg($"[debug] {message}"); break;
+                case Jiangyu.Sdk.LogLevel.Debug: LoggerInstance.Msg(LoaderDebug.Decorate(message)); break;
                 default: LoggerInstance.Msg(message); break;
             }
         });
 
-        Jiangyu.Sdk.Log.MinLevel = DevFlags.IsEnabled("debug")
-            ? Jiangyu.Sdk.LogLevel.Debug
-            : Jiangyu.Sdk.LogLevel.Info;
+        LoaderDebug.SyncSdkLog();
     }
 
     private void InitialiseCodeMods(string modsDir)
@@ -261,65 +220,34 @@ public class JiangyuMod : MelonMod
     {
         _currentScene = sceneName;
         _frameInScene = 0;
-        _frameOfLastPeriodicDump = 0;
-        _frameOfLastSpawnMonitor = 0;
-        _inspectedFrames.Clear();
-        _templatesInspectAttempts.Clear();
-        _templatesDumpSucceededThisScene = false;
-        _gateLiveDone = false;
-        _verbsLiveDone = false;
-        _lastUiScreenPtr = IntPtr.Zero;
-        _uiSettleFrames = 0;
-        UiTreeProbe.Reset();
+
+        // Re-read the dev flags for the new scene (DevFlags caches the file, so per-frame
+        // gate checks stay dict lookups) and re-sync the SDK logger's level to the debug
+        // gate, so a mid-session toggle takes effect here for both loader and SDK logging.
+        DevFlags.Refresh();
+        LoaderDebug.SyncSdkLog();
+
+        _replacement.Reset();
+        _inspection.OnSceneLoaded();
+        _ui.OnSceneLoaded();
         _tacticalHooks?.Reset();
-        _replacementCoordinator.OnSceneUnloaded();
-        InspectionSink.RefreshFlagCache();
         UpdateBridge();
 
         LoggerInstance.Msg($"Scene loaded: {sceneName} ({buildIndex})");
 
         _modHost?.SceneLoaded(buildIndex, sceneName);
+        _inspection.DumpSceneLoad(buildIndex, sceneName, LoggerInstance);
 
-        if (InspectionSink.IsEnabled())
-        {
-            SceneIdentityInspector.Dump(sceneName + "-t0", buildIndex, LoggerInstance);
-        }
-
-        TryApply();
-        MelonCoroutines.Start(FollowUpPoll());
+        _replacement.Apply(LoggerInstance);
+        MelonCoroutines.Start(_replacement.FollowUpPoll(LoggerInstance));
     }
 
     public override void OnUpdate()
     {
         _frameInScene++;
 
-        // Injection gate live phase: retry every ~120 frames in Tactical until an
-        // active actor is present, then run once. Gated by the `gate` dev toggle.
-        if (!_gateLiveDone && _currentScene == "Tactical"
-            && _frameInScene >= 300 && _frameInScene % 300 == 0
-            && InjectionGateInspector.IsEnabled())
-        {
-            _gateLiveDone = InjectionGateInspector.RunLiveIfReady($"Tactical-t{_frameInScene}f", LoggerInstance);
-        }
-
-        // Verb-surface live spike: same cadence and active-actor gate as the
-        // injection gate, latched once per scene. Gated by the `verbs` dev toggle.
-        if (!_verbsLiveDone && _currentScene == "Tactical"
-            && _frameInScene >= 300 && _frameInScene % 300 == 0
-            && VerbSurfaceProbe.IsEnabled())
-        {
-            _verbsLiveDone = VerbSurfaceProbe.RunLiveIfReady($"Tactical-t{_frameInScene}f", LoggerInstance);
-        }
-
-        // UI-tree probe: dump the live screen/dialog VisualElement tree on change so
-        // a modder can find injection attach points. Not latched (navigation
-        // captures each screen). Any scene with a UIManager. Gated by the `ui` toggle.
-        if (_frameInScene >= 120 && _frameInScene % 120 == 0 && UiTreeProbe.IsEnabled())
-        {
-            UiTreeProbe.Tick($"{_currentScene}-t{_frameInScene}f", LoggerInstance);
-        }
-
-        DriveUiInjections();
+        _inspection.Tick(_frameInScene, _currentScene, LoggerInstance);
+        _ui.Drive();
 
         // Pick up a mid-session bridge toggle (Studio writing the flag) within ~2s,
         // rather than only on scene load.
@@ -327,52 +255,7 @@ public class JiangyuMod : MelonMod
             UpdateBridge();
         _bridge?.Pump();
 
-        if (InspectionSink.IsEnabled() && !string.IsNullOrEmpty(_currentScene))
-        {
-            foreach (var markFrame in DelayedInspectFrames)
-            {
-                if (_frameInScene == markFrame && _inspectedFrames.Add(markFrame))
-                {
-                    SceneIdentityInspector.Dump($"{_currentScene}-t{markFrame}f", 0, LoggerInstance);
-                }
-            }
-
-            if (!_templatesDumpSucceededThisScene &&
-                TemplatesInspectScenes.Contains(_currentScene))
-            {
-                foreach (var markFrame in TemplatesInspectFrames)
-                {
-                    if (_frameInScene == markFrame && _templatesInspectAttempts.Add(markFrame))
-                    {
-                        _templatesDumpSucceededThisScene =
-                            TemplateStateInspector.TryDumpTemplatesFromLoader($"{_currentScene}-t{markFrame}f", LoggerInstance);
-                    }
-                }
-            }
-
-            if (_frameInScene >= 600 &&
-                _frameInScene - _frameOfLastPeriodicDump >= PeriodicInspectIntervalFrames)
-            {
-                _frameOfLastPeriodicDump = _frameInScene;
-                SceneIdentityInspector.Dump($"{_currentScene}-t{_frameInScene}f", 0, LoggerInstance);
-            }
-        }
-
-        // Steady-state spawn monitor. After the scheduled scene-load polls
-        // finish (t=600), sweep for newly-spawned SMRs every
-        // SpawnMonitorIntervalFrames so player-deployed units / reinforcement
-        // waves get their mesh/prefab swaps. Only runs when at least one mesh
-        // or prefab replacement is registered — texture-only mods have no
-        // target surface here and the monitor would be pure overhead.
-        if (_frameInScene >= 600 &&
-            _replacementCoordinator.HasMeshOrPrefabReplacements &&
-            _frameInScene - _frameOfLastSpawnMonitor >= SpawnMonitorIntervalFrames)
-        {
-            _frameOfLastSpawnMonitor = _frameInScene;
-            TryApply(includeTextures: false);
-        }
-
-        _replacementCoordinator.UpdateDrivenReplacements(LoggerInstance);
+        _replacement.Tick(_frameInScene, LoggerInstance);
 
         if (_currentScene == "Tactical")
             _tacticalHooks?.EnsureAttached();
@@ -380,64 +263,5 @@ public class JiangyuMod : MelonMod
             _strategyHooks?.EnsureAttached();
 
         _modHost?.Update();
-    }
-
-    private IEnumerator FollowUpPoll()
-    {
-        var frame = 0;
-        var scheduleIndex = 0;
-        while (scheduleIndex < PostSceneLoadPollFrames.Length)
-        {
-            yield return null;
-            frame++;
-            if (frame >= PostSceneLoadPollFrames[scheduleIndex])
-            {
-                TryApply();
-                scheduleIndex++;
-            }
-        }
-    }
-
-    // Re-apply registered mod-UI injections when the active screen changes, so an
-    // injected element re-lands after the game tears down and rebuilds a screen.
-    // Skipped entirely until a mod registers an injection.
-    private void DriveUiInjections()
-    {
-        if (!Jiangyu.Game.UI.HasInjections)
-            return;
-        var ptr = ActiveScreenPointer();
-        if (ptr != _lastUiScreenPtr)
-        {
-            _lastUiScreenPtr = ptr;
-            _uiSettleFrames = UiSettleWindowFrames;
-        }
-        if (_uiSettleFrames > 0)
-        {
-            _uiSettleFrames--;
-            Jiangyu.Game.UI.ReapplyAll();
-        }
-    }
-
-    private static IntPtr ActiveScreenPointer()
-    {
-        try
-        {
-            var manager = Il2CppMenace.UI.UIManager.Get();
-            var screen = manager != null ? manager.GetActiveScreen() : null;
-            return screen != null ? screen.Pointer : IntPtr.Zero;
-        }
-        catch { return IntPtr.Zero; }
-    }
-
-    private void TryApply(bool includeTextures = true)
-    {
-        try
-        {
-            _replacementCoordinator.ApplyReplacements(LoggerInstance, includeTextures);
-        }
-        catch (Exception ex)
-        {
-            LoggerInstance.Error($"Apply failed: {ex}");
-        }
     }
 }

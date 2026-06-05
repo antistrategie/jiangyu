@@ -1,6 +1,7 @@
 using Jiangyu.Shared.Bundles;
 using MelonLoader;
 using UnityEngine;
+using Jiangyu.Loader.Logging;
 
 namespace Jiangyu.Loader.Replacements;
 
@@ -91,7 +92,7 @@ internal sealed class MaterialReplacementService
         if (TextureMutationHelpers.MutateInPlace(replacement, destination, log))
         {
             _mutatedInstanceIds.Add(instanceId);
-            log.Msg(
+            log.Debug(
                 $"  Bound replacement '{replacementTextureName}' -> '{destination.name}' on material '{materialName ?? sourceMaterial.name}' property '{propertyName}' ({destination.width}x{destination.height}, {destination.format})");
         }
         else

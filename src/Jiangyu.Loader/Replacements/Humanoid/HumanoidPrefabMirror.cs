@@ -1,6 +1,7 @@
 using Il2CppInterop.Runtime;
 using MelonLoader;
 using UnityEngine;
+using Jiangyu.Loader.Logging;
 using Il2CppMenace.Tactical;
 using MenaceFootprints = Il2CppMenace.Tactical.Footprints;
 using MenaceRagdoll = Il2CppMenace.Tactical.Ragdoll;
@@ -133,7 +134,7 @@ internal static class HumanoidPrefabMirror
         if (sentinel != null)
             sentinel.gameObject.name = MirroredSentinelPrefix + referenceName;
 
-        log.Msg(
+        log.Debug(
             $"  Humanoid mirror on '{addition.name}': configured from reference '{referenceName}'.");
         return true;
     }

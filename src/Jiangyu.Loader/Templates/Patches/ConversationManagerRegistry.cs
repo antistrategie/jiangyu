@@ -2,6 +2,7 @@ using System.Reflection;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using MelonLoader;
+using Jiangyu.Loader.Logging;
 
 namespace Jiangyu.Loader.Templates;
 
@@ -78,7 +79,7 @@ internal static class ConversationManagerRegistry
         }
 
         var managerTypeName = manager.GetType().FullName ?? "<unknown>";
-        _log?.Msg($"  Conversation manager registered: {managerTypeName} (replaying {clonesSnapshot.Length} known clone(s)).");
+        _log?.Debug($"  Conversation manager registered: {managerTypeName} (replaying {clonesSnapshot.Length} known clone(s)).");
         BatchInjectClonesIntoManager(managerCache, clonesSnapshot);
     }
 
@@ -127,7 +128,7 @@ internal static class ConversationManagerRegistry
         foreach (var prepared in snapshot)
             Refresh(prepared);
 
-        _log?.Msg($"  Conversation clone post-patch refresh: {snapshot.Length} clone(s) re-deserialised against patched strings.");
+        _log?.Debug($"  Conversation clone post-patch refresh: {snapshot.Length} clone(s) re-deserialised against patched strings.");
     }
 
     // -----------------------------------------------------------------
@@ -142,7 +143,7 @@ internal static class ConversationManagerRegistry
         Refresh(prepared);
         if (!prepared.Active)
         {
-            _log?.Msg("  Conversation clone injection: clone is Active=False; skipped (matches vanilla bucket population).");
+            _log?.Debug("  Conversation clone injection: clone is Active=False; skipped (matches vanilla bucket population).");
             return;
         }
 
@@ -155,7 +156,7 @@ internal static class ConversationManagerRegistry
 
         var masterAdded = TryAppendToMasterArraySingle(managerCache, prepared.TypedWrapper);
 
-        _log?.Msg(
+        _log?.Debug(
             $"  Conversation clone injection: into {managerCache.ManagerType.FullName} "
             + $"(ConversationType={prepared.ConversationType}, "
             + $"{bucketsAdded}/{prepared.Triggers.Length} bucket(s) updated, "
@@ -182,7 +183,7 @@ internal static class ConversationManagerRegistry
         }
 
         if (inactive > 0)
-            _log?.Msg($"  Conversation clone injection: {inactive} Active=False clone(s) skipped (match vanilla bucket population).");
+            _log?.Debug($"  Conversation clone injection: {inactive} Active=False clone(s) skipped (match vanilla bucket population).");
 
         // Per-trigger bucket appends one-at-a-time (each is just a List.Add).
         var bucketAppends = 0;
@@ -201,7 +202,7 @@ internal static class ConversationManagerRegistry
 
         if (matching.Count > 0)
         {
-            _log?.Msg(
+            _log?.Debug(
                 $"  Conversation clone injection: {matching.Count} clone(s) injected "
                 + $"into {managerCache.ManagerType.FullName} "
                 + $"({bucketAppends} bucket append(s), masterArrayAdded={masterAddedCount}).");

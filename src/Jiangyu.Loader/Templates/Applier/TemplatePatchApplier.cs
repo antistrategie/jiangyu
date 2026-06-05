@@ -3,6 +3,7 @@ using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using Jiangyu.Shared.Templates;
 using MelonLoader;
+using Jiangyu.Loader.Logging;
 
 namespace Jiangyu.Loader.Templates;
 
@@ -257,7 +258,7 @@ internal sealed partial class TemplatePatchApplier
         }
 
         if (applied > 0)
-            log.Msg($"Template patch 'SoundBank:{bankId}': auto-extended busIndices by {applied} (sounds.Count={soundsCount}, prior busIndices.Length={busCount}).");
+            log.Debug($"Template patch 'SoundBank:{bankId}': auto-extended busIndices by {applied} (sounds.Count={soundsCount}, prior busIndices.Length={busCount}).");
     }
 
     // SoundBank-specific post-apply fixup. Iterates bank.sounds[]; for any
@@ -330,7 +331,7 @@ internal sealed partial class TemplatePatchApplier
             try
             {
                 addSound.Invoke(bank, new[] { sound });
-                log.Msg($"Template patch 'SoundBank:{bankId}': wired Sound id={soundId} (index {i}) via AddSound.");
+                log.Debug($"Template patch 'SoundBank:{bankId}': wired Sound id={soundId} (index {i}) via AddSound.");
             }
             catch (Exception ex)
             {

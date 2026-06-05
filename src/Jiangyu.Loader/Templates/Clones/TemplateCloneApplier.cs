@@ -198,7 +198,7 @@ internal sealed class TemplateCloneApplier
 
                 RegisterCloneIntoSlot(resolvedType, innerMap, resolvedType, directive.CloneId, clone, log);
 
-                log.Msg(isCreate
+                log.Debug(isCreate
                     ? $"Template create registered: {templateTypeName}:{directive.CloneId}."
                     : $"Template clone registered: {templateTypeName}:{directive.SourceId} -> {directive.CloneId}.");
                 applied++;
@@ -318,7 +318,7 @@ internal sealed class TemplateCloneApplier
                 }
             }
 
-            log.Msg(isCreate
+            log.Debug(isCreate
                 ? $"Template create registered: {templateTypeName}:{directive.CloneId}."
                 : $"Template clone registered: {templateTypeName}:{directive.SourceId} -> {directive.CloneId}.");
             applied++;
@@ -405,7 +405,10 @@ internal sealed class TemplateCloneApplier
         try
         {
             var ok = (bool)register.Invoke(null, new[] { typedBank });
-            log.Msg($"  SoundBank registration: Stem.SoundManager.RegisterBank returned {ok}.");
+            if (ok)
+                log.Debug("  SoundBank registration: Stem.SoundManager.RegisterBank returned true.");
+            else
+                log.Warning("  SoundBank registration: Stem.SoundManager.RegisterBank returned false; the SoundBank clone was not registered.");
         }
         catch (Exception ex)
         {
@@ -431,7 +434,7 @@ internal sealed class TemplateCloneApplier
         try
         {
             prop.SetValue(null, null);
-            log.Msg("  Conversation cache invalidated: next GetAll() will rebuild from live objects.");
+            log.Debug("  Conversation cache invalidated: next GetAll() will rebuild from live objects.");
         }
         catch (Exception ex)
         {
@@ -764,7 +767,7 @@ internal sealed class TemplateCloneApplier
     {
         if (clone == null)
         {
-            log.Msg($"Template clone '{cloneId}': deep-copy skipped, clone is null.");
+            log.Debug($"Template clone '{cloneId}': deep-copy skipped, clone is null.");
             return;
         }
 
@@ -843,7 +846,7 @@ internal sealed class TemplateCloneApplier
 
         if (deepCopiedCount > 0)
         {
-            log.Msg(
+            log.Debug(
                 $"Template clone '{cloneId}': deep-copied {deepCopiedCount} owned-PPtr element(s) "
                 + $"across {listsTouched} list field(s) so clone-side patches don't leak into the source.");
         }

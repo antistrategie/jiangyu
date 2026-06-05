@@ -133,7 +133,7 @@ internal sealed class BundleReplacementCatalog
     private void LoadBundle(DiscoveredMod mod, string bundlePath, LoaderLog log)
     {
         var ownerLabel = $"{mod.Name}/{Path.GetFileName(bundlePath)}";
-        log.Msg($"Loading bundle: {Path.GetFileName(bundlePath)}");
+        log.Debug($"Loading bundle: {Path.GetFileName(bundlePath)}");
 
         // Parse the mod's jiangyu.json once and reuse the JsonElement across
         // the three readers. LoadBundle runs per bundle, but the manifest is
@@ -272,7 +272,7 @@ internal sealed class BundleReplacementCatalog
             var renderers = instance.GetComponentsInChildren<SkinnedMeshRenderer>(true);
             if (renderers == null || renderers.Length == 0)
             {
-                log.Msg($"  {assetName}: no SkinnedMeshRenderers found, skipping");
+                log.Debug($"  {assetName}: no SkinnedMeshRenderers found, skipping");
                 return;
             }
 
@@ -311,7 +311,7 @@ internal sealed class BundleReplacementCatalog
                     ownerLabel,
                     log);
                 mappedTargetKeys.Add(targetKey);
-                log.Msg($"  Registered: {bundleMeshName} -> {targetKey} ({smr.bones.Length} bones, materialBindings={materialBindings.Count})");
+                log.Debug($"  Registered: {bundleMeshName} -> {targetKey} ({smr.bones.Length} bones, materialBindings={materialBindings.Count})");
             }
 
             if (mappedTargetKeys.Count == 0)
@@ -341,7 +341,7 @@ internal sealed class BundleReplacementCatalog
             instance.SetActive(false);
             _pinned.Add(instance);
             keepTemplateInstance = true;
-            log.Msg($"  Registered prefab: {prefab.name} -> {mappedTargetKeys.Count} target renderer path(s) ({prefabBoneNames.Length} bones)");
+            log.Debug($"  Registered prefab: {prefab.name} -> {mappedTargetKeys.Count} target renderer path(s) ({prefabBoneNames.Length} bones)");
         }
         finally
         {
@@ -358,7 +358,7 @@ internal sealed class BundleReplacementCatalog
         };
         RegisterTextureOverride(loadedTexture.name, loadedTexture, ownerLabel, log);
         _pinned.Add(loadedTexture);
-        log.Msg($"  Registered texture asset: {loadedTexture.name} ({loadedTexture.width}x{loadedTexture.height})");
+        log.Debug($"  Registered texture asset: {loadedTexture.name} ({loadedTexture.width}x{loadedTexture.height})");
     }
 
     private void RegisterAudioAsset(string ownerLabel, IntPtr audioClipPtr, LoaderLog log)
@@ -369,7 +369,7 @@ internal sealed class BundleReplacementCatalog
         };
         RegisterAudioOverride(loadedClip.name, loadedClip, ownerLabel, log);
         _pinned.Add(loadedClip);
-        log.Msg($"  Registered audio asset: {loadedClip.name}");
+        log.Debug($"  Registered audio asset: {loadedClip.name}");
     }
 
     private void RegisterSpriteAsset(string ownerLabel, IntPtr spritePtr, LoaderLog log)
@@ -380,7 +380,7 @@ internal sealed class BundleReplacementCatalog
         };
         RegisterSpriteOverride(loadedSprite.name, loadedSprite, ownerLabel, log);
         _pinned.Add(loadedSprite);
-        log.Msg($"  Registered sprite asset: {loadedSprite.name}");
+        log.Debug($"  Registered sprite asset: {loadedSprite.name}");
 
         // JIANGYU-CONTRACT: Sprite replacement lands via in-place mutation of
         // the backing Texture2D. Registering the bundle sprite's backing texture
@@ -472,7 +472,7 @@ internal sealed class BundleReplacementCatalog
         var shaderSuffix = unresolved > 0
             ? $"; rebound {rebinds} shader(s); {unresolved} unresolved (will render magenta)"
             : $"; rebound {rebinds} shader(s)";
-        log.Msg($"  Registered addition prefab: {key} (object name: {prefab.name}{shaderSuffix}{soldierScripts})");
+        log.Debug($"  Registered addition prefab: {key} (object name: {prefab.name}{shaderSuffix}{soldierScripts})");
     }
 
     private void RegisterMeshAsset(
@@ -506,7 +506,7 @@ internal sealed class BundleReplacementCatalog
                 metadataForMesh.TargetEntityName),
             ownerLabel,
             log);
-        log.Msg($"  Registered mesh asset: {loadedMesh.name} -> {targetKey} ({metadataForMesh.BoneNames.Length} bones, materialBindings={metadataForMesh.Materials?.Count ?? 0})");
+        log.Debug($"  Registered mesh asset: {loadedMesh.name} -> {targetKey} ({metadataForMesh.BoneNames.Length} bones, materialBindings={metadataForMesh.Materials?.Count ?? 0})");
     }
 
     private void RegisterMeshOverride(string targetName, ReplacementMesh mesh, string ownerLabel, LoaderLog log)

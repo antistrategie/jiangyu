@@ -1,5 +1,6 @@
 using MelonLoader;
 using UnityEngine;
+using Jiangyu.Loader.Logging;
 
 namespace Jiangyu.Loader.Replacements;
 
@@ -48,7 +49,7 @@ internal sealed class MeshPreparationService
             {
                 prepared.Mesh = runtimeMesh;
                 prepared.Bounds = runtimeMesh.bounds;
-                log.Msg($"  Prepared runtime mesh clone: {runtimeMesh.name} from {originalMesh.name}");
+                log.Debug($"  Prepared runtime mesh clone: {runtimeMesh.name} from {originalMesh.name}");
             }
         }
 

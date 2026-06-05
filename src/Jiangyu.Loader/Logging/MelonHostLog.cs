@@ -9,7 +9,9 @@ internal sealed class MelonHostLog : IModHostLog
 
     public MelonHostLog(MelonLogger.Instance log) => _log = log;
 
-    public void Debug(string message) => _log.Msg($"[debug] {message}");
+    // Verbose detail, emitted only when the `debug` dev flag is set (see LoaderDebug), so
+    // it stays out of a normal play log.
+    public void Debug(string message) => LoaderDebug.Write(_log, message);
 
     public void Info(string message) => _log.Msg(message);
 

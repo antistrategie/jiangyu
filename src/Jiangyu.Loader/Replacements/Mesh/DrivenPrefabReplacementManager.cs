@@ -1,5 +1,6 @@
 using MelonLoader;
 using UnityEngine;
+using Jiangyu.Loader.Logging;
 
 namespace Jiangyu.Loader.Replacements;
 
@@ -109,9 +110,9 @@ internal sealed class DrivenPrefabReplacementManager
 
         _drivenReplacements[entityRoot.GetInstanceID()] = driven;
 
-        log.Msg($"  [DRIVE] attached prefab '{replacementPrefab.PrefabName}' to '{entityRoot.name}' hiddenRenderers={hiddenRenderers.Length} mappedBones={pairs.Count}/{replacementMap.Count}");
-        log.Msg($"  [DRIVE] source skeleton root='{sourceSkeletonRoot.name}' pos={SkeletonTraversal.FormatVector3(sourceSkeletonRoot.position)} scale={SkeletonTraversal.FormatVector3(sourceSkeletonRoot.lossyScale)}");
-        log.Msg($"  [DRIVE] replacement skeleton root='{replacementSkeletonRoot.name}' pos={SkeletonTraversal.FormatVector3(replacementSkeletonRoot.position)} scale={SkeletonTraversal.FormatVector3(replacementSkeletonRoot.lossyScale)}");
+        log.Debug($"  [DRIVE] attached prefab '{replacementPrefab.PrefabName}' to '{entityRoot.name}' hiddenRenderers={hiddenRenderers.Length} mappedBones={pairs.Count}/{replacementMap.Count}");
+        log.Debug($"  [DRIVE] source skeleton root='{sourceSkeletonRoot.name}' pos={SkeletonTraversal.FormatVector3(sourceSkeletonRoot.position)} scale={SkeletonTraversal.FormatVector3(sourceSkeletonRoot.lossyScale)}");
+        log.Debug($"  [DRIVE] replacement skeleton root='{replacementSkeletonRoot.name}' pos={SkeletonTraversal.FormatVector3(replacementSkeletonRoot.position)} scale={SkeletonTraversal.FormatVector3(replacementSkeletonRoot.lossyScale)}");
         if (misses.Count > 0)
             log.Warning($"  [DRIVE] first missing bones: {string.Join(", ", misses)}");
 
@@ -151,7 +152,7 @@ internal sealed class DrivenPrefabReplacementManager
                     if (sample.Source == null || sample.Target == null)
                         continue;
 
-                    log.Msg($"  [DRIVE] sample {sample.Name} sourcePos={SkeletonTraversal.FormatVector3(sample.Source.position)} targetPos={SkeletonTraversal.FormatVector3(sample.Target.position)}");
+                    log.Debug($"  [DRIVE] sample {sample.Name} sourcePos={SkeletonTraversal.FormatVector3(sample.Source.position)} targetPos={SkeletonTraversal.FormatVector3(sample.Target.position)}");
                 }
             }
         }
@@ -187,10 +188,10 @@ internal sealed class DrivenPrefabReplacementManager
             return;
 
         var lodGroup = replacementRoot.GetComponentInChildren<LODGroup>(true);
-        log.Msg($"  [DRIVE] replacement has LODGroup={lodGroup != null}");
+        log.Debug($"  [DRIVE] replacement has LODGroup={lodGroup != null}");
 
         var replacementSmrs = replacementRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-        log.Msg($"  [DRIVE] replacement skinned renderer count={replacementSmrs.Length}");
+        log.Debug($"  [DRIVE] replacement skinned renderer count={replacementSmrs.Length}");
         foreach (var smr in replacementSmrs)
         {
             if (smr == null)
@@ -203,18 +204,18 @@ internal sealed class DrivenPrefabReplacementManager
             if (sourceSmr?.sharedMaterials != null && sourceSmr.sharedMaterials.Length > 0)
                 smr.sharedMaterials = sourceSmr.sharedMaterials;
 
-            log.Msg($"  [DRIVE] replacement SMR '{smr.name}' mesh='{smr.sharedMesh?.name ?? "<null>"}' mats={smr.sharedMaterials?.Length ?? 0} rootBone='{smr.rootBone?.name ?? "<null>"}' enabled={smr.enabled} active={smr.gameObject.activeInHierarchy} boundsCenter={SkeletonTraversal.FormatVector3(smr.localBounds.center)} boundsSize={SkeletonTraversal.FormatVector3(smr.localBounds.size)}");
+            log.Debug($"  [DRIVE] replacement SMR '{smr.name}' mesh='{smr.sharedMesh?.name ?? "<null>"}' mats={smr.sharedMaterials?.Length ?? 0} rootBone='{smr.rootBone?.name ?? "<null>"}' enabled={smr.enabled} active={smr.gameObject.activeInHierarchy} boundsCenter={SkeletonTraversal.FormatVector3(smr.localBounds.center)} boundsSize={SkeletonTraversal.FormatVector3(smr.localBounds.size)}");
         }
 
         var renderers = replacementRoot.GetComponentsInChildren<Renderer>(true);
-        log.Msg($"  [DRIVE] replacement renderer count={renderers.Length}");
+        log.Debug($"  [DRIVE] replacement renderer count={renderers.Length}");
         foreach (var renderer in renderers)
         {
             if (renderer == null)
                 continue;
 
             renderer.enabled = true;
-            log.Msg($"  [DRIVE] replacement renderer '{renderer.name}' type={renderer.GetType().Name} enabled={renderer.enabled} active={renderer.gameObject.activeInHierarchy}");
+            log.Debug($"  [DRIVE] replacement renderer '{renderer.name}' type={renderer.GetType().Name} enabled={renderer.enabled} active={renderer.gameObject.activeInHierarchy}");
         }
     }
 
