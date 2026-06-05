@@ -1189,6 +1189,13 @@ public static class TemplateCatalogValidator
                     + $"{catalog.FriendlyName(destinationType)} required by composite '{contextPath}'.{note}");
                 return 1;
             }
+
+            // Compile path rewrites TypeName to the FQN so the loader's own type
+            // resolution sidesteps the short-name ambiguity (the production case is
+            // Effects.Attack vs AI.Behaviors.Attack) at apply time. Editor-doc
+            // validation preserves the modder's input for round-trip emit.
+            if (mutateHashableIds)
+                composite.TypeName = type.FullName ?? type.Name;
         }
         else if (destinationType != null
             && (string.Equals(composite.TypeName, destinationType.Name, StringComparison.Ordinal)
@@ -1215,6 +1222,14 @@ public static class TemplateCatalogValidator
                 reportError(typeError ?? $"unknown composite type '{composite.TypeName}'.");
                 return 1;
             }
+
+            // Compile path canonicalises TypeName to the FQN so the loader's
+            // assembly-wide resolution sidesteps short-name ambiguity at apply
+            // time, mirroring the subtype-hint and monomorphic branches above.
+            // Editor-doc validation preserves the modder's input for round-trip
+            // emit.
+            if (mutateHashableIds)
+                composite.TypeName = type.FullName ?? type.Name;
         }
 
         // Editor-doc normalisation: drop type= whenever the bare

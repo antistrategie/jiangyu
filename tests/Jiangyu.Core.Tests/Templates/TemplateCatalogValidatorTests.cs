@@ -1539,6 +1539,56 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
+    public void Composite_SubtypeHintTypeName_CanonicalisedToFqnOnCompile()
+    {
+        // type="FixtureConcreteDerived" on a polymorphic FixtureBaseDataTemplate
+        // destination shares its short name with an unrelated twin in another
+        // namespace (Fixtures.Other), mirroring the production Effects.Attack vs
+        // AI.Behaviors.Attack collision. The compile path canonicalises TypeName
+        // to the resolved subtype's FQN so the loader's assembly-wide resolution
+        // picks the right type and never warns about ambiguity at apply time.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var composite = new CompiledTemplateComposite
+        {
+            TypeName = "FixtureConcreteDerived",
+            Operations = SetOps(
+                ("DerivedField", new CompiledTemplateValue
+                {
+                    Kind = CompiledTemplateValueKind.Int32,
+                    Int32 = 42,
+                })),
+        };
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Append,
+                        FieldPath = "Handlers",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.Composite,
+                            Composite = composite,
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+        Assert.Equal(typeof(FixtureConcreteDerived).FullName, composite.TypeName);
+    }
+
+    [Fact]
     public void TypeConstruction_IndexedDescentInner_Errors()
     {
         // type="FixtureConcreteDerived" { set "X" index=0 { ... } } — an indexed
