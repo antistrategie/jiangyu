@@ -128,7 +128,7 @@ public interface IModAssets
 
 /// <summary>
 /// The services a mod receives from the loader. The host supplies the concrete
-/// implementation and binds it to the mod before <see cref="JiangyuMod.OnInit"/>.
+/// implementation and binds it to the mod's systems before <see cref="JiangyuSystem.OnInit"/>.
 /// </summary>
 public abstract class ModContext
 {

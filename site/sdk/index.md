@@ -47,14 +47,14 @@ They are ordinary .NET assemblies, so you can also open the DLLs under `MelonLoa
 
 For the data side of the game, the [`jiangyu templates`](/reference/cli#templates) commands surface the same types from the angle you author against: `templates inspect` shows a template subtype's fields and their types, and `templates query` reads a field off a live instance. `jiangyu assets search` finds bundled assets by name and type. Studio's asset and template browsers are the same discovery, with search.
 
-## The entry point
+## Systems
 
-A **behaviour mod** has one `JiangyuMod` subclass as its entry point. A [template type](./template-types) needs none. The loader discovers the subclass, instantiates it, binds its `Context`, and drives the lifecycle. Every method is a no-op by default, so override only what you need.
+A **behaviour mod** is made of one or more **systems**: a `JiangyuSystem` subclass per feature. The loader discovers every system in the mod, instantiates each, binds the mod's shared `Context`, and drives the lifecycle. Every method is a no-op by default, so override only what you need. (A [template type](./template-types) is not a system and needs no entry point.)
 
 ```csharp
 using Jiangyu.Sdk;
 
-public sealed class MyMod : JiangyuMod
+public sealed class RelationshipSystem : JiangyuSystem
 {
     public override void OnInit()
     {
@@ -67,11 +67,20 @@ public sealed class MyMod : JiangyuMod
 
 | Override | Called |
 | --- | --- |
-| `OnInit()` | Once, after the mod loads and its `Context` is bound. |
+| `OnInit()` | Once, after the system loads and its `Context` is bound. |
 | `OnTemplatesApplied()` | Once, after every mod's template clones and patches have landed on the live templates. Read or further adjust the final merged template set here. |
 | `OnSceneLoaded(buildIndex, sceneName)` | Each time a Unity scene finishes loading. |
 | `OnUpdate()` | Every frame. Override only when you genuinely need per-frame work. |
 | `OnUnload()` | On shutdown or hot reload. The loader stops your coroutines and removes your patches for you. |
+
+The systems of one mod share a single `Context` (the same `State`, hooks, patches, and assets), so split a mod into as many systems as it has features and let them cooperate through `Context` rather than growing one entry point. Systems run in a stable, name-ordered sequence. When one must initialise after another, declare it with `[DependsOn]`, and the loader runs that dependency first on init and tears systems down in reverse on unload.
+
+```csharp
+[DependsOn(typeof(EconomySystem), typeof(RosterSystem))]
+public sealed class TradeSystem : JiangyuSystem { /* ... */ }
+```
+
+A dependency that is not a system of the same mod is ignored with a warning, as is a cycle (its members fall back to the name order). The analyzer flags both in the IDE before you run (`JIA010`, `JIA011`), along with a system the loader cannot construct because it has no parameterless constructor (`JIA012`).
 
 ## The mod API
 

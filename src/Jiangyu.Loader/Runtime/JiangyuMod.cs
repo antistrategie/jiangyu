@@ -176,17 +176,32 @@ public class JiangyuMod : MelonMod
                     continue;
 
                 var modId = ResolveModId(modDir);
+                // Load every code DLL first, then register the mod's systems together, so
+                // [DependsOn] orders across a multi-DLL mod rather than within one DLL.
+                var assemblies = new List<Assembly>();
                 foreach (var dll in Directory.GetFiles(codeDir, "*.dll"))
                 {
                     try
                     {
                         var asm = Assembly.LoadFrom(dll);
-                        _modHost.Register(asm, modId);
+                        assemblies.Add(asm);
                         JiangyuTypeRegistry.Register(JiangyuTypeCatalog.Scan(asm, modId), hostLog);
                     }
                     catch (Exception ex)
                     {
                         LoggerInstance.Error($"Code mod load failed for {dll}: {ex.Message}");
+                    }
+                }
+
+                if (assemblies.Count > 0)
+                {
+                    try
+                    {
+                        _modHost.Register(assemblies, modId);
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerInstance.Error($"Code mod system registration failed for {modId}: {ex.Message}");
                     }
                 }
             }

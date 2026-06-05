@@ -78,7 +78,7 @@ public sealed class JiangyuUsageAnalyzerTests
     {
         var ids = await IdsAsync("""
             using Jiangyu.Sdk;
-            public class M : JiangyuMod
+            public class M : JiangyuSystem
             {
                 public override void OnSceneLoaded(int b, string s) { Context.Hooks.Subscribe<object>(_ => { }); }
             }
@@ -92,7 +92,7 @@ public sealed class JiangyuUsageAnalyzerTests
     {
         var ids = await IdsAsync("""
             using Jiangyu.Sdk;
-            public class M : JiangyuMod
+            public class M : JiangyuSystem
             {
                 public override void OnUpdate() { Context.Hooks.Subscribe<object>(_ => { }); }
             }
@@ -106,7 +106,7 @@ public sealed class JiangyuUsageAnalyzerTests
     {
         var ids = await IdsAsync("""
             using Jiangyu.Sdk;
-            public class M : JiangyuMod
+            public class M : JiangyuSystem
             {
                 public override void OnInit() { Context.Hooks.Subscribe<object>(_ => { }); }
             }

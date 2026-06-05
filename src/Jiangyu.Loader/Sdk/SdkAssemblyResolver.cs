@@ -27,7 +27,7 @@ internal static class SdkAssemblyResolver
     {
         var requested = new AssemblyName(args.Name).Name;
         return requested is "Jiangyu.Sdk" or "Jiangyu.Sdk.Menace"
-            ? typeof(Jiangyu.Sdk.JiangyuMod).Assembly
+            ? typeof(Jiangyu.Sdk.JiangyuSystem).Assembly
             : null;
     }
 }

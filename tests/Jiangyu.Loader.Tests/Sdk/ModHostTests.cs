@@ -90,7 +90,7 @@ public class ModHostTests
         }
     }
 
-    private sealed class GoodMod : JiangyuMod
+    private sealed class GoodMod : JiangyuSystem
     {
         public int Inits;
         public int Updates;
@@ -105,7 +105,7 @@ public class ModHostTests
         public override void OnUnload() => Unloads++;
     }
 
-    private sealed class ThrowingMod : JiangyuMod
+    private sealed class ThrowingMod : JiangyuSystem
     {
         public int Attempts;
 
@@ -255,12 +255,191 @@ public class ModHostTests
     }
 
     [Fact]
-    public void Register_discovers_concrete_jiangyumod_entries()
+    public void Register_discovers_concrete_systems()
     {
         var host = NewHost(out _);
         var registered = host.Register(typeof(GoodMod).Assembly, "mymod");
 
-        Assert.Contains(registered, m => m.Instance is GoodMod);
+        Assert.Contains(registered, s => s.Instance is GoodMod);
+    }
+
+    // --- [DependsOn] ordering ---
+    //
+    // OrderByDependencies is the algorithm Register orders a mod's systems by before
+    // it instantiates them, so a dependency's lifecycle runs before its dependents'.
+    // These exercise it directly with plain marker classes carrying [DependsOn]: the
+    // algorithm orders any type list by its attributes, and keeping them out of the
+    // JiangyuSystem hierarchy stops assembly-wide discovery picking them up elsewhere.
+
+    private sealed class OrderA { }
+    [DependsOn(typeof(OrderA))] private sealed class OrderB { }
+    [DependsOn(typeof(OrderB))] private sealed class OrderC { }
+    private sealed class IndepAlpha { }
+    private sealed class IndepZeta { }
+    [DependsOn(typeof(OrderA))] private sealed class NeedsAbsent { }
+    [DependsOn(typeof(SelfRef))] private sealed class SelfRef { }
+    [DependsOn(typeof(CycleTwo))] private sealed class CycleOne { }
+    [DependsOn(typeof(CycleOne))] private sealed class CycleTwo { }
+
+    [Fact]
+    public void OrderByDependencies_places_dependencies_before_their_dependents()
+    {
+        var host = NewHost(out _);
+
+        var ordered = host.OrderByDependencies(new[] { typeof(OrderC), typeof(OrderA), typeof(OrderB) }, "mod");
+
+        Assert.Equal(new[] { typeof(OrderA), typeof(OrderB), typeof(OrderC) }, ordered);
+    }
+
+    [Fact]
+    public void OrderByDependencies_orders_independent_systems_by_name()
+    {
+        var host = NewHost(out _);
+
+        var ordered = host.OrderByDependencies(new[] { typeof(IndepZeta), typeof(IndepAlpha) }, "mod");
+
+        Assert.Equal(new[] { typeof(IndepAlpha), typeof(IndepZeta) }, ordered);
+    }
+
+    [Fact]
+    public void OrderByDependencies_warns_and_keeps_a_system_whose_dependency_is_outside_the_mod()
+    {
+        var host = NewHost(out var log);
+
+        var ordered = host.OrderByDependencies(new[] { typeof(NeedsAbsent) }, "mod");
+
+        Assert.Contains(typeof(NeedsAbsent), ordered);
+        Assert.Contains(log.Warns, w => w.Contains("not a system of this mod"));
+    }
+
+    [Fact]
+    public void OrderByDependencies_warns_and_keeps_a_self_dependency()
+    {
+        var host = NewHost(out var log);
+
+        var ordered = host.OrderByDependencies(new[] { typeof(SelfRef) }, "mod");
+
+        Assert.Contains(typeof(SelfRef), ordered);
+        Assert.Contains(log.Warns, w => w.Contains("depends on itself"));
+    }
+
+    [Fact]
+    public void OrderByDependencies_breaks_a_cycle_by_name_and_warns()
+    {
+        var host = NewHost(out var log);
+
+        var ordered = host.OrderByDependencies(new[] { typeof(CycleTwo), typeof(CycleOne) }, "mod");
+
+        Assert.Equal(new[] { typeof(CycleOne), typeof(CycleTwo) }, ordered);
+        Assert.Contains(log.Warns, w => w.Contains("cycle"));
+    }
+
+    // Real discovered systems with a dependency chain, to confirm the ordering flows
+    // through Register into registration (and therefore lifecycle dispatch) order.
+    // Register scans the whole test assembly, so other systems interleave: assert the
+    // relative order of these three only.
+    private sealed class FirstSystem : JiangyuSystem { }
+    [DependsOn(typeof(FirstSystem))] private sealed class SecondSystem : JiangyuSystem { }
+    [DependsOn(typeof(SecondSystem))] private sealed class ThirdSystem : JiangyuSystem { }
+
+    [Fact]
+    public void Register_orders_dependencies_before_their_dependents()
+    {
+        var host = NewHost(out _);
+        var registered = host.Register(typeof(FirstSystem).Assembly, "ordered");
+
+        int IndexOf<T>()
+        {
+            for (var i = 0; i < registered.Count; i++)
+                if (registered[i].Instance is T)
+                    return i;
+            return -1;
+        }
+
+        var first = IndexOf<FirstSystem>();
+        var second = IndexOf<SecondSystem>();
+        var third = IndexOf<ThirdSystem>();
+
+        Assert.True(first >= 0 && second >= 0 && third >= 0, "all three systems register");
+        Assert.True(first < second, "FirstSystem registers before its dependent SecondSystem");
+        Assert.True(second < third, "SecondSystem registers before its dependent ThirdSystem");
+    }
+
+    [DependsOn(typeof(OrderA), null)] private sealed class HasNullDep { }
+
+    [Fact]
+    public void OrderByDependencies_warns_and_keeps_a_system_with_a_null_dependency_entry()
+    {
+        var host = NewHost(out var log);
+
+        // A null entry must not throw (otherwise the NRE escapes Register and aborts
+        // the whole mod's DLL load). OrderA is passed so only the null entry warns.
+        var ordered = host.OrderByDependencies(new[] { typeof(HasNullDep), typeof(OrderA) }, "mod");
+
+        Assert.Contains(typeof(HasNullDep), ordered);
+        Assert.Contains(log.Warns, w => w.Contains("null"));
+    }
+
+    [Fact]
+    public void OrderByDependencies_deduplicates_repeated_input_without_a_false_cycle()
+    {
+        var host = NewHost(out var log);
+
+        var ordered = host.OrderByDependencies(new[] { typeof(OrderA), typeof(OrderA) }, "mod");
+
+        Assert.Equal(new[] { typeof(OrderA) }, ordered);
+        Assert.DoesNotContain(log.Warns, w => w.Contains("cycle"));
+    }
+
+    // No parameterless ctor, so assembly-wide discovery (ConcreteSystems) skips it;
+    // Adopt takes the constructed instance, letting the test fix the registration order.
+    private sealed class RecordingSystem : JiangyuSystem
+    {
+        private readonly List<string> _order;
+        private readonly string _id;
+        public RecordingSystem(List<string> order, string id) { _order = order; _id = id; }
+        public override void OnUnload() => _order.Add(_id);
+    }
+
+    [Fact]
+    public void UnloadAll_tears_systems_down_in_reverse_registration_order()
+    {
+        var host = NewHost(out _);
+        var order = new List<string>();
+        host.Adopt("m", new RecordingSystem(order, "A"));
+        host.Adopt("m", new RecordingSystem(order, "B"));
+        host.Adopt("m", new RecordingSystem(order, "C"));
+
+        host.UnloadAll();
+
+        Assert.Equal(new[] { "C", "B", "A" }, order);
+    }
+
+    [DependsOn(typeof(OrderA))] private class BaseDep { }
+    private sealed class DerivedDep : BaseDep { }
+
+    [Fact]
+    public void OrderByDependencies_inherits_DependsOn_from_a_base_system()
+    {
+        var host = NewHost(out _);
+
+        var ordered = host.OrderByDependencies(new[] { typeof(DerivedDep), typeof(OrderA) }, "mod");
+
+        // DerivedDep inherits BaseDep's [DependsOn(OrderA)] (Inherited = true), so OrderA orders first.
+        Assert.Equal(new[] { typeof(OrderA), typeof(DerivedDep) }, ordered);
+    }
+
+    [Fact]
+    public void Register_orders_systems_across_a_mods_assemblies_and_dedupes_overlap()
+    {
+        var host = NewHost(out _);
+
+        // A real multi-DLL mod passes its distinct code assemblies; the same assembly
+        // twice exercises both the multi-assembly overload and the dedup.
+        var registered = host.Register(new[] { typeof(GoodMod).Assembly, typeof(GoodMod).Assembly }, "multi");
+
+        Assert.Contains(registered, s => s.Instance is GoodMod);
+        Assert.Single(registered, s => s.Instance is FirstSystem);
     }
 
     [Fact]

@@ -72,7 +72,7 @@ public sealed class CodeProjectScaffolder
 
         // Seed a minimal project file, but only when no .csproj exists yet, so an
         // existing mod's project is never clobbered. No example source is written;
-        // the modder authors their own JiangyuMod entry point (see README.md).
+        // the modder authors their own JiangyuSystem subclasses (see README.md).
         if (!HasCsproj(codeDir))
         {
             var modName = SanitiseModName(Path.GetFileName(projectRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));

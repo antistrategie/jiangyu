@@ -120,24 +120,24 @@ public sealed class UiTarget
         {
             case Placement.After:
             case Placement.Before:
-            {
-                var anchor = UiTree.FindFirst(scope, _placementSelector);
-                var parent = UiTree.ParentOf(anchor);
-                var anchorIndex = UiTree.IndexInParent(anchor);
-                if (parent == null || anchorIndex < 0)
-                    return false;
-                var index = _placement == Placement.After ? anchorIndex + 1 : anchorIndex;
-                site = new UiSite(parent, index, scope);
-                return true;
-            }
+                {
+                    var anchor = UiTree.FindFirst(scope, _placementSelector);
+                    var parent = UiTree.ParentOf(anchor);
+                    var anchorIndex = UiTree.IndexInParent(anchor);
+                    if (parent == null || anchorIndex < 0)
+                        return false;
+                    var index = _placement == Placement.After ? anchorIndex + 1 : anchorIndex;
+                    site = new UiSite(parent, index, scope);
+                    return true;
+                }
             case Placement.Into:
-            {
-                var container = UiTree.FindFirst(scope, _placementSelector);
-                if (container == null)
-                    return false;
-                site = new UiSite(container, UiTree.ChildCount(container), scope);
-                return true;
-            }
+                {
+                    var container = UiTree.FindFirst(scope, _placementSelector);
+                    if (container == null)
+                        return false;
+                    site = new UiSite(container, UiTree.ChildCount(container), scope);
+                    return true;
+                }
             default:
                 site = new UiSite(scope, UiTree.ChildCount(scope), scope);
                 return true;

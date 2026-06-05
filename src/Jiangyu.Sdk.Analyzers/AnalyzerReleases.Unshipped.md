@@ -14,3 +14,6 @@ JIA006 | Jiangyu | Error | [JiangyuType] cannot receive the IL2CPP injection con
 JIA007 | Jiangyu | Error | [JiangyuType] override must not call base
 JIA008 | Jiangyu | Warning | Hook subscription in a repeated lifecycle method
 JIA009 | Jiangyu | Warning | State-mutating verb in an unsafe override
+JIA010 | Jiangyu | Warning | [DependsOn] target is not a sibling system
+JIA011 | Jiangyu | Warning | [DependsOn] cycle
+JIA012 | Jiangyu | Warning | JiangyuSystem needs a public parameterless constructor

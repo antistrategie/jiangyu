@@ -41,7 +41,7 @@ public static class CodeCommand
                 Console.WriteLine($"Preserved  {result.PreservedFiles.Count} file(s)");
                 Console.WriteLine();
                 Console.WriteLine("Next steps:");
-                Console.WriteLine("  1. Author your mod under code/ (a JiangyuMod subclass is the entry point).");
+                Console.WriteLine("  1. Author your mod under code/ (each feature is a JiangyuSystem subclass).");
                 Console.WriteLine("  2. Run 'jiangyu compile' to build it and package the DLL alongside the manifest.");
                 return 0;
             }

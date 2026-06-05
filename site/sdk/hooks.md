@@ -2,11 +2,11 @@
 
 Hooks are the SDK's event bus: global game moments your code reacts to, a kill, a round boundary, a leader hired, a save or load. A **behaviour mod** subscribes to the ones it cares about and runs logic when they fire.
 
-The [entry point](/sdk/#the-entry-point) that hosts a subscription, the [`Context`](/sdk/#the-mod-api) it hangs off, and the `code/` project are shared across the SDK and covered in the [SDK overview](/sdk/). This page is the hook surface itself.
+The [system](/sdk/#systems) that hosts a subscription, the [`Context`](/sdk/#the-mod-api) it hangs off, and the `code/` project are shared across the SDK and covered in the [SDK overview](/sdk/). This page is the hook surface itself.
 
 ## Subscribing
 
-Subscribe by the context type from your mod's [`OnInit`](/sdk/#the-entry-point). The subscription lives for the mod's lifetime.
+Subscribe by the context type from a system's [`OnInit`](/sdk/#systems). The subscription lives for the mod's lifetime.
 
 ```csharp
 Context.Hooks.Subscribe<EntityDiedContext>(ctx =>

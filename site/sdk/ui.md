@@ -214,7 +214,7 @@ using Jiangyu.Game;
 using UnityEngine.UIElements;
 using Il2CppMenace.UI.Strategy;
 
-public sealed class RelationshipUi : JiangyuMod
+public sealed class RelationshipBarSystem : JiangyuSystem
 {
     private UiInjection _bar;
 

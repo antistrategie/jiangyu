@@ -1,12 +1,12 @@
 # Template types
 
-A **custom template type** is your own effect, condition, or value provider that the game constructs from a KDL `type=` slot, exactly like it constructs its built-in ones. It is the common reason to write C#, and the one SDK surface that needs no [entry point](/sdk/#the-entry-point), just a `[JiangyuType]` class.
+A **custom template type** is your own effect, condition, or value provider that the game constructs from a KDL `type=` slot, exactly like it constructs its built-in ones. It is the common reason to write C#, and the one SDK surface that needs no [system](/sdk/#systems), just a `[JiangyuType]` class.
 
 Set up the [`code/` project](/sdk/#the-code-project) and read the game's types as the [SDK overview](/sdk/) describes. From inside a type, your code can read and command the live game with [game verbs](./verbs).
 
 ## Defining a type
 
-A `[JiangyuType]` class is your own subtype of a game type that the game constructs and dispatches through, slotted from a template exactly like a built-in one. **You do not need a `JiangyuMod` entry point for this**, just the class.
+A `[JiangyuType]` class is your own subtype of a game type that the game constructs and dispatches through, slotted from a template exactly like a built-in one. **You do not need a `JiangyuSystem` for this**, just the class.
 
 The common shape is a pair: a `SkillEventHandlerTemplate` is the factory the template data holds, and its `Create()` returns the `SkillEventHandler` the game ticks at runtime.
 

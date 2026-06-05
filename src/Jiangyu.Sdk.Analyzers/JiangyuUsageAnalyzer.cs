@@ -140,7 +140,7 @@ public sealed class JiangyuUsageAnalyzer : DiagnosticAnalyzer
     // the symbol graph: which override points are predicates (a mutation is refused at
     // runtime) or fire repeatedly (it compounds and re-fires on reload). The game-type
     // override names (IsTrue/OnUpdate/OnTurnStart on classes the SDK does not own)
-    // cannot carry an attribute, and the JiangyuMod lifecycle names classify by
+    // cannot carry an attribute, and the JiangyuSystem lifecycle names classify by
     // cadence, not identity. Extend it when a new predicate/repeated override ships.
     // (Which methods *mutate* is the part that is attribute-driven, via [MutatingVerb].)
     private static string? UnsafeOverrideAdvice(string? enclosingMethod) => enclosingMethod switch

@@ -19,7 +19,7 @@ They return real game types (`Actor`, `Tile`, `Skill`), so you call straight thr
 Anywhere the loader dispatches into your code:
 
 - inside a [hook](./hooks) handler,
-- in a `JiangyuMod` lifecycle method (`OnInit`, `OnSceneLoaded`, ...),
+- in a `JiangyuSystem` lifecycle method (`OnInit`, `OnSceneLoaded`, ...),
 - inside a [template type](./template-types) override the game invokes (a condition's `IsTrue`, a handler's `OnTurnStart`, an effect's `Create`).
 
 A pure-data mod (templates only, no `code/`) cannot use verbs, because there is no code to call them. The moment you want one, you have a [code project](/sdk/#the-code-project).
@@ -128,7 +128,7 @@ System.Collections.IEnumerator Later(Entity victim)
 You do not have to remember all of this. The Jiangyu analyzer flags the mistakes as you type:
 
 - **JIA007** if you call `base.Something()` from a [template type](./template-types) override (it crashes the game).
-- **JIA008** if you `Subscribe` to a hook from `OnSceneLoaded` or `OnUpdate` (it stacks duplicate handlers, [subscribe in `OnInit`](/sdk/#the-entry-point)).
+- **JIA008** if you `Subscribe` to a hook from `OnSceneLoaded` or `OnUpdate` (it stacks duplicate handlers, [subscribe in `OnInit`](/sdk/#systems)).
 - **JIA009** if you put a mutating verb in a predicate or polling override.
 
 ## A worked example
