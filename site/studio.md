@@ -118,7 +118,7 @@ See [Templates](/templates) for the KDL grammar.
 
 The UI Inspector captures the running game's live UI tree, so you can find the selectors to target with the [Game UI](/sdk/ui) injection API. Open it from the palette (**Open UI Inspector**), and it opens in a new pane.
 
-It reads the game over the **live game bridge**, a localhost connection enabled in [Settings](#settings) and off by default. With the bridge on and the game running, the status chip in the toolbar reads **Live**. Until then it reads **Waiting for game** or **Bridge off**, and the empty state says which.
+It reads the game over the **live game bridge**, a localhost connection the [dev loader](#deploying-the-loader) provides, enabled in [Settings](#settings) and off by default. With the bridge on and the game running, the status chip in the toolbar reads **Live**. Until then it reads **Waiting for game** or **Bridge off**, and the empty state says which.
 
 - **Capture**: pulls the current screen's UI tree. Navigate to the screen you want in the game first, then capture.
 - **Tree**: each node shows its type, `#name`, `.class` list, and any text. Expand and collapse with the chevrons, or search by type, name, or class to filter the tree to matching nodes and their ancestors.
@@ -141,8 +141,16 @@ The Settings dialog (palette → **Settings**) configures both global and per-pr
 
 - **Game path**: directory containing `MENACE.exe`. Required for indexing and compilation. Studio detects the game's Unity version and shows it next to the field.
 - **Unity Editor path**: a Unity Editor binary. The compile step uses it to build AssetBundles. Studio shows the expected version next to the field and warns if your install doesn't match.
+- **Loader**: deploys the in-game loader into the game's `Mods/`, so you never copy the DLL by hand. See [Deploying the loader](#deploying-the-loader).
+- **Live game bridge**: opens a localhost connection between Studio and the running game, used by the [UI Inspector](#ui-inspector). Available only with the dev loader deployed. Off by default. The indicator beside the toggle shows the connection state: live, waiting for the game, or off.
 - **Template editor**: default mode for `.kdl` template files in the editor pane (Visual or Source). Per-file toggles in the editor bar override this.
 - **Restore open tabs**: when on, Studio reopens the panes and tabs from your last session.
-- **Live game bridge**: opens a localhost connection between Studio and the running game, used by the [UI Inspector](#ui-inspector). Off by default. The indicator beside the toggle shows the connection state: live, waiting for the game, or off.
 
 The same global config is what `jiangyu` CLI reads. Edits in Studio and the CLI share one file.
+
+### Deploying the loader
+
+Studio provides a specific loader for dev use and can deploy it for you, so you never copy `Jiangyu.Loader.dll` into `Mods/` by hand. The **Loader** row shows what is currently deployed, read back from the DLL in `Mods/` rather than a remembered setting, and offers two builds:
+
+- **user**: the lean loader. This is the build shipped to users.
+- **dev**: the same loader with the Studio bridge and diagnostic probes merged in. Deploy this while you iterate, because it is what the [live game bridge](#ui-inspector) connects to for the UI Inspector and Studio's live game tools.

@@ -20,9 +20,7 @@ A verb is a thin, discoverable wrapper over a game call. It adds a name you can 
 
 That is milder than it sounds, and deliberate. A misused verb throws where you got it wrong and lands in the log, the session keeps running, a loud, fixable error rather than a dead game or a silent wrong result. A guard would only trade that away, turning the logged fault into a quiet no-op you would not notice until a player did, and an honest one is not ours to write anyway: "safe" means knowing the game's rules, and a rule we invent is one a patch quietly turns into a lie. Thin also stays a primitive you can build on, a `SafeSpawn` with exactly the checks your mod wants is three lines over `Units.Spawn`, where a guard baked in for you is one mod's idea of "safe" forced on the next, which may well *want* to spawn onto an "occupied" tile.
 
-So check `Mission.InMission` before the tactical verbs when you might be outside a mission. Only your code knows whether now is a sensible moment to call one. The single mistake that can corrupt game state, mutating while the AI is mid-decision, the **JIA009** analyzer flags as you type (see [Mutating with intent](#mutating-with-intent)).
-
-So the tactical verbs need a live tactical mission. `Mission.Map` outside one throws, the same as reaching for the manager yourself. Check `Mission.InMission` first when you might be outside one. Context is yours to get right because only your code knows it: a verb cannot tell whether now is a sensible moment to call it, but your code can.
+So the tactical verbs need a live tactical mission. `Mission.Map` outside one throws, the same as reaching for the manager yourself, so check `Mission.InMission` first when you might be outside one. A verb cannot tell whether now is a sensible moment to call it, but your code can. The one mistake that does corrupt game state, mutating while the AI is mid-decision, the **JIA009** analyzer flags as you type (see [Mutating with intent](#mutating-with-intent)).
 
 ## Where you can call them
 

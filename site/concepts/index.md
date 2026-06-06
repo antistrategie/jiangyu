@@ -28,7 +28,7 @@ For additions, the modder picks the name. The folder layout under `assets/additi
 
 ## Asset replacement vs addition
 
-A replacement edits the world: every game site that references the vanilla asset picks up the modded content. An addition ships a brand-new asset that didn't exist in the vanilla game, and only template clones that explicitly reference it pick it up.
+A replacement changes the game in place. Every site that used the vanilla asset now picks up your version instead. An addition does the reverse: it ships an asset the game never had, and nothing uses it until a clone references it by name.
 
 | | Replacement | Addition |
 | --- | --- | --- |
@@ -66,7 +66,7 @@ patch "WeaponTemplate" "weapon.foo" {
 }
 ```
 
-Reads as: empty the list, then append two skills. Order matters. Swapping `clear` and the appends would empty the list after the appends and end up with nothing.
+Reads as: empty the list, then append two skills. Move the `clear` below the appends and you wipe out everything you just added, so the order is load-bearing.
 
 The same rule covers more involved compositions:
 

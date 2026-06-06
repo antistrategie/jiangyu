@@ -45,29 +45,28 @@ export default defineConfig({
     },
 
     nav: [
-      { text: "Get started", link: "/getting-started" },
-      { text: "Assets", link: "/assets/" },
-      { text: "Templates", link: "/templates" },
-      { text: "SDK", link: "/sdk/" },
-      { text: "Troubleshooting", link: "/troubleshooting" },
+      { text: "What is Jiangyu?", link: "/what-is-jiangyu" },
+      { text: "Get started", link: "/tutorials/installation" },
+      { text: "Guides", link: "/assets/replacements/" },
+      { text: "Reference", link: "/reference/cli" },
     ],
 
+    // Organised by the Diátaxis modes: a learning path (tutorials), task
+    // recipes (how-to), the dry surface (reference), and the why (explanation).
     sidebar: [
       {
-        text: "Introduction",
+        text: "Tutorials",
         items: [
-          { text: "What is Jiangyu?", link: "/what-is-jiangyu" },
-          { text: "Getting started", link: "/getting-started" },
-          { text: "Concepts", link: "/concepts/" },
+          { text: "Installation", link: "/tutorials/installation" },
+          { text: "Your first patch", link: "/tutorials/first-patch" },
+          { text: "Your first re-skin", link: "/tutorials/first-reskin" },
         ],
       },
       {
-        text: "Assets",
+        text: "How-to guides",
         items: [
-          { text: "Overview", link: "/assets/" },
           {
-            text: "Replacements",
-            collapsed: true,
+            text: "Replace an asset",
             items: [
               { text: "Overview", link: "/assets/replacements/" },
               { text: "Textures", link: "/assets/replacements/textures" },
@@ -77,8 +76,7 @@ export default defineConfig({
             ],
           },
           {
-            text: "Additions",
-            collapsed: true,
+            text: "Add an asset",
             items: [
               { text: "Overview", link: "/assets/additions/" },
               { text: "Sprites", link: "/assets/additions/sprites" },
@@ -87,57 +85,33 @@ export default defineConfig({
               { text: "Prefabs", link: "/assets/additions/prefabs" },
             ],
           },
-        ],
-      },
-      {
-        text: "Templates",
-        items: [{ text: "Templates (KDL)", link: "/templates" }],
-      },
-      {
-        text: "Unity project",
-        items: [{ text: "Overview", link: "/unity-project" }],
-      },
-      {
-        text: "SDK",
-        items: [
-          { text: "Overview", link: "/sdk/" },
-          { text: "Template types", link: "/sdk/template-types" },
-          { text: "Game verbs", link: "/sdk/verbs" },
-          { text: "UI", link: "/sdk/ui" },
-        ],
-      },
-      {
-        text: "Studio",
-        items: [
-          { text: "Overview", link: "/studio" },
-          {
-            text: "AI agent",
-            collapsed: true,
-            items: [
-              { text: "Overview", link: "/studio/agent" },
-              { text: "Available tools", link: "/studio/agent-tools" },
-            ],
-          },
+          { text: "Patch and clone templates", link: "/templates" },
+          { text: "Write a custom template type", link: "/sdk/template-types" },
+          { text: "Add UI", link: "/sdk/ui" },
+          { text: "Call game verbs", link: "/sdk/verbs" },
+          { text: "Set up the Unity project", link: "/unity-project" },
+          { text: "Use Studio", link: "/studio" },
+          { text: "Use the AI agent", link: "/studio/agent" },
+          { text: "Troubleshooting", link: "/troubleshooting" },
         ],
       },
       {
         text: "Reference",
         items: [
-          {
-            text: "SDK",
-            collapsed: true,
-            items: [
-              { text: "Hooks", link: "/reference/hooks" },
-              { text: "Verbs", link: "/reference/verbs" },
-            ],
-          },
-          { text: "Manifest (jiangyu.json)", link: "/reference/manifest" },
           { text: "CLI", link: "/reference/cli" },
+          { text: "Manifest (jiangyu.json)", link: "/reference/manifest" },
+          { text: "Game verbs", link: "/reference/verbs" },
+          { text: "Hooks", link: "/reference/hooks" },
+          { text: "Agent tools", link: "/studio/agent-tools" },
         ],
       },
       {
-        text: "Help",
-        items: [{ text: "Troubleshooting", link: "/troubleshooting" }],
+        text: "Explanation",
+        items: [
+          { text: "What is Jiangyu?", link: "/what-is-jiangyu" },
+          { text: "Concepts", link: "/concepts/" },
+          { text: "The SDK", link: "/sdk/" },
+        ],
       },
     ],
 

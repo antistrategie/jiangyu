@@ -1,6 +1,6 @@
 # AI Agent
 
-Studio includes an optional AI agent panel that can help you create mods through natural conversation. Ask it to write template patches, find assets, diagnose compile errors, or explain how MENACE's systems work.
+Studio has an optional AI agent panel. You talk to it in plain language, and it can write template patches, dig up an asset, or work through a compile error with you.
 
 ::: info Opt-in
 AI features are disabled by default. Nothing is sent to any external service until you explicitly enable the feature and start a conversation. See [Enabling AI features](#enabling-ai-features) below.
@@ -53,7 +53,7 @@ Some examples:
 - "Search for audio assets related to gunfire"
 - "Clone mod_weapon.medium.rocket_launcher into a heavy variant with double damage"
 
-The agent has access to all of Jiangyu's domain tools. It can search and inspect templates, read game values, write KDL files, trigger compiles, and explain results.
+The agent has the full set of Jiangyu tools (see [Available tools](/studio/agent-tools)), so it can search templates, read live game values, write KDL, and compile without leaving the chat.
 
 ### Slash commands
 

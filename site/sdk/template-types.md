@@ -8,7 +8,7 @@ Set up the [`code/` project](/sdk/#the-code-project) and read the game's types a
 
 A `[JiangyuType]` class is your own subtype of a game type that the game constructs and dispatches through, slotted from a template exactly like a built-in one. **You do not need a `JiangyuSystem` for this**, just the class.
 
-The common shape is a pair: a `SkillEventHandlerTemplate` is the factory the template data holds, and its `Create()` returns the `SkillEventHandler` the game ticks at runtime.
+The common shape is a pair. A `SkillEventHandlerTemplate` is the factory the template data holds, and its `Create()` returns the `SkillEventHandler` the game ticks at runtime.
 
 ```csharp
 using Il2CppMenace.Tactical;

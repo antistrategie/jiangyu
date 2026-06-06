@@ -1,6 +1,6 @@
 # What is Jiangyu?
 
-Jiangyu is a modding platform for MENACE (Unity 6, IL2CPP). It runs the whole range: replace assets (textures, sprites, models, audio), patch the data MENACE ships with (unit stats, weapon damage, perk trees), add your own assets and characters, and write C# that runs inside the game.
+Jiangyu is a modding platform for MENACE (Unity 6, IL2CPP). It covers replacing assets (textures, sprites, models, audio), patching the data MENACE ships with (unit stats, weapon damage, perk trees), adding your own assets and characters, and writing C# that runs inside the game.
 
 The toolkit has three pieces:
 
@@ -8,7 +8,7 @@ The toolkit has three pieces:
 - **CLI** (`jiangyu`), the same operations from the terminal, for scripted workflows.
 - **Loader** (`Jiangyu.Loader.dll`), a MelonLoader plugin that applies mods inside MENACE at runtime.
 
-You go only as far as a mod needs: a re-skin is a dropped file, a rebalance is a KDL patch, and a new system is C# against the [SDK](/sdk/). [Concepts](/concepts/) lays out the layers.
+How far you take it is up to the mod. A re-skin is a single dropped file. A rebalance means writing a KDL patch, and only a genuinely new system needs C# against the [SDK](/sdk/), which is the exception more than the rule. [Concepts](/concepts/) lays out the layers.
 
 ## Compared to MenaceAssetPacker
 
@@ -17,7 +17,7 @@ You go only as far as a mod needs: a re-skin is a dropped file, a rebalance is a
 ### Workflow
 
 - **Mods are folders of files.** Replacements are declared by location: drop a file at the path Studio shows you and the filename does the matching. Your project is a directory you can put under git.
-- **Templates patched in KDL.** Patches live in `templates/*.kdl` with operations and typed values the compiler validates at build time. Operations compose when stacked, following the pattern modern modding ecosystems have settled on (RimWorld's `PatchOperation` XML, Skyrim's distributor plugins). Edit visually or write KDL by hand and switch at any time.
+- **Templates patched in KDL.** Patches live in `templates/*.kdl` with operations and typed values the compiler validates at build time. Stacked operations apply in order, the way RimWorld's `PatchOperation` XML composes. Edit visually or write KDL by hand and switch at any time.
 - **IDE-style Studio.** A grid of splittable, drag-and-drop panes with a command palette (`Ctrl+Shift+P`) and Monaco editors with vim mode.
 - **Live previews and drag-to-author.** Textures, sprites, audio, and 3D models preview inline. Drag a template id or field from the browser into the editor to start a patch with the field path filled in.
 

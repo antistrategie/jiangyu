@@ -1,6 +1,6 @@
 # SDK
 
-Most mods need no code. Stat tweaks, new variants, asset swaps, and audio are all data, and live in [templates](/templates) and [assets](/assets/). Reach for C# only when you want something the data layer cannot express.
+Most mods need no code. Stat tweaks, new variants, asset swaps, and audio are all data, and live in [templates](/templates) and [asset files](/assets/replacements/). Reach for C# only when you want something the data layer cannot express.
 
 When you do, the common case by far is a **custom [template type](./template-types)**: your own effect, condition, or value provider that the game constructs from a KDL `type=` slot. It needs no entry point, just a `[JiangyuType]` class, and it is where most code mods begin. The rest of this page, the entry point and the mod API, is for the rarer **behaviour mod** that reacts to the game at runtime.
 
@@ -19,7 +19,7 @@ A code mod compiles against `Jiangyu.Sdk` plus the game's IL2CPP proxy assemblie
 | [Game verbs](./verbs) | read and command the live game (spawn a unit, query a path) | not needed |
 | [Game UI](./ui) | inject your own elements into the game's screens | not needed |
 
-Template types are the data-shaped surface. The other three are runtime behaviour. Verbs and UI can be called from inside any of them.
+Template types are the data-shaped surface. The other three are runtime behaviour, and verbs and UI can be called from inside any of them.
 
 ## The `code/` project
 
@@ -111,7 +111,7 @@ Context.Hooks.Subscribe<EntityDiedContext>(ctx =>
 
 Every moment is a context type, split into a tactical family (combat, turns, movement, skills) and a strategy family (factions, leaders, operations). The [hook reference](/reference/hooks) lists them all with their payloads. Game-typed payloads are held as `object` to keep the SDK game-agnostic, so you cast them in your handler. Primitive payloads, a round number or a count, are typed directly.
 
-The bus is observer-only: it tells you a moment happened, it does not let you cancel it. To change what a skill or effect does, write a [template type](./template-types). To read or command the live game from a handler, use [game verbs](./verbs). To intercept a method with no hook, use [Patches](#patches).
+The bus is observer-only. It tells you a moment happened, but it can't stop it. To change what a skill or effect actually does, write a [template type](./template-types) instead. Verbs read and command the live game from a handler, and [Patches](#patches) cover the rare method no hook reaches.
 
 ### State
 

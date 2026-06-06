@@ -22,7 +22,7 @@ The basename (without extension) is the **target name** and must match the runti
 
 ## Per-category contracts
 
-Each asset class has its own runtime contract: textures mutate in place, atlas-backed sprites composite into a copy of the atlas at compile time, audio rides a Harmony hook on `AudioSource.Play`, models swap the shared mesh on every `SkinnedMeshRenderer`. The dedicated pages cover the specifics:
+Each asset class has its own runtime contract. Textures mutate in place. Sprites backed by an atlas get composited into a copy of it at compile time. Audio is swapped through a Harmony hook on `AudioSource.Play`, and a model swap replaces the shared mesh on every `SkinnedMeshRenderer` that uses it. The dedicated pages cover the specifics:
 
 - [Textures](/assets/replacements/textures)
 - [Sprites](/assets/replacements/sprites)

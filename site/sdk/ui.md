@@ -1,6 +1,6 @@
 # UI
 
-[Hooks](/sdk/#hooks) react to moments. [Template types](./template-types) change the game's data. [Game verbs](./verbs) read and command the live game. **Game UI** is the surface for the screen itself: it injects your own elements into the game's existing UI, so a custom bar, panel, or modal sits inside a native screen and looks like it belongs.
+Game UI injects your own elements into the game's existing screens, so a custom bar or modal sits inside a native screen and looks like it belongs. It is the fourth SDK surface, alongside [hooks](/sdk/#hooks), [template types](./template-types), and [verbs](./verbs).
 
 It lives in the `Jiangyu.Game` namespace, alongside the verbs, as plain static calls on `UI`:
 

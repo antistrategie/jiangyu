@@ -11,18 +11,18 @@ hero:
       link: /what-is-jiangyu
     - theme: alt
       text: Get started
-      link: /getting-started
+      link: /tutorials/installation
     - theme: alt
       text: Studio
       link: /studio
 
 features:
   - title: Drop-in replacements
-    details: Want a different texture, sprite, or audio clip? Drop the file where Studio tells you and the loader picks it up at runtime. No code, no config.
+    details: A texture, sprite, or audio swap is one file. Drop it where Studio tells you and the loader picks it up when the game runs. No code involved.
   - title: Patch and clone
-    details: Change anything from a single stat to a whole new weapon variant. Patch in place to tweak, or clone to fork freely. Write KDL by hand or edit it visually.
+    details: Change a single stat, or clone a template into a whole new weapon variant. A patch edits the original in place. A clone copies it first, so your changes never touch what they came from. Write the KDL by hand or edit it in Studio.
   - title: Add new characters and gear
-    details: Import custom characters, prefabs, and gear using Unity. The compiler bundles them and clones wire them in by name.
+    details: Bring your own characters, prefabs, and gear in through Unity. The compiler bundles them, and a clone wires them in by name.
   - title: Studio and CLI
     details: A visual workspace with previews and one-click compile, plus a matching CLI for scripts and CI. An opt-in AI agent is available if you want one.
 ---
