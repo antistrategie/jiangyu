@@ -30,7 +30,7 @@ public static partial class Mission
 
     /// <summary>
     /// Every actor on the field, optionally filtered to one faction. Flattens the
-    /// per-faction actor lists.
+    /// per-faction actor lists, skipping unused faction slots.
     /// </summary>
     public static IReadOnlyList<Actor> Actors(FactionType? faction = null)
     {
@@ -39,10 +39,12 @@ public static partial class Mission
         for (var i = 0; i < factions.Length; i++)
         {
             var f = factions[i];
-            if (faction.HasValue && f.GetFactionType() != faction.Value)
+            if (f == null || (faction.HasValue && f.GetFactionType() != faction.Value))
                 continue;
 
             var actors = f.GetActors();
+            if (actors == null)
+                continue;
             for (var j = 0; j < actors.Count; j++)
                 result.Add(actors[j]);
         }

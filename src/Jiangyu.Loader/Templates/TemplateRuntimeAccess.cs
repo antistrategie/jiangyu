@@ -69,6 +69,33 @@ internal static class TemplateRuntimeAccess
         if (resolvedType == null)
             return false;
 
+        return TryGetTemplateById(resolvedType, templateId, out template, out error);
+    }
+
+    /// <summary>
+    /// Looks up a single live template by its identity string against a known
+    /// concrete type, dispatching by base class exactly as the type-name
+    /// overload does. Used when the caller already holds the target type (e.g.
+    /// marshalling a verb argument) and so needs no name resolution.
+    /// </summary>
+    public static bool TryGetTemplateById(
+        Type resolvedType, string templateId,
+        out Il2CppObjectBase template, out string error)
+    {
+        template = null;
+
+        if (resolvedType == null)
+        {
+            error = "template type is null.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(templateId))
+        {
+            error = "template id is empty.";
+            return false;
+        }
+
         if (typeof(DataTemplate).IsAssignableFrom(resolvedType))
             return TryResolveDataTemplate(templateId, resolvedType, out template, out error);
 

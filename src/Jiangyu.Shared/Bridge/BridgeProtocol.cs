@@ -13,7 +13,7 @@ namespace Jiangyu.Shared.Bridge;
 public static class BridgeProtocol
 {
     /// <summary>Bumped on a breaking wire change. Written to the port file and answered by <c>ping</c>.</summary>
-    public const int Version = 1;
+    public const int Version = 2;
 
     /// <summary>Reject a frame larger than this, so a desync reading a bogus length cannot allocate wildly.</summary>
     public const int MaxMessageBytes = 64 * 1024 * 1024;
@@ -25,17 +25,14 @@ public static class BridgeProtocol
 /// <summary>
 /// The bridge method names, shared so the loader's handler registration and the client's
 /// request calls reference one spelling. A mismatch would otherwise fail silently as an
-/// "unknown method" response rather than at compile time.
+/// "unknown method" response rather than at compile time. <c>command</c> carries a
+/// <c>{ name, args }</c> payload dispatched to the loader's command registry (the verb
+/// runner and the on-demand inspectors); <c>ping</c> is the version handshake.
 /// </summary>
 public static class BridgeMethods
 {
     public const string Ping = "ping";
-    public const string UiCapture = "ui.capture";
-    public const string InspectScene = "inspect.scene";
-    public const string InspectTemplates = "inspect.templates";
-    public const string GateRun = "gate.run";
-    public const string VerbsRun = "verbs.run";
-    public const string StrategyRun = "strategy.run";
+    public const string Command = "command";
 }
 
 /// <summary>A bridge request: <c>{ id, method, params }</c>.</summary>

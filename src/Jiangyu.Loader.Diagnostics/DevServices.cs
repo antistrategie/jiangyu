@@ -1,6 +1,7 @@
-using Jiangyu.Loader.Diagnostics.InjectionGate;
+using System;
+using System.Collections.Generic;
+using System.Text.Json;
 using Jiangyu.Loader.Diagnostics.UiProbe;
-using Jiangyu.Loader.Diagnostics.VerbProbe;
 using Jiangyu.Loader.Runtime;
 using Jiangyu.Shared.Bridge;
 using Jiangyu.Shared.Dev;
@@ -8,35 +9,56 @@ using MelonLoader.Utils;
 
 namespace Jiangyu.Loader.Diagnostics;
 
-// The loader's dev surface, merged into the dev loader DLL only. Owns the Studio
-// bridge socket and routes its methods to the on-demand probes and inspectors.
-// JiangyuMod finds this through the IDevServices seam; the user loader DLL carries
-// none of it, so the bridge and every probe are simply absent there.
+// The loader's dev surface, merged into the dev loader DLL only. Owns the Studio bridge
+// socket and a registry of named commands routed over one `command` method: the generic
+// verb runner plus the on-demand inspectors. JiangyuMod finds this through the
+// IDevServices seam; the user loader DLL carries none of it.
 internal sealed class DevServices : IDevServices
 {
     private IDevServicesContext _context;
     private BridgeServer _bridge;
+    private Dictionary<string, Func<JsonElement, object>> _commands;
 
     public void Initialise(IDevServicesContext context)
     {
         _context = context;
 
-        if (InjectionGateInspector.IsEnabled())
+        // name -> handler. The verb runner takes the command's args; the inspectors read
+        // live scene state from the context and ignore them.
+        _commands = new Dictionary<string, Func<JsonElement, object>>(StringComparer.Ordinal)
         {
-            InjectionGateInspector.Run("init", live: false, context.Logger);
-        }
+            ["verb"] = args => VerbRunner.Run(args, _context.Logger),
+            ["ui"] = _ => UiTreeProbe.CaptureCurrent(_context.CurrentScene),
+            ["scene"] = _ => SceneIdentityInspector.Capture(_context.CurrentScene, _context.CurrentBuildIndex),
+            ["templates"] = _ => TemplateStateInspector.Capture(_context.CurrentScene),
+        };
 
         _bridge = new BridgeServer(context.Logger);
         _bridge.On(BridgeMethods.Ping, _ => new { ok = true, version = Jiangyu.Loader.BuildInfo.Version, protocol = BridgeProtocol.Version });
-        _bridge.On(BridgeMethods.UiCapture, _ => UiTreeProbe.CaptureCurrent("bridge"));
-        _bridge.On(BridgeMethods.InspectScene, _ => SceneIdentityInspector.Capture(_context.CurrentScene, _context.CurrentBuildIndex));
-        _bridge.On(BridgeMethods.InspectTemplates, _ => TemplateStateInspector.Capture(_context.CurrentScene));
-        _bridge.On(BridgeMethods.GateRun, _ => InjectionGateInspector.Capture(_context.CurrentScene, _context.Logger));
-        _bridge.On(BridgeMethods.VerbsRun, _ => VerbSurfaceProbe.Capture(_context.CurrentScene, _context.Logger));
-        _bridge.On(BridgeMethods.StrategyRun, _ => StrategyProbe.Capture(_context.Logger));
+        _bridge.On(BridgeMethods.Command, HandleCommand);
     }
 
-    public void OnSceneLoaded() => UpdateBridge();
+    // A `command` request is { name, args }: dispatch by name to the registry, passing
+    // the args sub-payload (the verb runner's {verb,args,mutate}; inspectors ignore it).
+    private object HandleCommand(JsonElement request)
+    {
+        if (request.ValueKind != JsonValueKind.Object
+            || !request.TryGetProperty("name", out var n) || n.GetString() is not { } name)
+            return new { error = "missing command 'name'" };
+        if (!_commands.TryGetValue(name, out var handler))
+            return new { error = $"unknown command '{name}'" };
+
+        var args = request.TryGetProperty("args", out var a) ? a : default;
+        return handler(args);
+    }
+
+    public void OnSceneLoaded()
+    {
+        // Handles name live objects from the scene that just unloaded. Drop them so a
+        // {ref:"..."} can never resolve to a stale instance.
+        ObjectHandles.Clear();
+        UpdateBridge();
+    }
 
     public void OnUpdate(int frameInScene)
     {

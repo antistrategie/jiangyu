@@ -501,22 +501,9 @@ internal static class TemplateStateInspector
         catch { return element.GetType().Name; }
     }
 
-    // Cache for IL2CPP class pointer → class name. Cheap to build (just one
-    // P/Invoke + Marshal.PtrToStringAnsi per unique class). Keeps the
-    // inspector's per-element cost at one dictionary lookup after the first
-    // sighting of any given concrete type.
-    private static readonly Dictionary<IntPtr, string> ConcreteClassNameCache = new();
-
     private static string BuildReferenceSummary(Il2CppObjectBase il2CppObject)
     {
-        // Resolve the *concrete* IL2CPP type name rather than the static
-        // wrapper type. Indexing a List<AbstractBase> returns a base-typed
-        // wrapper, so il2CppObject.GetType().Name reports the abstract base
-        // (e.g. "SkillEventHandlerTemplate") even when the underlying object
-        // is a concrete subclass like AddSkill. Asking IL2CPP directly via
-        // il2cpp_object_get_class + il2cpp_class_get_name returns the real
-        // runtime class name, which is what callers want from the dump.
-        var typeName = ResolveConcreteClassName(il2CppObject) ?? il2CppObject.GetType().Name;
+        var typeName = Il2CppTypeName.Resolve(il2CppObject) ?? il2CppObject.GetType().Name;
 
         string identity = null;
         if (typeof(DataTemplate).IsAssignableFrom(il2CppObject.GetType()))
@@ -548,36 +535,6 @@ internal static class TemplateStateInspector
             ? typeName
             : $"{typeName}:{identity}";
         return head + nativeSuffix;
-    }
-
-    private static string ResolveConcreteClassName(Il2CppObjectBase il2CppObject)
-    {
-        IntPtr objectPointer;
-        try { objectPointer = il2CppObject.Pointer; }
-        catch { return null; }
-        if (objectPointer == IntPtr.Zero) return null;
-
-        IntPtr klass;
-        try { klass = IL2CPP.il2cpp_object_get_class(objectPointer); }
-        catch { return null; }
-        if (klass == IntPtr.Zero) return null;
-
-        if (ConcreteClassNameCache.TryGetValue(klass, out var cached))
-            return cached;
-
-        string name;
-        try
-        {
-            var namePtr = IL2CPP.il2cpp_class_get_name(klass);
-            name = namePtr == IntPtr.Zero ? null : Marshal.PtrToStringAnsi(namePtr);
-        }
-        catch
-        {
-            name = null;
-        }
-
-        ConcreteClassNameCache[klass] = name;
-        return name;
     }
 
     private static IntPtr GetNativePointer(object instance)

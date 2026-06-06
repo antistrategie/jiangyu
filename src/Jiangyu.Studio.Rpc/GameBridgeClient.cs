@@ -29,6 +29,7 @@ internal sealed class GameBridgeClient
     private TcpClient? _client;
     private NetworkStream? _stream;
     private int _nextId;
+    private int _remoteProtocol;
 
     public bool IsConnected
     {
@@ -72,6 +73,10 @@ internal sealed class GameBridgeClient
         if (!EnsureConnected())
             throw new InvalidOperationException("game bridge not connected (is the game running with the bridge flag?)");
 
+        if (_remoteProtocol != 0 && _remoteProtocol != BridgeProtocol.Version)
+            throw new InvalidOperationException(
+                $"game bridge protocol mismatch: the loader speaks v{_remoteProtocol}, Studio expects v{BridgeProtocol.Version}. Redeploy the dev loader.");
+
         try
         {
             var id = (++_nextId).ToString();
@@ -100,9 +105,10 @@ internal sealed class GameBridgeClient
             return true;
         Cleanup();
 
-        var port = ReadPort();
+        var (port, protocol) = ReadPortFile();
         if (port <= 0)
             return false;
+        _remoteProtocol = protocol;
         try
         {
             var client = new TcpClient { ReceiveTimeout = ReadTimeoutMs, SendTimeout = ReadTimeoutMs };
@@ -126,19 +132,23 @@ internal sealed class GameBridgeClient
         _client = null;
     }
 
-    private static int ReadPort()
+    // Reads the loader's published port file: its listening port and the bridge protocol
+    // version it speaks (0 when absent), so Send can flag a stale loader clearly.
+    private static (int port, int protocol) ReadPortFile()
     {
         var (gameDir, _) = GlobalConfig.ResolveGamePath(GlobalConfig.Load());
         if (gameDir is null)
-            return 0;
+            return (0, 0);
         var path = Path.Combine(gameDir, "UserData", BridgeProtocol.PortFileName);
         if (!File.Exists(path))
-            return 0;
+            return (0, 0);
         try
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(path));
-            return doc.RootElement.TryGetProperty("port", out var portEl) ? portEl.GetInt32() : 0;
+            var port = doc.RootElement.TryGetProperty("port", out var portEl) ? portEl.GetInt32() : 0;
+            var protocol = doc.RootElement.TryGetProperty("protocol", out var protoEl) ? protoEl.GetInt32() : 0;
+            return (port, protocol);
         }
-        catch { return 0; }
+        catch { return (0, 0); }
     }
 }
