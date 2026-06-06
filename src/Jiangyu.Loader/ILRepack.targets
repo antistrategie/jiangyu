@@ -18,9 +18,15 @@
 
     <!-- Dev loader DLL only (-p:IncludeDiagnostics=true): build the diagnostics
          assembly against the just-compiled lean core DLL and stage it beside the
-         other merge inputs. BuildProjectReferences=false stops the nested build from
-         rebuilding this project (which would recurse through this AfterBuild target)
-         or the SDK/shared outputs already present in bin. -->
+         other merge inputs. The diagnostics project is not a reference of the lean
+         loader, so a direct build of this csproj never restores it. Restore it
+         explicitly first, or a clean checkout has no project.assets.json for it.
+         BuildProjectReferences=false stops the nested build from rebuilding this
+         project (which would recurse through this AfterBuild target) or the SDK/shared
+         outputs already present in bin. -->
+    <MSBuild Condition="'$(IncludeDiagnostics)' == 'true'"
+             Projects="$(MSBuildThisFileDirectory)../Jiangyu.Loader.Diagnostics/Jiangyu.Loader.Diagnostics.csproj"
+             Targets="Restore" />
     <MSBuild Condition="'$(IncludeDiagnostics)' == 'true'"
              Projects="$(MSBuildThisFileDirectory)../Jiangyu.Loader.Diagnostics/Jiangyu.Loader.Diagnostics.csproj"
              Properties="Configuration=$(Configuration);BuildProjectReferences=false" />
