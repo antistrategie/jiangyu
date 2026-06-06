@@ -11,7 +11,7 @@ jobs:
   test-dotnet:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
         with:
           path: jiangyu
 
@@ -22,13 +22,13 @@ jobs:
       # still need the loader to compile so we set up the build deps the
       # same way build-loader does below.
       - name: Checkout menace-ci-dependencies
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
         with:
           repository: beanpuppy/menace-ci-dependencies
           path: menace-ci-dependencies
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v5.2.0
+        uses: actions/setup-dotnet@v5.3.0
         with:
           dotnet-version: "10.0.x"
 
@@ -78,7 +78,7 @@ jobs:
       run:
         working-directory: src/Jiangyu.Studio.UI
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -102,18 +102,18 @@ jobs:
     needs: [test-dotnet, test-studio-ui]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
         with:
           path: jiangyu
 
       - name: Checkout menace-ci-dependencies
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
         with:
           repository: beanpuppy/menace-ci-dependencies
           path: menace-ci-dependencies
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v5.2.0
+        uses: actions/setup-dotnet@v5.3.0
         with:
           dotnet-version: "10.0.x"
 
@@ -175,12 +175,12 @@ jobs:
             platform: win-x64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
         with:
           path: jiangyu
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v5.2.0
+        uses: actions/setup-dotnet@v5.3.0
         with:
           dotnet-version: "10.0.x"
 
@@ -213,12 +213,12 @@ jobs:
             platform: win-x64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
         with:
           path: jiangyu
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v5.2.0
+        uses: actions/setup-dotnet@v5.3.0
         with:
           dotnet-version: "10.0.x"
 
