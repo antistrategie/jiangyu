@@ -14,7 +14,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Jiangyu.Core\Jiangyu.Core.csproj" />
+    <ProjectReference Include="../Jiangyu.Core/Jiangyu.Core.csproj" />
   </ItemGroup>
 
 </Project>

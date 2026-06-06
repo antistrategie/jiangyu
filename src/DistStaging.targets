@@ -1,0 +1,19 @@
+<Project>
+
+  <!--
+    Stages a project's primary output under the repo's dist/<DistSubdir>/ on a Release
+    build, so dev runs and the publish bundling (SdkDistribution.targets) resolve it
+    without a per-platform shell copy. A project opts in by importing this and setting
+    DistSubdir. Mirrors the loader's dist/loader staging in Jiangyu.Loader/ILRepack.targets.
+
+    The platform-agnostic SDK and loader DLLs are built once and copied into each
+    published artefact, so a cross-platform `dotnet publish` needs no game assemblies.
+    dist/ is gitignored.
+  -->
+  <Target Name="StageForDist" AfterTargets="Build"
+          Condition="'$(Configuration)' == 'Release' and '$(DistSubdir)' != ''">
+    <Copy SourceFiles="$(TargetPath)"
+          DestinationFolder="$(MSBuildThisFileDirectory)../dist/$(DistSubdir)" />
+  </Target>
+
+</Project>

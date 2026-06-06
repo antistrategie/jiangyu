@@ -10,8 +10,19 @@ description = "Build Jiangyu.Cli"
 run = "dotnet build src/Jiangyu.Cli/Jiangyu.Cli.csproj -c Release"
 
 [tasks."build:loader"]
-description = "Build Jiangyu.Loader"
-run = "dotnet build src/Jiangyu.Loader/Jiangyu.Loader.csproj -c Release"
+description = "Build both loader variants (user, dev); each stages itself under dist/loader for deploy"
+run = """
+dotnet build src/Jiangyu.Loader/Jiangyu.Loader.csproj -c Release --no-incremental
+dotnet build src/Jiangyu.Loader/Jiangyu.Loader.csproj -c Release -p:IncludeDiagnostics=true --no-incremental
+"""
+
+[tasks."build:sdk"]
+description = "Build the modder SDK and stage it under dist/sdk for the publish bundling"
+run = "dotnet build src/Jiangyu.Sdk.Menace/Jiangyu.Sdk.Menace.csproj -c Release"
+
+[tasks."build:dist"]
+description = "Build the SDK and both loader variants and stage them under dist/ for the publish bundling"
+depends = ["build:sdk", "build:loader"]
 
 [tasks."build:studio"]
 description = "Build Studio frontend + host"

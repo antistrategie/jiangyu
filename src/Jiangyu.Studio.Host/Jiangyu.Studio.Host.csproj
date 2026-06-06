@@ -13,7 +13,7 @@
     <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
     <DebugType>embedded</DebugType>
     <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
-    <RpcTypesOutputPath>$(MSBuildThisFileDirectory)..\Jiangyu.Studio.UI\src\shared\rpc\types.ts</RpcTypesOutputPath>
+    <RpcTypesOutputPath>$(MSBuildThisFileDirectory)../Jiangyu.Studio.UI/src/shared/rpc/types.ts</RpcTypesOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,10 +26,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Jiangyu.Acp\Jiangyu.Acp.csproj" />
-    <ProjectReference Include="..\Jiangyu.Core\Jiangyu.Core.csproj" />
-    <ProjectReference Include="..\Jiangyu.Studio.Rpc\Jiangyu.Studio.Rpc.csproj" />
-    <ProjectReference Include="..\Jiangyu.Studio.Rpc.Generators\Jiangyu.Studio.Rpc.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../Jiangyu.Acp/Jiangyu.Acp.csproj" />
+    <ProjectReference Include="../Jiangyu.Core/Jiangyu.Core.csproj" />
+    <ProjectReference Include="../Jiangyu.Studio.Rpc/Jiangyu.Studio.Rpc.csproj" />
+    <ProjectReference Include="../Jiangyu.Studio.Rpc.Generators/Jiangyu.Studio.Rpc.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <!-- jiangyu-mcp ships as a sibling executable spawned by ACP agents over
          stdio. ReferenceOutputAssembly=false keeps Mcp out of Host's
          compile/link path; the Target below drops its build output into
@@ -37,7 +37,7 @@
          via AppContext.BaseDirectory. Release publish should publish
          Jiangyu.Mcp separately and ship the resulting binary alongside
          jiangyu-studio. -->
-    <ProjectReference Include="..\Jiangyu.Mcp\Jiangyu.Mcp.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../Jiangyu.Mcp/Jiangyu.Mcp.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -45,13 +45,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Update="wwwroot\**">
+    <Content Update="wwwroot/**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <!-- OS window icon — shipped from the UI project so there's a single source
          of truth (UI/public/icon.png is also the web favicon). Copied to the
          output as "icon.png" so SetIconFile can resolve it via AppContext.BaseDirectory. -->
-    <Content Include="..\Jiangyu.Studio.UI\public\icon.png" Link="icon.png">
+    <Content Include="../Jiangyu.Studio.UI/public/icon.png" Link="icon.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
@@ -75,18 +75,18 @@
        launcher. -->
   <Target Name="CopyMcpToOutput" AfterTargets="Build">
     <ItemGroup>
-      <McpOutput Include="..\Jiangyu.Mcp\bin\$(Configuration)\$(TargetFramework)\**\*" />
+      <McpOutput Include="../Jiangyu.Mcp/bin/$(Configuration)/$(TargetFramework)/**/*" />
     </ItemGroup>
-    <Copy SourceFiles="@(McpOutput)" DestinationFolder="$(OutDir)bin\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(McpOutput)" DestinationFolder="$(OutDir)bin/%(RecursiveDir)" SkipUnchangedFiles="true" />
   </Target>
 
   <Target Name="BuildStudioFrontend" BeforeTargets="ResolveProjectStaticWebAssets" Condition="'$(Configuration)' == 'Release' And '$(SkipStudioFrontend)' != 'true'">
     <Message Importance="high" Text="Building Studio frontend bundle…" />
-    <Exec Command="bun install --frozen-lockfile" WorkingDirectory="$(MSBuildThisFileDirectory)..\Jiangyu.Studio.UI" />
-    <Exec Command="bun run build" WorkingDirectory="$(MSBuildThisFileDirectory)..\Jiangyu.Studio.UI" />
+    <Exec Command="bun install --frozen-lockfile" WorkingDirectory="$(MSBuildThisFileDirectory)../Jiangyu.Studio.UI" />
+    <Exec Command="bun run build" WorkingDirectory="$(MSBuildThisFileDirectory)../Jiangyu.Studio.UI" />
     <ItemGroup>
-      <Content Remove="wwwroot\**" />
-      <Content Include="wwwroot\**">
+      <Content Remove="wwwroot/**" />
+      <Content Include="wwwroot/**">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Content>
     </ItemGroup>
@@ -94,7 +94,11 @@
 
   <!-- Ship the modder SDK beside the published `jiangyu-studio` so Studio resolves
        its SDK directory to its own folder when it drives a mod's code build. See
-       ..\SdkDistribution.targets. -->
-  <Import Project="..\SdkDistribution.targets" />
+       ../SdkDistribution.targets. -->
+  <Import Project="../SdkDistribution.targets" />
+
+  <!-- Ship both loader builds in loader/user|dev beside the published `jiangyu-studio`
+       so Studio's loader deploy resolves them. See ../LoaderDistribution.targets. -->
+  <Import Project="../LoaderDistribution.targets" />
 
 </Project>

@@ -242,6 +242,13 @@ export interface ConfigStatus {
   unityEditorError?: string | null;
   unityEditorVersion?: string | null;
   melonLoaderError?: string | null;
+  deployedLoaderVariant?: string | null;
+  deployedLoaderVersion?: string | null;
+}
+
+export interface LoaderDeployResult {
+  variant: string;
+  version?: string | null;
 }
 
 export interface EnumMembersResult {

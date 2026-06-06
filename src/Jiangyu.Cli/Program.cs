@@ -1,6 +1,7 @@
 using System.CommandLine;
 using Jiangyu.Cli.Commands;
 using Jiangyu.Cli.Commands.Assets;
+using Jiangyu.Cli.Commands.Loader;
 using Jiangyu.Cli.Commands.Templates;
 
 var root = new RootCommand("Jiangyu — modkit for MENACE")
@@ -11,7 +12,8 @@ var root = new RootCommand("Jiangyu — modkit for MENACE")
     AssetsCommand.Create(),
     TemplatesCommand.Create(),
     UnityCommand.Create(),
-    CodeCommand.Create()
+    CodeCommand.Create(),
+    LoaderCommand.Create()
 };
 
 return await root.Parse(args).InvokeAsync();

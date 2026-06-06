@@ -1,0 +1,31 @@
+<Project>
+
+  <!--
+    Bundles the loader builds beside a published executable, mirroring
+    SdkDistribution.targets. The loader is a platform-agnostic net6 DLL, so it is built
+    once and staged under dist/loader/<variant>/ (by Jiangyu.Loader/ILRepack.targets,
+    driven by `mise run build:loader` locally or the build-loader CI job), and the
+    publish simply copies it in. Copying rather than building keeps a cross-platform
+    `dotnet publish` free of the game assemblies and MelonLoader the loader needs to
+    compile.
+
+    A missing staging tree warns rather than fails, so a publish without staged loaders
+    still succeeds (minus the bundled loaders).
+  -->
+  <Target Name="BundleLoaderForDistribution" AfterTargets="Publish">
+    <PropertyGroup>
+      <_LoaderStage>$(MSBuildThisFileDirectory)../dist/loader</_LoaderStage>
+    </PropertyGroup>
+
+    <Warning Condition="!Exists('$(_LoaderStage)/user/Jiangyu.Loader.dll')"
+             Text="No staged loader at $(_LoaderStage)/user. Run 'mise run build:loader' before publishing to bundle the loader variants." />
+
+    <Copy Condition="Exists('$(_LoaderStage)/user/Jiangyu.Loader.dll')"
+          SourceFiles="$(_LoaderStage)/user/Jiangyu.Loader.dll"
+          DestinationFolder="$(PublishDir)loader/user" />
+    <Copy Condition="Exists('$(_LoaderStage)/dev/Jiangyu.Loader.dll')"
+          SourceFiles="$(_LoaderStage)/dev/Jiangyu.Loader.dll"
+          DestinationFolder="$(PublishDir)loader/dev" />
+  </Target>
+
+</Project>

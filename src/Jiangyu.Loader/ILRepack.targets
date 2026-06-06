@@ -15,6 +15,19 @@
     output directory (Private=false).
   -->
   <Target Name="JiangyuLoaderILRepack" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+
+    <!-- Dev loader DLL only (-p:IncludeDiagnostics=true): build the diagnostics
+         assembly against the just-compiled lean core DLL and stage it beside the
+         other merge inputs. BuildProjectReferences=false stops the nested build from
+         rebuilding this project (which would recurse through this AfterBuild target)
+         or the SDK/shared outputs already present in bin. -->
+    <MSBuild Condition="'$(IncludeDiagnostics)' == 'true'"
+             Projects="$(MSBuildThisFileDirectory)../Jiangyu.Loader.Diagnostics/Jiangyu.Loader.Diagnostics.csproj"
+             Properties="Configuration=$(Configuration);BuildProjectReferences=false" />
+    <Copy Condition="'$(IncludeDiagnostics)' == 'true'"
+          SourceFiles="$(MSBuildThisFileDirectory)../Jiangyu.Loader.Diagnostics/bin/$(Configuration)/net6.0/Jiangyu.Loader.Diagnostics.dll"
+          DestinationFolder="$(OutputPath)" />
+
     <ItemGroup>
       <ILRepackInputAssemblies Include="$(OutputPath)Jiangyu.Loader.dll" />
       <ILRepackInputAssemblies Include="$(OutputPath)Jiangyu.Shared.dll" />
@@ -22,6 +35,8 @@
       <ILRepackInputAssemblies Include="$(OutputPath)Jiangyu.Sdk.Menace.dll" />
       <ILRepackInputAssemblies Include="$(OutputPath)System.Text.Json.dll" />
       <ILRepackInputAssemblies Include="$(OutputPath)System.Text.Encodings.Web.dll" />
+      <!-- Dev loader DLL only: the Studio bridge and the on-demand probes. -->
+      <ILRepackInputAssemblies Include="$(OutputPath)Jiangyu.Loader.Diagnostics.dll" Condition="'$(IncludeDiagnostics)' == 'true'" />
       <!-- The modder-facing surface stays public in the merged loader. -->
       <ILRepackInternalizeExclude Include="Jiangyu.Sdk" />
       <ILRepackInternalizeExclude Include="Jiangyu.Sdk.Menace" />
@@ -39,8 +54,19 @@
          (carried by the System.Text.* packages for platform-specific variants we
          don't ship) so nothing in bin/ can accidentally be picked up as a
          separate assembly. -->
-    <Delete Files="$(OutputPath)Jiangyu.Shared.dll;$(OutputPath)Jiangyu.Shared.pdb;$(OutputPath)Jiangyu.Sdk.dll;$(OutputPath)Jiangyu.Sdk.pdb;$(OutputPath)Jiangyu.Sdk.Menace.dll;$(OutputPath)Jiangyu.Sdk.Menace.pdb;$(OutputPath)System.Text.Json.dll;$(OutputPath)System.Text.Encodings.Web.dll" />
+    <Delete Files="$(OutputPath)Jiangyu.Shared.dll;$(OutputPath)Jiangyu.Shared.pdb;$(OutputPath)Jiangyu.Sdk.dll;$(OutputPath)Jiangyu.Sdk.pdb;$(OutputPath)Jiangyu.Sdk.Menace.dll;$(OutputPath)Jiangyu.Sdk.Menace.pdb;$(OutputPath)Jiangyu.Loader.Diagnostics.dll;$(OutputPath)Jiangyu.Loader.Diagnostics.pdb;$(OutputPath)System.Text.Json.dll;$(OutputPath)System.Text.Encodings.Web.dll" />
     <RemoveDir Directories="$(OutputPath)runtimes" />
+
+    <!-- Stage the merged DLL under the repo's dist/loader/<variant>/ so dev runs of
+         Studio/CLI resolve it (GlobalConfig.ResolveLoaderDll's dev-tree branch). Done
+         in MSBuild rather than a shell so `mise run build:loader` stays cross-platform.
+         dist/ is gitignored. -->
+    <PropertyGroup>
+      <_LoaderVariant Condition="'$(IncludeDiagnostics)' == 'true'">dev</_LoaderVariant>
+      <_LoaderVariant Condition="'$(IncludeDiagnostics)' != 'true'">user</_LoaderVariant>
+    </PropertyGroup>
+    <Copy SourceFiles="$(OutputPath)Jiangyu.Loader.dll"
+          DestinationFolder="$(MSBuildThisFileDirectory)../../dist/loader/$(_LoaderVariant)" />
   </Target>
 
 </Project>

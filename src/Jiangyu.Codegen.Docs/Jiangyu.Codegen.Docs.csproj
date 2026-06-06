@@ -14,7 +14,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Jiangyu.Sdk\Jiangyu.Sdk.csproj" />
+    <ProjectReference Include="../Jiangyu.Sdk/Jiangyu.Sdk.csproj" />
   </ItemGroup>
 
 </Project>

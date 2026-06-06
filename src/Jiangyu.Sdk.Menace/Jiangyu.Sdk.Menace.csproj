@@ -13,6 +13,7 @@
          verbs alike). 1591 is off: not every internal helper needs a doc comment. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);1591</NoWarn>
+    <DistSubdir>sdk</DistSubdir>
   </PropertyGroup>
 
   <!--
@@ -24,7 +25,7 @@
     Jiangyu.Sdk.
   -->
   <ItemGroup>
-    <ProjectReference Include="..\Jiangyu.Sdk\Jiangyu.Sdk.csproj" />
+    <ProjectReference Include="../Jiangyu.Sdk/Jiangyu.Sdk.csproj" />
     <InternalsVisibleTo Include="Jiangyu.Loader" />
   </ItemGroup>
 
@@ -37,9 +38,9 @@
   -->
   <Target Name="CopyMenaceBesideSdk" AfterTargets="Build">
     <Copy SourceFiles="$(OutputPath)Jiangyu.Sdk.Menace.dll"
-          DestinationFolder="$(MSBuildThisFileDirectory)..\Jiangyu.Sdk\bin\$(Configuration)\net6.0"
+          DestinationFolder="$(MSBuildThisFileDirectory)../Jiangyu.Sdk/bin/$(Configuration)/net6.0"
           SkipUnchangedFiles="true"
-          Condition="Exists('$(MSBuildThisFileDirectory)..\Jiangyu.Sdk\bin\$(Configuration)\net6.0')" />
+          Condition="Exists('$(MSBuildThisFileDirectory)../Jiangyu.Sdk/bin/$(Configuration)/net6.0')" />
   </Target>
 
   <ItemGroup>
@@ -68,5 +69,8 @@
       <Private>false</Private>
     </Reference>
   </ItemGroup>
+
+  <!-- Stage Jiangyu.Sdk.Menace.dll under dist/sdk so the publish bundling copies it in. -->
+  <Import Project="../DistStaging.targets" />
 
 </Project>

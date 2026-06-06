@@ -17,14 +17,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Jiangyu.Shared\Jiangyu.Shared.csproj" />
-    <ProjectReference Include="..\..\vendor\AssetRipper\Source\AssetRipper.Import\AssetRipper.Import.csproj" />
-    <ProjectReference Include="..\..\vendor\AssetRipper\Source\AssetRipper.Processing\AssetRipper.Processing.csproj" />
-    <ProjectReference Include="..\..\vendor\AssetRipper\Source\AssetRipper.Export.Modules.Models\AssetRipper.Export.Modules.Models.csproj" />
-    <ProjectReference Include="..\..\vendor\AssetRipper\Source\AssetRipper.Export.Modules.Textures\AssetRipper.Export.Modules.Textures.csproj" />
-    <ProjectReference Include="..\..\vendor\AssetRipper\Source\AssetRipper.Export.Modules.Audio\AssetRipper.Export.Modules.Audio.csproj" />
-    <ProjectReference Include="..\..\vendor\AssetRipper\Source\AssetRipper.Export.UnityProjects\AssetRipper.Export.UnityProjects.csproj" />
-    <ProjectReference Include="..\..\vendor\TinySerializer\TinySerializer\TinySerializer.csproj" />
+    <ProjectReference Include="../Jiangyu.Shared/Jiangyu.Shared.csproj" />
+    <ProjectReference Include="../../vendor/AssetRipper/Source/AssetRipper.Import/AssetRipper.Import.csproj" />
+    <ProjectReference Include="../../vendor/AssetRipper/Source/AssetRipper.Processing/AssetRipper.Processing.csproj" />
+    <ProjectReference Include="../../vendor/AssetRipper/Source/AssetRipper.Export.Modules.Models/AssetRipper.Export.Modules.Models.csproj" />
+    <ProjectReference Include="../../vendor/AssetRipper/Source/AssetRipper.Export.Modules.Textures/AssetRipper.Export.Modules.Textures.csproj" />
+    <ProjectReference Include="../../vendor/AssetRipper/Source/AssetRipper.Export.Modules.Audio/AssetRipper.Export.Modules.Audio.csproj" />
+    <ProjectReference Include="../../vendor/AssetRipper/Source/AssetRipper.Export.UnityProjects/AssetRipper.Export.UnityProjects.csproj" />
+    <ProjectReference Include="../../vendor/TinySerializer/TinySerializer/TinySerializer.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -33,25 +33,25 @@
          Editor scripts the modder's Unity Editor compiles, not Jiangyu.Core
          source. Exclude from this assembly's compile + content pickup; ship
          them as embedded resources keyed by the destination-relative path. -->
-    <Compile Remove="Templates\UnityProject\**\*" />
-    <None Remove="Templates\UnityProject\**\*" />
-    <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\Editor\BuildBundles.cs"
+    <Compile Remove="Templates/UnityProject/**/*" />
+    <None Remove="Templates/UnityProject/**/*" />
+    <EmbeddedResource Include="Templates/UnityProject/Assets/Jiangyu/Editor/BuildBundles.cs"
                       LogicalName="UnityProject/Assets/Jiangyu/Editor/BuildBundles.cs" />
-    <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\Editor\BuildModelBundles.cs"
+    <EmbeddedResource Include="Templates/UnityProject/Assets/Jiangyu/Editor/BuildModelBundles.cs"
                       LogicalName="UnityProject/Assets/Jiangyu/Editor/BuildModelBundles.cs" />
-    <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\Editor\BuildMeshReplacementBundle.cs"
+    <EmbeddedResource Include="Templates/UnityProject/Assets/Jiangyu/Editor/BuildMeshReplacementBundle.cs"
                       LogicalName="UnityProject/Assets/Jiangyu/Editor/BuildMeshReplacementBundle.cs" />
-    <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\Editor\ImportedPrefabPostProcessor.cs"
+    <EmbeddedResource Include="Templates/UnityProject/Assets/Jiangyu/Editor/ImportedPrefabPostProcessor.cs"
                       LogicalName="UnityProject/Assets/Jiangyu/Editor/ImportedPrefabPostProcessor.cs" />
-    <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\Editor\BakeHumanoid.cs"
+    <EmbeddedResource Include="Templates/UnityProject/Assets/Jiangyu/Editor/BakeHumanoid.cs"
                       LogicalName="UnityProject/Assets/Jiangyu/Editor/BakeHumanoid.cs" />
-    <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\Editor\BakeWeapon.cs"
+    <EmbeddedResource Include="Templates/UnityProject/Assets/Jiangyu/Editor/BakeWeapon.cs"
                       LogicalName="UnityProject/Assets/Jiangyu/Editor/BakeWeapon.cs" />
-    <EmbeddedResource Include="Templates\UnityProject\Assets\Jiangyu\README.md"
+    <EmbeddedResource Include="Templates/UnityProject/Assets/Jiangyu/README.md"
                       LogicalName="UnityProject/Assets/Jiangyu/README.md" />
-    <EmbeddedResource Include="Templates\UnityProject\Packages\manifest.json"
+    <EmbeddedResource Include="Templates/UnityProject/Packages/manifest.json"
                       LogicalName="UnityProject/Packages/manifest.json" />
-    <EmbeddedResource Include="Templates\UnityProject\.gitignore"
+    <EmbeddedResource Include="Templates/UnityProject/.gitignore"
                       LogicalName="UnityProject/.gitignore" />
   </ItemGroup>
 
@@ -60,17 +60,17 @@
          code/ project. The .props/.targets/.csproj/.cs files are the modder's
          build inputs, not Jiangyu.Core's; exclude them from this assembly's
          compile + content pickup and ship them as embedded resources. -->
-    <Compile Remove="Templates\CodeProject\**\*" />
-    <None Remove="Templates\CodeProject\**\*" />
-    <EmbeddedResource Include="Templates\CodeProject\Directory.Build.props"
+    <Compile Remove="Templates/CodeProject/**/*" />
+    <None Remove="Templates/CodeProject/**/*" />
+    <EmbeddedResource Include="Templates/CodeProject/Directory.Build.props"
                       LogicalName="CodeProject/Directory.Build.props" />
-    <EmbeddedResource Include="Templates\CodeProject\Directory.Build.targets"
+    <EmbeddedResource Include="Templates/CodeProject/Directory.Build.targets"
                       LogicalName="CodeProject/Directory.Build.targets" />
-    <EmbeddedResource Include="Templates\CodeProject\README.md"
+    <EmbeddedResource Include="Templates/CodeProject/README.md"
                       LogicalName="CodeProject/README.md" />
-    <EmbeddedResource Include="Templates\CodeProject\.gitignore"
+    <EmbeddedResource Include="Templates/CodeProject/.gitignore"
                       LogicalName="CodeProject/.gitignore" />
-    <EmbeddedResource Include="Templates\CodeProject\Mod.csproj"
+    <EmbeddedResource Include="Templates/CodeProject/Mod.csproj"
                       LogicalName="CodeProject/Mod.csproj" />
   </ItemGroup>
 

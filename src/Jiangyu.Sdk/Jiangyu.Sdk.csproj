@@ -7,6 +7,7 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <DistSubdir>sdk</DistSubdir>
   </PropertyGroup>
 
   <!-- The loader sets a mod's ModContext through the internal setter. -->
@@ -18,16 +19,19 @@
        mod's code/ project loads it from JiangyuSdkDir. The analyzer is not a runtime
        dependency of the SDK. -->
   <ItemGroup>
-    <ProjectReference Include="..\Jiangyu.Sdk.Analyzers\Jiangyu.Sdk.Analyzers.csproj"
+    <ProjectReference Include="../Jiangyu.Sdk.Analyzers/Jiangyu.Sdk.Analyzers.csproj"
                       ReferenceOutputAssembly="false"
                       PrivateAssets="all" />
   </ItemGroup>
 
   <Target Name="CopyAnalyzerBesideSdk" AfterTargets="Build">
-    <Copy SourceFiles="$(MSBuildThisFileDirectory)..\Jiangyu.Sdk.Analyzers\bin\$(Configuration)\netstandard2.0\Jiangyu.Sdk.Analyzers.dll"
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)../Jiangyu.Sdk.Analyzers/bin/$(Configuration)/netstandard2.0/Jiangyu.Sdk.Analyzers.dll"
           DestinationFolder="$(OutputPath)"
           SkipUnchangedFiles="true"
-          Condition="Exists('$(MSBuildThisFileDirectory)..\Jiangyu.Sdk.Analyzers\bin\$(Configuration)\netstandard2.0\Jiangyu.Sdk.Analyzers.dll')" />
+          Condition="Exists('$(MSBuildThisFileDirectory)../Jiangyu.Sdk.Analyzers/bin/$(Configuration)/netstandard2.0/Jiangyu.Sdk.Analyzers.dll')" />
   </Target>
+
+  <!-- Stage Jiangyu.Sdk.dll under dist/sdk so the publish bundling copies it in. -->
+  <Import Project="../DistStaging.targets" />
 
 </Project>

@@ -9,6 +9,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <DistSubdir>sdk</DistSubdir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,5 +25,8 @@
     <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
     <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
   </ItemGroup>
+
+  <!-- Stage Jiangyu.Sdk.Analyzers.dll under dist/sdk so the publish bundling copies it in. -->
+  <Import Project="../DistStaging.targets" />
 
 </Project>

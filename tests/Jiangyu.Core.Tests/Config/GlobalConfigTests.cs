@@ -170,11 +170,62 @@ public class GlobalConfigTests
         finally { Cleanup(root); }
     }
 
+    [Fact]
+    public void FindLoaderDllInRoots_FindsVariantSubfolder()
+    {
+        var root = NewTempDir();
+        try
+        {
+            var dll = WriteLoaderDll(root, "dev");
+            Assert.Equal(dll, GlobalConfig.FindLoaderDllInRoots(new[] { root }, "dev"));
+            Assert.Null(GlobalConfig.FindLoaderDllInRoots(new[] { root }, "user"));
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public void FindLoaderDllInRoots_FirstRootWithVariantWins()
+    {
+        var first = NewTempDir();
+        var second = NewTempDir();
+        try
+        {
+            var dll = WriteLoaderDll(second, "user");
+            Assert.Equal(dll, GlobalConfig.FindLoaderDllInRoots(new string?[] { null, first, second }, "user"));
+        }
+        finally { Cleanup(first); Cleanup(second); }
+    }
+
+    [Fact]
+    public void FindLoaderDllInRoots_NullWhenAbsent()
+    {
+        var root = NewTempDir();
+        try { Assert.Null(GlobalConfig.FindLoaderDllInRoots(new[] { root }, "dev")); }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public void ResolveLoaderDll_RejectsUnknownVariant()
+    {
+        var (dll, error) = GlobalConfig.ResolveLoaderDll(new GlobalConfig(), "prod");
+        Assert.Null(dll);
+        Assert.Contains("unknown loader variant", error);
+    }
+
     private static string NewTempDir()
     {
         var dir = Path.Combine(Path.GetTempPath(), $"jiangyu-sdk-{Guid.NewGuid()}");
         Directory.CreateDirectory(dir);
         return dir;
+    }
+
+    private static string WriteLoaderDll(string root, string variant)
+    {
+        var dir = Path.Combine(root, "loader", variant);
+        Directory.CreateDirectory(dir);
+        var dll = Path.Combine(dir, "Jiangyu.Loader.dll");
+        File.WriteAllText(dll, "");
+        return dll;
     }
 
     private static void WriteSdkDll(string dir)

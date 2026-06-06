@@ -10,7 +10,7 @@ using Jiangyu.Shared.Bridge;
 using MelonLoader;
 using MelonLoader.Utils;
 
-namespace Jiangyu.Loader.Bridge;
+namespace Jiangyu.Loader.Diagnostics;
 
 /// <summary>
 /// A localhost request/response socket so Studio (a separate process) can query and

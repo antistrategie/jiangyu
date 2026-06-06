@@ -19,11 +19,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Jiangyu.Core\Jiangyu.Core.csproj" />
+    <ProjectReference Include="../Jiangyu.Core/Jiangyu.Core.csproj" />
   </ItemGroup>
 
   <!-- Ship the modder SDK beside the published `jiangyu` so it resolves its SDK
-       directory to its own folder. See ..\SdkDistribution.targets. -->
-  <Import Project="..\SdkDistribution.targets" />
+       directory to its own folder. See ../SdkDistribution.targets. -->
+  <Import Project="../SdkDistribution.targets" />
+
+  <!-- Ship both loader builds in loader/user|dev beside the published `jiangyu` so
+       `jiangyu loader deploy` resolves them. See ../LoaderDistribution.targets. -->
+  <Import Project="../LoaderDistribution.targets" />
 
 </Project>

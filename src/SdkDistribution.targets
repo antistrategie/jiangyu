@@ -1,42 +1,35 @@
 <Project>
 
   <!--
-    Bundles the modder SDK beside a published executable so a released tool
-    resolves its SDK directory to its own folder (GlobalConfig.ResolveSdkDir's
-    "next to the running executable" branch). A mod's code/ project compiles
-    against Jiangyu.Sdk.dll + Jiangyu.Sdk.Menace.dll, with Jiangyu.Sdk.Analyzers.dll
-    as the author-time analyzer. Both `jiangyu` (CLI) and `jiangyu-studio` (Studio
-    Host) drive a mod's code build through Core, so both import this.
+    Bundles the modder SDK beside a published executable so a released tool resolves its
+    SDK directory to its own folder (GlobalConfig.ResolveSdkDir's "next to the running
+    executable" branch). A mod's code/ project compiles against Jiangyu.Sdk.dll +
+    Jiangyu.Sdk.Menace.dll, with Jiangyu.Sdk.Analyzers.dll as the author-time analyzer.
 
-    The reference-only ProjectReferences build the three projects (RuntimeIdentifier
-    and single-file are undefined so the net6 / netstandard SDK projects build plainly
-    and are not linked into the host). BundleSdkForDistribution then copies their own
-    build outputs into an sdk/ folder beside the executable, after single-file bundling,
-    so they sit alongside the bundle rather than inside it and do not clutter the
-    install root. ResolveSdkDir looks in <exe-dir>/sdk first.
+    The SDK is platform-agnostic, so it is built once and staged under dist/sdk/
+    (DistStaging.targets, driven by `mise run build:sdk` locally or the build-loader CI
+    job), and the publish copies it in. Copying rather than building keeps a
+    cross-platform `dotnet publish` free of the Il2CppInterop + game assemblies that
+    Jiangyu.Sdk.Menace compiles against. ResolveSdkDir looks in <exe-dir>/sdk first.
 
-    Publish-only: dev runs resolve the SDK via ResolveSdkDir's dev-tree branch
-    (src/Jiangyu.Sdk/bin/...), so co-locating is only needed in the released artefact.
+    A missing staging tree warns rather than fails, so a publish without a staged SDK
+    still succeeds (minus the bundled SDK).
   -->
-  <ItemGroup>
-    <ProjectReference Include="$(MSBuildThisFileDirectory)Jiangyu.Sdk\Jiangyu.Sdk.csproj"
-                      ReferenceOutputAssembly="false" PrivateAssets="all"
-                      UndefineProperties="RuntimeIdentifier;SelfContained;PublishSingleFile" />
-    <ProjectReference Include="$(MSBuildThisFileDirectory)Jiangyu.Sdk.Menace\Jiangyu.Sdk.Menace.csproj"
-                      ReferenceOutputAssembly="false" PrivateAssets="all"
-                      UndefineProperties="RuntimeIdentifier;SelfContained;PublishSingleFile" />
-    <ProjectReference Include="$(MSBuildThisFileDirectory)Jiangyu.Sdk.Analyzers\Jiangyu.Sdk.Analyzers.csproj"
-                      ReferenceOutputAssembly="false" PrivateAssets="all"
-                      UndefineProperties="RuntimeIdentifier;SelfContained;PublishSingleFile" />
-  </ItemGroup>
-
   <Target Name="BundleSdkForDistribution" AfterTargets="Publish">
+    <PropertyGroup>
+      <_SdkStage>$(MSBuildThisFileDirectory)../dist/sdk</_SdkStage>
+    </PropertyGroup>
+
+    <Warning Condition="!Exists('$(_SdkStage)/Jiangyu.Sdk.dll')"
+             Text="No staged SDK at $(_SdkStage). Run 'mise run build:sdk' before publishing to bundle the SDK." />
+
     <ItemGroup>
-      <_SdkDist Include="$(MSBuildThisFileDirectory)Jiangyu.Sdk\bin\$(Configuration)\net6.0\Jiangyu.Sdk.dll" />
-      <_SdkDist Include="$(MSBuildThisFileDirectory)Jiangyu.Sdk.Menace\bin\$(Configuration)\net6.0\Jiangyu.Sdk.Menace.dll" />
-      <_SdkDist Include="$(MSBuildThisFileDirectory)Jiangyu.Sdk.Analyzers\bin\$(Configuration)\netstandard2.0\Jiangyu.Sdk.Analyzers.dll" />
+      <_SdkDist Include="$(_SdkStage)/*.dll" />
     </ItemGroup>
-    <Copy SourceFiles="@(_SdkDist)" DestinationFolder="$(PublishDir)sdk" SkipUnchangedFiles="true" />
+    <Copy Condition="Exists('$(_SdkStage)/Jiangyu.Sdk.dll')"
+          SourceFiles="@(_SdkDist)"
+          DestinationFolder="$(PublishDir)sdk"
+          SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

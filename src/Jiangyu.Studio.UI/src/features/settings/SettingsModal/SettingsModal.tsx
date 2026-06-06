@@ -4,6 +4,7 @@ import { Modal } from "@shared/ui/Modal/Modal";
 import { ModalHeader } from "@shared/ui/Modal/ModalHeader";
 import { SegmentedControl } from "@shared/ui/SegmentedControl/SegmentedControl";
 import { rpcCall } from "@shared/rpc";
+import type { LoaderDeployResult } from "@shared/rpc";
 import type { ConfigStatus } from "@features/compile/configStatus";
 import {
   EDITOR_FONT_SIZE_DEFAULT,
@@ -34,25 +35,24 @@ import { bridgeSetEnabled } from "@features/bridge/bridge";
 import { useBridgeStatus } from "@features/bridge/useBridgeStatus";
 import styles from "./SettingsModal.module.css";
 
-type SectionId = "appearance" | "session" | "editor" | "ai" | "paths" | "bridge" | "about";
+type SectionId = "appearance" | "session" | "editor" | "ai" | "paths" | "about";
 
 interface SettingsModalProps {
   readonly onClose: () => void;
 }
 
 const NAV_SECTIONS: readonly { readonly id: SectionId; readonly label: string }[] = [
+  { id: "paths", label: "Game · 游戏" },
   { id: "appearance", label: "Appearance · 外观" },
   { id: "session", label: "Session · 会话" },
   { id: "editor", label: "Editor · 编辑器" },
   { id: "ai", label: "AI · 智能" },
-  { id: "paths", label: "Paths · 路径" },
-  { id: "bridge", label: "Game bridge · 桥接" },
   { id: "about", label: "About · 关于" },
 ];
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const contentRef = useRef<HTMLDivElement>(null);
-  const [active, setActive] = useState<SectionId>("appearance");
+  const [active, setActive] = useState<SectionId>("paths");
 
   // Nav items are scroll anchors. An IntersectionObserver keyed to the
   // content scroll container picks the topmost section whose heading sits
@@ -103,6 +103,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           ))}
         </nav>
         <div className={styles.content} ref={contentRef}>
+          <div id="setting-paths">
+            <PathsSection />
+          </div>
           <div id="setting-appearance">
             <AppearanceSection />
           </div>
@@ -114,12 +117,6 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           </div>
           <div id="setting-ai">
             <AiSection />
-          </div>
-          <div id="setting-paths">
-            <PathsSection />
-          </div>
-          <div id="setting-bridge">
-            <BridgeSection />
           </div>
           <div id="setting-about">
             <AboutSection />
@@ -476,7 +473,7 @@ function PathsSection() {
 
   return (
     <>
-      <SectionHeader title="Paths · 路径" />
+      <SectionHeader title="Game · 游戏" />
       {loadError !== null && <p className={styles.error}>Failed to load config: {loadError}</p>}
       {config === null && loadError === null && <p className={styles.muted}>Loading…</p>}
       {config !== null && (
@@ -509,9 +506,92 @@ function PathsSection() {
               <TriangleAlert size={12} /> MelonLoader: {config.melonLoaderError}
             </p>
           )}
+          {config.gamePath !== null && (
+            <LoaderField
+              config={config}
+              onDeployed={(variant, version) =>
+                setConfig({
+                  ...config,
+                  deployedLoaderVariant: variant,
+                  deployedLoaderVersion: version,
+                })
+              }
+            />
+          )}
+          <BridgeControls loaderVariant={config.deployedLoaderVariant} />
         </>
       )}
     </>
+  );
+}
+
+// --- In-game loader deploy -------------------------------------------------
+
+// The deployed variant + version are detected from Mods/Jiangyu.Loader.dll, not a
+// stored setting. Each button deploys (or, when it is already the deployed variant,
+// updates) that build; the dev build adds the Studio bridge and diagnostic probes.
+function LoaderField({
+  config,
+  onDeployed,
+}: {
+  readonly config: ConfigStatus;
+  readonly onDeployed: (variant: string, version: string | null) => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const deployed = config.deployedLoaderVariant;
+  const version = config.deployedLoaderVersion;
+
+  const deploy = async (variant: "user" | "dev") => {
+    setBusy(variant);
+    setError(null);
+    try {
+      const result = await rpcCall<LoaderDeployResult>("deployLoader", { variant });
+      onDeployed(result.variant, result.version ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const buttonLabel = (variant: "user" | "dev") => {
+    if (busy === variant) return "Deploying…";
+    return deployed === variant ? `Update ${variant}` : `Deploy ${variant}`;
+  };
+
+  return (
+    <Field label="Loader" hint="`dev` adds the Studio bridge + diagnostic probes">
+      <div className={styles.pathRow}>
+        <span className={styles.pathValue}>
+          {deployed !== null
+            ? `${deployed}${version !== null ? ` · v${version}` : ""}`
+            : "Not deployed"}
+        </span>
+        <button
+          type="button"
+          className={styles.linkButton}
+          disabled={busy !== null}
+          onClick={() => void deploy("user")}
+        >
+          {buttonLabel("user")}
+        </button>
+        <button
+          type="button"
+          className={styles.linkButton}
+          disabled={busy !== null}
+          onClick={() => void deploy("dev")}
+        >
+          {buttonLabel("dev")}
+        </button>
+      </div>
+      {error !== null && (
+        <p className={styles.error}>
+          <CircleX size={12} /> {error}
+        </p>
+      )}
+    </Field>
   );
 }
 
@@ -544,11 +624,14 @@ function PathRow({ label, hint, path, missingIcon, onChange }: PathRowProps) {
 
 // --- Game bridge section ---------------------------------------------------
 
-function BridgeSection() {
+// The bridge lives only in the dev loader, so it is offered only when the dev loader
+// is the one deployed; with the user loader (or none) there is nothing to connect to.
+function BridgeControls({ loaderVariant }: { readonly loaderVariant: string | null }) {
   const { status, setStatus } = useBridgeStatus();
 
-  const enabled = status?.enabled ?? false;
-  const connected = status?.connected ?? false;
+  const isDev = loaderVariant === "dev";
+  const enabled = isDev && (status?.enabled ?? false);
+  const connected = isDev && (status?.connected ?? false);
 
   const handleToggle = async (next: boolean) => {
     try {
@@ -562,28 +645,31 @@ function BridgeSection() {
   const stateLabel = connected ? "Live" : enabled ? "Waiting for game" : "Off";
 
   return (
-    <>
-      <SectionHeader title="Game bridge · 桥接" />
-      <Field
-        label="Live game bridge"
-        hint="Open a live connection between Studio and the running game."
-        labelAfter={
-          <span
-            role="img"
-            aria-label={stateLabel}
-            title={stateLabel}
-            style={{
-              display: "inline-block",
-              width: 8,
-              height: 8,
-              marginLeft: 6,
-              borderRadius: "50%",
-              backgroundColor: color,
-              boxShadow: connected ? `0 0 6px ${color}` : "none",
-            }}
-          />
-        }
-      >
+    <Field
+      label="Live game bridge"
+      hint={
+        isDev
+          ? "Open a live connection between Studio and the running game."
+          : "Deploy the dev loader to use the bridge — the user loader has none."
+      }
+      labelAfter={
+        <span
+          role="img"
+          aria-label={stateLabel}
+          title={stateLabel}
+          style={{
+            display: "inline-block",
+            width: 8,
+            height: 8,
+            marginLeft: 6,
+            borderRadius: "50%",
+            backgroundColor: color,
+            boxShadow: connected ? `0 0 6px ${color}` : "none",
+          }}
+        />
+      }
+    >
+      {isDev ? (
         <SegmentedControl<"on" | "off">
           value={enabled ? "on" : "off"}
           onChange={(v) => void handleToggle(v === "on")}
@@ -592,8 +678,10 @@ function BridgeSection() {
             { value: "off", label: "Off" },
           ]}
         />
-      </Field>
-    </>
+      ) : (
+        <span className={styles.muted}>Unavailable</span>
+      )}
+    </Field>
   );
 }
 

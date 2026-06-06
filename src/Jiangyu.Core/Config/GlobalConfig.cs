@@ -21,6 +21,15 @@ public sealed class GlobalConfig
     public string? Sdk { get; set; }
 
     /// <summary>
+    /// The two loader builds Studio and the CLI bundle and deploy: <c>user</c> (the
+    /// lean shipped loader) and <c>dev</c> (the same loader with the Studio bridge and
+    /// diagnostics merged in). Which one is deployed is detected from the DLL in the
+    /// game's <c>Mods/</c> folder (see <see cref="Deploy.LoaderVariantDetector"/>),
+    /// not stored in config.
+    /// </summary>
+    public static readonly string[] LoaderVariants = ["user", "dev"];
+
+    /// <summary>
     /// Asset pipeline cache root. Contains:
     ///   asset-index.json             — searchable asset catalogue (from 'assets index')
     ///   asset-index-manifest.json    — asset cache validity metadata
@@ -189,20 +198,88 @@ public sealed class GlobalConfig
     }
 
     /// <summary>
-    /// Walks up from a starting directory looking for the dev SDK build output
-    /// under <c>src/Jiangyu.Sdk/bin/{Release,Debug}/net6.0/Jiangyu.Sdk.dll</c>.
+    /// Walks up from a starting directory looking for the dev SDK, preferring the
+    /// unified <c>dist/sdk/</c> staging (<c>mise run build:sdk</c>, the same tree the
+    /// loader stages into and the SDK that ships with a deployed loader) and falling
+    /// back to a raw SDK build output under
+    /// <c>src/Jiangyu.Sdk/bin/{Release,Debug}/net6.0/Jiangyu.Sdk.dll</c>.
     /// </summary>
     private static string? FindDevSdkDir(string startDir)
     {
         var dir = new DirectoryInfo(startDir);
         while (dir is not null)
         {
+            var staged = Path.Combine(dir.FullName, "dist", "sdk");
+            if (File.Exists(Path.Combine(staged, "Jiangyu.Sdk.dll")))
+                return staged;
+
             foreach (var configuration in new[] { "Release", "Debug" })
             {
                 var candidate = Path.Combine(dir.FullName, "src", "Jiangyu.Sdk", "bin", configuration, "net6.0");
                 if (File.Exists(Path.Combine(candidate, "Jiangyu.Sdk.dll")))
                     return candidate;
             }
+            dir = dir.Parent;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Resolves the <c>Jiangyu.Loader.dll</c> for a loader <paramref name="variant"/>
+    /// (<c>user</c> or <c>dev</c>). Order: the bundled <c>loader/&lt;variant&gt;/</c>
+    /// folder beside the running executable (published layout), then the dev staging
+    /// tree (<c>dist/loader/&lt;variant&gt;/</c>, populated by <c>mise run build:loader</c>).
+    /// </summary>
+    public static (string? loaderDll, string? error) ResolveLoaderDll(GlobalConfig config, string variant)
+    {
+        if (!LoaderVariants.Contains(variant))
+            return (null, $"unknown loader variant '{variant}': expected {string.Join(" or ", LoaderVariants)}.");
+
+        var bundled = FindLoaderDllInRoots(
+            new[] { Path.GetDirectoryName(Environment.ProcessPath), AppContext.BaseDirectory }, variant);
+        if (bundled is not null)
+            return (bundled, null);
+
+        var dev = FindDevLoaderDll(AppContext.BaseDirectory, variant);
+        if (dev is not null)
+            return (dev, null);
+
+        return (null,
+            $"could not locate the {variant} loader DLL. Build it with 'mise run build:loader' "
+            + "(or publish Studio/CLI, which bundles both variants).");
+    }
+
+    /// <summary>
+    /// Locates a bundled loader DLL in the published layout: a
+    /// <c>loader/&lt;variant&gt;/Jiangyu.Loader.dll</c> subfolder beside one of the
+    /// candidate <paramref name="roots"/>. Pure file probing in declared order, so it
+    /// is testable without a real published executable. Null when none has it.
+    /// </summary>
+    internal static string? FindLoaderDllInRoots(IEnumerable<string?> roots, string variant)
+    {
+        foreach (var root in roots)
+        {
+            if (string.IsNullOrEmpty(root))
+                continue;
+            var candidate = Path.Combine(root, "loader", variant, "Jiangyu.Loader.dll");
+            if (File.Exists(candidate))
+                return candidate;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Walks up from a starting directory looking for the dev loader staging output
+    /// under <c>dist/loader/&lt;variant&gt;/Jiangyu.Loader.dll</c>.
+    /// </summary>
+    private static string? FindDevLoaderDll(string startDir, string variant)
+    {
+        var dir = new DirectoryInfo(startDir);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, "dist", "loader", variant, "Jiangyu.Loader.dll");
+            if (File.Exists(candidate))
+                return candidate;
             dir = dir.Parent;
         }
         return null;

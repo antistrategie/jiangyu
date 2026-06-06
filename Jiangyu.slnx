@@ -7,6 +7,7 @@
     <Project Path="src/Jiangyu.Codegen.Hooks/Jiangyu.Codegen.Hooks.csproj" />
     <Project Path="src/Jiangyu.Codegen.Verbs/Jiangyu.Codegen.Verbs.csproj" />
     <Project Path="src/Jiangyu.Loader/Jiangyu.Loader.csproj" />
+    <Project Path="src/Jiangyu.Loader.Diagnostics/Jiangyu.Loader.Diagnostics.csproj" />
     <Project Path="src/Jiangyu.Mcp/Jiangyu.Mcp.csproj" />
     <Project Path="src/Jiangyu.Sdk/Jiangyu.Sdk.csproj" />
     <Project Path="src/Jiangyu.Sdk.Menace/Jiangyu.Sdk.Menace.csproj" />

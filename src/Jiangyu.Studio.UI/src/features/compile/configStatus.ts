@@ -14,4 +14,8 @@ export interface ConfigStatus {
   readonly unityEditorError: string | null;
   readonly unityEditorVersion: string | null;
   readonly melonLoaderError: string | null;
+  /** Loader build detected in the game's Mods/ folder ("user" | "dev"), or null. */
+  readonly deployedLoaderVariant: string | null;
+  /** Version baked into the deployed loader (git-describe), or null. */
+  readonly deployedLoaderVersion: string | null;
 }

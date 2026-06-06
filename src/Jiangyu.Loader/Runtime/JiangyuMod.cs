@@ -1,16 +1,11 @@
 using System.Reflection;
-using Jiangyu.Loader.Bridge;
 using Jiangyu.Loader.Diagnostics;
-using Jiangyu.Loader.Diagnostics.InjectionGate;
-using Jiangyu.Loader.Diagnostics.UiProbe;
-using Jiangyu.Loader.Diagnostics.VerbProbe;
 using Jiangyu.Loader.Logging;
 using Jiangyu.Loader.Sdk;
 using Jiangyu.Loader.Sdk.Hooks;
 using Jiangyu.Loader.Sdk.Patches;
 using Jiangyu.Loader.Sdk.State;
 using Jiangyu.Loader.Sdk.Types;
-using Jiangyu.Shared.Bridge;
 using MelonLoader;
 using MelonLoader.Utils;
 
@@ -24,7 +19,7 @@ namespace Jiangyu.Loader.Runtime;
 // per-scene and per-frame work lives in the drivers (replacement scheduling, UI
 // re-injection); dev inspection is served on demand over the Studio bridge. This class
 // wires and sequences them.
-public class JiangyuMod : MelonMod
+public class JiangyuMod : MelonMod, IDevServicesContext
 {
     private readonly ReplacementCoordinator _replacementCoordinator = new();
     private readonly ReplacementScheduler _replacement;
@@ -32,7 +27,7 @@ public class JiangyuMod : MelonMod
     private int _frameInScene;
     private string _currentScene;
     private int _currentBuildIndex;
-    private BridgeServer _bridge;
+    private IDevServices _dev;
     private ModHost _modHost;
     private InProcessHookBus _hookBus;
     private TacticalHookPublisher _tacticalHooks;
@@ -59,43 +54,37 @@ public class JiangyuMod : MelonMod
 
         _replacementCoordinator.InstallHarmonyPatches(HarmonyInstance, LoggerInstance);
 
-        if (InjectionGateInspector.IsEnabled())
-        {
-            InjectionGateInspector.Run("init", live: false, LoggerInstance);
-        }
-
         InitialiseCodeMods(modsDir);
-        InitialiseBridge();
+
+        // The dev surface (Studio bridge + probes) is merged into the dev loader DLL
+        // only. The user loader DLL has no implementation to discover, so this is a
+        // no-op and none of that code is present to run. The surface is optional, so a
+        // failure bringing it up degrades to "no dev surface" rather than bricking the
+        // loader.
+        try
+        {
+            _dev = DiscoverDevServices();
+            _dev?.Initialise(this);
+        }
+        catch (Exception ex)
+        {
+            LoggerInstance.Warning($"Dev surface failed to initialise, continuing without it: {ex.Message}");
+            _dev = null;
+        }
     }
 
-    // The Studio bridge: a localhost socket Studio connects to, opened only while the
-    // `bridge` dev flag is set (Studio writes that flag when its toggle is on). Handlers
-    // run on the main thread via Pump. Start/stop is driven by the flag on scene load.
-    private void InitialiseBridge()
+    // Find the IDevServices implementation merged into this assembly. Present in the
+    // dev loader DLL (Jiangyu.Loader.Diagnostics is ILRepacked in), absent in the user
+    // loader DLL, where this returns null and the seam stays dormant.
+    private static IDevServices DiscoverDevServices()
     {
-        _bridge = new BridgeServer(LoggerInstance);
-        _bridge.On(BridgeMethods.Ping, _ => new { ok = true, version = Info.Version, protocol = BridgeProtocol.Version });
-        _bridge.On(BridgeMethods.UiCapture, _ => UiTreeProbe.CaptureCurrent("bridge"));
-        _bridge.On(BridgeMethods.InspectScene, _ => SceneIdentityInspector.Capture(_currentScene, _currentBuildIndex));
-        _bridge.On(BridgeMethods.InspectTemplates, _ => TemplateStateInspector.Capture(_currentScene));
-        _bridge.On(BridgeMethods.GateRun, _ => InjectionGateInspector.Capture(_currentScene, LoggerInstance));
-        _bridge.On(BridgeMethods.VerbsRun, _ => VerbSurfaceProbe.Capture(_currentScene, LoggerInstance));
-        _bridge.On(BridgeMethods.StrategyRun, _ => StrategyProbe.Capture(LoggerInstance));
+        var type = Assembly.GetExecutingAssembly().GetType("Jiangyu.Loader.Diagnostics.DevServices");
+        return type == null ? null : (IDevServices)Activator.CreateInstance(type, nonPublic: true);
     }
 
-    // Start/stop the bridge to match the `bridge` flag. Reads the flag fresh (not the
-    // scene-cached DevFlags) so toggling it in Studio mid-session takes effect on the
-    // next periodic check, without needing a scene change.
-    private void UpdateBridge()
-    {
-        if (_bridge == null)
-            return;
-        var enabled = Jiangyu.Shared.Dev.DevFlagFile.IsEnabled(MelonEnvironment.UserDataDirectory, "bridge");
-        if (enabled && !_bridge.IsRunning)
-            _bridge.Start();
-        else if (!enabled && _bridge.IsRunning)
-            _bridge.Stop();
-    }
+    MelonLogger.Instance IDevServicesContext.Logger => LoggerInstance;
+    string IDevServicesContext.CurrentScene => _currentScene;
+    int IDevServicesContext.CurrentBuildIndex => _currentBuildIndex;
 
     // Route the SDK's static Jiangyu.Sdk.Log (used by injected handlers and other
     // context-less mod code) into the loader log. Debug is enabled only when the
@@ -239,7 +228,7 @@ public class JiangyuMod : MelonMod
         _replacement.Reset();
         _ui.OnSceneLoaded();
         _tacticalHooks?.Reset();
-        UpdateBridge();
+        _dev?.OnSceneLoaded();
 
         LoggerInstance.Msg($"Scene loaded: {sceneName} ({buildIndex})");
 
@@ -255,11 +244,7 @@ public class JiangyuMod : MelonMod
 
         _ui.Drive();
 
-        // Pick up a mid-session bridge toggle (Studio writing the flag) within ~2s,
-        // rather than only on scene load.
-        if (_frameInScene % 120 == 0)
-            UpdateBridge();
-        _bridge?.Pump();
+        _dev?.OnUpdate(_frameInScene);
 
         _replacement.Tick(_frameInScene, LoggerInstance);
 

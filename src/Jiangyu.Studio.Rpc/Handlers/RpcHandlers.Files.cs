@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using AssetRipper.Primitives;
 using Jiangyu.Core.Config;
+using Jiangyu.Core.Deploy;
 using Jiangyu.Core.IO;
 using Jiangyu.Core.Unity;
 using Jiangyu.Core.Rpc;
@@ -603,12 +604,18 @@ public static partial class RpcHandlers
         }
 
         string? melonLoaderError = null;
-        if (gamePath is not null && !string.IsNullOrEmpty(config.Game))
+        string? deployedLoaderVariant = null;
+        string? deployedLoaderVersion = null;
+        var (gameRoot, _) = GlobalConfig.ResolveGamePath(config);
+        if (gameRoot is not null)
         {
-            var gameDir = GlobalConfig.ExpandHome(config.Game);
-            var melonDir = Path.Combine(gameDir, "MelonLoader");
-            if (!Directory.Exists(melonDir))
+            if (!Directory.Exists(Path.Combine(gameRoot, "MelonLoader")))
                 melonLoaderError = "MelonLoader not installed";
+
+            // Detected from Mods/Jiangyu.Loader.dll itself, not a stored setting.
+            var loader = LoaderVariantDetector.InspectDeployed(gameRoot);
+            deployedLoaderVariant = loader.Variant;
+            deployedLoaderVersion = loader.Version;
         }
 
         var status = new ConfigStatus
@@ -622,6 +629,8 @@ public static partial class RpcHandlers
             UnityEditorError = editorError,
             UnityEditorVersion = editorVersion?.ToString(),
             MelonLoaderError = melonLoaderError,
+            DeployedLoaderVariant = deployedLoaderVariant,
+            DeployedLoaderVersion = deployedLoaderVersion,
         };
 
         return JsonSerializer.SerializeToElement(status);
@@ -650,5 +659,11 @@ public static partial class RpcHandlers
 
         [JsonPropertyName("melonLoaderError")]
         public string? MelonLoaderError { get; set; }
+
+        [JsonPropertyName("deployedLoaderVariant")]
+        public string? DeployedLoaderVariant { get; set; }
+
+        [JsonPropertyName("deployedLoaderVersion")]
+        public string? DeployedLoaderVersion { get; set; }
     }
 }

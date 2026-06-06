@@ -8,12 +8,16 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <!-- The dev loader DLL is built with -p:IncludeDiagnostics=true, which merges
+         Jiangyu.Loader.Diagnostics (the Studio bridge and probes) into the output.
+         The default user loader DLL leaves it out. -->
+    <IncludeDiagnostics Condition="'$(IncludeDiagnostics)' == ''">false</IncludeDiagnostics>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Jiangyu.Shared\Jiangyu.Shared.csproj" />
-    <ProjectReference Include="..\Jiangyu.Sdk\Jiangyu.Sdk.csproj" />
-    <ProjectReference Include="..\Jiangyu.Sdk.Menace\Jiangyu.Sdk.Menace.csproj" />
+    <ProjectReference Include="../Jiangyu.Shared/Jiangyu.Shared.csproj" />
+    <ProjectReference Include="../Jiangyu.Sdk/Jiangyu.Sdk.csproj" />
+    <ProjectReference Include="../Jiangyu.Sdk.Menace/Jiangyu.Sdk.Menace.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -62,6 +66,9 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Jiangyu.Loader.Tests" />
+    <!-- The dev surface implements the internal IDevServices seam and reads the
+         internal BuildInfo.Version. Moot after ILRepack merges the two. -->
+    <InternalsVisibleTo Include="Jiangyu.Loader.Diagnostics" />
   </ItemGroup>
 
   <ItemGroup>

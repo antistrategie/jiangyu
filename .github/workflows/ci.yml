@@ -48,8 +48,14 @@ jobs:
           cp /tmp/ml/MelonLoader/net6/Il2CppInterop.Runtime.dll jiangyu/.ci/melonloader/
           cp /tmp/ml/MelonLoader/net6/UnityEngine.Il2CppAssetBundleManager.dll jiangyu/.ci/melonloader/
 
-      - name: Build Jiangyu.Loader (Release) for guard test
+      - name: Build Jiangyu.Loader (Release, user variant) for guard test
         run: dotnet build jiangyu/src/Jiangyu.Loader/Jiangyu.Loader.csproj -c Release -p:MelonLoaderDir=${{ github.workspace }}/jiangyu/.ci/melonloader -p:GameAssembliesDir=${{ github.workspace }}/menace-ci-dependencies
+
+      # Guards the dev variant: that Jiangyu.Loader.Diagnostics compiles and ILRepack
+      # merges it in. --no-incremental forces a fresh compile so the merge input is the
+      # lean core rather than the user variant's already-merged DLL at the shared path.
+      - name: Build Jiangyu.Loader (Release, dev variant) for guard test
+        run: dotnet build jiangyu/src/Jiangyu.Loader/Jiangyu.Loader.csproj -c Release -p:IncludeDiagnostics=true --no-incremental -p:MelonLoaderDir=${{ github.workspace }}/jiangyu/.ci/melonloader -p:GameAssembliesDir=${{ github.workspace }}/menace-ci-dependencies
 
       - name: Test Jiangyu.Core.Tests
         run: dotnet test jiangyu/tests/Jiangyu.Core.Tests/Jiangyu.Core.Tests.csproj
@@ -127,18 +133,39 @@ jobs:
           cp /tmp/ml/MelonLoader/net6/Il2CppInterop.Runtime.dll jiangyu/.ci/melonloader/
           cp /tmp/ml/MelonLoader/net6/UnityEngine.Il2CppAssetBundleManager.dll jiangyu/.ci/melonloader/
 
-      - name: Build Loader
-        run: dotnet build jiangyu/src/Jiangyu.Loader/Jiangyu.Loader.csproj -c Release -p:MelonLoaderDir=${{ github.workspace }}/jiangyu/.ci/melonloader -p:GameAssembliesDir=${{ github.workspace }}/menace-ci-dependencies
+      # build-loader is the one job with game deps. It builds the platform-agnostic
+      # SDK and both loader variants, which stage themselves under dist/ (DistStaging /
+      # ILRepack targets). build-cli and build-studio-host download dist/ and copy it
+      # into their published bundles, so those jobs need no game assemblies at all.
+      - name: Build SDK
+        run: dotnet build jiangyu/src/Jiangyu.Sdk.Menace/Jiangyu.Sdk.Menace.csproj -c Release -p:MelonLoaderDir=${{ github.workspace }}/jiangyu/.ci/melonloader -p:GameAssembliesDir=${{ github.workspace }}/menace-ci-dependencies
 
+      # --no-incremental on the dev build forces a fresh compile so the merge input is
+      # the lean core, not the user variant's already-merged DLL at the shared path.
+      - name: Build loader variants
+        run: |
+          dotnet build jiangyu/src/Jiangyu.Loader/Jiangyu.Loader.csproj -c Release --no-incremental -p:MelonLoaderDir=${{ github.workspace }}/jiangyu/.ci/melonloader -p:GameAssembliesDir=${{ github.workspace }}/menace-ci-dependencies
+          dotnet build jiangyu/src/Jiangyu.Loader/Jiangyu.Loader.csproj -c Release -p:IncludeDiagnostics=true --no-incremental -p:MelonLoaderDir=${{ github.workspace }}/jiangyu/.ci/melonloader -p:GameAssembliesDir=${{ github.workspace }}/menace-ci-dependencies
+
+      # The standalone release artefact is the lean user loader (the default for a
+      # manual Mods/ install). The dev variant ships only inside the Studio/CLI bundles.
       - name: Upload Loader artefact
         uses: actions/upload-artifact@v7
         with:
           name: Jiangyu.Loader.dll
-          path: jiangyu/src/Jiangyu.Loader/bin/Release/net6.0/Jiangyu.Loader.dll
+          path: jiangyu/dist/loader/user/Jiangyu.Loader.dll
+
+      # The SDK + both loader variants, consumed by build-cli / build-studio-host to
+      # bundle into the published Studio/CLI (sdk/ + loader/user + loader/dev).
+      - name: Upload dist staging
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist-staging
+          path: jiangyu/dist/
 
   build-cli:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [test-dotnet, test-studio-ui]
+    needs: [test-dotnet, test-studio-ui, build-loader]
     strategy:
       matrix:
         include:
@@ -149,15 +176,24 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          path: jiangyu
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5.2.0
         with:
           dotnet-version: "10.0.x"
 
+      # The SDK + loaders are built once on Linux (build-loader) and copied into the
+      # bundle by Sdk/LoaderDistribution.targets, so this publish needs no game deps.
+      - name: Download dist staging
+        uses: actions/download-artifact@v8
+        with:
+          name: dist-staging
+          path: jiangyu/dist
+
       - name: Publish CLI
-        run: |
-          dotnet publish src/Jiangyu.Cli/Jiangyu.Cli.csproj -c Release -r ${{ matrix.platform }} --self-contained -o publish/cli
+        run: dotnet publish jiangyu/src/Jiangyu.Cli/Jiangyu.Cli.csproj -c Release -r ${{ matrix.platform }} --self-contained -o publish/cli
 
       - name: Upload CLI artefact
         uses: actions/upload-artifact@v7
@@ -167,7 +203,7 @@ jobs:
 
   build-studio-host:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [test-dotnet, test-studio-ui]
+    needs: [test-dotnet, test-studio-ui, build-loader]
     strategy:
       matrix:
         include:
@@ -178,6 +214,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          path: jiangyu
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5.2.0
@@ -189,15 +227,23 @@ jobs:
         with:
           bun-version: latest
 
+      # The SDK + loaders are built once on Linux (build-loader) and copied into the
+      # bundle by Sdk/LoaderDistribution.targets, so this publish needs no game deps.
+      - name: Download dist staging
+        uses: actions/download-artifact@v8
+        with:
+          name: dist-staging
+          path: jiangyu/dist
+
       - name: Publish Studio Host
-        run: dotnet publish src/Jiangyu.Studio.Host/Jiangyu.Studio.Host.csproj -c Release -r ${{ matrix.platform }} --self-contained -o publish/studio
+        run: dotnet publish jiangyu/src/Jiangyu.Studio.Host/Jiangyu.Studio.Host.csproj -c Release -r ${{ matrix.platform }} --self-contained -o publish/studio
 
       # jiangyu-mcp ships alongside jiangyu-studio under bin/. The studio
       # executable stays at the install root; bin/ holds support binaries
       # (mcp here + bundled bun next). AgentProcessManager resolves
       # <AppContext.BaseDirectory>/bin/jiangyu-mcp.
       - name: Publish Jiangyu.Mcp
-        run: dotnet publish src/Jiangyu.Mcp/Jiangyu.Mcp.csproj -c Release -r ${{ matrix.platform }} --self-contained -o publish/studio/bin
+        run: dotnet publish jiangyu/src/Jiangyu.Mcp/Jiangyu.Mcp.csproj -c Release -r ${{ matrix.platform }} --self-contained -o publish/studio/bin
 
       # Bundle bun so `bunx`-distributed agents (Claude Code, Copilot CLI,
       # Gemini CLI — most of the ACP registry) work out of the box on
