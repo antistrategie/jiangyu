@@ -127,7 +127,7 @@ public class JiangyuMod : MelonMod, IDevServicesContext
 
             foreach (var modDir in Directory.GetDirectories(modsDir))
             {
-                var codeDir = Path.Combine(modDir, "code");
+                var codeDir = Path.Combine(modDir, Jiangyu.Shared.Bundles.CompiledLayout.CodeDirName);
                 if (!Directory.Exists(codeDir))
                     continue;
 
@@ -169,7 +169,7 @@ public class JiangyuMod : MelonMod, IDevServicesContext
             Jiangyu.Sdk.Log.BindModResolver(_modHost.ModIdForAssembly);
 
             // Game.UI resolves a UXML name against the calling mod's own bundles.
-            Jiangyu.Game.UI.BindUxmlResolver((assembly, name) =>
+            Jiangyu.Game.Ui.UI.BindUxmlResolver((assembly, name) =>
             {
                 var modId = _modHost.ModIdForAssembly(assembly);
                 if (string.IsNullOrEmpty(modId))

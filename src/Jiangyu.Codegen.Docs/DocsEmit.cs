@@ -6,6 +6,12 @@ namespace Jiangyu.Codegen.Docs;
 /// <summary>One verb row in the reference: where it lives, how it is called, what it does.</summary>
 public sealed record VerbDoc(string Layer, string Class, string Member, string Signature, string Summary);
 
+/// <summary>One member row of a UI type in the reference.</summary>
+public sealed record UiMemberDoc(string Signature, string Summary);
+
+/// <summary>A UI type in the reference: its group, its type summary (the section intro), its members.</summary>
+public sealed record UiClassDoc(string Group, string Class, string Summary, IReadOnlyList<UiMemberDoc> Members);
+
 /// <summary>
 /// The pure markdown rendering for the generated modder reference: the verb surface
 /// (from the SDK's XML doc, so it covers generated and bespoke verbs alike) and the hook
@@ -20,11 +26,7 @@ public static class DocsEmit
     public static string EmitVerbs(IReadOnlyList<VerbDoc> verbs)
     {
         var sb = new StringBuilder();
-        sb.AppendLine(DoNotEdit);
-        sb.AppendLine();
-        sb.AppendLine("# Verb reference");
-        sb.AppendLine();
-        sb.AppendLine("Every verb in the `Jiangyu.Game` namespace, generated from the SDK. Verbs are plain static calls that read and command the live game. See [the verbs guide](/sdk/verbs) for how and where to call them.");
+        Header(sb, "Verb reference", "Every verb in the `Jiangyu.Game` namespace, generated from the SDK. Verbs are plain static calls that read and command the live game. See [the verbs guide](/sdk/verbs) for how and where to call them.");
 
         foreach (var layer in verbs.GroupBy(v => v.Layer).OrderBy(g => g.Key, StringComparer.Ordinal))
         {
@@ -48,11 +50,7 @@ public static class DocsEmit
     public static string EmitHooks(IReadOnlyList<HookDescriptor> hooks)
     {
         var sb = new StringBuilder();
-        sb.AppendLine(DoNotEdit);
-        sb.AppendLine();
-        sb.AppendLine("# Hook reference");
-        sb.AppendLine();
-        sb.AppendLine("Every hook delivered through the hook bus, generated from the SDK. Subscribe with `Context.Hooks.Subscribe<T>` in a system's `OnInit` (see [the hooks guide](/sdk/#hooks) for the subscription model). Game-typed payloads arrive as `object`, so cast them in the handler.");
+        Header(sb, "Hook reference", "Every hook delivered through the hook bus, generated from the SDK. Subscribe with `Context.Hooks.Subscribe<T>` in a system's `OnInit` (see [the hooks guide](/sdk/#hooks) for the subscription model). Game-typed payloads arrive as `object`, so cast them in the handler.");
 
         foreach (var layer in hooks.GroupBy(h => h.Layer).OrderBy(g => g.Key, StringComparer.Ordinal))
         {
@@ -81,7 +79,65 @@ public static class DocsEmit
         return sb.ToString();
     }
 
+    // The UI groups in display order: the injection surface and element helpers first,
+    // then the reusable components, then the sounds.
+    private static readonly string[] UiGroupOrder = ["Injection and helpers", "Components", "Audio"];
+
+    /// <summary>Render the UI reference, grouped, with each type's summary as its section intro.</summary>
+    public static string EmitUi(IReadOnlyList<UiClassDoc> classes)
+    {
+        var sb = new StringBuilder();
+        Header(sb, "UI reference", "The `Jiangyu.Game.Ui` injection surface, the reusable components, and the UI sounds, generated from the SDK. Components are open wrappers over the game's own controls: each hands back the real elements on `.Root`, so anything not exposed here is reachable and overridable on them.");
+
+        foreach (var group in classes
+                     .GroupBy(c => c.Group)
+                     .OrderBy(g => GroupRank(g.Key)).ThenBy(g => g.Key, StringComparer.Ordinal))
+        {
+            sb.AppendLine();
+            sb.AppendLine($"## {group.Key}");
+            foreach (var cls in group.OrderBy(c => c.Class, StringComparer.Ordinal))
+            {
+                sb.AppendLine();
+                sb.AppendLine($"### {cls.Class}");
+                if (!string.IsNullOrWhiteSpace(cls.Summary))
+                {
+                    sb.AppendLine();
+                    sb.AppendLine(Collapse(cls.Summary));
+                }
+                if (cls.Members.Count > 0)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine("| Member | Description |");
+                    sb.AppendLine("| --- | --- |");
+                    foreach (var m in cls.Members.OrderBy(m => m.Signature, StringComparer.Ordinal))
+                        sb.AppendLine($"| `{m.Signature}` | {Inline(m.Summary)} |");
+                }
+            }
+        }
+        return sb.ToString();
+    }
+
+    private static int GroupRank(string group)
+    {
+        var i = Array.IndexOf(UiGroupOrder, group);
+        return i < 0 ? UiGroupOrder.Length : i;
+    }
+
+    // The shared preamble for every generated reference: the do-not-edit banner, the H1
+    // title, and the section's intro paragraph.
+    private static void Header(StringBuilder sb, string title, string intro)
+    {
+        sb.AppendLine(DoNotEdit);
+        sb.AppendLine();
+        sb.AppendLine($"# {title}");
+        sb.AppendLine();
+        sb.AppendLine(intro);
+    }
+
     // Collapse whitespace and escape the pipe so a summary stays inside its table cell.
-    private static string Inline(string text)
-        => string.Join(" ", (text ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).Replace("|", "\\|");
+    private static string Inline(string text) => Collapse(text).Replace("|", "\\|");
+
+    // Collapse whitespace for prose (a section intro), without the table-cell pipe escaping.
+    private static string Collapse(string text)
+        => string.Join(" ", (text ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 }

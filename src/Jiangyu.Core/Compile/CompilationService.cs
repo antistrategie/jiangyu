@@ -216,14 +216,12 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             $"  {modelFiles.Count} model file(s), {replacementTextures.Count} texture replacement(s), {totalSpriteCount} sprite replacement(s), {replacementAudio.Count} audio replacement(s), {replacementEntries.Count} replacement mesh target(s)");
 
         var bundleName = manifest.Name.ToLowerInvariant().Replace(" ", "_");
-        var outputDir = Path.Combine(projectDir, "compiled");
-        Directory.CreateDirectory(outputDir);
-
-        // Clear stale .bundle artefacts from previous compiles so removed
-        // prefab additions don't linger and ship. The main mod bundle and any
-        // currently-staged addition bundles are re-written below.
-        foreach (var stale in Directory.EnumerateFiles(outputDir, "*.bundle"))
-            File.Delete(stale);
+        // Start every compile from a clean output tree: everything under compiled/ is build
+        // output regenerated below, so wiping first is the one step that clears whatever a
+        // previous compile left (a removed bundle, a now-empty templates.json, a renamed code
+        // DLL, an older flat layout) instead of a separate stale-delete per artefact.
+        var outputDir = CompiledOutput.Reset(projectDir);
+        var bundlesDir = Path.Combine(outputDir, Jiangyu.Shared.Bundles.CompiledLayout.BundlesDirName);
         var userUnityDir = Path.Combine(projectDir, "unity");
         var unityBuildDir = Path.Combine(projectDir, ".jiangyu", "unity_build");
         var builtBundle = Path.Combine(unityBuildDir, bundleName);
@@ -270,10 +268,8 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         if (codeBuild is { Success: true })
         {
-            var codeOutputDir = Path.Combine(outputDir, "code");
+            var codeOutputDir = Path.Combine(outputDir, Jiangyu.Shared.Bundles.CompiledLayout.CodeDirName);
             Directory.CreateDirectory(codeOutputDir);
-            foreach (var stale in Directory.EnumerateFiles(codeOutputDir, "*.dll"))
-                File.Delete(stale);
             foreach (var dll in codeBuild.DllPaths)
                 File.Copy(dll, Path.Combine(codeOutputDir, Path.GetFileName(dll)), overwrite: true);
             _log.Info($"  Packaged {codeBuild.DllPaths.Count} code dll(s) -> {codeOutputDir}");
@@ -413,9 +409,21 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         _log.Info($"  [timing] Template compilation: {phaseSw.Elapsed.TotalSeconds:F1}s");
 
         var compiledManifest = ModManifest.FromJson(manifest.ToJson());
-        compiledManifest.TemplatePatches = templatePatchResult.Patches;
-        compiledManifest.TemplateClones = templateCloneResult.Clones;
         compiledManifest.CompiledForUnity = gameVersion?.ToString();
+
+        // The compiled template program ships beside the manifest in its own
+        // templates.json, so jiangyu.json stays a lean identity record the loader scans
+        // cheaply. Written only when there's something to ship; the clean output tree means
+        // there is never a stale file to clear.
+        var compiledTemplates = new CompiledTemplatePatchManifest
+        {
+            TemplatePatches = templatePatchResult.Patches,
+            TemplateClones = templateCloneResult.Clones,
+        };
+        if (!compiledTemplates.IsEmpty)
+            await File.WriteAllTextAsync(
+                Path.Combine(outputDir, CompiledTemplatePatchManifest.FileName),
+                compiledTemplates.ToJson());
 
         // Detect the combined-Unity-pass case: a mod with both addition
         // prefabs AND mesh-replacement work pays two cold starts today. When
@@ -431,7 +439,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             await BuildUnityAdditionPrefabs(projectDir, unityBuildDir, unityEditorPath);
             AdditionPrefabStaging.Stage(
                 sourceDirs: [Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Prefabs), unityBuildDir],
-                outputDir,
+                bundlesDir,
                 compiledManifest,
                 _log);
         }
@@ -504,7 +512,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             {
                 AdditionPrefabStaging.Stage(
                     sourceDirs: [Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Prefabs), unityBuildDir],
-                    outputDir,
+                    bundlesDir,
                     compiledManifest,
                     _log);
             }
@@ -522,7 +530,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         if (!File.Exists(builtBundle))
             return Fail("Unity build did not produce expected bundle.");
 
-        var destBundle = Path.Combine(outputDir, $"{bundleName}.bundle");
+        var destBundle = Path.Combine(bundlesDir, $"{bundleName}.bundle");
         File.Copy(builtBundle, destBundle, overwrite: true);
 
         // Copy manifest alongside the bundle

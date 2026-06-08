@@ -81,6 +81,7 @@ internal static class UiTreeProbe
             Name = SafeName(element),
             Classes = ReadClasses(element),
             Text = ReadText(element),
+            Style = ReadStyle(element),
         };
 
         int childCount;
@@ -131,6 +132,81 @@ internal static class UiTreeProbe
         catch { return null; }
     }
 
+    // Computed layout (the resolved pixel box) plus the key visual styles a modder
+    // needs to match injected UI to the native look. Each read is guarded so a property
+    // missing on this Unity build drops that one field rather than the whole node, and
+    // transparent / zero values are omitted to keep the dump compact.
+    private static Dictionary<string, object> ReadStyle(VisualElement element)
+    {
+        var style = new Dictionary<string, object>();
+
+        try
+        {
+            var box = element.worldBound;
+            // Guard every component: a NaN in any of x/y/w/h serialises to a bare NaN
+            // token that System.Text.Json rejects, which would drop the whole dump.
+            if (!float.IsNaN(box.x) && !float.IsNaN(box.y) && !float.IsNaN(box.width) && !float.IsNaN(box.height))
+            {
+                style["x"] = System.Math.Round(box.x, 1);
+                style["y"] = System.Math.Round(box.y, 1);
+                style["w"] = System.Math.Round(box.width, 1);
+                style["h"] = System.Math.Round(box.height, 1);
+            }
+        }
+        catch { }
+
+        try
+        {
+            var rs = element.resolvedStyle;
+            if (rs != null)
+            {
+                try { var c = rs.backgroundColor; if (c.a > 0.004f) style["bg"] = Col(c); } catch { }
+                try { var c = rs.color; if (c.a > 0.004f) style["color"] = Col(c); } catch { }
+                try { var fs = rs.fontSize; if (fs > 0.01f) style["fontSize"] = System.Math.Round(fs, 1); } catch { }
+                try
+                {
+                    var bw = rs.borderTopWidth;
+                    if (bw > 0.01f)
+                    {
+                        style["borderWidth"] = System.Math.Round(bw, 1);
+                        var bc = rs.borderTopColor;
+                        if (bc.a > 0.004f) style["borderColor"] = Col(bc);
+                    }
+                }
+                catch { }
+                try { style["flexDirection"] = rs.flexDirection.ToString(); } catch { }
+                try { var op = rs.opacity; if (op < 0.999f) style["opacity"] = System.Math.Round(op, 2); } catch { }
+                try { if (rs.display.ToString() == "None") style["display"] = "None"; } catch { }
+                try
+                {
+                    var bg = rs.backgroundImage;
+                    string image = null;
+                    try { var sprite = bg.sprite; if (sprite != null) image = "sprite:" + sprite.name; } catch { }
+                    if (image == null) try { var tex = bg.texture; if (tex != null) image = "texture:" + tex.name; } catch { }
+                    if (image == null) try { var vec = bg.vectorImage; if (vec != null) image = "vector:" + vec.name; } catch { }
+                    if (image != null)
+                    {
+                        style["bgImage"] = image;
+                        try { var t = rs.unityBackgroundImageTintColor; if (t.r < 0.99f || t.g < 0.99f || t.b < 0.99f || t.a < 0.99f) style["bgTint"] = Col(t); } catch { }
+                        try
+                        {
+                            var l = rs.unitySliceLeft; var tp = rs.unitySliceTop; var r = rs.unitySliceRight; var b = rs.unitySliceBottom;
+                            if (l != 0 || tp != 0 || r != 0 || b != 0) style["slice"] = $"{l},{tp},{r},{b}";
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+            }
+        }
+        catch { }
+
+        return style.Count > 0 ? style : null;
+    }
+
+    private static string Col(UnityEngine.Color c) =>
+        $"rgba({(int)System.Math.Round(c.r * 255f)}, {(int)System.Math.Round(c.g * 255f)}, {(int)System.Math.Round(c.b * 255f)}, {System.Math.Round(c.a, 2)})";
+
     // The concrete IL2CPP class name of a wrapper, e.g. "ProgressBar"/"SquaddieRow",
     // not the static cast type. Null for a null object.
     private static string ConcreteName(Il2CppObjectBase obj)
@@ -170,6 +246,7 @@ internal static class UiTreeProbe
         public string Name { get; set; }
         public string Text { get; set; }
         public List<string> Classes { get; set; }
+        public Dictionary<string, object> Style { get; set; }
         public List<UiNode> Children { get; set; }
     }
 }

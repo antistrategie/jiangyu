@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Il2CppMenace.UI;
 using UnityEngine.UIElements;
 
-namespace Jiangyu.Game;
+namespace Jiangyu.Game.Ui;
 
 /// <summary>
 /// Describes where injected UI lands: which live screen or dialog to inject into,
@@ -20,7 +20,7 @@ public sealed class UiTarget
     private Placement _placement = Placement.Append;
     private UiSelector _placementSelector;
 
-    /// <summary>An overlay injection is stretched to fill the screen after insertion.</summary>
+    // An overlay injection is stretched to fill the screen after insertion.
     internal bool IsOverlay { get; private set; }
 
     private UiTarget(Func<VisualElement> resolveRoot) => _resolveRoot = resolveRoot;

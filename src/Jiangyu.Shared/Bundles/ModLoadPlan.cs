@@ -183,9 +183,14 @@ public static class ModLoadPlanBuilder
                 return false;
             }
 
-            var bundlePaths = Directory.GetFiles(modDir, "*.bundle")
-                .OrderBy(path => path, StringComparer.Ordinal)
-                .ToArray();
+            // Compiled bundles live under the mod's bundles/ subfolder, beside code/.
+            // A mod with no bundles (template- or code-only) simply has none here.
+            var bundlesDir = Path.Combine(modDir, CompiledLayout.BundlesDirName);
+            var bundlePaths = Directory.Exists(bundlesDir)
+                ? Directory.GetFiles(bundlesDir, "*.bundle")
+                    .OrderBy(path => path, StringComparer.Ordinal)
+                    .ToArray()
+                : Array.Empty<string>();
 
             mod = new DiscoveredMod(
                 manifest.Name.Trim(),

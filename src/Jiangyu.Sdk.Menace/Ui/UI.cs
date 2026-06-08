@@ -2,10 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
+using Il2CppInterop.Runtime;
 using Jiangyu.Sdk;
 using UnityEngine.UIElements;
 
-namespace Jiangyu.Game;
+namespace Jiangyu.Game.Ui;
 
 /// <summary>
 /// Adds mod UI into the game's live screens and dialogs. Injected elements join the
@@ -27,6 +28,13 @@ public static class UI
     private static readonly List<RegisteredInjection> Injections = new();
     private static int _seq;
     private static Func<Assembly, string, VisualTreeAsset> _uxmlResolver = static (_, _) => null;
+
+    // Native pointers of elements CloseOnOutsideClick has already hooked, so a repeat call
+    // for the same live element is a no-op rather than stacking machinery. Tracked off-band
+    // (not as a class on the element) so the marker never surfaces as a USS class or a
+    // suggested selector in the inspector. A rebuilt element is a fresh pointer, so it
+    // re-hooks correctly against the new panel.
+    private static readonly HashSet<IntPtr> OutsideCloseHooked = new();
 
     /// <summary>Resolve a bundled UXML asset by calling assembly and name. Bound by the loader at startup.</summary>
     public static void BindUxmlResolver(Func<Assembly, string, VisualTreeAsset> resolver) =>
@@ -62,7 +70,90 @@ public static class UI
     /// <summary>Every descendant of <paramref name="root"/> matching <paramref name="selector"/>.</summary>
     public static IReadOnlyList<VisualElement> FindAll(VisualElement root, UiSelector selector) => UiTree.FindAll(root, selector);
 
-    /// <summary>Whether any injection is registered. The loader skips its driver when false.</summary>
+    /// <summary>
+    /// Close <paramref name="element"/> when a pointer goes down anywhere outside it: on
+    /// another UI element, or on empty space. A transparent, behind-everything catcher
+    /// makes empty space pickable (UI Toolkit dispatches no event where nothing pickable
+    /// sits), and a capture-phase handler on the panel root sees every press first. A press
+    /// inside the element, or on an element named in <paramref name="keepOpenOn"/> (the
+    /// button that toggles it, for one), is left alone. <paramref name="onClose"/> defaults
+    /// to hiding the element. Call this once the element is attached to a panel.
+    /// </summary>
+    public static void CloseOnOutsideClick(VisualElement element, Action onClose = null, params string[] keepOpenOn)
+    {
+        if (element == null)
+            return;
+        VisualElement panelRoot;
+        try { panelRoot = element.panel != null ? element.panel.visualTree : null; }
+        catch { panelRoot = null; }
+        if (panelRoot == null)
+            return;
+
+        // Idempotent per element instance: a repeat call for the same live element is a
+        // no-op, so re-binding (without a panel rebuild) never stacks catchers, pollers or
+        // handlers. A screen rebuild hands back a fresh element with no marker, so it
+        // re-hooks correctly against the new panel (the old catcher/handler died with it).
+        try
+        {
+            if (!OutsideCloseHooked.Add(element.Pointer))
+                return;
+        }
+        catch { }
+
+        onClose ??= () => element.SetVisible(false);
+
+        // A transparent, full-screen element behind the rest of the UI, so a press on
+        // otherwise-empty space lands on something the panel can dispatch from. It is
+        // pickable only while the element is actually shown: a closed flyout's catcher must
+        // never sit in front of and swallow clicks on another screen, so it defaults to
+        // PickingMode.Ignore and a poll flips it on only when the element is visible. If the
+        // poll never runs, the catcher stays inert (empty-space close is simply lost, never
+        // a blocked screen).
+        try
+        {
+            var catcher = UiElementExtensions.FillOverlay();
+            panelRoot.Add(catcher);
+            catcher.SendToBack();
+            catcher.schedule.Execute(DelegateSupport.ConvertDelegate<Il2CppSystem.Action>((Action)(() =>
+            {
+                try { catcher.pickingMode = element.IsVisible() ? PickingMode.Position : PickingMode.Ignore; }
+                catch { }
+            }))).Every(200);
+        }
+        catch { }
+
+        try
+        {
+            panelRoot.RegisterCallback<PointerDownEvent>(
+                DelegateSupport.ConvertDelegate<EventCallback<PointerDownEvent>>(
+                    (Action<PointerDownEvent>)(evt => OnOutsidePress(evt, element, onClose, keepOpenOn))),
+                TrickleDown.TrickleDown);
+        }
+        catch (Exception ex) { Log.Warn($"UI.CloseOnOutsideClick: hookup failed: {ex.Message}"); }
+    }
+
+    private static void OnOutsidePress(PointerDownEvent evt, VisualElement element, Action onClose, string[] keepOpenOn)
+    {
+        try
+        {
+            if (!element.IsVisible())
+                return;
+            var target = evt.target != null ? evt.target.TryCast<VisualElement>() : null;
+            for (var e = target; e != null; e = e.parent)
+            {
+                if (e.Pointer == element.Pointer)
+                    return;
+                string name;
+                try { name = e.name; } catch { name = null; }
+                if (name != null && keepOpenOn != null && Array.IndexOf(keepOpenOn, name) >= 0)
+                    return;
+            }
+            onClose();
+        }
+        catch { }
+    }
+
+    // Whether any injection is registered. The loader skips its driver when false.
     internal static bool HasInjections => Injections.Count > 0;
 
     // Re-apply every live injection. The loader calls this when the active screen

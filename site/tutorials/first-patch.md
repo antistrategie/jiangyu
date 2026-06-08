@@ -58,7 +58,6 @@ Copy that `compiled/` folder into MENACE's `Mods/`, renamed to `CarbineBuff`:
   Jiangyu.Loader.dll
   CarbineBuff/
     jiangyu.json
-    *.bundle
 ```
 
 The palette's **Deploy Mod** command does the copy for you if you would rather not do it by hand.

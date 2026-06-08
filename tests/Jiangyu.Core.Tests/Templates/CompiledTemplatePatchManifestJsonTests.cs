@@ -264,4 +264,186 @@ public class CompiledTemplatePatchManifestJsonTests
         Assert.Contains("\"TypeConstruction\"", handlerJson);
         Assert.DoesNotContain("\"Composite\"", handlerJson);
     }
+
+    [Fact]
+    public void Manifest_Roundtrip_PreservesTypedScalarValues()
+    {
+        var original = new CompiledTemplatePatchManifest
+        {
+            TemplatePatches =
+            [
+                new CompiledTemplatePatch
+                {
+                    TemplateType = "EntityTemplate",
+                    TemplateId = "local_forces_basic_soldier",
+                    Set =
+                    [
+                        new CompiledTemplateSetOperation
+                        {
+                            FieldPath = "CanBeDowned",
+                            Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Boolean, Boolean = true },
+                        },
+                        new CompiledTemplateSetOperation
+                        {
+                            FieldPath = "DeploymentCost",
+                            Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 7 },
+                        },
+                        new CompiledTemplateSetOperation
+                        {
+                            FieldPath = "CharacterHeight",
+                            Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Single, Single = 1.25f },
+                        },
+                        new CompiledTemplateSetOperation
+                        {
+                            FieldPath = "DebugName",
+                            Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.String, String = "patched" },
+                        },
+                        new CompiledTemplateSetOperation
+                        {
+                            FieldPath = "ActorType",
+                            Value = new CompiledTemplateValue
+                            {
+                                Kind = CompiledTemplateValueKind.Enum,
+                                EnumType = "EntityTemplateActorType",
+                                EnumValue = "Human",
+                            },
+                        },
+                    ],
+                },
+            ],
+        };
+
+        var restored = CompiledTemplatePatchManifest.FromJson(original.ToJson());
+
+        var patch = Assert.Single(restored.TemplatePatches!);
+        Assert.Equal("EntityTemplate", patch.TemplateType);
+        Assert.Equal("local_forces_basic_soldier", patch.TemplateId);
+        Assert.Equal(5, patch.Set.Count);
+
+        Assert.Equal(CompiledTemplateValueKind.Boolean, patch.Set[0].Value!.Kind);
+        Assert.True(patch.Set[0].Value!.Boolean);
+        Assert.Equal(CompiledTemplateValueKind.Int32, patch.Set[1].Value!.Kind);
+        Assert.Equal(7, patch.Set[1].Value!.Int32);
+        Assert.Equal(CompiledTemplateValueKind.Single, patch.Set[2].Value!.Kind);
+        Assert.Equal(1.25f, patch.Set[2].Value!.Single);
+        Assert.Equal(CompiledTemplateValueKind.String, patch.Set[3].Value!.Kind);
+        Assert.Equal("patched", patch.Set[3].Value!.String);
+        Assert.Equal(CompiledTemplateValueKind.Enum, patch.Set[4].Value!.Kind);
+        Assert.Equal("EntityTemplateActorType", patch.Set[4].Value!.EnumType);
+        Assert.Equal("Human", patch.Set[4].Value!.EnumValue);
+    }
+
+    [Fact]
+    public void Manifest_Roundtrip_PreservesTemplateTypePerEntry()
+    {
+        var original = new CompiledTemplatePatchManifest
+        {
+            TemplatePatches =
+            [
+                new CompiledTemplatePatch
+                {
+                    TemplateType = "EntityTemplate",
+                    TemplateId = "player_squad.darby",
+                    Set = [new CompiledTemplateSetOperation { FieldPath = "HudYOffsetScale", Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Single, Single = 5.0f } }],
+                },
+                new CompiledTemplatePatch
+                {
+                    TemplateType = "UnitLeaderTemplate",
+                    TemplateId = "squad_leader_test",
+                    Set = [new CompiledTemplateSetOperation { FieldPath = "PromotionTax", Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 1 } }],
+                },
+            ],
+        };
+
+        var restored = CompiledTemplatePatchManifest.FromJson(original.ToJson());
+
+        Assert.NotNull(restored.TemplatePatches);
+        Assert.Equal(2, restored.TemplatePatches!.Count);
+        Assert.Equal("EntityTemplate", restored.TemplatePatches[0].TemplateType);
+        Assert.Equal("UnitLeaderTemplate", restored.TemplatePatches[1].TemplateType);
+    }
+
+    [Fact]
+    public void Manifest_FromJson_OmittedTemplateType_DeserialisesAsNull()
+    {
+        var json = """
+        {
+            "templatePatches": [
+                {
+                    "templateId": "some_template",
+                    "set": [
+                        { "fieldPath": "Field", "value": { "kind": "Boolean", "boolean": true } }
+                    ]
+                }
+            ]
+        }
+        """;
+
+        var manifest = CompiledTemplatePatchManifest.FromJson(json);
+        var patch = Assert.Single(manifest.TemplatePatches!);
+        Assert.Null(patch.TemplateType);
+        Assert.Equal("some_template", patch.TemplateId);
+    }
+
+    [Fact]
+    public void Manifest_FromJson_IndexedFieldPath_Deserialises()
+    {
+        var json = """
+        {
+            "templatePatches": [
+                {
+                    "templateType": "EntityTemplate",
+                    "templateId": "foo",
+                    "set": [
+                        { "fieldPath": "Properties.MoraleEvents[2].SomeField",
+                          "value": { "kind": "Int32", "int32": 42 } }
+                    ]
+                }
+            ]
+        }
+        """;
+
+        var manifest = CompiledTemplatePatchManifest.FromJson(json);
+        var op = Assert.Single(manifest.TemplatePatches![0].Set);
+        Assert.Equal("Properties.MoraleEvents[2].SomeField", op.FieldPath);
+        Assert.Equal(42, op.Value!.Int32);
+    }
+
+    [Fact]
+    public void TryLoad_RoundTripsTemplatesJsonFromDisk()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"jiangyu-templates-load-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var original = new CompiledTemplatePatchManifest
+            {
+                TemplatePatches =
+                [
+                    new CompiledTemplatePatch { TemplateType = "PerkTemplate", TemplateId = "perk.x", Set = [] },
+                ],
+                TemplateClones =
+                [
+                    new CompiledTemplateClone { TemplateType = "PerkTemplate", CloneId = "perk.y" },
+                ],
+            };
+            File.WriteAllText(Path.Combine(dir, CompiledTemplatePatchManifest.FileName), original.ToJson());
+
+            var loaded = CompiledTemplatePatchManifest.TryLoad(dir);
+
+            Assert.NotNull(loaded);
+            Assert.Equal("perk.x", Assert.Single(loaded!.TemplatePatches!).TemplateId);
+            Assert.Equal("perk.y", Assert.Single(loaded.TemplateClones!).CloneId);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void TryLoad_ReturnsNullWhenNoTemplatesJsonPresent()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"jiangyu-templates-missing-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try { Assert.Null(CompiledTemplatePatchManifest.TryLoad(dir)); }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
 }

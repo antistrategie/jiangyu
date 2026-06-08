@@ -69,6 +69,22 @@ public sealed class ModLoadPlanBuilderTests : IDisposable
         Assert.All(plan.BlockedMods, blocked => Assert.Contains("Duplicate manifest name", blocked.Reason));
     }
 
+    [Fact]
+    public void Build_DiscoversTemplateOnlyModWithNoBundlesDir()
+    {
+        var modDir = Path.Combine(_modsDir, "10-patchonly");
+        Directory.CreateDirectory(modDir);
+        File.WriteAllText(Path.Combine(modDir, "jiangyu.json"), BuildManifestJson("PatchOnly", null));
+        // No bundles/ subfolder at all — a template- or code-only mod.
+
+        var plan = ModLoadPlanBuilder.Build(_modsDir);
+
+        var mod = Assert.Single(plan.LoadableMods);
+        Assert.Equal("PatchOnly", mod.Name);
+        Assert.Empty(mod.BundlePaths);
+        Assert.Empty(plan.BlockedMods);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_modsDir))
@@ -82,7 +98,9 @@ public sealed class ModLoadPlanBuilderTests : IDisposable
         File.WriteAllText(
             Path.Combine(modDir, "jiangyu.json"),
             BuildManifestJson(name, depends));
-        File.WriteAllText(Path.Combine(modDir, $"{name}.bundle"), "bundle");
+        var bundlesDir = Path.Combine(modDir, "bundles");
+        Directory.CreateDirectory(bundlesDir);
+        File.WriteAllText(Path.Combine(bundlesDir, $"{name}.bundle"), "bundle");
     }
 
     private static string BuildManifestJson(string name, string[]? depends)

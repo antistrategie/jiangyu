@@ -2,10 +2,11 @@
 
 Game UI injects your own elements into the game's existing screens, so a custom bar or modal sits inside a native screen and looks like it belongs. It is the fourth SDK surface, alongside [hooks](/sdk/#hooks), [template types](./template-types), and [verbs](./verbs).
 
-It lives in the `Jiangyu.Game` namespace, alongside the verbs, as plain static calls on `UI`:
+It lives in the `Jiangyu.Game.Ui` namespace, as plain static calls on `UI`. Reusable widgets sit under `Jiangyu.Game.Ui.Components` and the UI sounds under `Jiangyu.Game.Audio`:
 
 ```csharp
-using Jiangyu.Game;
+using Jiangyu.Game.Ui;
+using Jiangyu.Game.Audio;
 using UnityEngine.UIElements;
 ```
 
@@ -17,9 +18,12 @@ Every injection answers three questions: **where** to put it, **what** to add, a
 
 ```csharp
 UI.Inject(
-    UiTarget.Screen<ArmoryUIScreen>().After(UiSelector.Name("HealthBar")),  // where
-    "relationship_bar",                                                      // what (a bundled UXML)
-    element => element.Q<Label>("Value").text = "12");                       // how (optional)
+    // where
+    UiTarget.Screen<ArmoryUIScreen>().After(UiSelector.Name("HealthBar")),
+    // what (a bundled UXML)
+    "relationship_bar",
+    // how (optional)
+    element => element.Q<Label>("Value").text = "12");
 ```
 
 `UI.Inject` returns a `UiInjection` handle you keep to [refresh or remove](#keeping-an-injection-current) it. The loader re-applies it for you when the screen changes, so you set it up once and never re-inject by hand.
@@ -103,10 +107,34 @@ UI.InjectEach(
 
 ## Matching the game's look
 
-Two extensions make an injected element sit naturally beside a native one:
+A few helpers make an injected element behave like a native one:
 
 - `target.MatchStyle(reference)` copies every USS class off `reference` onto `target`, so it inherits the same stylesheet rules. Use it when the neighbour is styled by class.
 - `target.StackAfter(reference, gap)` positions `target` absolutely one row below `reference`, matching its left edge, width, and height. Use it when the neighbour carries no classes and is positioned in code, as many game bars are. It reads the resolved layout, so call it from `bind`, after the reference has been laid out.
+- `target.SetVisible(bool)`, `target.IsVisible()`, `target.SetWidthPercent(percent)`, and `target.CenterText()` cover the small chores: toggling display, driving a bar fill, and centring a label inline (which beats the game's own `.unity-label` text-align).
+
+The game's hover glow is not a helper you call. It is a trait the [Components](#components) wear by default, so a native-looking control is hovered by virtue of being one.
+
+`Sound.Click()` and `Sound.RightClick()` play the game's standard UI click sounds, so a button you wire by hand still clicks like a native one. `UI.CloseOnOutsideClick(element, onClose, keepOpenOn)` dismisses an injected panel when a press lands anywhere outside it, empty space included.
+
+## Components
+
+Components are ready-made widgets that bundle the native look, behaviour, and sounds, so a common piece is one call rather than hand-assembled markup. They are built in code and injected through the build-callback form of `Inject`. Import `Jiangyu.Game.Ui.Components` and use them by name.
+
+| Component | What it is |
+| --- | --- |
+| `TextButton` | the game's text-button frame, native click sound, and native hover glow |
+| `ItemTile` | the game's loot slot for an item, with native hover, a selected border, and a count badge |
+| `Flyout` | a window-framed panel that dismisses on any outside click |
+
+They are open wrappers, not sealed widgets. Each hands back the real elements (`Root`, `Content`, `Badge`, and so on), so anything a knob does not cover is reachable on them: add USS classes, set inline styles, add children, or drop to the helpers above and assemble the element yourself. The full member list is in the [UI reference](/reference/ui).
+
+```csharp
+var gift = new TextButton("GIFT").OnClick(OpenGifts);
+UI.InjectEach(
+    UiTarget.Screen<ArmoryUIScreen>().Each(UiSelector.TypeName("UnitWindow")).After(UiSelector.Name("UnitWindowButton")),
+    () => gift.Root);
+```
 
 ## Authoring UI in UXML
 
@@ -210,7 +238,7 @@ A self-contained behaviour mod that adds a relationship bar under the health bar
 
 ```csharp
 using Jiangyu.Sdk;
-using Jiangyu.Game;
+using Jiangyu.Game.Ui;
 using UnityEngine.UIElements;
 using Il2CppMenace.UI.Strategy;
 

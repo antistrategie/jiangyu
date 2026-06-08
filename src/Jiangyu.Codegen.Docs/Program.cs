@@ -31,12 +31,16 @@ if (verbs.Count == 0)
     return 1;
 }
 
+var ui = ParseUi(xmlPath);
+
 Directory.CreateDirectory(outputDir);
 var verbsFile = Path.Combine(outputDir, "verbs.md");
 var hooksFile = Path.Combine(outputDir, "hooks.md");
+var uiFile = Path.Combine(outputDir, "ui.md");
 File.WriteAllText(verbsFile, DocsEmit.EmitVerbs(verbs));
 File.WriteAllText(hooksFile, DocsEmit.EmitHooks(HookCatalog.All));
-Console.WriteLine($"docsgen: wrote {verbsFile} ({verbs.Count} verb(s)) and {hooksFile} ({HookCatalog.All.Count} hook(s))");
+File.WriteAllText(uiFile, DocsEmit.EmitUi(ui));
+Console.WriteLine($"docsgen: wrote {verbsFile} ({verbs.Count} verb(s)), {hooksFile} ({HookCatalog.All.Count} hook(s)), {uiFile} ({ui.Count} UI type(s))");
 return 0;
 
 static List<VerbDoc> ParseVerbs(string xmlPath)
@@ -70,6 +74,70 @@ static List<VerbDoc> ParseVerbs(string xmlPath)
     }
 
     return verbs;
+}
+
+static List<UiClassDoc> ParseUi(string xmlPath)
+{
+    // (group, namespace prefix). Components is matched before Ui because its namespace nests
+    // under Ui. The XML doc carries internal documented types (UiSite, ...) too, so only the
+    // public UI surface is kept.
+    (string Group, string Ns)[] groups =
+    [
+        ("Components", "Jiangyu.Game.Ui.Components."),
+        ("Audio", "Jiangyu.Game.Audio."),
+        ("Injection and helpers", "Jiangyu.Game.Ui."),
+    ];
+    string[] publicClasses =
+        ["UI", "UiTarget", "UiSelector", "UiInjection", "UiElementExtensions", "TextButton", "ItemTile", "Flyout", "Sound"];
+
+    var byClass = new Dictionary<string, (string Group, string Summary, List<UiMemberDoc> Members)>();
+
+    foreach (var member in XDocument.Load(xmlPath).Descendants("member"))
+    {
+        var name = member.Attribute("name")?.Value;
+        if (name is null || name.Length < 2) continue;
+        var kind = name[0];
+        if (kind is not ('T' or 'M' or 'P')) continue;
+
+        var id = name[2..];
+        var paren = id.IndexOf('(');
+        var paramList = paren >= 0 ? id[(paren + 1)..^1] : "";
+        var full = paren >= 0 ? id[..paren] : id;
+
+        var group = groups.FirstOrDefault(g => full.StartsWith(g.Ns, StringComparison.Ordinal));
+        if (group.Ns is null) continue;
+        var remainder = full[group.Ns.Length..];
+        var dot = remainder.IndexOf('.');
+        var cls = dot < 0 ? remainder : remainder[..dot];
+        if (!publicClasses.Contains(cls)) continue;
+
+        var summary = RenderSummary(member.Element("summary"));
+        if (!byClass.TryGetValue(cls, out var acc))
+            acc = (group.Group, "", new List<UiMemberDoc>());
+        acc.Group = group.Group;
+
+        if (kind == 'T')
+        {
+            acc.Summary = summary;
+        }
+        else if (dot >= 0)
+        {
+            var memberName = remainder[(dot + 1)..];
+            if (memberName == "#ctor")
+                memberName = cls;
+            // Generic methods carry an arity marker in the doc id (Screen``1); render it as <T>.
+            var tick = memberName.IndexOf("``", StringComparison.Ordinal);
+            if (tick >= 0)
+                memberName = memberName[..tick] + "<T>";
+            var signature = kind == 'P' || paren < 0
+                ? memberName
+                : $"{memberName}({string.Join(", ", SplitParams(paramList).Select(ShortType))})";
+            acc.Members.Add(new UiMemberDoc(signature, summary));
+        }
+        byClass[cls] = acc;
+    }
+
+    return byClass.Select(kv => new UiClassDoc(kv.Value.Group, kv.Key, kv.Value.Summary, kv.Value.Members)).ToList();
 }
 
 // Split a doc-id parameter list on top-level commas (generics use {} and may nest commas).
@@ -153,5 +221,7 @@ static string ShortCref(string cref)
     if (cref.Length > 2 && cref[1] == ':') cref = cref[2..];
     var paren = cref.IndexOf('(');
     if (paren >= 0) cref = cref[..paren];
-    return cref.Contains('.') ? cref[(cref.LastIndexOf('.') + 1)..] : cref;
+    var name = cref.Contains('.') ? cref[(cref.LastIndexOf('.') + 1)..] : cref;
+    var tick = name.IndexOf('`');
+    return tick >= 0 ? name[..tick] + "<T>" : name;
 }

@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Il2CppInterop.Runtime;
 using UnityEngine.UIElements;
 
-namespace Jiangyu.Game;
+namespace Jiangyu.Game.Ui;
 
 /// <summary>
 /// Depth-bounded traversal of a live UI Toolkit tree. Every read is guarded so a

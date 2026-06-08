@@ -2,6 +2,13 @@ using System.Text.Json.Serialization;
 
 namespace Jiangyu.Shared.Templates;
 
+/// <summary>
+/// The compiled template program a mod ships: its patch and clone directives.
+/// Written by the compiler to <c>compiled/templates.json</c> beside the lean
+/// manifest, and read back by the loader's patch and clone catalogues. Kept out
+/// of <c>jiangyu.json</c> so the manifest stays a small identity record the
+/// loader can scan cheaply.
+/// </summary>
 public sealed class CompiledTemplatePatchManifest
 {
     [JsonPropertyName("templatePatches")]
@@ -9,6 +16,26 @@ public sealed class CompiledTemplatePatchManifest
 
     [JsonPropertyName("templateClones")]
     public List<CompiledTemplateClone>? TemplateClones { get; set; }
+
+    public const string FileName = "templates.json";
+
+    /// <summary>True when there are no patches and no clones to ship.</summary>
+    [JsonIgnore]
+    public bool IsEmpty =>
+        (TemplatePatches is null || TemplatePatches.Count == 0) &&
+        (TemplateClones is null || TemplateClones.Count == 0);
+
+    public string ToJson() => JsonStore.ToJson(this);
+
+    public static CompiledTemplatePatchManifest FromJson(string json) =>
+        JsonStore.FromJson<CompiledTemplatePatchManifest>(json) ?? new CompiledTemplatePatchManifest();
+
+    /// <summary>
+    /// Load the compiled template program sitting in <paramref name="directory"/>,
+    /// or null when there is none (a mod with no patches or clones ships no file).
+    /// </summary>
+    public static CompiledTemplatePatchManifest? TryLoad(string directory) =>
+        JsonStore.TryLoad<CompiledTemplatePatchManifest>(directory, FileName);
 }
 
 /// <summary>

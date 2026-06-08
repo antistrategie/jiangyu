@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Jiangyu.Shared.Bundles;
 using Jiangyu.Shared.Templates;
 using Jiangyu.Loader.Logging;
@@ -15,11 +14,6 @@ namespace Jiangyu.Loader.Templates;
 /// </summary>
 internal sealed class TemplatePatchCatalog
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
-
     // Outer key: template type name (e.g. "EntityTemplate").
     // Middle key: templateId. Inner list: operations in applied order. Set
     // ops dedup on fieldPath within the inner list (later replaces earlier);
@@ -35,12 +29,12 @@ internal sealed class TemplatePatchCatalog
     public IEnumerable<KeyValuePair<string, Dictionary<string, List<LoadedPatchOperation>>>> EnumerateByType()
         => _patches;
 
-    public void Load(IReadOnlyList<DiscoveredMod> loadableMods, LoaderLog log)
+    public void Load(IReadOnlyList<(DiscoveredMod Mod, CompiledTemplatePatchManifest Templates)> mods, LoaderLog log)
     {
-        foreach (var mod in loadableMods)
+        foreach (var (mod, templates) in mods)
         {
             log.Mod = mod.Name;
-            LoadFromMod(mod, log);
+            LoadFromMod(mod, templates, log);
         }
 
         log.Mod = null;
@@ -61,23 +55,8 @@ internal sealed class TemplatePatchCatalog
             $"Loaded {PatchCount} template patch operation(s): {string.Join("; ", typeSummaries)}.");
     }
 
-    private void LoadFromMod(DiscoveredMod mod, LoaderLog log)
+    private void LoadFromMod(DiscoveredMod mod, CompiledTemplatePatchManifest manifest, LoaderLog log)
     {
-        if (string.IsNullOrEmpty(mod.ManifestPath) || !File.Exists(mod.ManifestPath))
-            return;
-
-        CompiledTemplatePatchManifest manifest;
-        try
-        {
-            var json = File.ReadAllText(mod.ManifestPath);
-            manifest = JsonSerializer.Deserialize<CompiledTemplatePatchManifest>(json, JsonOptions);
-        }
-        catch (Exception ex)
-        {
-            log.Error($"Failed to read template patches: {ex.Message}");
-            return;
-        }
-
         var patches = manifest?.TemplatePatches;
         if (patches == null || patches.Count == 0)
             return;

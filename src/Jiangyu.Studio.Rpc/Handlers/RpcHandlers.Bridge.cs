@@ -139,5 +139,10 @@ public static partial class RpcHandlers
 
         [JsonPropertyName("children")]
         public required List<UiNode>? Children { get; set; }
+
+        // Computed style snapshot from the probe: geometry (x/y/w/h), colours (rgba
+        // strings), fonts, borders, layout. Values are strings or numbers.
+        [JsonPropertyName("style")]
+        public required Dictionary<string, object>? Style { get; set; }
     }
 }

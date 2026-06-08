@@ -190,7 +190,7 @@ Every verb in the `Jiangyu.Game` namespace, generated from the SDK. Verbs are pl
 | --- | --- |
 | `Mission.ActiveActor` | The actor whose turn it currently is. |
 | `Mission.ActorCount(bool, bool, bool, bool, Nullable)` | Count actors matching the given side and liveness flags, optionally restricted to one actorType. |
-| `Mission.Actors(Nullable)` | Every actor on the field, optionally filtered to one faction. Flattens the per-faction actor lists. |
+| `Mission.Actors(Nullable)` | Every actor on the field, optionally filtered to one faction. Flattens the per-faction actor lists, skipping unused faction slots. |
 | `Mission.DeadCount(ActorType)` | The number of dead actors of type. |
 | `Mission.DeadEnemyCount(Nullable)` | The number of dead enemy actors, optionally restricted to one faction. |
 | `Mission.DeadStructureCount(StructureType)` | The number of destroyed structures of type. |

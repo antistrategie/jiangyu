@@ -1,4 +1,12 @@
-import { useCallback, useDeferredValue, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { ChevronDown, Copy, RadioTower, RefreshCw, Search } from "lucide-react";
 import { Button } from "@shared/ui/Button/Button";
 import { EmptyState } from "@shared/ui/EmptyState/EmptyState";
@@ -7,7 +15,8 @@ import { ContextMenu, type ContextMenuEntry } from "@shared/ui/ContextMenu/Conte
 import { useToast } from "@shared/toast";
 import { bridgeUiCapture, type UiDump, type UiNode } from "@features/bridge/bridge";
 import { useBridgeStatus } from "@features/bridge/useBridgeStatus";
-import { bestSelector, nodeMatches, selectorsOf, truncate } from "./helpers";
+import { onKeyActivate } from "@shared/utils/a11y";
+import { bestSelector, nodeMatches, selectorsOf, styleEntries, truncate } from "./helpers";
 import styles from "./UiInspector.module.css";
 
 interface Menu {
@@ -36,6 +45,8 @@ export function UiInspector() {
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const [menu, setMenu] = useState<Menu | null>(null);
+  const [selected, setSelected] = useState<{ path: string; node: UiNode } | null>(null);
+  const treeRef = useRef<HTMLDivElement>(null);
 
   const connected = status?.connected ?? false;
   const enabled = status?.enabled ?? false;
@@ -74,6 +85,8 @@ export function UiInspector() {
     setError(null);
     try {
       setDump(await bridgeUiCapture());
+      // The new tree has fresh node objects, so the old selection no longer points at one.
+      setSelected(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       // A failed request tears down the socket, so reflect the disconnect at once
@@ -132,7 +145,12 @@ export function UiInspector() {
         <div key={path}>
           <div
             className={`${styles.row} ${isMatch ? styles.match : ""}`}
+            data-path={path}
+            role="button"
+            tabIndex={0}
             style={{ paddingLeft: depth * 14 + 8 }}
+            onClick={() => setSelected({ path, node })}
+            onKeyDown={onKeyActivate(() => setSelected({ path, node }))}
             onContextMenu={(e) => {
               e.preventDefault();
               openMenu(e.clientX, e.clientY, node);
@@ -142,7 +160,10 @@ export function UiInspector() {
               <button
                 type="button"
                 className={`${styles.expander} ${isCollapsed ? "" : styles.expanderOpen}`}
-                onClick={() => toggle(path)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggle(path);
+                }}
                 aria-label={isCollapsed ? "Expand" : "Collapse"}
               >
                 <ChevronDown size={12} />
@@ -169,7 +190,10 @@ export function UiInspector() {
                 className={styles.copyBtn}
                 title={`Copy ${best}`}
                 aria-label="Copy selector"
-                onClick={() => copy(best)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  copy(best);
+                }}
               >
                 <Copy size={11} />
               </button>
@@ -190,7 +214,7 @@ export function UiInspector() {
           <span>{dump.nodeCount} nodes</span>
           {dump.truncated && <span className={styles.truncated}>truncated</span>}
         </div>
-        <div className={styles.tree}>
+        <div className={styles.tree} ref={treeRef}>
           {dump.screenTree !== null && renderNode(dump.screenTree, "s", 0)}
           {dump.dialogTree !== null && (
             <>
@@ -205,6 +229,23 @@ export function UiInspector() {
       </div>
     );
   }, [dump, filter, collapsed, copy, toggle, openMenu]);
+
+  // Highlight the selected row by toggling a class on the matching DOM node, instead of
+  // rebuilding the whole tree memo on every selection. useLayoutEffect re-applies before
+  // paint after any tree rebuild (collapse/capture), so the highlight never flickers.
+  useLayoutEffect(() => {
+    const root = treeRef.current;
+    if (root === null) return;
+    root.querySelector(`.${styles.selected}`)?.classList.remove(styles.selected);
+    if (selected !== null) {
+      root.querySelector(`[data-path="${selected.path}"]`)?.classList.add(styles.selected);
+    }
+  }, [selected, tree]);
+
+  const selectedEntries = useMemo(
+    () => (selected === null ? [] : styleEntries(selected.node)),
+    [selected],
+  );
 
   const state = connected
     ? { cls: styles.live, label: "Live" }
@@ -237,6 +278,32 @@ export function UiInspector() {
       </div>
 
       {renderBody()}
+
+      {dump !== null && selected !== null && (
+        <div className={styles.stylePanel}>
+          <div className={styles.stylePanelHead}>
+            {selected.node.type ?? "?"}
+            {selected.node.name ? ` #${selected.node.name}` : ""}
+          </div>
+          {selectedEntries.length === 0 ? (
+            <div className={styles.stylePanelEmpty}>No computed styles for this node.</div>
+          ) : (
+            <div className={styles.styleList}>
+              {selectedEntries.map((e) => (
+                <div key={e.key} className={styles.styleRow}>
+                  <span className={styles.styleKey}>{e.key}</span>
+                  <span className={styles.styleVal}>
+                    {e.color !== null && (
+                      <span className={styles.swatch} style={{ background: e.color }} />
+                    )}
+                    {e.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {menu !== null && (
         <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />

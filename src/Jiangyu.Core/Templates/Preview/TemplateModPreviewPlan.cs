@@ -26,10 +26,11 @@ public sealed class TemplateModPreviewPlan
         ArgumentNullException.ThrowIfNull(log);
 
         string manifestPath = ResolveManifestPath(modPath);
-        ModManifest manifest = ModManifest.FromJson(File.ReadAllText(manifestPath));
+        var modDir = Path.GetDirectoryName(manifestPath)!;
+        var templates = CompiledTemplatePatchManifest.TryLoad(modDir) ?? new CompiledTemplatePatchManifest();
 
-        var cloneResult = TemplatePatchEmitter.EmitClones(manifest.TemplateClones, log);
-        var patchResult = TemplatePatchEmitter.Emit(manifest.TemplatePatches, log);
+        var cloneResult = TemplatePatchEmitter.EmitClones(templates.TemplateClones, log);
+        var patchResult = TemplatePatchEmitter.Emit(templates.TemplatePatches, log);
 
         if (!cloneResult.Success || !patchResult.Success)
         {

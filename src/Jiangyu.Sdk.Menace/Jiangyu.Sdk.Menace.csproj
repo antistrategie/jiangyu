@@ -56,6 +56,14 @@
       <HintPath>$(GameAssembliesDir)/Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>$(GameAssembliesDir)/Assembly-CSharp-firstpass.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(GameAssembliesDir)/UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Il2CppSirenix.Serialization">
       <HintPath>$(GameAssembliesDir)/Il2CppSirenix.Serialization.dll</HintPath>
       <Private>false</Private>

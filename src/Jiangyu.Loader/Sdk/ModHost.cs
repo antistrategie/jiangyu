@@ -179,7 +179,7 @@ internal sealed class ModHost
             catch (Exception ex)
             {
                 system.Failures++;
-                _log.Error($"[{system.ModId}] {phase} threw ({system.Failures}/{QuarantineThreshold}): {ex.Message}");
+                _log.Error($"[{system.ModId}] {phase} threw ({system.Failures}/{QuarantineThreshold}): {ex}");
                 if (system.Failures >= QuarantineThreshold)
                 {
                     system.Quarantined = true;

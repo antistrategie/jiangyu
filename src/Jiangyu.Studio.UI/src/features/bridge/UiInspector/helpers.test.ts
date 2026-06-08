@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { UiNode } from "@features/bridge/bridge";
-import { bestSelector, nodeMatches, selectorsOf, truncate } from "./helpers";
+import { bestSelector, nodeMatches, selectorsOf, styleEntries, truncate } from "./helpers";
 
 const node = (over: Partial<UiNode> = {}): UiNode => ({
   type: "VisualElement",
@@ -8,6 +8,7 @@ const node = (over: Partial<UiNode> = {}): UiNode => ({
   text: null,
   classes: null,
   children: null,
+  style: null,
   ...over,
 });
 
@@ -76,5 +77,27 @@ describe("truncate", () => {
 
   it("leaves short text untouched", () => {
     expect(truncate("short")).toBe("short");
+  });
+});
+
+describe("styleEntries", () => {
+  it("returns nothing when the node has no style", () => {
+    expect(styleEntries(node({ style: null }))).toEqual([]);
+  });
+
+  it("orders known keys, stringifies numbers, and flags colours for a swatch", () => {
+    const entries = styleEntries(
+      node({ style: { color: "rgba(255, 0, 0, 1)", w: 46, display: "None" } }),
+    );
+    expect(entries).toEqual([
+      { key: "display", value: "None", color: null },
+      { key: "w", value: "46", color: null },
+      { key: "color", value: "rgba(255, 0, 0, 1)", color: "rgba(255, 0, 0, 1)" },
+    ]);
+  });
+
+  it("sorts unknown keys to the end, alphabetically", () => {
+    const keys = styleEntries(node({ style: { zebra: 1, x: 2, apple: 3 } })).map((e) => e.key);
+    expect(keys).toEqual(["x", "apple", "zebra"]);
   });
 });

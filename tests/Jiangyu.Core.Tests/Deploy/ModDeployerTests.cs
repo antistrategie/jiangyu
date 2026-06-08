@@ -15,8 +15,9 @@ public sealed class ModDeployerTests : IDisposable
         _compiled = Path.Combine(_root, "compiled");
         _dest = Path.Combine(_root, "Mods", "MyMod");
         Directory.CreateDirectory(Path.Combine(_compiled, "code"));
+        Directory.CreateDirectory(Path.Combine(_compiled, "bundles"));
         File.WriteAllText(Path.Combine(_compiled, "jiangyu.json"), "{}");
-        File.WriteAllText(Path.Combine(_compiled, "a.bundle"), "bundle");
+        File.WriteAllText(Path.Combine(_compiled, "bundles", "a.bundle"), "bundle");
         File.WriteAllText(Path.Combine(_compiled, "code", "MyMod.Code.dll"), "dll");
     }
 
@@ -32,7 +33,7 @@ public sealed class ModDeployerTests : IDisposable
         ModDeployer.Deploy(_compiled, _dest);
 
         Assert.True(File.Exists(Path.Combine(_dest, "jiangyu.json")));
-        Assert.True(File.Exists(Path.Combine(_dest, "a.bundle")));
+        Assert.True(File.Exists(Path.Combine(_dest, "bundles", "a.bundle")));
         Assert.True(File.Exists(Path.Combine(_dest, "code", "MyMod.Code.dll")));
     }
 

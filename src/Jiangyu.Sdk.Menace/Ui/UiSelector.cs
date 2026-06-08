@@ -2,7 +2,7 @@ using System;
 using Il2CppInterop.Runtime.InteropTypes;
 using UnityEngine.UIElements;
 
-namespace Jiangyu.Game;
+namespace Jiangyu.Game.Ui;
 
 /// <summary>
 /// Matches a live <see cref="VisualElement"/> by name, USS class, or concrete type.

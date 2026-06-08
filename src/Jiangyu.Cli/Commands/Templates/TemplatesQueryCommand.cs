@@ -124,7 +124,7 @@ public static class TemplatesQueryCommand
             if (isQualifiedCodeType)
             {
                 var (assemblies, searchDirs) = CodeTypeResolver.LoadInputs(
-                    Path.Combine(Directory.GetCurrentDirectory(), "compiled", "code"));
+                    Path.Combine(Directory.GetCurrentDirectory(), "compiled", Jiangyu.Shared.Bundles.CompiledLayout.CodeDirName));
                 codeAssemblies = assemblies;
                 additionalSearchDirectories.AddRange(searchDirs);
             }

@@ -199,6 +199,7 @@ export interface UiNode {
   text: string | null;
   classes: string[] | null;
   children: UiNode[] | null;
+  style: Record<string, unknown> | null;
 }
 
 export interface CodeSyncResult {

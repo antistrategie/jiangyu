@@ -32,9 +32,8 @@ public class RpcCodeXrefTests : IDisposable
 
     private void WriteCompiledManifest()
     {
-        var manifest = new ModManifest
+        var templates = new CompiledTemplatePatchManifest
         {
-            Name = "test",
             TemplatePatches =
             [
                 new CompiledTemplatePatch
@@ -70,7 +69,8 @@ public class RpcCodeXrefTests : IDisposable
 
         var compiledDir = Path.Combine(_projectDir, "compiled");
         Directory.CreateDirectory(compiledDir);
-        File.WriteAllText(Path.Combine(compiledDir, ModManifest.FileName), manifest.ToJson());
+        File.WriteAllText(Path.Combine(compiledDir, ModManifest.FileName), new ModManifest { Name = "test" }.ToJson());
+        File.WriteAllText(Path.Combine(compiledDir, CompiledTemplatePatchManifest.FileName), templates.ToJson());
     }
 
     private static JsonElement NameParam(string value)

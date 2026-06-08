@@ -44,7 +44,7 @@ public static partial class RpcHandlers
     {
         var projectRoot = RpcContext.ProjectRoot ?? throw new InvalidOperationException("No project open.");
 
-        var codeDir = Path.Combine(projectRoot, "compiled", "code");
+        var codeDir = Path.Combine(projectRoot, "compiled", Jiangyu.Shared.Bundles.CompiledLayout.CodeDirName);
         var dlls = Directory.Exists(codeDir) ? Directory.GetFiles(codeDir, "*.dll") : [];
         if (dlls.Length == 0)
             return JsonSerializer.SerializeToElement(
@@ -99,12 +99,15 @@ public static partial class RpcHandlers
     private static List<TemplateRefRow>? LoadCompiledRefs()
     {
         var projectRoot = RpcContext.ProjectRoot ?? throw new InvalidOperationException("No project open.");
-        var manifest = ModManifest.TryLoad(Path.Combine(projectRoot, "compiled"));
-        if (manifest is null)
+        var compiledDir = Path.Combine(projectRoot, "compiled");
+        // A missing manifest means "never compiled" (null); the compiled template
+        // program, when present, lives beside it in templates.json.
+        if (ModManifest.TryLoad(compiledDir) is null)
             return null;
+        var templates = CompiledTemplatePatchManifest.TryLoad(compiledDir);
 
         var rows = new List<TemplateRefRow>();
-        foreach (var patch in manifest.TemplatePatches ?? [])
+        foreach (var patch in templates?.TemplatePatches ?? [])
             foreach (var (kind, value, fieldPath) in CompiledTemplateReferences.Enumerate(patch))
                 rows.Add(new TemplateRefRow(patch.TemplateType ?? "EntityTemplate", patch.TemplateId, fieldPath, kind, value));
         return rows;

@@ -5,6 +5,7 @@ using Jiangyu.Loader.Runtime.Patching;
 using Jiangyu.Loader.Logging;
 using Jiangyu.Loader.Templates;
 using Jiangyu.Shared.Bundles;
+using Jiangyu.Shared.Templates;
 using MelonLoader;
 using UnityEngine;
 
@@ -75,8 +76,13 @@ internal class ReplacementCoordinator
 
         var plan = ModLoadPlanBuilder.Build(modsDir);
         var summary = _catalog.LoadBundles(plan, new LoaderLog(log));
-        _templateClones.Load(plan.LoadableMods, new LoaderLog(log));
-        _templatePatches.Load(plan.LoadableMods, new LoaderLog(log));
+        // Read each mod's compiled template program once and feed both catalogs, rather
+        // than each catalog re-reading and re-parsing the same templates.json.
+        var templates = plan.LoadableMods
+            .Select(mod => (Mod: mod, Templates: CompiledTemplatePatchManifest.TryLoad(mod.DirectoryPath)))
+            .ToList();
+        _templateClones.Load(templates, new LoaderLog(log));
+        _templatePatches.Load(templates, new LoaderLog(log));
         return summary;
     }
 

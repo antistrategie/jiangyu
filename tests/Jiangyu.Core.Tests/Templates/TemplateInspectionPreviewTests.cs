@@ -14,12 +14,13 @@ public sealed class TemplateInspectionPreviewTests : IDisposable
     public void PreviewPlan_LoadsManifest_AndResolvesCloneChain()
     {
         Directory.CreateDirectory(_tempRoot);
-        string manifestPath = Path.Combine(_tempRoot, ModManifest.FileName);
         File.WriteAllText(
-            manifestPath,
+            Path.Combine(_tempRoot, ModManifest.FileName),
+            """{ "name": "PreviewFixture" }""");
+        File.WriteAllText(
+            Path.Combine(_tempRoot, CompiledTemplatePatchManifest.FileName),
             """
             {
-              "name": "PreviewFixture",
               "templateClones": [
                 { "templateType": "UnitLeaderTemplate", "sourceId": "base.alpha", "cloneId": "clone.alpha" },
                 { "templateType": "UnitLeaderTemplate", "sourceId": "clone.alpha", "cloneId": "clone.beta" }
@@ -50,9 +51,11 @@ public sealed class TemplateInspectionPreviewTests : IDisposable
         Directory.CreateDirectory(_tempRoot);
         File.WriteAllText(
             Path.Combine(_tempRoot, ModManifest.FileName),
+            """{ "name": "CreateFixture" }""");
+        File.WriteAllText(
+            Path.Combine(_tempRoot, CompiledTemplatePatchManifest.FileName),
             """
             {
-              "name": "CreateFixture",
               "templateClones": [
                 { "templateType": "PerkTemplate", "cloneId": "perk.fresh" },
                 { "templateType": "PerkTemplate", "sourceId": "perk.fresh", "cloneId": "perk.derived" }

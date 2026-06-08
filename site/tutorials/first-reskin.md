@@ -37,7 +37,8 @@ Press **Ctrl+Shift+B**. When it finishes, Studio offers a **Reveal** action that
   Jiangyu.Loader.dll
   RedLogo/
     jiangyu.json
-    *.bundle
+    bundles/
+      *.bundle
 ```
 
 The palette's **Deploy Mod** command does the copy for you.

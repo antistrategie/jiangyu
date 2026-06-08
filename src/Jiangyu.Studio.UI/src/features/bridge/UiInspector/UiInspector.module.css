@@ -113,7 +113,7 @@
   padding-right: var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
-  cursor: default;
+  cursor: pointer;
 }
 
 .row:hover {
@@ -122,6 +122,71 @@
 
 .match {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.selected,
+.selected:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.stylePanel {
+  flex-shrink: 0;
+  max-height: 40%;
+  overflow-y: auto;
+  border-top: var(--border-rule);
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.stylePanelHead {
+  position: sticky;
+  top: 0;
+  background: var(--bg-sunken);
+  padding: var(--space-1) var(--space-3);
+  border-bottom: var(--border-rule);
+  font-family: var(--font-label);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+
+.styleList {
+  padding: var(--space-1) 0;
+}
+
+.styleRow {
+  display: flex;
+  gap: var(--space-3);
+  padding: 1px var(--space-3);
+}
+
+.styleKey {
+  flex-shrink: 0;
+  min-width: 92px;
+  color: var(--fg-muted);
+}
+
+.styleVal {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--fg-strong);
+  word-break: break-all;
+}
+
+.swatch {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--fg-subtle);
+  display: inline-block;
+}
+
+.stylePanelEmpty {
+  padding: var(--space-2) var(--space-3);
+  color: var(--fg-subtle);
 }
 
 .expander,

@@ -63,4 +63,39 @@ public class DocsEmitTests
         var md = DocsEmit.EmitHooks(hooks);
         Assert.Contains("- **Source:** synthetic (raised by Jiangyu)", md);
     }
+
+    [Fact]
+    public void EmitUi_renders_type_summary_as_section_intro_then_member_rows()
+    {
+        var md = DocsEmit.EmitUi(new[]
+        {
+            new UiClassDoc("Components", "TextButton", "A native-looking text button.", new[]
+            {
+                new UiMemberDoc("TextButton(string, bool)", "Build the button."),
+                new UiMemberDoc("OnClick(Action)", "Run a handler on click."),
+            }),
+        });
+        Assert.Contains("# UI reference", md);
+        Assert.Contains("## Components", md);
+        Assert.Contains("### TextButton", md);
+        // The type summary is prose under the heading, not a table row.
+        Assert.Contains("A native-looking text button.", md);
+        Assert.Contains("| `TextButton(string, bool)` | Build the button. |", md);
+        Assert.Contains("| `OnClick(Action)` | Run a handler on click. |", md);
+    }
+
+    [Fact]
+    public void EmitUi_orders_groups_helpers_then_components_then_audio()
+    {
+        var md = DocsEmit.EmitUi(new[]
+        {
+            new UiClassDoc("Audio", "Sound", "UI sounds.", System.Array.Empty<UiMemberDoc>()),
+            new UiClassDoc("Components", "Flyout", "A window-framed panel.", System.Array.Empty<UiMemberDoc>()),
+            new UiClassDoc("Injection and helpers", "UI", "Adds mod UI into the game's screens.", System.Array.Empty<UiMemberDoc>()),
+        });
+        var helpers = md.IndexOf("## Injection and helpers", System.StringComparison.Ordinal);
+        var components = md.IndexOf("## Components", System.StringComparison.Ordinal);
+        var audio = md.IndexOf("## Audio", System.StringComparison.Ordinal);
+        Assert.True(helpers < components && components < audio);
+    }
 }

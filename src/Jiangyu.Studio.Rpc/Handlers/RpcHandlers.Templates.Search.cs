@@ -96,7 +96,7 @@ public static partial class RpcHandlers
         string? modId = null;
         if (RpcContext.ProjectRoot is { } projectRoot)
         {
-            var (assemblies, searchDirs) = CodeTypeResolver.LoadInputs(Path.Combine(projectRoot, "compiled", "code"));
+            var (assemblies, searchDirs) = CodeTypeResolver.LoadInputs(Path.Combine(projectRoot, "compiled", Jiangyu.Shared.Bundles.CompiledLayout.CodeDirName));
             codeAssemblies = assemblies;
             // No code DLLs means no mod types to scan or label, so skip the search-dir
             // wiring and the manifest read that only the modId:Name labelling needs.

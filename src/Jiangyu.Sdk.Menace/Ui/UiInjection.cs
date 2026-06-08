@@ -1,4 +1,4 @@
-namespace Jiangyu.Game;
+namespace Jiangyu.Game.Ui;
 
 /// <summary>
 /// A live mod-UI injection returned by <see cref="UI"/>. Hold it to refresh the

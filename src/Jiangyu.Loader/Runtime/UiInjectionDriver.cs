@@ -24,7 +24,7 @@ internal sealed class UiInjectionDriver
 
     public void Drive()
     {
-        if (!Jiangyu.Game.UI.HasInjections)
+        if (!Jiangyu.Game.Ui.UI.HasInjections)
             return;
 
         var ptr = ActiveScreenPointer();
@@ -37,7 +37,7 @@ internal sealed class UiInjectionDriver
         if (_settleFrames > 0)
         {
             _settleFrames--;
-            Jiangyu.Game.UI.ReapplyAll();
+            Jiangyu.Game.Ui.UI.ReapplyAll();
         }
     }
 
