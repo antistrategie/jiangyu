@@ -175,7 +175,7 @@ export function useCompile(): UseCompile {
         const detail = buildSuccessDetail(duration, warnings, bundlePath);
         toast({
           variant: "success",
-          message: bundlePath !== null ? "Compile complete" : "Compile complete (template-only)",
+          message: "Compile complete",
           ...(detail !== null ? { detail } : {}),
           ...(bundlePath !== null
             ? {
