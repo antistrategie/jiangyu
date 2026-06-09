@@ -48,7 +48,15 @@ internal static class JiangyuTypeMetadataReader
             foreach (var dllPath in dllPaths)
             {
                 Assembly assembly;
-                try { assembly = context.LoadFromAssemblyPath(dllPath); }
+                // Load the mod's own DLL from a byte copy, never the file path. On Windows
+                // MetadataLoadContext memory-maps a path-loaded assembly and does not reliably
+                // release the handle on dispose, so the inspected DLL stays locked. Since the
+                // inspected DLLs are the ones a later compile deletes or overwrites (compiled/
+                // gets wiped, code/bin rebuilt), a lingering lock from a long-lived host (Studio,
+                // the MCP server) makes that compile fail with "used by another process". Reading
+                // the bytes first leaves no handle on the file. Dependency assemblies resolve via
+                // the path resolver, which is fine: those are never deleted.
+                try { assembly = context.LoadFromByteArray(File.ReadAllBytes(dllPath)); }
                 catch { continue; }
 
                 foreach (var type in SafeGetTypes(assembly))
