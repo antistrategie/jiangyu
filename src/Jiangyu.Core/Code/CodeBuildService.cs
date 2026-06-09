@@ -25,6 +25,16 @@ public sealed class CodeBuildService(ILogSink log)
             || !Directory.EnumerateFiles(codeDir, "*.csproj", SearchOption.TopDirectoryOnly).Any())
             return null;
 
+        // A scaffolded code/ ships the .csproj and build props before any C# is written,
+        // so the .csproj alone does not mean there is code to build: the SDK build would
+        // still emit an empty assembly that there is no reason to package. Treat "csproj
+        // but no .cs source" the same as "no code project" and skip the build.
+        if (!HasCSharpSources(codeDir))
+        {
+            log.Info("  Skipping code/ build: no .cs source files.");
+            return null;
+        }
+
         if (string.IsNullOrEmpty(sdkDir))
             return CodeBuildResult.Failed(
                 "code/ present but the Jiangyu SDK path is unresolved. Set \"sdk\" in your global config, or build src/Jiangyu.Sdk.");
@@ -74,6 +84,22 @@ public sealed class CodeBuildService(ILogSink log)
         var typeNames = ReadJiangyuTypeNames(dlls, gameDir, sdkDir);
         log.Info($"  Built code/ -> {dlls.Count} dll(s); [JiangyuType]: {(typeNames.Count == 0 ? "(none)" : string.Join(", ", typeNames))}");
         return CodeBuildResult.Built(dlls, typeNames);
+    }
+
+    // True when code/ holds at least one hand-written C# source. The build's own bin/ and
+    // obj/ are ignored: obj/ carries generated .cs (AssemblyInfo, global usings) that exist
+    // even for an empty project, so counting them would defeat the check.
+    private static bool HasCSharpSources(string codeDir)
+    {
+        foreach (var path in Directory.EnumerateFiles(codeDir, "*.cs", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(codeDir, path);
+            var top = relative.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries)[0];
+            if (top is "bin" or "obj")
+                continue;
+            return true;
+        }
+        return false;
     }
 
     private HashSet<string> ReadJiangyuTypeNames(IReadOnlyList<string> dllPaths, string gameDir, string sdkDir)

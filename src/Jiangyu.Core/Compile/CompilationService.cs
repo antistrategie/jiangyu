@@ -452,7 +452,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         if (totalCompileInputCount == 0)
         {
             await File.WriteAllTextAsync(Path.Combine(outputDir, ModManifest.FileName), compiledManifest.ToJson());
-            _log.Info($"  -> {Path.Combine(outputDir, ModManifest.FileName)} (template-only, no bundle)");
+            _log.Info($"  -> {Path.Combine(outputDir, ModManifest.FileName)}");
             _log.Info("Done.");
             return new CompilationResult { Success = true };
         }
