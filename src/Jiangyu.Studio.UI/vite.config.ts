@@ -49,6 +49,7 @@ export default defineConfig({
         // cache headers on /assets, only the small app chunk redownloads
         // when users update.
         manualChunks(id) {
+          if (id.includes("/features/editor/CodeEditor/monacoSetup")) return "monaco";
           if (!id.includes("node_modules")) return undefined;
           if (id.includes("/monaco-editor/") || id.includes("/@monaco-editor/")) return "monaco";
           if (id.includes("/three/")) return "three";

@@ -9,9 +9,7 @@ import { initInstalledAgents } from "@features/agent/installed";
 import { getWindowParams } from "@features/panes/role";
 import "./styles/global.css";
 
-// Monaco editor web worker setup for Vite
-import * as monaco from "monaco-editor";
-import { loader } from "@monaco-editor/react";
+import "@features/editor/CodeEditor/monacoSetup";
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
 import cssWorker from "monaco-editor/esm/vs/language/css/css.worker?worker";
@@ -27,10 +25,6 @@ self.MonacoEnvironment = {
     return new editorWorker();
   },
 };
-
-// Bind @monaco-editor/react to the bundled monaco instance so it loads from
-// the local chunk rather than the jsdelivr CDN.
-loader.config({ monaco });
 
 initRpc();
 initSettings();

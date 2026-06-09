@@ -17,6 +17,9 @@ publish/
 dist/
 .jiangyu/
 
+## CI build deps, populated at runtime (MelonLoader DLLs for the loader build)
+.ci/
+
 ## Test / coverage output
 TestResults/
 *.trx
