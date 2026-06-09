@@ -8,7 +8,7 @@ The `Jiangyu.Game.Ui` injection surface, the reusable components, and the UI sou
 
 ### UI
 
-Adds mod UI into the game's live screens and dialogs. Injected elements join the game's own UI Toolkit panel, so the game's stylesheets cascade to them: give an element the game's USS class names (discover them with the Studio UI inspector, or copy them off a neighbour with MatchStyle) and it is styled like native UI. Author the element as a UXML asset bundled with the mod (an .uxml under Assets/UI/, with its USS linked by a <Style> tag) and pass its name or the loaded VisualTreeAsset, or build it from a callback. A UiTarget says which screen and where. The returned UiInjection is re-applied automatically when the screen is rebuilt, and Refresh rebuilds it on demand after the data behind it changes.
+Adds mod UI into the game's live screens and dialogs. Injected elements join the game's own UI Toolkit panel, so the game's stylesheets cascade to them: give an element the game's USS class names (discover them with the Studio UI inspector, or copy them off a neighbour with MatchStyle) and it is styled like native UI. Author the element as a UXML asset bundled with the mod (an .uxml under Assets/UI/, with its USS linked by a &lt;Style&gt; tag) and pass its name or the loaded VisualTreeAsset, or build it from a callback. A UiTarget says which screen and where. The returned UiInjection is re-applied automatically when the screen is rebuilt, and Refresh rebuilds it on demand after the data behind it changes.
 
 | Member | Description |
 | --- | --- |
@@ -55,7 +55,7 @@ Matches a live VisualElement by name, USS class, or concrete type. Selectors loc
 | `Class(string)` | Match an element carrying the USS class className. |
 | `Name(string)` | Match the element whose name equals name. |
 | `Type<T>` | Match an element whose concrete game type is T (a subclass counts). |
-| `TypeName(string)` | Match an element whose concrete game type name equals typeName, for example "ArmoryUnitSelectSlot". This is the type name the UI inspector reports, so it matches even when the type has no compile-time wrapper to use with Type<T>. |
+| `TypeName(string)` | Match an element whose concrete game type name equals typeName, for example "ArmoryUnitSelectSlot". This is the type name the UI inspector reports, so it matches even when the type has no compile-time wrapper to use with Type&lt;T&gt;. |
 
 ### UiTarget
 

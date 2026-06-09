@@ -85,6 +85,24 @@ public class DocsEmitTests
     }
 
     [Fact]
+    public void EmitUi_escapes_angle_brackets_in_prose_but_leaves_signatures_in_code()
+    {
+        var md = DocsEmit.EmitUi(new[]
+        {
+            new UiClassDoc("Injection and helpers", "UI", "Link the USS with a <Style> tag.", new[]
+            {
+                new UiMemberDoc("Type<T>", "Match an element whose type is T, as with Type<T>."),
+            }),
+        });
+        // VitePress compiles markdown through the Vue SFC parser, so a generic or literal
+        // tag in prose must be HTML-escaped or it reads as an unclosed element.
+        Assert.Contains("a &lt;Style&gt; tag", md);
+        Assert.Contains("as with Type&lt;T&gt;.", md);
+        // The signature stays raw inside its backtick span (markdown escapes inline code).
+        Assert.Contains("| `Type<T>` |", md);
+    }
+
+    [Fact]
     public void EmitUi_orders_groups_helpers_then_components_then_audio()
     {
         var md = DocsEmit.EmitUi(new[]

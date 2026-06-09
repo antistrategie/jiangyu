@@ -137,7 +137,30 @@ public static class DocsEmit
     // Collapse whitespace and escape the pipe so a summary stays inside its table cell.
     private static string Inline(string text) => Collapse(text).Replace("|", "\\|");
 
-    // Collapse whitespace for prose (a section intro), without the table-cell pipe escaping.
+    // Collapse whitespace for prose (a section intro or table cell) and neutralise angle
+    // brackets. VitePress compiles markdown through the Vue SFC parser, so a generic like
+    // Type<T> or a literal <Style> in prose reads as an unclosed HTML tag and fails the
+    // build. Escaping is skipped inside backtick spans: markdown-it already escapes inline
+    // code, and rewriting there would render the entity text literally.
     private static string Collapse(string text)
-        => string.Join(" ", (text ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        => EscapeAnglesOutsideCode(
+            string.Join(" ", (text ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)));
+
+    private static string EscapeAnglesOutsideCode(string text)
+    {
+        var sb = new StringBuilder(text.Length);
+        var inCode = false;
+        foreach (var c in text)
+        {
+            if (c == '`')
+                inCode = !inCode;
+            if (!inCode && c == '<')
+                sb.Append("&lt;");
+            else if (!inCode && c == '>')
+                sb.Append("&gt;");
+            else
+                sb.Append(c);
+        }
+        return sb.ToString();
+    }
 }
