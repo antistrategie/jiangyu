@@ -37,7 +37,22 @@ public sealed class JiangyuExportHandler : ExportHandler
         ProjectExporter projectExporter = new(Settings, gameData.AssemblyManager);
         BeforeExport(projectExporter);
         projectExporter.DoFinalOverrides(Settings);
-        projectExporter.ExportSubset(gameData.GameBundle, Settings, fileSystem, assetsToExport);
+
+        // Salt exported GUIDs with this prefab's directory name. Shared dependencies
+        // (a shader or physic material used by several prefabs) are exported into one
+        // subset dir per prefab; an unsalted GUID is identical across those copies, so
+        // importing them together makes Unity flag a duplicate and reassign random GUIDs,
+        // breaking the references on every rip. The salt keeps each copy distinct and stable.
+        var previousNamespace = ExportCollection.GuidNamespace;
+        ExportCollection.GuidNamespace = fileSystem.Path.GetFileName(outputPath.TrimEnd('/', '\\'));
+        try
+        {
+            projectExporter.ExportSubset(gameData.GameBundle, Settings, fileSystem, assetsToExport);
+        }
+        finally
+        {
+            ExportCollection.GuidNamespace = previousNamespace;
+        }
 
         Logger.Info(LogCategory.Export, "Finished subset export");
     }

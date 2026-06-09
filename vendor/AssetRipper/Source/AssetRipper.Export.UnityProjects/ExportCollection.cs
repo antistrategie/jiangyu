@@ -30,6 +30,15 @@ namespace AssetRipper.Export.UnityProjects;
 
 public abstract class ExportCollection : IExportCollection
 {
+	/// <summary>
+	/// Per-export-pass discriminator folded into <see cref="AssetExportCollection{T}.ComputeStableGuid(T)"/>.
+	/// A shared source asset (e.g. a shader referenced by several prefabs) is exported into one subset
+	/// directory per prefab; without this salt every copy hashes to the same GUID, and importing them
+	/// together makes Unity treat them as duplicates and reassign random GUIDs. Setting it to the
+	/// destination prefab's name keeps each copy's GUID distinct yet stable across rips. Empty means no salt.
+	/// </summary>
+	public static string GuidNamespace { get; set; } = "";
+
 	public virtual UnityGuid GUID => throw new NotSupportedException();
 
 	protected static void ExportMeta(IExportContainer container, Meta meta, string filePath, FileSystem fileSystem)

@@ -89,10 +89,18 @@ public class AssetExportCollection<T> : ExportCollection where T : IUnityObjectB
 	public T Asset { get; }
 
 	/// <summary>
-	/// Deterministic GUID derived from the asset's identity inside the source bundle.
+	/// Deterministic GUID derived from the asset's identity inside the source bundle, salted with
+	/// <see cref="ExportCollection.GuidNamespace"/> so a shared source asset exported into more than
+	/// one subset directory gets a distinct (but rip-stable) GUID per directory rather than a
+	/// colliding one that Unity re-randomises on import.
 	/// </summary>
 	protected virtual UnityGuid ComputeStableGuid(T asset)
-		=> ComputeStableGuid(asset.Collection.Name, asset.PathID, asset.ClassID);
+	{
+		string collectionName = GuidNamespace.Length == 0
+			? asset.Collection.Name
+			: $"{GuidNamespace}/{asset.Collection.Name}";
+		return ComputeStableGuid(collectionName, asset.PathID, asset.ClassID);
+	}
 
 	/// <summary>
 	/// MD5 of UTF-8 collection name, little-endian int64 PathID, and little-endian int32 ClassID.
