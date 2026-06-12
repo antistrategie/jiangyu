@@ -42,6 +42,7 @@ export const usePaneWindowStore = create<PaneWindowStore>((set, get) => ({
   windows: {},
 
   openPaneWindow: async (desc) => {
+    const project = currentProject;
     try {
       const result = await rpcCall<{ windowId: string }>("openPaneWindow", {
         kind: desc.kind,
@@ -50,6 +51,10 @@ export const usePaneWindowStore = create<PaneWindowStore>((set, get) => ({
         browserState: desc.browserState,
       });
       if (result.windowId.length === 0) return;
+      // The project can switch while the host opens the window. The window
+      // belongs to the old session, so don't track it (tracking would
+      // persist it into the new project's slot).
+      if (currentProject !== project) return;
       set((s) => {
         const windows = { ...s.windows, [result.windowId]: desc };
         persist(windows);
@@ -70,6 +75,10 @@ export const usePaneWindowStore = create<PaneWindowStore>((set, get) => ({
     if (stored.length === 0) return;
     set({ windows: {} });
     for (const desc of stored) {
+      // Rapid project switches interleave with the awaits below. A stale
+      // restore loop must stop rather than keep spawning the old project's
+      // windows (and persisting them into the new project's slot).
+      if (currentProject !== projectPath) return;
       await get().openPaneWindow(desc);
     }
   },
@@ -113,38 +122,50 @@ export const usePaneWindowStore = create<PaneWindowStore>((set, get) => ({
 // Module-level subscriptions: the host fans three notifications into every
 // window. We translate each into a store action. Set up once at module load;
 // there's only ever one pane-window store per process.
-interface PaneWindowClosed {
+export interface PaneWindowClosed {
   readonly windowId: string;
 }
-interface PaneWindowTabsChanged {
+export interface PaneWindowTabsChanged {
   readonly windowId: string;
   readonly filePaths: readonly string[];
   readonly activeFilePath: string | null;
 }
-interface PaneWindowBrowserStateChanged {
+export interface PaneWindowBrowserStateChanged {
   readonly windowId: string;
   readonly state: AssetBrowserState | TemplateBrowserState;
 }
 
-subscribe("paneWindowClosed", (params) => {
-  const { windowId } = params as PaneWindowClosed;
+declare module "@shared/rpc/notifications" {
+  interface HostNotificationMap {
+    paneWindowClosed: PaneWindowClosed;
+    paneWindowTabsChanged: PaneWindowTabsChanged;
+    paneWindowBrowserStateChanged: PaneWindowBrowserStateChanged;
+  }
+}
+
+subscribe("paneWindowClosed", ({ windowId }) => {
   usePaneWindowStore.getState()._handleClosed(windowId);
 });
-subscribe("paneWindowTabsChanged", (params) => {
-  const { windowId, filePaths, activeFilePath } = params as PaneWindowTabsChanged;
+subscribe("paneWindowTabsChanged", ({ windowId, filePaths, activeFilePath }) => {
   usePaneWindowStore.getState()._handleTabsChanged(windowId, filePaths, activeFilePath);
 });
-subscribe("paneWindowBrowserStateChanged", (params) => {
-  const { windowId, state } = params as PaneWindowBrowserStateChanged;
+subscribe("paneWindowBrowserStateChanged", ({ windowId, state }) => {
   usePaneWindowStore.getState()._handleBrowserStateChanged(windowId, state);
 });
+
+// Updates the module-local project pointer that persist() and the restore /
+// open guards compare against. Exported for tests, app code goes through
+// useSyncPaneWindowProject.
+export function setPaneWindowProject(projectPath: string | null): void {
+  currentProject = projectPath;
+}
 
 // App calls this once with the current project; we remember it for persist()
 // so store mutations write to the right localStorage slot. Also kicks off
 // restoreFor when the project changes (load-on-open behaviour).
 export function useSyncPaneWindowProject(projectPath: string | null): void {
   useEffect(() => {
-    currentProject = projectPath;
+    setPaneWindowProject(projectPath);
     if (projectPath === null) return;
     void usePaneWindowStore.getState().restoreFor(projectPath);
   }, [projectPath]);

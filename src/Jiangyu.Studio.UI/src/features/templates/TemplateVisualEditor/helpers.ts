@@ -381,6 +381,28 @@ export function groupDirectives<
 }
 
 /**
+ * Move the entry whose `_uiId` is `fromId` to `toSlot` — the target
+ * insertion index in the pre-move list (0..len). Returns the input list
+ * unchanged (same reference) when fromId is absent, so callers can use an
+ * identity check to skip a no-op commit. Single-entry counterpart to
+ * `reorderDirectives`, which additionally moves descent groups as a unit.
+ */
+export function reorderByUiId<T extends { _uiId: string }>(
+  list: T[],
+  fromId: string,
+  toSlot: number,
+): T[] {
+  const fromIdx = list.findIndex((item) => item._uiId === fromId);
+  if (fromIdx === -1) return list;
+  const next = [...list];
+  const moved = next.splice(fromIdx, 1)[0];
+  if (moved === undefined) return list;
+  const insertAt = toSlot > fromIdx ? toSlot - 1 : toSlot;
+  next.splice(insertAt, 0, moved);
+  return next;
+}
+
+/**
  * Reorder a flat directive list, with awareness of descent-group spans.
  * If the source id heads a descent group, all K consecutive members of
  * that group move together; standalone rows behave as a length-1 move.

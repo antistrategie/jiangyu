@@ -5,7 +5,7 @@ export type { CodeSyncResult, DeployResult };
 
 /** Scaffold or refresh the open project's code/ C# project. */
 export async function codeSync(): Promise<CodeSyncResult> {
-  return rpcCall<CodeSyncResult>("codeSync");
+  return rpcCall<CodeSyncResult>("codeSync", undefined, { timeoutMs: 0 });
 }
 
 /** Deploy the open project's compiled/ output into the game's Mods folder. */

@@ -1,4 +1,4 @@
-import { formatDurationShort, type CompileState, type CompileStatus } from "@features/compile";
+import { formatDurationShort, type CompileProgress, type CompileStatus } from "@features/compile";
 
 export const SUCCESS_LINGER_MS = 5_000;
 
@@ -6,11 +6,14 @@ export const SUCCESS_LINGER_MS = 5_000;
  * Compute the progress bar percentage from compile state.
  * Returns null when there is no meaningful progress to show.
  */
-export function computeProgressPct(state: CompileState): number | null {
-  if (state.status !== "running" || state.progress === null || state.progress.total <= 0) {
+export function computeProgressPct(
+  status: CompileStatus,
+  progress: CompileProgress | null,
+): number | null {
+  if (status !== "running" || progress === null || progress.total <= 0) {
     return null;
   }
-  return Math.round((state.progress.current / state.progress.total) * 100);
+  return Math.round((progress.current / progress.total) * 100);
 }
 
 /**
@@ -22,8 +25,8 @@ export function deriveDisplayStatus(status: CompileStatus, override: "idle" | nu
   return status;
 }
 
-export function formatDurationLive(state: CompileState): string {
-  if (state.startedAt === null) return "0s";
-  const end = state.finishedAt ?? Date.now();
-  return formatDurationShort(end - state.startedAt);
+export function formatDurationLive(startedAt: number | null, finishedAt: number | null): string {
+  if (startedAt === null) return "0s";
+  const end = finishedAt ?? Date.now();
+  return formatDurationShort(end - startedAt);
 }

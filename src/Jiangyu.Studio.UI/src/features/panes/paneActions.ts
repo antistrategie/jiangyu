@@ -16,11 +16,11 @@ interface UsePaneActionsParams {
   readonly onTearOutPane: (paneId: string) => void;
 }
 
-// Non-whitespace delimiter for the pane-id signature. Pane ids are base36 +
-// underscore only; this character never appears inside them, so join+split
-// round-trips cleanly while keeping the memo key a plain string (cheap to
-// compare vs. the full Layout object, which changes on every drag-resize).
-const PANE_ID_DELIM = "";
+// Delimiter for the pane-id signature. Pane ids are base36 + underscore
+// only; newline never appears inside them, so join+split round-trips
+// cleanly while keeping the memo key a plain string (cheap to compare vs.
+// the full Layout object, which changes on every drag-resize).
+const PANE_ID_DELIM = "\n";
 
 export function usePaneActions({
   projectPath,

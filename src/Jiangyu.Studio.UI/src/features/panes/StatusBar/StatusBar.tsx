@@ -1,13 +1,12 @@
 import { useEffect, useReducer, useState } from "react";
 import { CheckCircle, CircleDot, PanelLeft, PanelLeftClose, XCircle } from "lucide-react";
-import { formatDurationShort, type CompileState, type CompileStatus } from "@features/compile";
+import { formatDurationShort, useCompileStore, type CompileStatus } from "@features/compile";
 import { useSidebarHidden } from "@features/settings/settings";
 import { Spinner } from "@shared/ui/Spinner/Spinner";
 import { SUCCESS_LINGER_MS, computeProgressPct, formatDurationLive } from "./statusBarHelpers";
 import styles from "./StatusBar.module.css";
 
 interface StatusBarProps {
-  readonly compileState: CompileState;
   readonly onOpenCompileModal: () => void;
 }
 
@@ -16,20 +15,23 @@ interface StatusBarProps {
  * Success auto-clears after a few seconds; failure persists until the next
  * compile or until the user clicks to open the dossier.
  */
-export function StatusBar({ compileState, onOpenCompileModal }: StatusBarProps) {
-  const displayStatus = useDisplayStatus(compileState);
-  useTickerWhileRunning(compileState.status === "running");
+export function StatusBar({ onOpenCompileModal }: StatusBarProps) {
+  const status = useCompileStore((s) => s.status);
+  const progress = useCompileStore((s) => s.progress);
+  const finishedAt = useCompileStore((s) => s.finishedAt);
+
+  const displayStatus = useDisplayStatus(status, finishedAt);
+  useTickerWhileRunning(status === "running");
   useStatusBarHeight();
   const [sidebarHidden, setSidebarHidden] = useSidebarHidden();
 
-  const progressPct = computeProgressPct(compileState);
+  const progressPct = computeProgressPct(status, progress);
 
-  const barClass =
-    compileState.status === "running" ? `${styles.bar} ${styles.barRunning}` : styles.bar;
+  const barClass = status === "running" ? `${styles.bar} ${styles.barRunning}` : styles.bar;
 
   return (
     <div className={barClass}>
-      {compileState.status === "running" && (
+      {status === "running" && (
         <div className={styles.progressTrack}>
           <div
             className={styles.progressFill}
@@ -58,9 +60,9 @@ export function StatusBar({ compileState, onOpenCompileModal }: StatusBarProps) 
         title="Open compile dossier"
       >
         <StatusIcon status={displayStatus} />
-        {displayStatus === "running" && <RunningSegment state={compileState} />}
-        {displayStatus === "success" && <SuccessSegment state={compileState} />}
-        {displayStatus === "failed" && <FailedSegment state={compileState} />}
+        {displayStatus === "running" && <RunningSegment />}
+        {displayStatus === "success" && <SuccessSegment />}
+        {displayStatus === "failed" && <FailedSegment />}
         {displayStatus === "idle" && <IdleSegment />}
       </button>
     </div>
@@ -90,28 +92,28 @@ function StatusIcon({ status }: { status: CompileStatus }) {
   return <CircleDot size={12} className={styles.statusIconIdle} />;
 }
 
-function RunningSegment({ state }: { state: CompileState }) {
+function RunningSegment() {
+  const phase = useCompileStore((s) => s.phase);
+  const statusLine = useCompileStore((s) => s.statusLine);
+  const startedAt = useCompileStore((s) => s.startedAt);
+  const finishedAt = useCompileStore((s) => s.finishedAt);
   return (
     <>
-      {state.phase !== null && <span className={styles.phase}>{state.phase}</span>}
-      {state.phase !== null && state.statusLine !== null && (
-        <span className={styles.separator}>·</span>
-      )}
-      {state.statusLine !== null && <span className={styles.statusLine}>{state.statusLine}</span>}
-      {state.phase === null && state.statusLine === null && (
-        <span className={styles.phase}>Compiling…</span>
-      )}
+      {phase !== null && <span className={styles.phase}>{phase}</span>}
+      {phase !== null && statusLine !== null && <span className={styles.separator}>·</span>}
+      {statusLine !== null && <span className={styles.statusLine}>{statusLine}</span>}
+      {phase === null && statusLine === null && <span className={styles.phase}>Compiling…</span>}
       <span className={styles.separator}>·</span>
-      <span className={styles.duration}>{formatDurationLive(state)}</span>
+      <span className={styles.duration}>{formatDurationLive(startedAt, finishedAt)}</span>
     </>
   );
 }
 
-function SuccessSegment({ state }: { state: CompileState }) {
+function SuccessSegment() {
+  const startedAt = useCompileStore((s) => s.startedAt);
+  const finishedAt = useCompileStore((s) => s.finishedAt);
   const duration =
-    state.startedAt !== null && state.finishedAt !== null
-      ? formatDurationShort(state.finishedAt - state.startedAt)
-      : null;
+    startedAt !== null && finishedAt !== null ? formatDurationShort(finishedAt - startedAt) : null;
   return (
     <span className={styles.success}>
       Compile complete{duration !== null ? ` · ${duration}` : ""}
@@ -119,10 +121,11 @@ function SuccessSegment({ state }: { state: CompileState }) {
   );
 }
 
-function FailedSegment({ state }: { state: CompileState }) {
+function FailedSegment() {
+  const errorMessage = useCompileStore((s) => s.errorMessage);
   return (
     <span className={styles.failed}>
-      Compile failed{state.errorMessage !== null ? ` — ${state.errorMessage}` : ""}
+      Compile failed{errorMessage !== null ? ` — ${errorMessage}` : ""}
     </span>
   );
 }
@@ -153,25 +156,25 @@ function useTickerWhileRunning(running: boolean): void {
 /**
  * Tracks what the status bar should *display*. Success auto-clears after
  * SUCCESS_LINGER_MS; failure persists until the next compile.
- * Does NOT touch the shared CompileState.
+ * Does NOT touch the shared compile state.
  */
-function useDisplayStatus(state: CompileState): CompileStatus {
+function useDisplayStatus(status: CompileStatus, finishedAt: number | null): CompileStatus {
   const [override, setOverride] = useState<"idle" | null>(null);
 
-  const [prevStatus, setPrevStatus] = useState(state.status);
-  if (prevStatus !== state.status) {
-    setPrevStatus(state.status);
+  const [prevStatus, setPrevStatus] = useState(status);
+  if (prevStatus !== status) {
+    setPrevStatus(status);
     setOverride(null);
   }
 
   useEffect(() => {
-    if (state.status !== "success") return;
+    if (status !== "success") return;
     const handle = setTimeout(() => setOverride("idle"), SUCCESS_LINGER_MS);
     return () => clearTimeout(handle);
-  }, [state.status, state.finishedAt]);
+  }, [status, finishedAt]);
 
   if (override !== null) return override;
-  return state.status;
+  return status;
 }
 
 /** Set --status-bar-h on :root while the status bar is mounted. */

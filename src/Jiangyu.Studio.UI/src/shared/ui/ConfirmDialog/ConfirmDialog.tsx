@@ -28,13 +28,21 @@ export function ConfirmDialog({
   }, []);
 
   // Modal handles Escape → onCancel; Enter-to-confirm is specific to this
-  // dialog's semantics, so it stays here.
+  // dialog's semantics, so it stays here. When a button other than Confirm
+  // has focus (the user Tabbed to Cancel), let the native Enter activation
+  // run instead of hijacking it into a confirm.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        onConfirm();
+      if (e.key !== "Enter") return;
+      if (
+        e.target instanceof HTMLElement &&
+        e.target.closest("button") !== null &&
+        e.target.closest("button") !== confirmRef.current
+      ) {
+        return;
       }
+      e.preventDefault();
+      onConfirm();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);

@@ -13,7 +13,7 @@ import {
   type StampedDirective,
   type StampedNode,
 } from "../helpers";
-import { useDragReorder, useTemplateMembers } from "../hooks";
+import { ROW_REORDER_MIME, useDragReorder, useTemplateMembers } from "../hooks";
 import { useEditorDispatch, useEditorScrollContainer, useNodeIndex } from "../store";
 import { CommitInput } from "../shared/CommitInput";
 import { SuggestionCombobox } from "../shared/SuggestionCombobox";
@@ -67,8 +67,9 @@ export function DirectiveBody({
 }: DirectiveBodyProps) {
   const dispatch = useEditorDispatch();
   const nodeIndex = useNodeIndex();
-  const reorder = useDragReorder((fromId, toSlot) =>
-    dispatch({ type: "reorderRows", nodeIndex, fromId, toSlot }),
+  const reorder = useDragReorder(
+    (fromId, toSlot) => dispatch({ type: "reorderRows", nodeIndex, fromId, toSlot }),
+    ROW_REORDER_MIME,
   );
   const onSetDirectives = useCallback(
     (directives: StampedDirective[]) => dispatch({ type: "setDirectives", nodeIndex, directives }),
@@ -314,7 +315,14 @@ export function DirectiveBody({
           {virtualItems.map((vRow) => {
             const g = groups[vRow.index];
             if (!g) return null;
-            const key = g.kind === "loose" ? g.directive._uiId : `group-${g.field}-${g.index}`;
+            // Same keying as the flow path: groups key by their first
+            // member's uiId, so two non-adjacent groups on one field
+            // can't collide and crossing the windowing threshold keeps
+            // each group's identity.
+            const key =
+              g.kind === "loose"
+                ? g.directive._uiId
+                : (g.members[0]?.directive._uiId ?? `group-${g.field}-${g.index}`);
             return (
               <div
                 key={key}
@@ -648,7 +656,7 @@ function DescentGroup({
             e.dataTransfer.effectAllowed = "move";
             // Same payload key per-row grips use; the parent's reorder
             // helper recognises group-head ids and moves all K members.
-            e.dataTransfer.setData("application/x-jiangyu-row-reorder", firstMemberId);
+            e.dataTransfer.setData(ROW_REORDER_MIME, firstMemberId);
             onDragStart();
           },
           onDragEnd,

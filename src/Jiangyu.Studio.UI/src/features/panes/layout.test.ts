@@ -20,6 +20,7 @@ import {
   openFile,
   paneWeight,
   remapPaths,
+  reorderByPath,
   reorderTab,
   saveLayout,
   selectTab,
@@ -879,6 +880,44 @@ describe("insertCrossWindowPane", () => {
     expect(
       insertCrossWindowPane(EMPTY_LAYOUT, "missing", "code", [{ path: A }], A, undefined, "right"),
     ).toBe(EMPTY_LAYOUT);
+  });
+});
+
+describe("reorderByPath", () => {
+  const items = [{ path: A }, { path: B }, { path: C }];
+
+  it("moves an item earlier in the array", () => {
+    expect(reorderByPath(items, C, 0).map((t) => t.path)).toEqual([C, A, B]);
+  });
+
+  it("moves an item later in the array (accounting for removal shift)", () => {
+    // Request: put A at the tail (index 3). After removing A, list is [B, C]
+    // and inserting at index 3 clamps to 2 → [B, C, A].
+    expect(reorderByPath(items, A, 3).map((t) => t.path)).toEqual([B, C, A]);
+  });
+
+  it("clamps a target index larger than items.length to the end", () => {
+    expect(reorderByPath(items, B, 99).map((t) => t.path)).toEqual([A, C, B]);
+  });
+
+  it("clamps a negative target index to the front", () => {
+    expect(reorderByPath(items, B, -1).map((t) => t.path)).toEqual([B, A, C]);
+  });
+
+  it("returns the input array when the target index equals the current index", () => {
+    expect(reorderByPath(items, B, 1)).toBe(items);
+  });
+
+  it("returns the input array for an unknown path", () => {
+    expect(reorderByPath(items, "/nope", 0)).toBe(items);
+  });
+
+  it("preserves item identity (only positions change)", () => {
+    const next = reorderByPath(items, A, 2);
+    expect(next.map((t) => t.path)).toEqual([B, A, C]);
+    expect(next[0]).toBe(items[1]);
+    expect(next[1]).toBe(items[0]);
+    expect(next[2]).toBe(items[2]);
   });
 });
 

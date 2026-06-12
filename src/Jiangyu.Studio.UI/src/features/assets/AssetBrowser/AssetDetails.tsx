@@ -26,6 +26,7 @@ import {
 } from "@shared/ui/MenuList/MenuList";
 import { Spinner } from "@shared/ui/Spinner/Spinner";
 import { AudioPlayer } from "./AudioPlayer";
+import { BatchProgressBar, type BatchProgress } from "./BatchProgressBar";
 import { ImageViewer } from "./ImageViewer";
 import { ModelViewer } from "./ModelViewer";
 import styles from "./AssetBrowser.module.css";
@@ -47,9 +48,9 @@ interface AssetDetailsProps {
   readonly projectExportPath: string | null;
   readonly selectedCount: number;
   readonly exporting: boolean;
-  readonly exportProgress: { done: number; total: number } | null;
+  readonly exportProgress: BatchProgress | null;
   readonly importing: boolean;
-  readonly importProgress: { done: number; total: number } | null;
+  readonly importProgress: BatchProgress | null;
   readonly allSelectedArePrefabs: boolean;
 }
 
@@ -222,22 +223,8 @@ export function AssetDetails({
           {replacementPath != null && <MetaRow label="Replace" value={replacementPath} />}
           {showAffects && <MetaRow label="Affects" value={`${String(instanceCount)} instances`} />}
         </MetaBlock>
-        {exportProgress && exporting && exportProgress.total > 1 && (
-          <div className={styles.exportProgress}>
-            <div
-              className={styles.exportProgressFill}
-              style={{ width: `${(exportProgress.done / exportProgress.total) * 100}%` }}
-            />
-          </div>
-        )}
-        {importProgress && importing && importProgress.total > 1 && (
-          <div className={styles.exportProgress}>
-            <div
-              className={styles.exportProgressFill}
-              style={{ width: `${(importProgress.done / importProgress.total) * 100}%` }}
-            />
-          </div>
-        )}
+        <BatchProgressBar progress={exportProgress} active={exporting} />
+        <BatchProgressBar progress={importProgress} active={importing} />
       </div>
     </>
   );

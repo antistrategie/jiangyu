@@ -22,12 +22,13 @@ import {
   beginTemplateDrag,
   endTemplateDrag,
 } from "@features/templates/crossInstance";
-import { useToast } from "@shared/toast";
+import { useToastPush } from "@shared/toast";
 import {
   DEFAULT_TEMPLATE_BROWSER_STATE,
   type TemplateBrowserState,
 } from "@features/panes/browserState";
 import { useDebouncedScrollTop } from "@shared/utils/useDebouncedScrollTop";
+import { useDismissOnOutsideClick } from "@shared/utils/useDismissOnOutsideClick";
 import { onKeyActivate } from "@shared/utils/a11y";
 import { Spinner } from "@shared/ui/Spinner/Spinner";
 import { LoadingBanner } from "@shared/ui/LoadingBanner/LoadingBanner";
@@ -39,14 +40,20 @@ import {
 } from "@features/templates/TemplateFilePicker/TemplateFilePicker";
 import styles from "./TemplateBrowser.module.css";
 import { TemplateDetail } from "./DetailPanel";
-import { instanceKey, navStepBack, navStepForward, pushNavEntry } from "./helpers";
+import {
+  buildReferenceTargetIndex,
+  instanceKey,
+  navStepBack,
+  navStepForward,
+  pushNavEntry,
+} from "./helpers";
 
 function templatesIndexStatus(): Promise<TemplateIndexStatus> {
   return rpcCall<TemplateIndexStatus>("templatesIndexStatus");
 }
 
 function templatesIndex(): Promise<TemplateIndexStatus> {
-  return rpcCall<TemplateIndexStatus>("templatesIndex");
+  return rpcCall<TemplateIndexStatus>("templatesIndex", undefined, { timeoutMs: 0 });
 }
 
 function templatesSearch(): Promise<TemplateSearchResult> {
@@ -76,6 +83,10 @@ function templatesInspect(params: {
 
 const uf = new uFuzzy({});
 const ROW_HEIGHT = 28;
+
+// Stable empty list for the detail panel's referencedBy prop, so the
+// memoised TemplateDetail doesn't see a fresh [] identity per render.
+const NO_REFERENCES: readonly TemplateReferenceEntry[] = [];
 
 // --- Component ---
 
@@ -193,7 +204,7 @@ export function TemplateBrowser({
     });
   }, [query, typeFilter, focusedKey, navHistory, navIndex, listFraction, scrollTop]);
 
-  const { push: pushToast } = useToast();
+  const pushToast = useToastPush();
 
   // --- Index status ---
   useEffect(() => {
@@ -264,6 +275,14 @@ export function TemplateBrowser({
     return map;
   }, [allInstances]);
 
+  // Secondary index so the detail panel resolves inspected references
+  // (pathId + optional name) in O(1) instead of scanning every instance
+  // per rendered reference link.
+  const referenceTargetIndex = useMemo(
+    () => buildReferenceTargetIndex(allInstances),
+    [allInstances],
+  );
+
   // --- Fuzzy search ---
   const deferredQuery = useDeferredValue(query);
 
@@ -286,8 +305,8 @@ export function TemplateBrowser({
 
   // --- Load members when focus changes ---
   const focusedInstance = useMemo(
-    () => (focusedKey ? (allInstances.find((i) => instanceKey(i) === focusedKey) ?? null) : null),
-    [focusedKey, allInstances],
+    () => (focusedKey ? (instanceLookup.get(focusedKey) ?? null) : null),
+    [focusedKey, instanceLookup],
   );
 
   // Reset member/inspection state synchronously off focusedInstance identity
@@ -545,6 +564,11 @@ export function TemplateBrowser({
   }, [filtered, initialState]);
 
   // --- Split handle drag ---
+  // During the drag the fraction is written straight to the two panels'
+  // flex styles, so pointermove never re-renders the (virtualised, heavy)
+  // tree; React state commits once on pointerup for persistence.
+  const listPanelRef = useRef<HTMLDivElement>(null);
+  const detailPanelRef = useRef<HTMLDivElement>(null);
   const handleSplitPointerDown = useCallback(
     (e: React.PointerEvent) => {
       e.preventDefault();
@@ -553,15 +577,18 @@ export function TemplateBrowser({
       const start = e.clientX;
       const startFrac = listFraction;
       const totalWidth = el.getBoundingClientRect().width;
+      let frac = startFrac;
 
       const onMove = (ev: PointerEvent) => {
         const dx = ev.clientX - start;
-        const newFrac = Math.min(0.85, Math.max(0.15, startFrac + dx / totalWidth));
-        setListFraction(newFrac);
+        frac = Math.min(0.85, Math.max(0.15, startFrac + dx / totalWidth));
+        if (listPanelRef.current) listPanelRef.current.style.flex = String(frac);
+        if (detailPanelRef.current) detailPanelRef.current.style.flex = String(1 - frac);
       };
       const onUp = () => {
         document.removeEventListener("pointermove", onMove);
         document.removeEventListener("pointerup", onUp);
+        setListFraction(frac);
       };
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
@@ -640,7 +667,7 @@ export function TemplateBrowser({
       ) : (
         <div ref={bodyRef} className={styles.body}>
           {/* --- List panel --- */}
-          <div className={styles.listPanel} style={{ flex: listFraction }}>
+          <div ref={listPanelRef} className={styles.listPanel} style={{ flex: listFraction }}>
             <div ref={listRef} className={styles.listScroll} onScroll={handleListScroll}>
               <div
                 style={{
@@ -681,7 +708,11 @@ export function TemplateBrowser({
           <div className={styles.splitHandle} onPointerDown={handleSplitPointerDown} />
 
           {/* --- Detail panel --- */}
-          <div className={styles.detailPanel} style={{ flex: 1 - listFraction }}>
+          <div
+            ref={detailPanelRef}
+            className={styles.detailPanel}
+            style={{ flex: 1 - listFraction }}
+          >
             {focusedInstance ? (
               <TemplateDetail
                 instance={focusedInstance}
@@ -689,18 +720,21 @@ export function TemplateBrowser({
                 membersLoading={membersLoading}
                 inspectionValues={inspectionValues}
                 inspectionLoading={inspectionLoading}
-                onCreatePatch={(inst) => handleCreatePatch(inst)}
-                onCreateClone={(inst) => handleCreateClone(inst)}
-                onPatchToFile={(inst) => handlePatchToFile(inst)}
-                onCloneToFile={(inst) => handleCloneToFile(inst)}
+                onCreatePatch={handleCreatePatch}
+                onCreateClone={handleCreateClone}
+                onPatchToFile={handlePatchToFile}
+                onCloneToFile={handleCloneToFile}
                 onNavigate={navigateTo}
                 onGoBack={goBack}
                 onGoForward={goForward}
                 canGoBack={canGoBack}
                 canGoForward={canGoForward}
                 projectPath={projectPath}
-                referencedBy={(focusedKey !== null ? referencedBy[focusedKey] : null) ?? []}
+                referencedBy={
+                  (focusedKey !== null ? referencedBy[focusedKey] : undefined) ?? NO_REFERENCES
+                }
                 instanceLookup={instanceLookup}
+                referenceTargetIndex={referenceTargetIndex}
                 allReferencedBy={referencedBy}
               />
             ) : (
@@ -845,16 +879,7 @@ function TypeCombobox({ types, totalCount, value, onChange }: TypeComboboxProps)
   }
 
   // Close on outside click
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
+  useDismissOnOutsideClick(rootRef, () => setOpen(false), { enabled: open });
 
   // Scroll highlighted item into view
   useEffect(() => {

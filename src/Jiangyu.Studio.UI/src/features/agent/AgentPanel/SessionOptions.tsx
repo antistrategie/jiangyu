@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback } from "react";
 import { ChevronDown } from "lucide-react";
-import { configOptionIdentifier, useAgentStore } from "@features/agent/store";
+import { stringifyValue, useAgentStore } from "@features/agent/store";
 import { agentSetConfigOption, agentSetSessionMode } from "@features/agent/rpc";
-import type { ConfigOption, ConfigOptionChoice, SessionMode } from "@features/agent/types";
+import { usePopover } from "@features/agent/usePopover";
+import type { SessionConfigChoice, SessionConfigOption, SessionMode } from "@features/agent/types";
 import {
   MenuList,
   MenuListBody,
@@ -21,52 +22,10 @@ function focusOnMount(el: HTMLInputElement | null): void {
   if (el) el.focus();
 }
 
-/** Best-available current value (agents emit `value` or `currentValue`). */
-function currentValue(opt: ConfigOption): unknown {
-  return opt.value ?? opt.currentValue;
-}
-
-function choiceLabel(c: ConfigOptionChoice): string {
-  return c.name ?? c.label ?? stringifyValue(c.value) ?? "—";
-}
-
-function stringifyValue(value: unknown): string | null {
-  if (typeof value === "string") return value;
-  if (typeof value === "boolean") return value ? "on" : "off";
-  if (typeof value === "number") return String(value);
-  return null;
-}
-
-/** A configOption whose key/id is "mode" duplicates the SessionModes block.
+/** A configOption whose id is "mode" duplicates the SessionModes block.
  *  When the agent provides both, hide the duplicate to avoid two controls. */
-function isModeConfigOption(opt: ConfigOption): boolean {
-  return configOptionIdentifier(opt) === "mode";
-}
-
-/** Outside-click + Escape dismiss for popover-anchor patterns. */
-function usePopover(): {
-  open: boolean;
-  setOpen: (next: boolean | ((cur: boolean) => boolean)) => void;
-  wrapRef: React.RefObject<HTMLDivElement | null>;
-} {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onMouseDown = (e: MouseEvent) => {
-      if (wrapRef.current?.contains(e.target as Node) !== true) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onMouseDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onMouseDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-  return { open, setOpen, wrapRef };
+function isModeConfigOption(opt: SessionConfigOption): boolean {
+  return opt.id === "mode";
 }
 
 // --- Bar -------------------------------------------------------------------
@@ -80,24 +39,19 @@ export function SessionOptionsBar() {
   const availableModes = useAgentStore((s) => s.availableModes);
   const configOptions = useAgentStore((s) => s.configOptions);
 
-  const visibleOptions = configOptions.filter((o) => {
-    if (configOptionIdentifier(o) === null) return false;
-    // Hide the duplicate "mode" configOption when SessionModes is set —
-    // the dedicated ModePicker covers it.
-    if (availableModes.length > 0 && isModeConfigOption(o)) return false;
-    return true;
-  });
+  // Hide the duplicate "mode" configOption when SessionModes is set — the
+  // dedicated ModePicker covers it.
+  const visibleOptions =
+    availableModes.length > 0 ? configOptions.filter((o) => !isModeConfigOption(o)) : configOptions;
 
   if (availableModes.length === 0 && visibleOptions.length === 0) return null;
 
   return (
     <div className={styles.optionsBar}>
       {availableModes.length > 0 && <ModePicker />}
-      {visibleOptions.map((opt) => {
-        const id = configOptionIdentifier(opt);
-        if (id === null) return null;
-        return <ConfigOptionPicker key={id} option={opt} optionKey={id} />;
-      })}
+      {visibleOptions.map((opt) => (
+        <ConfigOptionPicker key={opt.id} option={opt} />
+      ))}
     </div>
   );
 }
@@ -162,16 +116,7 @@ function ModePicker() {
 
 // --- Per-option picker -----------------------------------------------------
 
-function ConfigOptionPicker({
-  option,
-  optionKey,
-}: {
-  readonly option: ConfigOption;
-  readonly optionKey: string;
-}) {
-  const value = currentValue(option);
-  const choices = option.options ?? option.choices ?? [];
-
+function ConfigOptionPicker({ option }: { readonly option: SessionConfigOption }) {
   /** Apply the change locally before the agent acknowledges. Some agents
    *  (e.g. Claude Agent) accept session/set_config_option silently
    *  without emitting a config_option_update notification, so the UI
@@ -179,11 +124,9 @@ function ConfigOptionPicker({
    *  notification (if it arrives) overwrites this through mergeConfigOptions. */
   const applyChange = (next: unknown) => {
     useAgentStore.setState((s) => ({
-      configOptions: s.configOptions.map((o) =>
-        configOptionIdentifier(o) === optionKey ? { ...o, value: next, currentValue: next } : o,
-      ),
+      configOptions: s.configOptions.map((o) => (o.id === option.id ? { ...o, value: next } : o)),
     }));
-    void agentSetConfigOption(optionKey, next).catch((err: unknown) => {
+    void agentSetConfigOption(option.id, next).catch((err: unknown) => {
       console.error("[Agent] setConfigOption failed:", err);
     });
   };
@@ -191,22 +134,18 @@ function ConfigOptionPicker({
   // Boolean toggles in-place; everything else opens a popover.
   if (option.type === "boolean") {
     return (
-      <BooleanToggle
-        label={option.name ?? optionKey}
-        value={value === true}
-        onChange={applyChange}
-      />
+      <BooleanToggle label={option.name} value={option.value === true} onChange={applyChange} />
     );
   }
 
   return (
     <SelectPicker
-      label={option.name ?? optionKey}
-      value={value}
-      choices={choices}
-      type={option.type ?? null}
-      min={option.min ?? null}
-      max={option.max ?? null}
+      label={option.name}
+      value={option.value}
+      choices={option.choices}
+      type={option.type}
+      min={option.min}
+      max={option.max}
       onChange={applyChange}
     />
   );
@@ -223,7 +162,7 @@ function SelectPicker({
 }: {
   readonly label: string;
   readonly value: unknown;
-  readonly choices: readonly ConfigOptionChoice[];
+  readonly choices: readonly SessionConfigChoice[];
   readonly type: string | null;
   readonly min?: number | null;
   readonly max?: number | null;
@@ -234,7 +173,7 @@ function SelectPicker({
   // Trigger shows the active choice's label (or the raw value as a
   // fallback) so the bar reads at a glance.
   const activeChoice = choices.find((c) => Object.is(c.value, value));
-  const triggerLabel = activeChoice ? choiceLabel(activeChoice) : (stringifyValue(value) ?? label);
+  const triggerLabel = activeChoice ? activeChoice.label : (stringifyValue(value) ?? label);
 
   return (
     <div className={styles.optionsWrap} ref={wrapRef}>
@@ -259,13 +198,13 @@ function SelectPicker({
                       setOpen(false);
                     }}
                   >
-                    {choice.description ? (
+                    {choice.description !== null ? (
                       <MenuItemContent>
-                        <MenuItemLabel>{choiceLabel(choice)}</MenuItemLabel>
+                        <MenuItemLabel>{choice.label}</MenuItemLabel>
                         <MenuItemSubtext>{choice.description}</MenuItemSubtext>
                       </MenuItemContent>
                     ) : (
-                      <MenuItemLabel>{choiceLabel(choice)}</MenuItemLabel>
+                      <MenuItemLabel>{choice.label}</MenuItemLabel>
                     )}
                   </MenuItem>
                 ))}

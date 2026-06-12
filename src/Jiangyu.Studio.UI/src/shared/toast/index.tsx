@@ -46,9 +46,18 @@ export const useToastStore = create<ToastStore>((set, get) => ({
   },
 }));
 
-// Legacy shape — existing consumers call useToast() and destructure `{ push }`.
-// Keep the hook so the rewrite doesn't have to touch every caller. New code
-// should prefer `useToastStore(s => s.push)` or `useToastStore.getState().push(...)`.
+/**
+ * Stable `push` action only. This is what almost every consumer wants:
+ * subscribing to the toast list itself re-renders the caller on every toast
+ * anywhere in the app, so only the toast container should use `useToast`.
+ */
+export function useToastPush(): ToastStore["push"] {
+  return useToastStore((s) => s.push);
+}
+
+// Full queue view for the toast container (the one component that renders
+// the list). Everything else should use `useToastPush` or, from
+// non-component code, `useToastStore.getState().push({...})`.
 interface ToastContextValue {
   readonly toasts: readonly Toast[];
   readonly push: ToastStore["push"];

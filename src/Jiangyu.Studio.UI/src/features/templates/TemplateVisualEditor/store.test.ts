@@ -3,6 +3,7 @@ import {
   buildDescentMemberDirective,
   groupDirectives,
   insertAtPendingAnchor,
+  reorderByUiId,
   reorderDirectives,
   rewriteDescentSlotIndex,
   stampDirective,
@@ -10,6 +11,7 @@ import {
   stripUiIds,
   type StampedDirective,
 } from "./helpers";
+import { pushUndoFrame, undoCoalesceKey, UNDO_COALESCE_WINDOW_MS, UNDO_STACK_LIMIT } from "./store";
 import type { DescentStep, EditorDirective, EditorDocument } from "./types";
 
 // --- Factory helpers ---
@@ -391,5 +393,130 @@ describe("rewriteDescentSlotIndex composes with grouping", () => {
     const groups = groupDirectives(updated);
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({ kind: "group", index: 3 });
+  });
+});
+
+// --- reorderByUiId ---
+
+describe("reorderByUiId", () => {
+  it("moves an entry down", () => {
+    const list = [dir("a", "A"), dir("b", "B"), dir("c", "C")];
+    const next = reorderByUiId(list, "a", 3);
+    expect(next.map((d) => d._uiId)).toEqual(["b", "c", "a"]);
+  });
+
+  it("moves an entry up", () => {
+    const list = [dir("a", "A"), dir("b", "B"), dir("c", "C")];
+    const next = reorderByUiId(list, "c", 0);
+    expect(next.map((d) => d._uiId)).toEqual(["c", "a", "b"]);
+  });
+
+  it("returns the same reference when fromId is unknown", () => {
+    const list = [dir("a", "A"), dir("b", "B")];
+    expect(reorderByUiId(list, "ghost", 0)).toBe(list);
+  });
+
+  it("does not mutate the input list", () => {
+    const list = [dir("a", "A"), dir("b", "B")];
+    reorderByUiId(list, "a", 2);
+    expect(list.map((d) => d._uiId)).toEqual(["a", "b"]);
+  });
+});
+
+// --- undoCoalesceKey ---
+
+describe("undoCoalesceKey", () => {
+  it("keys updateNode by node index", () => {
+    expect(undoCoalesceKey({ type: "updateNode", nodeIndex: 2, node: node2() })).toBe("node:2");
+  });
+
+  it("keys updateDirective by node and directive index", () => {
+    expect(
+      undoCoalesceKey({
+        type: "updateDirective",
+        nodeIndex: 1,
+        dirIndex: 4,
+        directive: dir("a", "A"),
+      }),
+    ).toBe("dir:1:4");
+  });
+
+  it("returns null for structural actions", () => {
+    expect(undoCoalesceKey({ type: "addNode", node: node2() })).toBeNull();
+    expect(undoCoalesceKey({ type: "deleteNode", nodeIndex: 0 })).toBeNull();
+    expect(undoCoalesceKey({ type: "reorderCards", fromId: "a", toSlot: 1 })).toBeNull();
+    expect(undoCoalesceKey({ type: "load", nodes: [] })).toBeNull();
+  });
+
+  function node2() {
+    return { kind: "Patch" as const, templateType: "T", directives: [], _uiId: "n" };
+  }
+});
+
+// --- pushUndoFrame ---
+
+describe("pushUndoFrame", () => {
+  it("pushes when the keys differ", () => {
+    const stack = ["f0"];
+    const next = pushUndoFrame(stack, "f1", {
+      key: "dir:0:0",
+      now: 100,
+      lastKey: "dir:0:1",
+      lastTime: 90,
+    });
+    expect(next).toEqual(["f0", "f1"]);
+  });
+
+  it("pushes when the key is null even with matching timestamps", () => {
+    const stack = ["f0"];
+    const next = pushUndoFrame(stack, "f1", { key: null, now: 100, lastKey: null, lastTime: 100 });
+    expect(next).toEqual(["f0", "f1"]);
+  });
+
+  it("coalesces a same-key push inside the window (same reference back)", () => {
+    const stack = ["f0"];
+    const next = pushUndoFrame(stack, "f1", {
+      key: "dir:0:0",
+      now: 100 + UNDO_COALESCE_WINDOW_MS,
+      lastKey: "dir:0:0",
+      lastTime: 100,
+    });
+    expect(next).toBe(stack);
+  });
+
+  it("pushes a same-key frame once the window has elapsed", () => {
+    const stack = ["f0"];
+    const next = pushUndoFrame(stack, "f1", {
+      key: "dir:0:0",
+      now: 101 + UNDO_COALESCE_WINDOW_MS,
+      lastKey: "dir:0:0",
+      lastTime: 100,
+    });
+    expect(next).toEqual(["f0", "f1"]);
+  });
+
+  it("never coalesces onto an empty stack", () => {
+    const next = pushUndoFrame<string>([], "f0", {
+      key: "dir:0:0",
+      now: 100,
+      lastKey: "dir:0:0",
+      lastTime: 100,
+    });
+    expect(next).toEqual(["f0"]);
+  });
+
+  it("caps the stack at UNDO_STACK_LIMIT, dropping the oldest frames", () => {
+    let stack: string[] = [];
+    for (let i = 0; i < UNDO_STACK_LIMIT + 5; i++) {
+      stack = pushUndoFrame(stack, `f${i}`, {
+        key: null,
+        now: i,
+        lastKey: null,
+        lastTime: i - 1,
+      });
+    }
+    expect(stack).toHaveLength(UNDO_STACK_LIMIT);
+    expect(stack[0]).toBe("f5");
+    expect(stack[stack.length - 1]).toBe(`f${UNDO_STACK_LIMIT + 4}`);
   });
 });

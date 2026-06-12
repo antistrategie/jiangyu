@@ -233,7 +233,7 @@ export function assetsIndexStatus(): Promise<AssetIndexStatus> {
 }
 
 export function assetsIndex(): Promise<AssetIndexStatus> {
-  return rpcCall<AssetIndexStatus>("assetsIndex");
+  return rpcCall<AssetIndexStatus>("assetsIndex", undefined, { timeoutMs: 0 });
 }
 
 export function assetsSearch(params: AssetSearchParams): Promise<AssetEntry[]> {
@@ -241,7 +241,7 @@ export function assetsSearch(params: AssetSearchParams): Promise<AssetEntry[]> {
 }
 
 export function assetsExport(params: AssetExportParams): Promise<AssetExportResult> {
-  return rpcCall<AssetExportResult>("assetsExport", params);
+  return rpcCall<AssetExportResult>("assetsExport", params, { timeoutMs: 0 });
 }
 
 export function assetsPreview(params: {
@@ -256,7 +256,7 @@ export function pickDirectory(params?: {
   title?: string;
   initial?: string;
 }): Promise<string | null> {
-  return rpcCall<string | null>("pickDirectory", params ?? {});
+  return rpcCall<string | null>("pickDirectory", params ?? {}, { timeoutMs: 0 });
 }
 
 export async function revealInExplorer(path: string): Promise<void> {

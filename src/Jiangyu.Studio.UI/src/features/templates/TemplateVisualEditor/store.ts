@@ -1,6 +1,11 @@
 import { createContext, use } from "react";
 import type React from "react";
-import { reorderDirectives, type StampedDirective, type StampedNode } from "./helpers";
+import {
+  reorderByUiId,
+  reorderDirectives,
+  type StampedDirective,
+  type StampedNode,
+} from "./helpers";
 
 // Editor state lives in a reducer rather than a tree of useStates so the
 // many structural mutations (add/delete/update node, the same on directives,
@@ -67,16 +72,8 @@ export function editorReducer(nodes: StampedNode[], action: EditorAction): Stamp
         i === action.nodeIndex ? { ...n, directives: action.directives } : n,
       );
 
-    case "reorderCards": {
-      const fromIndex = nodes.findIndex((n) => n._uiId === action.fromId);
-      if (fromIndex === -1) return nodes;
-      const next = [...nodes];
-      const moved = next.splice(fromIndex, 1)[0];
-      if (moved === undefined) return nodes;
-      const insertAt = action.toSlot > fromIndex ? action.toSlot - 1 : action.toSlot;
-      next.splice(insertAt, 0, moved);
-      return next;
-    }
+    case "reorderCards":
+      return reorderByUiId(nodes, action.fromId, action.toSlot);
 
     case "reorderRows":
       return nodes.map((n, i) =>
@@ -85,6 +82,62 @@ export function editorReducer(nodes: StampedNode[], action: EditorAction): Stamp
           : n,
       );
   }
+}
+
+// --- Undo bookkeeping ---
+
+/** Hard cap on retained undo frames; the oldest frame drops off first. */
+export const UNDO_STACK_LIMIT = 100;
+
+/** Two dispatches with the same coalesce key within this window merge into
+ *  one undo frame, so a typing burst undoes as a single step. */
+export const UNDO_COALESCE_WINDOW_MS = 1000;
+
+/**
+ * Coalescing identity for an action. Per-keystroke editors (combobox text,
+ * value inputs) dispatch `updateNode` / `updateDirective` once per character
+ * against the same target, so those actions key on that target and a burst
+ * collapses into one undo frame. Structural actions return null and always
+ * push their own frame. Commit-style inputs dispatch once per blur/Enter;
+ * two commits to the same target only merge when they land within the
+ * window, which still reads as one edit.
+ */
+export function undoCoalesceKey(action: EditorAction): string | null {
+  switch (action.type) {
+    case "updateNode":
+      return `node:${action.nodeIndex}`;
+    case "updateDirective":
+      return `dir:${action.nodeIndex}:${action.dirIndex}`;
+    default:
+      return null;
+  }
+}
+
+export interface UndoPushMeta {
+  /** Coalesce key of the incoming action; null always pushes a frame. */
+  readonly key: string | null;
+  readonly now: number;
+  /** Coalesce key and timestamp of the previous push. */
+  readonly lastKey: string | null;
+  readonly lastTime: number;
+}
+
+/**
+ * Push `frame` onto the undo stack. When the incoming action coalesces with
+ * the previous push (same non-null key, within the window), the top frame
+ * already captures the state before the burst, so the stack is returned
+ * unchanged (same reference). The stack is capped at UNDO_STACK_LIMIT.
+ * Pure — never mutates the input array.
+ */
+export function pushUndoFrame<T>(stack: T[], frame: T, meta: UndoPushMeta): T[] {
+  const coalesce =
+    meta.key !== null &&
+    meta.key === meta.lastKey &&
+    meta.now - meta.lastTime <= UNDO_COALESCE_WINDOW_MS;
+  if (coalesce && stack.length > 0) return stack;
+  const next = [...stack, frame];
+  if (next.length > UNDO_STACK_LIMIT) next.splice(0, next.length - UNDO_STACK_LIMIT);
+  return next;
 }
 
 /**
@@ -149,12 +202,16 @@ export function useEditorScrollContainer(): React.RefObject<HTMLDivElement | nul
 /**
  * Provided by the editor so deeply-nested CompositeEditors can read and
  * mutate their persisted collapse state without threading callbacks down
- * the tree. `resolveState(directiveUiId)` returns the explicit persisted
- * state (true=collapsed, false=expanded) or undefined when the modder
- * hasn't toggled this composite — the caller then falls back to the
- * content-based default (collapsed when populated). `toggle` flips the
- * stored state, optimistically lifting it into the editor's persisted
- * map. Null outside the editor; callers fall back to local React state.
+ * the tree. The control object is identity-stable for the editor's
+ * lifetime and reads the live key/state maps through refs, so consumers
+ * seed their own render state from `resolveState(directiveUiId)` at mount:
+ * it returns the explicit persisted state (true=collapsed, false=expanded)
+ * or undefined when the modder hasn't toggled this composite — the caller
+ * then falls back to the content-based default (collapsed when populated).
+ * `toggle` records the new state in the editor's persisted map so the
+ * choice survives unmounts (node collapse, virtualised scroll-out, parse
+ * reloads). Null outside the editor; callers keep plain local state with
+ * no persistence.
  */
 export interface CompositeCollapseControl {
   readonly resolveState: (directiveUiId: string) => boolean | undefined;

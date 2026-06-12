@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useDismissOnOutsideClick } from "@shared/utils/useDismissOnOutsideClick";
 import styles from "../TemplateVisualEditor.module.css";
 import { useAnchorPosition } from "./useAnchorPosition";
 
@@ -80,17 +81,7 @@ export function SuggestionCombobox({
 
   // Close on outside click. The dropdown lives in a portal so it's NOT a
   // descendant of `wrapRef`; treat clicks inside it as "inside" too.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (wrapRef.current?.contains(target)) return;
-      if (dropdownRef.current?.contains(target)) return;
-      setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
+  useDismissOnOutsideClick([wrapRef, dropdownRef], () => setOpen(false), { enabled: open });
 
   const filtered = useMemo(() => {
     const lowerQuery = value.toLowerCase();

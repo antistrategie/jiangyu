@@ -3,10 +3,13 @@
 
 import type {
   ConfigOption,
+  ConfigOptionChoice,
   ContentBlock,
   PermissionRequest,
   PermissionToolCall,
   PlanEntry,
+  SessionConfigChoice,
+  SessionConfigOption,
   ToolCallContent,
 } from "./types";
 
@@ -67,29 +70,58 @@ export function nextMessageId(): string {
   return `m${messageIdCounter.toString(36)}`;
 }
 
-/** Best-available identifier for a config option (agents emit either
- *  `key` or `id`; Claude Agent emits neither and we drop those). */
-export function configOptionIdentifier(opt: ConfigOption): string | null {
-  return opt.key ?? opt.id ?? null;
+/** Render a config value for display. Returns null when the value has no
+ *  obvious flat form (objects, arrays, null). */
+export function stringifyValue(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (typeof value === "boolean") return value ? "on" : "off";
+  if (typeof value === "number") return String(value);
+  return null;
 }
 
-/** Merge a config_option_update payload into the existing list by key.
- *  New keys append; existing keys overwrite. Entries without any
- *  identifier are dropped (we have no way to address them). */
+/** Collapse the wire's dual spellings into the canonical shape. Agents emit
+ *  either `key` or `id`; entries with neither are dropped (we have no way
+ *  to address them in set_config_option). */
+export function normaliseConfigOption(raw: ConfigOption): SessionConfigOption | null {
+  const id = raw.key ?? raw.id ?? null;
+  if (id === null) return null;
+  return {
+    id,
+    name: raw.name ?? id,
+    description: raw.description ?? null,
+    type: raw.type ?? null,
+    value: raw.value ?? raw.currentValue,
+    choices: (raw.options ?? raw.choices ?? []).map(normaliseConfigChoice),
+    min: raw.min ?? null,
+    max: raw.max ?? null,
+  };
+}
+
+export function normaliseConfigOptions(raw: readonly ConfigOption[]): SessionConfigOption[] {
+  return raw.flatMap((opt) => {
+    const normalised = normaliseConfigOption(opt);
+    return normalised === null ? [] : [normalised];
+  });
+}
+
+function normaliseConfigChoice(raw: ConfigOptionChoice): SessionConfigChoice {
+  return {
+    value: raw.value,
+    label: raw.name ?? raw.label ?? stringifyValue(raw.value) ?? "—",
+    description: raw.description ?? null,
+  };
+}
+
+/** Merge a config_option_update payload into the existing list by id.
+ *  New ids append; existing ids overwrite. */
 export function mergeConfigOptions(
-  existing: readonly ConfigOption[],
-  incoming: readonly ConfigOption[],
-): ConfigOption[] {
-  const byKey = new Map<string, ConfigOption>();
-  for (const opt of existing) {
-    const id = configOptionIdentifier(opt);
-    if (id !== null) byKey.set(id, opt);
-  }
-  for (const opt of incoming) {
-    const id = configOptionIdentifier(opt);
-    if (id !== null) byKey.set(id, opt);
-  }
-  return [...byKey.values()];
+  existing: readonly SessionConfigOption[],
+  incoming: readonly SessionConfigOption[],
+): SessionConfigOption[] {
+  const byId = new Map<string, SessionConfigOption>();
+  for (const opt of existing) byId.set(opt.id, opt);
+  for (const opt of incoming) byId.set(opt.id, opt);
+  return [...byId.values()];
 }
 
 /** Extract a flat string from a content block. Non-text blocks render to a

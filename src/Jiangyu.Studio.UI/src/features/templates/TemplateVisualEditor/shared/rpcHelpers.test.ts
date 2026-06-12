@@ -12,6 +12,8 @@ import {
   getCachedProjectClones,
   invalidateProjectAdditionsCache,
   getCachedProjectAdditions,
+  mergeCloneSuggestions,
+  fetchInstancesWithClones,
   templateTypesCache,
 } from "./rpcHelpers";
 
@@ -76,6 +78,59 @@ describe("invalidateProjectClonesCache", () => {
     const second = await getCachedProjectClones();
     expect(second).toHaveLength(0);
     expect(mockRpcCall).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("mergeCloneSuggestions", () => {
+  const clones = [
+    { templateType: "UnitTemplate", id: "archer_clone", file: "a.kdl" },
+    { templateType: "UnitTemplate", id: "archer_01", file: "a.kdl" },
+    { templateType: "BuildingTemplate", id: "barracks_clone", file: "b.kdl" },
+  ];
+
+  it("lists clones of the requested type first, tagged, before game items", () => {
+    const merged = mergeCloneSuggestions("UnitTemplate", [{ label: "swordsman" }], clones);
+    expect(merged).toEqual([
+      { label: "archer_clone", tag: "clone" },
+      { label: "archer_01", tag: "clone" },
+      { label: "swordsman" },
+    ]);
+  });
+
+  it("drops clones whose id shadows a game entry", () => {
+    const merged = mergeCloneSuggestions("UnitTemplate", [{ label: "archer_01" }], clones);
+    expect(merged).toEqual([{ label: "archer_clone", tag: "clone" }, { label: "archer_01" }]);
+  });
+
+  it("filters clones to the requested template type", () => {
+    const merged = mergeCloneSuggestions("BuildingTemplate", [], clones);
+    expect(merged).toEqual([{ label: "barracks_clone", tag: "clone" }]);
+  });
+});
+
+describe("fetchInstancesWithClones", () => {
+  it("merges indexed instances with project clones", async () => {
+    mockRpcCall.mockImplementation((method) => {
+      if (method === "templatesSearch") {
+        return Promise.resolve({
+          types: [],
+          instances: [
+            {
+              name: "archer_01",
+              className: "UnitTemplate",
+              identity: { collection: "", pathId: 0 },
+            },
+          ],
+        });
+      }
+      return Promise.resolve({
+        clones: [{ templateType: "UnitTemplate", id: "archer_clone", file: "a.kdl" }],
+      });
+    });
+
+    const merged = await fetchInstancesWithClones("UnitTemplate");
+    expect(merged).toEqual([{ label: "archer_clone", tag: "clone" }, { label: "archer_01" }]);
+    expect(mockRpcCall).toHaveBeenCalledWith("templatesSearch", { className: "UnitTemplate" });
   });
 });
 

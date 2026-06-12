@@ -21,8 +21,8 @@ vi.mock("@shared/rpc", async (orig) => {
 });
 
 import { rpcCall } from "@shared/rpc";
-import { usePaneWindowStore } from "./paneWindowStore";
-import { savePaneWindows, type PaneWindowDescriptor } from "./paneWindowStorage";
+import { setPaneWindowProject, usePaneWindowStore } from "./paneWindowStore";
+import { loadPaneWindows, savePaneWindows, type PaneWindowDescriptor } from "./paneWindowStorage";
 
 const mockRpc = vi.mocked(rpcCall);
 
@@ -37,6 +37,7 @@ describe("paneWindowStore", () => {
     stubStorage();
     mockRpc.mockReset();
     usePaneWindowStore.setState({ windows: {} });
+    setPaneWindowProject(null);
   });
 
   afterEach(() => {
@@ -145,6 +146,7 @@ describe("paneWindowStore", () => {
   describe("restoreFor", () => {
     it("loads persisted descriptors and re-opens each via openPaneWindow", async () => {
       savePaneWindows("/proj", [codeDesc]);
+      setPaneWindowProject("/proj");
       mockRpc.mockResolvedValueOnce({ windowId: "win-restored" });
       await usePaneWindowStore.getState().restoreFor("/proj");
       expect(mockRpc).toHaveBeenCalledWith(
@@ -157,6 +159,25 @@ describe("paneWindowStore", () => {
     it("is a no-op when nothing is persisted", async () => {
       await usePaneWindowStore.getState().restoreFor("/empty");
       expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it("stops a stale restore loop when the project switches mid-restore", async () => {
+      const secondDesc: PaneWindowDescriptor = { ...codeDesc, filePaths: ["/b"] };
+      savePaneWindows("/proj", [codeDesc, secondDesc]);
+      setPaneWindowProject("/proj");
+      // The project switches while the host is opening the first window.
+      mockRpc.mockImplementationOnce(() => {
+        setPaneWindowProject("/other");
+        return Promise.resolve({ windowId: "win-stale" });
+      });
+
+      await usePaneWindowStore.getState().restoreFor("/proj");
+
+      // Only the first open was attempted, and its window was not tracked.
+      expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(usePaneWindowStore.getState().windows).toEqual({});
+      // Nothing leaked into the new project's persisted slot.
+      expect(loadPaneWindows("/other")).toEqual([]);
     });
   });
 });

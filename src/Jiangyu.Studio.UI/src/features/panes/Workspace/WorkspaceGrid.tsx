@@ -85,6 +85,10 @@ export function WorkspaceGrid({
   // payload enters the window (e.g. cross-window drag from a secondary, or
   // a sidebar file drop that bubbles up to document level). In-window drags
   // set dragActive directly via handleDragStart.
+  //
+  // CROSS_TAB_MIME is text/plain (the only type that bridges WebKitGTK
+  // webview processes), so this deliberately lights up for any text drag.
+  // The payload marker is only checkable at drop time.
   useEffect(() => {
     const onEnter = (e: DragEvent) => {
       const types = e.dataTransfer?.types;
@@ -185,29 +189,43 @@ export function WorkspaceGrid({
   // Monaco's automaticLayout ResizeObserver misses sibling-column removals
   // (weight redistribution happens in the same frame as the DOM mutation).
   // Force every live editor to re-measure after any topology / weight change.
+  // Keyed on a geometry signature rather than layout identity: browser-pane
+  // state updates (every search keystroke) swap the layout object without
+  // moving anything.
+  const geometrySignature = layout.columns
+    .map(
+      (col) =>
+        `${col.id}:${columnWeight(col)}[${col.panes
+          .map((p) => `${p.id}:${paneWeight(p)}`)
+          .join(",")}]`,
+    )
+    .join("|");
   useEffect(() => {
     const editors = useEditorContent.getState().editors;
     const id = requestAnimationFrame(() => {
       for (const editor of Object.values(editors)) editor.layout();
     });
     return () => cancelAnimationFrame(id);
-  }, [layout, fullscreenPaneId]);
+  }, [geometrySignature, fullscreenPaneId]);
 
   // Active-pane palette actions: save/close + Monaco actions of the focused
   // editor. The editor selector reads the current pane's instance from the
   // store; re-subscribing only when the active pane id changes avoids noise
   // while the user is typing.
   const activeCodePane = getActiveCodePane(layout);
+  // Key the memos below on the pane id, not the pane object: resizePanes
+  // replaces the pane object per rAF frame during weight drags, and
+  // re-registering palette actions per frame is pure churn.
+  const activePaneId = activeCodePane?.id ?? null;
   const activeFile = activeCodePane?.activeTab ?? null;
   const activeEditor = useEditorContent((s) =>
-    activeCodePane !== null ? (s.editors[activeCodePane.id] ?? null) : null,
+    activePaneId !== null ? (s.editors[activePaneId] ?? null) : null,
   );
 
   const fileActions = useMemo<PaletteAction[]>(() => {
-    if (activeCodePane === null || activeFile === null) return [];
-    const paneId = activeCodePane.id;
+    if (activePaneId === null || activeFile === null) return [];
     const commands = fileTargetCommands(activeFile, projectPath, (paths) =>
-      useLayoutStore.getState().closeTabsInPane(paneId, paths),
+      useLayoutStore.getState().closeTabsInPane(activePaneId, paths),
     );
     const close = commands.find((c) => c.id === "close");
     if (close === undefined) return [];
@@ -243,7 +261,7 @@ export function WorkspaceGrid({
       });
     }
     return result;
-  }, [activeCodePane, activeFile, projectPath]);
+  }, [activePaneId, activeFile, projectPath]);
 
   const monacoActions = useMemo<PaletteAction[]>(() => {
     if (!activeEditor) return [];

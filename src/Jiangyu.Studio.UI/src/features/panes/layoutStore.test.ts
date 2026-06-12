@@ -132,5 +132,21 @@ describe("layoutStore", () => {
       // No project → no keys written.
       expect(Array.from({ length: 0 })).toEqual([]);
     });
+
+    it("never writes the new project's layout under the old key when switching mid-debounce", () => {
+      useLayoutStore.getState().setProject("/old");
+      useLayoutStore.getState().openFile("/old/a");
+      vi.advanceTimersByTime(100);
+      // Switch projects while the autosave for /old is still pending.
+      useLayoutStore.getState().setProject("/new");
+      useLayoutStore.getState().openFile("/new/b");
+      vi.advanceTimersByTime(200);
+
+      const oldSaved = localStorage.getItem("jiangyu:layout:/old");
+      // The pending save is flushed at switch time with /old's own layout.
+      expect(oldSaved).toContain("/old/a");
+      expect(oldSaved).not.toContain("/new/b");
+      expect(localStorage.getItem("jiangyu:layout:/new")).toContain("/new/b");
+    });
   });
 });

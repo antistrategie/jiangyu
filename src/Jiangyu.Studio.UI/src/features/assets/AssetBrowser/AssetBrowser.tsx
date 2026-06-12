@@ -27,14 +27,16 @@ import {
 } from "@features/project/config";
 import type { AssetPreviewResult } from "@shared/rpc";
 import { isAbsolute, join, normalise } from "@shared/path";
-import { useToast } from "@shared/toast";
+import { useToastPush } from "@shared/toast";
 import { DEFAULT_ASSET_BROWSER_STATE, type AssetBrowserState } from "@features/panes/browserState";
 import { useDebouncedScrollTop } from "@shared/utils/useDebouncedScrollTop";
+import { useDismissOnOutsideClick } from "@shared/utils/useDismissOnOutsideClick";
 import { Spinner } from "@shared/ui/Spinner/Spinner";
 import { LoadingBanner } from "@shared/ui/LoadingBanner/LoadingBanner";
 import { EmptyState } from "@shared/ui/EmptyState/EmptyState";
 import { Button } from "@shared/ui/Button/Button";
 import { AssetDetails, type Destination } from "./AssetDetails";
+import type { BatchProgress } from "./BatchProgressBar";
 import styles from "./AssetBrowser.module.css";
 
 interface AssetBrowserProps {
@@ -81,13 +83,9 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
   const [projectConfig, setProjectConfig] = useState<ProjectConfig>({});
 
   const [exporting, setExporting] = useState(false);
-  const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(
-    null,
-  );
+  const [exportProgress, setExportProgress] = useState<BatchProgress | null>(null);
   const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(
-    null,
-  );
+  const [importProgress, setImportProgress] = useState<BatchProgress | null>(null);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const actionMenuRef = useRef<HTMLDivElement>(null);
 
@@ -141,7 +139,7 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
   const [previewLoading, setPreviewLoading] = useState(false);
   const previewTokenRef = useRef(0);
 
-  const { push: pushToast } = useToast();
+  const pushToast = useToastPush();
 
   useEffect(() => {
     let cancelled = false;
@@ -183,24 +181,41 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
       new Set(["Texture2D", "Sprite", "AudioClip", "GameObject", "PrefabHierarchyObject", "Mesh"]),
     [],
   );
+  // Keyed against the full catalogue rather than `results`: ctrl-click picks
+  // must survive narrowing the filter (user intent is "keep this one", not
+  // "keep only if still visible"), and the focused asset must resolve even
+  // when the kind filter or search hides its row so the details panel and
+  // preview agree.
+  const assetsByKey = useMemo(() => {
+    const m = new Map<string, AssetEntry>();
+    for (const a of allAssets) m.set(rowKey(a), a);
+    return m;
+  }, [allAssets]);
+
+  // Single source of truth for the focused asset, shared by the preview reset
+  // block, the preview fetch effect, and the details panel.
+  const focused = useMemo(
+    () => (focusedKey === null ? null : (assetsByKey.get(focusedKey) ?? null)),
+    [assetsByKey, focusedKey],
+  );
+
   // Reset preview state synchronously off focusedKey identity so the panel
   // clears the moment focus moves rather than one render after the effect.
   const [prevFocusedKey, setPrevFocusedKey] = useState(focusedKey);
   if (prevFocusedKey !== focusedKey) {
     setPrevFocusedKey(focusedKey);
     setPreviewData(null);
-    const focused =
-      focusedKey !== null ? allAssets.find((a) => rowKey(a) === focusedKey) : undefined;
-    const className = focused?.className ?? "";
-    const previewable = focused?.collection !== undefined && PREVIEWABLE_CLASSES.has(className);
+    const previewable =
+      focused !== null &&
+      Boolean(focused.collection) &&
+      PREVIEWABLE_CLASSES.has(focused.className ?? "");
     setPreviewLoading(previewable);
   }
 
   useEffect(() => {
-    if (focusedKey === null) return;
-    const focused = allAssets.find((a) => rowKey(a) === focusedKey);
-    const className = focused?.className ?? "";
-    if (!focused?.collection || !PREVIEWABLE_CLASSES.has(className)) return;
+    if (focused === null) return;
+    const className = focused.className ?? "";
+    if (!focused.collection || !PREVIEWABLE_CLASSES.has(className)) return;
 
     const token = ++previewTokenRef.current;
     void assetsPreview({ collection: focused.collection, pathId: focused.pathId, className })
@@ -214,7 +229,7 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
       .finally(() => {
         if (previewTokenRef.current === token) setPreviewLoading(false);
       });
-  }, [focusedKey, allAssets, PREVIEWABLE_CLASSES]);
+  }, [focused, PREVIEWABLE_CLASSES]);
 
   // Reset catalogue state synchronously off the status state so the list
   // clears and the spinner shows the moment status changes.
@@ -405,16 +420,6 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
     }
   }, []);
 
-  // Looking up selected assets via `results` would silently drop picks whenever
-  // the user narrows the filter or the RESULT_CAP truncates them — the user
-  // intent on ctrl-click is "keep this one", not "keep only if still visible".
-  // Key the selection against `allAssets` so hidden picks still export.
-  const assetsByKey = useMemo(() => {
-    const m = new Map<string, AssetEntry>();
-    for (const a of allAssets) m.set(rowKey(a), a);
-    return m;
-  }, [allAssets]);
-
   const selectedRows = useMemo<readonly AssetEntry[]>(() => {
     const out: AssetEntry[] = [];
     for (const k of selection) {
@@ -511,41 +516,42 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
     [defaultBaseDir, projectExportPath],
   );
 
-  const handleExport = useCallback(
-    (dest: Destination) => {
-      if (selectedRows.length === 0 || exporting) return;
-      setExporting(true);
+  // Shared skeleton for the bulk export/import flows: flag the busy state,
+  // resolve the per-row operation, run it sequentially with {done, total}
+  // progress, then toast success (with a Reveal action on the first produced
+  // path) or failure, resetting busy/progress either way.
+  const runBatch = useCallback(
+    (opts: {
+      rows: readonly AssetEntry[];
+      setBusy: (busy: boolean) => void;
+      setProgress: (progress: BatchProgress | null) => void;
+      /** Runs after the paint guard; returning null aborts without a toast. */
+      makeOp: () => Promise<((row: AssetEntry) => Promise<string>) | null>;
+      successMessage: (count: number) => string;
+      errorLabel: string;
+    }) => {
+      const { rows, setBusy, setProgress, makeOp, successMessage, errorLabel } = opts;
+      setBusy(true);
 
       // Use double-rAF to guarantee the browser has painted the disabled/spinner
-      // state before kicking off the export RPC.
+      // state before kicking off the RPC loop.
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           const run = async () => {
-            const baseDir = await resolveBaseDir(dest);
-            if (baseDir === null) {
-              setExporting(false);
-              return;
-            }
-
-            setExportProgress({ done: 0, total: selectedRows.length });
-
-            const paths: string[] = [];
             try {
-              for (const [i, row] of selectedRows.entries()) {
-                const result = await assetsExport({
-                  assetName: row.name ?? "unnamed",
-                  collection: row.collection ?? "",
-                  pathId: row.pathId,
-                  kind: row.className ?? "",
-                  baseDir,
-                });
-                paths.push(result.outputPath);
-                setExportProgress({ done: i + 1, total: selectedRows.length });
+              const op = await makeOp();
+              if (op === null) return;
+
+              setProgress({ done: 0, total: rows.length });
+              const paths: string[] = [];
+              for (const [i, row] of rows.entries()) {
+                paths.push(await op(row));
+                setProgress({ done: i + 1, total: rows.length });
               }
               const first = paths[0];
               pushToast({
                 variant: "success",
-                message: `Exported ${paths.length} asset${paths.length === 1 ? "" : "s"}`,
+                message: successMessage(paths.length),
                 ...(first != null ? { detail: first } : {}),
                 ...(first != null
                   ? { actions: [{ label: "Reveal", run: () => void revealInExplorer(first) }] }
@@ -554,32 +560,51 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
             } catch (err) {
               pushToast({
                 variant: "error",
-                message: `Export failed: ${(err as Error).message}`,
+                message: `${errorLabel} failed: ${(err as Error).message}`,
               });
             } finally {
-              setExporting(false);
-              setExportProgress(null);
+              setBusy(false);
+              setProgress(null);
             }
           };
-
           void run();
         });
       });
     },
-    [selectedRows, exporting, resolveBaseDir, pushToast],
+    [pushToast],
   );
 
-  // Close action menu on outside click
-  useEffect(() => {
-    if (!actionMenuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (actionMenuRef.current && !actionMenuRef.current.contains(e.target as Node)) {
-        setActionMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [actionMenuOpen]);
+  const handleExport = useCallback(
+    (dest: Destination) => {
+      if (selectedRows.length === 0 || exporting) return;
+      runBatch({
+        rows: selectedRows,
+        setBusy: setExporting,
+        setProgress: setExportProgress,
+        makeOp: async () => {
+          const baseDir = await resolveBaseDir(dest);
+          if (baseDir === null) return null;
+          return async (row) =>
+            (
+              await assetsExport({
+                assetName: row.name ?? "unnamed",
+                collection: row.collection ?? "",
+                pathId: row.pathId,
+                kind: row.className ?? "",
+                baseDir,
+              })
+            ).outputPath;
+        },
+        successMessage: (count) => `Exported ${count} asset${count === 1 ? "" : "s"}`,
+        errorLabel: "Export",
+      });
+    },
+    [selectedRows, exporting, resolveBaseDir, runBatch],
+  );
+
+  useDismissOnOutsideClick(actionMenuRef, () => setActionMenuOpen(false), {
+    enabled: actionMenuOpen,
+  });
 
   const allSelectedArePrefabs = useMemo(
     () => selectedRows.length > 0 && selectedRows.every(isPrefab),
@@ -589,48 +614,24 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
   const handleImport = useCallback(() => {
     if (selectedRows.length === 0 || importing) return;
     if (!selectedRows.every(isPrefab)) return;
-    setImporting(true);
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const run = async () => {
-          setImportProgress({ done: 0, total: selectedRows.length });
-          const destDirs: string[] = [];
-          try {
-            for (const [i, row] of selectedRows.entries()) {
-              const params: {
-                assetName: string;
-                pathId?: number;
-                collection?: string;
-              } = { assetName: row.name ?? "unnamed", pathId: row.pathId };
-              if (row.collection) params.collection = row.collection;
-              const result = await unityImportPrefab(params);
-              destDirs.push(result.destDir);
-              setImportProgress({ done: i + 1, total: selectedRows.length });
-            }
-            const first = destDirs[0];
-            pushToast({
-              variant: "success",
-              message: `Imported ${destDirs.length.toString()} prefab${destDirs.length === 1 ? "" : "s"} to Unity`,
-              ...(first != null ? { detail: first } : {}),
-              ...(first != null
-                ? { actions: [{ label: "Reveal", run: () => void revealInExplorer(first) }] }
-                : {}),
-            });
-          } catch (err) {
-            pushToast({
-              variant: "error",
-              message: `Import failed: ${(err as Error).message}`,
-            });
-          } finally {
-            setImporting(false);
-            setImportProgress(null);
-          }
-        };
-        void run();
-      });
+    runBatch({
+      rows: selectedRows,
+      setBusy: setImporting,
+      setProgress: setImportProgress,
+      makeOp: () =>
+        Promise.resolve(async (row: AssetEntry) => {
+          const params: {
+            assetName: string;
+            pathId?: number;
+            collection?: string;
+          } = { assetName: row.name ?? "unnamed", pathId: row.pathId };
+          if (row.collection) params.collection = row.collection;
+          return (await unityImportPrefab(params)).destDir;
+        }),
+      successMessage: (count) => `Imported ${count} prefab${count === 1 ? "" : "s"} to Unity`,
+      errorLabel: "Import",
     });
-  }, [selectedRows, importing, pushToast]);
+  }, [selectedRows, importing, runBatch]);
 
   const handleConfigureProjectPath = useCallback(async () => {
     const picked = await pickDirectory({
@@ -814,9 +815,7 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
 
         <div className={styles.detailsPanel}>
           <AssetDetails
-            focused={
-              focusedKey === null ? null : (results.find((r) => rowKey(r) === focusedKey) ?? null)
-            }
+            focused={focused}
             previewData={previewData}
             previewLoading={previewLoading}
             nameUniqueness={nameUniqueness}

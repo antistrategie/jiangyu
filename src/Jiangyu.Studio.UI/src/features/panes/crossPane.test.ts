@@ -44,6 +44,11 @@ describe("encode/parseCrossPanePayload", () => {
     expect(parseCrossPanePayload(raw)).toBeNull();
   });
 
+  it("rejects simple pane kinds, which have no drag affordance to encode them", () => {
+    const raw = JSON.stringify({ m: "jiangyu-pane-drag/1", kind: "agent" });
+    expect(parseCrossPanePayload(raw)).toBeNull();
+  });
+
   it("accepts all three supported kinds", () => {
     const kinds = ["code", "assetBrowser", "templateBrowser"] as const;
     for (const kind of kinds) {

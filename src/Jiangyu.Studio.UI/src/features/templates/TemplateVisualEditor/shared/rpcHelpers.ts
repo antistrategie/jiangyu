@@ -11,6 +11,7 @@ import type { CrossMemberPayload } from "@features/templates/crossMember";
 import type { DirectiveOp } from "../types";
 import { inspectedFieldToEditorValue, makeDefaultValue, type StampedDirective } from "../helpers";
 import { uiId } from "./uiId";
+import type { SuggestionItem } from "./SuggestionCombobox";
 
 // --- RPC wrappers ---
 
@@ -124,6 +125,40 @@ export async function getCachedProjectClones(): Promise<readonly ProjectCloneEnt
 
 export function invalidateProjectClonesCache() {
   projectClonesCache = null;
+}
+
+/**
+ * Merge project-clone ids into a game-instance suggestion list. Clones
+ * whose id shadows a game entry are dropped; the rest are tagged "clone"
+ * and listed first so the modder's own content surfaces above the
+ * catalogue. Pure — callers supply the already-fetched inputs.
+ */
+export function mergeCloneSuggestions(
+  templateType: string,
+  gameItems: readonly SuggestionItem[],
+  projectClones: readonly ProjectCloneEntry[],
+): SuggestionItem[] {
+  const gameLabels = new Set(gameItems.map((i) => i.label));
+  const cloneItems: SuggestionItem[] = projectClones
+    .filter((c) => c.templateType === templateType && !gameLabels.has(c.id))
+    .map((c) => ({ label: c.id, tag: "clone" }));
+  return [...cloneItems, ...gameItems];
+}
+
+/**
+ * Suggestion list for a template-typed input: game instances of
+ * `templateType` from the template index plus the project's clones of
+ * that type, merged via mergeCloneSuggestions.
+ */
+export async function fetchInstancesWithClones(
+  templateType: string,
+): Promise<readonly SuggestionItem[]> {
+  const [searchResult, projectClones] = await Promise.all([
+    templatesSearch(templateType),
+    getCachedProjectClones(),
+  ]);
+  const gameItems: SuggestionItem[] = searchResult.instances.map((i) => ({ label: i.name }));
+  return mergeCloneSuggestions(templateType, gameItems, projectClones);
 }
 
 // --- Project additions ---

@@ -18,11 +18,13 @@ export interface AuthMethod {
   readonly description?: string | null;
 }
 
-/** Result of agentSessionCreate (now arrives as `agentSessionCreated` notification). */
+/** Result of agentSessionCreate (now arrives as `agentSessionCreated`
+ *  notification), with config options already normalised at the
+ *  subscription boundary. */
 export interface AgentSessionResult {
   readonly sessionId?: string;
   readonly modes?: SessionModes | null;
-  readonly configOptions?: ConfigOption[] | null;
+  readonly configOptions?: SessionConfigOption[] | null;
   readonly error?: string | null;
   /** Set when the agent rejected session/new with ACP's auth_required
    *  error (-32000). The host attaches the latest authMethods snapshot
@@ -51,11 +53,13 @@ export interface SessionMode {
   readonly description?: string | null;
 }
 
-/** One agent-tunable knob (model selection, thinking budget, etc.). All
- *  fields are optional because real-world agents emit varying shapes —
- *  Claude Agent uses `type` + `currentValue` without a stable `key`;
- *  others use `id` + `value`. The UI reads `key ?? id` and
- *  `value ?? currentValue`; entries without any identifier are dropped. */
+/** One agent-tunable knob (model selection, thinking budget, etc.) as it
+ *  appears on the wire. All fields are optional because real-world agents
+ *  emit varying shapes — Claude Agent uses `type` + `currentValue` without
+ *  a stable `key`; others use `id` + `value`; Copilot spells choices
+ *  `options`. Normalised once at the subscription boundary (see
+ *  `normaliseConfigOption` in messages.ts) into `SessionConfigOption`;
+ *  nothing past subscriptions.ts consumes this shape. */
 export interface ConfigOption {
   readonly key?: string | null;
   readonly id?: string | null;
@@ -64,7 +68,6 @@ export interface ConfigOption {
   readonly type?: string | null;
   readonly value?: unknown;
   readonly currentValue?: unknown;
-  /** Copilot's spelling. Use whichever is set; UI reads `options ?? choices`. */
   readonly options?: readonly ConfigOptionChoice[] | null;
   readonly choices?: readonly ConfigOptionChoice[] | null;
   readonly min?: number | null;
@@ -74,10 +77,30 @@ export interface ConfigOption {
 
 export interface ConfigOptionChoice {
   readonly value?: unknown;
-  /** Copilot uses `name`; some specs use `label`. UI reads `name ?? label`. */
+  /** Copilot uses `name`; some specs use `label`. */
   readonly name?: string | null;
   readonly label?: string | null;
   readonly description?: string | null;
+}
+
+/** Canonical config option consumed by the store and components. Entries
+ *  without any wire identifier are dropped during normalisation, so `id`
+ *  is always present here. */
+export interface SessionConfigOption {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly type: string | null;
+  readonly value: unknown;
+  readonly choices: readonly SessionConfigChoice[];
+  readonly min: number | null;
+  readonly max: number | null;
+}
+
+export interface SessionConfigChoice {
+  readonly value: unknown;
+  readonly label: string;
+  readonly description: string | null;
 }
 
 /** Result of agentSessionPrompt RPC. Spec stop reasons:
@@ -95,12 +118,13 @@ export type AgentStopReason =
 
 // --- Session update notifications (pushed via "agentUpdate") ---
 //
-// Wire shape: { sessionId, update: SessionUpdate }
-// The store unwraps the outer envelope and dispatches on update.sessionUpdate.
+// Wire shape: { sessionId, update: WireSessionUpdate }
+// The subscription layer unwraps the envelope, normalises config options,
+// and the store dispatches on update.sessionUpdate.
 
 export interface SessionNotification {
   readonly sessionId: string;
-  readonly update: SessionUpdate;
+  readonly update: WireSessionUpdate;
 }
 
 export type SessionUpdate =
@@ -114,6 +138,10 @@ export type SessionUpdate =
   | CurrentModeUpdate
   | ConfigOptionUpdate
   | SessionInfoUpdate;
+
+/** SessionUpdate as it arrives on the wire: identical except config options
+ *  still carry the agent's dual spellings. */
+export type WireSessionUpdate = Exclude<SessionUpdate, ConfigOptionUpdate> | WireConfigOptionUpdate;
 
 export interface AgentMessageChunk {
   readonly sessionUpdate: "agent_message_chunk";
@@ -170,6 +198,12 @@ export interface CurrentModeUpdate {
 }
 
 export interface ConfigOptionUpdate {
+  readonly sessionUpdate: "config_option_update";
+  readonly configOptions: readonly SessionConfigOption[];
+}
+
+/** Boundary-only wire shape of config_option_update before normalisation. */
+export interface WireConfigOptionUpdate {
   readonly sessionUpdate: "config_option_update";
   readonly configOptions: readonly ConfigOption[];
 }

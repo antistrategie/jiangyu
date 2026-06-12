@@ -12,7 +12,7 @@ import { Button } from "@shared/ui/Button/Button";
 import { EmptyState } from "@shared/ui/EmptyState/EmptyState";
 import { LoadingBanner } from "@shared/ui/LoadingBanner/LoadingBanner";
 import { ContextMenu, type ContextMenuEntry } from "@shared/ui/ContextMenu/ContextMenu";
-import { useToast } from "@shared/toast";
+import { useToastPush } from "@shared/toast";
 import { bridgeUiCapture, type UiDump, type UiNode } from "@features/bridge/bridge";
 import { useBridgeStatus } from "@features/bridge/useBridgeStatus";
 import { onKeyActivate } from "@shared/utils/a11y";
@@ -37,7 +37,7 @@ interface MatchSet {
  * search by type/name/class, and copy a node's selector. Read-only.
  */
 export function UiInspector() {
-  const { push } = useToast();
+  const push = useToastPush();
   const { status, setStatus } = useBridgeStatus();
   const [dump, setDump] = useState<UiDump | null>(null);
   const [capturing, setCapturing] = useState(false);

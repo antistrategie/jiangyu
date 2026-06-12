@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
+import { useDismissOnOutsideClick } from "@shared/utils/useDismissOnOutsideClick";
 import type { EnumMemberEntry, InspectedFieldNode, TemplateMember } from "@shared/rpc";
 import { rpcCall } from "@shared/rpc";
 import { useEditorDispatch, useNodeIndex } from "../store";
@@ -170,21 +171,19 @@ export function MatrixFieldEditor({
   const [openCellKey, setOpenCellKey] = useState<string | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
 
+  useDismissOnOutsideClick(popoverRef, () => setOpenCellKey(null), {
+    enabled: openCellKey !== null,
+  });
+
+  // Escape also closes the popover; the outside-click hook only covers
+  // pointer dismissal.
   useEffect(() => {
     if (!openCellKey) return;
-    const onMouseDown = (e: MouseEvent) => {
-      if (popoverRef.current?.contains(e.target as Node) === true) return;
-      setOpenCellKey(null);
-    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpenCellKey(null);
     };
-    document.addEventListener("mousedown", onMouseDown);
     document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onMouseDown);
-      document.removeEventListener("keydown", onKey);
-    };
+    return () => document.removeEventListener("keydown", onKey);
   }, [openCellKey]);
 
   if (rows <= 0 || cols <= 0) return null;

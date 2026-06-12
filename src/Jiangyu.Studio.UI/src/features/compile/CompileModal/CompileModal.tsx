@@ -1,32 +1,30 @@
-import { useEffect, useLayoutEffect, useMemo, useReducer, useRef } from "react";
+import { useEffect, useLayoutEffect, useReducer, useRef } from "react";
 import { FolderOpen, Play } from "lucide-react";
 import { Modal } from "@shared/ui/Modal/Modal";
 import { ModalHeader } from "@shared/ui/Modal/ModalHeader";
 import { Button } from "@shared/ui/Button/Button";
 import { rpcCall } from "@shared/rpc";
 import {
+  useCompileStore,
   useCompileSummary,
   formatDurationShort,
   type CompileLogEntry,
-  type CompileState,
   type CompileSummary,
 } from "@features/compile";
 import styles from "./CompileModal.module.css";
 
 interface CompileModalProps {
-  readonly state: CompileState;
   readonly onClose: () => void;
-  readonly onStart: () => void;
 }
 
-export function CompileModal({ state, onClose, onStart }: CompileModalProps) {
+export function CompileModal({ onClose }: CompileModalProps) {
   const summary = useCompileSummary(true);
   return (
     <Modal onClose={onClose} ariaLabelledBy="compile-title" width={1100} height={760}>
       <ModalHeader id="compile-title" title="Compile · 编译" onClose={onClose} />
       <div className={styles.body}>
-        <LogPanel state={state} />
-        <InfoPanel state={state} summary={summary} onStart={onStart} onClose={onClose} />
+        <LogPanel />
+        <InfoPanel summary={summary} onClose={onClose} />
       </div>
     </Modal>
   );
@@ -34,16 +32,22 @@ export function CompileModal({ state, onClose, onStart }: CompileModalProps) {
 
 // --- Log ---------------------------------------------------------------------
 
-function LogPanel({ state }: { state: CompileState }) {
+function LogPanel() {
   return (
     <div className={styles.logShell}>
       <span className={styles.logEyebrow}>Output · 输出</span>
-      <LogScroller state={state} />
+      <LogScroller />
     </div>
   );
 }
 
-function LogScroller({ state }: { state: CompileState }) {
+function LogScroller() {
+  const status = useCompileStore((s) => s.status);
+  const phase = useCompileStore((s) => s.phase);
+  const statusLine = useCompileStore((s) => s.statusLine);
+  const logs = useCompileStore((s) => s.logs);
+  const droppedLogCount = useCompileStore((s) => s.droppedLogCount);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
 
@@ -57,9 +61,9 @@ function LogScroller({ state }: { state: CompileState }) {
     if (!stickRef.current) return;
     const el = scrollRef.current;
     if (el !== null) el.scrollTop = el.scrollHeight;
-  }, [state.logs]);
+  }, [logs]);
 
-  if (state.status === "idle" && state.logs.length === 0) {
+  if (status === "idle" && logs.length === 0) {
     return (
       <div className={styles.log}>
         <div className={styles.logIdle}>
@@ -72,10 +76,17 @@ function LogScroller({ state }: { state: CompileState }) {
 
   return (
     <div className={styles.log} ref={scrollRef} onScroll={onScroll}>
-      {state.status === "running" && state.phase !== null && (
-        <LogLine level="info" prefix="→" message={state.phase} />
+      {droppedLogCount > 0 && (
+        <LogLine
+          level="info"
+          prefix="…"
+          message={`${droppedLogCount} earlier line${droppedLogCount === 1 ? "" : "s"} dropped`}
+        />
       )}
-      {state.logs.map((entry) => (
+      {status === "running" && phase !== null && (
+        <LogLine level="info" prefix="→" message={phase} />
+      )}
+      {logs.map((entry) => (
         <LogLine
           key={entry.id}
           level={entry.level}
@@ -83,11 +94,11 @@ function LogScroller({ state }: { state: CompileState }) {
           message={entry.message}
         />
       ))}
-      {state.status === "running" && (
+      {status === "running" && (
         <div className={`${styles.logLine} ${styles.logLine_running}`}>
           <span className={styles.logPromptPrefix}>→</span>
           <span className={styles.logMessage}>
-            {state.statusLine ?? "working…"}
+            {statusLine ?? "working…"}
             <span className={styles.logPromptCaret}>_</span>
           </span>
         </div>
@@ -121,33 +132,23 @@ function glyphFor(level: CompileLogEntry["level"]): string {
 
 // --- Info panel --------------------------------------------------------------
 
-function InfoPanel({
-  state,
-  summary,
-  onStart,
-  onClose,
-}: {
-  state: CompileState;
-  summary: CompileSummary | null;
-  onStart: () => void;
-  onClose: () => void;
-}) {
+function InfoPanel({ summary, onClose }: { summary: CompileSummary | null; onClose: () => void }) {
+  const status = useCompileStore((s) => s.status);
+  const warnCount = useCompileStore((s) => s.warnCount);
+  const errorCount = useCompileStore((s) => s.errorCount);
+  const errorMessage = useCompileStore((s) => s.errorMessage);
+  const bundlePath = useCompileStore((s) => s.bundlePath);
+  const startedAt = useCompileStore((s) => s.startedAt);
+  const finishedAt = useCompileStore((s) => s.finishedAt);
+  const start = useCompileStore((s) => s.start);
+
   // While running, tick every 500ms so the Duration stat advances in real time.
   // Stops as soon as the compile finishes — after that, duration is frozen at
   // finishedAt − startedAt.
-  useTickerWhileRunning(state.status === "running");
+  useTickerWhileRunning(status === "running");
 
-  const warningCount = useMemo(
-    () => state.logs.filter((e) => e.level === "warn").length,
-    [state.logs],
-  );
-  const errorCount = useMemo(
-    () => state.logs.filter((e) => e.level === "error").length,
-    [state.logs],
-  );
-
-  const isRunning = state.status === "running";
-  const isDone = state.status === "success" || state.status === "failed";
+  const isRunning = status === "running";
+  const isDone = status === "success" || status === "failed";
 
   return (
     <div className={styles.info}>
@@ -200,19 +201,19 @@ function InfoPanel({
       </Section>
 
       {(isRunning || isDone) && (
-        <Section title="Result · 结果" tone={state.status === "failed" ? "failed" : "default"}>
+        <Section title="Result · 结果" tone={status === "failed" ? "failed" : "default"}>
           <div className={styles.statGrid}>
-            {warningCount > 0 ? (
-              <Stat label="Warnings" value={warningCount} tone="warn" />
+            {warnCount > 0 ? (
+              <Stat label="Warnings" value={warnCount} tone="warn" />
             ) : (
-              <Stat label="Warnings" value={warningCount} />
+              <Stat label="Warnings" value={warnCount} />
             )}
-            <Stat label="Duration" value={formatDurationStat(state)} mono />
+            <Stat label="Duration" value={formatDurationStat(startedAt, finishedAt)} mono />
           </div>
-          {state.status === "failed" && state.errorMessage !== null && (
-            <p className={styles.resultError}>{state.errorMessage}</p>
+          {status === "failed" && errorMessage !== null && (
+            <p className={styles.resultError}>{errorMessage}</p>
           )}
-          {errorCount > 0 && state.status === "failed" && (
+          {errorCount > 0 && status === "failed" && (
             <p className={styles.resultMeta}>
               {errorCount} error{errorCount === 1 ? "" : "s"}
             </p>
@@ -220,13 +221,13 @@ function InfoPanel({
         </Section>
       )}
 
-      {state.status === "success" && state.bundlePath !== null && (
-        <p className={styles.resultPath} title={state.bundlePath}>
-          {state.bundlePath}
+      {status === "success" && bundlePath !== null && (
+        <p className={styles.resultPath} title={bundlePath}>
+          {bundlePath}
         </p>
       )}
       <div className={styles.actions}>
-        <Button variant="primary" size="md" onClick={onStart} disabled={isRunning}>
+        <Button variant="primary" size="md" onClick={start} disabled={isRunning}>
           {isRunning ? (
             <>Compiling…</>
           ) : isDone ? (
@@ -239,8 +240,8 @@ function InfoPanel({
             </>
           )}
         </Button>
-        {state.status === "success" && state.bundlePath !== null && (
-          <Button variant="ghost" onClick={() => revealBundle(state)}>
+        {status === "success" && bundlePath !== null && (
+          <Button variant="ghost" onClick={() => revealBundle(bundlePath)}>
             <FolderOpen size={12} /> Reveal bundle
           </Button>
         )}
@@ -252,9 +253,8 @@ function InfoPanel({
   );
 }
 
-function revealBundle(state: CompileState) {
-  if (state.bundlePath === null) return;
-  rpcCall<null>("revealInExplorer", { path: state.bundlePath }).catch((err: unknown) => {
+function revealBundle(bundlePath: string) {
+  rpcCall<null>("revealInExplorer", { path: bundlePath }).catch((err: unknown) => {
     console.error("[Compile] reveal failed:", err);
   });
 }
@@ -317,8 +317,8 @@ function useTickerWhileRunning(running: boolean): void {
   }, [running]);
 }
 
-function formatDurationStat(state: CompileState): string {
-  if (state.startedAt === null) return "—";
-  const end = state.finishedAt ?? Date.now();
-  return formatDurationShort(end - state.startedAt);
+function formatDurationStat(startedAt: number | null, finishedAt: number | null): string {
+  if (startedAt === null) return "—";
+  const end = finishedAt ?? Date.now();
+  return formatDurationShort(end - startedAt);
 }

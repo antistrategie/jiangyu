@@ -109,6 +109,12 @@ export function useTemplateMembers(
   };
 }
 
+// Drag payload mimes for the two reorder scopes. Each consumer of
+// useDragReorder passes the mime its grips put on the dataTransfer so the
+// document-level WebKitGTK fallback below commits the right gestures.
+export const CARD_REORDER_MIME = "application/x-jiangyu-card-reorder";
+export const ROW_REORDER_MIME = "application/x-jiangyu-row-reorder";
+
 /**
  * Drag-reorder state machine for a vertical list of rows. Owns the
  * (dragId, dragSlot) pair plus helpers for the two patterns the editor
@@ -118,7 +124,7 @@ export function useTemplateMembers(
  * Generalises across loose rows (topSlot=index, bottomSlot=index+1) and
  * descent groups (topSlot=startFlatIndex, bottomSlot=endFlatIndex). The
  * grip's `setData` call stays in the consumer because the payload mime
- * varies (cards vs rows vs groups).
+ * varies (cards vs rows vs groups); `mime` must match what the grips set.
  */
 export interface DragReorderState {
   readonly dragId: string | null;
@@ -142,11 +148,15 @@ export interface DragReorderState {
 // element even when dragover preventDefaults — the React tree never sees
 // the drop and dragend fires straight after dragover. A native drop
 // listener at the document level still receives the event, so we route
-// the reorder commit through there for the row mime we care about.
+// the reorder commit through there for the mime this instance owns.
 // Chromium-based embeds also deliver the per-element React drop normally
 // in addition to the document drop; either path clears drag state, so
 // the duplicate is a no-op (the second path sees dragIdRef === null).
+// Several instances can share a mime (every row list uses the row mime);
+// only the instance whose grip started the gesture holds a non-null
+// dragIdRef, so the others' fallbacks no-op.
 function useDocumentDropFallback(
+  mime: string,
   dragIdRef: React.RefObject<string | null>,
   dragSlotRef: React.RefObject<number | null>,
   onReorderRef: React.RefObject<(fromId: string, toSlot: number) => void>,
@@ -154,7 +164,7 @@ function useDocumentDropFallback(
 ) {
   useEffect(() => {
     const onDocDrop = (e: DragEvent) => {
-      if (!e.dataTransfer?.types.includes("application/x-jiangyu-card-reorder")) return;
+      if (!e.dataTransfer?.types.includes(mime)) return;
       e.preventDefault();
       const fromId = dragIdRef.current;
       const toSlot = dragSlotRef.current;
@@ -167,7 +177,7 @@ function useDocumentDropFallback(
       // WebKitGTK only delivers the document-level drop when the
       // document itself marks the gesture as accepted via a dragover
       // preventDefault. Per-card preventDefaults aren't enough.
-      if (e.dataTransfer?.types.includes("application/x-jiangyu-card-reorder")) {
+      if (e.dataTransfer?.types.includes(mime)) {
         e.preventDefault();
       }
     };
@@ -177,11 +187,14 @@ function useDocumentDropFallback(
       document.removeEventListener("drop", onDocDrop);
       document.removeEventListener("dragover", onDocDragOver);
     };
-  }, [dragIdRef, dragSlotRef, onReorderRef, cleanup]);
+  }, [mime, dragIdRef, dragSlotRef, onReorderRef, cleanup]);
 }
 
 export function useDragReorder(
   onReorder: (fromId: string, toSlot: number) => void,
+  /** Drag payload mime the consumer's grips set (CARD_REORDER_MIME or
+   *  ROW_REORDER_MIME); scopes the document-level drop fallback. */
+  mime: string,
 ): DragReorderState {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragSlot, setDragSlot] = useState<number | null>(null);
@@ -220,8 +233,14 @@ export function useDragReorder(
     >(),
   );
 
+  // Ids handed to buildHandlers since the last commit. The eviction effect
+  // below uses this as the live set so cache entries for deleted rows
+  // don't accumulate over the editor session.
+  const liveIdsRef = useRef(new Set<string>());
+
   const buildHandlers = useCallback((ownerId: string, topSlot: number, bottomSlot: number) => {
     const cache = handlersCacheRef.current;
+    liveIdsRef.current.add(ownerId);
     const isDragging = dragIdRef.current === ownerId;
     const cached = cache.get(ownerId);
     // Reuse the cached bag when slot bounds haven't changed; otherwise
@@ -280,6 +299,23 @@ export function useDragReorder(
     return handlers;
   }, []);
 
+  // Evict cache entries whose row no longer rendered this commit, then
+  // reset the live set for the next render pass. Runs after every commit:
+  // children render before this effect fires, so the live set is complete
+  // by the time it prunes. Evicted-but-still-mounted rows (none in
+  // practice: rows always call buildHandlers when they render) would just
+  // rebuild their bag on the next call.
+  useEffect(() => {
+    const cache = handlersCacheRef.current;
+    const live = liveIdsRef.current;
+    if (cache.size > live.size) {
+      for (const key of cache.keys()) {
+        if (!live.has(key)) cache.delete(key);
+      }
+    }
+    live.clear();
+  });
+
   const showIndicatorAt = useCallback(
     (slot: number, ownerId: string | null) =>
       dragSlot === slot && (ownerId === null || dragId !== ownerId),
@@ -295,7 +331,7 @@ export function useDragReorder(
     setDragId(null);
     setDragSlot(null);
   }, []);
-  useDocumentDropFallback(dragIdRef, dragSlotRef, onReorderRef, clearDragState);
+  useDocumentDropFallback(mime, dragIdRef, dragSlotRef, onReorderRef, clearDragState);
 
   return { dragId, dragSlot, buildHandlers, showIndicatorAt };
 }

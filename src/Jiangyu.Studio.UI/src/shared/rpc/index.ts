@@ -6,6 +6,8 @@
  *   - notifications: `{method, params?}` — no id; routed to subscribers
  */
 
+import type { HostNotificationMap } from "./notifications";
+
 interface RpcResponse {
   readonly id: number;
   readonly result?: unknown;
@@ -28,13 +30,6 @@ function isRpcResponse(msg: RpcMessage): msg is RpcResponse {
 
 function isRpcNotification(msg: RpcMessage): msg is RpcNotification {
   return typeof (msg as RpcNotification).method === "string";
-}
-
-export type FileChangeKind = "changed" | "deleted";
-
-export interface FileChangedEvent {
-  readonly path: string;
-  readonly kind: FileChangeKind;
 }
 
 interface PendingRequest {
@@ -123,10 +118,27 @@ export function initRpc(): void {
   });
 }
 
+export interface RpcCallOptions {
+  /**
+   * Milliseconds before the call rejects and its pending entry is dropped,
+   * so a lost host response surfaces as an error instead of a promise that
+   * hangs forever (wedging any UI flag cleared in its `finally`). Pass 0 for
+   * calls that are legitimately unbounded: interactive dialogs, indexing,
+   * Unity batchmode, build invocations.
+   */
+  readonly timeoutMs?: number;
+}
+
+const DEFAULT_TIMEOUT_MS = 120_000;
+
 /**
  * Call a method on the C# host and await the response.
  */
-export function rpcCall<T = unknown>(method: string, params?: unknown): Promise<T> {
+export function rpcCall<T = unknown>(
+  method: string,
+  params?: unknown,
+  options?: RpcCallOptions,
+): Promise<T> {
   const host = getHost();
   if (!host) {
     return Promise.reject(new Error("InfiniFrame host not available (running in browser?)"));
@@ -134,35 +146,54 @@ export function rpcCall<T = unknown>(method: string, params?: unknown): Promise<
 
   const id = nextId++;
   const message = JSON.stringify({ method, params, id });
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   return new Promise<T>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(`RPC ${method} timed out after ${(timeoutMs / 1000).toString()}s`));
+      }, timeoutMs);
+    }
     pending.set(id, {
-      resolve: resolve as (value: unknown) => void,
-      reject,
+      resolve: (value) => {
+        if (timer !== undefined) clearTimeout(timer);
+        resolve(value as T);
+      },
+      reject: (reason) => {
+        if (timer !== undefined) clearTimeout(timer);
+        reject(reason);
+      },
     });
     host.postMessage(message);
   });
 }
 
 export type * from "./types";
+export type * from "./notifications";
 
 /**
- * Subscribe to a notification method pushed from the host. The payload is
- * `unknown`; callers that know the shape should narrow with a type assertion
- * at the boundary (the host is the source of truth for the wire schema).
- * Returns an unsubscribe function.
+ * Subscribe to a notification method pushed from the host. Methods and
+ * payload shapes come from `HostNotificationMap` (see ./notifications);
+ * features that own a payload shape register it there via declaration
+ * merging. Returns an unsubscribe function.
  */
-export function subscribe(method: string, callback: (params: unknown) => void): () => void {
+export function subscribe<K extends keyof HostNotificationMap>(
+  method: K,
+  callback: (params: HostNotificationMap[K]) => void,
+): () => void {
   let set = subscribers.get(method);
   if (!set) {
     set = new Set();
     subscribers.set(method, set);
   }
-  set.add(callback);
+  const cb = callback as NotificationCallback;
+  set.add(cb);
   return () => {
     const s = subscribers.get(method);
     if (!s) return;
-    s.delete(callback);
+    s.delete(cb);
     if (s.size === 0) subscribers.delete(method);
   };
 }

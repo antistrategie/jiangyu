@@ -1,12 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { CircleX, TriangleAlert, Info, X } from "lucide-react";
 import { rpcCall } from "@shared/rpc";
 import { pickProjectFolder } from "@features/project/commands";
 import { loadRecentProjects, removeRecentProject } from "@features/project/recent";
+import { useConfigStatus } from "@features/settings/useConfigStatus";
 import { Spinner } from "@shared/ui/Spinner/Spinner";
 import { Button } from "@shared/ui/Button/Button";
 import { NewProjectDialog } from "@features/project/NewProjectDialog/NewProjectDialog";
-import type { ConfigStatus } from "@features/compile/configStatus";
 import styles from "./WelcomeScreen.module.css";
 
 interface WelcomeScreenProps {
@@ -14,15 +14,9 @@ interface WelcomeScreenProps {
 }
 
 export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
-  const [config, setConfig] = useState<ConfigStatus | null>(null);
+  const { config, pickGamePath, pickUnityPath } = useConfigStatus();
   const [recentProjects, setRecentProjects] = useState<readonly string[]>(loadRecentProjects);
   const [showNewDialog, setShowNewDialog] = useState(false);
-
-  useEffect(() => {
-    void rpcCall<ConfigStatus>("getConfigStatus")
-      .then(setConfig)
-      .catch(() => {});
-  }, []);
 
   const handleRemoveRecent = (path: string) => {
     setRecentProjects(removeRecentProject(path));
@@ -31,24 +25,6 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
   const handleOpen = async () => {
     const path = await pickProjectFolder();
     if (path !== null) onOpenProject(path);
-  };
-
-  const handleSetGamePath = async () => {
-    try {
-      const result = await rpcCall<ConfigStatus | null>("setGamePath");
-      if (result) setConfig(result);
-    } catch (err) {
-      console.error("[Studio] setGamePath failed:", err);
-    }
-  };
-
-  const handleSetUnityPath = async () => {
-    try {
-      const result = await rpcCall<ConfigStatus | null>("setUnityEditorPath");
-      if (result) setConfig(result);
-    } catch (err) {
-      console.error("[Studio] setUnityEditorPath failed:", err);
-    }
   };
 
   const hasGameError = config?.gamePath === null;
@@ -84,7 +60,7 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
                     <button
                       className={styles.configLinkInline}
                       type="button"
-                      onClick={() => void handleSetGamePath()}
+                      onClick={pickGamePath}
                     >
                       change
                     </button>
@@ -95,7 +71,7 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
                       <button
                         className={styles.configLinkInline}
                         type="button"
-                        onClick={() => void handleSetUnityPath()}
+                        onClick={pickUnityPath}
                       >
                         change
                       </button>
@@ -110,11 +86,7 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
                     <div className={styles.statusLine}>
                       <CircleX size={14} className={styles.iconError} />
                       <span className={styles.statusTextError}>MENACE not found</span>
-                      <button
-                        className={styles.setPathBtn}
-                        type="button"
-                        onClick={() => void handleSetGamePath()}
-                      >
+                      <button className={styles.setPathBtn} type="button" onClick={pickGamePath}>
                         Set path…
                       </button>
                     </div>
@@ -131,11 +103,7 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
                           <Info size={12} />
                         </span>
                       )}
-                      <button
-                        className={styles.setPathBtn}
-                        type="button"
-                        onClick={() => void handleSetUnityPath()}
-                      >
+                      <button className={styles.setPathBtn} type="button" onClick={pickUnityPath}>
                         Set path…
                       </button>
                     </div>
@@ -147,7 +115,7 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
                       <button
                         className={styles.configLinkInline}
                         type="button"
-                        onClick={() => void handleSetUnityPath()}
+                        onClick={pickUnityPath}
                       >
                         change
                       </button>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
+import { useDismissOnOutsideClick } from "@shared/utils/useDismissOnOutsideClick";
 import styles from "./ContextMenu.module.css";
 
 export interface ContextMenuItem {
@@ -35,23 +36,15 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
     if (nx !== x || ny !== y) setPos({ x: nx, y: ny });
   }, [x, y]);
 
+  useDismissOnOutsideClick(ref, onClose, { dismissOnScroll: true, dismissOnBlur: true });
+
   useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-    const onScroll = () => onClose();
-    document.addEventListener("mousedown", onDown, true);
     document.addEventListener("keydown", onKey);
-    window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("blur", onClose);
     return () => {
-      document.removeEventListener("mousedown", onDown, true);
       document.removeEventListener("keydown", onKey);
-      window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("blur", onClose);
     };
   }, [onClose]);
 

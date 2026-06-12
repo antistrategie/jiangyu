@@ -533,6 +533,11 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
                 language={getLanguage(activePath)}
                 theme="jiangyu"
                 loading=""
+                // Models are keyed by path URI and shared by every pane
+                // showing the same file, so a pane unmount must not dispose
+                // the active model out from under a surviving pane. The
+                // content store's prune owns model disposal instead.
+                keepCurrentModel
                 onMount={handleMount}
                 onChange={handleChange}
                 options={editorOptions}

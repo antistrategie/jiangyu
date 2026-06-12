@@ -6,8 +6,8 @@ import type {
   AgentStopReason,
   AuthMethod,
   AvailableCommand,
-  ConfigOption,
   PermissionRequest,
+  SessionConfigOption,
   SessionMode,
   SessionModes,
   SessionUpdate,
@@ -31,10 +31,10 @@ import {
 // subscribe callbacks.
 import { pickAllowOption, pickRejectOption, sendPermissionResponse } from "./subscriptions";
 
-// Re-export the message types and the config-option helper from this entry
+// Re-export the message types and the value-display helper from this entry
 // point so callers don't need to know which sibling file each symbol lives
 // in.
-export { configOptionIdentifier } from "./messages";
+export { stringifyValue } from "./messages";
 export type {
   AgentMessage,
   ChatMessage,
@@ -59,7 +59,7 @@ export interface AgentPromptResultEvent {
 export interface AgentResumeResult {
   readonly sessionId?: string;
   readonly modes?: SessionModes | null;
-  readonly configOptions?: ConfigOption[] | null;
+  readonly configOptions?: SessionConfigOption[] | null;
   /** Mode id Studio persisted when the user last picked one for this
    *  session. Overrides the agent's reported currentModeId because some
    *  agents (Claude) don't persist set_mode across session/load. */
@@ -145,7 +145,7 @@ interface AgentStore {
   // Populated from session/new and session/load responses; mutated by
   // current_mode_update / config_option_update notifications.
   readonly availableModes: readonly SessionMode[];
-  readonly configOptions: readonly ConfigOption[];
+  readonly configOptions: readonly SessionConfigOption[];
 
   // Auto-approve. ACP doesn't natively scope `_always` outcomes; clients
   // remember and bypass future prompts. All three fields are session-
@@ -164,9 +164,8 @@ interface AgentStore {
   readonly handleSessionCreated: (result: AgentSessionResult) => void;
   readonly beginReplay: (sessionId: string) => void;
   readonly handleResumeResult: (result: AgentResumeResult) => void;
-  readonly setConnected: (info: AgentStartResult) => void;
   readonly setDisconnected: () => void;
-  readonly setSession: (sessionId: string) => void;
+  readonly requestSessionCreate: () => void;
   readonly addUserMessage: (text: string) => void;
   readonly setPrompting: (prompting: boolean) => void;
   readonly clearLastStopReason: () => void;
@@ -174,9 +173,52 @@ interface AgentStore {
   readonly handlePromptResult: (event: AgentPromptResultEvent) => void;
   readonly handlePermissionRequest: (request: PermissionRequest) => void;
   readonly resolvePermission: (permissionId: string) => void;
-  readonly clearMessages: () => void;
   readonly addAutoApproveKind: (kind: ToolKind) => void;
   readonly addAutoRejectKind: (kind: ToolKind) => void;
+}
+
+/**
+ * Session-scoped state that resets whenever the active session changes or
+ * is torn down. Every reset path spreads this so a new session-scoped field
+ * can't be forgotten in one of them. Includes the auto-approve sets: a new
+ * (or resumed) session is a new approval scope.
+ */
+function sessionResetFields() {
+  return {
+    sessionId: null as string | null,
+    sessionTitle: null as string | null,
+    currentModeId: null as string | null,
+    replaying: false,
+    lastStopReason: null as AgentPromptResultEvent | null,
+    messages: [] as ChatMessage[],
+    availableCommands: [] as AvailableCommand[],
+    availableModes: [] as SessionMode[],
+    configOptions: [] as SessionConfigOption[],
+    autoApproveKinds: new Set<ToolKind>(),
+    autoRejectKinds: new Set<ToolKind>(),
+  };
+}
+
+/**
+ * Superset of sessionResetFields for connection-level transitions (connect
+ * attempt, disconnect): also clears the agent identity, auth state, and any
+ * in-flight prompt or pending session intent.
+ */
+function connectionResetFields() {
+  return {
+    ...sessionResetFields(),
+    connected: false,
+    connecting: false,
+    connectError: null as string | null,
+    agentName: null as string | null,
+    agentVersion: null as string | null,
+    currentAgentId: null as string | null,
+    prompting: false,
+    pendingSession: null as PendingSessionAction | null,
+    authMethods: [] as AuthMethod[],
+    authenticatingMethodId: null as string | null,
+    authError: null as string | null,
+  };
 }
 
 export const useAgentStore = create<AgentStore>((set, get) => ({
@@ -214,27 +256,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     // sessionId} for resuming a stored thread that requires booting an
     // agent first.
     set({
+      ...connectionResetFields(),
       connecting: true,
-      connected: false,
-      connectError: null,
       currentAgentId: agentId,
-      agentName: null,
-      agentVersion: null,
-      sessionId: null,
-      sessionTitle: null,
-      currentModeId: null,
-      replaying: false,
       pendingSession: pendingAction,
-      lastStopReason: null,
-      messages: [],
-      availableCommands: [],
-      availableModes: [],
-      configOptions: [],
-      authMethods: [],
-      authenticatingMethodId: null,
-      authError: null,
-      autoApproveKinds: new Set<ToolKind>(),
-      autoRejectKinds: new Set<ToolKind>(),
     }),
 
   handleStartResult: (result) => {
@@ -319,65 +344,32 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       // proves auth wasn't actually required, so clear the methods so the
       // sign-in card doesn't linger after the session is live.
       set({
+        ...sessionResetFields(),
         sessionId: result.sessionId,
-        sessionTitle: null,
         currentModeId: result.modes?.currentModeId ?? null,
         availableModes: result.modes?.availableModes ?? [],
         configOptions: result.configOptions ?? [],
-        lastStopReason: null,
-        messages: [],
-        availableCommands: [],
         pendingSession: null,
         authMethods: [],
         authError: null,
-        autoApproveKinds: new Set<ToolKind>(),
-        autoRejectKinds: new Set<ToolKind>(),
       });
     }
   },
 
-  setConnected: (info) =>
-    set({
-      connected: true,
-      connecting: false,
-      connectError: null,
-      agentName: info.agentName ?? null,
-      agentVersion: info.agentVersion ?? null,
-    }),
+  // The transcript clears with everything else: the disconnected panel
+  // renders the agent picker, never the message list, so a kept transcript
+  // could only resurface as stale state on a later connect.
+  setDisconnected: () => set(connectionResetFields()),
 
-  setDisconnected: () =>
+  requestSessionCreate: () =>
+    // Explicit user intent for a fresh session in the already-connected
+    // agent. The pendingSession flag tells the auto-create effect that this
+    // sessionId-clear is deliberate (vs a resume failure); connectError
+    // clears so the panel leaves any resume-failure card behind.
     set({
-      connected: false,
-      connecting: false,
+      ...sessionResetFields(),
       connectError: null,
-      agentName: null,
-      agentVersion: null,
-      currentAgentId: null,
-      sessionId: null,
-      sessionTitle: null,
-      currentModeId: null,
-      prompting: false,
-      replaying: false,
-      pendingSession: null,
-      lastStopReason: null,
-      availableCommands: [],
-      availableModes: [],
-      configOptions: [],
-      authMethods: [],
-      authenticatingMethodId: null,
-      authError: null,
-      autoApproveKinds: new Set<ToolKind>(),
-      autoRejectKinds: new Set<ToolKind>(),
-    }),
-
-  setSession: (sessionId) =>
-    set({
-      sessionId,
-      sessionTitle: null,
-      currentModeId: null,
-      lastStopReason: null,
-      messages: [],
-      availableCommands: [],
+      pendingSession: { kind: "create" },
     }),
 
   beginReplay: (sessionId) =>
@@ -390,14 +382,8 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     // sessionId and the auto-create effect would silently spawn a fresh
     // session, burying the resume error.
     set({
+      ...sessionResetFields(),
       sessionId,
-      sessionTitle: null,
-      currentModeId: null,
-      availableModes: [],
-      configOptions: [],
-      lastStopReason: null,
-      messages: [],
-      availableCommands: [],
       replaying: true,
       pendingSession: null,
     }),
@@ -428,13 +414,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       const baseConfig = result.configOptions ?? [];
       const mergedConfig =
         persistedConfig !== null
-          ? baseConfig.map((opt) => {
-              const id = opt.key ?? opt.id;
-              if (id !== null && id !== undefined && id in persistedConfig) {
-                return { ...opt, value: persistedConfig[id], currentValue: persistedConfig[id] };
-              }
-              return opt;
-            })
+          ? baseConfig.map((opt) =>
+              opt.id in persistedConfig ? { ...opt, value: persistedConfig[opt.id] } : opt,
+            )
           : baseConfig;
 
       set({
@@ -459,6 +441,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   handleUpdate: (update) =>
     set((s) => {
+      // A late notification from a dying agent must not append to a dead
+      // transcript: anything arriving outside a live connection is dropped.
+      if (!s.connected) return s;
       // Always produce new objects when modifying a message; the previous
       // render's references stay frozen so consumers comparing by identity
       // (React.memo, strict-mode double invokes) see real changes.
@@ -630,8 +615,6 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         m.role === "permission" && m.permissionId === permissionId ? { ...m, resolved: true } : m,
       ),
     })),
-
-  clearMessages: () => set({ messages: [] }),
 
   addAutoApproveKind: (kind) =>
     set((s) => {

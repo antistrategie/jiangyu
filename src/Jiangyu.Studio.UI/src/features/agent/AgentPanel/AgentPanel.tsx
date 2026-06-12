@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   useAgentStore,
   type ChatMessage,
@@ -17,6 +17,7 @@ import {
 } from "@features/agent/rpc";
 import { useInstalledAgents } from "@features/agent/installed";
 import { useRegistryModalStore } from "@features/agent/registryModal";
+import { usePopover } from "@features/agent/usePopover";
 import { AgentDropdown, AgentMenu } from "@features/agent/AgentDropdown/AgentDropdown";
 import { AgentHistoryPopover } from "@features/agent/AgentHistoryPopover/AgentHistoryPopover";
 import { Spinner } from "@shared/ui/Spinner/Spinner";
@@ -53,42 +54,19 @@ export function AgentPanel() {
   const currentMode = availableModes.find((m) => m.id === currentModeId);
   const modeBadgeLabel =
     currentMode?.name ?? (currentModeId !== null ? shortenModeId(currentModeId) : null);
-  const prompting = useAgentStore((s) => s.prompting);
   const messages = useAgentStore((s) => s.messages);
-  const availableCommands = useAgentStore((s) => s.availableCommands);
   const lastStopReason = useAgentStore((s) => s.lastStopReason);
 
   const installedAgents = useInstalledAgents((s) => s.agents);
   const currentAgent = installedAgents.find((a) => a.id === currentAgentId) ?? null;
   const setRegistryOpen = useRegistryModalStore((s) => s.setOpen);
-  const replaying = useAgentStore((s) => s.replaying);
   const authMethods = useAgentStore((s) => s.authMethods);
   const authenticatingMethodId = useAgentStore((s) => s.authenticatingMethodId);
   const authError = useAgentStore((s) => s.authError);
   const needsAuth = authMethods.length > 0;
 
-  const [input, setInput] = useState("");
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const historyWrapRef = useRef<HTMLDivElement>(null);
+  const { open: historyOpen, setOpen: setHistoryOpen, wrapRef: historyWrapRef } = usePopover();
   const listRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  // Outside-click + Escape to dismiss the history popover.
-  useEffect(() => {
-    if (!historyOpen) return;
-    const onMouseDown = (e: MouseEvent) => {
-      if (historyWrapRef.current?.contains(e.target as Node) !== true) setHistoryOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setHistoryOpen(false);
-    };
-    document.addEventListener("mousedown", onMouseDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onMouseDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [historyOpen]);
 
   // Translate the last stop reason to a user-facing string. "end_turn" and
   // host errors render via different surfaces (just clears banner / error
@@ -99,17 +77,6 @@ export function AgentPanel() {
     return STOP_REASON_LABEL[lastStopReason.stopReason] ?? null;
   })();
   const promptError = lastStopReason?.error ?? null;
-
-  // Slash-command suggestions: when the input starts with "/", filter the
-  // agent's published command list by the prefix typed so far. Sending a
-  // chosen command is just sending it as a normal prompt — ACP doesn't have
-  // a separate slash-command RPC; the agent parses the leading slash itself.
-  const slashSuggestions = (() => {
-    if (!input.startsWith("/")) return [];
-    if (availableCommands.length === 0) return [];
-    const prefix = input.slice(1).toLowerCase();
-    return availableCommands.filter((c) => c.name.toLowerCase().startsWith(prefix)).slice(0, 8);
-  })();
 
   // Stick to the bottom only when the user already is. Scrolling up to read
   // history shouldn't yank the view back down on every streamed token; once
@@ -132,11 +99,6 @@ export function AgentPanel() {
     if (el && stickToBottomRef.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
-  // Focus input on mount and after prompting ends.
-  useEffect(() => {
-    if (connected && !prompting) inputRef.current?.focus();
-  }, [connected, prompting]);
-
   const startAgent = useCallback(async (agent: InstalledAgent) => {
     useAgentStore.getState().setConnecting(agent.id);
     try {
@@ -156,6 +118,10 @@ export function AgentPanel() {
   // intent ("I want a new session" vs "I want to resume X") from state,
   // so a resume failure can't loop back into a silent new-session create.
   const pendingSession = useAgentStore((s) => s.pendingSession);
+  // pendingSession survives the create RPC (the auth-required path relies
+  // on it to retry after sign-in), so StrictMode's double effect invocation
+  // would fire session/new twice without an in-flight guard.
+  const createInFlightRef = useRef(false);
   useEffect(() => {
     if (!connected || pendingSession === null) return;
     // Block until the user has cleared any auth gate the agent put up.
@@ -164,11 +130,17 @@ export function AgentPanel() {
     if (needsAuth) return;
 
     if (pendingSession.kind === "create" && !sessionId) {
-      void agentSessionCreate().catch((err: unknown) => {
-        useAgentStore.getState().handleSessionCreated({
-          error: err instanceof Error ? err.message : String(err),
+      if (createInFlightRef.current) return;
+      createInFlightRef.current = true;
+      void agentSessionCreate()
+        .catch((err: unknown) => {
+          useAgentStore.getState().handleSessionCreated({
+            error: err instanceof Error ? err.message : String(err),
+          });
+        })
+        .finally(() => {
+          createInFlightRef.current = false;
         });
-      });
     } else if (pendingSession.kind === "resume") {
       const targetSessionId = pendingSession.sessionId;
       // beginReplay clears pendingSession itself, so the effect won't
@@ -194,58 +166,16 @@ export function AgentPanel() {
 
   const handleNewSession = useCallback(
     (agent: InstalledAgent) => {
-      // Same agent: just open a fresh session in the running process. The
-      // pendingSession flag tells the auto-create effect that this
-      // sessionId-clear is an explicit user intent (vs a resume failure).
+      // Same agent: just open a fresh session in the running process.
       // Different agent: full restart (host's agentStart tears down the
       // previous one before booting the new subprocess).
       if (agent.id === currentAgentId && connected) {
-        useAgentStore.setState({
-          sessionId: null,
-          sessionTitle: null,
-          currentModeId: null,
-          lastStopReason: null,
-          messages: [],
-          availableCommands: [],
-          pendingSession: { kind: "create" },
-        });
+        useAgentStore.getState().requestSessionCreate();
       } else {
         void startAgent(agent);
       }
     },
     [currentAgentId, connected, startAgent],
-  );
-
-  const handleSend = useCallback(async () => {
-    const text = input.trim();
-    if (!text || !sessionId || replaying) return;
-
-    setInput("");
-    useAgentStore.getState().clearLastStopReason();
-    useAgentStore.getState().addUserMessage(text);
-    useAgentStore.getState().setPrompting(true);
-
-    // ACP queues concurrent prompts on the agent side; sending mid-turn
-    // is fine and avoids losing the modder's typed message.
-    try {
-      await agentSessionPrompt(text);
-    } catch {
-      useAgentStore.getState().setPrompting(false);
-    }
-  }, [input, sessionId, replaying]);
-
-  const handleCancel = useCallback(() => {
-    void agentSessionCancel();
-  }, []);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        void handleSend();
-      }
-    },
-    [handleSend],
   );
 
   // --- Empty state ---------------------------------------------------------
@@ -345,12 +275,7 @@ export function AgentPanel() {
               <button
                 type="button"
                 className={styles.welcomeAction}
-                onClick={() => {
-                  useAgentStore.setState({
-                    connectError: null,
-                    pendingSession: { kind: "create" },
-                  });
-                }}
+                onClick={() => useAgentStore.getState().requestSessionCreate()}
               >
                 Start new session
               </button>
@@ -373,65 +298,7 @@ export function AgentPanel() {
             ))}
           </div>
 
-          {slashSuggestions.length > 0 && (
-            <div className={styles.slashSuggestions}>
-              {slashSuggestions.map((cmd) => (
-                <button
-                  key={cmd.name}
-                  type="button"
-                  className={styles.slashItem}
-                  onClick={() => setInput(`/${cmd.name} `)}
-                >
-                  <span className={styles.slashName}>/{cmd.name}</span>
-                  <span className={styles.slashDesc}>{cmd.description}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className={styles.composer}>
-            <textarea
-              ref={inputRef}
-              className={styles.composerInput}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={
-                replaying
-                  ? "Loading conversation history…"
-                  : prompting
-                    ? "Type next message (sends after current turn)…"
-                    : "Message the agent…"
-              }
-              disabled={replaying}
-              rows={1}
-            />
-            <div className={styles.composerActions}>
-              <div className={styles.composerActionsLeft}>
-                <SessionOptionsBar />
-              </div>
-              <div className={styles.composerActionsRight}>
-                {/* During a turn, show Cancel when there's nothing typed —
-                    that's the user's only sensible action mid-prompt.
-                    As soon as they start typing, swap to Send so the new
-                    message can fire (ACP queues it agent-side). */}
-                {prompting && !input.trim() ? (
-                  <button type="button" className={styles.cancelBtn} onClick={handleCancel}>
-                    Cancel
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className={styles.sendBtn}
-                    onClick={() => void handleSend()}
-                    disabled={!input.trim() || replaying}
-                  >
-                    Send
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+          <Composer />
 
           {promptError !== null && <div className={styles.inlineError}>{promptError}</div>}
           {promptError === null && stopMessage !== null && (
@@ -513,9 +380,142 @@ function deriveSessionLabel(sessionTitle: string | null, messages: readonly Chat
   return "New session";
 }
 
+// --- Composer ---
+
+/**
+ * Input state, send/cancel, and slash suggestions live in their own
+ * component so a keystroke re-renders just the composer, never the
+ * transcript above it.
+ */
+function Composer() {
+  const connected = useAgentStore((s) => s.connected);
+  const sessionId = useAgentStore((s) => s.sessionId);
+  const prompting = useAgentStore((s) => s.prompting);
+  const replaying = useAgentStore((s) => s.replaying);
+  const availableCommands = useAgentStore((s) => s.availableCommands);
+
+  const [input, setInput] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Focus input on mount and after prompting ends.
+  useEffect(() => {
+    if (connected && !prompting) inputRef.current?.focus();
+  }, [connected, prompting]);
+
+  // Slash-command suggestions: when the input starts with "/", filter the
+  // agent's published command list by the prefix typed so far. Sending a
+  // chosen command is just sending it as a normal prompt — ACP doesn't have
+  // a separate slash-command RPC; the agent parses the leading slash itself.
+  const slashSuggestions = (() => {
+    if (!input.startsWith("/")) return [];
+    if (availableCommands.length === 0) return [];
+    const prefix = input.slice(1).toLowerCase();
+    return availableCommands.filter((c) => c.name.toLowerCase().startsWith(prefix)).slice(0, 8);
+  })();
+
+  const handleSend = useCallback(async () => {
+    const text = input.trim();
+    if (!text || !sessionId || replaying) return;
+
+    setInput("");
+    useAgentStore.getState().clearLastStopReason();
+    useAgentStore.getState().addUserMessage(text);
+    useAgentStore.getState().setPrompting(true);
+
+    // ACP queues concurrent prompts on the agent side; sending mid-turn
+    // is fine and avoids losing the modder's typed message.
+    try {
+      await agentSessionPrompt(text);
+    } catch {
+      useAgentStore.getState().setPrompting(false);
+    }
+  }, [input, sessionId, replaying]);
+
+  const handleCancel = useCallback(() => {
+    void agentSessionCancel();
+  }, []);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        void handleSend();
+      }
+    },
+    [handleSend],
+  );
+
+  return (
+    <>
+      {slashSuggestions.length > 0 && (
+        <div className={styles.slashSuggestions}>
+          {slashSuggestions.map((cmd) => (
+            <button
+              key={cmd.name}
+              type="button"
+              className={styles.slashItem}
+              onClick={() => setInput(`/${cmd.name} `)}
+            >
+              <span className={styles.slashName}>/{cmd.name}</span>
+              <span className={styles.slashDesc}>{cmd.description}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className={styles.composer}>
+        <textarea
+          ref={inputRef}
+          className={styles.composerInput}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={
+            replaying
+              ? "Loading conversation history…"
+              : prompting
+                ? "Type next message (sends after current turn)…"
+                : "Message the agent…"
+          }
+          disabled={replaying}
+          rows={1}
+        />
+        <div className={styles.composerActions}>
+          <div className={styles.composerActionsLeft}>
+            <SessionOptionsBar />
+          </div>
+          <div className={styles.composerActionsRight}>
+            {/* During a turn, show Cancel when there's nothing typed —
+                that's the user's only sensible action mid-prompt.
+                As soon as they start typing, swap to Send so the new
+                message can fire (ACP queues it agent-side). */}
+            {prompting && !input.trim() ? (
+              <button type="button" className={styles.cancelBtn} onClick={handleCancel}>
+                Cancel
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={styles.sendBtn}
+                onClick={() => void handleSend()}
+                disabled={!input.trim() || replaying}
+              >
+                Send
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // --- Message rendering ---
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+// Memoised: the store keeps every untouched message's identity stable across
+// updates, so a streamed chunk re-renders only the bubble whose message
+// object actually changed.
+const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMessage }) {
   switch (message.role) {
     case "user":
       return <div className={`${styles.message} ${styles.message_user}`}>{message.text}</div>;
@@ -538,7 +538,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     case "permission":
       return <PermissionBlock message={message} />;
   }
-}
+});
 
 function ToolBlock({ message }: { message: ToolMessage }) {
   // Default collapsed so a chat full of tool calls reads like a conversation,

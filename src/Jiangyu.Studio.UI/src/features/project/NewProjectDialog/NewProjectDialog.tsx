@@ -30,7 +30,11 @@ export function NewProjectDialog({ onCreated, onCancel }: NewProjectDialogProps)
     setError(null);
 
     try {
-      const result = await rpcCall<string | null>("newProject", { name: trimmed });
+      const result = await rpcCall<string | null>(
+        "newProject",
+        { name: trimmed },
+        { timeoutMs: 0 },
+      );
       if (result !== null) {
         onCreated(result);
       } else {

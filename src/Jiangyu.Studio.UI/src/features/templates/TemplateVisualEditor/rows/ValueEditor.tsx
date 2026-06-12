@@ -16,9 +16,8 @@ import { CommitInput } from "../shared/CommitInput";
 import { SuggestionCombobox, type SuggestionItem } from "../shared/SuggestionCombobox";
 import {
   getCachedTemplateTypes,
-  getCachedProjectClones,
   getCachedProjectAdditions,
-  templatesSearch,
+  fetchInstancesWithClones,
 } from "../shared/rpcHelpers";
 import { assetsSearch } from "@features/assets/assets";
 import styles from "../TemplateVisualEditor.module.css";
@@ -324,19 +323,11 @@ function RefValueEditor({ value, onChange, member }: ValueEditorProps) {
   );
   const refType = resolveRefTypeDisplay(declaredRefType, isPolymorphic, explicitRefType);
 
-  const fetchRefInstances = useCallback(async (): Promise<readonly SuggestionItem[]> => {
-    if (!refType) return [];
-    const [searchResult, projectClones] = await Promise.all([
-      templatesSearch(refType),
-      getCachedProjectClones(),
-    ]);
-    const gameItems: SuggestionItem[] = searchResult.instances.map((i) => ({ label: i.name }));
-    const gameLabels = new Set(gameItems.map((i) => i.label));
-    const cloneItems: SuggestionItem[] = projectClones
-      .filter((c) => c.templateType === refType && !gameLabels.has(c.id))
-      .map((c) => ({ label: c.id, tag: "clone" }));
-    return [...cloneItems, ...gameItems];
-  }, [refType]);
+  const fetchRefInstances = useCallback(
+    (): Promise<readonly SuggestionItem[]> =>
+      refType ? fetchInstancesWithClones(refType) : Promise.resolve([]),
+    [refType],
+  );
 
   return (
     <div className={styles.setRefRow}>

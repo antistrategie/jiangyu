@@ -4,15 +4,16 @@ import { parseCrossMemberPayload } from "@features/templates/crossMember";
 import { useToastStore } from "@shared/toast";
 import { onKeyActivate } from "@shared/utils/a11y";
 import { allowsMultipleDirectives, isCellAddressedSet, type StampedNode } from "../helpers";
-import { useTemplateMembers } from "../hooks";
+import { CARD_REORDER_MIME, useTemplateMembers } from "../hooks";
 import { useEditorDispatch, useNodeIndex } from "../store";
 import { CommitInput } from "../shared/CommitInput";
 import { SuggestionCombobox, type SuggestionItem } from "../shared/SuggestionCombobox";
-import { rpcCall, type TemplateCloneSource, type TemplateCloneSourcesResult } from "@shared/rpc";
+import { rpcCall, type TemplateCloneSourcesResult } from "@shared/rpc";
 import {
   getCachedTemplateTypes,
   getCachedProjectClones,
-  templatesSearch,
+  fetchInstancesWithClones,
+  mergeCloneSuggestions,
   useVanillaFields,
   makeDefaultDirective,
   synthMemberFromPayload,
@@ -170,25 +171,15 @@ function NodeCardImpl({
     // among the 14+ click_bark assets.
     const nonDataTemplate =
       node.templateType === "SoundBank" || node.templateType === "ConversationTemplate";
-    const [searchResult, projectClones, cloneSources] = await Promise.all([
-      nonDataTemplate
-        ? Promise.resolve({ instances: [] as readonly { name: string }[] })
-        : templatesSearch(node.templateType),
+    if (!nonDataTemplate) return fetchInstancesWithClones(node.templateType);
+    const [cloneSources, projectClones] = await Promise.all([
+      rpcCall<TemplateCloneSourcesResult>("templatesCloneSources", {
+        templateType: node.templateType,
+      }),
       getCachedProjectClones(),
-      nonDataTemplate
-        ? rpcCall<TemplateCloneSourcesResult>("templatesCloneSources", {
-            templateType: node.templateType,
-          })
-        : Promise.resolve({ sources: [] as TemplateCloneSource[] }),
     ]);
-    const gameItems: SuggestionItem[] = nonDataTemplate
-      ? cloneSources.sources.map((s) => ({ label: s.id }))
-      : searchResult.instances.map((i) => ({ label: i.name }));
-    const gameLabels = new Set(gameItems.map((i) => i.label));
-    const cloneItems: SuggestionItem[] = projectClones
-      .filter((c) => c.templateType === node.templateType && !gameLabels.has(c.id))
-      .map((c) => ({ label: c.id, tag: "clone" }));
-    return [...cloneItems, ...gameItems];
+    const gameItems: SuggestionItem[] = cloneSources.sources.map((s) => ({ label: s.id }));
+    return mergeCloneSuggestions(node.templateType, gameItems, projectClones);
   }, [node.templateType]);
 
   return (
@@ -200,7 +191,7 @@ function NodeCardImpl({
         // dragover before they will deliver the drop event to React.
         // Harmless on the embeds that don't need it — the dataTransfer
         // mime guard scopes the accept to card-reorder gestures.
-        if (e.dataTransfer.types.includes("application/x-jiangyu-card-reorder")) {
+        if (e.dataTransfer.types.includes(CARD_REORDER_MIME)) {
           e.preventDefault();
         }
       }}
@@ -233,7 +224,7 @@ function NodeCardImpl({
             e.stopPropagation();
             justDraggedRef.current = true;
             e.dataTransfer.effectAllowed = "move";
-            e.dataTransfer.setData("application/x-jiangyu-card-reorder", node._uiId);
+            e.dataTransfer.setData(CARD_REORDER_MIME, node._uiId);
             onDragStart();
           }}
           onDragEnd={onDragEnd}
@@ -359,6 +350,7 @@ function NodeCardImpl({
 // re-rendering every other card. The reducer preserves entry identity
 // for unchanged StampedNode entries, so the `node` prop is referentially
 // stable across most mutations. The drag handler bag is identity-stable
-// thanks to useDragReorder's per-owner caching. Memo with the default
-// shallow compare is enough.
+// thanks to useDragReorder's per-owner caching, and onToggleCollapse is
+// identity-stable for the editor's lifetime (it reads the collapse maps
+// through refs). Memo with the default shallow compare is enough.
 export const NodeCard = memo(NodeCardImpl);

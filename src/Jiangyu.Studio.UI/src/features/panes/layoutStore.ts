@@ -106,6 +106,11 @@ interface LayoutStore {
 // dedupe: same tick = no-op, new tick = expand tree + briefly highlight.
 let revealTick = 0;
 
+// Pending debounced autosave (see the subscribe below). setProject flushes it
+// so a project switch can never write the new project's layout under the old
+// project's key.
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
 export const useLayoutStore = create<LayoutStore>((set) => {
   const revealForPath = (path: string): RevealRequest => {
     revealTick += 1;
@@ -120,6 +125,15 @@ export const useLayoutStore = create<LayoutStore>((set) => {
     revealRequest: null,
 
     setProject: (path) => {
+      // Flush any pending autosave for the outgoing project now, while the
+      // store still holds its layout. Letting the timer fire after the swap
+      // would write the incoming project's layout under the old key.
+      if (saveTimer !== null) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+        const prev = useLayoutStore.getState();
+        if (prev.currentProject !== null) saveLayout(prev.currentProject, prev.layout);
+      }
       // Honour the session-restore setting: when disabled, open projects
       // fresh instead of rehydrating the saved pane/tab layout. Saving
       // still happens unconditionally below, so toggling the setting back
@@ -275,7 +289,6 @@ export const useLayoutStore = create<LayoutStore>((set) => {
 // skips when project didn't change — setProject triggers a layout swap
 // mid-stream and we don't want to save the newly-loaded layout back
 // immediately.
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
 useLayoutStore.subscribe((state, prev) => {
   // Clear fullscreen when the target pane leaves the layout.
   if (state.fullscreenPaneId !== null && state.layout !== prev.layout) {
@@ -296,8 +309,12 @@ useLayoutStore.subscribe((state, prev) => {
     const project = state.currentProject;
     if (saveTimer !== null) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      saveLayout(project, useLayoutStore.getState().layout);
       saveTimer = null;
+      // The project can switch between arming and firing. Never write
+      // another project's layout under this key.
+      const current = useLayoutStore.getState();
+      if (current.currentProject !== project) return;
+      saveLayout(project, current.layout);
     }, 150);
   }
 });

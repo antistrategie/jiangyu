@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { rpcCall, subscribe, type FileChangedEvent } from "@shared/rpc";
+import { rpcCall, subscribe } from "@shared/rpc";
 
 // Keeps a flat list of all project files (for palette go-to-file) in sync
 // with the filesystem. A single `fileChanged` subscription fans out to both
@@ -49,8 +49,7 @@ export function useFileEntries(
     refreshRef.current = refresh;
     refresh();
 
-    const unsubscribe = subscribe("fileChanged", (params) => {
-      const event = params as FileChangedEvent;
+    const unsubscribe = subscribe("fileChanged", (event) => {
       if (event.kind === "deleted") onDeletedRef.current(event.path);
       if (refreshTimer !== null) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(refresh, 300);

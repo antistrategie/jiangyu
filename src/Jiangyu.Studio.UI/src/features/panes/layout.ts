@@ -685,9 +685,34 @@ export function setColumnWeight(layout: Layout, columnId: string, weight: number
 }
 
 /**
- * Reorder a tab within its code pane. `targetIndex` is the desired position
- * in the resulting tabs array (0-based; equal to tabs.length is "at the end").
- * A no-op when the path isn't in the pane or the order doesn't change.
+ * Reorder the item matching `path` within a list. `targetIndex` is the desired
+ * position in the resulting array (0-based, where items.length means "at the
+ * end"). Returns the input array when the path is missing or the order
+ * doesn't change, so callers can identity-compare to detect a no-op.
+ */
+export function reorderByPath<T extends { readonly path: string }>(
+  items: readonly T[],
+  path: string,
+  targetIndex: number,
+): readonly T[] {
+  const currentIndex = items.findIndex((t) => t.path === path);
+  if (currentIndex === -1) return items;
+
+  const item = items[currentIndex];
+  if (item === undefined) return items;
+  const without = [...items.slice(0, currentIndex), ...items.slice(currentIndex + 1)];
+  // Drops past the source position need to shift down by one since the
+  // removal closes the gap before the insertion.
+  let insertAt = targetIndex > currentIndex ? targetIndex - 1 : targetIndex;
+  insertAt = Math.max(0, Math.min(insertAt, without.length));
+  if (insertAt === currentIndex) return items;
+
+  return [...without.slice(0, insertAt), item, ...without.slice(insertAt)];
+}
+
+/**
+ * Reorder a tab within its code pane. A no-op when the path isn't in the pane
+ * or the order doesn't change. Index semantics follow reorderByPath.
  */
 export function reorderTab(
   layout: Layout,
@@ -697,19 +722,8 @@ export function reorderTab(
 ): Layout {
   const pane = findPane(layout, paneId);
   if (pane?.kind !== "code") return layout;
-  const currentIndex = pane.tabs.findIndex((t) => t.path === path);
-  if (currentIndex === -1) return layout;
-
-  const tab = pane.tabs[currentIndex];
-  if (tab === undefined) return layout;
-  const without = [...pane.tabs.slice(0, currentIndex), ...pane.tabs.slice(currentIndex + 1)];
-  // Drops past the source position need to shift down by one since the
-  // removal closes the gap before the insertion.
-  let insertAt = targetIndex > currentIndex ? targetIndex - 1 : targetIndex;
-  insertAt = Math.max(0, Math.min(insertAt, without.length));
-  if (insertAt === currentIndex) return layout;
-
-  const tabs = [...without.slice(0, insertAt), tab, ...without.slice(insertAt)];
+  const tabs = reorderByPath(pane.tabs, path, targetIndex);
+  if (tabs === pane.tabs) return layout;
   return replacePane(layout, paneId, { ...pane, tabs });
 }
 

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { rpcCall } from "@shared/rpc";
@@ -40,7 +41,10 @@ function ExternalLink({ href, children }: AnchorProps) {
 
 const COMPONENTS = { a: ExternalLink } as const;
 
-export function Markdown({ text }: { text: string }) {
+// Memoised on the text prop: re-parsing markdown for every bubble on every
+// streamed chunk is the transcript's dominant render cost. Only the bubble
+// whose text actually changed re-parses.
+export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className={styles.markdown}>
       <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={COMPONENTS}>
@@ -48,4 +52,4 @@ export function Markdown({ text }: { text: string }) {
       </ReactMarkdown>
     </div>
   );
-}
+});

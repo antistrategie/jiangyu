@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Plus } from "lucide-react";
+import { useDismissOnOutsideClick } from "@shared/utils/useDismissOnOutsideClick";
 import type { TemplateMember } from "@shared/rpc";
 import {
   INSTANCE_DRAG_TAG,
@@ -74,17 +75,9 @@ export function FieldAdder({
   // card. Position glues to the wrapper's bounding rect via useAnchorPosition.
   const position = useAnchorPosition(wrapRef, open);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (wrapRef.current?.contains(target)) return;
-      if (dropdownRef.current?.contains(target)) return;
-      setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
+  // The dropdown lives in a portal so it's NOT a descendant of `wrapRef`;
+  // treat clicks inside it as "inside" too.
+  useDismissOnOutsideClick([wrapRef, dropdownRef], () => setOpen(false), { enabled: open });
 
   const existingSet = new Set(existingFields);
   const matrixSet = existingMatrixFields ?? new Set<string>();

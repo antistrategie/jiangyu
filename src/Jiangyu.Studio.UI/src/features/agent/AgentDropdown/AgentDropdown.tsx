@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { InstalledAgent } from "@shared/rpc";
+import { usePopover } from "@features/agent/usePopover";
 import {
   MenuList,
   MenuListBody,
@@ -38,24 +39,7 @@ export function AgentDropdown({
   align = "left",
   disabled = false,
 }: AgentDropdownProps) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onMouseDown = (e: MouseEvent) => {
-      if (wrapRef.current?.contains(e.target as Node) !== true) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onMouseDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onMouseDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  const { open, setOpen, wrapRef } = usePopover();
 
   return (
     <div className={styles.wrap} ref={wrapRef}>

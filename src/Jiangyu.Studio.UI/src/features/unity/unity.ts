@@ -10,15 +10,15 @@ export interface UnityImportPrefabParams {
 }
 
 export async function unityInit(): Promise<UnityInitResult> {
-  return rpcCall<UnityInitResult>("unityInit");
+  return rpcCall<UnityInitResult>("unityInit", undefined, { timeoutMs: 0 });
 }
 
 export async function unityOpen(): Promise<UnityOpenResult> {
-  return rpcCall<UnityOpenResult>("unityOpen");
+  return rpcCall<UnityOpenResult>("unityOpen", undefined, { timeoutMs: 0 });
 }
 
 export async function unityImportPrefab(
   params: UnityImportPrefabParams,
 ): Promise<UnityImportPrefabResult> {
-  return rpcCall<UnityImportPrefabResult>("unityImportPrefab", params);
+  return rpcCall<UnityImportPrefabResult>("unityImportPrefab", params, { timeoutMs: 0 });
 }

@@ -8,7 +8,8 @@ vi.mock("./rpc", () => ({
   agentPermissionResponse: (...args: unknown[]) => permissionResponseMock(...args),
 }));
 
-import { configOptionIdentifier, useAgentStore, type ChatMessage } from "./store";
+import { useAgentStore, type ChatMessage } from "./store";
+import { normaliseConfigOption, normaliseConfigOptions } from "./messages";
 import type {
   AgentMessageChunk,
   AgentThoughtChunk,
@@ -18,15 +19,31 @@ import type {
   AvailableCommandsUpdate,
   SessionInfoUpdate,
   CurrentModeUpdate,
-  ConfigOption,
+  SessionConfigOption,
 } from "./types";
+
+/** Canonical option fixture; tests override what they assert on. */
+function option(overrides: Partial<SessionConfigOption> & { id: string }): SessionConfigOption {
+  return {
+    name: overrides.id,
+    description: null,
+    type: null,
+    value: undefined,
+    choices: [],
+    min: null,
+    max: null,
+    ...overrides,
+  };
+}
 
 function reset() {
   useAgentStore.setState({
-    connected: false,
+    // Most tests exercise a live session, so the baseline is "connected";
+    // handleUpdate drops everything otherwise.
+    connected: true,
     agentName: null,
     agentVersion: null,
-    sessionId: null,
+    sessionId: "s-test",
     sessionTitle: null,
     currentModeId: null,
     prompting: false,
@@ -36,6 +53,8 @@ function reset() {
     lastStopReason: null,
     messages: [],
     availableCommands: [],
+    availableModes: [],
+    configOptions: [],
     authMethods: [],
     authenticatingMethodId: null,
     authError: null,
@@ -46,58 +65,79 @@ function reset() {
 
 beforeEach(reset);
 
-describe("configOptionIdentifier", () => {
+describe("normaliseConfigOption", () => {
   it("prefers key over id", () => {
-    expect(configOptionIdentifier({ key: "mode", id: "ignored", name: "n" })).toBe("mode");
+    expect(normaliseConfigOption({ key: "mode", id: "ignored", name: "n" })?.id).toBe("mode");
   });
 
   it("falls back to id when key is missing", () => {
-    expect(configOptionIdentifier({ id: "thinking", name: "n" })).toBe("thinking");
+    expect(normaliseConfigOption({ id: "thinking", name: "n" })?.id).toBe("thinking");
   });
 
   it("returns null when neither key nor id is set", () => {
-    expect(configOptionIdentifier({ name: "anon" })).toBeNull();
+    expect(normaliseConfigOption({ name: "anon" })).toBeNull();
+  });
+
+  it("prefers value over currentValue", () => {
+    expect(normaliseConfigOption({ id: "x", value: "a", currentValue: "b" })?.value).toBe("a");
+    expect(normaliseConfigOption({ id: "x", currentValue: "b" })?.value).toBe("b");
+  });
+
+  it("falls back to the id as the display name", () => {
+    expect(normaliseConfigOption({ id: "model" })?.name).toBe("model");
+  });
+
+  it("collapses options/choices spellings and labels choices", () => {
+    const copilot = normaliseConfigOption({
+      id: "model",
+      options: [{ value: "gpt", name: "GPT" }],
+    });
+    expect(copilot?.choices).toEqual([{ value: "gpt", label: "GPT", description: null }]);
+
+    const spec = normaliseConfigOption({
+      id: "model",
+      choices: [{ value: "claude", label: "Claude" }],
+    });
+    expect(spec?.choices[0]?.label).toBe("Claude");
+
+    const bare = normaliseConfigOption({ id: "level", choices: [{ value: 3 }] });
+    expect(bare?.choices[0]?.label).toBe("3");
+  });
+
+  it("normaliseConfigOptions drops unidentifiable entries", () => {
+    const result = normaliseConfigOptions([{ key: "mode" }, { name: "anon" }]);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe("mode");
   });
 });
 
 describe("config_option_update merging", () => {
   // Indirectly exercises mergeConfigOptions through handleUpdate.
 
-  function seed(options: ConfigOption[]) {
+  function seed(options: SessionConfigOption[]) {
     useAgentStore.setState({ configOptions: options });
   }
 
-  it("appends new keys", () => {
-    seed([{ key: "mode", name: "Mode", value: "plan" }]);
+  it("appends new ids", () => {
+    seed([option({ id: "mode", name: "Mode", value: "plan" })]);
     useAgentStore.getState().handleUpdate({
       sessionUpdate: "config_option_update",
-      configOptions: [{ key: "thinking", name: "Thinking", value: "high" }],
+      configOptions: [option({ id: "thinking", name: "Thinking", value: "high" })],
     });
     const opts = useAgentStore.getState().configOptions;
     expect(opts).toHaveLength(2);
-    expect(opts.map((o) => o.key).sort()).toEqual(["mode", "thinking"]);
+    expect(opts.map((o) => o.id).sort()).toEqual(["mode", "thinking"]);
   });
 
-  it("overwrites existing keys in place", () => {
-    seed([{ key: "mode", name: "Mode", value: "plan" }]);
+  it("overwrites existing ids in place", () => {
+    seed([option({ id: "mode", name: "Mode", value: "plan" })]);
     useAgentStore.getState().handleUpdate({
       sessionUpdate: "config_option_update",
-      configOptions: [{ key: "mode", name: "Mode", value: "default" }],
+      configOptions: [option({ id: "mode", name: "Mode", value: "default" })],
     });
     const opts = useAgentStore.getState().configOptions;
     expect(opts).toHaveLength(1);
     expect(opts[0]?.value).toBe("default");
-  });
-
-  it("drops entries without any identifier", () => {
-    seed([{ key: "mode", name: "Mode" }]);
-    useAgentStore.getState().handleUpdate({
-      sessionUpdate: "config_option_update",
-      configOptions: [{ name: "Anonymous" }],
-    });
-    const opts = useAgentStore.getState().configOptions;
-    expect(opts).toHaveLength(1);
-    expect(opts[0]?.key).toBe("mode");
   });
 });
 
@@ -133,38 +173,81 @@ describe("content block text extraction", () => {
 });
 
 describe("connection lifecycle", () => {
-  it("sets connected state from agent info", () => {
-    useAgentStore.getState().setConnected({
+  it("handleStartResult success records agent info", () => {
+    useAgentStore.getState().setConnecting("claude-acp");
+    useAgentStore.getState().handleStartResult({
       agentName: "claude",
       agentVersion: "1.0",
       protocolVersion: 1,
     });
     const s = useAgentStore.getState();
     expect(s.connected).toBe(true);
+    expect(s.connecting).toBe(false);
     expect(s.agentName).toBe("claude");
     expect(s.agentVersion).toBe("1.0");
   });
 
-  it("clears state on disconnect", () => {
-    useAgentStore.getState().setConnected({ agentName: "claude" });
-    useAgentStore.getState().setSession("s-1");
+  it("clears state on disconnect, including the transcript", () => {
+    useAgentStore.getState().setConnecting("claude-acp");
+    useAgentStore.getState().handleStartResult({ agentName: "claude" });
+    useAgentStore.getState().handleSessionCreated({ sessionId: "s-1" });
+    useAgentStore.getState().handleUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "hello" },
+    });
     useAgentStore.getState().setDisconnected();
     const s = useAgentStore.getState();
     expect(s.connected).toBe(false);
     expect(s.agentName).toBeNull();
     expect(s.sessionId).toBeNull();
     expect(s.prompting).toBe(false);
+    expect(s.messages).toHaveLength(0);
+  });
+
+  it("handleUpdate drops notifications that arrive after disconnect", () => {
+    useAgentStore.getState().setDisconnected();
+    useAgentStore.getState().handleUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "late chunk from a dying agent" },
+    });
+    expect(useAgentStore.getState().messages).toHaveLength(0);
   });
 });
 
 describe("session", () => {
-  it("sets session id and clears messages", () => {
+  it("handleSessionCreated sets the session id and clears messages", () => {
     useAgentStore.getState().addUserMessage("hello");
     expect(useAgentStore.getState().messages).toHaveLength(1);
 
-    useAgentStore.getState().setSession("s-1");
+    useAgentStore.getState().handleSessionCreated({ sessionId: "s-1" });
     expect(useAgentStore.getState().sessionId).toBe("s-1");
     expect(useAgentStore.getState().messages).toHaveLength(0);
+  });
+
+  it("handleSessionCreated seeds modes and config options from session/new", () => {
+    useAgentStore.getState().handleSessionCreated({
+      sessionId: "s-1",
+      modes: { currentModeId: "plan", availableModes: [{ id: "plan", name: "Plan" }] },
+      configOptions: [option({ id: "model", value: "opus" })],
+    });
+    const s = useAgentStore.getState();
+    expect(s.currentModeId).toBe("plan");
+    expect(s.availableModes).toHaveLength(1);
+    expect(s.configOptions[0]?.id).toBe("model");
+  });
+
+  it("requestSessionCreate clears session state and queues a create intent", () => {
+    useAgentStore.getState().addUserMessage("old transcript");
+    useAgentStore.setState({ connectError: "resume failed", sessionTitle: "Old" });
+
+    useAgentStore.getState().requestSessionCreate();
+
+    const s = useAgentStore.getState();
+    expect(s.sessionId).toBeNull();
+    expect(s.sessionTitle).toBeNull();
+    expect(s.messages).toHaveLength(0);
+    expect(s.connectError).toBeNull();
+    expect(s.pendingSession).toEqual({ kind: "create" });
   });
 });
 
@@ -562,14 +645,6 @@ describe("prompt result", () => {
   });
 });
 
-describe("clearMessages", () => {
-  it("empties the message list", () => {
-    useAgentStore.getState().addUserMessage("hello");
-    useAgentStore.getState().clearMessages();
-    expect(useAgentStore.getState().messages).toHaveLength(0);
-  });
-});
-
 describe("session resume", () => {
   it("beginReplay resets the message list, sets sessionId, and flips replaying on", () => {
     useAgentStore.getState().addUserMessage("stale");
@@ -632,6 +707,28 @@ describe("session resume", () => {
     const s = useAgentStore.getState();
     expect(s.replaying).toBe(false);
     expect(s.sessionId).toBe("resumed");
+  });
+
+  it("handleResumeResult applies persisted config values over the agent's", () => {
+    useAgentStore.getState().beginReplay("resumed");
+    useAgentStore.getState().handleResumeResult({
+      sessionId: "resumed",
+      configOptions: [
+        option({ id: "model", value: "sonnet" }),
+        option({ id: "thinking", value: "low" }),
+      ],
+      persistedConfigValues: { model: "opus" },
+    });
+
+    const opts = useAgentStore.getState().configOptions;
+    expect(opts.find((o) => o.id === "model")?.value).toBe("opus");
+    expect(opts.find((o) => o.id === "thinking")?.value).toBe("low");
+  });
+
+  it("beginReplay resets the auto-approve scope (session change)", () => {
+    useAgentStore.getState().addAutoApproveKind("edit");
+    useAgentStore.getState().beginReplay("resumed");
+    expect(useAgentStore.getState().autoApproveKinds.size).toBe(0);
   });
 
   it("handleResumeResult error rolls back optimistic sessionId without queuing a new session", () => {
@@ -739,6 +836,7 @@ describe("authentication", () => {
     // the two calls), the panel must re-render the sign-in card without
     // dropping the user's original create intent.
     useAgentStore.setState({
+      sessionId: null,
       pendingSession: { kind: "create" },
       authMethods: [],
     });

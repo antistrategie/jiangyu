@@ -1,8 +1,9 @@
 import { useEffect } from "react";
 import { getActiveCodePane, getActivePane, getAllPanes } from "@features/panes/layout";
 import type { PaletteAction } from "@shared/palette/actions";
-import type { CompileState } from "@features/compile";
+import { useCompileStore } from "@features/compile";
 import { useLayoutStore } from "@features/panes/layoutStore";
+import { isModalOpen } from "@shared/ui/Modal/modalStack";
 import { matchBinding, type KeyBinding } from "./shortcuts";
 
 interface UseAppShortcutsParams {
@@ -10,8 +11,6 @@ interface UseAppShortcutsParams {
   readonly toggleSidebar: () => void;
 
   readonly projectPathRef: React.RefObject<string | null>;
-  readonly compileStateRef: React.RefObject<CompileState>;
-  readonly startCompileRef: React.RefObject<() => void>;
   readonly allActionsRef: React.RefObject<readonly PaletteAction[]>;
 }
 
@@ -24,8 +23,6 @@ export function useAppShortcuts({
   setPaletteOpen,
   toggleSidebar,
   projectPathRef,
-  compileStateRef,
-  startCompileRef,
   allActionsRef,
 }: UseAppShortcutsParams): void {
   useEffect(() => {
@@ -50,6 +47,8 @@ export function useAppShortcuts({
       {
         binding: { key: "Escape" },
         run: () => {
+          // An open dialog owns Escape; don't also exit fullscreen beneath it.
+          if (isModalOpen()) return false;
           if (useLayoutStore.getState().fullscreenPaneId === null) return false;
           useLayoutStore.getState().setFullscreenPaneId(null);
           return true;
@@ -117,8 +116,9 @@ export function useAppShortcuts({
         binding: { mod: true, shift: true, key: "b" },
         run: () => {
           if (projectPathRef.current === null) return false;
-          if (compileStateRef.current.status === "running") return false;
-          startCompileRef.current();
+          const compile = useCompileStore.getState();
+          if (compile.status === "running") return false;
+          compile.start();
           return true;
         },
       },
@@ -132,12 +132,5 @@ export function useAppShortcuts({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [
-    setPaletteOpen,
-    toggleSidebar,
-    projectPathRef,
-    compileStateRef,
-    startCompileRef,
-    allActionsRef,
-  ]);
+  }, [setPaletteOpen, toggleSidebar, projectPathRef, allActionsRef]);
 }

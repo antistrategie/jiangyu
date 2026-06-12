@@ -20,7 +20,7 @@ A few things need to be in place. This core set is required for every mod:
 Launch Studio. The welcome screen opens with a Configuration panel that flags whatever is missing.
 
 - **MENACE not found**: click **Set path…** and pick the folder with `MENACE.exe`.
-- **Unity Editor not found**: leave it for now. Set it when you first build a prefab or UI mod. The tooltip shows the version to install.
+- **Unity Editor not found**: same as above but for `Unity.exe`.
 - **MelonLoader not installed**: install MelonLoader into your MENACE folder before going further.
 
 These paths are written to a global config file that the `jiangyu` CLI shares. Once a project is open, the same fields live in Settings (palette → **Settings**).

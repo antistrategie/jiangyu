@@ -12,6 +12,16 @@ interface CrossTabPayload {
   readonly path: string;
 }
 
+export interface TabMovedOutEvent {
+  readonly path: string;
+}
+
+declare module "@shared/rpc/notifications" {
+  interface HostNotificationMap {
+    tabMovedOut: TabMovedOutEvent;
+  }
+}
+
 export function encodeCrossTabPayload(path: string): string {
   return JSON.stringify({ m: MARKER, path } satisfies CrossTabPayload);
 }
@@ -41,6 +51,6 @@ export async function completeTabMove(path: string): Promise<void> {
 /** Subscribe to tab-moved-out notifications — the source window is told the tab was consumed. */
 export function subscribeTabMovedOut(callback: (path: string) => void): () => void {
   return subscribe("tabMovedOut", (params) => {
-    callback((params as { path: string }).path);
+    callback(params.path);
   });
 }

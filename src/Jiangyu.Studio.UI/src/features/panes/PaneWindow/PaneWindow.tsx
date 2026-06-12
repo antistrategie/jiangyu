@@ -20,7 +20,7 @@ import {
   encodeCrossPanePayload,
   subscribePaneMovedOut,
 } from "@features/panes/crossPane";
-import type { PaneKind, Tab } from "@features/panes/layout";
+import { reorderByPath, type PaneKind, type Tab } from "@features/panes/layout";
 import type { AssetBrowserState, TemplateBrowserState } from "@features/panes/browserState";
 import { attachDragChip } from "@shared/drag/chip";
 import { computeTabDropIndex } from "@shared/drag/computeDropIndex";
@@ -105,20 +105,6 @@ function titleFor(kind: PaneKind | null, activeFilePath: string | null): string 
   return "Jiangyu Studio — Pane";
 }
 
-// Mirror of layout.reorderTab for the secondary window's local tab array —
-// the primary's Tab[] lives in Layout, but pane windows manage their own.
-function reorderTabs(tabs: readonly Tab[], path: string, targetIndex: number): Tab[] {
-  const currentIndex = tabs.findIndex((t) => t.path === path);
-  if (currentIndex === -1) return tabs as Tab[];
-  const tab = tabs[currentIndex];
-  if (tab === undefined) return tabs as Tab[];
-  const without = [...tabs.slice(0, currentIndex), ...tabs.slice(currentIndex + 1)];
-  let insertAt = targetIndex > currentIndex ? targetIndex - 1 : targetIndex;
-  insertAt = Math.max(0, Math.min(insertAt, without.length));
-  if (insertAt === currentIndex) return tabs as Tab[];
-  return [...without.slice(0, insertAt), tab, ...without.slice(insertAt)];
-}
-
 function Placeholder({ text }: { text: string }) {
   return (
     <div className={styles.shell}>
@@ -139,7 +125,7 @@ function CodePaneShell({
 }) {
   useEditorContentSync();
 
-  const [tabs, setTabs] = useState<Tab[]>(() =>
+  const [tabs, setTabs] = useState<readonly Tab[]>(() =>
     filePaths.map((path) => ({ path, name: basename(path) })),
   );
   const [activePath, setActivePath] = useState<string | null>(() => {
@@ -180,20 +166,20 @@ function CodePaneShell({
     useEditorContent.getState().prune(openPaths, new Set<string>());
   }, [tabs]);
 
+  // Both setters fire at top level: state updaters must stay pure
+  // (StrictMode double-invokes them), so the neighbour is computed first.
   const handleCloseTab = useCallback(
     (path: string) => {
-      setTabs((prev) => {
-        const idx = prev.findIndex((t) => t.path === path);
-        if (idx === -1) return prev;
-        const next = prev.slice(0, idx).concat(prev.slice(idx + 1));
-        if (path === activePath) {
-          const neighbour = next[Math.max(0, idx - 1)] ?? next[0] ?? null;
-          setActivePath(neighbour?.path ?? null);
-        }
-        return next;
-      });
+      const idx = tabs.findIndex((t) => t.path === path);
+      if (idx === -1) return;
+      const next = tabs.slice(0, idx).concat(tabs.slice(idx + 1));
+      setTabs(next);
+      if (path === activePath) {
+        const neighbour = next[Math.max(0, idx - 1)] ?? next[0] ?? null;
+        setActivePath(neighbour?.path ?? null);
+      }
     },
-    [activePath],
+    [tabs, activePath],
   );
 
   // Remove the tab from local state when the host reports our drag was
@@ -251,7 +237,7 @@ function CodePaneShell({
     // foreign-source drops so the primary doesn't see a bogus close signal.
     if (draggingRef.current === path) {
       const targetIndex = computeTabDropIndex(e.currentTarget, e.clientX);
-      setTabs((prev) => reorderTabs(prev, path, targetIndex));
+      setTabs((prev) => reorderByPath(prev, path, targetIndex));
       return;
     }
     setTabs((prev) => {

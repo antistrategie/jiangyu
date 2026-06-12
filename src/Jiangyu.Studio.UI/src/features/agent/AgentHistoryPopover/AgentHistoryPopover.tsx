@@ -127,10 +127,14 @@ export function AgentHistoryPopover({
   };
 
   const handleDelete = (id: string) => {
-    void agentSessionDelete(id).then((file) => {
-      const list = [...(file.sessions ?? [])].sort((a, b) => b.updatedAt - a.updatedAt);
-      setSessions(list);
-    });
+    agentSessionDelete(id)
+      .then((file) => {
+        const list = [...(file.sessions ?? [])].sort((a, b) => b.updatedAt - a.updatedAt);
+        setSessions(list);
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err));
+      });
   };
 
   // The inline variant is used by the empty state where the picker card

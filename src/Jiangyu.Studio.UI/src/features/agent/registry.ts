@@ -9,12 +9,7 @@
  * Distribution shape mirrors the published schema. npx-only is the v1
  * happy path; binary and uvx install are left for a follow-up.
  */
-import {
-  rpcCall,
-  subscribe,
-  type AgentRegistryFetchedNotification,
-  type InstalledAgent,
-} from "@shared/rpc";
+import { rpcCall, subscribe, type InstalledAgent } from "@shared/rpc";
 
 export interface RegistryNpx {
   readonly package: string;
@@ -78,10 +73,9 @@ export function fetchRegistry(): Promise<RegistryDocument> {
   if (inFlight !== null) return inFlight;
 
   inFlight = new Promise<RegistryDocument>((resolve, reject) => {
-    const unsubscribe = subscribe("agentsRegistryFetched", (params) => {
+    const unsubscribe = subscribe("agentsRegistryFetched", (event) => {
       unsubscribe();
       inFlight = null;
-      const event = params as AgentRegistryFetchedNotification;
       if (!event.ok) {
         reject(new Error(event.error ?? "Registry fetch failed."));
       } else if (event.registry !== undefined && event.registry !== null) {

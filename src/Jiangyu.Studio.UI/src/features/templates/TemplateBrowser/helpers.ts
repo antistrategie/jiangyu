@@ -108,6 +108,53 @@ export function instanceKey(inst: TemplateInstanceEntry): string {
 }
 
 /**
+ * Secondary index for resolving an inspected reference (pathId + optional
+ * name) to an instance key in O(1). A reference's fileId is a dependency
+ * index, not a collection name, so the pathId alone can be ambiguous
+ * across collections; the name-qualified map handles references that
+ * carry a name. Both maps keep the first instance encountered, matching
+ * iteration order over the instance list.
+ */
+export interface ReferenceTargetIndex {
+  readonly byPathId: ReadonlyMap<number, string>;
+  readonly byPathIdAndName: ReadonlyMap<string, string>;
+}
+
+// U+0000 can't appear in a template name, so the composite key encodes the
+// (pathId, name) pair without collision risk.
+function referenceNameKey(pathId: number, name: string): string {
+  return `${pathId}\u0000${name}`;
+}
+
+export function buildReferenceTargetIndex(
+  instances: readonly TemplateInstanceEntry[],
+): ReferenceTargetIndex {
+  const byPathId = new Map<number, string>();
+  const byPathIdAndName = new Map<string, string>();
+  for (const inst of instances) {
+    const key = instanceKey(inst);
+    if (!byPathId.has(inst.identity.pathId)) byPathId.set(inst.identity.pathId, key);
+    const nameKey = referenceNameKey(inst.identity.pathId, inst.name);
+    if (!byPathIdAndName.has(nameKey)) byPathIdAndName.set(nameKey, key);
+  }
+  return { byPathId, byPathIdAndName };
+}
+
+/** Instance key for a reference target, or null when nothing matches. A
+ *  named reference must match on both pathId and name; an undefined name
+ *  takes the first instance with that pathId; a null name never matches
+ *  (instance names are always strings). */
+export function resolveReferenceTargetKey(
+  index: ReferenceTargetIndex,
+  pathId: number,
+  name: string | null | undefined,
+): string | null {
+  if (name === undefined) return index.byPathId.get(pathId) ?? null;
+  if (name === null) return null;
+  return index.byPathIdAndName.get(referenceNameKey(pathId, name)) ?? null;
+}
+
+/**
  * Push a new key onto the nav history relative to the current index,
  * truncating any forward branches. Mirrors browser-style nav semantics:
  * navigating somewhere new while in the middle of the history discards

@@ -10,7 +10,7 @@ import {
 import { useToastStore } from "@shared/toast";
 import styles from "./TemplateVisualEditor.module.css";
 import { stripUiIds, type StampedNode } from "./helpers";
-import { useDragReorder } from "./hooks";
+import { CARD_REORDER_MIME, useDragReorder } from "./hooks";
 import {
   CompositeCollapseContext,
   ConversationSourceContext,
@@ -18,6 +18,8 @@ import {
   EditorScrollContainerContext,
   NodeIndexContext,
   editorReducer,
+  pushUndoFrame,
+  undoCoalesceKey,
   type CompositeCollapseControl,
   type EditorAction,
 } from "./store";
@@ -67,68 +69,107 @@ export function TemplateVisualEditor({
   const lastSerialisedRef = useRef<string>("");
   const serialiseVersionRef = useRef(0);
 
-  // Undo/redo history
+  // Undo/redo history. undoMetaRef carries the coalescing state: the key
+  // and timestamp of the last undo push, so a per-keystroke dispatch burst
+  // against the same field collapses into one frame (see pushUndoFrame).
   const undoStackRef = useRef<StampedNode[][]>([]);
   const redoStackRef = useRef<StampedNode[][]>([]);
-  // Mirror nodes into a ref so async callbacks see the latest value without
-  // stale closures. Synced via effect after each render.
+  const undoMetaRef = useRef<{ key: string | null; time: number }>({ key: null, time: 0 });
+  // Mirror nodes into a ref so callbacks read the latest value without
+  // stale closures. Written synchronously in dispatch (every nodes change
+  // flows through it) so back-to-back dispatches in one tick compose.
   const nodesRef = useRef<StampedNode[]>(nodes);
+
+  // Latest-value mirror of the onChange prop. Call sites pass fresh inline
+  // arrows, so closing over the prop directly would re-mint
+  // scheduleSerialise / dispatch (and with them the dispatch context value)
+  // after every parent re-render.
+  const onChangeRef = useRef(onChange);
   useEffect(() => {
-    nodesRef.current = nodes;
-  });
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  // Latest-value mirrors of the collapse maps and cache key, so the
+  // collapse callbacks and the composite-collapse control below can stay
+  // identity-stable for the component's lifetime. Synced after every
+  // commit; the uiId→key maps are additionally written synchronously in
+  // dispatch so children mounting in the same commit as a nodes change
+  // (e.g. a parse reload) resolve against the fresh maps.
+  const keyByUiIdRef = useRef<Map<string, string>>(new Map());
+  const compositeKeyByUiIdRef = useRef<Map<string, string>>(new Map());
+  const collapsedRef = useRef(collapsed);
+  const compositeCollapseRef = useRef<Map<string, boolean>>(new Map());
+  const cacheKeyRef = useRef(cacheKey);
 
   // Debounced serialise of `updated` back to KDL text. Side-effect-only;
   // run after each mutation to push the new content out via onChange and
   // refresh parse-error diagnostics.
   const serialiseTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const scheduleSerialise = useCallback(
-    (updated: StampedNode[]) => {
-      const version = ++serialiseVersionRef.current;
-      clearTimeout(serialiseTimerRef.current);
-      serialiseTimerRef.current = setTimeout(() => {
-        const doc = { nodes: updated, errors: [] as EditorError[] };
-        void templatesSerialise(stripUiIds(doc)).then(async (result) => {
+  const scheduleSerialise = useCallback((updated: StampedNode[]) => {
+    const version = ++serialiseVersionRef.current;
+    clearTimeout(serialiseTimerRef.current);
+    serialiseTimerRef.current = setTimeout(() => {
+      const doc = { nodes: updated, errors: [] as EditorError[] };
+      void templatesSerialise(stripUiIds(doc)).then(async (result) => {
+        if (version !== serialiseVersionRef.current) return;
+        lastSerialisedRef.current = result.text;
+        onChangeRef.current(result.text);
+        // Refresh validation errors after local edits — the parse-on-content
+        // path is gated by `content === lastSerialisedRef.current` to avoid
+        // clobbering in-progress nodes, so errors would otherwise go stale.
+        try {
+          const parsed = await templatesParse(result.text);
           if (version !== serialiseVersionRef.current) return;
-          lastSerialisedRef.current = result.text;
-          onChange(result.text);
-          // Refresh validation errors after local edits — the parse-on-content
-          // path is gated by `content === lastSerialisedRef.current` to avoid
-          // clobbering in-progress nodes, so errors would otherwise go stale.
-          try {
-            const parsed = await templatesParse(result.text);
-            if (version !== serialiseVersionRef.current) return;
-            setParseErrors(parsed.errors);
-          } catch {
-            /* keep previous errors — a failed re-parse shouldn't wipe them */
-          }
-        });
-      }, 150);
-    },
-    [onChange],
-  );
+          setParseErrors(parsed.errors);
+        } catch {
+          /* keep previous errors — a failed re-parse shouldn't wipe them */
+        }
+      });
+    }, 150);
+  }, []);
 
   // The dispatch handle exposed via context. Wraps the pure reducer with
-  // undo-stack bookkeeping and the serialise side effect.
+  // undo-stack bookkeeping and the serialise side effect. Identity-stable
+  // for the component's lifetime so the context never re-renders consumers.
   const dispatch = useCallback<React.Dispatch<EditorAction>>(
     (action) => {
       const next = editorReducer(nodesRef.current, action);
-      if (action.type !== "load") {
-        undoStackRef.current = [...undoStackRef.current, nodesRef.current];
+      if (action.type === "load") {
+        // Loads come from parse / undo / redo; the next edit must open a
+        // fresh undo frame rather than coalesce across the boundary.
+        undoMetaRef.current = { key: null, time: 0 };
+      } else {
+        const key = undoCoalesceKey(action);
+        const now = Date.now();
+        undoStackRef.current = pushUndoFrame(undoStackRef.current, nodesRef.current, {
+          key,
+          now,
+          lastKey: undoMetaRef.current.key,
+          lastTime: undoMetaRef.current.time,
+        });
+        undoMetaRef.current = { key, time: now };
         redoStackRef.current = [];
         invalidateProjectClonesCache();
         scheduleSerialise(next);
       }
+      nodesRef.current = next;
+      // Refresh the stable-key maps alongside the nodes so children that
+      // mount in the resulting commit (CompositeEditor seeding its collapse
+      // state) resolve against the new tree, not last commit's.
+      const nodeKeys = computeNodeKeyByUiId(next);
+      keyByUiIdRef.current = nodeKeys;
+      compositeKeyByUiIdRef.current = computeCompositeKeyByUiId(next, nodeKeys);
       setNodes(next);
     },
     [scheduleSerialise],
   );
 
   // Parse via RPC when content changes externally.
-  // The bail-out compares against the last parsed-or-serialised content so a
-  // parent re-render (which can rebuild `dispatch`'s identity and re-fire the
-  // effect) doesn't trigger a redundant re-parse + load dispatch — which
-  // would mint fresh `_uiId`s and remount every node card under the editor.
+  // The bail-out compares against the last parsed-or-serialised content so
+  // our own serialise round-trip doesn't trigger a redundant re-parse +
+  // load dispatch — which would mint fresh `_uiId`s and remount every node
+  // card under the editor.
   useEffect(() => {
     if (content === lastSerialisedRef.current) return;
 
@@ -146,14 +187,30 @@ export function TemplateVisualEditor({
       });
   }, [content, dispatch]);
 
-  // Undo/redo keyboard handler.
+  // Scroll-container ref handed to descendant virtualisers via
+  // EditorScrollContainerContext. DirectiveBody uses it as TanStack
+  // Virtual's getScrollElement so the outer .root's scroll position
+  // drives row mounting for huge clones (voicelines.kdl: 374 directives).
+  // Doubles as the editor's root element for scoping the undo handler.
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Undo/redo keyboard handler. Scoped to this editor instance: with
+  // several editors mounted (split panes) an unscoped handler would pop
+  // every stack at once, and it would steal Ctrl+Z from inputs the editor
+  // doesn't own (e.g. a browser pane's search box).
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey;
       if (!isMod || e.key.toLowerCase() !== "z") return;
+      const root = scrollContainerRef.current;
+      const el = document.activeElement;
+      if (!root || !el || !root.contains(el)) return;
       e.preventDefault();
 
-      const el = document.activeElement;
+      // Editor-owned input with uncommitted text (CommitInput is
+      // uncontrolled; its defaultValue is the last committed value):
+      // revert the draft instead of popping a frame. Controlled inputs
+      // keep value and defaultValue in sync, so they fall through.
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
         if (el.value !== el.defaultValue) {
           el.value = el.defaultValue;
@@ -210,55 +267,70 @@ export function TemplateVisualEditor({
     setCompositeCollapse(loadCompositeCollapse(cacheKey));
   }
 
+  // Keep the latest-value mirrors current after every commit. The collapse
+  // callbacks and composite control only fire from event handlers, which
+  // run after this effect, so they always see the values just rendered.
+  useEffect(() => {
+    keyByUiIdRef.current = keyByUiId;
+    compositeKeyByUiIdRef.current = compositeKeyByUiId;
+    collapsedRef.current = collapsed;
+    compositeCollapseRef.current = compositeCollapse;
+    cacheKeyRef.current = cacheKey;
+  });
+
   // Intersect a candidate set with the current nodes' stable keys before
   // persisting, so stale entries (from renamed nodes) silently drop out the
   // next time the user toggles/expands/collapses. Keeps the persisted state
-  // clean without a separate prune pass.
-  const persistCollapsed = useCallback(
-    (next: Set<string>) => {
-      const cleaned = pruneCollapsed(next, keyByUiId.values());
-      saveCollapsed(cacheKey, cleaned);
-      setCollapsed(cleaned);
-    },
-    [cacheKey, keyByUiId],
-  );
+  // clean without a separate prune pass. Reads through the refs so the
+  // callbacks below stay identity-stable for the component's lifetime —
+  // a fresh onToggleCollapse per render would defeat memo(NodeCard) for
+  // every card on every dispatch.
+  const persistCollapsed = useCallback((next: Set<string>) => {
+    const cleaned = pruneCollapsed(next, keyByUiIdRef.current.values());
+    saveCollapsed(cacheKeyRef.current, cleaned);
+    collapsedRef.current = cleaned;
+    setCollapsed(cleaned);
+  }, []);
 
   // Composite-collapse control surface, threaded to CompositeEditor via
-  // context. Toggle materialises the explicit state into the persisted
-  // map (true=collapsed, false=expanded) so subsequent renders read the
-  // user's choice rather than recomputing from content. Same prune-on-
-  // persist pattern as node collapse to drop keys whose composite no
-  // longer exists.
+  // context. Identity-stable so the context never re-renders consumers;
+  // each CompositeEditor seeds its own render state from resolveState at
+  // mount and re-renders itself on toggle. Toggle materialises the
+  // explicit state into the persisted map (true=collapsed, false=expanded)
+  // with the same prune-on-persist pattern as node collapse, and writes
+  // the ref synchronously so composites mounting before the next commit's
+  // ref sync still read the recorded state.
   const compositeCollapseControl = useMemo<CompositeCollapseControl>(
     () => ({
       resolveState: (uiId) => {
-        const key = compositeKeyByUiId.get(uiId);
+        const key = compositeKeyByUiIdRef.current.get(uiId);
         if (key === undefined) return undefined;
-        return compositeCollapse.get(key);
+        return compositeCollapseRef.current.get(key);
       },
       toggle: (uiId, nextState) => {
-        const key = compositeKeyByUiId.get(uiId);
+        const key = compositeKeyByUiIdRef.current.get(uiId);
         if (key === undefined) return;
-        const next = new Map(compositeCollapse);
+        const next = new Map(compositeCollapseRef.current);
         next.set(key, nextState);
-        const cleaned = pruneCompositeCollapse(next, compositeKeyByUiId.values());
-        saveCompositeCollapse(cacheKey, cleaned);
+        const cleaned = pruneCompositeCollapse(next, compositeKeyByUiIdRef.current.values());
+        saveCompositeCollapse(cacheKeyRef.current, cleaned);
+        compositeCollapseRef.current = cleaned;
         setCompositeCollapse(cleaned);
       },
     }),
-    [compositeKeyByUiId, compositeCollapse, cacheKey],
+    [],
   );
 
   const handleToggleCollapse = useCallback(
     (nodeUiId: string) => {
-      const stableKey = keyByUiId.get(nodeUiId);
+      const stableKey = keyByUiIdRef.current.get(nodeUiId);
       if (stableKey === undefined) return;
-      const next = new Set(collapsed);
+      const next = new Set(collapsedRef.current);
       if (next.has(stableKey)) next.delete(stableKey);
       else next.add(stableKey);
       persistCollapsed(next);
     },
-    [collapsed, keyByUiId, persistCollapsed],
+    [persistCollapsed],
   );
 
   const handleExpandAll = useCallback(() => {
@@ -266,8 +338,8 @@ export function TemplateVisualEditor({
   }, [persistCollapsed]);
 
   const handleCollapseAll = useCallback(() => {
-    persistCollapsed(new Set(keyByUiId.values()));
-  }, [keyByUiId, persistCollapsed]);
+    persistCollapsed(new Set(keyByUiIdRef.current.values()));
+  }, [persistCollapsed]);
 
   const handleAddNode = useCallback(
     (kind: EditorNodeKind) => {
@@ -279,8 +351,9 @@ export function TemplateVisualEditor({
     [dispatch],
   );
 
-  const cardReorder = useDragReorder((fromId, toSlot) =>
-    dispatch({ type: "reorderCards", fromId, toSlot }),
+  const cardReorder = useDragReorder(
+    (fromId, toSlot) => dispatch({ type: "reorderCards", fromId, toSlot }),
+    CARD_REORDER_MIME,
   );
 
   const [bottomDragOver, setBottomDragOver] = useState<"Patch" | "Clone" | "reject" | false>(false);
@@ -322,12 +395,6 @@ export function TemplateVisualEditor({
     },
     [dispatch],
   );
-
-  // Scroll-container ref handed to descendant virtualisers via
-  // EditorScrollContainerContext. DirectiveBody uses it as TanStack
-  // Virtual's getScrollElement so the outer .root's scroll position
-  // drives row mounting for huge clones (voicelines.kdl: 374 directives).
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   return (
     <EditorDispatchContext value={dispatch}>

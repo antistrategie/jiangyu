@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
+import { loader } from "@monaco-editor/react";
+import type * as monacoNs from "monaco-editor";
 import type { editor as monacoEditor } from "monaco-editor";
 import { rpcCall, subscribe, type FileChangeKind, type FileChangedEvent } from "@shared/rpc";
 
@@ -58,6 +60,24 @@ function omit<V>(record: Readonly<Record<string, V>>, key: string): Record<strin
   const { [key]: _, ...rest } = record;
   void _;
   return rest;
+}
+
+// Monaco models outlive editor unmounts (TabbedMonacoEditor passes
+// keepCurrentModel so a closing pane never disposes a model another pane may
+// share), which makes this store the single owner of model lifecycle: a model
+// is disposed when its path leaves every pane (prune) or is renamed away
+// (remapPath). @monaco-editor/react keys models by `monaco.Uri.parse(path)`
+// (its getOrCreateModel), so the identical construction here finds the same
+// model.
+function disposeModelsFor(paths: Iterable<string>): void {
+  // The loader's declared Monaco type doesn't resolve under this tsconfig
+  // (same situation as TabbedMonacoEditor's onMount), so cast to the
+  // monaco-editor namespace.
+  const monaco = loader.__getMonacoInstance() as typeof monacoNs | null;
+  if (monaco === null) return;
+  for (const path of paths) {
+    monaco.editor.getModel(monaco.Uri.parse(path))?.dispose();
+  }
 }
 
 export const useEditorContent = create<EditorContentState>((set, get) => ({
@@ -233,6 +253,9 @@ export const useEditorContent = create<EditorContentState>((set, get) => ({
 
   remapPath: (oldPath, newPath) => {
     if (oldPath === newPath) return;
+    // The model under the old URI is stale after a rename: the editor
+    // recreates one under the new URI on its next render.
+    disposeModelsFor([oldPath]);
     set((s) => {
       const { [oldPath]: oldContent, ...restContents } = s.contents;
       const { [oldPath]: oldConflict, ...restConflicts } = s.conflicts;
@@ -256,6 +279,7 @@ export const useEditorContent = create<EditorContentState>((set, get) => ({
   },
 
   prune: (openPaths, openPaneIds) => {
+    const evictedPaths: string[] = [];
     set((s) => {
       let contents = s.contents;
       let conflicts = s.conflicts;
@@ -266,7 +290,10 @@ export const useEditorContent = create<EditorContentState>((set, get) => ({
       let contentsChanged = false;
       for (const [k, v] of Object.entries(s.contents)) {
         if (openPaths.has(k)) nextContents[k] = v;
-        else contentsChanged = true;
+        else {
+          contentsChanged = true;
+          evictedPaths.push(k);
+        }
       }
       if (contentsChanged) contents = nextContents;
 
@@ -297,6 +324,9 @@ export const useEditorContent = create<EditorContentState>((set, get) => ({
       if (!contentsChanged && !conflictsChanged && !dirtyChanged && !editorsChanged) return s;
       return { contents, conflicts, dirty, editors };
     });
+    // A model only exists for a path whose content was loaded, so the
+    // evicted content keys cover every model whose path is now closed.
+    disposeModelsFor(evictedPaths);
   },
 }));
 
@@ -305,8 +335,8 @@ export const useEditorContent = create<EditorContentState>((set, get) => ({
 // the same handler N times.
 export function useEditorContentSync(): void {
   useEffect(() => {
-    return subscribe("fileChanged", (params) => {
-      useEditorContent.getState().onFileChanged(params as FileChangedEvent);
+    return subscribe("fileChanged", (event) => {
+      useEditorContent.getState().onFileChanged(event);
     });
   }, []);
 }

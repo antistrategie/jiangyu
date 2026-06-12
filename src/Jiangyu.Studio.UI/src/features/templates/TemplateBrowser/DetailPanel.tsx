@@ -3,7 +3,7 @@
 // tree, and the recursive field/value rows.
 
 import { GripVertical } from "lucide-react";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useMemo, useRef, useState } from "react";
 import type {
   InspectedFieldNode,
   InspectedReference,
@@ -22,6 +22,7 @@ import {
 } from "@features/templates/crossInstance";
 import { encodeCrossMemberPayload } from "@features/templates/crossMember";
 import { onKeyActivate } from "@shared/utils/a11y";
+import { useDismissOnOutsideClick } from "@shared/utils/useDismissOnOutsideClick";
 import { Spinner } from "@shared/ui/Spinner/Spinner";
 import { DetailTitle, MetaBlock, MetaRow, SectionHeader } from "@shared/ui/DetailPanel/DetailPanel";
 import {
@@ -37,7 +38,9 @@ import {
   formatMatrixCell,
   formatValue,
   resolveEnumLeafLabel,
+  resolveReferenceTargetKey,
   valueNodeKindIsScalar,
+  type ReferenceTargetIndex,
 } from "./helpers";
 
 interface TemplateDetailProps {
@@ -58,10 +61,15 @@ interface TemplateDetailProps {
   projectPath: string;
   referencedBy: readonly TemplateReferenceEntry[];
   instanceLookup: ReadonlyMap<string, TemplateInstanceEntry>;
+  referenceTargetIndex: ReferenceTargetIndex;
   allReferencedBy: Readonly<Record<string, readonly TemplateReferenceEntry[]>>;
 }
 
-export function TemplateDetail({
+// Memoised because the parent TemplateBrowser re-renders on every search
+// keystroke and scroll commit; the detail panel's props (focused instance,
+// fetched data, stable handlers) only change on focus/data changes, so the
+// shallow compare skips the whole heavy member tree the rest of the time.
+export const TemplateDetail = memo(function TemplateDetail({
   instance,
   memberData,
   membersLoading,
@@ -78,21 +86,23 @@ export function TemplateDetail({
   canGoForward,
   referencedBy: refs,
   instanceLookup,
+  referenceTargetIndex,
   allReferencedBy,
 }: TemplateDetailProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [menuOpen]);
+  useDismissOnOutsideClick(menuRef, () => setMenuOpen(false), { enabled: menuOpen });
+
+  // Member name → inspected value node, built once per inspection result
+  // instead of a linear find() per member row.
+  const valueNodeByName = useMemo(() => {
+    const map = new Map<string, InspectedFieldNode>();
+    for (const v of inspectionValues ?? []) {
+      if (v.name && !map.has(v.name)) map.set(v.name, v);
+    }
+    return map;
+  }, [inspectionValues]);
 
   return (
     <div className={styles.detail}>
@@ -235,27 +245,25 @@ export function TemplateDetail({
             </div>
           ) : memberData?.members ? (
             <div className={styles.memberList}>
-              {memberData.members.map((m) => {
-                const valueNode = inspectionValues?.find((v) => v.name === m.name) ?? null;
-                return (
-                  <MemberRow
-                    key={m.name}
-                    member={m}
-                    valueNode={valueNode}
-                    parentTypeName={instance.className}
-                    fieldPath={m.name}
-                    instanceLookup={instanceLookup}
-                    onNavigate={onNavigate}
-                  />
-                );
-              })}
+              {memberData.members.map((m) => (
+                <MemberRow
+                  key={m.name}
+                  member={m}
+                  valueNode={valueNodeByName.get(m.name) ?? null}
+                  parentTypeName={instance.className}
+                  fieldPath={m.name}
+                  instanceLookup={instanceLookup}
+                  referenceTargetIndex={referenceTargetIndex}
+                  onNavigate={onNavigate}
+                />
+              ))}
             </div>
           ) : null}
         </div>
       )}
     </div>
   );
-}
+});
 
 // --- Reference tree node ---
 
@@ -341,6 +349,7 @@ interface MemberRowProps {
   parentTypeName: string;
   fieldPath: string;
   instanceLookup: ReadonlyMap<string, TemplateInstanceEntry>;
+  referenceTargetIndex: ReferenceTargetIndex;
   onNavigate: (key: string) => void;
 }
 
@@ -350,6 +359,7 @@ function MemberRow({
   parentTypeName,
   fieldPath,
   instanceLookup,
+  referenceTargetIndex,
   onNavigate,
 }: MemberRowProps) {
   const [expanded, setExpanded] = useState(false);
@@ -488,6 +498,7 @@ function MemberRow({
                     typeName={elemType}
                     subFields={elemSubFields}
                     instanceLookup={instanceLookup}
+                    referenceTargetIndex={referenceTargetIndex}
                     onNavigate={onNavigate}
                   />
                 );
@@ -501,7 +512,12 @@ function MemberRow({
               <span className={styles.fieldInfoItem}>
                 Target:{" "}
                 <strong>
-                  {renderReferenceLink(valueNode.reference, instanceLookup, onNavigate)}
+                  {renderReferenceLink(
+                    valueNode.reference,
+                    instanceLookup,
+                    referenceTargetIndex,
+                    onNavigate,
+                  )}
                 </strong>
               </span>
             </div>
@@ -543,6 +559,7 @@ function MemberRow({
                       typeName={elem.fieldTypeName ?? ""}
                       subFields={arrSubFields}
                       instanceLookup={instanceLookup}
+                      referenceTargetIndex={referenceTargetIndex}
                       onNavigate={onNavigate}
                     />
                   );
@@ -709,21 +726,17 @@ function renderValueLine(
 function renderReferenceLink(
   reference: InspectedReference,
   instanceLookup: ReadonlyMap<string, TemplateInstanceEntry>,
+  referenceTargetIndex: ReferenceTargetIndex,
   onNavigate: (key: string) => void,
 ): React.ReactNode {
   if (!reference.pathId) return <span>{reference.name ?? "null"}</span>;
-  // Find the referenced template in the index by matching name + className,
-  // since the reference's fileId is a dependency index, not a collection name.
-  let targetKey: string | null = null;
-  for (const [k, inst] of instanceLookup) {
-    if (
-      inst.identity.pathId === reference.pathId &&
-      (reference.name === undefined || inst.name === reference.name)
-    ) {
-      targetKey = k;
-      break;
-    }
-  }
+  // Resolve via the pathId(+name) index, since the reference's fileId is a
+  // dependency index, not a collection name.
+  const targetKey = resolveReferenceTargetKey(
+    referenceTargetIndex,
+    reference.pathId,
+    reference.name,
+  );
   const target = targetKey ? instanceLookup.get(targetKey) : undefined;
   const label = target
     ? `${target.className}:${target.name}`
@@ -750,6 +763,7 @@ function ExpandableElementRow({
   typeName,
   subFields,
   instanceLookup,
+  referenceTargetIndex,
   onNavigate,
 }: {
   elem: InspectedFieldNode;
@@ -757,6 +771,7 @@ function ExpandableElementRow({
   typeName: string;
   subFields: readonly InspectedFieldNode[] | null;
   instanceLookup: ReadonlyMap<string, TemplateInstanceEntry>;
+  referenceTargetIndex: ReferenceTargetIndex;
   onNavigate: (key: string) => void;
 }) {
   const [subExpanded, setSubExpanded] = useState(false);
@@ -768,7 +783,7 @@ function ExpandableElementRow({
   // SkillGroup.Skills (List<SkillTemplate>).
   const referenceLink =
     elem.kind === "reference" && elem.reference
-      ? renderReferenceLink(elem.reference, instanceLookup, onNavigate)
+      ? renderReferenceLink(elem.reference, instanceLookup, referenceTargetIndex, onNavigate)
       : null;
 
   return (

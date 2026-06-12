@@ -4,6 +4,7 @@ import { ChevronDown, GripVertical, X } from "lucide-react";
 import { parseCrossMemberPayload } from "@features/templates/crossMember";
 import { useToastStore } from "@shared/toast";
 import { onKeyActivate } from "@shared/utils/a11y";
+import { useDismissOnOutsideClick } from "@shared/utils/useDismissOnOutsideClick";
 import type { InspectedFieldNode, TemplateMember } from "@shared/rpc";
 import type { EditorValue } from "../types";
 import { useAnchorPosition } from "../shared/useAnchorPosition";
@@ -20,9 +21,10 @@ import {
   allowsMultipleDirectives,
   directiveForOpChange,
   isFieldBagValue,
+  reorderByUiId,
   type StampedDirective,
 } from "../helpers";
-import { useDragReorder } from "../hooks";
+import { ROW_REORDER_MIME, useDragReorder } from "../hooks";
 import { useTemplateMembers } from "../hooks";
 import { useCompositeCollapse } from "../store";
 import { CommitInput } from "../shared/CommitInput";
@@ -153,17 +155,9 @@ export function SetRow({
   // stacking context; otherwise it gets trapped under the next card.
   const opMenuPosition = useAnchorPosition(opRef, opOpen);
 
-  useEffect(() => {
-    if (!opOpen) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (opRef.current?.contains(target)) return;
-      if (opMenuRef.current?.contains(target)) return;
-      setOpOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [opOpen]);
+  // The menu lives in a portal so it's NOT a descendant of `opRef`; treat
+  // clicks inside it as "inside" too.
+  useDismissOnOutsideClick([opRef, opMenuRef], () => setOpOpen(false), { enabled: opOpen });
 
   const namedArrayEnum = member?.namedArrayEnumTypeName;
   const isHashSet = member?.isOdinHashSet === true;
@@ -205,7 +199,7 @@ export function SetRow({
           onDragStart={(e) => {
             e.stopPropagation();
             e.dataTransfer.effectAllowed = "move";
-            e.dataTransfer.setData("application/x-jiangyu-row-reorder", directive._uiId);
+            e.dataTransfer.setData(ROW_REORDER_MIME, directive._uiId);
             onDragStart();
           }}
           onDragEnd={onDragEnd}
@@ -495,24 +489,28 @@ export function CompositeEditor({
   // HandlerSubtypePicker) start with zero directives and default to
   // expanded so the modder can fill them in without a click.
   //
-  // Collapse state comes from the editor's CompositeCollapseContext when
-  // available so it persists across parses + tab switches; fallback to
-  // local state lets CompositeEditor render outside the editor (tests,
-  // stand-alone usage) without persistence.
+  // Render state lives locally so a toggle re-renders just this composite
+  // (the editor's CompositeCollapseContext value is identity-stable and
+  // never re-renders consumers). The control, when present, seeds the
+  // initial value from the persisted map and records toggles so the
+  // choice survives unmounts (node collapse, virtualised scroll-out,
+  // parse reloads — each remount re-seeds because the directive gets a
+  // fresh `_uiId` and therefore a fresh component instance). Outside the
+  // editor (tests, stand-alone usage) the state is purely local.
   const compositeCollapse = useCompositeCollapse();
   const defaultCollapsed = directives.length > 0;
-  const [localCollapsed, setLocalCollapsed] = useState(() => defaultCollapsed);
-  const persisted =
-    compositeCollapse !== null && directiveUiId !== undefined
-      ? compositeCollapse.resolveState(directiveUiId)
-      : undefined;
-  const collapsed = persisted ?? (compositeCollapse !== null ? defaultCollapsed : localCollapsed);
-  const setCollapsed = (next: boolean | ((prev: boolean) => boolean)): void => {
-    const resolved = typeof next === "function" ? next(collapsed) : next;
+  const [collapsed, setCollapsed] = useState(() => {
+    const persisted =
+      compositeCollapse !== null && directiveUiId !== undefined
+        ? compositeCollapse.resolveState(directiveUiId)
+        : undefined;
+    return persisted ?? defaultCollapsed;
+  });
+  const toggleCollapsed = () => {
+    const next = !collapsed;
+    setCollapsed(next);
     if (compositeCollapse !== null && directiveUiId !== undefined) {
-      compositeCollapse.toggle(directiveUiId, resolved);
-    } else {
-      setLocalCollapsed(resolved);
+      compositeCollapse.toggle(directiveUiId, next);
     }
   };
   const isTaggedString = taggedPolymorphicBase != null && taggedPolymorphicBase !== "";
@@ -571,17 +569,12 @@ export function CompositeEditor({
   };
 
   const handleRowReorder = (fromId: string, toSlot: number) => {
-    const fromIdx = directives.findIndex((d) => d._uiId === fromId);
-    if (fromIdx === -1) return;
-    const next = [...directives];
-    const moved = next.splice(fromIdx, 1)[0];
-    if (moved === undefined) return;
-    const insertAt = toSlot > fromIdx ? toSlot - 1 : toSlot;
-    next.splice(insertAt, 0, moved);
+    const next = reorderByUiId(directives, fromId, toSlot);
+    if (next === directives) return;
     onChange({ ...value, compositeDirectives: next });
   };
 
-  const reorder = useDragReorder(handleRowReorder);
+  const reorder = useDragReorder(handleRowReorder, ROW_REORDER_MIME);
 
   // Vanilla sub-field lookup (composite's vanillaNode.fields → name→node).
   // Stays empty when vanillaNode is missing or doesn't expose object fields,
@@ -634,7 +627,16 @@ export function CompositeEditor({
     handleAddDirective(makeDefaultDirective(synthMember, vanilla));
   };
 
-  const memberMap = new Map(members.map((m) => [m.name, m]));
+  // Memoised so the inner DirectiveRows' member lookups keep a stable map
+  // identity across re-renders that don't change the member list.
+  const memberMap = useMemo(() => new Map(members.map((m) => [m.name, m])), [members]);
+
+  // Memoised so SuggestionCombobox's "fetchSuggestions changed → drop
+  // cache and refetch" reset doesn't fire on every parent re-render.
+  const fetchFromCandidates = useCallback(
+    () => templatesPrototypeCandidates(fromLookupType),
+    [fromLookupType],
+  );
 
   const isConstruction = value.kind === "TypeConstruction";
   // Tagged-string composites surface their discriminators through the
@@ -667,8 +669,6 @@ export function CompositeEditor({
     subtypeChoices !== null &&
     subtypeChoices.length > 0 &&
     !!value.compositeType;
-
-  const toggleCollapsed = () => setCollapsed((c) => !c);
 
   return (
     <div className={styles.compositeBody}>
@@ -734,7 +734,7 @@ export function CompositeEditor({
                   <SuggestionCombobox
                     value={value.compositeFrom ?? ""}
                     placeholder=""
-                    fetchSuggestions={() => templatesPrototypeCandidates(fromLookupType)}
+                    fetchSuggestions={fetchFromCandidates}
                     onChange={(next) => {
                       const { compositeFrom: _drop, ...rest } = value;
                       onChange(next === "" ? rest : { ...rest, compositeFrom: next });
