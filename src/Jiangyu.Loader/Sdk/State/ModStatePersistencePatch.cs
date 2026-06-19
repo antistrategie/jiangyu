@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using HarmonyLib;
 using Il2CppMenace.Strategy;
@@ -35,16 +37,69 @@ internal sealed class ModStatePersistencePatch : IHarmonyPatchModule
             return;
         try
         {
-            var slot = ResolveSavePath(__1, __2);
             var latest = SaveSystem.GetLatestSaveFilePath();
-            _log.Msg($"mod state: save -> {slot}");
-            store.WriteAll(slot);
-            if (!string.IsNullOrEmpty(latest) && !string.Equals(latest, slot, StringComparison.Ordinal))
-                store.WriteAll(latest);
+            // Autosaves and quicksaves pass no explicit path, so ResolveSavePath falls back to the
+            // latest alias and the actual timestamped file must be recovered by mtime. A NAMED save
+            // already gives us the exact file, so skip the mtime guess there: it could otherwise grab a
+            // concurrent autosave that happens to be newer and attach the sidecar to the wrong save.
+            bool pathless = string.IsNullOrEmpty(__1) && string.IsNullOrEmpty(__2);
+            var targets = new[]
+            {
+                ResolveSavePath(__1, __2),
+                latest,
+                pathless ? GetJustWrittenSavePath(latest) : null,
+            };
+            var written = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var path in targets)
+            {
+                if (string.IsNullOrEmpty(path) || !written.Add(path))
+                    continue;
+                _log.Msg($"mod state: save -> {path}");
+                store.WriteAll(path);
+            }
         }
         catch (Exception ex)
         {
             _log.Error($"mod state: save postfix failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    // The file the game just wrote: the newest .save in the folder that is not the latest alias.
+    // Save derives autosave and quicksave paths internally, so this recovers the path the postfix
+    // is not handed.
+    private static string GetJustWrittenSavePath(string latest)
+    {
+        try
+        {
+            var paths = SaveSystem.GetSaveFilePaths();
+            if (paths == null)
+                return null;
+            string newest = null;
+            var newestTime = DateTime.MinValue;
+            for (int i = 0; i < paths.Length; i++)
+            {
+                var p = paths[i];
+                if (string.IsNullOrEmpty(p) || string.Equals(p, latest, StringComparison.Ordinal))
+                    continue;
+                DateTime t;
+                try
+                {
+                    if (!File.Exists(p))
+                        continue;
+                    t = File.GetLastWriteTimeUtc(p);
+                }
+                catch { continue; }
+                if (t > newestTime)
+                {
+                    newestTime = t;
+                    newest = p;
+                }
+            }
+            return newest;
+        }
+        catch
+        {
+            return null;
         }
     }
 

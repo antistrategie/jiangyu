@@ -24,12 +24,12 @@ internal sealed class HumanoidMirrorScheduler
     /// </summary>
     public string Queue(GameObject prefab, MelonLogger.Instance log)
     {
-        if (!HumanoidPrefabMirror.IsHumanoid(prefab))
+        if (!HumanoidPrefabMirror.HasReferenceSentinel(prefab))
             return string.Empty;
         if (HumanoidPrefabMirror.Mirror(prefab, log))
-            return "; humanoid-mirrored";
+            return "; component-mirrored";
         _pending.Add(prefab);
-        return "; queued for humanoid mirror";
+        return "; queued for component mirror";
     }
 
     /// <summary>

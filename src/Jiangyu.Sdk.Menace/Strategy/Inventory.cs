@@ -45,4 +45,30 @@ public static partial class Inventory
                 result.Add(raw[i]);
         return result;
     }
+
+    /// <summary>
+    /// Every owned item instance across all templates, each as a live handle. Read-only
+    /// probe of the whole shared inventory: thread a handle into a later verb, or count
+    /// the returned list to confirm a swap left the inventory size unchanged.
+    /// </summary>
+    public static IReadOnlyList<BaseItem> All()
+    {
+        var result = new List<BaseItem>();
+        var owned = StrategyState.Get()?.OwnedItems;
+        if (owned == null)
+            return result;
+        var buffer = new Il2CppSystem.Collections.Generic.List<BaseItem>();
+        owned.GetInstances(buffer);
+        for (var i = 0; i < buffer.Count; i++)
+            result.Add(buffer[i]);
+        return result;
+    }
+
+    /// <summary>
+    /// An owned-but-unequipped instance of <paramref name="template"/>, or null when every
+    /// owned copy is in use. Returned as a live handle to pass to <c>Leaders.Equip</c>, so
+    /// equip-from-existing reuses a registered instance instead of minting a new one.
+    /// </summary>
+    public static Item UnusedInstance(ItemTemplate template)
+        => StrategyState.Get()?.OwnedItems?.GetUnusedInstance(template, false);
 }

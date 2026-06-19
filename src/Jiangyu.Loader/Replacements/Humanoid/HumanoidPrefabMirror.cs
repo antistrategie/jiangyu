@@ -69,16 +69,17 @@ internal static class HumanoidPrefabMirror
     private const string MirroredSentinelPrefix = "__jiangyu_mirrored:";
 
     /// <summary>
-    /// Returns true when <paramref name="addition"/> is shaped like a
-    /// humanoid soldier prefab the mirror can do useful work on: has an
-    /// Animator with a humanoid avatar. Geometry-only props and vehicle
-    /// shells skip the mirror.
+    /// True when <paramref name="addition"/> carries a reference sentinel
+    /// child (see <see cref="ReferenceSentinelPrefix"/>), i.e. it opts into
+    /// component mirroring. Rig-agnostic: humanoid bakes and generic-rigged
+    /// additions (constructs, vehicles, mechs) alike qualify, since the
+    /// Ragdoll and Footprints remap keys on bone name, not avatar type.
     /// </summary>
-    public static bool IsHumanoid(GameObject addition)
+    public static bool HasReferenceSentinel(GameObject addition)
     {
         if (addition == null) return false;
-        var animator = addition.GetComponent<Animator>();
-        return animator != null && animator.avatar != null && animator.avatar.isHuman;
+        var (_, referenceName) = FindReferenceSentinel(addition);
+        return !string.IsNullOrEmpty(referenceName);
     }
 
     /// <summary>

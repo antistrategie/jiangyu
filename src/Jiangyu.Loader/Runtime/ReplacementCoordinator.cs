@@ -60,6 +60,8 @@ internal class ReplacementCoordinator
                 new AudioReplacementPatch(_catalog.ReplacementAudioClips),
                 new ConversationManagerTrackingPatch(),
                 new InventoryFilterPatch(),
+                new ModularVehicleSpawnGuardPatch(),
+                new SuppressionHandlerGuardPatch(),
                 new Jiangyu.Loader.Sdk.Hooks.StrategyHarmonyPatch(),
                 new Jiangyu.Loader.Sdk.State.ModStatePersistencePatch(),
             });

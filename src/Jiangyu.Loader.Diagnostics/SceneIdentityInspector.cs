@@ -105,6 +105,12 @@ internal static class SceneIdentityInspector
                 RootBoneName = smr.rootBone?.name,
                 HideFlags = smr.hideFlags.ToString(),
                 SceneLoaded = smr.gameObject != null && smr.gameObject.scene.isLoaded,
+                Enabled = smr.enabled,
+                ActiveInHierarchy = smr.gameObject != null && smr.gameObject.activeInHierarchy,
+                LossyScale = Fmt(smr.transform != null ? smr.transform.lossyScale : default),
+                WorldPos = Fmt(smr.transform != null ? smr.transform.position : default),
+                BoundsCenter = Fmt(smr.transform != null ? smr.bounds.center : default),
+                BoundsSize = Fmt(smr.transform != null ? smr.bounds.size : default),
             });
         }
 
@@ -141,6 +147,9 @@ internal static class SceneIdentityInspector
             count++;
         return count;
     }
+
+    private static string Fmt(Vector3 v)
+        => $"({v.x:0.###}, {v.y:0.###}, {v.z:0.###})";
 
     private static string GameObjectPath(GameObject gameObject)
     {
@@ -181,6 +190,12 @@ internal static class SceneIdentityInspector
         public string RootBoneName { get; set; }
         public string HideFlags { get; set; }
         public bool SceneLoaded { get; set; }
+        public bool Enabled { get; set; }
+        public bool ActiveInHierarchy { get; set; }
+        public string LossyScale { get; set; }
+        public string WorldPos { get; set; }
+        public string BoundsCenter { get; set; }
+        public string BoundsSize { get; set; }
     }
 
     private sealed class TextureAssetInfo

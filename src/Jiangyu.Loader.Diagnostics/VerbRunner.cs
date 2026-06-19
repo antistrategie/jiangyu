@@ -273,7 +273,23 @@ internal static class VerbRunner
     // A live game object with no richer form: hand back a handle so it can be passed to
     // another verb as {ref:"..."}, plus its id when it exposes one.
     private static object SerialiseHandle(Il2CppObjectBase obj)
-        => new { type = TypeName(obj), handle = ObjectHandles.Register(obj), id = TemplateRuntimeAccess.ReadTemplateId(obj) };
+        => new { type = TypeName(obj), handle = ObjectHandles.Register(obj), id = HandleId(obj) };
+
+    // A live instance carries no id of its own; its identity is the template behind it.
+    // Read the template id for items and leaders so a handle is recognisable at a glance
+    // (e.g. which armour an owned instance is), falling back to the generic reflection scan.
+    private static string HandleId(Il2CppObjectBase obj)
+    {
+        switch (obj)
+        {
+            case Il2CppMenace.Items.BaseItem item:
+                return item.GetBaseItemTemplate()?.GetID() ?? TemplateRuntimeAccess.ReadTemplateId(obj);
+            case Il2CppMenace.Strategy.BaseUnitLeader leader:
+                return leader.GetTemplate()?.GetID() ?? TemplateRuntimeAccess.ReadTemplateId(obj);
+            default:
+                return TemplateRuntimeAccess.ReadTemplateId(obj);
+        }
+    }
 
     // A returned actor carries a handle too, so it can be threaded into a later verb the
     // same way as any other live object, alongside its readable faction and tile.
