@@ -14,7 +14,7 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
     <!-- Drives McpEndpointTests: spins up an in-memory ASP.NET pipeline so we
          can hit the bearer-gated /mcp route without binding a real port. -->
-    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.8" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.9" />
   </ItemGroup>
 
   <ItemGroup>
