@@ -144,7 +144,12 @@ public sealed class TemplateTypeCatalog : IDisposable
         foreach (var dll in extraAssemblies)
         {
             Assembly extra;
-            try { extra = context.LoadFromAssemblyPath(dll); }
+            // Load mod DLLs from a byte copy, never the path. On Windows a path-loaded
+            // MetadataLoadContext assembly stays memory-mapped and locked past dispose, which blocks
+            // the next compile from overwriting the mod's rebuilt DLL ("used by another process").
+            // Game/SDK dependencies still resolve by path via the resolver, which is fine: those are
+            // never recompiled. Mirrors JiangyuTypeMetadataReader.
+            try { extra = context.LoadFromByteArray(File.ReadAllBytes(dll)); }
             catch { continue; } // Non-fatal: a mod DLL that fails to load shouldn't break the catalog.
             foreach (var type in SafeGetTypes(extra))
             {
