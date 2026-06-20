@@ -88,6 +88,7 @@ export default defineConfig({
           { text: "Patch and clone templates", link: "/templates" },
           { text: "Write a custom template type", link: "/sdk/template-types" },
           { text: "Add UI", link: "/sdk/ui" },
+          { text: "Translate a mod", link: "/localise" },
           { text: "Call game verbs", link: "/sdk/verbs" },
           { text: "Set up the Unity project", link: "/unity-project" },
           { text: "Use Studio", link: "/studio" },

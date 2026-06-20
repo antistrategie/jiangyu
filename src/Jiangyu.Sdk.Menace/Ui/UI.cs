@@ -70,6 +70,53 @@ public static class UI
     /// <summary>Every descendant of <paramref name="root"/> matching <paramref name="selector"/>.</summary>
     public static IReadOnlyList<VisualElement> FindAll(VisualElement root, UiSelector selector) => UiTree.FindAll(root, selector);
 
+    // Marks a UXML label's name as a localisation key rather than a query name:
+    //   <ui:Label name="@WOMENACE::ui/give_gifts" text="GIVE GIFTS" />
+    // The leading '@' flags it, the rest is the loca key, and the authored text is the English
+    // fallback that stays visible to designers in the UXML. Note this overloads the element name, so
+    // an @-marked element is not findable by its bare key via UiSelector.Name (use the full "@key").
+    private const string LocaMarker = "@";
+
+    // The authored (English) text of each marked label, keyed by its loca key so re-localising after a
+    // language switch falls back to English rather than the previously-applied language. Keyed by the
+    // stable loca key (not the native pointer) so it neither leaks nor mis-serves a recycled pointer.
+    private static readonly Dictionary<string, string> LocaleOriginals = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Translate every marked label under <paramref name="root"/> for the active language. A label is
+    /// marked by giving its name a leading <c>@</c>, the rest of the name is its loca key, and the
+    /// authored text is the English fallback. Injected UXML is localised automatically (on inject and
+    /// on every rebuild, including an in-game language switch), so a mod calls this only for a tree it
+    /// builds and manages outside the injection system. Idempotent.
+    /// </summary>
+    public static void Localise(VisualElement root)
+    {
+        foreach (var element in UiTree.FindAll(root, UiSelector.NameStartsWith(LocaMarker)))
+            TranslateLabel(element);
+    }
+
+    private static void TranslateLabel(VisualElement element)
+    {
+        var label = element.TryCast<Label>();
+        if (label == null)
+            return;
+
+        string name;
+        try { name = element.name; }
+        catch { return; }
+
+        var key = name.Substring(LocaMarker.Length);
+        if (!LocaleOriginals.TryGetValue(key, out var original))
+        {
+            try { original = label.text; }
+            catch { original = null; }
+            LocaleOriginals[key] = original;
+        }
+
+        try { label.text = Locale.Text(key, original); }
+        catch { }
+    }
+
     /// <summary>
     /// Close <paramref name="element"/> when a pointer goes down anywhere outside it: on
     /// another UI element, or on empty space. A transparent, behind-everything catcher
@@ -165,6 +212,14 @@ public static class UI
     {
         foreach (var injection in Injections.ToArray())
             injection.Reapply();
+    }
+
+    // Re-translate @-marked labels in every live injected tree without rebuilding it, for an in-game
+    // language switch (Reapply skips already-occupied sites, so it would not retranslate open UI).
+    internal static void RelocaliseAll()
+    {
+        foreach (var injection in Injections.ToArray())
+            injection.RelocaliseLive();
     }
 
     internal static void Unregister(RegisteredInjection registered) => Injections.Remove(registered);
@@ -269,6 +324,9 @@ internal sealed class RegisteredInjection
 
             try { _bind?.Invoke(element, site.Scope); }
             catch (Exception ex) { Log.Warn($"UI inject bind threw: {ex.Message}"); }
+            // Translate any @-marked labels in the injected tree for the active language. Runs on
+            // initial inject and on every screen rebuild, so injected UXML needs no per-mod call.
+            UI.Localise(element);
             _injected.Add(element);
         }
     }
@@ -279,6 +337,16 @@ internal sealed class RegisteredInjection
             if (element.IsAlive())
                 try { element.RemoveFromHierarchy(); } catch { }
         _injected.Clear();
+    }
+
+    // Re-translate @-marked labels in the already-injected (live, not rebuilt) trees.
+    internal void RelocaliseLive()
+    {
+        if (_removed)
+            return;
+        foreach (var element in _injected)
+            if (element.IsAlive())
+                UI.Localise(element);
     }
 
     internal void Dispose()

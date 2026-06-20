@@ -41,6 +41,10 @@ public sealed class UiSelector
     public UiSelector And(UiSelector other) =>
         new(e => _match(e) && other._match(e));
 
+    /// <summary>Match an element whose name begins with <paramref name="prefix"/>.</summary>
+    internal static UiSelector NameStartsWith(string prefix) =>
+        new(e => NameOf(e) is { } name && name.StartsWith(prefix, StringComparison.Ordinal));
+
     internal bool Matches(VisualElement element) => element != null && _match(element);
 
     private static string NameOf(VisualElement e)

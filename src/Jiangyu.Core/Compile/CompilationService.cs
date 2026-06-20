@@ -6,10 +6,12 @@ using Jiangyu.Core.Code;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Glb;
 using Jiangyu.Core.Il2Cpp;
+using Jiangyu.Core.Localisation;
 using Jiangyu.Core.Models;
 using Jiangyu.Core.Templates;
 using Jiangyu.Core.Unity;
 using Jiangyu.Shared.Bundles;
+using Jiangyu.Shared.Localisation;
 using Jiangyu.Shared.Replacements;
 using Jiangyu.Shared.Templates;
 using SharpGLTF.Schema2;
@@ -205,7 +207,13 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var hasKdlTemplates = Directory.Exists(templatesDir)
             && Directory.EnumerateFiles(templatesDir, "*.kdl", SearchOption.AllDirectories).Any();
 
-        if (totalCompileInputCount == 0 && !hasKdlTemplates)
+        // A localisation-only mod (e.g. one that only translates another mod) ships just locales/*.po
+        // and must still compile so EmitLocalisationAsync emits its tables.
+        var localesDir = Path.Combine(projectDir, LocaleLayout.SourceDirName);
+        var hasLocales = Directory.Exists(localesDir)
+            && Directory.EnumerateFiles(localesDir, "*.po", SearchOption.AllDirectories).Any();
+
+        if (totalCompileInputCount == 0 && !hasKdlTemplates && !hasLocales)
         {
             _log.Info("No replacement assets or template patches found. Nothing to compile.");
             return new CompilationResult { Success = true };
@@ -425,6 +433,8 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 Path.Combine(outputDir, CompiledTemplatePatchManifest.FileName),
                 compiledTemplates.ToJson());
 
+        await EmitLocalisationAsync(projectDir, outputDir, manifest.Name, compiledTemplates);
+
         // Detect the combined-Unity-pass case: a mod with both addition
         // prefabs AND mesh-replacement work pays two cold starts today. When
         // both have work we fold the prefab pass into the first Unity call
@@ -543,6 +553,103 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         return new CompilationResult { Success = true, BundlePath = destBundle };
     }
 
+    /// <summary>
+    /// Emits the localisation outputs under <c>compiled/locales/</c>: the source catalogue
+    /// (<c>&lt;mod&gt;.pot</c>) extracted from the compiled template program, and one
+    /// <c>&lt;code&gt;.json</c> translation table plus optional <c>&lt;code&gt;.ui.json</c> map
+    /// per locale found under the mod's <c>locales/</c> folder. PO files are scanned recursively
+    /// so a localisation-only mod can carry one target per subfolder. Multiple PO files sharing a
+    /// locale code merge into one table.
+    /// </summary>
+    private async Task EmitLocalisationAsync(
+        string projectDir, string outputDir, string modName, CompiledTemplatePatchManifest compiledTemplates)
+    {
+        var catalogue = LocalisationCompiler.ExtractCatalogue(compiledTemplates, modName, out var skippedNested);
+        await AddUiKeysFromSourceAsync(projectDir, catalogue);
+
+        var sourceDir = Path.Combine(projectDir, LocaleLayout.SourceDirName);
+        var sourcePoFiles = Directory.Exists(sourceDir)
+            ? Directory.EnumerateFiles(sourceDir, "*.po", SearchOption.AllDirectories)
+                .OrderBy(p => p, StringComparer.Ordinal).ToList()
+            : [];
+
+        if (catalogue.Entries.Count == 0 && sourcePoFiles.Count == 0)
+            return;
+
+        var localesOut = Path.Combine(outputDir, CompiledLayout.LocalesDirName);
+        Directory.CreateDirectory(localesOut);
+
+        if (catalogue.Entries.Count > 0)
+        {
+            await File.WriteAllTextAsync(
+                Path.Combine(localesOut, LocaleLayout.CatalogueFileName(modName)),
+                PoFormat.Write(catalogue));
+            var skipNote = skippedNested > 0 ? $" ({skippedNested} string(s) not extractable)" : string.Empty;
+            _log.Info($"  Localisation: {catalogue.Entries.Count} translatable string(s) -> {LocaleLayout.CatalogueFileName(modName)}{skipNote}");
+        }
+
+        // Stage each hand-written .po into compiled/locales/ (preserving subfolders) so it deploys
+        // with the mod. The loader reads the .po directly, so there is no compiled table. Compiling
+        // here only validates the keys and copies the file.
+        foreach (var poPath in sourcePoFiles)
+        {
+            var code = Path.GetFileNameWithoutExtension(poPath);
+            if (!LocaleCatalogue.IsKnownCode(code))
+            {
+                _log.Warning($"  Localisation: '{Path.GetRelativePath(projectDir, poPath)}' is not a known locale code; skipping.");
+                continue;
+            }
+
+            var result = LocaleTable.Compile(await File.ReadAllTextAsync(poPath));
+            if (result.Malformed > 0)
+                _log.Warning($"  Localisation: {result.Malformed} entry(ies) in '{Path.GetFileName(poPath)}' had an unparseable key.");
+
+            var relative = Path.GetRelativePath(sourceDir, poPath);
+            var dest = Path.Combine(localesOut, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            File.Copy(poPath, dest, overwrite: true);
+
+            var fieldCount = (result.Translations.TemplatePatches ?? []).Sum(p => p.Set.Count);
+            _log.Info($"  Localisation: staged {relative} ({fieldCount} translated field(s), {result.Ui.Count} UI string(s)).");
+        }
+    }
+
+    // Add UI strings to the catalogue so code and UXML strings appear in the POT for translators
+    // without a separate authoring step: literal Locale.Text("key","fallback") calls under code/, and
+    // name="@key"-marked elements under unity/. Deduped against entries already present.
+    private static async Task AddUiKeysFromSourceAsync(string projectDir, PoFile catalogue)
+    {
+        var seen = new HashSet<string>(
+            catalogue.Entries.Where(e => e.Context != null).Select(e => e.Context!), StringComparer.Ordinal);
+
+        void Add(string key, string fallback)
+        {
+            if (string.IsNullOrEmpty(key) || !seen.Add(key))
+                return;
+            var entry = new PoEntry { Context = key, Id = fallback, Str = string.Empty };
+            entry.ExtractedComments.Add($"UI · {key}");
+            catalogue.Entries.Add(entry);
+        }
+
+        async Task ScanAsync(string subDir, string glob, Func<string, IEnumerable<(string Key, string Fallback)>> extract)
+        {
+            var dir = Path.Combine(projectDir, subDir);
+            if (!Directory.Exists(dir))
+                return;
+            foreach (var file in Directory.EnumerateFiles(dir, glob, SearchOption.AllDirectories)
+                         .OrderBy(p => p, StringComparer.Ordinal))
+            {
+                string text;
+                try { text = await File.ReadAllTextAsync(file); }
+                catch { continue; }
+                foreach (var (key, fallback) in extract(text))
+                    Add(key, fallback);
+            }
+        }
+
+        await ScanAsync("code", "*.cs", LocalisationCompiler.ExtractUiKeys);
+        await ScanAsync("unity", "*.uxml", LocalisationCompiler.ExtractUxmlUiKeys);
+    }
 
     /// <summary>
     /// Invokes Unity batchmode against the modder's <c>unity/</c> project to

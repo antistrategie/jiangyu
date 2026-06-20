@@ -299,7 +299,7 @@ Recursion is automatic. The inner `type="SetFlag"` packs first to `"SetFlag|{...
 
 Four common omissions are filled automatically:
 
-- **Node Guids.** Every `BaseConversationNode` subtype and `ConversationNodeContainer` carries an `int Guid`. When omitted, the compiler emits `FNV-1a("{patchId}#node_{counter}")`, stable across rebuilds and distinct from the source's Guids. Modders can still write `set "Guid" N` to force a value.
+- **Node Guids.** Every `BaseConversationNode` subtype and `ConversationNodeContainer` carries an `int Guid`. When omitted, the compiler emits `FNV-1a("{patchId}#node_{counter}")`, stable across rebuilds and distinct from the source's Guids. Leave it to the auto-fill: the guid is also the game's runtime node id (conversation jumps, save-state), so a hand-picked value risks colliding with another node's.
 - **Clone identity.** `clone "SoundBank" id="X"` implies `set "bankId" "X"`. `clone "ConversationTemplate" id="X"` implies `set "Path" "X"`. Skipped when the modder set the field explicitly.
 - **`Stem.Sound.id` from `name`.** A `Stem.Sound` composite with `set "name" "X"` and no `set "id"` defaults `id` to FNV-1a(`X`). Within-bank uniqueness only requires distinct names.
 - **`VariationCopyCount` sync.** `VariationConversationNode`'s parallel `VariationCopyCount` array is padded with `1`s to match the number of `append "Variations"` ops. Branches without a matching copy-count entry play silently in MENACE's engine.

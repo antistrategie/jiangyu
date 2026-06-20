@@ -14,4 +14,7 @@ public static class CompiledLayout
 
     /// <summary>Subfolder holding the compiled mod code DLL(s).</summary>
     public const string CodeDirName = "code";
+
+    /// <summary>Subfolder holding the compiled per-locale translation tables and source catalogue.</summary>
+    public const string LocalesDirName = "locales";
 }

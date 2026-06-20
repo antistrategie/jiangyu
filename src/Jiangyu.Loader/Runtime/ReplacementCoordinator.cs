@@ -1,6 +1,7 @@
 using Il2CppInterop.Runtime;
 using Jiangyu.Loader.Bundles;
 using Jiangyu.Loader.Replacements;
+using Jiangyu.Loader.Runtime.Localisation;
 using Jiangyu.Loader.Runtime.Patching;
 using Jiangyu.Loader.Logging;
 using Jiangyu.Loader.Templates;
@@ -26,6 +27,7 @@ internal class ReplacementCoordinator
     private readonly TemplateCloneCatalog _templateClones;
     private readonly TemplateCloneApplier _templateCloneApplier;
     private readonly LoaderHarmonyPatchInstaller _harmonyPatchInstaller;
+    private LocaleApplier _localeApplier;
     // Per-instance dedupe for the driven-prefab branch. DrivenPrefabReplacementManager
     // does not leave a "[jiangyu]" marker on smr.sharedMesh, so the IsAlreadyProcessedMesh
     // check below cannot tell a driven-handled SMR apart from an un-handled one. The
@@ -62,6 +64,7 @@ internal class ReplacementCoordinator
                 new InventoryFilterPatch(),
                 new ModularVehicleSpawnGuardPatch(),
                 new SuppressionHandlerGuardPatch(),
+                new LocaleReloadPatch(),
                 new Jiangyu.Loader.Sdk.Hooks.StrategyHarmonyPatch(),
                 new Jiangyu.Loader.Sdk.State.ModStatePersistencePatch(),
             });
@@ -85,6 +88,7 @@ internal class ReplacementCoordinator
             .ToList();
         _templateClones.Load(templates, new LoaderLog(log));
         _templatePatches.Load(templates, new LoaderLog(log));
+        _localeApplier = new LocaleApplier(plan.LoadableMods);
         return summary;
     }
 
@@ -114,7 +118,8 @@ internal class ReplacementCoordinator
             _catalog.ReplacementSprites.Count == 0 &&
             _catalog.ReplacementAudioClips.Count == 0 &&
             !_templatePatchApplier.HasPendingPatches &&
-            !_templateCloneApplier.HasPendingClones)
+            !_templateCloneApplier.HasPendingClones &&
+            !(_localeApplier?.Pending ?? false))
             return;
 
         // Prefab-time rebind propagates by sharedMesh reference to every
@@ -185,6 +190,10 @@ internal class ReplacementCoordinator
         // the ~25 post-scene-load polls.
         if (clonesApplied > 0 || patchesApplied > 0)
             _templateCloneApplier.RunPostPatchHooks(new LoaderLog(log));
+
+        // Active-language translations rewrite m_DefaultTranslation after the base patches set
+        // the source text, so they overwrite English in the same pass the base patches land.
+        _localeApplier?.Apply(log);
 
         // Humanoid-addition prefab script-config mirrors deferred from
         // addition-prefab loading. Resources is populated by this pass
