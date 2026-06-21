@@ -15,8 +15,8 @@ namespace Jiangyu.Loader.Sdk.Hooks;
 /// contexts mods receive through <see cref="IHookBus"/>. Each publish guards on
 /// <see cref="InProcessHookBus.HasSubscribers{T}"/> so an event with no listener
 /// skips the subscriber dispatch. The TacticalManager is recreated each mission,
-/// so <see cref="EnsureAttached"/> re-attaches once a fresh one is present, and
-/// publishes <see cref="MissionStartedContext"/> at that point.
+/// so the <c>TacticalManager.Start</c> Harmony postfix calls <see cref="Attach"/> once a
+/// fresh one comes up, which publishes <see cref="MissionStartedContext"/> at that point.
 /// </summary>
 internal sealed class TacticalHookPublisher : HookPublisherBase
 {
@@ -28,13 +28,13 @@ internal sealed class TacticalHookPublisher : HookPublisherBase
     }
 
     /// <summary>
-    /// Attach to the current <see cref="TacticalManager"/> when one is present and
-    /// not already attached. Cheap and idempotent: a no-op once attached to this
-    /// mission's manager. Call each frame while a tactical mission is live.
+    /// Attach to <paramref name="tm"/> when it is present and not already attached.
+    /// Idempotent: a no-op once attached to this mission's manager. Driven by the
+    /// <c>TacticalManager.Start</c> Harmony postfix, so it runs once per mission instead
+    /// of polling.
     /// </summary>
-    public void EnsureAttached()
+    public void Attach(TacticalManager tm)
     {
-        var tm = TacticalManager.Get();
         if (tm == null || tm.Pointer == IntPtr.Zero || tm.Pointer == _attachedTo)
             return;
 

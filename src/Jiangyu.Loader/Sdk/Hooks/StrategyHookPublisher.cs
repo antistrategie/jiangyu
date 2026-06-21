@@ -10,18 +10,19 @@ namespace Jiangyu.Loader.Sdk.Hooks;
 /// <summary>
 /// Bridges the strategy-layer (campaign meta-game) moments onto the hook bus. Unlike
 /// the tactical events (one TacticalManager singleton), the strategy events are
-/// scattered across per-instance types, and the factions populate progressively
-/// after the StrategyState appears. So <see cref="EnsureAttached"/> runs each frame
-/// on the strategy scene and subscribes each owner exactly once, keyed by its native
-/// pointer — the singleton, the squaddies collection, and every faction as it loads.
-/// A new StrategyState (a loaded save or a different campaign) appears at a new
-/// pointer, which drops the prior session's bookkeeping so its owners re-hook.
+/// scattered across per-instance types, and the factions populate progressively after
+/// the StrategyState appears. The <c>StrategyState.OnAdded</c> postfix calls
+/// <see cref="AttachState"/>, and the <c>StoryFactions.Init</c> and
+/// <c>ProcessSaveState</c> postfixes call <see cref="SubscribeFactionsFrom"/>, so each
+/// owner (the state, the squaddies collection, every faction) is subscribed once at load
+/// time rather than by polling. Each owner is keyed by its native pointer. A new
+/// StrategyState (a loaded save or a different campaign) appears at a new pointer, which
+/// drops the prior session's bookkeeping so its owners re-hook.
 /// </summary>
 internal sealed class StrategyHookPublisher : HookPublisherBase
 {
     private readonly HashSet<IntPtr> _subscribed = new();
     private int _factionsHooked;
-    private int _lastFactionCount = -1;
     private IntPtr _attachedState;
 
     public StrategyHookPublisher(InProcessHookBus bus, IModHostLog log)
@@ -29,30 +30,32 @@ internal sealed class StrategyHookPublisher : HookPublisherBase
     {
     }
 
-    /// <summary>
-    /// Subscribe any strategy owner not yet hooked. Each owner (StrategyState, the
-    /// squaddies collection, each faction) is keyed by its native pointer, so this is
-    /// idempotent across frames and re-entries: no owner is double-subscribed, and
-    /// factions that load late get picked up on a later frame.
-    /// </summary>
-    public void EnsureAttached()
+    // Drop the prior session's bookkeeping when a different StrategyState becomes active
+    // (a loaded save or a new campaign appears at a new native pointer), so its owners
+    // re-hook against the fresh objects instead of being skipped as already-seen against
+    // stale (and possibly pointer-reused) entries.
+    private void EnsureFreshState(IntPtr statePointer)
     {
-        var ss = StrategyState.Get();
+        if (statePointer == IntPtr.Zero || statePointer == _attachedState)
+            return;
+
+        _attachedState = statePointer;
+        _subscribed.Clear();
+        _factionsHooked = 0;
+        ClearHookedDelegates();
+    }
+
+    /// <summary>
+    /// Subscribe the StrategyState and its squaddies collection, plus any factions
+    /// already loaded. Driven by the <c>StrategyState.OnAdded</c> Harmony postfix.
+    /// Idempotent: each owner is keyed by its native pointer and subscribed once.
+    /// </summary>
+    public void AttachState(StrategyState ss)
+    {
         if (ss == null || ss.Pointer == IntPtr.Zero)
             return;
 
-        // A fresh StrategyState (loaded save or new campaign) appears at a new pointer.
-        // Drop the previous session's subscription bookkeeping so its owners re-hook
-        // instead of being skipped as already-seen against stale (and possibly
-        // pointer-reused) entries, and reset the faction-count gate and held delegates.
-        if (ss.Pointer != _attachedState)
-        {
-            _attachedState = ss.Pointer;
-            _subscribed.Clear();
-            _lastFactionCount = -1;
-            _factionsHooked = 0;
-            ClearHookedDelegates();
-        }
+        EnsureFreshState(ss.Pointer);
 
         if (_subscribed.Add(ss.Pointer))
         {
@@ -64,26 +67,32 @@ internal sealed class StrategyHookPublisher : HookPublisherBase
         if (squaddies != null && squaddies.Pointer != IntPtr.Zero && _subscribed.Add(squaddies.Pointer))
             Hook<Il2CppSystem.Action<int>>(squaddies.add_OnAliveSquaddiesChanged, (Action<int>)OnAliveSquaddiesChanged, "OnAliveSquaddiesChanged");
 
-        var factions = ss.StoryFactions;
-        if (factions != null && factions.Pointer != IntPtr.Zero)
+        SubscribeFactionsFrom(ss.StoryFactions);
+    }
+
+    /// <summary>
+    /// Subscribe every faction in <paramref name="factions"/> not yet hooked. Driven by
+    /// the <c>StoryFactions.Init</c> and <c>StoryFactions.ProcessSaveState</c> postfixes,
+    /// so factions that load after the StrategyState are picked up at load time rather
+    /// than by polling. Idempotent via the per-pointer subscription set.
+    /// </summary>
+    public void SubscribeFactionsFrom(StoryFactions factions)
+    {
+        if (factions == null || factions.Pointer == IntPtr.Zero)
+            return;
+
+        // A faction collection can populate before its StrategyState is marked active, so
+        // sync the fresh-state bookkeeping off the live state before subscribing.
+        EnsureFreshState(StrategyState.Get()?.Pointer ?? IntPtr.Zero);
+
+        try
         {
-            try
-            {
-                // Re-enumerate the Il2Cpp faction dictionary only when its count
-                // changes (a faction loaded). Once settled, this is one count read
-                // per frame instead of marshalling every entry across the boundary.
-                var count = factions.m_Factions.Count;
-                if (count != _lastFactionCount)
-                {
-                    _lastFactionCount = count;
-                    foreach (var pair in factions.m_Factions)
-                        SubscribeFaction(pair.Value);
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"hooks: failed to enumerate factions: {ex.GetType().Name}: {ex.Message}");
-            }
+            foreach (var pair in factions.m_Factions)
+                SubscribeFaction(pair.Value);
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"hooks: failed to enumerate factions: {ex.GetType().Name}: {ex.Message}");
         }
     }
 

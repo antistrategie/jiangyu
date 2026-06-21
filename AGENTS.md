@@ -95,6 +95,8 @@ Individual mods compose from `.bundle` files, JSON/KDL patches and clones, and (
 
 Loader-side mod discovery works in two phases. Discover and validate manifests first, then load bundles only for unblocked mods. Bundle load order is deterministic lexical mod-folder order; later-loaded mods win conflicts explicitly.
 
+A mod's `code/` DLLs load through two deliberately different paths by context. At **runtime** the loader loads each once with `Assembly.LoadFrom` (`JiangyuMod.InitialiseCodeMods`): stable assembly identity is required there because `ModHost` dedupes by it and `SdkAssemblyResolver` redirects by it, so a byte-load (which mints a fresh identity per call) must not be substituted. The deployed DLL being file-locked while the game runs is a non-issue (no recompile happens mid-session). At **compile time** `Jiangyu.Core`'s `TemplateTypeCatalog` instead reads the freshly-built code DLL as bytes into a `MetadataLoadContext`, so Windows does not keep it memory-mapped and an immediate recompile can overwrite it. The runtime template catalogs load only compiled manifests, never code DLLs, so there is no double-load.
+
 ### Core/CLI split
 
 - Core owns all domain logic. Services accept `IProgressSink` and `ILogSink` for output.

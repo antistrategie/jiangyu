@@ -70,7 +70,6 @@ public sealed class RelationshipSystem : JiangyuSystem
 | `OnInit()` | Once, after the system loads and its `Context` is bound. |
 | `OnTemplatesApplied()` | Once, after every mod's template clones and patches have landed on the live templates. Read or further adjust the final merged template set here. |
 | `OnSceneLoaded(buildIndex, sceneName)` | Each time a Unity scene finishes loading. |
-| `OnUpdate()` | Every frame. Override only when you genuinely need per-frame work. |
 | `OnUnload()` | On shutdown or hot reload. The loader stops your coroutines and removes your patches for you. |
 
 The systems of one mod share a single `Context` (the same `State`, hooks, patches, and assets), so split a mod into as many systems as it has features and let them cooperate through `Context` rather than growing one entry point. Systems run in a stable, name-ordered sequence. When one must initialise after another, declare it with `[DependsOn]`, and the loader runs that dependency first on init and tears systems down in reverse on unload.

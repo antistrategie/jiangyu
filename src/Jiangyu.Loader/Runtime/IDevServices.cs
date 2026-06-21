@@ -13,11 +13,9 @@ internal interface IDevServices
     // Wire the bridge and run any load-time check. Called once from OnInitializeMelon.
     void Initialise(IDevServicesContext context);
 
-    // Start or stop the bridge to match the dev flag. Called on every scene load.
+    // Start or stop the bridge to match the dev flag, and start the request-pump loop on
+    // the first call. Called on every scene load.
     void OnSceneLoaded();
-
-    // Per-frame tick: picks up a mid-session bridge toggle and pumps pending requests.
-    void OnUpdate(int frameInScene);
 }
 
 // What the dev surface reads back from the live loader. The scene members are

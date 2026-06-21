@@ -93,14 +93,12 @@ public class ModHostTests
     private sealed class GoodMod : JiangyuSystem
     {
         public int Inits;
-        public int Updates;
         public int Scenes;
         public int Unloads;
         public int TemplatesApplied;
 
         public override void OnInit() => Inits++;
         public override void OnTemplatesApplied() => TemplatesApplied++;
-        public override void OnUpdate() => Updates++;
         public override void OnSceneLoaded(int buildIndex, string sceneName) => Scenes++;
         public override void OnUnload() => Unloads++;
     }
@@ -109,7 +107,7 @@ public class ModHostTests
     {
         public int Attempts;
 
-        public override void OnUpdate()
+        public override void OnSceneLoaded(int buildIndex, string sceneName)
         {
             Attempts++;
             throw new InvalidOperationException("boom");
@@ -150,7 +148,7 @@ public class ModHostTests
         host.ContextFor("dual").Coroutines.Start(Forever());
 
         for (var i = 0; i < 5; i++)
-            host.Update(); // the ThrowingMod entry point quarantines after 3 throws
+            host.SceneLoaded(0, "Tactical"); // the ThrowingMod entry point quarantines after 3 throws
 
         // The good sibling is still live, so the shared coroutine is not torn down.
         Assert.Empty(stopped);
@@ -168,7 +166,7 @@ public class ModHostTests
         host.ContextFor("solo").Coroutines.Start(Forever());
 
         for (var i = 0; i < 5; i++)
-            host.Update();
+            host.SceneLoaded(0, "Tactical");
 
         // No sibling entry point -> quarantine tears down the mod's coroutines.
         Assert.NotEmpty(stopped);
@@ -192,13 +190,11 @@ public class ModHostTests
         host.InitAll();
         host.TemplatesApplied();
         host.SceneLoaded(1, "Tactical");
-        host.Update();
         host.UnloadAll();
 
         Assert.Equal(1, mod.Inits);
         Assert.Equal(1, mod.TemplatesApplied);
         Assert.Equal(1, mod.Scenes);
-        Assert.Equal(1, mod.Updates);
         Assert.Equal(1, mod.Unloads);
     }
 
@@ -211,11 +207,11 @@ public class ModHostTests
         host.Adopt("good", good);
         host.Adopt("bad", bad);
 
-        host.Update();
+        host.SceneLoaded(0, "Tactical");
 
-        Assert.Equal(1, good.Updates);
+        Assert.Equal(1, good.Scenes);
         Assert.Equal(1, bad.Attempts);
-        Assert.Contains(log.Errors, e => e.Contains("bad") && e.Contains("OnUpdate"));
+        Assert.Contains(log.Errors, e => e.Contains("bad") && e.Contains("OnSceneLoaded"));
     }
 
     [Fact]
@@ -226,7 +222,7 @@ public class ModHostTests
         var loaded = host.Adopt("bad", bad);
 
         for (var i = 0; i < 5; i++)
-            host.Update();
+            host.SceneLoaded(0, "Tactical");
 
         Assert.True(loaded.Quarantined);
         Assert.Equal(3, bad.Attempts);

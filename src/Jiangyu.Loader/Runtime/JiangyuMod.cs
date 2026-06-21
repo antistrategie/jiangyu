@@ -14,17 +14,15 @@ using MelonLoader.Utils;
 
 namespace Jiangyu.Loader.Runtime;
 
-// MelonLoader entry point. Owns the per-scene frame clock and the loader's subsystems,
-// and forwards the MelonLoader lifecycle (init, scene load, update) to each. The
-// per-scene and per-frame work lives in the drivers (replacement scheduling, UI
-// re-injection); dev inspection is served on demand over the Studio bridge. This class
-// wires and sequences them.
+// MelonLoader entry point. Owns the loader's subsystems and forwards the MelonLoader
+// lifecycle (init, scene load) to each. The loader runs no per-frame OnUpdate: replacement
+// application, UI re-injection, and hook attachment are event-driven (Harmony postfixes on
+// the game's own methods), and dev inspection is served on demand over the Studio bridge.
+// This class wires and sequences them.
 public class JiangyuMod : MelonMod, IDevServicesContext
 {
     private readonly ReplacementCoordinator _replacementCoordinator = new();
     private readonly ReplacementScheduler _replacement;
-    private readonly UiInjectionDriver _ui = new();
-    private int _frameInScene;
     private string _currentScene;
     private int _currentBuildIndex;
     private IDevServices _dev;
@@ -122,6 +120,8 @@ public class JiangyuMod : MelonMod, IDevServicesContext
             _tacticalHooks = new TacticalHookPublisher(_hookBus, hostLog);
             _strategyHooks = new StrategyHookPublisher(_hookBus, hostLog);
             StrategyHarmonyPatch.Bus = _hookBus;
+            TacticalManagerStartPatch.Publisher = _tacticalHooks;
+            StrategyAttachPatch.Publisher = _strategyHooks;
             ModStatePersistencePatch.Store = new ModStateStore(_modHost, hostLog);
             _replacementCoordinator.TemplatesApplied = () => _modHost.TemplatesApplied();
 
@@ -217,7 +217,6 @@ public class JiangyuMod : MelonMod, IDevServicesContext
     {
         _currentScene = sceneName;
         _currentBuildIndex = buildIndex;
-        _frameInScene = 0;
 
         // Re-read the dev flags for the new scene (DevFlags caches the file, so per-frame
         // gate checks stay dict lookups) and re-sync the SDK logger's level to the debug
@@ -226,7 +225,6 @@ public class JiangyuMod : MelonMod, IDevServicesContext
         LoaderDebug.SyncSdkLog();
 
         _replacement.Reset();
-        _ui.OnSceneLoaded();
         _tacticalHooks?.Reset();
         _dev?.OnSceneLoaded();
 
@@ -236,23 +234,5 @@ public class JiangyuMod : MelonMod, IDevServicesContext
 
         _replacement.Apply(LoggerInstance);
         MelonCoroutines.Start(_replacement.FollowUpPoll(LoggerInstance));
-    }
-
-    public override void OnUpdate()
-    {
-        _frameInScene++;
-
-        _ui.Drive();
-
-        _dev?.OnUpdate(_frameInScene);
-
-        _replacement.Tick(_frameInScene, LoggerInstance);
-
-        if (_currentScene == "Tactical")
-            _tacticalHooks?.EnsureAttached();
-        else if (_currentScene == "Strategy")
-            _strategyHooks?.EnsureAttached();
-
-        _modHost?.Update();
     }
 }

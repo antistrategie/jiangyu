@@ -30,29 +30,6 @@ internal sealed class ReplacementMesh
     }
 }
 
-internal sealed class ReplacementPrefab
-{
-    public GameObject Template;
-    public string PrefabName;
-    public string[] BoneNames;
-    public string TargetRendererPath;
-    public string TargetEntityName;
-
-    public ReplacementPrefab(
-        GameObject template,
-        string prefabName,
-        string[] boneNames,
-        string targetRendererPath,
-        string targetEntityName = null)
-    {
-        Template = template;
-        PrefabName = prefabName;
-        BoneNames = boneNames;
-        TargetRendererPath = targetRendererPath;
-        TargetEntityName = targetEntityName;
-    }
-}
-
 internal sealed class PreparedMeshAssignment
 {
     public Mesh Mesh;

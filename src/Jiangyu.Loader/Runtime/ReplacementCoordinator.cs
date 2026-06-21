@@ -21,18 +21,14 @@ internal class ReplacementCoordinator
     private readonly MeshPreparationService _meshPreparation;
     private readonly DirectMeshReplacementApplier _directReplacements;
     private readonly PrefabMeshRebindApplier _prefabRebindApplier;
-    private readonly DrivenPrefabReplacementManager _drivenReplacements;
     private readonly TemplatePatchCatalog _templatePatches;
     private readonly TemplatePatchApplier _templatePatchApplier;
     private readonly TemplateCloneCatalog _templateClones;
     private readonly TemplateCloneApplier _templateCloneApplier;
     private readonly LoaderHarmonyPatchInstaller _harmonyPatchInstaller;
     private LocaleApplier _localeApplier;
-    // Per-instance dedupe for the driven-prefab branch. DrivenPrefabReplacementManager
-    // does not leave a "[jiangyu]" marker on smr.sharedMesh, so the IsAlreadyProcessedMesh
-    // check below cannot tell a driven-handled SMR apart from an un-handled one. The
-    // mesh-rebind branches mark sharedMesh and dedupe via that suffix, but this set is
-    // still cheap insurance against the spawn monitor re-firing driven creation every tick.
+    // Per-SMR dedupe so an SMR already handled is skipped on later sweeps, alongside the
+    // "[jiangyu]" sharedMesh marker the mesh-rebind path leaves.
     private readonly HashSet<int> _processedSmrInstanceIds = new();
 
     private bool _templateWorkSeen;
@@ -50,7 +46,6 @@ internal class ReplacementCoordinator
         _meshPreparation = new MeshPreparationService(_pinned);
         _directReplacements = new DirectMeshReplacementApplier(_materialReplacements, _meshPreparation);
         _prefabRebindApplier = new PrefabMeshRebindApplier(_catalog, _directReplacements);
-        _drivenReplacements = new DrivenPrefabReplacementManager(_pinned);
         _templatePatches = new TemplatePatchCatalog();
         _templatePatchApplier = new TemplatePatchApplier(_templatePatches, new ModAssetResolver(_catalog));
         _templateClones = new TemplateCloneCatalog();
@@ -60,12 +55,16 @@ internal class ReplacementCoordinator
             {
                 new TemplateCloneEarlyInjectionPatch(_templateCloneApplier),
                 new AudioReplacementPatch(_catalog.ReplacementAudioClips),
+                new Jiangyu.Loader.Replacements.ElementSpawnReplacementPatch(this),
                 new ConversationManagerTrackingPatch(),
                 new InventoryFilterPatch(),
                 new ModularVehicleSpawnGuardPatch(),
                 new SuppressionHandlerGuardPatch(),
                 new LocaleReloadPatch(),
+                new UiInjectionActivatePatch(),
+                new Jiangyu.Loader.Sdk.Hooks.TacticalManagerStartPatch(),
                 new Jiangyu.Loader.Sdk.Hooks.StrategyHarmonyPatch(),
+                new Jiangyu.Loader.Sdk.Hooks.StrategyAttachPatch(),
                 new Jiangyu.Loader.Sdk.State.ModStatePersistencePatch(),
             });
     }
@@ -97,8 +96,7 @@ internal class ReplacementCoordinator
         _harmonyPatchInstaller.Install(harmony, new LoaderHarmonyPatchContext(log));
     }
 
-    public bool HasMeshOrPrefabReplacements =>
-        _catalog.Meshes.Count > 0 || _catalog.Prefabs.Count > 0;
+    public bool HasMeshReplacements => _catalog.Meshes.Count > 0;
 
     public void OnSceneUnloaded()
     {
@@ -113,7 +111,6 @@ internal class ReplacementCoordinator
     public void ApplyReplacements(MelonLogger.Instance log, bool includeTextures = true)
     {
         if (_catalog.Meshes.Count == 0 &&
-            _catalog.Prefabs.Count == 0 &&
             _catalog.ReplacementTextures.Count == 0 &&
             _catalog.ReplacementSprites.Count == 0 &&
             _catalog.ReplacementAudioClips.Count == 0 &&
@@ -133,41 +130,8 @@ internal class ReplacementCoordinator
 
         foreach (var obj in skinnedRenderers)
         {
-            var smr = obj.Cast<SkinnedMeshRenderer>();
-            if (smr == null)
-                continue;
-
-            var smrInstanceId = smr.GetInstanceID();
-            if (_processedSmrInstanceIds.Contains(smrInstanceId))
-                continue;
-
-            if (!IsLiveSceneRenderer(smr) || IsAlreadyProcessedMesh(smr.sharedMesh))
-                continue;
-
-            if (!TryResolveRendererTarget(smr, out var entityRoot, out var targetRendererPath))
-                continue;
-
-            if (TryGetReplacementMesh(smr, entityRoot, targetRendererPath, out var meshReplacement))
-            {
-                if (_directReplacements.Apply(log, smr, meshReplacement))
-                {
-                    visualReplacements++;
-                    _processedSmrInstanceIds.Add(smrInstanceId);
-                }
-
-                continue;
-            }
-
-            if (_catalog.Prefabs.TryGetValue(targetRendererPath, out var prefabReplacement) &&
-                IsReplacementScopeMatch(smr, entityRoot, prefabReplacement.TargetEntityName))
-            {
-                if (!_drivenReplacements.HasReplacementFor(entityRoot) &&
-                    _drivenReplacements.TryCreate(log, entityRoot, smr, prefabReplacement))
-                {
-                    visualReplacements++;
-                    _processedSmrInstanceIds.Add(smrInstanceId);
-                }
-            }
+            if (TryApplyToRenderer(log, obj.Cast<SkinnedMeshRenderer>()))
+                visualReplacements++;
         }
 
         var textureMutations = includeTextures ? _textureMutation.ApplyPending(log) : 0;
@@ -238,13 +202,12 @@ internal class ReplacementCoordinator
             return true;
 
         if (_catalog.Meshes.Count == 0 &&
-            _catalog.Prefabs.Count == 0 &&
             _catalog.ReplacementTextures.Count == 0 &&
             _catalog.ReplacementSprites.Count == 0 &&
             _catalog.ReplacementAudioClips.Count == 0)
             return false;
 
-        if (_catalog.Meshes.Count > 0 || _catalog.Prefabs.Count > 0)
+        if (_catalog.Meshes.Count > 0)
         {
             var skinnedRenderers = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<SkinnedMeshRenderer>(), true);
             foreach (var obj in skinnedRenderers)
@@ -256,9 +219,7 @@ internal class ReplacementCoordinator
                 if (!TryResolveRendererTarget(smr, out var entityRoot, out var targetRendererPath))
                     continue;
 
-                if (TryGetReplacementMesh(smr, entityRoot, targetRendererPath, out _) ||
-                    (_catalog.Prefabs.TryGetValue(targetRendererPath, out var prefabReplacement) &&
-                     IsReplacementScopeMatch(smr, entityRoot, prefabReplacement.TargetEntityName)))
+                if (TryGetReplacementMesh(smr, entityRoot, targetRendererPath, out _))
                     return true;
             }
         }
@@ -269,8 +230,75 @@ internal class ReplacementCoordinator
         return false;
     }
 
-    public void UpdateDrivenReplacements(MelonLogger.Instance log)
-        => _drivenReplacements.Update(log);
+    // Apply mesh and driven-prefab replacements to a freshly spawned element's renderers.
+    // Driven by the Element.OnSpawned Harmony postfix in place of the steady-state spawn
+    // monitor: a unit's swap lands when its model is built, not on a frame poll. The
+    // renderers come from the element's own list (they are not yet parented under its
+    // model transform at this point). Texture, template, and locale work is scene-load
+    // only and stays on the scheduled poll.
+    public void ApplyToSpawnedRenderers(MelonLogger.Instance log, List<SkinnedMeshRenderer> renderers)
+    {
+        var hasReplacements = HasMeshReplacements;
+        if (!hasReplacements && !LoaderDebug.Enabled)
+            return;
+
+        // Debug-gated proof that the Element.OnSpawned postfix fires per spawned element
+        // with its renderers already built, independent of whether a replacement is set.
+        if (LoaderDebug.Enabled)
+            log.Debug($"[spawn] element skinnedRenderers={renderers?.Count ?? 0} meshOrPrefabReplacements={hasReplacements}");
+
+        if (!hasReplacements || renderers == null)
+            return;
+
+        var applied = 0;
+        foreach (var smr in renderers)
+        {
+            try
+            {
+                if (TryApplyToRenderer(log, smr))
+                    applied++;
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Spawn replacement on '{smr?.name}' failed: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        if (applied > 0)
+            log.Msg($"Applied {applied} visual replacement(s) to a spawned unit.");
+    }
+
+    // Resolve and apply the mesh or driven-prefab replacement for one live SMR. Shared by
+    // the scene-load sweep and the per-element spawn postfix; idempotent via
+    // _processedSmrInstanceIds, so an SMR handled by one path is skipped by the other.
+    private bool TryApplyToRenderer(MelonLogger.Instance log, SkinnedMeshRenderer smr)
+    {
+        if (smr == null)
+            return false;
+
+        var smrInstanceId = smr.GetInstanceID();
+        if (_processedSmrInstanceIds.Contains(smrInstanceId))
+            return false;
+
+        if (!IsLiveSceneRenderer(smr) || IsAlreadyProcessedMesh(smr.sharedMesh))
+            return false;
+
+        if (!TryResolveRendererTarget(smr, out var entityRoot, out var targetRendererPath))
+            return false;
+
+        if (TryGetReplacementMesh(smr, entityRoot, targetRendererPath, out var meshReplacement))
+        {
+            if (_directReplacements.Apply(log, smr, meshReplacement))
+            {
+                _processedSmrInstanceIds.Add(smrInstanceId);
+                return true;
+            }
+
+            return false;
+        }
+
+        return false;
+    }
 
     private static bool IsLiveSceneRenderer(SkinnedMeshRenderer smr)
     {
@@ -410,7 +438,7 @@ internal class ReplacementCoordinator
         if (string.IsNullOrWhiteSpace(rawPath))
             return false;
 
-        if (_catalog.Meshes.ContainsKey(rawPath) || _catalog.Prefabs.ContainsKey(rawPath))
+        if (_catalog.Meshes.ContainsKey(rawPath))
         {
             resolvedPath = rawPath;
             return true;
@@ -420,7 +448,7 @@ internal class ReplacementCoordinator
         if (string.IsNullOrWhiteSpace(normalised))
             return false;
 
-        if (_catalog.Meshes.ContainsKey(normalised) || _catalog.Prefabs.ContainsKey(normalised))
+        if (_catalog.Meshes.ContainsKey(normalised))
         {
             resolvedPath = normalised;
             return true;

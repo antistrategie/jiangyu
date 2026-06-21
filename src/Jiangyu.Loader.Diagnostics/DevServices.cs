@@ -1,10 +1,12 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Text.Json;
 using Jiangyu.Loader.Diagnostics.UiProbe;
 using Jiangyu.Loader.Runtime;
 using Jiangyu.Shared.Bridge;
 using Jiangyu.Shared.Dev;
+using MelonLoader;
 using MelonLoader.Utils;
 
 namespace Jiangyu.Loader.Diagnostics;
@@ -18,6 +20,7 @@ internal sealed class DevServices : IDevServices
     private IDevServicesContext _context;
     private BridgeServer _bridge;
     private Dictionary<string, Func<JsonElement, object>> _commands;
+    private bool _pumpStarted;
 
     public void Initialise(IDevServicesContext context)
     {
@@ -58,15 +61,31 @@ internal sealed class DevServices : IDevServices
         // {ref:"..."} can never resolve to a stale instance.
         ObjectHandles.Clear();
         UpdateBridge();
+
+        // Start the main-thread request pump once, on the first scene load. MelonLoader's
+        // coroutine runner is ready by now (it is not at OnInitializeMelon time), and a
+        // self-contained loop keeps the pump off the loader's frame tick.
+        if (!_pumpStarted)
+        {
+            _pumpStarted = true;
+            MelonCoroutines.Start(PumpLoop());
+        }
     }
 
-    public void OnUpdate(int frameInScene)
+    // Drain the bridge's queued request handlers on the main thread each frame (game and
+    // UI APIs are main-thread-only), and pick up a mid-session bridge toggle without
+    // waiting for a scene change. Runs for the session: the dev loader lives until exit.
+    private IEnumerator PumpLoop()
     {
-        // Pick up a mid-session bridge toggle (Studio writing the flag) within ~2s,
-        // rather than only on scene load.
-        if (frameInScene % 120 == 0)
-            UpdateBridge();
-        _bridge?.Pump();
+        var frame = 0;
+        while (true)
+        {
+            if (frame % 120 == 0)
+                UpdateBridge();
+            _bridge?.Pump();
+            frame++;
+            yield return null;
+        }
     }
 
     // Start or stop the bridge to match the `bridge` flag. Reads the flag fresh so

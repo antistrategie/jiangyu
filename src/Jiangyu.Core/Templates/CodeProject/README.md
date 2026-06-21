@@ -19,7 +19,7 @@ Open the **mod root** (the folder containing `<Mod>.slnx`), not `code/`, so the 
 - `[JiangyuType("Name")]` on a `partial` class injects it into the IL2CPP type
   system so KDL `type="<mod>:Name"` can construct it into a template slot. Mark the class `partial` and Jiangyu generates the IL2CPP injection constructors; you write only your fields and overrides.
 - An injected `[JiangyuType]` the game constructs has no `Context` of its own. Log via the static `Jiangyu.Sdk.Log` (auto-tagged), and call `ModContext.For(this)` for the mod's `State` or `ModFolder`.
-- For behaviour that reacts to game moments, write a `JiangyuSystem` subclass per feature (`OnInit`, `OnTemplatesApplied`, `OnSceneLoaded`, `OnUpdate`, `OnUnload`). The systems of one mod share a `Context`; when one must initialise after another, annotate it with `[DependsOn(typeof(OtherSystem))]`.
+- For behaviour that reacts to game moments, write a `JiangyuSystem` subclass per feature (`OnInit`, `OnTemplatesApplied`, `OnSceneLoaded`, `OnUnload`). The systems of one mod share a `Context`; when one must initialise after another, annotate it with `[DependsOn(typeof(OtherSystem))]`.
 
 ## Building
 

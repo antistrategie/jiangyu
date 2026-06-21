@@ -10,15 +10,12 @@ namespace Jiangyu.Loader.Bundles;
 
 internal sealed class BundleReplacementCatalog
 {
-    private static readonly Vector3 HiddenTemplateInstancePosition = new(0f, -10000f, 0f);
-
     private readonly List<UnityEngine.Object> _pinned;
     // The loaded bundle handles per mod folder name (matches ModContext.ModId), so a
     // mod can load its own bundled assets by name through ModContext.Assets.
     private readonly Dictionary<string, List<Il2CppAssetBundle>> _bundlesByMod = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IModAssets> _assetsByMod = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _meshOwners = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _prefabOwners = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _textureOwners = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _spriteOwners = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _audioOwners = new(StringComparer.Ordinal);
@@ -41,7 +38,6 @@ internal sealed class BundleReplacementCatalog
     public readonly HumanoidMirrorScheduler HumanoidMirror = new();
 
     public Dictionary<string, ReplacementMesh> Meshes { get; } = new(StringComparer.Ordinal);
-    public Dictionary<string, ReplacementPrefab> Prefabs { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, Texture2D> ReplacementTextures { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, Sprite> ReplacementSprites { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, AudioClip> ReplacementAudioClips { get; } = new(StringComparer.Ordinal);
@@ -49,9 +45,7 @@ internal sealed class BundleReplacementCatalog
     // Mod-shipped addition prefabs declared on jiangyu.json's additionPrefabs
     // list. Looked up by Unity Object.name, satisfying KDL asset= references
     // targeting GameObject-typed fields via ModAssetResolver Phase 1 before
-    // the Phase 2 fallback consults the live game-asset registry. Distinct
-    // dictionary from Prefabs (which carries ReplacementPrefab metadata for
-    // the mesh-replacement path).
+    // the Phase 2 fallback consults the live game-asset registry.
     //
     // Case-insensitive on purpose: Unity normalises asset bundle names to
     // lowercase when writing, so a bundle authored as Voymastina/Voymastina
@@ -264,7 +258,6 @@ internal sealed class BundleReplacementCatalog
         _pinned.Add(prefab);
 
         var instance = UnityEngine.Object.Instantiate(prefab);
-        var keepTemplateInstance = false;
         try
         {
             instance.hideFlags = HideFlags.HideAndDontSave;
@@ -277,7 +270,6 @@ internal sealed class BundleReplacementCatalog
             }
 
             var mappedTargetKeys = new HashSet<string>(StringComparer.Ordinal);
-            var metadataByTargetKey = new Dictionary<string, CompiledMeshMetadata>(StringComparer.Ordinal);
             foreach (var smr in renderers)
             {
                 if (smr.sharedMesh == null)
@@ -302,7 +294,6 @@ internal sealed class BundleReplacementCatalog
                         ? targetKey
                         : prefabMetadata.TargetRendererPath;
                     targetEntityName = prefabMetadata.TargetEntityName;
-                    metadataByTargetKey[targetKey] = prefabMetadata;
                 }
 
                 RegisterMeshOverride(
@@ -317,36 +308,13 @@ internal sealed class BundleReplacementCatalog
             if (mappedTargetKeys.Count == 0)
                 return;
 
-            var prefabBoneNames = CollectPrefabBoneNames(instance);
-            foreach (var targetKey in mappedTargetKeys)
-            {
-                var targetRendererPath = targetKey;
-                string targetEntityName = null;
-                if (metadataByTargetKey.TryGetValue(targetKey, out var prefabMetadata))
-                {
-                    targetRendererPath = string.IsNullOrWhiteSpace(prefabMetadata.TargetRendererPath)
-                        ? targetKey
-                        : prefabMetadata.TargetRendererPath;
-                    targetEntityName = prefabMetadata.TargetEntityName;
-                }
-
-                RegisterPrefabOverride(
-                    targetKey,
-                    new ReplacementPrefab(instance, prefab.name, prefabBoneNames, targetRendererPath, targetEntityName),
-                    ownerLabel,
-                    log);
-            }
-
-            instance.transform.position = HiddenTemplateInstancePosition;
-            instance.SetActive(false);
-            _pinned.Add(instance);
-            keepTemplateInstance = true;
-            log.Debug($"  Registered prefab: {prefab.name} -> {mappedTargetKeys.Count} target renderer path(s) ({prefabBoneNames.Length} bones)");
+            log.Debug($"  Registered {mappedTargetKeys.Count} mesh target(s) from prefab '{prefab.name}'.");
         }
         finally
         {
-            if (!keepTemplateInstance)
-                UnityEngine.Object.Destroy(instance);
+            // The bundle instance is only a vehicle for extracting the (now-pinned) meshes;
+            // nothing references it after registration, so it is always disposed.
+            UnityEngine.Object.Destroy(instance);
         }
     }
 
@@ -518,15 +486,6 @@ internal sealed class BundleReplacementCatalog
         _meshOwners[targetName] = ownerLabel;
     }
 
-    private void RegisterPrefabOverride(string targetName, ReplacementPrefab prefab, string ownerLabel, LoaderLog log)
-    {
-        if (_prefabOwners.TryGetValue(targetName, out var previousOwner))
-            log.Warning($"  Override prefab target '{targetName}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
-
-        Prefabs[targetName] = prefab;
-        _prefabOwners[targetName] = ownerLabel;
-    }
-
     private void RegisterTextureOverride(string textureName, Texture2D texture, string ownerLabel, LoaderLog log)
     {
         if (_textureOwners.TryGetValue(textureName, out var previousOwner))
@@ -570,25 +529,6 @@ internal sealed class BundleReplacementCatalog
         for (int i = 0; i < bones.Length; i++)
             names[i] = bones[i]?.name ?? string.Empty;
         return names;
-    }
-
-    private static string[] CollectPrefabBoneNames(GameObject prefabInstance)
-    {
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        var renderers = prefabInstance.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-        foreach (var smr in renderers)
-        {
-            foreach (var bone in smr.bones)
-            {
-                if (bone != null && !string.IsNullOrEmpty(bone.name))
-                    names.Add(bone.name);
-            }
-
-            if (smr.rootBone != null && !string.IsNullOrEmpty(smr.rootBone.name))
-                names.Add(smr.rootBone.name);
-        }
-
-        return names.OrderBy(x => x, StringComparer.Ordinal).ToArray();
     }
 
     private static LoaderManifest OpenManifest(string manifestPath, LoaderLog log)

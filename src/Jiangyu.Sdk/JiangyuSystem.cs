@@ -33,9 +33,6 @@ public abstract class JiangyuSystem
     /// <summary>Called when a Unity scene finishes loading.</summary>
     public virtual void OnSceneLoaded(int buildIndex, string sceneName) { }
 
-    /// <summary>Called every frame. Override only when per-frame work is needed.</summary>
-    public virtual void OnUpdate() { }
-
     /// <summary>Called when the system is unloaded, on shutdown or hot reload.</summary>
     public virtual void OnUnload() { }
 }

@@ -362,20 +362,31 @@ internal sealed class TemplateCloneApplier
         return applied;
     }
 
+    // Il2CppStem.SoundManager.RegisterBank(SoundBank) lives in Assembly-CSharp-firstpass,
+    // which Jiangyu.Loader does not reference statically, so the type is found by scanning the
+    // loaded assemblies. Resolved once and cached so repeat SoundBank-clone registrations skip
+    // the domain walk. A miss is not cached: an early call before Stem is loaded then retries.
+    private static Type _soundManagerType;
+
+    private static Type ResolveSoundManagerType()
+    {
+        if (_soundManagerType != null)
+            return _soundManagerType;
+        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            var type = asm.GetType("Il2CppStem.SoundManager", throwOnError: false);
+            if (type != null)
+                return _soundManagerType = type;
+        }
+        return null;
+    }
+
     private static void TryRegisterSoundBankWithStem(
         UnityEngine.Object cloneObj, Type resolvedType, LoaderLog log)
     {
         if (cloneObj == null || resolvedType == null) return;
 
-        // Il2CppStem.SoundManager.RegisterBank(SoundBank) lives in
-        // Assembly-CSharp-firstpass. Jiangyu.Loader doesn't reference that
-        // assembly statically, so we resolve via reflection.
-        Type soundManagerType = null;
-        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            soundManagerType = asm.GetType("Il2CppStem.SoundManager", throwOnError: false);
-            if (soundManagerType != null) break;
-        }
+        var soundManagerType = ResolveSoundManagerType();
         if (soundManagerType == null)
         {
             log.Warning("  SoundBank registration: Il2CppStem.SoundManager type not found.");

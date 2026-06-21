@@ -36,6 +36,10 @@ public static class UI
     // re-hooks correctly against the new panel.
     private static readonly HashSet<IntPtr> OutsideCloseHooked = new();
 
+    // Screen roots already given a GeometryChangedEvent re-apply hook, so a re-activated
+    // (or cached, pointer-reused) screen is not double-hooked.
+    private static readonly HashSet<IntPtr> GeometryHookedRoots = new();
+
     /// <summary>Resolve a bundled UXML asset by calling assembly and name. Bound by the loader at startup.</summary>
     public static void BindUxmlResolver(Func<Assembly, string, VisualTreeAsset> resolver) =>
         _uxmlResolver = resolver ?? (static (_, _) => null);
@@ -203,11 +207,39 @@ public static class UI
     // Whether any injection is registered. The loader skips its driver when false.
     internal static bool HasInjections => Injections.Count > 0;
 
-    // Re-apply every live injection. The loader calls this when the active screen
-    // changes, so an injection re-lands after the game tears down and rebuilds a
-    // screen. Each injection skips sites it already occupies, so this is idempotent.
-    // Iterates a snapshot: a bind callback may Remove an injection mid-pass (which
-    // mutates Injections), and a removed injection's Reapply early-returns anyway.
+    // The loader's UIManager.ActivateScreen postfix calls this when a screen becomes the
+    // active one. Re-applies immediately, then hooks the screen root's GeometryChangedEvent
+    // so an injection whose target site is built after activation lands once the screen
+    // lays out, without polling. Idempotent: re-apply skips occupied sites, and each root
+    // is hooked once.
+    internal static void NotifyScreenActivated(VisualElement screenRoot)
+    {
+        if (!HasInjections)
+            return;
+
+        ReapplyAll();
+
+        if (screenRoot == null)
+            return;
+
+        IntPtr rootPtr;
+        try { rootPtr = screenRoot.Pointer; }
+        catch { return; }
+        if (!GeometryHookedRoots.Add(rootPtr))
+            return;
+
+        try
+        {
+            screenRoot.RegisterCallback<GeometryChangedEvent>(
+                DelegateSupport.ConvertDelegate<EventCallback<GeometryChangedEvent>>(
+                    (Action<GeometryChangedEvent>)(_ => { if (HasInjections) ReapplyAll(); })));
+        }
+        catch (Exception ex) { Log.Warn($"UI: screen geometry hook failed: {ex.Message}"); }
+    }
+
+    // Re-apply every live injection. Each injection skips sites it already occupies, so
+    // this is idempotent. Iterates a snapshot: a bind callback may Remove an injection
+    // mid-pass (which mutates Injections), and a removed injection's Reapply early-returns.
     internal static void ReapplyAll()
     {
         foreach (var injection in Injections.ToArray())
@@ -328,6 +360,7 @@ internal sealed class RegisteredInjection
             // initial inject and on every screen rebuild, so injected UXML needs no per-mod call.
             UI.Localise(element);
             _injected.Add(element);
+            Log.Debug($"UI inject {_marker} landed at a resolved site");
         }
     }
 

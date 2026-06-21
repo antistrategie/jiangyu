@@ -154,8 +154,6 @@ internal sealed class ModHost
     public void SceneLoaded(int buildIndex, string sceneName)
         => ForEachLive("OnSceneLoaded", s => s.Instance.OnSceneLoaded(buildIndex, sceneName));
 
-    public void Update() => ForEachLive("OnUpdate", s => s.Instance.OnUpdate());
-
     public void UnloadAll()
     {
         // Tear down in reverse dependency order (LIFO): each system unloads before the

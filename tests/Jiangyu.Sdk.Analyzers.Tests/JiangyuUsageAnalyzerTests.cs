@@ -87,14 +87,18 @@ public sealed class JiangyuUsageAnalyzerTests
         Assert.Equal(new[] { "JIA008" }, ids);
     }
 
+    // JiangyuSystem no longer has OnUpdate, but the rule's "frame" cadence still applies to a
+    // game-type override of a per-frame method (e.g. a [JiangyuType] over a game OnUpdate),
+    // reached via ModContext.For(this).Hooks. Pins that branch so it cannot be dropped silently.
     [Fact]
-    public async Task Subscribe_InOnUpdate_ReportsJIA008()
+    public async Task Subscribe_InGameTypeOnUpdateOverride_ReportsJIA008()
     {
         var ids = await IdsAsync("""
             using Jiangyu.Sdk;
-            public class M : JiangyuSystem
+            public class GameBase { public virtual void OnUpdate() { } }
+            [JiangyuType] public class H : GameBase
             {
-                public override void OnUpdate() { Context.Hooks.Subscribe<object>(_ => { }); }
+                public override void OnUpdate() { ModContext.For(this).Hooks.Subscribe<object>(_ => { }); }
             }
             """);
 
