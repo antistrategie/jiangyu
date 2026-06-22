@@ -119,12 +119,21 @@ public class JiangyuMod : MelonMod, IDevServicesContext
             var hostLog = new MelonHostLog(LoggerInstance);
             _hookBus = new InProcessHookBus(hostLog);
             ModPatchCoordinator.Initialise(HarmonyInstance);
+
+            // Game.Input.Hotkeys: one loader-owned per-frame coroutine polls input and fans
+            // each press out to mod-registered handlers, so a mod never writes a frame loop.
+            // Registrations are grouped per mod (by the handler's assembly), so the loader drops
+            // them on that mod's unload alongside its coroutines and patches.
+            var hotkeyDispatch = new Sdk.Input.HotkeyDispatch();
+            var hotkeyRegistry = new Sdk.Input.HotkeyRegistry(hotkeyDispatch, asm => _modHost?.ModIdForAssembly(asm));
+
             _modHost = new ModHost(hostLog, LoaderModContext.Factory(
                 hostLog, _hookBus, modsDir,
                 assetsProvider: modId => _replacementCoordinator.AssetsFor(modId, hostLog),
                 coroutineStart: MelonCoroutines.Start,
                 coroutineStop: MelonCoroutines.Stop,
-                patchingEnabled: true));
+                patchingEnabled: true),
+                clearModHotkeys: hotkeyRegistry.ClearMod);
             _tacticalHooks = new TacticalHookPublisher(_hookBus, hostLog);
             _strategyHooks = new StrategyHookPublisher(_hookBus, hostLog);
             StrategyHarmonyPatch.Bus = _hookBus;
@@ -185,6 +194,13 @@ public class JiangyuMod : MelonMod, IDevServicesContext
                 return _replacementCoordinator.AssetsFor(modId, hostLog)
                     ?.Load<UnityEngine.UIElements.VisualTreeAsset>(name);
             });
+
+            // Bound before InitAll so a system's OnInit can register hotkeys. The dispatch and
+            // registry were created above so the registry's ClearMod could be handed to the host.
+            Jiangyu.Game.Input.Hotkeys.BindRegistrar(hotkeyRegistry);
+            MelonCoroutines.Start(Sdk.Input.HotkeyPump.Poll(
+                hotkeyDispatch,
+                ex => LoggerInstance.Error($"Hotkey handler threw and was removed: {ex.GetType().Name}: {ex.Message}")));
 
             _modHost.InitAll();
         }

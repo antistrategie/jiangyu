@@ -104,6 +104,10 @@
       <HintPath>$(GameAssembliesDir)/UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GameAssembliesDir)/UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.AnimationModule">
       <HintPath>$(GameAssembliesDir)/UnityEngine.AnimationModule.dll</HintPath>
       <Private>false</Private>

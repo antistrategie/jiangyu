@@ -41,14 +41,16 @@ internal sealed class ModHost
 
     private readonly IModHostLog _log;
     private readonly Func<string, ModContext> _contextFactory;
+    private readonly Action<string> _clearModHotkeys;
     private readonly Dictionary<string, ModContext> _contexts = new(StringComparer.Ordinal);
     private readonly Dictionary<Assembly, ModContext> _contextsByAssembly = new();
     private readonly List<LoadedSystem> _systems = new();
 
-    public ModHost(IModHostLog log, Func<string, ModContext> contextFactory)
+    public ModHost(IModHostLog log, Func<string, ModContext> contextFactory, Action<string> clearModHotkeys = null)
     {
         _log = log;
         _contextFactory = contextFactory;
+        _clearModHotkeys = clearModHotkeys;
     }
 
     public IReadOnlyList<LoadedSystem> Systems => _systems;
@@ -192,13 +194,16 @@ internal sealed class ModHost
         }
     }
 
-    // Release a mod's runtime attachments: stop its coroutines and drop its method
-    // patches, so a quarantined or unloaded system leaves nothing running.
-    private static void CleanupSystem(LoadedSystem system)
+    // Release a mod's runtime attachments: stop its coroutines, drop its method patches, and
+    // remove its hotkeys, so a quarantined or unloaded system leaves nothing running. All three
+    // are mod-scoped (shared by every system of a modId), so the quarantine path calls this only
+    // once no sibling system of the mod is still live; a full unload releases every system.
+    private void CleanupSystem(LoadedSystem system)
     {
         var context = system.Instance.Context;
         (context?.Coroutines as ModCoroutineRunner)?.StopAll();
         (context?.Patches as ModPatchService)?.RemoveAll();
+        _clearModHotkeys?.Invoke(system.ModId);
     }
 
     private static IEnumerable<Type> ConcreteSystems(Assembly assembly)

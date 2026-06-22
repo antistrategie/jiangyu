@@ -16,10 +16,11 @@ A code mod compiles against `Jiangyu.Sdk` plus the game's IL2CPP proxy assemblie
 | --- | --- | --- |
 | [Template types](./template-types) | add your own effect, condition, or value the game constructs from data | not needed |
 | [Hooks](#hooks) | react to game moments (a kill, a round boundary, a leader hired) | needed |
+| [Hotkeys](./hotkeys) | run your code when the player presses a key | needed |
 | [Game verbs](./verbs) | read and command the live game (spawn a unit, query a path) | not needed |
 | [Game UI](./ui) | inject your own elements into the game's screens | not needed |
 
-Template types are the data-shaped surface. The other three are runtime behaviour, and verbs and UI can be called from inside any of them.
+Template types are the data-shaped surface. The others are runtime behaviour, and verbs and UI can be called from inside any of them.
 
 ## The `code/` project
 
@@ -151,6 +152,8 @@ System.Collections.IEnumerator Settle()
 ```
 
 Use it to act after a synchronous hook once the game state has settled, to poll for a condition no hook covers, or to sequence an effect over time. Routines are stopped for you when the mod unloads.
+
+There is intentionally no per-frame `OnUpdate` on a system. Most "every frame" code is really waiting for a moment, so react to the game's own with [Hooks](#hooks) and to a keypress with [Hotkeys](./hotkeys). When you genuinely need to run on every frame, a coroutine that `yield return null`s in a loop is the escape hatch, and it ends cleanly when you stop it or the mod unloads.
 
 ### Patches
 
