@@ -28,7 +28,9 @@ import { buildProjectActions } from "@features/project/paletteActions";
 import { buildUnityActions } from "@features/unity/paletteActions";
 import { unityInit, unityOpen } from "@features/unity/unity";
 import { buildCodeActions } from "@features/code/paletteActions";
-import { codeSync, deploy } from "@features/code/code";
+import { codeSync } from "@features/code/code";
+// Side-effect import: registers the packageFinished / deployFinished toast subscribers.
+import "@features/project/buildNotifications";
 import { revealInExplorer } from "@features/assets/assets";
 import { useToastStore, type Toast } from "@shared/toast";
 import { usePaneActions } from "@features/panes/paneActions";
@@ -58,6 +60,39 @@ function runRpcWithToast<T>(
     } catch (err) {
       push({ variant: "error", message: `${errorLabel}: ${(err as Error).message}` });
     }
+  })();
+}
+
+// Deploy / package operate on the existing compiled/ output, so the palette and the
+// compile dossier share these. Module-level (no component state) so they pass straight
+// to both buildProjectActions and the CompileModal.
+// Kick off a non-blocking build-output op (package, deploy). The work runs on a host
+// worker thread and the result toast arrives via its finished notification, so this only
+// starts it and surfaces a failure to even begin.
+function fireBuildOp(method: string, label: string, params?: unknown): Promise<void> {
+  return rpcCall<{ started: boolean }>(method, params).then(
+    () => undefined,
+    (err: unknown) => {
+      useToastStore.getState().push({
+        variant: "error",
+        message: `${label} failed: ${(err as Error).message}`,
+      });
+    },
+  );
+}
+
+function deployMod(): void {
+  void fireBuildOp("deploy", "Deploy");
+}
+
+function packageMod(): void {
+  // Always ask where to drop the package; abort silently if cancelled.
+  void (async () => {
+    const dir = await rpcCall<string | null>("pickDirectory", {
+      title: "Choose where to save the package",
+    });
+    if (dir === null) return;
+    await fireBuildOp("package", "Package", { outputDirectory: dir });
   })();
 }
 
@@ -186,12 +221,8 @@ export function App() {
         openProject: () => void ps.openProject(),
         closeProject: ps.closeProject,
         revealProject: ps.revealProject,
-        deployMod: () =>
-          runRpcWithToast(deploy, "Deploy failed", (r) => ({
-            message: `Deployed ${r.modName}`,
-            detail: r.destDir,
-            actions: [{ label: "Reveal", run: () => void revealInExplorer(r.destDir) }],
-          })),
+        deployMod,
+        packageMod,
       }),
       {
         id: "app.openSettings",
@@ -325,7 +356,13 @@ export function App() {
       )}
       <Palette open={paletteOpen} onClose={() => setPaletteOpen(false)} actions={allActions} />
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
-      {compileOpen && <CompileModal onClose={() => setCompileOpen(false)} />}
+      {compileOpen && (
+        <CompileModal
+          onClose={() => setCompileOpen(false)}
+          onDeploy={deployMod}
+          onPackage={packageMod}
+        />
+      )}
       {registryOpen && <AgentRegistryModal onClose={() => setRegistryOpen(false)} />}
     </div>
   );

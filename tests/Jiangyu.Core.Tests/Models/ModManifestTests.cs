@@ -12,9 +12,9 @@ public class ModManifestTests
 
         Assert.Equal("TestMod", manifest.Name);
         Assert.Equal("0.1.0", manifest.Version);
-        Assert.NotNull(manifest.Depends);
-        Assert.Single(manifest.Depends);
-        Assert.Contains("Jiangyu >= 1.0.0", manifest.Depends);
+        // The Jiangyu requirement is stamped at compile (compiledForJiangyu), not seeded
+        // into the scaffold, so a fresh manifest declares no dependencies.
+        Assert.Null(manifest.Depends);
     }
 
     [Fact]

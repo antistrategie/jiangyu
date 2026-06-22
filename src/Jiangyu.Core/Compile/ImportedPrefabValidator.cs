@@ -6,7 +6,7 @@ namespace Jiangyu.Core.Compile;
 /// <summary>
 /// Checks that every Unity GUID reachable from <c>unity/Assets/</c> resolves
 /// to either a non-imported asset or an <c>Imported/&lt;name&gt;/</c> rip
-/// declared in <c>manifest.importedPrefabs</c>. Catches the silent-pink-
+/// declared in <c>manifest.imports</c>. Catches the silent-pink-
 /// material failure where a contributor bakes a humanoid against a vanilla
 /// rip but forgets to declare the rip in the manifest.
 /// </summary>
@@ -47,7 +47,7 @@ internal static partial class ImportedPrefabValidator
         if (guidToSubdir.Count == 0) return null;
 
         var declared = new HashSet<string>(
-            (IEnumerable<string>?)manifest.ImportedPrefabs ?? [],
+            (IEnumerable<string>?)manifest.Imports ?? [],
             StringComparer.OrdinalIgnoreCase);
 
         var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mat", ".prefab", ".asset" };
@@ -88,7 +88,7 @@ internal static partial class ImportedPrefabValidator
 
         var lines = new List<string>
         {
-            "Mod content references host-game rips that are missing from 'importedPrefabs' in jiangyu.json.",
+            "Mod content references host-game rips that are missing from 'imports' in jiangyu.json.",
             "Either add the following names to the manifest and re-run compile, or remove the references from the listed files:",
         };
         foreach (var subdir in missingSubdirs)

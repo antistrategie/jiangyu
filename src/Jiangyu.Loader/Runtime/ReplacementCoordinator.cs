@@ -78,7 +78,7 @@ internal class ReplacementCoordinator
         if (!Directory.Exists(modsDir))
             return new BundleLoadSummary(0, 0, 0);
 
-        var plan = ModLoadPlanBuilder.Build(modsDir);
+        var plan = ModLoadPlanBuilder.Build(modsDir, BuildInfo.Version);
         var summary = _catalog.LoadBundles(plan, new LoaderLog(log));
         // Read each mod's compiled template program once and feed both catalogs, rather
         // than each catalog re-reading and re-parsing the same templates.json.

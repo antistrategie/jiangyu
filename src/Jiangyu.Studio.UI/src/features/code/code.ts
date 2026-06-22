@@ -1,14 +1,9 @@
 import { rpcCall } from "@shared/rpc";
-import type { CodeSyncResult, DeployResult } from "@shared/rpc";
+import type { CodeSyncResult } from "@shared/rpc";
 
-export type { CodeSyncResult, DeployResult };
+export type { CodeSyncResult };
 
 /** Scaffold or refresh the open project's code/ C# project. */
 export async function codeSync(): Promise<CodeSyncResult> {
   return rpcCall<CodeSyncResult>("codeSync", undefined, { timeoutMs: 0 });
-}
-
-/** Deploy the open project's compiled/ output into the game's Mods folder. */
-export async function deploy(): Promise<DeployResult> {
-  return rpcCall<DeployResult>("deploy");
 }

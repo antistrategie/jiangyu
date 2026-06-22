@@ -12,12 +12,10 @@ public static partial class RpcHandlers
 {
     /// <summary>
     /// Cross-handler compile gate. Both the blocking MCP tool here and the
-    /// streaming WebView RPC in Studio.Host take this lock so a second
-    /// compile can't start while one is already in flight (each variant
-    /// has its own runtime state, but they share the gate).
+    /// streaming WebView RPC in Studio.Host route through the shared build
+    /// gate (<see cref="BeginBuildOp"/>) so a second compile — or a package
+    /// or deploy — can't start while one is already in flight.
     /// </summary>
-    public static readonly Lock CompileLock = new();
-    public static bool CompileRunning;
 
     /// <summary>
     /// Optional override that lets Studio.Host route MCP-triggered compiles
@@ -26,8 +24,9 @@ public static partial class RpcHandlers
     /// null in the standalone <c>jiangyu-mcp</c> binary, where compiles
     /// run inline without a UI to notify. Returns the same shape as the
     /// inline path so the agent gets a typed result either way. Takes the
-    /// project root and is responsible for the gate (managing
-    /// <see cref="CompileRunning"/>) since it owns the streaming state.
+    /// project root and is responsible for the build gate
+    /// (<see cref="BeginBuildOp"/>/<see cref="EndBuildOp"/>) since it owns
+    /// the streaming state.
     /// </summary>
     public static Func<string, JsonElement>? CompileRunOverride;
 
@@ -45,12 +44,7 @@ public static partial class RpcHandlers
         if (CompileRunOverride is { } streaming)
             return streaming(projectRoot);
 
-        lock (CompileLock)
-        {
-            if (CompileRunning)
-                throw new InvalidOperationException("Compile already in progress.");
-            CompileRunning = true;
-        }
+        BeginBuildOp();
 
         try
         {
@@ -95,7 +89,7 @@ public static partial class RpcHandlers
         }
         finally
         {
-            lock (CompileLock) CompileRunning = false;
+            EndBuildOp();
         }
     }
 

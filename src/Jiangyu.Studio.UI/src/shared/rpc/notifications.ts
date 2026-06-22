@@ -24,6 +24,8 @@ import type {
   CompileProgressEvent,
   CompileStartedEvent,
   CompileStatusEvent,
+  DeployFinishedEvent,
+  PackageFinishedEvent,
 } from "./types";
 
 export type FileChangeKind = "changed" | "deleted";
@@ -41,6 +43,8 @@ export interface HostNotificationMap {
   compileProgress: CompileProgressEvent;
   compileLog: CompileLogEventPayload;
   compileFinished: CompileFinishedEvent;
+  packageFinished: PackageFinishedEvent;
+  deployFinished: DeployFinishedEvent;
   agentsRegistryFetched: AgentRegistryFetchedNotification;
   agentSessionCreated: AgentSessionCreatedNotification;
 }

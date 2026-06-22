@@ -13,18 +13,22 @@ public sealed class ModLoadPlan(IReadOnlyList<DiscoveredMod> loadableMods, IRead
 
 public sealed class DiscoveredMod(
     string name,
+    string version,
     string directoryPath,
     string relativeDirectoryPath,
     string manifestPath,
     IReadOnlyList<string> bundlePaths,
-    IReadOnlyList<ManifestDependency> dependencies)
+    IReadOnlyList<ManifestDependency> dependencies,
+    IReadOnlyList<ManifestDependency> conflicts)
 {
     public string Name { get; } = name;
+    public string Version { get; } = version;
     public string DirectoryPath { get; } = directoryPath;
     public string RelativeDirectoryPath { get; } = relativeDirectoryPath;
     public string ManifestPath { get; } = manifestPath;
     public IReadOnlyList<string> BundlePaths { get; } = bundlePaths;
     public IReadOnlyList<ManifestDependency> Dependencies { get; } = dependencies;
+    public IReadOnlyList<ManifestDependency> Conflicts { get; } = conflicts;
 }
 
 public sealed class BlockedMod(string name, string directoryPath, string relativeDirectoryPath, string reason)
@@ -37,10 +41,17 @@ public sealed class BlockedMod(string name, string directoryPath, string relativ
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? RelativeDirectoryPath : Name;
 }
 
-public sealed class ManifestDependency(string raw, string name, string? constraint)
+public sealed class ManifestDependency(string raw, string name, string? @operator, string? constraint)
 {
     public string Raw { get; } = raw;
     public string Name { get; } = name;
+
+    /// <summary>The comparison operator (<c>&gt;=</c>, <c>&lt;</c>, ...), or null for a
+    /// presence-only entry with no version constraint.</summary>
+    public string? Operator { get; } = @operator;
+
+    /// <summary>The version the <see cref="Operator"/> compares against, or null when there
+    /// is no constraint.</summary>
     public string? Constraint { get; } = constraint;
 }
 
@@ -57,7 +68,11 @@ public static class ModLoadPlanBuilder
         @"^\s*(?<name>.+?)(?:\s*(?<operator>>=|<=|==|!=|>|<|=)\s*(?<constraint>.+))?\s*$",
         RegexOptions.Compiled);
 
-    public static ModLoadPlan Build(string modsDir)
+    /// <summary>Discover, validate, and dependency-gate the mods under <paramref name="modsDir"/>.
+    /// <paramref name="loaderVersion"/> is the running Jiangyu version that satisfies a
+    /// <c>Jiangyu</c> dependency or conflict constraint; pass null offline to fall back to a
+    /// presence-only check for the loader entry.</summary>
+    public static ModLoadPlan Build(string modsDir, string? loaderVersion = null)
     {
         if (!Directory.Exists(modsDir))
             return ModLoadPlan.Empty;
@@ -103,28 +118,42 @@ public static class ModLoadPlanBuilder
             discovered.RemoveAll(mod => duplicateNames.Contains(mod.Name));
         }
 
-        // `depends` currently resolves against manifest `name`. This is provisional until
+        // `depends`/`conflicts` resolve against manifest `name`. This is provisional until
         // Jiangyu defines a stable machine-readable mod identifier separate from display name.
-        var availableNames = new HashSet<string>(discovered.Select(mod => mod.Name), StringComparer.Ordinal)
-        {
-            LoaderDependencyName,
-        };
+        // The loader itself is present as `Jiangyu` at the running version; offline (no version
+        // supplied) it is present with an empty version, so its constraints fall back to a
+        // presence-only check.
+        var availableVersions = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var mod in discovered)
+            availableVersions[mod.Name] = mod.Version;
+        availableVersions[LoaderDependencyName] = loaderVersion ?? string.Empty;
 
         var loadable = new List<DiscoveredMod>();
         foreach (var mod in discovered.OrderBy(mod => mod.RelativeDirectoryPath, StringComparer.Ordinal))
         {
-            var missingDependencies = mod.Dependencies
-                .Where(dep => !availableNames.Contains(dep.Name))
-                .Select(dep => dep.Raw)
-                .ToArray();
+            var problems = new List<string>();
 
-            if (missingDependencies.Length > 0)
+            foreach (var dependency in mod.Dependencies)
+            {
+                var unmet = DescribeUnmetDependency(dependency, availableVersions);
+                if (unmet is not null)
+                    problems.Add(unmet);
+            }
+
+            foreach (var conflict in mod.Conflicts)
+            {
+                var triggered = DescribeTriggeredConflict(conflict, availableVersions);
+                if (triggered is not null)
+                    problems.Add(triggered);
+            }
+
+            if (problems.Count > 0)
             {
                 blocked.Add(new BlockedMod(
                     mod.Name,
                     mod.DirectoryPath,
                     mod.RelativeDirectoryPath,
-                    $"Missing required mod(s): {string.Join(", ", missingDependencies)}."));
+                    $"Cannot load '{mod.Name}': {string.Join("; ", problems)}."));
                 continue;
             }
 
@@ -134,6 +163,46 @@ public static class ModLoadPlanBuilder
         return new ModLoadPlan(
             loadable,
             [.. blocked.OrderBy(mod => mod.RelativeDirectoryPath, StringComparer.Ordinal)]);
+    }
+
+    // A dependency is unmet when its mod is absent, or present but failing the version
+    // constraint. A constraint that can't be evaluated (no operator, or either side
+    // unparseable as a version) degrades to a presence-only check. Returns the block
+    // reason, or null when satisfied.
+    private static string? DescribeUnmetDependency(ManifestDependency dependency, IReadOnlyDictionary<string, string> availableVersions)
+    {
+        if (!availableVersions.TryGetValue(dependency.Name, out var presentVersion))
+            return $"requires {dependency.Raw}";
+
+        if (dependency.Operator is null || dependency.Constraint is null)
+            return null;
+
+        if (!SemVer.TryParse(presentVersion, out var present) || !SemVer.TryParse(dependency.Constraint, out var required))
+            return null;
+
+        return SemVer.Satisfies(present, dependency.Operator, required)
+            ? null
+            : $"requires {dependency.Raw} but found {dependency.Name} {presentVersion}";
+    }
+
+    // A conflict triggers when the named mod is present and (for a constrained entry) its
+    // version satisfies the conflict range. A constrained entry whose present version can't
+    // be evaluated does not trigger: we won't block on an unconfirmable range. Returns the
+    // block reason, or null when there is no conflict.
+    private static string? DescribeTriggeredConflict(ManifestDependency conflict, IReadOnlyDictionary<string, string> availableVersions)
+    {
+        if (!availableVersions.TryGetValue(conflict.Name, out var presentVersion))
+            return null;
+
+        if (conflict.Operator is null || conflict.Constraint is null)
+            return $"conflicts with {conflict.Name}, which is installed";
+
+        if (!SemVer.TryParse(presentVersion, out var present) || !SemVer.TryParse(conflict.Constraint, out var range))
+            return null;
+
+        return SemVer.Satisfies(present, conflict.Operator, range)
+            ? $"conflicts with {conflict.Raw} (found {conflict.Name} {presentVersion})"
+            : null;
     }
 
     private static bool TryDiscoverMod(string modsDir, string manifestPath, out DiscoveredMod? mod, out BlockedMod? blockedMod)
@@ -173,13 +242,15 @@ public static class ModLoadPlanBuilder
                 return false;
             }
 
-            if (!TryParseDependencies(manifest.Depends, out var dependencies, out var dependencyError))
+            if (!TryParseConstraints(manifest.Depends, "Dependency", out var dependencies, out var dependencyError))
             {
-                blockedMod = new BlockedMod(
-                    manifest.Name,
-                    modDir,
-                    relativeDirectoryPath,
-                    dependencyError!);
+                blockedMod = new BlockedMod(manifest.Name, modDir, relativeDirectoryPath, dependencyError!);
+                return false;
+            }
+
+            if (!TryParseConstraints(manifest.Conflicts, "Conflict", out var conflicts, out var conflictError))
+            {
+                blockedMod = new BlockedMod(manifest.Name, modDir, relativeDirectoryPath, conflictError!);
                 return false;
             }
 
@@ -194,11 +265,13 @@ public static class ModLoadPlanBuilder
 
             mod = new DiscoveredMod(
                 manifest.Name.Trim(),
+                manifest.Version ?? string.Empty,
                 modDir,
                 relativeDirectoryPath,
                 manifestPath,
                 bundlePaths,
-                dependencies);
+                dependencies,
+                conflicts);
             return true;
         }
         catch (Exception ex)
@@ -212,48 +285,65 @@ public static class ModLoadPlanBuilder
         }
     }
 
-    private static bool TryParseDependencies(
-        IReadOnlyList<string>? rawDependencies,
-        out IReadOnlyList<ManifestDependency> dependencies,
+    // Parses a `<name>` or `<name> <op> <constraint>` list, shared by `depends` and
+    // `conflicts`. <paramref name="kind"/> labels the entry in error text ("Dependency"
+    // / "Conflict").
+    private static bool TryParseConstraints(
+        IReadOnlyList<string>? rawEntries,
+        string kind,
+        out IReadOnlyList<ManifestDependency> entries,
         out string? error)
     {
-        dependencies = [];
+        entries = [];
         error = null;
 
-        if (rawDependencies == null || rawDependencies.Count == 0)
+        if (rawEntries == null || rawEntries.Count == 0)
             return true;
 
-        var result = new List<ManifestDependency>(rawDependencies.Count);
-        foreach (var rawDependency in rawDependencies)
+        var result = new List<ManifestDependency>(rawEntries.Count);
+        foreach (var rawEntry in rawEntries)
         {
-            if (string.IsNullOrWhiteSpace(rawDependency))
+            if (string.IsNullOrWhiteSpace(rawEntry))
             {
-                error = "Manifest contains an empty dependency entry.";
+                error = $"Manifest contains an empty {kind.ToLowerInvariant()} entry.";
                 return false;
             }
 
-            var match = DependencyPattern.Match(rawDependency);
+            var match = DependencyPattern.Match(rawEntry);
             if (!match.Success)
             {
-                error = $"Dependency entry '{rawDependency}' is invalid.";
+                error = $"{kind} entry '{rawEntry}' is invalid.";
                 return false;
             }
 
             var name = match.Groups["name"].Value.Trim();
             if (string.IsNullOrWhiteSpace(name))
             {
-                error = $"Dependency entry '{rawDependency}' does not name a required mod.";
+                error = $"{kind} entry '{rawEntry}' does not name a mod.";
                 return false;
             }
 
-            var constraint = match.Groups["constraint"].Success
-                ? match.Groups["constraint"].Value.Trim()
-                : null;
+            var @operator = match.Groups["operator"].Success ? match.Groups["operator"].Value.Trim() : null;
+            var constraint = match.Groups["constraint"].Success ? match.Groups["constraint"].Value.Trim() : null;
+            var hasConstraint = !string.IsNullOrWhiteSpace(constraint);
 
-            result.Add(new ManifestDependency(rawDependency, name, string.IsNullOrWhiteSpace(constraint) ? null : constraint));
+            // A typo'd version (e.g. "Base >= 1.O.O") would otherwise parse here but silently
+            // fail to evaluate later, disabling the requirement with no signal. Reject it as a
+            // manifest error up front so the modder sees the cause.
+            if (hasConstraint && !SemVer.TryParse(constraint, out _))
+            {
+                error = $"{kind} entry '{rawEntry}' has an invalid version '{constraint}'.";
+                return false;
+            }
+
+            result.Add(new ManifestDependency(
+                rawEntry,
+                name,
+                hasConstraint ? @operator : null,
+                hasConstraint ? constraint : null));
         }
 
-        dependencies = result;
+        entries = result;
         return true;
     }
 

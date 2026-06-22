@@ -32,6 +32,10 @@ export interface AgentSessionCreatedNotification {
   authMethods?: unknown;
 }
 
+export interface BuildStartedAck {
+  started: boolean;
+}
+
 export interface CompileStartedAck {
   started: boolean;
 }
@@ -56,6 +60,21 @@ export interface CompileProgressEvent {
 export interface CompileLogEventPayload {
   level: string;
   message: string;
+}
+
+export interface DeployFinishedEvent {
+  success: boolean;
+  modName?: string | null;
+  destDir?: string | null;
+  errorMessage?: string | null;
+}
+
+export interface PackageFinishedEvent {
+  success: boolean;
+  modName?: string | null;
+  version?: string | null;
+  archivePath?: string | null;
+  errorMessage?: string | null;
 }
 
 export interface PaneWindowOpenedAck {
@@ -250,6 +269,12 @@ export interface ConfigStatus {
 export interface LoaderDeployResult {
   variant: string;
   version?: string | null;
+}
+
+export interface PackageResult {
+  modName: string;
+  version: string;
+  archivePath: string;
 }
 
 export interface EnumMembersResult {

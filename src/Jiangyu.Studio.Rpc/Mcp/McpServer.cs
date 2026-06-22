@@ -223,8 +223,8 @@ public sealed class McpServer
             // Long-running tools (e.g. jiangyu_compile) declare LongRunning=true
             // and bypass this lock — holding it for minutes would freeze every
             // concurrent WebView interaction (typing, mode picker, etc). Such
-            // tools are responsible for their own concurrency (typically a
-            // per-tool gate like CompileLock).
+            // tools are responsible for their own concurrency (typically the
+            // shared build gate, BeginBuildOp/EndBuildOp).
             JsonElement result;
             if (tool.LongRunning)
             {

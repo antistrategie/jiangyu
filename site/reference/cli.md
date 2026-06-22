@@ -24,12 +24,23 @@ Compiles the project's replacements and templates into a shippable mod under `co
 
 Compile bootstraps two preconditions on first run so the modder doesn't need to chain commands by hand:
 
-- Host prefabs declared in [`importedPrefabs`](/reference/manifest#imported-prefabs) are ripped into `unity/Assets/Imported/<name>/` if missing. Cached on subsequent runs.
+- Host prefabs declared in [`imports`](/reference/manifest#imported-prefabs) are ripped into `unity/Assets/Imported/<name>/` if missing. Cached on subsequent runs.
 - The asset index is built if missing or stale. Cached on subsequent runs.
 
-Game data is loaded once and reused for both steps. Compile also verifies that every `Imported/<X>/` GUID referenced from authored content has `X` listed in `importedPrefabs`, and fails with the unlisted names if not.
+Game data is loaded once and reused for both steps. Compile also verifies that every `Imported/<X>/` GUID referenced from authored content has `X` listed in `imports`, and fails with the unlisted names if not.
 
 Equivalent to Studio's Compile dossier. Returns non-zero on any compile error.
+
+### `jiangyu package`
+
+Packages the already-compiled `compiled/` output into `<name>-<version>.zip` for distribution. Like `deploy`, it works on the existing build and does **not** compile, so run `jiangyu compile` first (it fails if `compiled/` is absent). The archive holds a single top-level `<name>/` folder, so a player extracts it straight into `Mods/`. The name and version come from `compiled/jiangyu.json`. Writes into the project directory by default; `--output <dir>` redirects it.
+
+```sh
+jiangyu compile
+jiangyu package --output ../dist
+```
+
+To cut a new version, bump `version` in `jiangyu.json`, recompile, then package.
 
 ### `jiangyu deploy`
 
@@ -57,7 +68,7 @@ jiangyu unity import-prefab rmc_default_female_soldier_2
 
 Pass `--path-id` and/or `--collection` when the name is ambiguous (use `jiangyu assets search` to disambiguate).
 
-Most modders won't run this directly. List the names in [`importedPrefabs`](/reference/manifest#imported-prefabs) instead, and `jiangyu compile` rips on first run. Use this command as an escape hatch when you want to bring in a prefab one-off for inspection without committing to a manifest entry.
+Most modders won't run this directly. List the names in [`imports`](/reference/manifest#imported-prefabs) instead, and `jiangyu compile` rips on first run. Use this command as an escape hatch when you want to bring in a prefab one-off for inspection without committing to a manifest entry.
 
 ## Assets
 

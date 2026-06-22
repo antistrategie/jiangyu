@@ -8,6 +8,7 @@ var root = new RootCommand("Jiangyu — modkit for MENACE")
 {
     InitCommand.Create(),
     CompileCommand.Create(),
+    PackageCommand.Create(),
     DeployCommand.Create(),
     AssetsCommand.Create(),
     TemplatesCommand.Create(),

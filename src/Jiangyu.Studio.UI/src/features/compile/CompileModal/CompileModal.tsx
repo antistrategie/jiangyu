@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useReducer, useRef } from "react";
-import { FolderOpen, Play } from "lucide-react";
+import { FolderOpen, Package, Play, Rocket } from "lucide-react";
 import { Modal } from "@shared/ui/Modal/Modal";
 import { ModalHeader } from "@shared/ui/Modal/ModalHeader";
 import { Button } from "@shared/ui/Button/Button";
@@ -15,16 +15,18 @@ import styles from "./CompileModal.module.css";
 
 interface CompileModalProps {
   readonly onClose: () => void;
+  readonly onDeploy: () => void;
+  readonly onPackage: () => void;
 }
 
-export function CompileModal({ onClose }: CompileModalProps) {
+export function CompileModal({ onClose, onDeploy, onPackage }: CompileModalProps) {
   const summary = useCompileSummary(true);
   return (
     <Modal onClose={onClose} ariaLabelledBy="compile-title" width={1100} height={760}>
       <ModalHeader id="compile-title" title="Compile · 编译" onClose={onClose} />
       <div className={styles.body}>
         <LogPanel />
-        <InfoPanel summary={summary} onClose={onClose} />
+        <InfoPanel summary={summary} onClose={onClose} onDeploy={onDeploy} onPackage={onPackage} />
       </div>
     </Modal>
   );
@@ -132,7 +134,17 @@ function glyphFor(level: CompileLogEntry["level"]): string {
 
 // --- Info panel --------------------------------------------------------------
 
-function InfoPanel({ summary, onClose }: { summary: CompileSummary | null; onClose: () => void }) {
+function InfoPanel({
+  summary,
+  onClose,
+  onDeploy,
+  onPackage,
+}: {
+  summary: CompileSummary | null;
+  onClose: () => void;
+  onDeploy: () => void;
+  onPackage: () => void;
+}) {
   const status = useCompileStore((s) => s.status);
   const warnCount = useCompileStore((s) => s.warnCount);
   const errorCount = useCompileStore((s) => s.errorCount);
@@ -244,6 +256,16 @@ function InfoPanel({ summary, onClose }: { summary: CompileSummary | null; onClo
           <Button variant="ghost" onClick={() => revealBundle(bundlePath)}>
             <FolderOpen size={12} /> Reveal bundle
           </Button>
+        )}
+        {status === "success" && (
+          <>
+            <Button variant="ghost" onClick={onDeploy}>
+              <Rocket size={12} /> Deploy
+            </Button>
+            <Button variant="ghost" onClick={onPackage}>
+              <Package size={12} /> Package
+            </Button>
+          </>
         )}
         <Button variant="ghost" onClick={onClose}>
           {isRunning ? "Hide" : "Close"}

@@ -24,12 +24,7 @@ public static partial class RpcDispatcher
         var projectRoot = ProjectWatcher.ProjectRoot
             ?? throw new InvalidOperationException("No project open.");
 
-        lock (RpcHandlers.CompileLock)
-        {
-            if (RpcHandlers.CompileRunning)
-                throw new InvalidOperationException("Compile already in progress.");
-            RpcHandlers.CompileRunning = true;
-        }
+        RpcHandlers.BeginBuildOp();
 
         // Fire-and-forget: compile runs on a worker thread and streams events
         // back via notifications. The RPC returns immediately so the message
@@ -53,12 +48,7 @@ public static partial class RpcDispatcher
     {
         RpcHandlers.CompileRunOverride = projectRoot =>
         {
-            lock (RpcHandlers.CompileLock)
-            {
-                if (RpcHandlers.CompileRunning)
-                    throw new InvalidOperationException("Compile already in progress.");
-                RpcHandlers.CompileRunning = true;
-            }
+            RpcHandlers.BeginBuildOp();
             // Block this thread (an MCP request handler thread, NOT the
             // WebView dispatch thread) until the streaming task finishes,
             // so the agent's tool-call response carries the final result.
@@ -135,7 +125,7 @@ public static partial class RpcDispatcher
         }
         finally
         {
-            lock (RpcHandlers.CompileLock) RpcHandlers.CompileRunning = false;
+            RpcHandlers.EndBuildOp();
         }
     }
 

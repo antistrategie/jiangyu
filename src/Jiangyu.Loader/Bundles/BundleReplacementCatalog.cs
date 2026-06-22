@@ -86,7 +86,6 @@ internal sealed class BundleReplacementCatalog
         {
             loadableModCount++;
             log.Mod = mod.Name;
-            LogIgnoredConstraints(mod, log);
 
             if (mod.BundlePaths.Count == 0)
             {
@@ -110,18 +109,6 @@ internal sealed class BundleReplacementCatalog
         }
 
         return new BundleLoadSummary(loadableModCount, plan.BlockedMods.Count, bundleCount);
-    }
-
-    private static void LogIgnoredConstraints(DiscoveredMod mod, LoaderLog log)
-    {
-        foreach (var dependency in mod.Dependencies)
-        {
-            if (string.IsNullOrWhiteSpace(dependency.Constraint))
-                continue;
-
-            log.Warning(
-                $"Dependency '{dependency.Raw}' includes a version constraint that is not enforced yet; required presence only.");
-        }
     }
 
     private void LoadBundle(DiscoveredMod mod, string bundlePath, LoaderLog log)

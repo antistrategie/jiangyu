@@ -10,11 +10,30 @@ namespace Jiangyu.Studio.Rpc;
 public static partial class RpcHandlers
 {
     [McpTool("jiangyu_deploy",
-        "Deploy the compiled mod into the game's Mods/<name>/ folder. Clean: the existing deployed folder is removed first, so stale artifacts never linger. Requires compiled/ (run jiangyu_compile first). Returns {modName, destDir}.")]
+        "Deploy the compiled mod into the game's Mods/<name>/ folder. Clean: the existing deployed folder is removed first, so stale artifacts never linger. Requires compiled/ (run jiangyu_compile first). Returns {modName, destDir}.",
+        LongRunning = true)]
     internal static JsonElement Deploy(JsonElement? __)
     {
         var projectRoot = RpcContext.ProjectRoot ?? throw new InvalidOperationException("No project open.");
 
+        // Share the build gate so deploy can't race a concurrent compile rewriting compiled/.
+        BeginBuildOp();
+        try
+        {
+            var (modName, destDir) = DeployCore(projectRoot);
+            return JsonSerializer.SerializeToElement(new DeployResult { ModName = modName, DestDir = destDir });
+        }
+        finally
+        {
+            EndBuildOp();
+        }
+    }
+
+    /// <summary>The deploy work without the build gate, shared by the MCP entry and Studio's
+    /// non-blocking dispatcher handler. Copies the project's compiled/ output into the game's
+    /// <c>Mods/&lt;name&gt;/</c> folder and returns the mod name and destination.</summary>
+    internal static (string ModName, string DestDir) DeployCore(string projectRoot)
+    {
         var manifestPath = Path.Combine(projectRoot, ModManifest.FileName);
         if (!File.Exists(manifestPath))
             throw new InvalidOperationException($"{ModManifest.FileName} not found. Open a Jiangyu project first.");
@@ -35,12 +54,7 @@ public static partial class RpcHandlers
         // deploy clears with a recursive delete.
         var dest = ModDeployer.ResolveModDestination(gameDir, manifest.Name);
         ModDeployer.Deploy(compiledDir, dest);
-
-        return JsonSerializer.SerializeToElement(new DeployResult
-        {
-            ModName = manifest.Name,
-            DestDir = dest,
-        });
+        return (manifest.Name, dest);
     }
 
     [RpcType]

@@ -3,15 +3,16 @@ import { PALETTE_SCOPE } from "@shared/palette/actions";
 import { buildProjectActions, type ProjectActionHandlers } from "@features/project/paletteActions";
 
 function makeHandlers(): ProjectActionHandlers & {
-  calls: { open: number; close: number; reveal: number; deploy: number };
+  calls: { open: number; close: number; reveal: number; deploy: number; package: number };
 } {
-  const calls = { open: 0, close: 0, reveal: 0, deploy: 0 };
+  const calls = { open: 0, close: 0, reveal: 0, deploy: 0, package: 0 };
   return {
     calls,
     openProject: () => void calls.open++,
     closeProject: () => void calls.close++,
     revealProject: () => void calls.reveal++,
     deployMod: () => void calls.deploy++,
+    packageMod: () => void calls.package++,
   };
 }
 
@@ -21,13 +22,14 @@ describe("buildProjectActions", () => {
     expect(actions.map((a) => a.id)).toEqual(["app.openProject"]);
   });
 
-  it("adds Close, Reveal and Deploy when a project is open", () => {
+  it("adds Close, Reveal, Deploy and Package when a project is open", () => {
     const actions = buildProjectActions("/a/b", makeHandlers());
     expect(actions.map((a) => a.id)).toEqual([
       "app.openProject",
       "app.closeProject",
       "app.revealProject",
       "project.deploy",
+      "project.package",
     ]);
   });
 
@@ -40,8 +42,9 @@ describe("buildProjectActions", () => {
     void find("app.closeProject").run();
     void find("app.revealProject").run();
     void find("project.deploy").run();
+    void find("project.package").run();
 
-    expect(h.calls).toEqual({ open: 1, close: 1, reveal: 1, deploy: 1 });
+    expect(h.calls).toEqual({ open: 1, close: 1, reveal: 1, deploy: 1, package: 1 });
   });
 
   it("tags every action with the PROJECT scope", () => {

@@ -27,7 +27,7 @@ public class LocalePlannerTests
         """;
 
     private static DiscoveredMod Mod(string name) =>
-        new(name, "", "", "", new List<string>(), new List<ManifestDependency>());
+        new(name, "", "", "", "", new List<string>(), new List<ManifestDependency>(), new List<ManifestDependency>());
 
     private static LocalePo Po(DiscoveredMod mod, string code, string po) =>
         new(mod, code, LocaleTable.Compile(po));

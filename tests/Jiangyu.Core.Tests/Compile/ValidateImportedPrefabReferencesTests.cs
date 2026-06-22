@@ -27,7 +27,7 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
     [Fact]
     public void NoUnityDir_ReturnsNull()
     {
-        var manifest = NewManifest(importedPrefabs: null);
+        var manifest = NewManifest(imports: null);
 
         var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
@@ -40,7 +40,7 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
         Directory.CreateDirectory(_assetsDir);
         WriteFile(Path.Combine(_assetsDir, "Authored", "char.prefab"),
             "m_Script: {fileID: 1, guid: deadbeefdeadbeefdeadbeefdeadbeef, type: 3}");
-        var manifest = NewManifest(importedPrefabs: null);
+        var manifest = NewManifest(imports: null);
 
         var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
@@ -55,7 +55,7 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
         WriteFile(Path.Combine(_assetsDir, "Prefabs", "my_char.prefab"),
             $"m_Script: {{fileID: 1, guid: {guid}, type: 3}}");
 
-        var manifest = NewManifest(importedPrefabs: ["rmc_default_female_soldier_2"]);
+        var manifest = NewManifest(imports: ["rmc_default_female_soldier_2"]);
 
         var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
@@ -68,7 +68,7 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
         var guid = NewGuid();
         SeedImported("rmc_default_female_soldier_2", guid);
 
-        var manifest = NewManifest(importedPrefabs: null);
+        var manifest = NewManifest(imports: null);
 
         var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
@@ -83,12 +83,12 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
         WriteFile(Path.Combine(_assetsDir, "Prefabs", "my_char.prefab"),
             $"m_Script: {{fileID: 1, guid: {guid}, type: 3}}");
 
-        var manifest = NewManifest(importedPrefabs: null);
+        var manifest = NewManifest(imports: null);
 
         var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
         Assert.NotNull(result);
-        Assert.Contains("importedPrefabs", result);
+        Assert.Contains("'imports'", result);
         Assert.Contains("rmc_default_female_soldier_2", result);
         Assert.Contains(Path.Combine("unity", "Assets", "Prefabs", "my_char.prefab"), result);
         Assert.Contains("or remove", result);
@@ -106,7 +106,7 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
         WriteFile(Path.Combine(_assetsDir, "Prefabs", "loadout.prefab"),
             $"a: {{guid: {soldierGuid}, type: 3}}\nb: {{guid: {rifleGuid}, type: 3}}");
 
-        var manifest = NewManifest(importedPrefabs: null);
+        var manifest = NewManifest(imports: null);
 
         var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
@@ -128,7 +128,7 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
         WriteFile(Path.Combine(_importedDir, "soldier", "GameObject", "inner.prefab"),
             $"a: {{guid: {guid}, type: 3}}");
 
-        var manifest = NewManifest(importedPrefabs: null);
+        var manifest = NewManifest(imports: null);
 
         var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
@@ -143,7 +143,7 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
         WriteFile(Path.Combine(_assetsDir, "Prefabs", "x.prefab"),
             $"a: {{guid: {guid}, type: 3}}");
 
-        var manifest = NewManifest(importedPrefabs: ["SOLDIER"]);
+        var manifest = NewManifest(imports: ["SOLDIER"]);
 
         var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
@@ -160,7 +160,7 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
         WriteFile(Path.Combine(_assetsDir, "Scripts", "MyScript.cs"),
             $"// guid: {guid} mentioned in a comment");
 
-        var manifest = NewManifest(importedPrefabs: null);
+        var manifest = NewManifest(imports: null);
 
         var result = ImportedPrefabValidator.Validate(_projectDir, manifest);
 
@@ -185,10 +185,10 @@ public sealed class ValidateImportedPrefabReferencesTests : IDisposable
         File.WriteAllText(path, content);
     }
 
-    private static ModManifest NewManifest(List<string>? importedPrefabs) => new()
+    private static ModManifest NewManifest(List<string>? imports) => new()
     {
         Name = "test-mod",
-        ImportedPrefabs = importedPrefabs,
+        Imports = imports,
     };
 
     private static string NewGuid() => Guid.NewGuid().ToString("N");

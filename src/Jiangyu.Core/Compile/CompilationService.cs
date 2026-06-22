@@ -92,13 +92,13 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var replacementRoot = Path.Combine(projectDir, "assets", "replacements");
         var additionRoot = Path.Combine(projectDir, "assets", "additions");
 
-        // Auto-import host-game prefabs declared in manifest.importedPrefabs,
+        // Auto-import host-game prefabs declared in manifest.imports,
         // and auto-build the asset index when stale. Both steps need
         // GameData, which is multi-second to load, so load it lazily and at
         // most once per compile.
         var importedRoot = Path.Combine(projectDir, "unity", "Assets", "Imported");
-        var missingImports = manifest.ImportedPrefabs is { Count: > 0 }
-            ? manifest.ImportedPrefabs
+        var missingImports = manifest.Imports is { Count: > 0 }
+            ? manifest.Imports
                 .Where(name => !Directory.Exists(Path.Combine(importedRoot, name)))
                 .ToList()
             : new List<string>();
@@ -128,7 +128,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 }
                 catch (InvalidOperationException ex)
                 {
-                    return Fail($"Failed to import host prefab '{name}' from importedPrefabs: {ex.Message}");
+                    return Fail($"Failed to import host prefab '{name}' from imports: {ex.Message}");
                 }
             }
 
@@ -140,7 +140,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         }
 
         // Validate that every host-rip GUID referenced outside Imported/ has
-        // its rip declared in importedPrefabs. Catches the silent-pink-
+        // its rip declared in imports. Catches the silent-pink-
         // material failure where a contributor bakes against a vanilla rip
         // but forgets to add it to the manifest.
         var importValidationError = ImportedPrefabValidator.Validate(projectDir, manifest);
@@ -418,6 +418,11 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         var compiledManifest = ModManifest.FromJson(manifest.ToJson());
         compiledManifest.CompiledForUnity = gameVersion?.ToString();
+        compiledManifest.CompiledForJiangyu = JiangyuVersion.Current;
+        // `imports` is a compile-time build input (which host rips to pull before the
+        // bake), not runtime metadata. The loader never reads it, so keep it out of the
+        // shipped manifest rather than leaking host-asset names into every distribution.
+        compiledManifest.Imports = null;
 
         // The compiled template program ships beside the manifest in its own
         // templates.json, so jiangyu.json stays a lean identity record the loader scans

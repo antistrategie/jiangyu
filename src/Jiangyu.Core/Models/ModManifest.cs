@@ -22,12 +22,28 @@ public sealed class ModManifest
     public List<string>? Depends { get; set; }
 
     /// <summary>
+    /// Mods this one refuses to load alongside. Same grammar as <see cref="Depends"/>:
+    /// <c>"Name"</c> blocks on any version, <c>"Name &lt; 2.0.0"</c> blocks only the
+    /// matching range.
+    /// </summary>
+    [JsonPropertyName("conflicts")]
+    public List<string>? Conflicts { get; set; }
+
+    /// <summary>
     /// The game's Unity version at compile time, stamped by the compiler. The
     /// loader compares it to the running game so it can warn when a mod was built
     /// against a different game build. Authoring manifests leave it null.
     /// </summary>
     [JsonPropertyName("compiledForUnity")]
     public string? CompiledForUnity { get; set; }
+
+    /// <summary>
+    /// The Jiangyu toolchain version that built this mod, stamped by the compiler.
+    /// The loader warns when it is newer than the installed loader. Authoring
+    /// manifests leave it null.
+    /// </summary>
+    [JsonPropertyName("compiledForJiangyu")]
+    public string? CompiledForJiangyu { get; set; }
 
     /// <summary>
     /// Host-game prefab names that the mod's bake outputs reference at
@@ -38,8 +54,8 @@ public sealed class ModManifest
     /// entry must resolve unambiguously via the asset index. Once ripped,
     /// the directory is cached locally and skipped on subsequent compiles.
     /// </summary>
-    [JsonPropertyName("importedPrefabs")]
-    public List<string>? ImportedPrefabs { get; set; }
+    [JsonPropertyName("imports")]
+    public List<string>? Imports { get; set; }
 
     /// <summary>
     /// Mesh replacement mappings. Key = target skinned-renderer path under the entity root.
@@ -58,10 +74,12 @@ public sealed class ModManifest
     [JsonPropertyName("additionPrefabs")]
     public List<string>? AdditionPrefabs { get; set; }
 
+    // The Jiangyu requirement is stamped at compile time as compiledForJiangyu, not
+    // hardcoded here, so a scaffolded mod starts with no dependencies. A modder adds a
+    // hard floor (e.g. "Jiangyu >= 1.3.0") to Depends only when they need one.
     public static ModManifest CreateDefault(string name) => new()
     {
         Name = name,
-        Depends = ["Jiangyu >= 1.0.0"],
     };
 
     public string ToJson() => JsonStore.ToJson(this);

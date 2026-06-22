@@ -7,6 +7,7 @@ export interface ProjectActionHandlers {
   readonly closeProject: () => void;
   readonly revealProject: () => void;
   readonly deployMod: () => void;
+  readonly packageMod: () => void;
 }
 
 /**
@@ -49,6 +50,14 @@ export function buildProjectActions(
       cn: "部署",
       desc: "Copy compiled/ into the game's Mods folder.",
       run: handlers.deployMod,
+    });
+    actions.push({
+      id: "project.package",
+      label: "Package Mod",
+      scope: PROJECT_SCOPE,
+      cn: "打包",
+      desc: "Package compiled/ into a distributable zip.",
+      run: handlers.packageMod,
     });
   }
   return actions;

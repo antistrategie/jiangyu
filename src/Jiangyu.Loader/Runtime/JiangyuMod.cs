@@ -9,7 +9,7 @@ using Jiangyu.Loader.Sdk.Types;
 using MelonLoader;
 using MelonLoader.Utils;
 
-[assembly: MelonInfo(typeof(Jiangyu.Loader.Runtime.JiangyuMod), "Jiangyu", Jiangyu.Loader.BuildInfo.Version, "antistrategie")]
+[assembly: MelonInfo(typeof(Jiangyu.Loader.Runtime.JiangyuMod), "Jiangyu", Jiangyu.Loader.BuildInfo.Version, "Antistratégie")]
 [assembly: MelonGame("Overhype Studios", "Menace")]
 
 namespace Jiangyu.Loader.Runtime;
@@ -48,7 +48,15 @@ public class JiangyuMod : MelonMod, IDevServicesContext
         LoggerInstance.Msg(
             $"Resolved {loadSummary.LoadableModCount} loadable mod(s), skipped {loadSummary.BlockedModCount} blocked mod(s), loaded {loadSummary.LoadedBundleCount} bundle(s).");
 
-        GameVersionGate.Check(UnityEngine.Application.unityVersion, ReadCompiledForUnity(modsDir), LoggerInstance.Warning);
+        var versionStamps = ReadModManifests(modsDir).ToList();
+        GameVersionGate.Check(
+            UnityEngine.Application.unityVersion,
+            versionStamps.Select(stamp => (stamp.ModId, stamp.Manifest.CompiledForUnity)),
+            LoggerInstance.Warning);
+        JiangyuVersionGate.Check(
+            BuildInfo.Version,
+            versionStamps.Select(stamp => (stamp.ModId, stamp.Manifest.CompiledForJiangyu)),
+            LoggerInstance.Warning);
 
         _replacementCoordinator.InstallHarmonyPatches(HarmonyInstance, LoggerInstance);
 
@@ -198,18 +206,18 @@ public class JiangyuMod : MelonMod, IDevServicesContext
         return Path.GetFileName(modDir);
     }
 
-    // Each deployed mod's folder name paired with the game Unity version it was
-    // compiled against, read from its jiangyu.json. Null when the manifest predates
-    // the stamp or was hand-written.
-    private static IEnumerable<(string ModId, string CompiledForUnity)> ReadCompiledForUnity(string modsDir)
+    // Each deployed mod's folder name paired with its manifest, read once so the version
+    // gates (game Unity build, Jiangyu toolchain) share a single read rather than each
+    // re-parsing every jiangyu.json.
+    private static IEnumerable<(string ModId, Jiangyu.Shared.Bundles.LoaderManifest Manifest)> ReadModManifests(string modsDir)
     {
         if (!Directory.Exists(modsDir))
             yield break;
 
         foreach (var modDir in Directory.GetDirectories(modsDir))
         {
-            if (Jiangyu.Shared.Bundles.LoaderManifest.TryRead(modDir, out var manifest))
-                yield return (Path.GetFileName(modDir), manifest.CompiledForUnity);
+            if (Jiangyu.Shared.Bundles.LoaderManifest.TryRead(modDir, out var manifest) && manifest != null)
+                yield return (Path.GetFileName(modDir), manifest);
         }
     }
 
