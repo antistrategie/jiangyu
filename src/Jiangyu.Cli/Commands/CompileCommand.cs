@@ -9,7 +9,15 @@ public static class CompileCommand
 {
     public static Command Create()
     {
-        var command = new Command("compile", "Compile mod assets into AssetBundles");
+        var cleanOption = new Option<bool>("--clean")
+        {
+            Description = "Force a full rebuild, ignoring the incremental build cache.",
+        };
+
+        var command = new Command("compile", "Compile mod assets into AssetBundles")
+        {
+            cleanOption,
+        };
         command.SetAction(async (parseResult) =>
         {
             var projectDir = Directory.GetCurrentDirectory();
@@ -32,6 +40,7 @@ public static class CompileCommand
                     Manifest = manifest,
                     Config = config,
                     ProjectDirectory = projectDir,
+                    Clean = parseResult.GetValue(cleanOption),
                 });
 
                 return result.Success ? 0 : 1;

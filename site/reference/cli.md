@@ -29,6 +29,8 @@ Compile bootstraps two preconditions on first run so the modder doesn't need to 
 
 Game data is loaded once and reused for both steps. Compile also verifies that every `Imported/<X>/` GUID referenced from authored content has `X` listed in `imports`, and fails with the unlisted names if not.
 
+Compile is **incremental**: the `compiled/` tree is reassembled every run, but the slow Unity batchmode (prefab and texture/sprite/mesh bundling, the bulk of compile time) is skipped when the mod's inputs (`unity/` and `assets/`) are unchanged since the last successful compile. Input fingerprints and the cached bundle metadata are tracked in `.jiangyu/build-state.json`; pass `--clean` to force a full rebuild and ignore the cache.
+
 Equivalent to Studio's Compile dossier. Returns non-zero on any compile error.
 
 ### `jiangyu package`

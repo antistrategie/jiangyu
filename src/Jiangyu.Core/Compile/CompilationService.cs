@@ -39,6 +39,9 @@ public sealed class CompilationInput
     public required GlobalConfig Config { get; init; }
     public required string ProjectDirectory { get; init; }
 
+    /// <summary>Force a full rebuild, ignoring (and overwriting) the incremental build state.
+    /// Defaults to incremental.</summary>
+    public bool Clean { get; init; }
 }
 
 /// <summary>
@@ -233,6 +236,13 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var userUnityDir = Path.Combine(projectDir, "unity");
         var unityBuildDir = Path.Combine(projectDir, ".jiangyu", "unity_build");
         var builtBundle = Path.Combine(unityBuildDir, bundleName);
+
+        // Incremental build state: per-phase input fingerprints from the last successful
+        // compile. --clean starts empty (rebuilds everything) and overwrites the file.
+        // compiled/ is wiped and reassembled every compile regardless, so incremental only
+        // skips expensive generation (the Unity prefab batchmode) when its inputs are
+        // unchanged and its cached output is still present, never reuses a stale compiled/.
+        var buildState = input.Clean ? new BuildState() : BuildState.Load(projectDir);
 
         var useRawGlbPipeline = replacementAssetCount > 0;
 
@@ -449,17 +459,62 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var hasPrefabWork = AdditionPrefabStaging.ShouldInvokeUnityForPrefabs(projectDir);
         var combinedUnityPass = hasPrefabWork && useRawGlbPipeline;
 
+        const string PrefabPhase = "prefabs";
+        const string AssetsPhase = "assets";
+        // The unity/ project (editor scripts plus any prefabs) feeds both the prefab and the
+        // raw-GLB passes, so fingerprint it once and reuse. Only computed when a pass that
+        // reads it will run, since hashing the tree (which can include large imported rips)
+        // is wasted otherwise.
+        var unityInputsFingerprint = (useRawGlbPipeline || hasPrefabWork)
+            ? PrefabInputsFingerprint(userUnityDir, gameVersion?.ToString())
+            : string.Empty;
+        // Reuse the raw-GLB Unity pass (the texture/sprite/mesh bundle, plus the folded prefab
+        // build in the combined case) when its inputs are unchanged and the cached outputs
+        // survive. This Unity cold start is the bulk of compile time, so skipping it is the
+        // main incremental win. The mesh metadata it produces is cached alongside the
+        // fingerprint and restored on reuse. --clean starts from an empty build state.
+        var assetsFingerprint = useRawGlbPipeline
+            ? AssetInputsFingerprint(projectDir, unityInputsFingerprint)
+            : string.Empty;
+        var reuseRawGlb = useRawGlbPipeline
+            && buildState.Matches(AssetsPhase, assetsFingerprint)
+            && File.Exists(builtBundle)
+            && (!combinedUnityPass || (Directory.Exists(unityBuildDir) && Directory.EnumerateFiles(unityBuildDir, "*.bundle").Any()));
         if (!combinedUnityPass)
         {
-            await BuildUnityAdditionPrefabs(projectDir, unityBuildDir, unityEditorPath);
+            // Skip the prefab batchmode (a Unity cold start) when its inputs are unchanged
+            // since the last successful compile and its cached bundles are still present.
+            // Staging below always reruns from the cached output, so compiled/ is reassembled
+            // either way; only the slow Unity invocation is avoided.
+            var prefabFingerprint = hasPrefabWork ? unityInputsFingerprint : string.Empty;
+            var reuseCachedPrefabs = hasPrefabWork
+                && buildState.Matches(PrefabPhase, prefabFingerprint)
+                && Directory.Exists(unityBuildDir)
+                && Directory.EnumerateFiles(unityBuildDir, "*.bundle").Any();
+
+            if (reuseCachedPrefabs)
+            {
+                _log.Info("  Incremental: prefab inputs unchanged, reusing cached bundles.");
+            }
+            else
+            {
+                await BuildUnityAdditionPrefabs(projectDir, unityBuildDir, unityEditorPath);
+                if (hasPrefabWork)
+                    buildState.Record(PrefabPhase, prefabFingerprint);
+                else
+                    buildState.Remove(PrefabPhase);
+            }
+
             AdditionPrefabStaging.Stage(
                 sourceDirs: [Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Prefabs), unityBuildDir],
                 bundlesDir,
                 compiledManifest,
                 _log);
         }
-        else
+        else if (!reuseRawGlb)
         {
+            // The folded prefab build is about to rerun in the raw-GLB pass; clear its stale
+            // output first. When reusing, keep the cached prefab bundles for staging.
             AdditionPrefabStaging.ClearStaleBuildOutput(unityBuildDir);
         }
 
@@ -467,6 +522,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         if (totalCompileInputCount == 0)
         {
             await File.WriteAllTextAsync(Path.Combine(outputDir, ModManifest.FileName), compiledManifest.ToJson());
+            buildState.Save(projectDir);
             _log.Info($"  -> {Path.Combine(outputDir, ModManifest.FileName)}");
             _log.Info("Done.");
             return new CompilationResult { Success = true };
@@ -474,54 +530,66 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         if (useRawGlbPipeline)
         {
-            _log.Info("  Using direct mesh replacement pipeline...");
-            phaseSw.Restart();
-            Directory.CreateDirectory(unityBuildDir);
-            var targetMeshNamesByBundleMesh = replacementEntries
-                .Where(entry => !entry.SuppressMeshContract)
-                .ToDictionary(entry => entry.BundleMeshName, entry => entry.TargetMeshName, StringComparer.Ordinal);
-
-            try
+            if (reuseRawGlb)
             {
-                var buildResult = await GlbMeshBundleCompiler.BuildAsync(
-                    unityEditorPath,
-                    userUnityDir,
-                    bundleName,
-                    builtBundle,
-                    replacementEntries,
-                    replacementTextures,
-                    replacementSprites,
-                    replacementAudio,
-                    gameDataPath,
-                    targetMeshNamesByBundleMesh,
-                    runPrefabs: combinedUnityPass,
-                    log: _log);
-                compiledManifest.Meshes = new Dictionary<string, MeshManifestEntry>(StringComparer.Ordinal);
-                foreach (var entry in replacementEntries)
+                _log.Info("  Incremental: asset inputs unchanged, reusing cached bundles.");
+                compiledManifest.Meshes = buildState.GetData<Dictionary<string, MeshManifestEntry>>(AssetsPhase)
+                    ?? new Dictionary<string, MeshManifestEntry>(StringComparer.Ordinal);
+            }
+            else
+            {
+                _log.Info("  Using direct mesh replacement pipeline...");
+                phaseSw.Restart();
+                Directory.CreateDirectory(unityBuildDir);
+                var targetMeshNamesByBundleMesh = replacementEntries
+                    .Where(entry => !entry.SuppressMeshContract)
+                    .ToDictionary(entry => entry.BundleMeshName, entry => entry.TargetMeshName, StringComparer.Ordinal);
+
+                try
                 {
-                    var bundleMeshName = entry.BundleMeshName;
-                    if (!buildResult.MeshBoneNames.TryGetValue(bundleMeshName, out var boneNames))
-                        continue;
-
-                    compiledManifest.Meshes[entry.TargetRendererPath] = new MeshManifestEntry
+                    var buildResult = await GlbMeshBundleCompiler.BuildAsync(
+                        unityEditorPath,
+                        userUnityDir,
+                        bundleName,
+                        builtBundle,
+                        replacementEntries,
+                        replacementTextures,
+                        replacementSprites,
+                        replacementAudio,
+                        gameDataPath,
+                        targetMeshNamesByBundleMesh,
+                        runPrefabs: combinedUnityPass,
+                        log: _log);
+                    compiledManifest.Meshes = new Dictionary<string, MeshManifestEntry>(StringComparer.Ordinal);
+                    foreach (var entry in replacementEntries)
                     {
-                        Source = entry.SourceReference ?? bundleMeshName,
-                        Compiled = new CompiledMeshMetadata
+                        var bundleMeshName = entry.BundleMeshName;
+                        if (!buildResult.MeshBoneNames.TryGetValue(bundleMeshName, out var boneNames))
+                            continue;
+
+                        compiledManifest.Meshes[entry.TargetRendererPath] = new MeshManifestEntry
                         {
-                            BoneNames = boneNames,
-                            Materials = buildResult.MeshMaterialBindings.GetValueOrDefault(bundleMeshName),
-                            TargetRendererPath = entry.TargetRendererPath,
-                            TargetMeshName = entry.TargetMeshName,
-                            TargetEntityName = entry.TargetEntityName,
-                        }
-                    };
+                            Source = entry.SourceReference ?? bundleMeshName,
+                            Compiled = new CompiledMeshMetadata
+                            {
+                                BoneNames = boneNames,
+                                Materials = buildResult.MeshMaterialBindings.GetValueOrDefault(bundleMeshName),
+                                TargetRendererPath = entry.TargetRendererPath,
+                                TargetMeshName = entry.TargetMeshName,
+                                TargetEntityName = entry.TargetEntityName,
+                            }
+                        };
+                    }
                 }
+                catch (Exception ex)
+                {
+                    return Fail($"Direct mesh replacement pipeline failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+                }
+                _log.Info($"  [timing] Asset bundle build: {phaseSw.Elapsed.TotalSeconds:F1}s");
+
+                // Cache the mesh metadata so a later reuse can restore it without the Unity pass.
+                buildState.Record(AssetsPhase, assetsFingerprint, compiledManifest.Meshes);
             }
-            catch (Exception ex)
-            {
-                return Fail($"Direct mesh replacement pipeline failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
-            }
-            _log.Info($"  [timing] Asset bundle build: {phaseSw.Elapsed.TotalSeconds:F1}s");
 
             if (combinedUnityPass)
             {
@@ -530,6 +598,9 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                     bundlesDir,
                     compiledManifest,
                     _log);
+                // Prefabs ship from this same pass; record their fingerprint so a later
+                // non-combined compile can reuse the cached bundles too.
+                buildState.Record(PrefabPhase, unityInputsFingerprint);
             }
         }
         else
@@ -550,6 +621,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         // Copy manifest alongside the bundle
         await File.WriteAllTextAsync(Path.Combine(outputDir, ModManifest.FileName), compiledManifest.ToJson());
+        buildState.Save(projectDir);
 
         _log.Info($"  -> {destBundle}");
         _log.Info($"  [timing] Total: {totalSw.Elapsed.TotalSeconds:F1}s");
@@ -557,6 +629,30 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         return new CompilationResult { Success = true, BundlePath = destBundle };
     }
+
+    // Fingerprint of the inputs Unity reads when building the addition-prefab bundles: the
+    // mod's unity/ project content. Build-generated noise (Library/, Temp/, build.log) lives
+    // in the unity/ root and is excluded by hashing only Assets/, ProjectSettings/, and the
+    // package manifest.
+    private static string PrefabInputsFingerprint(string unityDir, string? gameVersion)
+        => FileFingerprint.Combine(
+            FileFingerprint.OfDirectory(Path.Combine(unityDir, "Assets")),
+            FileFingerprint.OfDirectory(Path.Combine(unityDir, "ProjectSettings")),
+            FileFingerprint.OfFile(Path.Combine(unityDir, "Packages", "manifest.json")),
+            // Bundle format tracks the Unity editor (resolved from the game's Unity version),
+            // and the cached mesh metadata schema and bundle-build logic track the Jiangyu
+            // toolchain version, so a game or compiler upgrade must invalidate the cache even
+            // when the mod's own files are unchanged.
+            gameVersion ?? string.Empty,
+            JiangyuVersion.Current);
+
+    // Fingerprint of the inputs the raw-GLB Unity pass reads: the mod's authored assets plus
+    // the (already-computed) unity/ project fingerprint, which carries the game and toolchain
+    // versions.
+    private static string AssetInputsFingerprint(string projectDir, string unityInputsFingerprint)
+        => FileFingerprint.Combine(
+            FileFingerprint.OfDirectory(Path.Combine(projectDir, "assets")),
+            unityInputsFingerprint);
 
     /// <summary>
     /// Emits the localisation outputs under <c>compiled/locales/</c>: the source catalogue
