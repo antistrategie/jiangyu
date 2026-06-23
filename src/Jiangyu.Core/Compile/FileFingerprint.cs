@@ -12,8 +12,11 @@ namespace Jiangyu.Core.Compile;
 public static class FileFingerprint
 {
     /// <summary>SHA-256 over every file under <paramref name="dir"/> (relative path + content),
-    /// or empty when the directory is absent.</summary>
-    public static string OfDirectory(string dir)
+    /// or empty when the directory is absent. <paramref name="excludeRelative"/>, when given, is
+    /// tested against each file's forward-slashed path relative to <paramref name="dir"/>; matches
+    /// are skipped (and their bytes never read), so build-generated subtrees can be left out of an
+    /// otherwise source-only fingerprint.</summary>
+    public static string OfDirectory(string dir, Func<string, bool>? excludeRelative = null)
     {
         if (!Directory.Exists(dir))
             return string.Empty;
@@ -21,6 +24,7 @@ public static class FileFingerprint
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var files = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
             .Select(path => (Relative: Path.GetRelativePath(dir, path).Replace('\\', '/'), Full: path))
+            .Where(entry => excludeRelative is null || !excludeRelative(entry.Relative))
             .OrderBy(entry => entry.Relative, StringComparer.Ordinal);
 
         foreach (var (relative, full) in files)

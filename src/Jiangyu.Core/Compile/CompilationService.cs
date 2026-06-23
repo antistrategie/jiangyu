@@ -630,13 +630,26 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         return new CompilationResult { Success = true, BundlePath = destBundle };
     }
 
+    // Relative paths under unity/Assets/ that Unity or Jiangyu regenerate during compile, so they
+    // must NOT feed the input fingerprint: Assets/Jiangyu/Staging/ is repopulated every compile from
+    // assets/additions/ (already hashed via AssetInputsFingerprint, so hashing it here is both
+    // redundant AND unstable — its Unity .meta GUIDs and staged copies change run-to-run, which
+    // otherwise defeats incremental reuse entirely), and Library/Temp/obj are editor caches.
+    // Assets/Imported/ is left in: it is a real mesh-replacement input and only changes when the
+    // mod's import list does.
+    private static bool IsRegeneratedAssetPath(string relative)
+        => relative.StartsWith("Jiangyu/Staging/", StringComparison.Ordinal)
+            || relative.StartsWith("Library/", StringComparison.Ordinal)
+            || relative.StartsWith("Temp/", StringComparison.Ordinal)
+            || relative.StartsWith("obj/", StringComparison.Ordinal);
+
     // Fingerprint of the inputs Unity reads when building the addition-prefab bundles: the
-    // mod's unity/ project content. Build-generated noise (Library/, Temp/, build.log) lives
-    // in the unity/ root and is excluded by hashing only Assets/, ProjectSettings/, and the
-    // package manifest.
+    // mod's unity/ project content. Build-generated subtrees (Library/, Temp/, build.log in the
+    // unity/ root, plus Assets/Jiangyu/Staging/ and editor caches under Assets/) are excluded so
+    // an unchanged source tree yields a stable fingerprint and incremental reuse can hit.
     private static string PrefabInputsFingerprint(string unityDir, string? gameVersion)
         => FileFingerprint.Combine(
-            FileFingerprint.OfDirectory(Path.Combine(unityDir, "Assets")),
+            FileFingerprint.OfDirectory(Path.Combine(unityDir, "Assets"), IsRegeneratedAssetPath),
             FileFingerprint.OfDirectory(Path.Combine(unityDir, "ProjectSettings")),
             FileFingerprint.OfFile(Path.Combine(unityDir, "Packages", "manifest.json")),
             // Bundle format tracks the Unity editor (resolved from the game's Unity version),

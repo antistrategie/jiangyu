@@ -81,6 +81,51 @@ public class FileFingerprintTests : IDisposable
     }
 
     [Fact]
+    public void OfDirectory_ExcludedFilesDoNotAffectHash()
+    {
+        // A file matched by the exclude predicate must not contribute to the hash, so the
+        // fingerprint equals one taken with the excluded file absent entirely.
+        static bool Excluded(string rel) => rel.StartsWith("Jiangyu/Staging/", StringComparison.Ordinal);
+
+        Write("Assets/a.txt", "alpha");
+        var sourceOnly = FileFingerprint.OfDirectory(_dir, Excluded);
+
+        Write("Jiangyu/Staging/staged.txt", "build-output");
+        Assert.Equal(sourceOnly, FileFingerprint.OfDirectory(_dir, Excluded));
+    }
+
+    [Fact]
+    public void OfDirectory_StableWhenOnlyExcludedSubtreeChanges()
+    {
+        // The regression: the compile rewrites Assets/Jiangyu/Staging/ every run, so churn there
+        // must leave the fingerprint unchanged while real source edits still move it.
+        static bool Excluded(string rel) => rel.StartsWith("Jiangyu/Staging/", StringComparison.Ordinal);
+
+        Write("Authored/model.txt", "source");
+        Write("Jiangyu/Staging/clip.wav", "v1");
+        var first = FileFingerprint.OfDirectory(_dir, Excluded);
+
+        Write("Jiangyu/Staging/clip.wav", "v2-regenerated");
+        Write("Jiangyu/Staging/extra.wav.meta", "guid: deadbeef");
+        Assert.Equal(first, FileFingerprint.OfDirectory(_dir, Excluded));
+
+        Write("Authored/model.txt", "source-edited");
+        Assert.NotEqual(first, FileFingerprint.OfDirectory(_dir, Excluded));
+    }
+
+    [Fact]
+    public void OfDirectory_ExcludePredicateReceivesForwardSlashedRelativePath()
+    {
+        // The predicate must see forward-slashed paths relative to the root on every platform,
+        // so prefix matches like "Jiangyu/Staging/" work regardless of the OS path separator.
+        var seen = new List<string>();
+        Write("Jiangyu/Staging/clip.wav", "x");
+        FileFingerprint.OfDirectory(_dir, rel => { seen.Add(rel); return false; });
+
+        Assert.Contains("Jiangyu/Staging/clip.wav", seen);
+    }
+
+    [Fact]
     public void OfFile_PresentVsAbsent()
     {
         Write("a.txt", "alpha");
