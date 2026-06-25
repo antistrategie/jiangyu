@@ -313,6 +313,27 @@
   margin: var(--space-1) 0 0;
 }
 
+/* Tester handles read as a loose set of recessed mono chips, distinct from the
+   structured three-column credits rows below. */
+.testerList {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.tester {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg);
+  letter-spacing: var(--tracking-wide);
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-sunken);
+  border: 1px solid var(--rule-faint);
+  border-radius: var(--radius);
+}
+
 .creditsGroup {
   display: flex;
   flex-direction: column;

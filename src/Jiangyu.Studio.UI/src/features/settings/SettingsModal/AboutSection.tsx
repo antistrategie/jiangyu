@@ -31,6 +31,16 @@ export function AboutSection() {
       </Field>
       <SectionHeader title="Credits · 致谢" />
       <p className={styles.muted}>
+        Special thanks to everybody from the MENACE Modding Discord who tested the pre-1.0 builds
+        and reported bugs and made suggestions:
+      </p>
+      <ul className={styles.testerList}>
+        <li className={styles.tester}>@Vulture2K</li>
+        <li className={styles.tester}>@Kiravel</li>
+        <li className={styles.tester}>@Blanjipan</li>
+        <li className={styles.tester}>@Patbiker-The replika enjoyer</li>
+      </ul>
+      <p className={styles.muted}>
         Jiangyu Studio builds on open-source work. AssetRipper is distributed under GPL-3.0; see{" "}
         <code>vendor/AssetRipper/LICENSE.md</code> for the full text.
       </p>
