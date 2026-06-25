@@ -9,13 +9,13 @@ public static partial class Market
     /// <summary>How many instances of the given template, stack type and remaining timeout the market holds.</summary>
     public static int CountItemInstances(global::Il2CppMenace.Items.BaseItemTemplate p0, global::Il2CppMenace.Strategy.BlackMarketStackType p1, int p2) => global::Il2CppMenace.States.StrategyState.Get().BlackMarket.CountItemInstances(p0, p1, p2);
 
-    /// <summary>Fill the black market up to its configured stock.</summary>
+    /// <summary>Restock the black market to its configured stock, optionally decrementing remaining timeouts and resetting the restock counter.</summary>
     [global::Jiangyu.Sdk.MutatingVerb]
-    public static void FillUp() { global::Il2CppMenace.States.StrategyState.Get().BlackMarket.FillUp(); }
+    public static void Restock(bool p0, bool p1) { global::Il2CppMenace.States.StrategyState.Get().BlackMarket.Restock(p0, p1); }
 
-    /// <summary>Top up the market's blueprint vouchers. Returns false when none were added.</summary>
+    /// <summary>Top up the market's blueprint vouchers and tokens. Returns false when none were added.</summary>
     [global::Jiangyu.Sdk.MutatingVerb]
-    public static bool FillBlueprintVouchers() => global::Il2CppMenace.States.StrategyState.Get().BlackMarket.TryFillupBlueprintVouchers();
+    public static bool FillBlueprintVouchers() => global::Il2CppMenace.States.StrategyState.Get().BlackMarket.TryFillupBlueprintVouchersAndTokens();
 
     /// <summary>Add an existing item instance to the black market with an optional remaining timeout.</summary>
     [global::Jiangyu.Sdk.MutatingVerb]

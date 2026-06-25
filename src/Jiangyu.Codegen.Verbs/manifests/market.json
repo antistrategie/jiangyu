@@ -11,20 +11,20 @@
     },
     {
       "group": "Strategy.Market",
-      "name": "FillUp",
+      "name": "Restock",
       "onType": "Il2CppMenace.Strategy.BlackMarket",
-      "method": "FillUp",
+      "method": "Restock",
       "receiver": "global::Il2CppMenace.States.StrategyState.Get().BlackMarket",
-      "summary": "Fill the black market up to its configured stock.",
+      "summary": "Restock the black market to its configured stock, optionally decrementing remaining timeouts and resetting the restock counter.",
       "mutating": true
     },
     {
       "group": "Strategy.Market",
       "name": "FillBlueprintVouchers",
       "onType": "Il2CppMenace.Strategy.BlackMarket",
-      "method": "TryFillupBlueprintVouchers",
+      "method": "TryFillupBlueprintVouchersAndTokens",
       "receiver": "global::Il2CppMenace.States.StrategyState.Get().BlackMarket",
-      "summary": "Top up the market's blueprint vouchers. Returns false when none were added.",
+      "summary": "Top up the market's blueprint vouchers and tokens. Returns false when none were added.",
       "mutating": true
     },
     {

@@ -54,5 +54,5 @@ public static partial class Leaders
     /// <summary>Unequip one item from a leader's container. Returns false when it is not equipped.</summary>
     [global::Jiangyu.Sdk.MutatingVerb]
     public static bool Unequip(BaseUnitLeader self, Item item)
-        => self.GetItems().TryUnequip(item, true);
+        => self.GetItems().TryUnequip(item, ItemEventFlags.Default);
 }

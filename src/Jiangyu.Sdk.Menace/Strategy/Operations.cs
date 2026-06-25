@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Il2CppMenace.States;
 using Il2CppMenace.Strategy;
+using Il2CppMenace.Tactical;
 
 namespace Jiangyu.Game.Strategy;
 
@@ -46,4 +47,15 @@ public static partial class Operations
                 result.Add(raw[i]);
         return result;
     }
+
+    /// <summary>
+    /// How many operations have finished against the given faction type. Pass a non-null
+    /// <paramref name="status"/> to count only those with that result, or null for all. Exposes a
+    /// C# nullable (not the game's <c>Il2CppSystem.Nullable</c>) so the verb is callable over the bridge.
+    /// </summary>
+    public static int FinishedCount(FactionType faction, OperationStatus? status = null)
+        => StrategyState.Get().Operations.GetFinishedCountAgainst(faction, Optional(status));
+
+    private static Il2CppSystem.Nullable<T> Optional<T>(T? value) where T : struct
+        => value.HasValue ? new Il2CppSystem.Nullable<T>(value.Value) : new Il2CppSystem.Nullable<T>();
 }

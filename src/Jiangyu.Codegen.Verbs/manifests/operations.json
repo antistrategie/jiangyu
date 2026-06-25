@@ -51,22 +51,6 @@
     },
     {
       "group": "Strategy.Operations",
-      "name": "FinishedCount",
-      "onType": "Il2CppMenace.Strategy.OperationsManager",
-      "method": "GetFinishedCountAgainst",
-      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Operations",
-      "summary": "How many operations have finished against the given faction type."
-    },
-    {
-      "group": "Strategy.Operations",
-      "name": "FinishedCountWithResult",
-      "onType": "Il2CppMenace.Strategy.OperationsManager",
-      "method": "GetFinishedCountWithResultAgainst",
-      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Operations",
-      "summary": "How many operations have finished against the given faction type with the given status."
-    },
-    {
-      "group": "Strategy.Operations",
       "name": "AvailableOfClient",
       "onType": "Il2CppMenace.Strategy.OperationsManager",
       "method": "GetAvailableOperationsOfClient",

@@ -16,7 +16,7 @@ public static partial class Campaign
     public static bool IsIronman() => global::Il2CppMenace.States.StrategyState.Get().IsIronman();
 
     /// <summary>The campaign's global difficulty template.</summary>
-    public static global::Il2CppMenace.Strategy.GlobalDifficultyTemplate Difficulty() => global::Il2CppMenace.States.StrategyState.Get().GetGlobalDifficulty();
+    public static global::Il2CppMenace.Strategy.GlobalDifficulty Difficulty() => global::Il2CppMenace.States.StrategyState.Get().GetGlobalDifficulty();
 
     /// <summary>A campaign-progress measure for the given progress type.</summary>
     public static float Progress(global::Il2CppMenace.Strategy.CampaignProgressType p0) => global::Il2CppMenace.States.StrategyState.Get().GetCampaignProgress(p0);

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-04-20T13:39:22.1413549+00:00",
-  "gameAssemblyHash": "8acb29df07efcd543a4bf74e34c931b71459db5d683af9ba2e9da7083540a509",
+  "generatedAt": "2026-06-25T14:01:12.9347911+00:00",
+  "gameAssemblyHash": "c149eacf55753892a9ead99ec7398e1611c6e64f25c5a570ee44257b3a35bfe9",
   "types": [
     {
       "typeName": "Menace.Tactical.EntityLootEntry",
@@ -628,7 +628,7 @@
     {
       "typeName": "EntityTemplate",
       "category": "template",
-      "fieldCount": 109,
+      "fieldCount": 110,
       "sampleNames": [
         "enemy.pirate_scavengers",
         "player_squad.darby"
@@ -772,6 +772,11 @@
           "fieldTypeName": "Boolean"
         },
         {
+          "name": "IsIgnoredForCollateral",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
           "name": "IsSurfaceChangedOnDeath",
           "kind": "bool",
           "fieldTypeName": "Boolean"
@@ -847,6 +852,11 @@
           "name": "MissionPreviewColorOverride",
           "kind": "object",
           "fieldTypeName": "UnityEngine.Color"
+        },
+        {
+          "name": "HUDOffset",
+          "kind": "object",
+          "fieldTypeName": "UnityEngine.Vector3"
         },
         {
           "name": "Prefabs",
@@ -934,11 +944,6 @@
           "name": "CustomLineOfSightOffset",
           "kind": "object",
           "fieldTypeName": "UnityEngine.Vector2Int"
-        },
-        {
-          "name": "HudYOffsetScale",
-          "kind": "float",
-          "fieldTypeName": "Single"
         },
         {
           "name": "Badge",
@@ -1228,7 +1233,7 @@
     {
       "typeName": "SkillTemplate",
       "category": "template",
-      "fieldCount": 120,
+      "fieldCount": 124,
       "sampleNames": [
         "active.change_plates",
         "passive.ammo_armor_piercing"
@@ -1439,9 +1444,9 @@
           "fieldTypeName": "Boolean"
         },
         {
-          "name": "IsUsableWhileContained",
-          "kind": "bool",
-          "fieldTypeName": "Boolean"
+          "name": "UsabilityWhileContained",
+          "kind": "enum",
+          "fieldTypeName": "Menace.Tactical.Skills.UsabilityWhileContained"
         },
         {
           "name": "IsUsableWhilePinnedDown",
@@ -1465,6 +1470,11 @@
         },
         {
           "name": "IsRemovedAfterOperation",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "MarkAsActed",
           "kind": "bool",
           "fieldTypeName": "Boolean"
         },
@@ -1502,6 +1512,11 @@
           "name": "MaxRange",
           "kind": "int",
           "fieldTypeName": "Int32"
+        },
+        {
+          "name": "ShowAllTilesInRangeOnHover",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
         },
         {
           "name": "MinElementDelay",
@@ -1546,7 +1561,7 @@
         {
           "name": "Repetitions",
           "kind": "int",
-          "fieldTypeName": "Int32"
+          "fieldTypeName": "UInt16"
         },
         {
           "name": "RepetitionDelay",
@@ -1649,6 +1664,16 @@
           "name": "CameraEffectOnFire",
           "kind": "enum",
           "fieldTypeName": "Menace.Tactical.CameraEffectType"
+        },
+        {
+          "name": "RecoilStrength",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "HitStrength",
+          "kind": "float",
+          "fieldTypeName": "Single"
         },
         {
           "name": "ProjectileSpawnPositionOffset",
@@ -1869,7 +1894,7 @@
     {
       "typeName": "UnitLeaderTemplate",
       "category": "template",
-      "fieldCount": 44,
+      "fieldCount": 43,
       "sampleNames": [
         "pilot.achilleas",
         "squad_leader.darby"
@@ -1926,9 +1951,11 @@
           "fieldTypeName": "ID"
         },
         {
-          "name": "PromotedBarkSound",
-          "kind": "object",
-          "fieldTypeName": "ID"
+          "name": "PromotionBarkSounds",
+          "kind": "array",
+          "fieldTypeName": "Menace.Strategy.PromotionBarkSound[]",
+          "elementTypeName": "Menace.Strategy.PromotionBarkSound",
+          "storage": "inline"
         },
         {
           "name": "Gender",
@@ -1973,14 +2000,14 @@
           "fieldTypeName": "Int32"
         },
         {
-          "name": "PromotionTax",
+          "name": "SquaddieTax",
           "kind": "int",
           "fieldTypeName": "Int32"
         },
         {
-          "name": "SquaddieTax",
-          "kind": "int",
-          "fieldTypeName": "Int32"
+          "name": "PromotionCostMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
         },
         {
           "name": "InfantryUnitTemplate",
@@ -2004,11 +2031,6 @@
         },
         {
           "name": "SlotInactive",
-          "kind": "reference",
-          "fieldTypeName": "UnityEngine.Sprite"
-        },
-        {
-          "name": "SlotInjured",
           "kind": "reference",
           "fieldTypeName": "UnityEngine.Sprite"
         },

@@ -44,7 +44,8 @@ Every verb in the `Jiangyu.Game` namespace, generated from the SDK. Verbs are pl
 
 | Verb | Description |
 | --- | --- |
-| `Inventory.AddItem(BaseItemTemplate, bool)` | Add an instance of template to the campaign inventory. Returns the created instance. showDialog surfaces the game's pickup dialog. |
+| `Inventory.AddItem(BaseItemTemplate, bool, bool)` | Add an instance of template to the campaign inventory. Returns the created instance. showDialog surfaces the game's pickup dialog, and showItemSlotInDialog shows the item's slot within that dialog. |
+| `Inventory.All` | Every owned item instance across all templates, each as a live handle. Read-only probe of the whole shared inventory: thread a handle into a later verb, or count the returned list to confirm a swap left the inventory size unchanged. |
 | `Inventory.InstanceCount(BaseItemTemplate)` | How many owned instances of the given item template the campaign holds. |
 | `Inventory.Instances(BaseItemTemplate)` | The owned instances of template. |
 | `Inventory.IsNew(BaseItemTemplate)` | Whether the given owned item template is still flagged as new (unseen). |
@@ -55,6 +56,7 @@ Every verb in the `Jiangyu.Game` namespace, generated from the SDK. Verbs are pl
 | `Inventory.RemoveItem(BaseItem)` | Remove a specific owned item instance. Returns false when it is not owned. |
 | `Inventory.RemoveItem(BaseItemTemplate)` | Remove one owned instance of template. Returns false when none is owned. |
 | `Inventory.UnlockedItemsWithTag(TagType)` | How many unlocked owned items carry the given tag. |
+| `Inventory.UnusedInstance(ItemTemplate)` | An owned-but-unequipped instance of template, or null when every owned copy is in use. Returned as a live handle to pass to Leaders.Equip, so equip-from-existing reuses a registered instance instead of minting a new one. |
 
 ### Leaders
 
@@ -65,9 +67,12 @@ Every verb in the `Jiangyu.Game` namespace, generated from the SDK. Verbs are pl
 | `Leaders.AvailableUnits` | The number of units currently available for deployment across the roster. |
 | `Leaders.CountByStatus(UnitLeaderStatus)` | The number of leaders in the roster with the given status. |
 | `Leaders.Dismiss(BaseUnitLeader)` | Dismiss a leader from the campaign roster (false if not present). |
+| `Leaders.Equip(BaseUnitLeader, Item)` | Equip an already-owned item instance onto a leader's container (creating a slot if needed). Use with an UnusedInstance handle to equip-from-existing without minting a fresh (unregistered) item. Returns false when the add is rejected. |
+| `Leaders.EquippedItems(BaseUnitLeader)` | The items in a leader's equipment container (armour, weapons, accessories), each as a live handle. Read-only probe of what a form actually has equipped. |
 | `Leaders.HasAliveAvailableLeader` | Whether the roster holds at least one alive, available leader. |
 | `Leaders.HealthStatus(BaseUnitLeader)` | The leader's current health status. |
 | `Leaders.Hire(UnitLeaderTemplate)` | Hire a leader into the campaign roster. |
+| `Leaders.Hired` | The leaders currently in the campaign roster, each handed back as a live handle so it can be threaded into a later verb as {ref:"..."}. |
 | `Leaders.HitpointsPct(BaseUnitLeader)` | The leader's hitpoints as a 0..1 fraction of maximum. |
 | `Leaders.IsDeployable(BaseUnitLeader)` | Whether the leader can currently be deployed on an operation. |
 | `Leaders.IsUnavailable(BaseUnitLeader)` | Whether the leader is unavailable (e.g. recovering for a strategic duration). |
@@ -76,6 +81,7 @@ Every verb in the `Jiangyu.Game` namespace, generated from the SDK. Verbs are pl
 | `Leaders.RemoveSquaddie(BaseUnitLeader, int)` | Remove the squaddie with the given id from the leader's squad (false if absent). |
 | `Leaders.Roster` | The campaign roster, or null when no campaign is loaded. |
 | `Leaders.SetHealthStatus(BaseUnitLeader, LeaderHealthStatus)` | Set the leader's health status. |
+| `Leaders.Unequip(BaseUnitLeader, Item)` | Unequip one item from a leader's container. Returns false when it is not equipped. |
 
 ### Market
 
@@ -83,10 +89,10 @@ Every verb in the `Jiangyu.Game` namespace, generated from the SDK. Verbs are pl
 | --- | --- |
 | `Market.AddItem(BaseItem, int)` | Add an existing item instance to the black market with an optional remaining timeout. |
 | `Market.CountItemInstances(BaseItemTemplate, BlackMarketStackType, int)` | How many instances of the given template, stack type and remaining timeout the market holds. |
-| `Market.FillBlueprintVouchers` | Top up the market's blueprint vouchers. Returns false when none were added. |
-| `Market.FillUp` | Fill the black market up to its configured stock. |
-| `Market.Refresh` | Refresh (restock) the black market through the game's OnOperationFinished. Returns the number of regular-stock items afterwards. |
+| `Market.FillBlueprintVouchers` | Top up the market's blueprint vouchers and tokens. Returns false when none were added. |
+| `Market.Refresh` | Restock the black market, decrementing remaining timeouts and resetting the restock counter, then return the number of regular-stock items afterwards. This restocks only; it does not replicate the rest of an operation-finished pass. It runs the game's Restock, so it publishes the BlackMarketRestocked hook. Do not call it from a handler of that hook. |
 | `Market.RemoveItem(BaseItem)` | Remove an item instance from the black market. Returns false when it is not present. |
+| `Market.Restock(bool, bool)` | Restock the black market to its configured stock, optionally decrementing remaining timeouts and resetting the restock counter. |
 
 ### Operations
 
@@ -103,8 +109,7 @@ Every verb in the `Jiangyu.Game` namespace, generated from the SDK. Verbs are pl
 | `Operations.EnemyFaction(Operation)` | The operation's enemy faction template. |
 | `Operations.EnemyFactionAvailable(FactionTemplate)` | Whether an operation against the given enemy faction is available. |
 | `Operations.Finish(Operation)` | Run the game's operation-finished handling for the given operation. |
-| `Operations.FinishedCount(FactionType)` | How many operations have finished against the given faction type. |
-| `Operations.FinishedCountWithResult(FactionType, OperationStatus)` | How many operations have finished against the given faction type with the given status. |
+| `Operations.FinishedCount(FactionType, Nullable)` | How many operations have finished against the given faction type. Pass a non-null status to count only those with that result, or null for all. Exposes a C# nullable (not the game's Il2CppSystem.Nullable) so the verb is callable over the bridge. |
 | `Operations.IsActive(OperationTemplate)` | Whether an operation of the given template is currently active. |
 | `Operations.Length(Operation)` | The operation's length. |
 | `Operations.Missions(Operation)` | The missions belonging to operation. |

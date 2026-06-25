@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Runtime.CompilerServices;
 using AsmResolver.DotNet;
 using AsmResolver.DotNet.Signatures;
 using AsmResolver.PE.DotNet.Metadata.Tables;
@@ -94,39 +96,98 @@ internal static class ManagedTypeInspectionEnricher
         }
     }
 
-    /// <summary>
-    /// Walks a resolved enum's static fields and returns member names ordered
-    /// by their constant value, so callers can index by value (the
-    /// <c>[NamedArray]</c> convention is element[i] ↔ enum member with value
-    /// i). Skips members whose constant value can't be read.
-    /// </summary>
-    private static IReadOnlyList<string> GetEnumMembersByValue(TypeDefinition enumType)
+    // An enum's reflected shape (the [Flags] marker plus its constants), read once per TypeDefinition.
+    // The same enum recurs across thousands of template instances, so caching the attribute and field
+    // walks here keeps a full re-index (and every Studio inspect) off a per-scalar metadata scan.
+    private sealed class EnumInfo
     {
-        var entries = new List<(long Value, string Name)>();
+        public bool IsFlags;
+        // Constants in declaration order: name lookup and flags decomposition both depend on order.
+        public (long Value, string Name)[] Members = [];
+        // Member names ordered by constant value, for the [NamedArray] element[i] ↔ value-i mapping.
+        public string[] NamesByValue = [];
+    }
+
+    // Weak keys so entries die with their TypeDefinition when the game assembly is reloaded.
+    private static readonly ConditionalWeakTable<TypeDefinition, EnumInfo> EnumCache = new();
+
+    private static EnumInfo GetEnumInfo(TypeDefinition enumType) => EnumCache.GetValue(enumType, BuildEnumInfo);
+
+    private static EnumInfo BuildEnumInfo(TypeDefinition enumType)
+    {
+        var members = new List<(long Value, string Name)>();
         foreach (FieldDefinition field in enumType.Fields)
         {
             if (!field.IsStatic || field.Constant is null) continue;
             if (!TryConvertConstantToLong(field.Constant, out long value)) continue;
             string? name = field.Name?.ToString();
             if (string.IsNullOrEmpty(name)) continue;
-            entries.Add((value, name));
+            members.Add((value, name));
         }
-        entries.Sort((a, b) => a.Value.CompareTo(b.Value));
-        return [.. entries.Select(e => e.Name)];
+        bool isFlags = false;
+        foreach (CustomAttribute attribute in enumType.CustomAttributes)
+        {
+            if (string.Equals(attribute.Constructor?.DeclaringType?.FullName, "System.FlagsAttribute", StringComparison.Ordinal))
+            {
+                isFlags = true;
+                break;
+            }
+        }
+        return new EnumInfo
+        {
+            IsFlags = isFlags,
+            Members = [.. members],
+            NamesByValue = [.. members.OrderBy(m => m.Value).Select(m => m.Name)],
+        };
     }
 
-    // Skips when the integer value doesn't map to a single enum member: Flags
-    // bitmasks combine multiple members, and unknown raw values can't be named
-    // safely. Leaving such nodes as ints lets the frontend fall back to a
-    // neutral default rather than emit a synthesised member name.
+    /// <summary>
+    /// Returns an enum's member names ordered by their constant value, so callers can index by value
+    /// (the <c>[NamedArray]</c> convention is element[i] ↔ enum member with value i).
+    /// </summary>
+    private static IReadOnlyList<string> GetEnumMembersByValue(TypeDefinition enumType) => GetEnumInfo(enumType).NamesByValue;
+
+    // The field's declared type is an enum, so its kind is "enum" regardless of whether the value
+    // names a single member. A single member shows by name; a [Flags] bitmask decomposes into the
+    // " | "-joined names of its set members; any value that still can't be named keeps its number as
+    // a string. Classifying every enum-typed scalar as "enum" (with a string Value) keeps the kind
+    // stable across instances, so a flags combination on one template does not read as a different
+    // kind than a single flag on another (which would otherwise break structural-baseline comparison).
     private static void PromoteEnumScalar(InspectedFieldNode node, TypeDefinition enumType)
     {
         if (!string.Equals(node.Kind, "int", StringComparison.Ordinal)) return;
         if (node.Value is null) return;
         if (!TryReadIntegerValue(node.Value, out long numericValue)) return;
-        if (!TryGetEnumMemberName(enumType, numericValue, out string? name)) return;
         node.Kind = "enum";
-        node.Value = name;
+        if (TryGetEnumMemberName(enumType, numericValue, out string? name))
+            node.Value = name;
+        else if (TryComposeFlags(enumType, numericValue, out string? composed))
+            node.Value = composed;
+        else
+            node.Value = numericValue.ToString(CultureInfo.InvariantCulture);
+    }
+
+    // Decompose a [Flags] enum value into the " | "-joined names of the members it sets. Returns
+    // false for a non-flags enum, the zero value, or when named members don't cover every set bit
+    // (so the caller keeps the raw number rather than an incomplete name). Members are matched in
+    // declaration order, each consuming the bits it contributes.
+    private static bool TryComposeFlags(TypeDefinition enumType, long value, out string? composed)
+    {
+        composed = null;
+        EnumInfo info = GetEnumInfo(enumType);
+        if (value == 0 || !info.IsFlags) return false;
+        long remaining = value;
+        List<string> names = [];
+        foreach ((long memberValue, string memberName) in info.Members)
+        {
+            if (memberValue == 0) continue;
+            if ((value & memberValue) != memberValue || (remaining & memberValue) == 0) continue;
+            names.Add(memberName);
+            remaining &= ~memberValue;
+        }
+        if (names.Count == 0 || remaining != 0) return false;
+        composed = string.Join(" | ", names);
+        return true;
     }
 
     private static bool TryReadIntegerValue(object boxed, out long value)
@@ -147,17 +208,15 @@ internal static class ManagedTypeInspectionEnricher
 
     private static bool TryGetEnumMemberName(TypeDefinition enumType, long value, out string? name)
     {
-        name = null;
-        foreach (FieldDefinition field in enumType.Fields)
+        foreach ((long memberValue, string memberName) in GetEnumInfo(enumType).Members)
         {
-            if (!field.IsStatic || field.Constant is null) continue;
-            if (!TryConvertConstantToLong(field.Constant, out long memberValue)) continue;
-            if (memberValue != value) continue;
-            string? candidate = field.Name?.ToString();
-            if (string.IsNullOrEmpty(candidate)) return false;
-            name = candidate;
-            return true;
+            if (memberValue == value)
+            {
+                name = memberName;
+                return true;
+            }
         }
+        name = null;
         return false;
     }
 

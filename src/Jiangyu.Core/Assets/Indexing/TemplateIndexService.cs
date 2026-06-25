@@ -32,8 +32,12 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
     // subtype's fields when a slot is edited. TemplateInstanceEntry carries
     // the script's CLR namespace so the member-query catalogue can
     // disambiguate short-name collisions like Effects.Attack vs
-    // AI.Behaviors.Attack.
-    internal const int CurrentFormatVersion = 8;
+    // AI.Behaviors.Attack. v9: enum-typed scalars are always kind "enum"
+    // (a [Flags] combination decomposes to " | "-joined member names) so the
+    // kind is stable across instances regardless of the value. v10: an enum
+    // value that names neither a member nor a flags set carries its number as
+    // a string, so an "enum"-kind node always has a string value.
+    internal const int CurrentFormatVersion = 10;
     private const int ValuesInspectDepth = 6;
 
     private static readonly JsonSerializerOptions JsonOptions = new()

@@ -19,6 +19,25 @@ public class VerbEmitTests
     public void MapTypeName_flattens_nested_type_separator()
         => Assert.Equal("global::Some.Outer.Inner", TypeNames.Map("Some.Outer+Inner"));
 
+    [Fact]
+    public void Of_renders_constructed_generic_with_angle_brackets()
+        => Assert.Equal("global::System.Nullable<int>", TypeNames.Of(typeof(int?)));
+
+    [Fact]
+    public void Of_renders_nested_generic_arguments_recursively()
+        => Assert.Equal(
+            "global::System.Collections.Generic.List<global::System.Collections.Generic.List<string>>",
+            TypeNames.Of(typeof(System.Collections.Generic.List<System.Collections.Generic.List<string>>)));
+
+    [Fact]
+    public void Of_keeps_the_nested_type_segment_of_a_generic_outer()
+    {
+        // Regression: a type nested in a generic outer (Dictionary`2+Enumerator) must not be
+        // truncated at the first backtick, which would drop the +Enumerator segment entirely.
+        var rendered = TypeNames.Of(typeof(System.Collections.Generic.Dictionary<int, string>.Enumerator));
+        Assert.Equal("global::System.Collections.Generic.Dictionary.Enumerator<int, string>", rendered);
+    }
+
     [Theory]
     [InlineData("Tactical.Units", "Jiangyu.Game.Tactical", "Units")]
     [InlineData("Strategy.Campaign", "Jiangyu.Game.Strategy", "Campaign")]

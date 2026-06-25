@@ -33,7 +33,7 @@ An item was added to the Black Market.
 The Black Market restocked its inventory.
 
 - **Context:** `BlackMarketRestockedContext`
-- **Source:** postfix (`BlackMarket.FillUp`)
+- **Source:** postfix (`BlackMarket.Restock`)
 
 ### ConversationVarChanged
 

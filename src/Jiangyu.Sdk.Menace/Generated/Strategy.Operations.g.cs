@@ -24,12 +24,6 @@ public static partial class Operations
     /// <summary>Whether an operation of the given template is currently active.</summary>
     public static bool IsActive(global::Il2CppMenace.Strategy.OperationTemplate p0) => global::Il2CppMenace.States.StrategyState.Get().Operations.IsOperationActive(p0);
 
-    /// <summary>How many operations have finished against the given faction type.</summary>
-    public static int FinishedCount(global::Il2CppMenace.Tactical.FactionType p0) => global::Il2CppMenace.States.StrategyState.Get().Operations.GetFinishedCountAgainst(p0);
-
-    /// <summary>How many operations have finished against the given faction type with the given status.</summary>
-    public static int FinishedCountWithResult(global::Il2CppMenace.Tactical.FactionType p0, global::Il2CppMenace.Strategy.OperationStatus p1) => global::Il2CppMenace.States.StrategyState.Get().Operations.GetFinishedCountWithResultAgainst(p0, p1);
-
     /// <summary>How many operations of the given client faction are available, filtered by operation type.</summary>
     public static int AvailableOfClient(global::Il2CppMenace.Strategy.StoryFactionTemplate p0, global::Il2CppMenace.Strategy.OperationType p1) => global::Il2CppMenace.States.StrategyState.Get().Operations.GetAvailableOperationsOfClient(p0, p1);
 

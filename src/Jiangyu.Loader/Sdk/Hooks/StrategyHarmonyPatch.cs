@@ -30,7 +30,7 @@ internal sealed class StrategyHarmonyPatch : IHarmonyPatchModule
         Patch(harmony, "Il2CppMenace.Strategy.OperationsManager", "OnOperationFinished", nameof(OnOperationFinishedPostfix));
         Patch(harmony, "Il2CppMenace.Strategy.Operation", "StartOperation", nameof(StartOperationPostfix));
         Patch(harmony, "Il2CppMenace.Strategy.BlackMarket", "AddItem", nameof(AddItemPostfix));
-        Patch(harmony, "Il2CppMenace.Strategy.BlackMarket", "FillUp", nameof(FillUpPostfix));
+        Patch(harmony, "Il2CppMenace.Strategy.BlackMarket", "Restock", nameof(RestockPostfix));
     }
 
     private static void Patch(HarmonyLib.Harmony harmony, string typeName, string method, string postfix)
@@ -85,6 +85,6 @@ internal sealed class StrategyHarmonyPatch : IHarmonyPatchModule
             Publish(new Jiangyu.Sdk.OperationStartedContext { Operation = __instance, Mission = __0 });
     }
 
-    private static void FillUpPostfix()
+    private static void RestockPostfix()
         => Publish(new Jiangyu.Sdk.BlackMarketRestockedContext());
 }

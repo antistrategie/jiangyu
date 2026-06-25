@@ -18,11 +18,12 @@ public static partial class Inventory
 
     /// <summary>
     /// Add an instance of <paramref name="template"/> to the campaign inventory. Returns the
-    /// created instance. <paramref name="showDialog"/> surfaces the game's pickup dialog.
+    /// created instance. <paramref name="showDialog"/> surfaces the game's pickup dialog,
+    /// and <paramref name="showItemSlotInDialog"/> shows the item's slot within that dialog.
     /// </summary>
     [MutatingVerb]
-    public static BaseItem AddItem(BaseItemTemplate template, bool showDialog = false)
-        => StrategyState.Get().OwnedItems.AddItem(template, showDialog);
+    public static BaseItem AddItem(BaseItemTemplate template, bool showDialog = false, bool showItemSlotInDialog = false)
+        => StrategyState.Get().OwnedItems.AddItem(template, showDialog, showItemSlotInDialog);
 
     /// <summary>Remove a specific owned item instance. Returns false when it is not owned.</summary>
     [MutatingVerb]

@@ -50,7 +50,7 @@
     },
     {
       "layer": "Strategy", "name": "BlackMarketRestocked", "context": "BlackMarketRestockedContext", "kind": "postfix",
-      "owner": "Il2CppMenace.Strategy.BlackMarket", "member": "FillUp",
+      "owner": "Il2CppMenace.Strategy.BlackMarket", "member": "Restock",
       "summary": "The Black Market restocked its inventory.",
       "payload": []
     }

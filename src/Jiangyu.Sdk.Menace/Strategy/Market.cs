@@ -8,14 +8,16 @@ namespace Jiangyu.Game.Strategy;
 public static partial class Market
 {
     /// <summary>
-    /// Refresh (restock) the black market through the game's <c>OnOperationFinished</c>.
-    /// Returns the number of regular-stock items afterwards.
+    /// Restock the black market, decrementing remaining timeouts and resetting the restock counter,
+    /// then return the number of regular-stock items afterwards. This restocks only; it does not
+    /// replicate the rest of an operation-finished pass. It runs the game's <c>Restock</c>, so it
+    /// publishes the <c>BlackMarketRestocked</c> hook. Do not call it from a handler of that hook.
     /// </summary>
     [MutatingVerb]
     public static int Refresh()
     {
         var market = StrategyState.Get().BlackMarket;
-        market.OnOperationFinished(null);
+        market.Restock(true, true);
         var items = new Il2CppSystem.Collections.Generic.List<BaseItem>();
         market.GetInstances(items, false);
         return items.Count;
