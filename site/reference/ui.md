@@ -22,6 +22,7 @@ Adds mod UI into the game's live screens and dialogs. Injected elements join the
 | `InjectEach(UiTarget, Func, Action)` | Inject a built element once per scoped match. build and bind get the scope. |
 | `InjectEach(UiTarget, VisualTreeAsset, Action)` | Inject a loaded uxml asset once per scoped match. |
 | `InjectEach(UiTarget, string, Action)` | Inject the bundled UXML once per scoped match. bind gets the new element and its scope. |
+| `Localise(VisualElement)` | Translate every marked label under root for the active language. A label is marked by giving its name a leading @, the rest of the name is its loca key, and the authored text is the English fallback. Injected UXML is localised automatically (on inject and on every rebuild, including an in-game language switch), so a mod calls this only for a tree it builds and manages outside the injection system. Idempotent. |
 
 ### UiElementExtensions
 
@@ -54,6 +55,7 @@ Matches a live VisualElement by name, USS class, or concrete type. Selectors loc
 | `And(UiSelector)` | A selector that matches only when both this and other match. |
 | `Class(string)` | Match an element carrying the USS class className. |
 | `Name(string)` | Match the element whose name equals name. |
+| `NameStartsWith(string)` | Match an element whose name begins with prefix. |
 | `Type<T>` | Match an element whose concrete game type is T (a subclass counts). |
 | `TypeName(string)` | Match an element whose concrete game type name equals typeName, for example "ArmoryUnitSelectSlot". This is the type name the UI inspector reports, so it matches even when the type has no compile-time wrapper to use with Type&lt;T&gt;. |
 
@@ -107,6 +109,31 @@ A native-looking text button: the game's .text-button frame with a .text-button-
 | `OnClick(Action)` | Run handler on click (in addition to the click sound). |
 | `Root` | The underlying button element. Add it to the tree, restyle it, extend it. |
 | `TextButton(string, bool)` | Build the button. Pass sound false to suppress the click sound. |
+
+### Tooltip
+
+The game's native tooltip: the floating info panel the game shows on hover, built from the game's TooltipData and displayed through UIManager. Build content with the fluent Heading / Paragraph / Stat / Line methods, then Show it anchored to an element (it sticks to the mouse by default, matching the game's own tooltips), or wire it to an element's hover with the static OnHover. Hide takes this tooltip back down. It is an ergonomics wrapper, not a sealed widget: a mod-facing Style maps onto the game's paragraph styles so the Il2Cpp tooltip types stay off the mod's surface, and Data exposes the underlying TooltipData for content this wrapper does not surface. Pass already-localised text (route it through Locale.Text first): each row is registered into the tooltip's own loca store so it renders, and the store falls back to the string as given, so the authored text is what shows.
+
+| Member | Description |
+| --- | --- |
+| `Data` | The underlying game tooltip data, for content this wrapper does not surface. |
+| `Heading(string)` | Add a heading row. |
+| `Hide` | Take this tooltip back down. A no-op unless this tooltip is the one currently on top, so a mod never tears down a different tooltip (a game tooltip, or a nested child opened over this one) that it does not own. |
+| `Icon(Sprite, string)` | Add an icon row from sprite (sourced by the mod, e.g. a template's icon). |
+| `Image(Sprite, bool, string)` | Add an image row from sprite. With useImageSize the row takes the sprite's native size, otherwise it fits the tooltip width. |
+| `Interactive(Action, Func)` | Wrap the rows added by content in an interactive container and reveal nested's tooltip as a child panel when that block is hovered. This is the mechanism the game uses to let you examine an item's skills from its tooltip. Call it as many times as you like for multiple independently-nested blocks; nested runs on each hover so the child reflects current state, and may return null to show nothing. |
+| `Line` | Add a horizontal divider. |
+| `Link(string, string)` | A rich-text span that renders text as a link to the game's built-in glossary term key (e.g. "hitpoint_damage"); hovering it opens that term's tooltip. Embed the result inside a Paragraph. Only existing game terms resolve. |
+| `OnHover(VisualElement, Func, bool)` | Show a freshly-built tooltip while anchor is hovered, and hide it on leave. build runs on every hover, so the tooltip reflects current state. Return null from it to show nothing this time. Idempotent: wiring the same element more than once (e.g. after a screen rebuild) does not stack duplicate handlers. |
+| `Paragraph(string, Style)` | Add a paragraph row in the given style. |
+| `ProgressBar(float, string, int)` | Add a labelled progress bar. fraction is the 0..1 fill; text is the label drawn on it. Colours follow the game's default bar styling. |
+| `SectionHeading(string)` | Add a section heading (a divider-style header that groups the rows beneath it). |
+| `Show(VisualElement, bool)` | Show this tooltip, anchored to anchor. With stickToMouse (the default) it follows the cursor like the game's own tooltips, otherwise it pins to the anchor. Call once the anchor is attached to a panel. |
+| `Space` | Add vertical spacing. |
+| `Stat(string, string, Func)` | Add a name/value stat row (e.g. "RANGE 5"). Pass nested to reveal a child tooltip when the row is hovered, the way the game lets you drill into a stat from an item tooltip. Consecutive stat rows render as one aligned group. |
+| `StatBar(string, float, float, bool, Func)` | Add a stat row drawn as a value-vs-maximum bar (e.g. a weapon's RANGE or DAMAGE). With biggerIsBetter the bar colours a high value positively. Pass nested to reveal a child tooltip when the row is hovered. Consecutive stat rows render as one aligned group. |
+| `Subheading(string)` | Add a subheading row (a smaller heading). |
+| `Tooltip(string, int, bool)` | Start an empty tooltip. width is the content width in pixels. Set canBePinned so the player can pin it in place (the game shows a pin hint); a pinned tooltip stays put, which is what lets the cursor move onto an interactive row to open a Interactive nested child. |
 
 ## Audio
 

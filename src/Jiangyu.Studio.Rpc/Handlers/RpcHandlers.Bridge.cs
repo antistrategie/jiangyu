@@ -98,7 +98,7 @@ public static partial class RpcHandlers
     // UiDump/UiNode define the ui.capture wire contract. The loader emits this shape (camelCase)
     // and BridgeUiCapture passes it through verbatim; [RpcType] generates the matching TS in the UI.
     // Mirror of the loader's UiTreeProbe dump (Jiangyu.Loader/Diagnostics/UiProbe/UiTreeProbe.cs).
-    /// <summary>A live capture of the game's UI tree: the active screen and any open dialog.</summary>
+    /// <summary>A live capture of the game's UI tree: the active screen, any open dialog, and the live tooltip overlay.</summary>
     [RpcType]
     internal sealed class UiDump
     {
@@ -119,6 +119,29 @@ public static partial class RpcHandlers
 
         [JsonPropertyName("dialogTree")]
         public required UiNode? DialogTree { get; set; }
+
+        // Optional: the live tooltips on the overlay panel (pinned tooltips and nested children),
+        // captured from UIManager's tooltip stack. Absent in captures from a loader that predates
+        // tooltip capture, so it is not required.
+        [JsonPropertyName("tooltips")]
+        public List<UiTooltip>? Tooltips { get; set; }
+    }
+
+    /// <summary>A live tooltip from the overlay: its id, pin state, the element that triggered it, and its content tree.</summary>
+    [RpcType]
+    internal sealed class UiTooltip
+    {
+        [JsonPropertyName("tooltipId")]
+        public required string? TooltipId { get; set; }
+
+        [JsonPropertyName("isPinned")]
+        public required bool IsPinned { get; set; }
+
+        [JsonPropertyName("trigger")]
+        public required UiNode? Trigger { get; set; }
+
+        [JsonPropertyName("tree")]
+        public required UiNode? Tree { get; set; }
     }
 
     /// <summary>A node in a captured UI tree.</summary>

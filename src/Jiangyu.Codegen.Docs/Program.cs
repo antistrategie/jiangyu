@@ -118,7 +118,10 @@ static List<UiClassDoc> ParseUi(string xmlPath)
 
         if (kind == 'T')
         {
-            acc.Summary = summary;
+            // Only the class's own T: member sets the section summary; a nested public type (e.g.
+            // Tooltip.Style) shares cls with its outer class, so its T: member must not overwrite it.
+            if (dot < 0)
+                acc.Summary = summary;
         }
         else if (dot >= 0)
         {

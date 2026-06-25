@@ -41,10 +41,10 @@ internal static class UiTreeProbe
         BaseDialog dialog = null;
         try { screen = manager.GetActiveScreen(); } catch { /* none */ }
         try { dialog = manager.GetCurrentDialog(); } catch { /* none */ }
-        return BuildDump(sceneTag, screen, dialog, ConcreteName(screen), ConcreteName(dialog));
+        return BuildDump(sceneTag, manager, screen, dialog, ConcreteName(screen), ConcreteName(dialog));
     }
 
-    private static UiDump BuildDump(string sceneTag, UIScreen screen, BaseDialog dialog, string screenName, string dialogName)
+    private static UiDump BuildDump(string sceneTag, UIManager manager, UIScreen screen, BaseDialog dialog, string screenName, string dialogName)
     {
         var dump = new UiDump
         {
@@ -62,9 +62,87 @@ internal static class UiTreeProbe
         if (dialog != null)
             dump.DialogTree = Walk(dialog.TryCast<VisualElement>(), 0, ref nodes);
 
+        dump.Tooltips = CaptureTooltips(manager, ref nodes);
+
         dump.NodeCount = nodes;
         dump.Truncated = nodes >= MaxNodes;
         return dump;
+    }
+
+    // The live tooltips, which render on their own overlay panel that the active-screen and
+    // dialog roots above do not reach. UIManager keeps every open tooltip (pinned and the
+    // nested children opened by hovering a row or a <link> inside a parent) in m_TooltipStack.
+    // For each entry the trigger element (ElementWithTooltip) is the exact thing a child hangs
+    // off, so the dump records it next to the tooltip's own content tree.
+    private static List<UiTooltip> CaptureTooltips(UIManager manager, ref int nodes)
+    {
+        Il2CppSystem.Collections.Generic.Stack<TooltipStackEntry> stack;
+        try { stack = manager.m_TooltipStack; }
+        catch { return null; }
+        if (stack == null)
+            return null;
+
+        TooltipStackEntry[] entries;
+        try
+        {
+            var array = stack.ToArray();
+            entries = new TooltipStackEntry[array.Length];
+            for (var i = 0; i < array.Length; i++) entries[i] = array[i];
+        }
+        catch { return null; }
+
+        var result = new List<UiTooltip>();
+        foreach (var entry in entries)
+        {
+            if (entry == null || nodes >= MaxNodes) continue;
+            var tip = new UiTooltip();
+            try { tip.TooltipId = entry.TooltipId; } catch { }
+            try { tip.IsPinned = entry.IsPinned; } catch { }
+
+            // The element that owns/triggered this tooltip. Identity only (no child walk): for a
+            // nested child this is the row/word/stat in the parent that carries the create-func or
+            // <link>, which is the whole point of the capture.
+            try
+            {
+                var trigger = entry.ElementWithTooltip;
+                if (trigger != null)
+                    tip.Trigger = Identity(trigger, ref nodes);
+            }
+            catch { }
+
+            // The tooltip's own content. The Tooltip is an InterfaceElement (a VisualElement), so
+            // walk it directly; fall back to its content container when the cast does not hold.
+            try
+            {
+                var tooltip = entry.Tooltip;
+                VisualElement root = null;
+                try { root = tooltip?.TryCast<VisualElement>(); } catch { }
+                if (root == null) try { root = tooltip?.GetContent(); } catch { }
+                if (root != null)
+                    tip.Tree = Walk(root, 0, ref nodes);
+            }
+            catch { }
+
+            result.Add(tip);
+        }
+        return result.Count > 0 ? result : null;
+    }
+
+    // Identity of a single element without descending into its children: concrete type, name,
+    // USS classes, and text (which preserves any <link=id> rich-text markup, so a link-word
+    // trigger is visible in the dump). Counts against the global node cap like Walk does.
+    private static UiNode Identity(VisualElement element, ref int nodes)
+    {
+        if (element == null || nodes >= MaxNodes) return null;
+        nodes++;
+        return new UiNode
+        {
+            Type = ConcreteName(element),
+            Name = SafeName(element),
+            Classes = ReadClasses(element),
+            Text = ReadText(element),
+            Style = ReadStyle(element),
+        };
     }
 
     // Recursively capture an element's identity, USS classes, text, and children,
@@ -238,6 +316,15 @@ internal static class UiTreeProbe
         public bool Truncated { get; set; }
         public UiNode ScreenTree { get; set; }
         public UiNode DialogTree { get; set; }
+        public List<UiTooltip> Tooltips { get; set; }
+    }
+
+    private sealed class UiTooltip
+    {
+        public string TooltipId { get; set; }
+        public bool IsPinned { get; set; }
+        public UiNode Trigger { get; set; }
+        public UiNode Tree { get; set; }
     }
 
     private sealed class UiNode
