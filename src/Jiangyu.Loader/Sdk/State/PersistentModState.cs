@@ -28,21 +28,47 @@ internal sealed class PersistentModState : IModState
     // Raw JSON loaded from the sidecar, keyed by type full name, not yet realised.
     private Dictionary<string, JsonElement> _pending;
 
+    // Types whose stored bytes failed to deserialise. Tracked so the loud reset warning fires once
+    // per type rather than on every Get.
+    private readonly HashSet<Type> _corrupt = new();
+
+    private readonly IModLog _log;
+
+    public PersistentModState(IModLog log = null) => _log = log;
+
     public T Get<T>() where T : class, new()
     {
         if (_live.TryGetValue(typeof(T), out var existing))
             return (T)existing;
 
-        T blob = null;
-        if (_pending != null && _pending.TryGetValue(typeof(T).FullName ?? typeof(T).Name, out var raw))
+        var key = typeof(T).FullName ?? typeof(T).Name;
+        if (_pending != null && _pending.TryGetValue(key, out var raw))
         {
-            try { blob = raw.Deserialize<T>(Options); }
-            catch { blob = null; }
+            try
+            {
+                var blob = raw.Deserialize<T>(Options) ?? new T();
+                _live[typeof(T)] = blob;
+                _pending.Remove(key);   // realised: the live copy is authoritative, drop the raw bytes
+                return blob;
+            }
+            catch (Exception ex)
+            {
+                // Unreadable bytes (schema change, hand-edit): reset to a fresh default and CACHE it,
+                // so the mod mutates a live instance that actually persists, rather than a throwaway
+                // that silently drops its writes (e.g. consuming gifts for no affinity). Drop the
+                // unreadable bytes so the fresh state is what Serialize saves. Surfaced loudly, once.
+                if (_corrupt.Add(typeof(T)))
+                    _log?.Error($"mod state: blob '{key}' failed to deserialise, resetting it to a fresh default: {ex.GetType().Name}: {ex.Message}");
+                var reset = new T();
+                _live[typeof(T)] = reset;
+                _pending.Remove(key);
+                return reset;
+            }
         }
 
-        blob ??= new T();
-        _live[typeof(T)] = blob;
-        return blob;
+        var fresh = new T();
+        _live[typeof(T)] = fresh;
+        return fresh;
     }
 
     /// <summary>State persists automatically when the game saves, so this is not
@@ -68,7 +94,17 @@ internal sealed class PersistentModState : IModState
     public void Load(string json)
     {
         _live.Clear();
+        _corrupt.Clear();   // a different save slot: re-arm the per-type corruption warning
         _pending = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, Options)
             ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+    }
+
+    /// <summary>Drop all state so nothing leaks from a previous session: used on a new game, and when
+    /// loading a save that has no sidecar. The next Get returns a fresh blob.</summary>
+    public void Clear()
+    {
+        _live.Clear();
+        _pending = null;
+        _corrupt.Clear();
     }
 }

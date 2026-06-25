@@ -31,18 +31,22 @@ Game data is loaded once and reused for both steps. Compile also verifies that e
 
 Compile is **incremental**: the `compiled/` tree is reassembled every run, but the slow Unity batchmode (prefab and texture/sprite/mesh bundling, the bulk of compile time) is skipped when the mod's inputs (`unity/` and `assets/`) are unchanged since the last successful compile. Input fingerprints and the cached bundle metadata are tracked in `.jiangyu/build-state.json`; pass `--clean` to force a full rebuild and ignore the cache.
 
+Pass `--release` for a build you intend to ship: it excludes dev-only `*.Dev.cs` sources (see [dev verbs](/sdk/dev-verbs)) from the code DLL. A plain `compile` keeps them in for local testing.
+
 Equivalent to Studio's Compile dossier. Returns non-zero on any compile error.
 
 ### `jiangyu package`
 
-Packages the already-compiled `compiled/` output into `<name>-<version>.zip` for distribution. Like `deploy`, it works on the existing build and does **not** compile, so run `jiangyu compile` first (it fails if `compiled/` is absent). The archive holds a single top-level `<name>/` folder, so a player extracts it straight into `Mods/`. The name and version come from `compiled/jiangyu.json`. Writes into the project directory by default; `--output <dir>` redirects it.
+Packages the already-compiled `compiled/` output into `<name>-<version>.zip` for distribution. Like `deploy`, it works on the existing build and does **not** compile, so run `jiangyu compile` first (it fails if `compiled/` is absent). The archive holds a single top-level `<name>/` folder, so a player extracts it straight into `Mods/`. The name and version come from `compiled/jiangyu.json`. Writes into the project directory by default. Pass `--output <dir>` to redirect it.
+
+It also refuses to package a build whose code DLL still carries a `[DevVerb]` [dev verb](/sdk/dev-verbs), which means a dev build was packaged by mistake. Build a release first to strip the `*.Dev.cs` sources:
 
 ```sh
-jiangyu compile
+jiangyu compile --release
 jiangyu package --output ../dist
 ```
 
-To cut a new version, bump `version` in `jiangyu.json`, recompile, then package.
+To cut a new version, bump `version` in `jiangyu.json`, recompile for release, then package.
 
 ### `jiangyu deploy`
 

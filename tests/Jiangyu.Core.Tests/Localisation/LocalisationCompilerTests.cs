@@ -101,6 +101,17 @@ public class LocalisationCompilerTests
     }
 
     [Fact]
+    public void ExtractUiKeys_FindsDeclarativeLocalisedTextLiterals()
+    {
+        // A data-table entry: the runtime read uses computed args, but the literal declaration is
+        // extractable so the string still reaches translators.
+        const string source =
+            """new Entry { Title = new LocalisedText("WOMENACE::ui/affinity/wmgfl_voymastina/lv2", "Outfit(s): Erwin") };""";
+        var keys = LocalisationCompiler.ExtractUiKeys(source).ToList();
+        Assert.Contains(("WOMENACE::ui/affinity/wmgfl_voymastina/lv2", "Outfit(s): Erwin"), keys);
+    }
+
+    [Fact]
     public void ExtractUxmlUiKeys_FindsMarkedLabels_AndIgnoresHyphenatedNameAttributes()
     {
         const string uxml = """

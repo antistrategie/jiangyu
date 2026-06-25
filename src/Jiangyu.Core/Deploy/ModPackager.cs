@@ -1,5 +1,8 @@
 using System.IO.Compression;
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
 using Jiangyu.Core.Models;
+using Jiangyu.Shared.Bundles;
 
 namespace Jiangyu.Core.Deploy;
 
@@ -26,6 +29,11 @@ public static class ModPackager
         var manifest = ModManifest.TryLoad(compiledDir)
             ?? throw new InvalidOperationException($"compiled/{ModManifest.FileName} not found. Run compile first.");
 
+        // Dev verbs must never ship: refuse to package a build whose code DLL still carries a
+        // [DevVerb]. A release build excludes the *.Dev.cs that defines them, so this only trips when
+        // a dev build was packaged by mistake.
+        GuardNoDevVerbs(compiledDir);
+
         var version = string.IsNullOrWhiteSpace(manifest.Version) ? "0.0.0" : manifest.Version;
         var destDir = outputDir ?? projectDir;
         Directory.CreateDirectory(destDir);
@@ -33,6 +41,53 @@ public static class ModPackager
         var archivePath = Path.Combine(destDir, $"{manifest.Name}-{version}.zip");
         Pack(compiledDir, manifest.Name, archivePath);
         return new PackResult(manifest.Name, version, archivePath);
+    }
+
+    // Throw if any compiled code DLL references the [DevVerb] attribute (i.e. applies it to a class),
+    // which means a dev verb would ship. Scans the metadata's type references, so it needs no game or
+    // SDK assemblies on a resolver path.
+    private static void GuardNoDevVerbs(string compiledDir)
+    {
+        var codeDir = Path.Combine(compiledDir, CompiledLayout.CodeDirName);
+        if (!Directory.Exists(codeDir))
+            return;
+        foreach (var dll in Directory.EnumerateFiles(codeDir, "*.dll", SearchOption.AllDirectories))
+        {
+            if (!ReferencesDevVerb(dll))
+                continue;
+            throw new InvalidOperationException(
+                $"'{Path.GetFileName(dll)}' carries a [DevVerb] dev verb, which must not ship in a release. "
+                + "Put dev verbs in a *.Dev.cs file, then package a release build: "
+                + "'jiangyu compile --release' followed by 'jiangyu package'.");
+        }
+    }
+
+    private static bool ReferencesDevVerb(string dllPath)
+    {
+        try
+        {
+            using var stream = File.OpenRead(dllPath);
+            using var pe = new PEReader(stream);
+            if (!pe.HasMetadata)
+                return false;
+            var reader = pe.GetMetadataReader();
+            foreach (var handle in reader.TypeReferences)
+            {
+                var typeRef = reader.GetTypeReference(handle);
+                // Match the SDK's attribute specifically, not any same-named type a mod might have.
+                if (reader.GetString(typeRef.Name) == "DevVerbAttribute"
+                    && reader.GetString(typeRef.Namespace) == "Jiangyu.Sdk")
+                    return true;
+            }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            // Fail closed: a guard that cannot read the DLL it is about to ship must not wave it
+            // through, or a dev build could slip past on a transient read error.
+            throw new InvalidOperationException(
+                $"could not scan '{Path.GetFileName(dllPath)}' for dev verbs before packaging: {ex.Message}");
+        }
     }
 
     private static void Pack(string compiledDir, string modName, string archivePath)

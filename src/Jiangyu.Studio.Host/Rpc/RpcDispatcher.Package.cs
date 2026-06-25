@@ -9,10 +9,11 @@ namespace Jiangyu.Studio.Host.Rpc;
 
 public static partial class RpcDispatcher
 {
-    // Non-blocking package: zips the existing compiled/ tree on a worker thread under the
-    // shared build gate and reports completion via the packageFinished notification. The
-    // blocking RpcHandlers.Package path is kept for MCP, where a blocking tool call is
-    // expected.
+    // Non-blocking package: zips the existing compiled/ tree on a worker thread under the shared
+    // build gate and reports completion via the packageFinished notification. A thin packager: it
+    // does NOT compile (compile first), so a release build is the caller's responsibility. ModPackager
+    // refuses to zip a build that still carries a dev verb, which is the compile-release-first nudge.
+    // The blocking RpcHandlers.Package path is kept for MCP.
     private static JsonElement HandlePackage(IInfiniFrameWindow window, JsonElement? parameters)
     {
         var projectRoot = ProjectWatcher.ProjectRoot

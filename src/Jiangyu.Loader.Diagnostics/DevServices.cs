@@ -30,10 +30,11 @@ internal sealed class DevServices : IDevServices
         // live scene state from the context and ignore them.
         _commands = new Dictionary<string, Func<JsonElement, object>>(StringComparer.Ordinal)
         {
-            ["verb"] = args => VerbRunner.Run(args, _context.Logger),
+            ["verb"] = args => VerbRunner.Run(args, _context.Logger, _context.ModAssemblies),
             ["ui"] = _ => UiTreeProbe.CaptureCurrent(_context.CurrentScene),
             ["scene"] = _ => SceneIdentityInspector.Capture(_context.CurrentScene, _context.CurrentBuildIndex),
             ["templates"] = _ => TemplateStateInspector.Capture(_context.CurrentScene),
+            ["winmission"] = _ => MissionAutoWin.Run(_context.Logger),
         };
 
         _bridge = new BridgeServer(context.Logger);

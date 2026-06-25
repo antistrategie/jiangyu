@@ -32,6 +32,15 @@ new TextButton(Locale.Text("MyMod::ui/swap_form", "SWAP FORM"));
 <ui:Label name="@MyMod::ui/give_gifts" text="GIVE GIFTS" />
 ```
 
+**Data-table strings** use `LocalisedText`. The extractor only sees *literal* `Locale.Text("key", "fallback")` calls, so a string stored in a table and read with a computed key would be missed. Declare it as a `new LocalisedText("key", "English")` literal instead (the extractor picks that up), store it, and resolve it at display time with `.Resolve()`.
+
+```csharp
+// in a data table
+new Unlock { Title = new LocalisedText("MyMod::ui/unlock/lv2", "New outfit") };
+// at display time
+label.text = unlock.Title.Resolve();
+```
+
 **Voice-line subtitles** are extracted automatically. The text of every spoken bark (a SAY node in a conversation) becomes a catalogue entry, so a translator can localise what your characters say on screen. This covers the subtitle text only, not the audio: the voice clips stay as recorded, the words shown change with the language.
 
 Literal `Locale.Text` calls and `@`-marked UXML labels are collected into the catalogue automatically, so they reach translators alongside your KDL text.

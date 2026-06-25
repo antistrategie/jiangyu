@@ -60,12 +60,26 @@ internal sealed class ModStateStore
                     state.Load(File.ReadAllText(sidecar));
                     _log.Info($"mod state: loaded {context.ModId}");
                 }
+                else
+                {
+                    // No sidecar for this save: clear so a prior session's state does not leak into a
+                    // save that predates the mod (or never had state).
+                    state.Clear();
+                }
             }
             catch (Exception ex)
             {
                 _log.Error($"mod state: failed to load {context.ModId}: {ex.GetType().Name}: {ex.Message}");
             }
         }
+    }
+
+    /// <summary>Drop every mod's state, e.g. when a new game starts (which never triggers a load),
+    /// so nothing carries over from the previous session.</summary>
+    public void ResetAll()
+    {
+        foreach (var context in _host.Contexts)
+            (context.State as PersistentModState)?.Clear();
     }
 
     private static string SidecarPath(string savePath, string modId)

@@ -221,8 +221,6 @@ export function App() {
         openProject: () => void ps.openProject(),
         closeProject: ps.closeProject,
         revealProject: ps.revealProject,
-        deployMod,
-        packageMod,
       }),
       {
         id: "app.openSettings",

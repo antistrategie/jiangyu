@@ -67,8 +67,9 @@ let logIdCounter = 0;
 
 interface CompileStore extends CompileState {
   /** Kick off a compile via the host RPC. State flips to running
-   *  immediately; failures surface as a failed state plus an error toast. */
-  readonly start: () => void;
+   *  immediately; failures surface as a failed state plus an error toast.
+   *  Pass release=true to build for distribution (excludes dev-only *.Dev.cs sources). */
+  readonly start: (release?: boolean) => void;
   readonly reset: () => void;
   readonly handleStarted: () => void;
   readonly handlePhase: (phase: string) => void;
@@ -85,10 +86,13 @@ interface CompileStore extends CompileState {
 export const useCompileStore = create<CompileStore>((set) => ({
   ...INITIAL_COMPILE_STATE,
 
-  start: () => {
+  start: (release?: boolean) => {
     logIdCounter = 0;
     set({ ...INITIAL_COMPILE_STATE, status: "running", startedAt: Date.now() });
-    rpcCall<{ started: boolean }>("compile").catch((err: unknown) => {
+    rpcCall<{ started: boolean }>(
+      "compile",
+      release === true ? { release: true } : undefined,
+    ).catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       set({ status: "failed", errorMessage: message, finishedAt: Date.now() });
       useToastStore.getState().push({

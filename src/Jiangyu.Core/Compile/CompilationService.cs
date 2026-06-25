@@ -42,6 +42,10 @@ public sealed class CompilationInput
     /// <summary>Force a full rebuild, ignoring (and overwriting) the incremental build state.
     /// Defaults to incremental.</summary>
     public bool Clean { get; init; }
+
+    /// <summary>Build for release: exclude dev-only <c>*.Dev.cs</c> sources (dev verbs, debug probes)
+    /// from the code DLL. Defaults to a dev build, which includes them for local testing.</summary>
+    public bool Release { get; init; }
 }
 
 /// <summary>
@@ -275,7 +279,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         // cross-check every type="ns:Name" against the [JiangyuType]s it produced.
         var gameRoot = Path.GetDirectoryName(gameDataPath)!;
         var (codeSdkDir, _) = GlobalConfig.ResolveSdkDir(config);
-        var codeBuild = await new CodeBuildService(_log).BuildAsync(projectDir, gameRoot, codeSdkDir);
+        var codeBuild = await new CodeBuildService(_log).BuildAsync(projectDir, gameRoot, codeSdkDir, devSources: !input.Release);
         if (codeBuild is { Success: false })
             return Fail(codeBuild.Error!);
 

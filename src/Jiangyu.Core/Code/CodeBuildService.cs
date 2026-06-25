@@ -18,7 +18,7 @@ public sealed class CodeBuildService(ILogSink log)
     /// when there is no code project to build, a failed result on build error, or a
     /// built result carrying the output DLLs and their <c>[JiangyuType]</c> names.
     /// </summary>
-    public async Task<CodeBuildResult?> BuildAsync(string projectDir, string gameDir, string? sdkDir)
+    public async Task<CodeBuildResult?> BuildAsync(string projectDir, string gameDir, string? sdkDir, bool devSources = true)
     {
         var codeDir = Path.Combine(projectDir, "code");
         if (!Directory.Exists(codeDir)
@@ -43,6 +43,17 @@ public sealed class CodeBuildService(ILogSink log)
         try { if (Directory.Exists(binDir)) Directory.Delete(binDir, recursive: true); }
         catch { /* a locked stale output is non-fatal; the build overwrites it */ }
 
+        // A release build must force a full code rebuild: MSBuild's up-to-date check keys off file
+        // timestamps, not the JiangyuDev property, so after a dev build it would reuse the cached DLL
+        // and leave the *.Dev.cs sources in. Dropping obj/ guarantees the dev verbs are recompiled out.
+        // (A release also clears obj for the next dev build, so that one rebuilds the dev sources back.)
+        if (!devSources)
+        {
+            var objDir = Path.Combine(codeDir, "obj");
+            try { if (Directory.Exists(objDir)) Directory.Delete(objDir, recursive: true); }
+            catch { /* non-fatal */ }
+        }
+
         log.Info("  Building code/ ...");
         var psi = new ProcessStartInfo
         {
@@ -59,6 +70,10 @@ public sealed class CodeBuildService(ILogSink log)
         psi.ArgumentList.Add("--nologo");
         psi.ArgumentList.Add($"-p:GameDir={gameDir}");
         psi.ArgumentList.Add($"-p:JiangyuSdkDir={sdkDir}");
+        // Dev builds include *.Dev.cs sources (dev verbs, debug probes); a release build leaves
+        // JiangyuDev unset so Directory.Build.props strips them from the shipped DLL.
+        if (devSources)
+            psi.ArgumentList.Add("-p:JiangyuDev=true");
 
         var output = new StringBuilder();
         var outputLock = new object();

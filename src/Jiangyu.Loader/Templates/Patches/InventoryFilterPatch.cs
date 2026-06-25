@@ -46,10 +46,17 @@ internal sealed class InventoryFilterPatch : IHarmonyPatchModule
     // slot's dropdown. Replace when the SDK lands.
     private static readonly Dictionary<string, int> RestrictionTagToSlot = new(StringComparer.Ordinal)
     {
-        { "armor_restricted",   2 }, // InfantryArmor
-        { "weapon_restricted",  0 }, // InfantryWeapon
-        { "vehicle_restricted", 4 }, // Vehicle
+        { "jy_armor_restricted",   2 }, // InfantryArmor
+        { "jy_weapon_restricted",  0 }, // InfantryWeapon
+        { "jy_vehicle_restricted", 4 }, // Vehicle
     };
+
+    // Tags that make an owned item non-sellable in the black market: the slot-restriction tags (a
+    // unit-bound chassis / custom armour, selling which would soft-lock the unit) plus jy_no_sell, a
+    // generic marker for items that should never be tradeable (e.g. gift commodities) but are not
+    // tied to an equip slot.
+    private static readonly HashSet<string> NoSellTags =
+        new(RestrictionTagToSlot.Keys, StringComparer.Ordinal) { "jy_no_sell" };
 
     private static MelonLogger.Instance _log;
 
@@ -127,6 +134,30 @@ internal sealed class InventoryFilterPatch : IHarmonyPatchModule
         catch (Exception ex)
         {
             _log.Warning($"Inventory filter: trade-guard patch failed: {ex.Message}");
+        }
+
+        // The black market renders its player sell column from BlackMarketUIScreen.UpdateItemSlots,
+        // built from a pre-filtered list. The BaseItem-overload guard above does not reliably reach
+        // that displayed list (it misses the vehicle and other grouped rows), so filter it directly: a
+        // prefix strips no-sell items before the slots are built. Inherently black-market-scoped, since
+        // the method exists only on that screen.
+        var sellPanelMethod = Il2CppMethodResolver.Find(
+            "BlackMarketUIScreen", "UpdateItemSlots",
+            new[] { "List", "SortedFilteredItemList", "Single", "List" }, exact: false, _log, "Inventory filter");
+        if (sellPanelMethod == null)
+        {
+            _log.Warning("Inventory filter: BlackMarketUIScreen.UpdateItemSlots not found; sell-list guard inactive.");
+            return;
+        }
+        try
+        {
+            harmony.Patch(sellPanelMethod,
+                prefix: new HarmonyMethod(typeof(InventoryFilterPatch), nameof(SellPanelPrefix)));
+            _log.Msg("Inventory filter: hooked BlackMarketUIScreen.UpdateItemSlots for the sell-list guard.");
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"Inventory filter: sell-list guard patch failed: {ex.Message}");
         }
     }
 
@@ -280,6 +311,23 @@ internal sealed class InventoryFilterPatch : IHarmonyPatchModule
         }
     }
 
+    // Prefix on BlackMarketUIScreen.UpdateItemSlots. __args[0] is the List<BaseItem> the sell column
+    // is about to turn into slots; strip the no-sell items so they never render and cannot be sold.
+    public static void SellPanelPrefix(object[] __args)
+    {
+        try
+        {
+            if (__args == null || __args.Length < 1) return;
+            var filteredItems = __args[0];
+            if (filteredItems == null) return;
+            RemoveRestrictedInstances(filteredItems);
+        }
+        catch (Exception ex)
+        {
+            _log?.Warning($"Inventory filter SellPanelPrefix: {ex.Message}");
+        }
+    }
+
     private static void RemoveRestrictedInstances(object resultList)
     {
         var listType = resultList.GetType();
@@ -298,7 +346,7 @@ internal sealed class InventoryFilterPatch : IHarmonyPatchModule
             var tags = ReadInstanceTemplateTags(item);
             if (tags == null) continue;
             bool restricted = false;
-            foreach (var t in RestrictionTagToSlot.Keys)
+            foreach (var t in NoSellTags)
                 if (tags.Contains(t)) { restricted = true; break; }
             if (restricted)
             {
@@ -522,7 +570,7 @@ internal sealed class InventoryFilterPatch : IHarmonyPatchModule
             {
                 // Restricted unit: keep items it can equip (OnlyEquipableBy intersecting its tags,
                 // armor/weapon) OR items carrying the restriction tag in their own Tags (vehicles:
-                // a chassis tagged vehicle_restricted). Tags is on the base ItemTemplate, so it
+                // a chassis tagged jy_vehicle_restricted). Tags is on the base ItemTemplate, so it
                 // reads off the list element directly, unlike VehicleItemTemplate.EntityTemplate.
                 keep = ItemAllowedFor(item, unitTags) || ItemOwnTagsHaveAny(item, applicableTags);
             }
@@ -543,7 +591,7 @@ internal sealed class InventoryFilterPatch : IHarmonyPatchModule
     /// <summary>
     /// True if the item's own Tags (on the base ItemTemplate, readable off the list element)
     /// contain any of the given tags. Used for the Vehicle slot: a chassis item tagged
-    /// vehicle_restricted is kept even without OnlyEquipableBy.
+    /// jy_vehicle_restricted is kept even without OnlyEquipableBy.
     /// </summary>
     private static bool ItemOwnTagsHaveAny(object item, HashSet<string> tags)
     {

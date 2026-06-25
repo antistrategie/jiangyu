@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useReducer, useRef } from "react";
+import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { FolderOpen, Package, Play, Rocket } from "lucide-react";
 import { Modal } from "@shared/ui/Modal/Modal";
 import { ModalHeader } from "@shared/ui/Modal/ModalHeader";
@@ -153,6 +153,7 @@ function InfoPanel({
   const startedAt = useCompileStore((s) => s.startedAt);
   const finishedAt = useCompileStore((s) => s.finishedAt);
   const start = useCompileStore((s) => s.start);
+  const [releaseBuild, setReleaseBuild] = useState(false);
 
   // While running, tick every 500ms so the Duration stat advances in real time.
   // Stops as soon as the compile finishes — after that, duration is frozen at
@@ -239,7 +240,21 @@ function InfoPanel({
         </p>
       )}
       <div className={styles.actions}>
-        <Button variant="primary" size="md" onClick={start} disabled={isRunning}>
+        <label className={styles.releaseToggle}>
+          <input
+            type="checkbox"
+            checked={releaseBuild}
+            disabled={isRunning}
+            onChange={(e) => setReleaseBuild(e.target.checked)}
+          />
+          Release build · 发布 (excludes dev-only sources)
+        </label>
+        <Button
+          variant="primary"
+          size="md"
+          onClick={() => start(releaseBuild)}
+          disabled={isRunning}
+        >
           {isRunning ? (
             <>Compiling…</>
           ) : isDone ? (

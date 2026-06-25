@@ -13,10 +13,15 @@ public static class CompileCommand
         {
             Description = "Force a full rebuild, ignoring the incremental build cache.",
         };
+        var releaseOption = new Option<bool>("--release")
+        {
+            Description = "Build for release: exclude dev-only *.Dev.cs sources (dev verbs, debug probes) from the code DLL.",
+        };
 
         var command = new Command("compile", "Compile mod assets into AssetBundles")
         {
             cleanOption,
+            releaseOption,
         };
         command.SetAction(async (parseResult) =>
         {
@@ -41,6 +46,7 @@ public static class CompileCommand
                     Config = config,
                     ProjectDirectory = projectDir,
                     Clean = parseResult.GetValue(cleanOption),
+                    Release = parseResult.GetValue(releaseOption),
                 });
 
                 return result.Success ? 0 : 1;

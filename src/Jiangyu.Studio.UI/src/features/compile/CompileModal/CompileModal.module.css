@@ -297,3 +297,21 @@
   padding-top: var(--space-3);
   border-top: var(--border-rule);
 }
+
+.releaseToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-xs);
+  color: var(--fg-on-inverse-muted);
+  cursor: pointer;
+}
+
+.releaseToggle input {
+  cursor: pointer;
+}
+
+.releaseToggle:has(input:disabled) {
+  opacity: 0.5;
+  cursor: default;
+}

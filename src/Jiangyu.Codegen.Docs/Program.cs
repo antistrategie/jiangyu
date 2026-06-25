@@ -88,7 +88,7 @@ static List<UiClassDoc> ParseUi(string xmlPath)
         ("Injection and helpers", "Jiangyu.Game.Ui."),
     ];
     string[] publicClasses =
-        ["UI", "UiTarget", "UiSelector", "UiInjection", "UiElementExtensions", "TextButton", "ItemTile", "Flyout", "Sound"];
+        ["UI", "UiTarget", "UiSelector", "UiInjection", "UiElementExtensions", "TextButton", "ItemTile", "Flyout", "Tooltip", "Sound"];
 
     var byClass = new Dictionary<string, (string Group, string Summary, List<UiMemberDoc> Members)>();
 

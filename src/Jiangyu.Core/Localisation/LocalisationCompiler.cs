@@ -113,11 +113,21 @@ public static class LocalisationCompiler
         """\bLocale\s*\.\s*Text\s*\(\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)""",
         RegexOptions.Compiled);
 
-    /// <summary>The <c>(key, fallback)</c> pairs from every literal <c>Locale.Text</c> call in a
-    /// source file, so a mod's UI strings reach the POT without a separate authoring step.</summary>
+    // Matches new LocalisedText("key", "fallback"): a translatable string declared as DATA (stored in
+    // a table or field, resolved at display) rather than via a runtime Locale.Text call. Lets a mod's
+    // data-driven UI strings, whose runtime Locale.Text uses computed args, still reach the POT.
+    private static readonly Regex LocalisedTextCtor = new(
+        """\bLocalisedText\s*\(\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)""",
+        RegexOptions.Compiled);
+
+    /// <summary>The <c>(key, fallback)</c> pairs from every literal <c>Locale.Text</c> call and
+    /// <c>new LocalisedText(...)</c> declaration in a source file, so a mod's UI strings (live and
+    /// data-declared) reach the POT without a separate authoring step.</summary>
     public static IEnumerable<(string Key, string Fallback)> ExtractUiKeys(string sourceText)
     {
         foreach (Match match in LocaleTextCall.Matches(sourceText))
+            yield return (PoFormat.Unescape(match.Groups[1].Value), PoFormat.Unescape(match.Groups[2].Value));
+        foreach (Match match in LocalisedTextCtor.Matches(sourceText))
             yield return (PoFormat.Unescape(match.Groups[1].Value), PoFormat.Unescape(match.Groups[2].Value));
     }
 

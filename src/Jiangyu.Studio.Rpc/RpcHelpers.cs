@@ -60,6 +60,13 @@ public static class RpcHelpers
         return prop.ValueKind == JsonValueKind.Number && prop.TryGetInt64(out var v) ? v : null;
     }
 
+    public static bool TryGetBool(JsonElement? parameters, string name)
+    {
+        if (parameters is not { } p || !p.TryGetProperty(name, out var prop))
+            return false;
+        return prop.ValueKind == JsonValueKind.True;
+    }
+
     /// <summary>
     /// Strict: returns false when the two paths are equal. Callers use this to reject
     /// moving/copying a directory into itself; the UI-side <c>isDescendant</c> includes equality.

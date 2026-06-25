@@ -27,6 +27,17 @@
     <GameAssembliesDir Condition="'$(GameAssembliesDir)' == ''">$(GameDir)/MelonLoader/Il2CppAssemblies</GameAssembliesDir>
   </PropertyGroup>
 
+  <!--
+    Dev-only sources. Files named *.Dev.cs (e.g. dev verbs, debug probes) compile only in a dev
+    build. A plain `jiangyu compile` sets JiangyuDev=true (dev verbs in, for local testing). A
+    release compile and `jiangyu package` leave it unset, and Directory.Build.targets then excludes
+    the *.Dev.cs sources, so they are stripped from the shipped DLL. JIANGYU_DEV is defined here too,
+    for #if guards in shared files.
+  -->
+  <PropertyGroup Condition="'$(JiangyuDev)' == 'true'">
+    <DefineConstants>$(DefineConstants);JIANGYU_DEV</DefineConstants>
+  </PropertyGroup>
+
   <Import Project="local.props" Condition="Exists('local.props')" />
 
 </Project>

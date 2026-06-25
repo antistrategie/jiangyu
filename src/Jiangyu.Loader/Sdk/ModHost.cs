@@ -59,6 +59,10 @@ internal sealed class ModHost
     /// persist each mod's <see cref="ModContext.State"/> on save/load.</summary>
     public IEnumerable<ModContext> Contexts => _contexts.Values;
 
+    /// <summary>The loaded mod code assemblies. Used by the dev surface to discover mod-contributed
+    /// dev verbs ([DevVerb] classes) alongside the SDK's own.</summary>
+    public IEnumerable<Assembly> ModAssemblies => _contextsByAssembly.Keys;
+
     /// <summary>Discover, order, and register every concrete JiangyuSystem in an assembly.</summary>
     public IReadOnlyList<LoadedSystem> Register(Assembly modAssembly, string modId)
         => Register(new[] { modAssembly }, modId);

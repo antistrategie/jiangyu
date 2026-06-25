@@ -18,18 +18,19 @@ public static partial class RpcDispatcher
     // Rejects concurrent compiles — the UI layer should already gate on state,
     // but a stray second call would otherwise interleave sink output. Shares
     // the compile gate with the blocking MCP variant in Studio.Rpc.
-    private static JsonElement HandleCompile(IInfiniFrameWindow window, JsonElement? unused)
+    private static JsonElement HandleCompile(IInfiniFrameWindow window, JsonElement? parameters)
     {
-        _ = unused;
         var projectRoot = ProjectWatcher.ProjectRoot
             ?? throw new InvalidOperationException("No project open.");
+        // A release build excludes dev-only *.Dev.cs sources (dev verbs); the default is a dev build.
+        var release = RpcHelpers.TryGetBool(parameters, "release");
 
         RpcHandlers.BeginBuildOp();
 
         // Fire-and-forget: compile runs on a worker thread and streams events
         // back via notifications. The RPC returns immediately so the message
         // loop isn't blocked for the minutes a Unity build can take.
-        _ = Task.Run(() => RunCompileAsync(BroadcastSink, projectRoot));
+        _ = Task.Run(() => RunCompileAsync(BroadcastSink, projectRoot, release));
         return JsonSerializer.SerializeToElement(new CompileStartedAck { Started = true });
     }
 
@@ -52,7 +53,8 @@ public static partial class RpcDispatcher
             // Block this thread (an MCP request handler thread, NOT the
             // WebView dispatch thread) until the streaming task finishes,
             // so the agent's tool-call response carries the final result.
-            return RunCompileAsync(BroadcastSink, projectRoot)
+            // MCP compiles are dev builds (dev verbs in); release is a UI/CLI concern.
+            return RunCompileAsync(BroadcastSink, projectRoot, release: false)
                 .GetAwaiter().GetResult();
         };
     }
@@ -72,7 +74,7 @@ public static partial class RpcDispatcher
         }
     }
 
-    private static async Task<JsonElement> RunCompileAsync(Action<string, object> send, string projectRoot)
+    private static async Task<JsonElement> RunCompileAsync(Action<string, object> send, string projectRoot, bool release)
     {
         try
         {
@@ -102,6 +104,7 @@ public static partial class RpcDispatcher
                 Manifest = manifest,
                 Config = config,
                 ProjectDirectory = projectRoot,
+                Release = release,
             });
 
             var finished = new CompileFinishedEvent

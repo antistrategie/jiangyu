@@ -26,4 +26,8 @@ internal interface IDevServicesContext
     MelonLogger.Instance Logger { get; }
     string CurrentScene { get; }
     int CurrentBuildIndex { get; }
+
+    // The loaded mod code assemblies, so the verb runner can discover mod-contributed [DevVerb]
+    // classes alongside the SDK's own verbs.
+    System.Collections.Generic.IEnumerable<System.Reflection.Assembly> ModAssemblies { get; }
 }

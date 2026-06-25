@@ -22,6 +22,7 @@ internal sealed class LoaderModContext : ModContext
         ModFolder = modFolder;
         Version = version;
         Log = new TaggedLog(modId, hostLog);
+        State = new PersistentModState(Log);
         Hooks = hooks;
         Assets = assets ?? NullModAssets.Instance;
         Coroutines = coroutines ?? NullModCoroutines.Instance;
@@ -36,7 +37,7 @@ internal sealed class LoaderModContext : ModContext
 
     public override IModLog Log { get; }
 
-    public override IModState State { get; } = new PersistentModState();
+    public override IModState State { get; }
 
     public override IHookBus Hooks { get; }
 

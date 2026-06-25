@@ -64,4 +64,13 @@
     </Reference>
   </ItemGroup>
 
+  <!--
+    Exclude dev-only *.Dev.cs sources from a release build (when JiangyuDev is not set). This lives
+    in .targets, not .props, so the SDK's default Compile glob has already added them by the time the
+    Remove runs. See Directory.Build.props for how `jiangyu compile` and `package` set JiangyuDev.
+  -->
+  <ItemGroup Condition="'$(JiangyuDev)' != 'true'">
+    <Compile Remove="**/*.Dev.cs" />
+  </ItemGroup>
+
 </Project>

@@ -25,6 +25,7 @@ internal sealed class ModStatePersistencePatch : IHarmonyPatchModule
         _log = context.Log;
         Patch(harmony, "Il2CppMenace.Strategy.SaveSystem", "Save", nameof(SavePostfix));
         Patch(harmony, "Il2CppMenace.Strategy.SaveSystem", "ExecLoad", nameof(ExecLoadPostfix));
+        Patch(harmony, "Il2CppMenace.States.StrategyState", "CreateNewGame", nameof(CreateNewGamePostfix));
     }
 
     private static void Patch(HarmonyLib.Harmony harmony, string typeName, string method, string postfix)
@@ -116,6 +117,19 @@ internal sealed class ModStatePersistencePatch : IHarmonyPatchModule
         catch (Exception ex)
         {
             _log.Error($"mod state: load postfix failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private static void CreateNewGamePostfix()
+    {
+        try
+        {
+            Store?.ResetAll();
+            _log.Msg("mod state: reset for new game");
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"mod state: new-game reset failed: {ex.GetType().Name}: {ex.Message}");
         }
     }
 

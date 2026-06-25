@@ -30,8 +30,9 @@ namespace Jiangyu.Loader.Diagnostics;
 /// </summary>
 internal static class VerbRunner
 {
-    // Request: { verb: "Mission.Actors", args: [...], mutate?: bool }.
-    internal static object Run(JsonElement request, MelonLogger.Instance log)
+    // Request: { verb: "Mission.Actors", args: [...], mutate?: bool }. modAssemblies are the loaded
+    // mod code assemblies, scanned for [DevVerb] classes alongside the SDK's own verbs.
+    internal static object Run(JsonElement request, MelonLogger.Instance log, IEnumerable<Assembly> modAssemblies = null)
     {
         if (request.ValueKind != JsonValueKind.Object
             || !request.TryGetProperty("verb", out var verbProp) || verbProp.GetString() is not { } verb)
@@ -42,7 +43,7 @@ internal static class VerbRunner
             : Array.Empty<JsonElement>();
         var mutate = request.TryGetProperty("mutate", out var m) && m.ValueKind == JsonValueKind.True;
 
-        var method = ResolveMethod(verb, args.Length);
+        var method = ResolveMethod(verb, args.Length, modAssemblies);
         if (method == null)
             return new { error = $"no verb '{verb}' taking {args.Length} arg(s). Use \"Class.Method\" (e.g. \"Units.Spawn\")." };
 
@@ -77,39 +78,58 @@ internal static class VerbRunner
 
     // --- method resolution -------------------------------------------------
 
-    // The verb classes are public static classes in the Jiangyu.Game.* namespaces of
-    // Jiangyu.Sdk.Menace (merged into the dev loader). The set is fixed for the process,
-    // so scan the assembly once and cache the short-name -> class map.
+    // The verb classes are the static classes in the Jiangyu.Game.* namespaces of Jiangyu.Sdk.Menace
+    // (merged into the dev loader), plus any static class a loaded mod marks with [DevVerb]. The set
+    // is fixed for the process (mods are loaded once), so scan once and cache the short-name -> class
+    // map. SDK names win on a collision with a mod verb.
     private static Dictionary<string, Type> _verbClasses;
 
-    private static Dictionary<string, Type> VerbClasses() => _verbClasses ??= BuildVerbClasses();
+    private static Dictionary<string, Type> VerbClasses(IEnumerable<Assembly> modAssemblies)
+        => _verbClasses ??= BuildVerbClasses(modAssemblies);
 
-    private static Dictionary<string, Type> BuildVerbClasses()
+    private static Dictionary<string, Type> BuildVerbClasses(IEnumerable<Assembly> modAssemblies)
     {
         var map = new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
         foreach (var t in typeof(Jiangyu.Game.Tactical.Mission).Assembly.GetTypes())
-            if (t.IsClass && t.IsAbstract && t.IsSealed                 // static class
+            if (IsStaticClass(t)
                 && t.Namespace != null && t.Namespace.StartsWith("Jiangyu.Game", StringComparison.Ordinal))
                 map[t.Name] = t;
+
+        if (modAssemblies != null)
+            foreach (var assembly in modAssemblies)
+                foreach (var t in SafeGetTypes(assembly))
+                    if (IsStaticClass(t) && t.IsDefined(typeof(DevVerbAttribute), inherit: false) && !map.ContainsKey(t.Name))
+                        map[t.Name] = t;
+
         return map;
+    }
+
+    private static bool IsStaticClass(Type t) => t.IsClass && t.IsAbstract && t.IsSealed;
+
+    // A mod assembly may fail to load some of its types (missing optional dependency); take what loads.
+    private static IEnumerable<Type> SafeGetTypes(Assembly assembly)
+    {
+        try { return assembly.GetTypes(); }
+        catch (ReflectionTypeLoadException ex) { return ex.Types.Where(t => t != null); }
+        catch { return Array.Empty<Type>(); }
     }
 
     // Resolved verbs are cached by name + arity: the verb set and its overloads are
     // fixed for the process, so a repeated call skips the reflection scan.
     private static readonly Dictionary<string, MethodInfo> _methodCache = new(StringComparer.OrdinalIgnoreCase);
 
-    private static MethodInfo ResolveMethod(string verb, int argCount)
+    private static MethodInfo ResolveMethod(string verb, int argCount, IEnumerable<Assembly> modAssemblies)
     {
         var key = verb + "/" + argCount;
         if (_methodCache.TryGetValue(key, out var cached))
             return cached;
-        var resolved = ResolveMethodUncached(verb, argCount);
+        var resolved = ResolveMethodUncached(verb, argCount, modAssemblies);
         _methodCache[key] = resolved;
         return resolved;
     }
 
     // Match "Class.Method" by the class's short name and the method by name + arity.
-    private static MethodInfo ResolveMethodUncached(string verb, int argCount)
+    private static MethodInfo ResolveMethodUncached(string verb, int argCount, IEnumerable<Assembly> modAssemblies)
     {
         var dot = verb.LastIndexOf('.');
         if (dot <= 0)
@@ -117,7 +137,7 @@ internal static class VerbRunner
         var className = verb.Substring(0, dot);
         var methodName = verb.Substring(dot + 1);
 
-        if (!VerbClasses().TryGetValue(className, out var type))
+        if (!VerbClasses(modAssemblies).TryGetValue(className, out var type))
             return null;
 
         // Prefer an overload whose required-parameter count fits the supplied args.

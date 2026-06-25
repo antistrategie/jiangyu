@@ -90,6 +90,7 @@ export default defineConfig({
           { text: "Add UI", link: "/sdk/ui" },
           { text: "Translate a mod", link: "/localise" },
           { text: "Call game verbs", link: "/sdk/verbs" },
+          { text: "Add a dev verb", link: "/sdk/dev-verbs" },
           { text: "Add a hotkey", link: "/sdk/hotkeys" },
           { text: "Set up the Unity project", link: "/unity-project" },
           { text: "Use Studio", link: "/studio" },

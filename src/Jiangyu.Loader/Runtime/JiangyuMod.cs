@@ -91,6 +91,8 @@ public class JiangyuMod : MelonMod, IDevServicesContext
     MelonLogger.Instance IDevServicesContext.Logger => LoggerInstance;
     string IDevServicesContext.CurrentScene => _currentScene;
     int IDevServicesContext.CurrentBuildIndex => _currentBuildIndex;
+    System.Collections.Generic.IEnumerable<System.Reflection.Assembly> IDevServicesContext.ModAssemblies
+        => _modHost?.ModAssemblies ?? System.Array.Empty<System.Reflection.Assembly>();
 
     // Route the SDK's static Jiangyu.Sdk.Log (used by injected handlers and other
     // context-less mod code) into the loader log. Debug is enabled only when the
