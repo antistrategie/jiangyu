@@ -11,7 +11,7 @@ jobs:
   test-dotnet:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
         with:
           path: jiangyu
 
@@ -22,7 +22,7 @@ jobs:
       # still need the loader to compile so we set up the build deps the
       # same way build-loader does below.
       - name: Checkout menace-ci-dependencies
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@v7.0.0
         with:
           repository: beanpuppy/menace-ci-dependencies
           path: menace-ci-dependencies
@@ -78,7 +78,7 @@ jobs:
       run:
         working-directory: src/Jiangyu.Studio.UI
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -102,12 +102,12 @@ jobs:
     needs: [test-dotnet, test-studio-ui]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
         with:
           path: jiangyu
 
       - name: Checkout menace-ci-dependencies
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@v7.0.0
         with:
           repository: beanpuppy/menace-ci-dependencies
           path: menace-ci-dependencies
@@ -175,7 +175,7 @@ jobs:
             platform: win-x64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
         with:
           path: jiangyu
 
@@ -213,7 +213,7 @@ jobs:
             platform: win-x64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
         with:
           path: jiangyu
 
