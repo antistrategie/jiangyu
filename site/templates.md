@@ -171,6 +171,8 @@ patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
 }
 ```
 
+The handler name in `type=` (`AddSkill`), the fields you `set` (`Event`, `SkillToAdd`, `ShowHUDText`), and the values an `enum=` field accepts (`OnAttack`) all come from the [event handler reference](/reference/event-handlers). It lists every built-in handler with its settable fields and their enum values, and flags the fields you cannot set from KDL, the Odin-routed conditions and value providers, so you know when a behaviour needs the [C# path](/sdk/template-types) instead.
+
 - `append "F" type="X" { ... }` / `insert "F" index=N type="X" { ... }`: build a fresh X and add it.
 - `set "F" index=N type="X" { ... }`: build a fresh X and replace polymorphic element N.
 - `set "F" type="X" { ... }`: build a fresh X for a polymorphic scalar field (an Odin-routed interface such as `Attack.DamageFilterCondition`).

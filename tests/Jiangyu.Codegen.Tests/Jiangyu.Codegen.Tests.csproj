@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\Jiangyu.Codegen.Verbs\Jiangyu.Codegen.Verbs.csproj" />
     <ProjectReference Include="..\..\src\Jiangyu.Codegen.Hooks\Jiangyu.Codegen.Hooks.csproj" />
     <ProjectReference Include="..\..\src\Jiangyu.Codegen.Docs\Jiangyu.Codegen.Docs.csproj" />
+    <ProjectReference Include="..\..\src\Jiangyu.Codegen.Handlers\Jiangyu.Codegen.Handlers.csproj" />
     <ProjectReference Include="..\..\src\Jiangyu.Sdk\Jiangyu.Sdk.csproj" />
   </ItemGroup>
 

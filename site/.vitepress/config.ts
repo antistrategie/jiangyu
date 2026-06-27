@@ -105,6 +105,7 @@ export default defineConfig({
           { text: "Manifest (jiangyu.json)", link: "/reference/manifest" },
           { text: "Game verbs", link: "/reference/verbs" },
           { text: "Hooks", link: "/reference/hooks" },
+          { text: "Event handlers", link: "/reference/event-handlers" },
           { text: "Agent tools", link: "/studio/agent-tools" },
         ],
       },

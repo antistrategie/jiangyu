@@ -8,6 +8,8 @@ Set up the [`code/` project](/sdk/#the-code-project) and read the game's types a
 
 A `[JiangyuType]` class is your own subtype of a game type that the game constructs and dispatches through, slotted from a template exactly like a built-in one. **You do not need a `JiangyuSystem` for this**, just the class.
 
+The [event handler reference](/reference/event-handlers) is the menu for this: every method you can override on `SkillEventHandler`, every built-in handler you can subclass or slot from KDL, and every condition the game models. Reach for a built-in before writing C#.
+
 The common shape is a pair. A `SkillEventHandlerTemplate` is the factory the template data holds, and its `Create()` returns the `SkillEventHandler` the game ticks at runtime.
 
 ```csharp

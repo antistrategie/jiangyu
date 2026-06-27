@@ -210,6 +210,14 @@ export interface UiDump {
   truncated: boolean;
   screenTree: UiNode | null;
   dialogTree: UiNode | null;
+  tooltips?: UiTooltip[] | null;
+}
+
+export interface UiTooltip {
+  tooltipId: string | null;
+  isPinned: boolean;
+  trigger: UiNode | null;
+  tree: UiNode | null;
 }
 
 export interface UiNode {
