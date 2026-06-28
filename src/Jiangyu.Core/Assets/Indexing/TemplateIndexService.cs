@@ -36,8 +36,13 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
     // (a [Flags] combination decomposes to " | "-joined member names) so the
     // kind is stable across instances regardless of the value. v10: an enum
     // value that names neither a member nor a flags set carries its number as
-    // a string, so an "enum"-kind node always has a string value.
-    internal const int CurrentFormatVersion = 10;
+    // a string, so an "enum"-kind node always has a string value. v11:
+    // Odin-serialised references carry their decoded semantic field path (e.g.
+    // m_ObjectiveGroups[2].Objectives[0].Target) in References/ReferencedBy
+    // instead of the opaque serializationData.ReferencedUnityObjects path. v12:
+    // Odin-decoded Unity math structs (Vector2Int, Color, etc.) carry their
+    // component names (x/y, r/g/b/a) instead of nameless positional values.
+    internal const int CurrentFormatVersion = 12;
     private const int ValuesInspectDepth = 6;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -137,6 +142,10 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
             values = ExtractTemplateValues(index, session.GameData);
             _progress.Finish();
             elapsedValues = sw.ElapsedMilliseconds;
+
+            // Swap opaque Odin reference paths for decoded semantic ones now
+            // that both the index and the decoded value tree exist.
+            ReattributeOdinReferences(index, values);
         }
 
         Directory.CreateDirectory(CachePath);
@@ -296,7 +305,51 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
             }
         }
 
-        // --- Build reverse index ---
+        instances = [.. instances
+            .OrderBy(instance => instance.ClassName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(instance => instance.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(instance => instance.Identity.Collection, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(instance => instance.Identity.PathId)];
+
+        var templateTypes = instances
+            .GroupBy(instance => instance.ClassName, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var (classifiedVia, ancestor) = classificationByType.TryGetValue(group.Key, out var info)
+                    ? info
+                    : ("suffix", null);
+
+                return new TemplateTypeEntry
+                {
+                    ClassName = group.Key,
+                    Count = group.Count(),
+                    ClassifiedVia = classifiedVia,
+                    TemplateAncestor = ancestor,
+                };
+            })
+            .OrderBy(entry => entry.ClassName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new TemplateIndex
+        {
+            Classification = TemplateClassifier.GetMetadata(),
+            TemplateTypes = templateTypes,
+            Instances = instances,
+            // The reverse index is derived from the final forward edges; it is
+            // built once by ReattributeOdinReferences after that pass has
+            // finalised them, so the full build never constructs it twice.
+            ReferencedBy = null,
+        };
+    }
+
+    /// <summary>
+    /// Build the reverse reference index ("collection:pathId" → sources that
+    /// reference it) from the forward <see cref="TemplateInstanceEntry.References"/>
+    /// edges. Returns null when no instance references anything.
+    /// </summary>
+    private static Dictionary<string, List<TemplateReferenceEntry>>? BuildReferencedBy(
+        IReadOnlyList<TemplateInstanceEntry> instances)
+    {
         var referencedBy = new Dictionary<string, HashSet<(string Collection, long PathId, string FieldName)>>();
         foreach (var instance in instances)
         {
@@ -330,38 +383,157 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
                 .ThenBy(e => e.Source.PathId)
                 .ToList());
 
-        instances = [.. instances
-            .OrderBy(instance => instance.ClassName, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(instance => instance.Name, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(instance => instance.Identity.Collection, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(instance => instance.Identity.PathId)];
+        return referencedByLists.Count > 0 ? referencedByLists : null;
+    }
 
-        var templateTypes = instances
-            .GroupBy(instance => instance.ClassName, StringComparer.OrdinalIgnoreCase)
-            .Select(group =>
-            {
-                var (classifiedVia, ancestor) = classificationByType.TryGetValue(group.Key, out var info)
-                    ? info
-                    : ("suffix", null);
+    // Field names from Sirenix Odin's SerializationData struct, as surfaced by
+    // the inspector. The raw-graph reference pass attributes every external
+    // reference in the blob to ReferencedUnityObjectsPath; reattribution swaps
+    // those for the decoded semantic paths.
+    private const string SerializationDataField = "serializationData";
+    private const string ReferencedUnityObjectsField = "ReferencedUnityObjects";
+    private const string ReferencedUnityObjectsPath = SerializationDataField + "." + ReferencedUnityObjectsField;
 
-                return new TemplateTypeEntry
-                {
-                    ClassName = group.Key,
-                    Count = group.Count(),
-                    ClassifiedVia = classifiedVia,
-                    TemplateAncestor = ancestor,
-                };
-            })
-            .OrderBy(entry => entry.ClassName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        return new TemplateIndex
+    /// <summary>
+    /// Re-attribute Odin-serialised references from the opaque raw-graph path
+    /// (<c>serializationData.ReferencedUnityObjects</c>) to their real semantic
+    /// field path (e.g. <c>m_ObjectiveGroups[2].Objectives[0].Target</c>),
+    /// recovered from the decoded value tree. Templates with no decoded Odin
+    /// payload are left untouched, and any external reference the decoder did
+    /// not surface keeps its raw path so no edge is silently lost. Always
+    /// (re)builds the reverse index from the finalised forward edges, so this
+    /// is the single place <see cref="TemplateIndex.ReferencedBy"/> is built in
+    /// the full-build flow.
+    /// </summary>
+    internal static void ReattributeOdinReferences(
+        TemplateIndex index,
+        IReadOnlyDictionary<string, List<InspectedFieldNode>> values)
+    {
+        // (pathId[, name]) → known-template identity for resolving a decoded
+        // reference's target. A pathId can repeat across collections, so a
+        // named reference resolves strictly by (pathId, name) and a name-less
+        // one only when its bare pathId is unambiguous.
+        var byPathId = new Dictionary<long, TemplateIdentity>();
+        var ambiguousPathIds = new HashSet<long>();
+        var byPathIdAndName = new Dictionary<(long PathId, string Name), TemplateIdentity>();
+        foreach (var inst in index.Instances)
         {
-            Classification = TemplateClassifier.GetMetadata(),
-            TemplateTypes = templateTypes,
-            Instances = instances,
-            ReferencedBy = referencedByLists.Count > 0 ? referencedByLists : null,
-        };
+            var id = inst.Identity;
+            if (!byPathId.TryAdd(id.PathId, id))
+                ambiguousPathIds.Add(id.PathId);
+            byPathIdAndName.TryAdd((id.PathId, inst.Name), id);
+        }
+
+        TemplateIdentity? Resolve(InspectedReference reference)
+        {
+            if (reference.PathId is not long pathId || pathId == 0)
+                return null;
+            // A reference that carries a name is authoritative: resolve strictly
+            // by (pathId, name) and treat a miss as unresolved rather than
+            // silently binding to a same-pathId sibling in another collection.
+            if (reference.Name is { Length: > 0 } name)
+                return byPathIdAndName.TryGetValue((pathId, name), out var byName) ? byName : null;
+            return !ambiguousPathIds.Contains(pathId) && byPathId.TryGetValue(pathId, out var byId)
+                ? byId
+                : null;
+        }
+
+        foreach (var instance in index.Instances)
+        {
+            if (!values.TryGetValue(TemplateIndex.IdentityKey(instance.Identity), out var fields))
+                continue;
+
+            var decoded = FindDecodedOdinRoot(fields);
+            if (decoded is null)
+                continue;
+
+            var semanticEdges = new List<TemplateEdge>();
+            var coveredTargets = new HashSet<(string Collection, long PathId)>();
+            var seen = new HashSet<(string FieldPath, string Collection, long PathId)>();
+            CollectOdinReferenceEdges(decoded, string.Empty, Resolve, semanticEdges, coveredTargets, seen);
+            if (semanticEdges.Count == 0)
+                continue;
+
+            // Keep every existing edge except the opaque ReferencedUnityObjects
+            // entries whose target a semantic edge now covers.
+            var rebuilt = (instance.References ?? [])
+                .Where(e => !IsOpaqueOdinReferencePath(e.FieldName)
+                    || !coveredTargets.Contains((e.Target.Collection, e.Target.PathId)))
+                .ToList();
+            rebuilt.AddRange(semanticEdges);
+            instance.References = rebuilt.Count > 0 ? rebuilt : null;
+        }
+
+        index.ReferencedBy = BuildReferencedBy(index.Instances);
+    }
+
+    // The raw-graph walker prefixes the path with the serializationData field's
+    // owner (e.g. m_Structure on DataTemplate-derived types), so match the
+    // ReferencedUnityObjects suffix rather than the bare path.
+    private static bool IsOpaqueOdinReferencePath(string fieldName) =>
+        fieldName.Equals(ReferencedUnityObjectsPath, StringComparison.Ordinal)
+        || fieldName.EndsWith("." + ReferencedUnityObjectsPath, StringComparison.Ordinal);
+
+    private static List<InspectedFieldNode>? FindDecodedOdinRoot(List<InspectedFieldNode> fields)
+    {
+        var serializationData = fields.FirstOrDefault(f =>
+            string.Equals(f.Name, SerializationDataField, StringComparison.Ordinal));
+        var decoded = serializationData?.Fields?.FirstOrDefault(f =>
+            string.Equals(f.Name, OdinPayloadEnricher.DecodedFieldName, StringComparison.Ordinal));
+        return decoded?.Fields;
+    }
+
+    private static void CollectOdinReferenceEdges(
+        List<InspectedFieldNode> nodes,
+        string pathPrefix,
+        Func<InspectedReference, TemplateIdentity?> resolve,
+        List<TemplateEdge> edges,
+        HashSet<(string Collection, long PathId)> coveredTargets,
+        HashSet<(string FieldPath, string Collection, long PathId)> seen)
+    {
+        foreach (var node in nodes)
+        {
+            // Never re-descend into a nested raw blob or a duplicate decoded
+            // subtree (the enricher hoists decoded fields, so both can appear).
+            if (string.Equals(node.Name, SerializationDataField, StringComparison.Ordinal)
+                || string.Equals(node.Name, OdinPayloadEnricher.DecodedFieldName, StringComparison.Ordinal))
+                continue;
+
+            string path = node.Name is { Length: > 0 } name
+                ? (pathPrefix.Length == 0 ? name : $"{pathPrefix}.{name}")
+                : pathPrefix;
+            VisitOdinNode(node, path, resolve, edges, coveredTargets, seen);
+        }
+    }
+
+    private static void VisitOdinNode(
+        InspectedFieldNode node,
+        string path,
+        Func<InspectedReference, TemplateIdentity?> resolve,
+        List<TemplateEdge> edges,
+        HashSet<(string Collection, long PathId)> coveredTargets,
+        HashSet<(string FieldPath, string Collection, long PathId)> seen)
+    {
+        if (string.Equals(node.Kind, "reference", StringComparison.Ordinal))
+        {
+            if (node.Reference is { } reference
+                && resolve(reference) is { } target
+                && seen.Add((path, target.Collection, target.PathId)))
+            {
+                edges.Add(new TemplateEdge { FieldName = path, Target = target });
+                coveredTargets.Add((target.Collection, target.PathId));
+            }
+            return;
+        }
+
+        if (node.Fields is { Count: > 0 })
+            CollectOdinReferenceEdges(node.Fields, path, resolve, edges, coveredTargets, seen);
+
+        if (node.Elements is { Count: > 0 })
+        {
+            for (int i = 0; i < node.Elements.Count; i++)
+                VisitOdinNode(node.Elements[i], $"{path}[{i}]", resolve, edges, coveredTargets, seen);
+        }
     }
 
     private string? ComputeGameAssemblyHash() => GameDataSession.ComputeGameAssemblyHash(GameDataPath);

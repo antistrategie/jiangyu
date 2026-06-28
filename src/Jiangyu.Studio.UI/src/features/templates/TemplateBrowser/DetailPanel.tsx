@@ -482,27 +482,19 @@ function MemberRow({
           {/* Named array: show labelled rows with collapsible nested fields */}
           {isNamedArray && valueNode.elements && valueNode.elements.length > 0 && (
             <div className={styles.memberNestedList}>
-              {valueNode.elements.map((elem, idx) => {
-                const label = namedArrayLabelMap?.[idx] ?? `[${idx}]`;
-                const elemType = member.elementTypeName ?? "byte";
-                const elemSubFields: readonly InspectedFieldNode[] | null =
-                  elem.kind === "object" && elem.fields && elem.fields.length > 0
-                    ? elem.fields
-                    : null;
-                return (
-                  <ExpandableElementRow
-                    // eslint-disable-next-line @eslint-react/no-array-index-key -- idx is the named-array attribute index, not iteration order; stable across renders.
-                    key={idx}
-                    elem={elem}
-                    label={label}
-                    typeName={elemType}
-                    subFields={elemSubFields}
-                    instanceLookup={instanceLookup}
-                    referenceTargetIndex={referenceTargetIndex}
-                    onNavigate={onNavigate}
-                  />
-                );
-              })}
+              {valueNode.elements.map((elem, idx) => (
+                <NestedValueRow
+                  // eslint-disable-next-line @eslint-react/no-array-index-key -- idx is the named-array attribute index, not iteration order; stable across renders.
+                  key={idx}
+                  value={elem}
+                  label={namedArrayLabelMap?.[idx] ?? `[${idx}]`}
+                  typeName={member.elementTypeName ?? "byte"}
+                  firstLevel
+                  instanceLookup={instanceLookup}
+                  referenceTargetIndex={referenceTargetIndex}
+                  onNavigate={onNavigate}
+                />
+              ))}
             </div>
           )}
 
@@ -523,18 +515,18 @@ function MemberRow({
             </div>
           )}
 
-          {/* Object: show nested fields with values */}
+          {/* Object: show nested fields, each recursively navigable. */}
           {valueNode?.kind === "object" && valueNode.fields && valueNode.fields.length > 0 && (
             <div className={styles.memberNestedList}>
               {valueNode.fields.map((subVal, i) => (
-                <div key={subVal.name ?? `unnamed-${i}`} className={styles.memberNestedRow}>
-                  <span className={styles.chevronSpacer} />
-                  <div className={styles.memberNestedScroll}>
-                    <span className={styles.memberNestedLabel}>{subVal.name ?? "<unnamed>"}</span>
-                    <span className={styles.memberNestedType}>{subVal.fieldTypeName ?? ""}</span>
-                    <span className={styles.memberNestedValue}>{formatValue(subVal)}</span>
-                  </div>
-                </div>
+                <NestedValueRow
+                  key={subVal.name ?? `unnamed-${i}`}
+                  value={subVal}
+                  firstLevel
+                  instanceLookup={instanceLookup}
+                  referenceTargetIndex={referenceTargetIndex}
+                  onNavigate={onNavigate}
+                />
               ))}
             </div>
           )}
@@ -545,30 +537,19 @@ function MemberRow({
             valueNode.elements &&
             valueNode.elements.length > 0 && (
               <div className={styles.memberNestedList}>
-                {valueNode.elements.map((elem, idx) => {
-                  const arrSubFields: readonly InspectedFieldNode[] | null =
-                    elem.kind === "object" && elem.fields && elem.fields.length > 0
-                      ? elem.fields
-                      : null;
-                  return (
-                    <ExpandableElementRow
-                      // eslint-disable-next-line @eslint-react/no-array-index-key -- idx is the array's semantic position in a fixed-shape inspection result, not iteration order.
-                      key={idx}
-                      elem={elem}
-                      label={`[${idx}]`}
-                      typeName={elem.fieldTypeName ?? ""}
-                      subFields={arrSubFields}
-                      instanceLookup={instanceLookup}
-                      referenceTargetIndex={referenceTargetIndex}
-                      onNavigate={onNavigate}
-                    />
-                  );
-                })}
-                {valueNode.truncated && (
-                  <div className={styles.memberNestedTruncated}>
-                    <span>… truncated (total {valueNode.count ?? "?"})</span>
-                  </div>
-                )}
+                {valueNode.elements.map((elem, idx) => (
+                  <NestedValueRow
+                    // eslint-disable-next-line @eslint-react/no-array-index-key -- idx is the array's semantic position in a fixed-shape inspection result, not iteration order.
+                    key={idx}
+                    value={elem}
+                    label={`[${idx}]`}
+                    firstLevel
+                    instanceLookup={instanceLookup}
+                    referenceTargetIndex={referenceTargetIndex}
+                    onNavigate={onNavigate}
+                  />
+                ))}
+                {valueNode.truncated && <TruncationNotice count={valueNode.count} />}
               </div>
             )}
 
@@ -755,90 +736,75 @@ function renderReferenceLink(
   );
 }
 
-// --- Expandable element row (used by both named and regular arrays) ---
-
-function ExpandableElementRow({
-  elem,
-  label,
-  typeName,
-  subFields,
-  instanceLookup,
-  referenceTargetIndex,
-  onNavigate,
-}: {
-  elem: InspectedFieldNode;
-  label: string;
-  typeName: string;
-  subFields: readonly InspectedFieldNode[] | null;
-  instanceLookup: ReadonlyMap<string, TemplateInstanceEntry>;
-  referenceTargetIndex: ReferenceTargetIndex;
-  onNavigate: (key: string) => void;
-}) {
-  const [subExpanded, setSubExpanded] = useState(false);
-  const hasChildren = subFields !== null;
-
-  // When the element resolves to a known template, render the value as a
-  // navigable link instead of plain text. Covers reference-array fields like
-  // SkillTemplate.EventHandlers (List<SkillEventHandlerTemplate>) and
-  // SkillGroup.Skills (List<SkillTemplate>).
-  const referenceLink =
-    elem.kind === "reference" && elem.reference
-      ? renderReferenceLink(elem.reference, instanceLookup, referenceTargetIndex, onNavigate)
-      : null;
-
+// Shown under an expanded array whose element count exceeds the inspector's
+// sample limit, so a sampled list never reads as complete.
+function TruncationNotice({ count }: { count: number | null | undefined }) {
   return (
-    <div>
-      <div
-        className={`${styles.memberNestedRow} ${hasChildren ? styles.memberHeaderExpandable : ""}`}
-        {...(hasChildren && {
-          role: "button",
-          tabIndex: 0,
-          "aria-expanded": subExpanded,
-          onClick: () => setSubExpanded(!subExpanded),
-          onKeyDown: onKeyActivate(() => setSubExpanded(!subExpanded)),
-        })}
-      >
-        {hasChildren ? (
-          <button
-            type="button"
-            className={`${styles.chevron} ${subExpanded ? styles.chevronOpen : ""}`}
-            aria-label={subExpanded ? "Collapse" : "Expand"}
-            tabIndex={-1}
-          >
-            ▸
-          </button>
-        ) : (
-          <span className={styles.chevronSpacer} />
-        )}
-        <div className={styles.memberNestedScroll}>
-          <span className={styles.memberNestedLabel}>{label}</span>
-          <span className={styles.memberNestedType}>{typeName}</span>
-          <span className={styles.memberNestedValue}>{referenceLink ?? formatValue(elem)}</span>
-        </div>
-      </div>
-      {subExpanded && subFields && (
-        <div className={styles.memberNestedSubList}>
-          {subFields.map((f, i) => (
-            <NestedValueRow key={f.name ?? `unnamed-${i}`} value={f} />
-          ))}
-        </div>
-      )}
+    <div className={styles.memberNestedTruncated}>
+      <span>… truncated (total {count ?? "?"})</span>
     </div>
   );
 }
 
 // --- Recursive nested value row ---
 
-function NestedValueRow({ value }: { value: InspectedFieldNode }) {
+export function NestedValueRow({
+  value,
+  label,
+  typeName,
+  firstLevel = false,
+  instanceLookup,
+  referenceTargetIndex,
+  onNavigate,
+}: {
+  value: InspectedFieldNode;
+  label?: string;
+  typeName?: string;
+  // Rows directly under a member's expanded detail use the outer row styling
+  // plus an overflow-scroll wrapper; deeper (recursive) rows use the inset
+  // styling. Defaults to a deeper row.
+  firstLevel?: boolean;
+  instanceLookup: ReadonlyMap<string, TemplateInstanceEntry>;
+  referenceTargetIndex: ReferenceTargetIndex;
+  onNavigate: (key: string) => void;
+}) {
   const [open, setOpen] = useState(false);
-  const children =
-    value.kind === "object" && value.fields && value.fields.length > 0 ? value.fields : null;
-  const hasChildren = children !== null;
+
+  // Recurse into both object fields and array elements so deeply nested shapes
+  // (e.g. m_ObjectiveGroups[].Objectives[].Target on a mission) stay navigable
+  // to their leaves instead of dead-ending at the first nested array.
+  const children: readonly InspectedFieldNode[] | null =
+    value.kind === "object" && value.fields && value.fields.length > 0
+      ? value.fields
+      : value.kind === "array" && value.elements && value.elements.length > 0
+        ? value.elements
+        : null;
+  const childrenAreElements = value.kind === "array";
+  // 2D Odin matrices (e.g. an objective's bool[9,9]) reached through recursion
+  // render as a grid, matching the top-level renderer, rather than a blank row.
+  const isMatrix = value.kind === "matrix" && value.dimensions?.length === 2 && !!value.elements;
+  const hasChildren = children !== null || isMatrix;
+
+  // Template-typed leaves (and reference-array elements) render as a navigable
+  // link rather than the bare name formatValue would emit, so an objective's
+  // enemy Target points at the actual EntityTemplate.
+  const referenceLink =
+    value.kind === "reference" && value.reference
+      ? renderReferenceLink(value.reference, instanceLookup, referenceTargetIndex, onNavigate)
+      : null;
+
+  const rowInner = (
+    <>
+      <span className={styles.memberNestedLabel}>{label ?? value.name ?? "?"}</span>
+      <span className={styles.memberNestedType}>{typeName ?? value.fieldTypeName ?? ""}</span>
+      <span className={styles.memberNestedValue}>{referenceLink ?? formatValue(value)}</span>
+    </>
+  );
 
   return (
     <div>
       <div
-        className={`${styles.memberNestedSubRow} ${hasChildren ? styles.memberHeaderExpandable : ""}`}
+        className={`${firstLevel ? styles.memberNestedRow : styles.memberNestedSubRow} ${hasChildren ? styles.memberHeaderExpandable : ""}`}
         {...(hasChildren && {
           role: "button",
           tabIndex: 0,
@@ -859,15 +825,28 @@ function NestedValueRow({ value }: { value: InspectedFieldNode }) {
         ) : (
           <span className={styles.chevronSpacer} />
         )}
-        <span className={styles.memberNestedLabel}>{value.name ?? "?"}</span>
-        <span className={styles.memberNestedType}>{value.fieldTypeName ?? ""}</span>
-        <span className={styles.memberNestedValue}>{formatValue(value)}</span>
+        {firstLevel ? <div className={styles.memberNestedScroll}>{rowInner}</div> : rowInner}
       </div>
+      {open && isMatrix && value.dimensions && value.elements && (
+        <MatrixGrid
+          rows={value.dimensions[0] ?? 0}
+          cols={value.dimensions[1] ?? 0}
+          cells={value.elements}
+        />
+      )}
       {open && children && (
         <div className={styles.memberNestedSubList}>
           {children.map((c, i) => (
-            <NestedValueRow key={c.name ?? `unnamed-${i}`} value={c} />
+            <NestedValueRow
+              key={c.name ?? `unnamed-${i}`}
+              value={c}
+              {...(childrenAreElements && c.name == null && { label: `[${i}]` })}
+              instanceLookup={instanceLookup}
+              referenceTargetIndex={referenceTargetIndex}
+              onNavigate={onNavigate}
+            />
           ))}
+          {value.truncated && <TruncationNotice count={value.count} />}
         </div>
       )}
     </div>

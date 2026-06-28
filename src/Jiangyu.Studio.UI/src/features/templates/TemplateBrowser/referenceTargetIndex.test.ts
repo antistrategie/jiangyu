@@ -23,8 +23,13 @@ describe("referenceTargetIndex", () => {
     expect(resolveReferenceTargetKey(index, 10, "barracks")).toBe("buildings:10");
   });
 
-  it("resolves an unnamed reference to the first instance with the pathId", () => {
-    expect(resolveReferenceTargetKey(index, 10, undefined)).toBe("units:10");
+  it("resolves an unnamed reference to the sole instance with an unambiguous pathId", () => {
+    expect(resolveReferenceTargetKey(index, 20, undefined)).toBe("units:20");
+  });
+
+  it("returns null for an unnamed reference at an ambiguous pathId", () => {
+    // pathId 10 is owned by both units:10 and buildings:10.
+    expect(resolveReferenceTargetKey(index, 10, undefined)).toBeNull();
   });
 
   it("keeps the first entry on (pathId, name) collisions", () => {
@@ -43,5 +48,9 @@ describe("referenceTargetIndex", () => {
 
   it("returns null for a null name (instance names are always strings)", () => {
     expect(resolveReferenceTargetKey(index, 10, null)).toBeNull();
+  });
+
+  it("treats an empty-string name like a missing name (falls back to unambiguous pathId)", () => {
+    expect(resolveReferenceTargetKey(index, 20, "")).toBe("units:20");
   });
 });

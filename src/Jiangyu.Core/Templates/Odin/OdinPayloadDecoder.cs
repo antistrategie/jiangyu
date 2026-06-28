@@ -21,6 +21,25 @@ public static class OdinPayloadDecoder
     private const int DefaultMaxDepth = 64;
 
     /// <summary>
+    /// Sirenix's atomic formatters for common Unity math structs write the
+    /// components positionally with no entry names, so the decoder reads them as
+    /// unnamed primitives. Re-label them by the struct's known component order
+    /// (matching Unity's own serializer) so e.g. a Vector2Int reads as
+    /// <c>{ x, y }</c> rather than two nameless ints.
+    /// </summary>
+    private static readonly Dictionary<string, string[]> KnownStructComponents = new(StringComparer.Ordinal)
+    {
+        ["UnityEngine.Vector2"] = ["x", "y"],
+        ["UnityEngine.Vector2Int"] = ["x", "y"],
+        ["UnityEngine.Vector3"] = ["x", "y", "z"],
+        ["UnityEngine.Vector3Int"] = ["x", "y", "z"],
+        ["UnityEngine.Vector4"] = ["x", "y", "z", "w"],
+        ["UnityEngine.Quaternion"] = ["x", "y", "z", "w"],
+        ["UnityEngine.Color"] = ["r", "g", "b", "a"],
+        ["UnityEngine.Color32"] = ["r", "g", "b", "a"],
+    };
+
+    /// <summary>
     /// Decode a Binary-format Odin payload. Returns <c>null</c> if
     /// <paramref name="bytes"/> is empty or the decode fails before producing
     /// any nodes; otherwise returns the top-level fields of the blob.
@@ -207,8 +226,26 @@ public static class OdinPayloadDecoder
             return node;
         }
 
+        NameKnownStructComponents(node.FieldTypeName, children);
         node.Fields = children;
         return node;
+    }
+
+    /// <summary>
+    /// Fill in the component names Odin's atomic struct formatters omit (see
+    /// <see cref="KnownStructComponents"/>). Only applied when the node's type
+    /// is a known struct and the decoded child count matches; existing names
+    /// the blob carried are never overwritten.
+    /// </summary>
+    internal static void NameKnownStructComponents(string? typeName, List<InspectedFieldNode> children)
+    {
+        if (typeName is null
+            || !KnownStructComponents.TryGetValue(typeName, out var names)
+            || children.Count != names.Length)
+            return;
+
+        for (int i = 0; i < children.Count; i++)
+            children[i].Name ??= names[i];
     }
 
     private static InspectedFieldNode ReadArray(

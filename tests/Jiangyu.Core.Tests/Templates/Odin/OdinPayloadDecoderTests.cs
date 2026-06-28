@@ -540,6 +540,61 @@ public class OdinPayloadDecoderTests
         return stream.ToArray();
     }
 
+    // Sirenix's atomic formatters write Unity math structs positionally with no
+    // member names; the decoder backfills them from the known component order.
+    [Theory]
+    [InlineData("UnityEngine.Vector2Int", "x", "y")]
+    [InlineData("UnityEngine.Vector3", "x", "y", "z")]
+    [InlineData("UnityEngine.Color", "r", "g", "b", "a")]
+    public void NameKnownStructComponents_LabelsUnnamedComponentsByType(
+        string typeName, params string[] expected)
+    {
+        var children = expected.Select(_ => new InspectedFieldNode { Kind = "int", Value = 0 }).ToList();
+
+        OdinPayloadDecoder.NameKnownStructComponents(typeName, children);
+
+        Assert.Equal(expected, children.Select(c => c.Name));
+    }
+
+    [Fact]
+    public void NameKnownStructComponents_SkipsWhenChildCountDoesNotMatch()
+    {
+        var children = new List<InspectedFieldNode> { new() { Kind = "int", Value = 0 } };
+
+        OdinPayloadDecoder.NameKnownStructComponents("UnityEngine.Vector2Int", children);
+
+        Assert.Null(children[0].Name);
+    }
+
+    [Fact]
+    public void NameKnownStructComponents_DoesNotOverwriteExistingNames()
+    {
+        var children = new List<InspectedFieldNode>
+        {
+            new() { Name = "custom", Kind = "int", Value = 0 },
+            new() { Kind = "int", Value = 0 },
+        };
+
+        OdinPayloadDecoder.NameKnownStructComponents("UnityEngine.Vector2Int", children);
+
+        Assert.Equal("custom", children[0].Name);
+        Assert.Equal("y", children[1].Name);
+    }
+
+    [Fact]
+    public void NameKnownStructComponents_IgnoresUnknownType()
+    {
+        var children = new List<InspectedFieldNode>
+        {
+            new() { Kind = "int", Value = 0 },
+            new() { Kind = "int", Value = 0 },
+        };
+
+        OdinPayloadDecoder.NameKnownStructComponents("Menace.Tactical.SomeStruct", children);
+
+        Assert.All(children, c => Assert.Null(c.Name));
+    }
+
     // Empty marker types: the writer needs a Type to emit on BeginStructNode
     // / BeginReferenceNode; we only assert against the type-name string the
     // decoder recovers, never against the type's fields.

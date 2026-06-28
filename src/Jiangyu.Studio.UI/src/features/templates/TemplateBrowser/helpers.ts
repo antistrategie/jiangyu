@@ -118,6 +118,9 @@ export function instanceKey(inst: TemplateInstanceEntry): string {
 export interface ReferenceTargetIndex {
   readonly byPathId: ReadonlyMap<number, string>;
   readonly byPathIdAndName: ReadonlyMap<string, string>;
+  // pathIds owned by more than one instance (pathIds are per-collection). A
+  // name-less reference at such a pathId cannot be resolved unambiguously.
+  readonly ambiguousPathIds: ReadonlySet<number>;
 }
 
 // U+0000 can't appear in a template name, so the composite key encodes the
@@ -130,26 +133,31 @@ export function buildReferenceTargetIndex(
   instances: readonly TemplateInstanceEntry[],
 ): ReferenceTargetIndex {
   const byPathId = new Map<number, string>();
+  const ambiguousPathIds = new Set<number>();
   const byPathIdAndName = new Map<string, string>();
   for (const inst of instances) {
     const key = instanceKey(inst);
-    if (!byPathId.has(inst.identity.pathId)) byPathId.set(inst.identity.pathId, key);
+    if (byPathId.has(inst.identity.pathId)) ambiguousPathIds.add(inst.identity.pathId);
+    else byPathId.set(inst.identity.pathId, key);
     const nameKey = referenceNameKey(inst.identity.pathId, inst.name);
     if (!byPathIdAndName.has(nameKey)) byPathIdAndName.set(nameKey, key);
   }
-  return { byPathId, byPathIdAndName };
+  return { byPathId, byPathIdAndName, ambiguousPathIds };
 }
 
 /** Instance key for a reference target, or null when nothing matches. A
- *  named reference must match on both pathId and name; an undefined name
- *  takes the first instance with that pathId; a null name never matches
- *  (instance names are always strings). */
+ *  named reference must match on both pathId and name; a missing name
+ *  (undefined or empty) takes the instance with that pathId only when it is
+ *  unambiguous; a null name never matches (instance names are always
+ *  non-empty strings). Mirrors the backend resolver in TemplateIndexService. */
 export function resolveReferenceTargetKey(
   index: ReferenceTargetIndex,
   pathId: number,
   name: string | null | undefined,
 ): string | null {
-  if (name === undefined) return index.byPathId.get(pathId) ?? null;
+  if (name === undefined || name === "") {
+    return index.ambiguousPathIds.has(pathId) ? null : (index.byPathId.get(pathId) ?? null);
+  }
   if (name === null) return null;
   return index.byPathIdAndName.get(referenceNameKey(pathId, name)) ?? null;
 }
