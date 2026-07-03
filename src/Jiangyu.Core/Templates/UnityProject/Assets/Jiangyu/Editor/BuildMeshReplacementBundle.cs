@@ -255,10 +255,15 @@ namespace Jiangyu.Mod
                 }
             };
 
+            // LZ4 (chunk-based): compresses the bundle FILE on disk without changing the assets inside.
+            // Additions are dominated by uncompressed RGBA32 textures (large flat/transparent regions) and
+            // PCM audio, both of which LZ4 shrinks well, so the shipped file is much smaller. LZ4 is block
+            // compression decoded on demand by LoadFromFile, so load stays streamed (no LoadFromMemory /
+            // full-inflate spike) and runtime memory is unchanged.
             var manifest = BuildPipeline.BuildAssetBundles(
                 outputDir,
                 builds,
-                BuildAssetBundleOptions.UncompressedAssetBundle,
+                BuildAssetBundleOptions.ChunkBasedCompression,
                 EditorUserBuildSettings.activeBuildTarget);
 
             if (manifest == null)
