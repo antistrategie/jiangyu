@@ -28,7 +28,7 @@ jobs:
           path: menace-ci-dependencies
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v5.3.0
+        uses: actions/setup-dotnet@v5.4.0
         with:
           dotnet-version: "10.0.x"
 
@@ -113,7 +113,7 @@ jobs:
           path: menace-ci-dependencies
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v5.3.0
+        uses: actions/setup-dotnet@v5.4.0
         with:
           dotnet-version: "10.0.x"
 
@@ -180,7 +180,7 @@ jobs:
           path: jiangyu
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v5.3.0
+        uses: actions/setup-dotnet@v5.4.0
         with:
           dotnet-version: "10.0.x"
 
@@ -218,7 +218,7 @@ jobs:
           path: jiangyu
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v5.3.0
+        uses: actions/setup-dotnet@v5.4.0
         with:
           dotnet-version: "10.0.x"
 
