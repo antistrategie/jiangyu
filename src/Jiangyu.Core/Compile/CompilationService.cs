@@ -513,6 +513,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 sourceDirs: [Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Prefabs), unityBuildDir],
                 bundlesDir,
                 compiledManifest,
+                gameDataPath,
                 _log);
         }
         else if (!reuseRawGlb)
@@ -601,6 +602,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                     sourceDirs: [Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Prefabs), unityBuildDir],
                     bundlesDir,
                     compiledManifest,
+                    gameDataPath,
                     _log);
                 // Prefabs ship from this same pass; record their fingerprint so a later
                 // non-combined compile can reuse the cached bundles too.

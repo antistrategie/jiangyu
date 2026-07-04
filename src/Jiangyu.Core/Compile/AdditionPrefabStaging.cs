@@ -27,6 +27,7 @@ internal static class AdditionPrefabStaging
         IReadOnlyList<string> sourceDirs,
         string outputDir,
         ModManifest compiledManifest,
+        string gameDataPath,
         ILogSink log)
     {
         var staged = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -54,11 +55,13 @@ internal static class AdditionPrefabStaging
             return;
 
         Directory.CreateDirectory(outputDir);
+        var gameClips = new AnimationClipRestoration.GameClipIndex(gameDataPath);
         var names = new List<string>(staged.Count);
         foreach (var (stem, source) in staged.OrderBy(kvp => kvp.Key, StringComparer.Ordinal))
         {
             var dest = Path.Combine(outputDir, stem + ".bundle");
             File.Copy(source, dest, overwrite: true);
+            AnimationClipRestoration.RestoreStagedBundle(dest, gameClips, log);
             names.Add(stem);
             log.Info($"  Staged addition prefab bundle: {stem}.bundle");
         }

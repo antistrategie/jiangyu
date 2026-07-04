@@ -9,6 +9,7 @@ public sealed class AdditionPrefabStagingTests : IDisposable
 {
     private readonly string _tempRoot;
     private readonly string _outputDir;
+    private readonly string _gameDataDir;
     private readonly RecordingLog _log;
 
     public AdditionPrefabStagingTests()
@@ -17,6 +18,10 @@ public sealed class AdditionPrefabStagingTests : IDisposable
         Directory.CreateDirectory(_tempRoot);
         _outputDir = Path.Combine(_tempRoot, "compiled");
         Directory.CreateDirectory(_outputDir);
+        // clip restoration reads this lazily and only when a staged bundle
+        // contains hollow AnimationClips, which these fixtures never do
+        _gameDataDir = Path.Combine(_tempRoot, "gamedata");
+        Directory.CreateDirectory(_gameDataDir);
         _log = new RecordingLog();
     }
 
@@ -31,7 +36,7 @@ public sealed class AdditionPrefabStagingTests : IDisposable
     {
         var manifest = NewManifest();
 
-        AdditionPrefabStaging.Stage([], _outputDir, manifest, _log);
+        AdditionPrefabStaging.Stage([], _outputDir, manifest, _gameDataDir, _log);
 
         Assert.Null(manifest.AdditionPrefabs);
         Assert.Empty(Directory.GetFiles(_outputDir));
@@ -43,7 +48,7 @@ public sealed class AdditionPrefabStagingTests : IDisposable
         var manifest = NewManifest();
         var missing = Path.Combine(_tempRoot, "does-not-exist");
 
-        AdditionPrefabStaging.Stage([missing], _outputDir, manifest, _log);
+        AdditionPrefabStaging.Stage([missing], _outputDir, manifest, _gameDataDir, _log);
 
         Assert.Null(manifest.AdditionPrefabs);
     }
@@ -54,7 +59,7 @@ public sealed class AdditionPrefabStagingTests : IDisposable
         var manifest = NewManifest();
         var sourceDir = MakeSourceDir("primary", ("voymastina_darby", "voymastina contents"));
 
-        AdditionPrefabStaging.Stage([sourceDir], _outputDir, manifest, _log);
+        AdditionPrefabStaging.Stage([sourceDir], _outputDir, manifest, _gameDataDir, _log);
 
         Assert.Equal(new[] { "voymastina_darby" }, manifest.AdditionPrefabs);
         var staged = Path.Combine(_outputDir, "voymastina_darby.bundle");
@@ -69,7 +74,7 @@ public sealed class AdditionPrefabStagingTests : IDisposable
         var escapeHatch = MakeSourceDir("escape", ("widget", "stale hand-shipped"));
         var unityBuild = MakeSourceDir("unity_build", ("widget", "fresh unity-built"));
 
-        AdditionPrefabStaging.Stage([escapeHatch, unityBuild], _outputDir, manifest, _log);
+        AdditionPrefabStaging.Stage([escapeHatch, unityBuild], _outputDir, manifest, _gameDataDir, _log);
 
         Assert.Equal(new[] { "widget" }, manifest.AdditionPrefabs);
         var staged = Path.Combine(_outputDir, "widget.bundle");
@@ -83,7 +88,7 @@ public sealed class AdditionPrefabStagingTests : IDisposable
         var escapeHatch = MakeSourceDir("escape", ("alpha", "alpha contents"));
         var unityBuild = MakeSourceDir("unity_build", ("beta", "beta contents"));
 
-        AdditionPrefabStaging.Stage([escapeHatch, unityBuild], _outputDir, manifest, _log);
+        AdditionPrefabStaging.Stage([escapeHatch, unityBuild], _outputDir, manifest, _gameDataDir, _log);
 
         Assert.Equal(new[] { "alpha", "beta" }, manifest.AdditionPrefabs!.OrderBy(s => s, StringComparer.Ordinal).ToArray());
         Assert.True(File.Exists(Path.Combine(_outputDir, "alpha.bundle")));
@@ -99,7 +104,7 @@ public sealed class AdditionPrefabStagingTests : IDisposable
             ("alpha", "a"),
             ("mike", "m"));
 
-        AdditionPrefabStaging.Stage([source], _outputDir, manifest, _log);
+        AdditionPrefabStaging.Stage([source], _outputDir, manifest, _gameDataDir, _log);
 
         Assert.Equal(new[] { "alpha", "mike", "zulu" }, manifest.AdditionPrefabs);
     }
@@ -183,7 +188,7 @@ public sealed class AdditionPrefabStagingTests : IDisposable
         AdditionPrefabStaging.ClearStaleBuildOutput(buildDir);
 
         var manifest = NewManifest();
-        AdditionPrefabStaging.Stage([buildDir], _outputDir, manifest, _log);
+        AdditionPrefabStaging.Stage([buildDir], _outputDir, manifest, _gameDataDir, _log);
 
         Assert.Null(manifest.AdditionPrefabs);
         Assert.Empty(Directory.GetFiles(_outputDir));
