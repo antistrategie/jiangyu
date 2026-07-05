@@ -48,6 +48,7 @@ internal sealed class InventoryFilterPatch : IHarmonyPatchModule
     {
         { "jy_armor_restricted",   2 }, // InfantryArmor
         { "jy_weapon_restricted",  0 }, // InfantryWeapon
+        { "jy_special_restricted", 1 }, // InfantrySpecial
         { "jy_vehicle_restricted", 4 }, // Vehicle
     };
 

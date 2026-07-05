@@ -688,6 +688,36 @@ public class ModHostTests
     }
 
     [Fact]
+    public void Patch_registry_postfix_sees_and_overrides_the_result()
+    {
+        var registry = new ModPatchRegistry();
+        object? seen = null;
+        registry.Add(ModPatchRegistry.Kind.Postfix, "key", "mymod", "T.M", info =>
+        {
+            seen = info.Result;
+            info.Result = 0;
+        }, new CollectingLog());
+
+        var result = registry.DispatchPostfix("key", null, Array.Empty<object>(), 5, out var overridden);
+
+        Assert.Equal(5, seen);
+        Assert.True(overridden);
+        Assert.Equal(0, result);
+    }
+
+    [Fact]
+    public void Patch_registry_postfix_leaves_the_result_when_no_handler_assigns_it()
+    {
+        var registry = new ModPatchRegistry();
+        registry.Add(ModPatchRegistry.Kind.Postfix, "key", "mymod", "T.M", _ => { }, new CollectingLog());
+
+        var result = registry.DispatchPostfix("key", null, Array.Empty<object>(), 5, out var overridden);
+
+        Assert.False(overridden);
+        Assert.Equal(5, result);
+    }
+
+    [Fact]
     public void Patch_registry_prefix_skip_stops_the_original()
     {
         var registry = new ModPatchRegistry();

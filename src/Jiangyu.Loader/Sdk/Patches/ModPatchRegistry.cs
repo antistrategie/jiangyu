@@ -50,13 +50,22 @@ internal sealed class ModPatchRegistry
     }
 
     public void DispatchPostfix(object key, object instance, object[] args)
-    {
-        if (!_postfixes.TryGetValue(key, out var entries))
-            return;
+        => DispatchPostfix(key, instance, args, null, out _);
 
-        var info = new PatchInfo(instance, args);
+    /// <summary>Runs the postfix handlers with the original's return value visible on
+    /// <see cref="PatchInfo.Result"/>. Returns the (possibly overridden) value and
+    /// whether any handler overrode it.</summary>
+    public object DispatchPostfix(object key, object instance, object[] args, object result, out bool overridden)
+    {
+        overridden = false;
+        if (!_postfixes.TryGetValue(key, out var entries))
+            return result;
+
+        var info = new PatchInfo(instance, args, result);
         foreach (var entry in entries.ToArray())
             Invoke(entry, info, Kind.Postfix);
+        overridden = info.IsResultOverridden;
+        return info.Result;
     }
 
     /// <summary>Drop every handler a mod registered, on its unload or quarantine. The

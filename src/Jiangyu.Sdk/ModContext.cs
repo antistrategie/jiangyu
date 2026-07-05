@@ -45,10 +45,18 @@ public interface IHookBus
 /// <summary>What a patched method call exposes to a mod's patch handler.</summary>
 public sealed class PatchInfo
 {
+    private object _result;
+
     public PatchInfo(object instance, IReadOnlyList<object> args)
     {
         Instance = instance;
         Args = args ?? Array.Empty<object>();
+    }
+
+    public PatchInfo(object instance, IReadOnlyList<object> args, object result)
+        : this(instance, args)
+    {
+        _result = result;
     }
 
     /// <summary>The receiver the method was called on, or null for a static method.
@@ -61,6 +69,25 @@ public sealed class PatchInfo
     /// <summary>Set from a prefix handler to stop the original method running. Ignored
     /// for a postfix (the original has already run).</summary>
     public bool Skip { get; set; }
+
+    /// <summary>The original method's return value, boxed, as a postfix handler sees it.
+    /// Assigning overrides the value the caller receives. Overriding is honoured for
+    /// targets returning <c>int</c>, <c>bool</c> or <c>float</c>, and only when the
+    /// value assigned is of that exact type (a mismatched type is ignored, never
+    /// coerced); for other return types the assignment is ignored. Always null in a
+    /// prefix handler.</summary>
+    public object Result
+    {
+        get => _result;
+        set
+        {
+            _result = value;
+            IsResultOverridden = true;
+        }
+    }
+
+    /// <summary>Whether a handler assigned <see cref="Result"/> during this dispatch.</summary>
+    public bool IsResultOverridden { get; private set; }
 }
 
 /// <summary>
