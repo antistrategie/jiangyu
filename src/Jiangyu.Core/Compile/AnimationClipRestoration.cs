@@ -40,6 +40,15 @@ internal static class AnimationClipRestoration
     {
         private Dictionary<string, byte[]>? _clips;
         private HashSet<string>? _ambiguous;
+        private Dictionary<string, string>? _aliases;
+
+        /// <summary>Test seam: build from an in-memory clip set instead of game files.</summary>
+        internal GameClipIndex(Dictionary<string, byte[]> clips) : this(string.Empty)
+        {
+            _clips = clips;
+            _ambiguous = new HashSet<string>(StringComparer.Ordinal);
+            _aliases = BuildAliases(clips, _ambiguous);
+        }
 
         public IReadOnlyDictionary<string, byte[]> Clips
         {
@@ -58,6 +67,54 @@ internal static class AnimationClipRestoration
                 EnsureBuilt();
                 return _ambiguous!;
             }
+        }
+
+        /// <summary>
+        /// Exact-name lookup with a ripped-name fallback: an AssetRipper rip
+        /// of an FBX sub-asset clip ("model|clip") sanitises the characters a
+        /// file name cannot carry to underscores, so the bundle-side name no
+        /// longer matches the game-side one. The alias index maps each game
+        /// name's sanitised form back to the original.
+        /// </summary>
+        public bool TryGetClip(string name, out byte[] data, out string matchedName)
+        {
+            EnsureBuilt();
+            if (_clips!.TryGetValue(name, out data!))
+            {
+                matchedName = name;
+                return true;
+            }
+            if (_aliases!.TryGetValue(name, out var canonical) && _clips.TryGetValue(canonical, out data!))
+            {
+                matchedName = canonical;
+                return true;
+            }
+            data = null!;
+            matchedName = name;
+            return false;
+        }
+
+        private static Dictionary<string, string> BuildAliases(
+            Dictionary<string, byte[]> clips, HashSet<string> ambiguous)
+        {
+            var aliases = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var name in clips.Keys)
+            {
+                var alias = SanitiseAsRippedFileName(name);
+                if (alias == name || clips.ContainsKey(alias))
+                    continue;
+                if (aliases.TryGetValue(alias, out var existing))
+                {
+                    // two distinct game clips collapse onto one ripped name:
+                    // the pick is arbitrary, surface it like any other
+                    // ambiguous match
+                    if (!string.Equals(existing, name, StringComparison.Ordinal))
+                        ambiguous.Add(alias);
+                    continue;
+                }
+                aliases[alias] = name;
+            }
+            return aliases;
         }
 
         private void EnsureBuilt()
@@ -114,7 +171,29 @@ internal static class AnimationClipRestoration
             }
             _clips = clips;
             _ambiguous = ambiguous;
+            _aliases = BuildAliases(clips, ambiguous);
         }
+    }
+
+    /// <summary>
+    /// The name a game clip gets when AssetRipper writes it as a .anim file:
+    /// every character a file name cannot carry becomes an underscore. The
+    /// pipe of the FBX sub-asset convention ("model|clip") is the case that
+    /// actually occurs in the game's clips; the rest are covered alongside.
+    /// </summary>
+    internal static string SanitiseAsRippedFileName(string name)
+    {
+        var chars = name.ToCharArray();
+        var changed = false;
+        for (var i = 0; i < chars.Length; i++)
+        {
+            if (chars[i] is '|' or '/' or '\\' or ':' or '*' or '?' or '"' or '<' or '>')
+            {
+                chars[i] = '_';
+                changed = true;
+            }
+        }
+        return changed ? new string(chars) : name;
     }
 
     /// <summary>
@@ -129,9 +208,10 @@ internal static class AnimationClipRestoration
         var restored = 0;
         var missing = new List<string>();
         var ambiguous = new List<string>();
+        var aliased = new List<(string Hollow, string Game)>();
         try
         {
-            restored = Restore(bundlePath, gameClips, missing, ambiguous);
+            restored = Restore(bundlePath, gameClips, missing, ambiguous, aliased);
         }
         catch (Exception e)
         {
@@ -152,9 +232,15 @@ internal static class AnimationClipRestoration
             log.Warning($"  Hollow animation clip '{name}' has no matching game clip; it will play empty.");
         foreach (var name in ambiguous.Distinct().Take(5))
             log.Warning($"  Hollow animation clip '{name}' matches multiple distinct game clips; restored from the first by file order.");
+        // An alias restore is not name-exact: the hollow clip was matched to a
+        // game clip only after sanitising the game name (e.g. FBX 'model|clip'
+        // -> 'model_clip'). Surface it so a coincidental collision with an
+        // unrelated clip of the same sanitised name is visible, not silent.
+        foreach (var (hollow, game) in aliased.Take(10))
+            log.Info($"  Hollow animation clip '{hollow}' restored from game clip '{game}' via a sanitised-name alias.");
     }
 
-    private static int Restore(string bundlePath, GameClipIndex gameClips, List<string> missing, List<string> ambiguous)
+    private static int Restore(string bundlePath, GameClipIndex gameClips, List<string> missing, List<string> ambiguous, List<(string Hollow, string Game)> aliased)
     {
         var am = new AssetsManager
         {
@@ -208,13 +294,15 @@ internal static class AnimationClipRestoration
                         continue;
 
                     var name = baseField["m_Name"].AsString;
-                    if (!gameClips.Clips.TryGetValue(name, out var original))
+                    if (!gameClips.TryGetClip(name, out var original, out var matchedName))
                     {
                         missing.Add(name);
                         continue;
                     }
-                    if (gameClips.AmbiguousNames.Contains(name))
+                    if (gameClips.AmbiguousNames.Contains(name) || gameClips.AmbiguousNames.Contains(matchedName))
                         ambiguous.Add(name);
+                    if (!string.Equals(matchedName, name, StringComparison.Ordinal))
+                        aliased.Add((name, matchedName));
                     info.SetNewData(original);
                     restored++;
                     fileModified = true;
