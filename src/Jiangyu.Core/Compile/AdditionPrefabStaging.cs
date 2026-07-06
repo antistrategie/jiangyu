@@ -1,4 +1,5 @@
 using Jiangyu.Core.Abstractions;
+using Jiangyu.Core.IO;
 using Jiangyu.Core.Models;
 
 namespace Jiangyu.Core.Compile;
@@ -97,6 +98,6 @@ internal static class AdditionPrefabStaging
     {
         Directory.CreateDirectory(unityBuildOutputDir);
         foreach (var stale in Directory.EnumerateFiles(unityBuildOutputDir))
-            File.Delete(stale);
+            ResilientFs.DeleteFile(stale);
     }
 }

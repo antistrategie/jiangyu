@@ -260,15 +260,38 @@ namespace Jiangyu.Mod
             // PCM audio, both of which LZ4 shrinks well, so the shipped file is much smaller. LZ4 is block
             // compression decoded on demand by LoadFromFile, so load stays streamed (no LoadFromMemory /
             // full-inflate spike) and runtime memory is unchanged.
+            // ForceRebuildAssetBundle: never trust Unity's own incremental bundle cache. A stale
+            // .manifest surviving in the output dir (e.g. a delete a Windows file lock defeated)
+            // otherwise makes Unity decide the bundle is current and skip it, emitting no file
+            // while still succeeding. Jiangyu already gates the Unity invocation on its own input
+            // fingerprints, so a full rebuild here costs nothing extra when Unity does run.
             var manifest = BuildPipeline.BuildAssetBundles(
                 outputDir,
                 builds,
-                BuildAssetBundleOptions.ChunkBasedCompression,
+                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle,
                 EditorUserBuildSettings.activeBuildTarget);
 
             if (manifest == null)
             {
                 Debug.LogError("[Jiangyu] BuildAssetBundles returned null");
+                EditorApplication.Exit(1);
+                return;
+            }
+
+            // BuildAssetBundles can return a non-null manifest yet skip writing our bundle (e.g.
+            // when a cold-project import pass leaves the generated assets unimported). Fail loudly
+            // with an exit code so the compiler surfaces this log instead of the opaque
+            // "did not produce expected bundle" downstream.
+            if (!File.Exists(outputPath))
+            {
+                var built = manifest.GetAllAssetBundles();
+                var listing = Directory.Exists(outputDir)
+                    ? string.Join(", ", Directory.GetFiles(outputDir).Select(Path.GetFileName))
+                    : "(output dir missing)";
+                Debug.LogError(
+                    "[Jiangyu] BuildAssetBundles reported success but did not write the expected bundle '" +
+                    Path.GetFileName(outputPath) + "' to '" + outputDir + "'. Bundles in manifest: [" +
+                    string.Join(", ", built) + "]. Files present: [" + listing + "].");
                 EditorApplication.Exit(1);
                 return;
             }

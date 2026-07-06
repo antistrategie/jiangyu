@@ -1,3 +1,4 @@
+using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Unity;
 
 namespace Jiangyu.Core.Glb;
@@ -83,7 +84,8 @@ internal static class MeshBundleUnityBuild
         string textureDataPath,
         string diagnosticsPath,
         string? meshContractPath,
-        bool runPrefabs = false)
+        bool runPrefabs = false,
+        ILogSink? log = null)
     {
         var modRoot = Path.GetFullPath(Path.Combine(userUnityDir, ".."));
         var logFile = Path.Combine(modRoot, ".jiangyu", "unity_build_mesh.log");
@@ -112,13 +114,20 @@ internal static class MeshBundleUnityBuild
             ExecuteMethod = "Jiangyu.Mod.BuildMeshReplacementBundle.BuildAll",
             LogFile = logFile,
             ExtraArgs = extra,
+            // Retry a cold-project run that writes no bundle here, before the caller (a second
+            // Unity pass, or the mesh-contract extractor that reads this file) depends on it.
+            ExpectedOutputPath = outputBundlePath,
+            Log = log,
         });
 
-        if (result.Success)
+        if (result.Success && File.Exists(outputBundlePath))
             return;
 
         var logTail = string.Join(Environment.NewLine, result.LogTailLines);
+        var reason = result.Success
+            ? "exited successfully but wrote no bundle"
+            : $"failed (exit code {result.ExitCode})";
         throw new InvalidOperationException(
-            $"Unity mesh build failed (exit code {result.ExitCode}). Log: {logFile}{Environment.NewLine}{logTail}".Trim());
+            $"Unity mesh build {reason}, even after a cold-project retry. Log: {logFile}{Environment.NewLine}{logTail}".Trim());
     }
 }

@@ -6,6 +6,7 @@ using Jiangyu.Core.Code;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Glb;
 using Jiangyu.Core.Il2Cpp;
+using Jiangyu.Core.IO;
 using Jiangyu.Core.Localisation;
 using Jiangyu.Core.Models;
 using Jiangyu.Core.Templates;
@@ -552,6 +553,9 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
                 try
                 {
+                    // The cold-project batchmode retry lives inside the Unity invoker
+                    // (UnityBundleInvoker), so it fires per Unity pass here, before the mesh
+                    // contract extractor or a second pass depends on the pass-1 bundle.
                     var buildResult = await GlbMeshBundleCompiler.BuildAsync(
                         unityEditorPath,
                         userUnityDir,
@@ -613,6 +617,8 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         {
             await StageRawModelFiles(userUnityDir, modelFiles);
 
+            // The cold-project batchmode retry lives inside the Unity invoker, keyed on the
+            // expected bundle path (set in InvokeUnityBuildForModels).
             var success = await InvokeUnityBuildForModels(unityEditorPath, userUnityDir, bundleName);
             if (!success)
                 return Fail("Unity build failed. Check logs for details.");
@@ -620,7 +626,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         // Collect output
         if (!File.Exists(builtBundle))
-            return Fail("Unity build did not produce expected bundle.");
+            return Fail(DescribeMissingBundle(projectDir, builtBundle, unityBuildDir, useRawGlbPipeline));
 
         var destBundle = Path.Combine(bundlesDir, $"{bundleName}.bundle");
         File.Copy(builtBundle, destBundle, overwrite: true);
@@ -1554,9 +1560,8 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
     private Task StageRawModelFiles(string userUnityDir, IEnumerable<string> modelFiles)
     {
         var stagingDir = Path.Combine(userUnityDir, "Assets", "Jiangyu", "Staging", "Models");
-        if (Directory.Exists(stagingDir))
-            Directory.Delete(stagingDir, recursive: true);
-        Directory.CreateDirectory(stagingDir);
+        ResilientFs.DeleteDirectory(stagingDir);
+        ResilientFs.CreateDirectory(stagingDir);
 
         var count = 0;
         foreach (var modelFile in modelFiles)
@@ -1574,6 +1579,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
     {
         var modRoot = Path.GetFullPath(Path.Combine(userUnityDir, ".."));
         var logFile = Path.Combine(modRoot, ".jiangyu", "unity_build_models.log");
+        var expectedBundle = Path.Combine(modRoot, ".jiangyu", "unity_build", bundleName);
 
         _log.Info("  Invoking Unity to build model bundle...");
 
@@ -1584,6 +1590,9 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             ExecuteMethod = "Jiangyu.Mod.BuildModelBundles.BuildAll",
             LogFile = logFile,
             ExtraArgs = [new("bundleName", bundleName)],
+            // Retry a cold-project run that writes no bundle against the now-warm project.
+            ExpectedOutputPath = expectedBundle,
+            Log = _log,
         });
 
         if (!result.Success)
@@ -1597,6 +1606,24 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         }
 
         return true;
+    }
+
+    // Rich failure text for the "Unity exited 0 but wrote no bundle" case. The bare
+    // "did not produce expected bundle" gave the reporter nowhere to look. It names the
+    // expected path, the Unity build log to inspect, and what the build dir actually holds.
+    private static string DescribeMissingBundle(string projectDir, string builtBundle, string unityBuildDir, bool rawGlbPipeline)
+    {
+        var logFile = Path.Combine(projectDir, ".jiangyu", rawGlbPipeline ? "unity_build_mesh.log" : "unity_build_models.log");
+        var present = Directory.Exists(unityBuildDir)
+            ? Directory.GetFiles(unityBuildDir).Select(Path.GetFileName).ToArray()
+            : Array.Empty<string>();
+        var listing = present.Length > 0 ? string.Join(", ", present) : "(none)";
+        return
+            $"Unity build reported success but did not produce the expected bundle.{Environment.NewLine}" +
+            $"  Expected: {builtBundle}{Environment.NewLine}" +
+            $"  Files in {unityBuildDir}: {listing}{Environment.NewLine}" +
+            $"  Unity build log: {logFile}{Environment.NewLine}" +
+            "  A cold Unity project can run its first batchmode invocation as an import/compile pass without executing the build (Jiangyu retries once automatically). If it persists, check the Unity build log above: the usual causes are Unity licence activation not yet completed on this machine, or the wrong Unity Editor version.";
     }
 
     private CompilationResult Fail(string message)

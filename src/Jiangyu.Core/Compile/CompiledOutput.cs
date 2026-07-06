@@ -1,3 +1,4 @@
+using Jiangyu.Core.IO;
 using Jiangyu.Shared.Bundles;
 
 namespace Jiangyu.Core.Compile;
@@ -16,10 +17,12 @@ internal static class CompiledOutput
     public static string Reset(string projectDir)
     {
         var outputDir = Path.Combine(projectDir, "compiled");
-        if (Directory.Exists(outputDir))
-            Directory.Delete(outputDir, recursive: true);
-        Directory.CreateDirectory(outputDir);
-        Directory.CreateDirectory(Path.Combine(outputDir, CompiledLayout.BundlesDirName));
+        ResilientFs.DeleteDirectory(outputDir);
+        // Recreate through the retrying helper too: on Windows the recursive delete above can
+        // return before NTFS finalises removal, and a bare CreateDirectory on the same path then
+        // faults with the directory still in a pending-deletion state.
+        ResilientFs.CreateDirectory(outputDir);
+        ResilientFs.CreateDirectory(Path.Combine(outputDir, CompiledLayout.BundlesDirName));
         return outputDir;
     }
 }

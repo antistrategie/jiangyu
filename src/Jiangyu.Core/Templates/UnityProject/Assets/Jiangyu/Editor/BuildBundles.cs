@@ -74,9 +74,14 @@ namespace Jiangyu.Mod
             var outputDir = Path.Combine(modRoot, ".jiangyu", "unity_build");
             Directory.CreateDirectory(outputDir);
 
+            // ForceRebuildAssetBundle: never trust Unity's own incremental bundle cache. A stale
+            // .manifest left in the output dir (e.g. a delete that a Windows file lock defeated)
+            // otherwise makes Unity decide the bundle is current and skip it, emitting no file
+            // while still succeeding. Jiangyu already skips the whole Unity invocation when its
+            // inputs are unchanged, so a full rebuild here has no extra cost when Unity does run.
             var manifest = BuildPipeline.BuildAssetBundles(
                 outputDir,
-                BuildAssetBundleOptions.ChunkBasedCompression,
+                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle,
                 EditorUserBuildSettings.activeBuildTarget);
 
             if (manifest == null)

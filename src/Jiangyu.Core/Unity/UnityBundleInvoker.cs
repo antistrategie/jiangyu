@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Jiangyu.Core.Abstractions;
 
 namespace Jiangyu.Core.Unity;
 
@@ -51,13 +52,53 @@ public static class UnityBundleInvoker
                 ? $"-{name} \"{value}\""
                 : $"-{name} {value}");
         }
+        var arguments = string.Join(" ", args);
 
+        return await InvokeWithRetryAsync(invocation, () => RunOnceAsync(invocation, arguments));
+    }
+
+    /// <summary>
+    /// The cold-project retry policy, separated from process spawning so it is testable with a
+    /// scripted <paramref name="runOnce"/>. A cold Unity project (no Library/, e.g. a fresh clone
+    /// or a modder's first-ever compile) can spend its first batchmode invocation on the initial
+    /// asset import and script compile, then quit before running the build: the process exits 0
+    /// (or the build's own guard exits non-zero) with no bundle written. When the caller names an
+    /// <see cref="UnityBundleInvocation.ExpectedOutputPath"/>, an invocation that does not produce
+    /// it (whatever the exit code) is retried once against the now-warm project, which normally
+    /// succeeds. Callers with no single expected artefact (the multi-bundle prefab pass) leave it
+    /// null and get a single attempt.
+    /// </summary>
+    internal static async Task<UnityBundleInvocationResult> InvokeWithRetryAsync(
+        UnityBundleInvocation invocation,
+        Func<Task<UnityBundleInvocationResult>> runOnce)
+    {
+        var maxAttempts = invocation.ExpectedOutputPath is null ? 1 : 2;
+        UnityBundleInvocationResult result = default!;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            result = await runOnce();
+
+            var producedOutput = invocation.ExpectedOutputPath is null
+                || File.Exists(invocation.ExpectedOutputPath);
+            if (result.Success && producedOutput)
+                return result;
+
+            if (attempt < maxAttempts)
+                invocation.Log?.Warning(
+                    $"  Unity build attempt {attempt} produced no bundle at {invocation.ExpectedOutputPath}. Retrying once against the now-imported project.");
+        }
+
+        return result;
+    }
+
+    private static async Task<UnityBundleInvocationResult> RunOnceAsync(UnityBundleInvocation invocation, string arguments)
+    {
         using var process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
                 FileName = invocation.UnityEditor,
-                Arguments = string.Join(" ", args),
+                Arguments = arguments,
                 UseShellExecute = false,
             }
         };
@@ -93,6 +134,17 @@ public sealed class UnityBundleInvocation
     /// bare tokens (like a bundle name) pass through unquoted.
     /// </summary>
     public IReadOnlyList<KeyValuePair<string, string>> ExtraArgs { get; init; } = [];
+
+    /// <summary>
+    /// The single bundle file this invocation is expected to write. When set, an invocation
+    /// that exits without producing it is treated as a failed attempt and retried once (the
+    /// cold-project batchmode race). Leave null when the build emits many bundles or none, in
+    /// which case the invocation runs exactly once regardless of what lands on disk.
+    /// </summary>
+    public string? ExpectedOutputPath { get; init; }
+
+    /// <summary>Optional sink for the cold-project retry notice. No output when null.</summary>
+    public ILogSink? Log { get; init; }
 }
 
 public sealed record UnityBundleInvocationResult(int ExitCode, IReadOnlyList<string> LogTailLines)

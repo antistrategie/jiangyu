@@ -19,8 +19,11 @@ public static class ModDeployer
         if (!Directory.Exists(compiledDir))
             throw new DirectoryNotFoundException($"compiled directory not found: {compiledDir}");
 
-        if (Directory.Exists(destDir))
-            Directory.Delete(destDir, recursive: true);
+        // Route through ResilientFs: the destination lives under the game's Mods/ folder, so this
+        // is the delete most likely to hit a live lock (the game holding a just-loaded bundle),
+        // and the helper both retries transient locks and reports a "close MENACE" hint on a hard
+        // failure instead of a bare IOException.
+        ResilientFs.DeleteDirectory(destDir);
 
         DirectoryCopier.Copy(compiledDir, destDir, overwrite: true);
     }

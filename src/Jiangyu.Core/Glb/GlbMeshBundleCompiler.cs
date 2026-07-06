@@ -172,7 +172,7 @@ public static class GlbMeshBundleCompiler
                 firstPassOutputPath = outputBundlePath + ".pass1";
 
             sw.Restart();
-            await MeshBundleUnityBuild.InvokeUnityBuildAsync(unityEditor, unityProjectDir, firstPassOutputPath, bundleName, meshDataPath, textureDataPath, diagnosticsPath, meshContractPath: null, runPrefabs: runPrefabs);
+            await MeshBundleUnityBuild.InvokeUnityBuildAsync(unityEditor, unityProjectDir, firstPassOutputPath, bundleName, meshDataPath, textureDataPath, diagnosticsPath, meshContractPath: null, runPrefabs: runPrefabs, log: log);
             log?.Info($"  [timing] Unity pass 1: {sw.Elapsed.TotalSeconds:F1}s{(runPrefabs ? " (with prefab pass)" : "")}");
 
             if (needsSecondPass)
@@ -208,7 +208,7 @@ public static class GlbMeshBundleCompiler
                 {
                     MeshBundleStager.WriteMeshContracts(contractPath, contracts);
                     sw.Restart();
-                    await MeshBundleUnityBuild.InvokeUnityBuildAsync(unityEditor, unityProjectDir, outputBundlePath, bundleName, meshDataPath, textureDataPath, diagnosticsPath, contractPath);
+                    await MeshBundleUnityBuild.InvokeUnityBuildAsync(unityEditor, unityProjectDir, outputBundlePath, bundleName, meshDataPath, textureDataPath, diagnosticsPath, contractPath, log: log);
                     log?.Info($"  [timing] Unity pass 2: {sw.Elapsed.TotalSeconds:F1}s");
                 }
                 else if (!string.Equals(firstPassOutputPath, outputBundlePath, StringComparison.Ordinal))

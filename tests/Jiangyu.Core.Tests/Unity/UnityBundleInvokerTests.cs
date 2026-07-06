@@ -147,4 +147,89 @@ public sealed class UnityBundleInvokerTests : IDisposable
         var meshPath = Path.Combine(_tempDir, "mesh.bin");
         Assert.Contains($"-dataPath {meshPath}", captured);
     }
+
+    // --- Cold-project retry policy (InvokeWithRetryAsync) ---
+    // These drive the retry loop with a scripted runner instead of a real Unity process, and let
+    // it observe a real file so the ExpectedOutputPath check is exercised as it runs in production.
+
+    private static Task<UnityBundleInvocationResult> Ok() => Task.FromResult(new UnityBundleInvocationResult(0, Array.Empty<string>()));
+    private static Task<UnityBundleInvocationResult> Failed() => Task.FromResult(new UnityBundleInvocationResult(1, Array.Empty<string>()));
+
+    private UnityBundleInvocation Invocation(string? expectedOutputPath) => new()
+    {
+        UnityEditor = "unused",
+        ProjectPath = _tempDir,
+        ExecuteMethod = "Whatever.Method",
+        LogFile = Path.Combine(_tempDir, "build.log"),
+        ExpectedOutputPath = expectedOutputPath,
+    };
+
+    [Fact]
+    public async Task Retry_RunsTwice_WhenFirstAttemptWritesNoBundleThenWarmRunSucceeds()
+    {
+        var bundle = Path.Combine(_tempDir, "mod"); // absent to start
+        var calls = 0;
+
+        var result = await UnityBundleInvoker.InvokeWithRetryAsync(Invocation(bundle), () =>
+        {
+            calls++;
+            if (calls == 2)
+                File.WriteAllText(bundle, "x"); // the now-warm project produces the bundle
+            return Ok();
+        });
+
+        Assert.Equal(2, calls);
+        Assert.True(result.Success);
+        Assert.True(File.Exists(bundle));
+    }
+
+    [Fact]
+    public async Task Retry_RunsOnce_WhenFirstAttemptProducesTheBundle()
+    {
+        var bundle = Path.Combine(_tempDir, "mod");
+        var calls = 0;
+
+        var result = await UnityBundleInvoker.InvokeWithRetryAsync(Invocation(bundle), () =>
+        {
+            calls++;
+            File.WriteAllText(bundle, "x");
+            return Ok();
+        });
+
+        Assert.Equal(1, calls); // no wasted second cold start
+        Assert.True(result.Success);
+    }
+
+    [Fact]
+    public async Task Retry_RunsExactlyOnce_WhenNoExpectedOutputIsNamed()
+    {
+        var calls = 0;
+
+        // A failing run with no expected artefact (the multi-bundle prefab pass) must not retry.
+        var result = await UnityBundleInvoker.InvokeWithRetryAsync(Invocation(expectedOutputPath: null), () =>
+        {
+            calls++;
+            return Failed();
+        });
+
+        Assert.Equal(1, calls);
+        Assert.False(result.Success);
+    }
+
+    [Fact]
+    public async Task Retry_StopsAfterTwoAttempts_WhenTheBundleNeverAppears()
+    {
+        var bundle = Path.Combine(_tempDir, "never"); // never created
+        var calls = 0;
+
+        var result = await UnityBundleInvoker.InvokeWithRetryAsync(Invocation(bundle), () =>
+        {
+            calls++;
+            return Ok(); // exit 0 but writes nothing
+        });
+
+        Assert.Equal(2, calls); // bounded: one retry, no more
+        Assert.False(File.Exists(bundle));
+        Assert.Equal(0, result.ExitCode); // returns the last attempt for the caller to reject
+    }
 }
