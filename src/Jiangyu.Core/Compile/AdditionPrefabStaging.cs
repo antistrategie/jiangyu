@@ -93,11 +93,22 @@ internal static class AdditionPrefabStaging
     /// no output. (2) If the modder has just deleted their last prefab,
     /// skipping the wipe would leave the previous compile's bundles sitting
     /// here for <see cref="Stage"/> to re-ship.
+    ///
+    /// <para><paramref name="preservePath"/> names one file to keep: the
+    /// raw-GLB mesh/texture bundle that shares this dir with the prefab
+    /// bundles. When a compile reuses that cached bundle (asset inputs
+    /// unchanged) the prefab-hygiene wipe must not delete it, or the reuse
+    /// path finds nothing to copy.</para>
     /// </summary>
-    public static void ClearStaleBuildOutput(string unityBuildOutputDir)
+    public static void ClearStaleBuildOutput(string unityBuildOutputDir, string? preservePath = null)
     {
         Directory.CreateDirectory(unityBuildOutputDir);
+        var preserveName = preservePath is null ? null : Path.GetFileName(preservePath);
         foreach (var stale in Directory.EnumerateFiles(unityBuildOutputDir))
+        {
+            if (preserveName is not null && Path.GetFileName(stale) == preserveName)
+                continue;
             ResilientFs.DeleteFile(stale);
+        }
     }
 }

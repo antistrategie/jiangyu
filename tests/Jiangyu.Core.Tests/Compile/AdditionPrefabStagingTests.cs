@@ -175,6 +175,28 @@ public sealed class AdditionPrefabStagingTests : IDisposable
     }
 
     [Fact]
+    public void ClearStaleBuildOutput_PreservesTheNamedBundle_ClearsEverythingElse()
+    {
+        // The regression this guards: a texture/sprite/audio-only mod caches its raw-GLB bundle
+        // (named after the mod, no .bundle extension) in unity_build/. On the next compile the
+        // reuse path relies on that bundle, but the prefab-hygiene wipe runs first and used to
+        // delete it, so the compile failed with "did not produce expected bundle" on every second
+        // run. The preserved file must survive while stale prefab bundles/manifests are removed.
+        var buildDir = Path.Combine(_tempRoot, ".jiangyu", "unity_build");
+        Directory.CreateDirectory(buildDir);
+        var reusedBundle = Path.Combine(buildDir, "test"); // raw-GLB bundle, extensionless
+        File.WriteAllText(reusedBundle, "cached raw-glb bundle");
+        File.WriteAllText(Path.Combine(buildDir, "widget.bundle"), "stale prefab bundle");
+        File.WriteAllText(Path.Combine(buildDir, "test.manifest"), "stale unity manifest");
+
+        AdditionPrefabStaging.ClearStaleBuildOutput(buildDir, preservePath: reusedBundle);
+
+        Assert.True(File.Exists(reusedBundle));
+        Assert.False(File.Exists(Path.Combine(buildDir, "widget.bundle")));
+        Assert.False(File.Exists(Path.Combine(buildDir, "test.manifest")));
+    }
+
+    [Fact]
     public void Stage_AfterClearWithNoSources_LeavesCompiledEmpty()
     {
         // End-to-end of the regression scenario: stale bundle in unity_build/,

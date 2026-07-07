@@ -503,7 +503,13 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             }
             else
             {
-                await BuildUnityAdditionPrefabs(projectDir, unityBuildDir, unityEditorPath);
+                // The prefab-hygiene wipe inside here must not delete the raw-GLB bundle when
+                // this compile is reusing it: the two share unity_build/, and without this the
+                // reuse path below finds nothing to copy and the compile fails on the second run
+                // after every full build.
+                await BuildUnityAdditionPrefabs(
+                    projectDir, unityBuildDir, unityEditorPath,
+                    preserveBundlePath: reuseRawGlb ? builtBundle : null);
                 if (hasPrefabWork)
                     buildState.Record(PrefabPhase, prefabFingerprint);
                 else
@@ -785,9 +791,9 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
     /// <see cref="AdditionPrefabStaging.ShouldInvokeUnityForPrefabs"/> returns
     /// false.
     /// </summary>
-    private async Task BuildUnityAdditionPrefabs(string projectDir, string unityBuildOutputDir, string unityEditorPath)
+    private async Task BuildUnityAdditionPrefabs(string projectDir, string unityBuildOutputDir, string unityEditorPath, string? preserveBundlePath = null)
     {
-        AdditionPrefabStaging.ClearStaleBuildOutput(unityBuildOutputDir);
+        AdditionPrefabStaging.ClearStaleBuildOutput(unityBuildOutputDir, preserveBundlePath);
 
         if (!AdditionPrefabStaging.ShouldInvokeUnityForPrefabs(projectDir))
             return;
