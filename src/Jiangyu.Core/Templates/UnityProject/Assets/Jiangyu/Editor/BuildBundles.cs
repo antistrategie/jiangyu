@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -51,17 +53,17 @@ namespace Jiangyu.Mod
                 return false;
             }
 
-            var assigned =
-                AssignBundleNames("t:Prefab", "Assets/Prefabs", ".prefab") +
-                AssignBundleNames("t:VisualTreeAsset", "Assets/UI", ".uxml") +
-                // Textures under Assets/UI/Icons get their own bundle, loadable by name via
-                // Context.Assets.Load. Textures elsewhere under Assets/UI stay as UXML/USS
-                // dependencies of their owning UXML. So put a texture here only if it is loaded
-                // standalone: an Icons texture also referenced by a UXML is pulled out of that UXML's
-                // bundle and the styled element loses its background image. Keep UXML-referenced
-                // textures outside Assets/UI/Icons.
-                AssignBundleNames("t:Texture2D", "Assets/UI/Icons", ".png");
-            if (assigned == 0)
+            var bundleNames = new List<string>();
+            AssignBundleNames("t:Prefab", "Assets/Prefabs", ".prefab", bundleNames);
+            AssignBundleNames("t:VisualTreeAsset", "Assets/UI", ".uxml", bundleNames);
+            // Textures under Assets/UI/Icons get their own bundle, loadable by name via
+            // Context.Assets.Load. Textures elsewhere under Assets/UI stay as UXML/USS
+            // dependencies of their owning UXML. So put a texture here only if it is loaded
+            // standalone: an Icons texture also referenced by a UXML is pulled out of that UXML's
+            // bundle and the styled element loses its background image. Keep UXML-referenced
+            // textures outside Assets/UI/Icons.
+            AssignBundleNames("t:Texture2D", "Assets/UI/Icons", ".png", bundleNames);
+            if (bundleNames.Count == 0)
             {
                 Debug.LogWarning("Jiangyu BuildBundles: no prefabs under Assets/Prefabs/ or UXML under Assets/UI/. Nothing to build.");
                 return true;
@@ -90,9 +92,12 @@ namespace Jiangyu.Mod
                 return false;
             }
 
-            var built = manifest.GetAllAssetBundles();
-            Debug.Log("Jiangyu BuildBundles: built " + built.Length + " bundle(s) into " + outputDir);
-            return true;
+            Debug.Log("Jiangyu BuildBundles: built " + manifest.GetAllAssetBundles().Length + " bundle(s) into " + outputDir);
+
+            // A non-null manifest does not guarantee each expected bundle was written (a
+            // cold-project import pass can leave assets unimported), so verify every assigned
+            // bundle actually landed on disk.
+            return BundleBuildVerify.AllWritten(outputDir, bundleNames, manifest, "Jiangyu BuildBundles");
         }
 
         /// <summary>
@@ -101,16 +106,16 @@ namespace Jiangyu.Mod
         /// stripped and <c>/</c> translated to <c>__</c> (the KDL <c>asset="dir/name"</c>
         /// convention). A USS linked from a UXML by a <c>&lt;Style&gt;</c> tag rides
         /// inside that UXML's bundle as a dependency, so only the UXML is keyed.
-        /// Returns the number of assets assigned. A missing root contributes zero.
+        /// Each assigned bundle name is added to <paramref name="into"/> so the caller can verify
+        /// it was written. A missing root adds nothing.
         /// </summary>
-        private static int AssignBundleNames(string filter, string root, string extension)
+        private static void AssignBundleNames(string filter, string root, string extension, ICollection<string> into)
         {
             if (!AssetDatabase.IsValidFolder(root))
-                return 0;
+                return;
 
             var rootPrefix = root.EndsWith("/") ? root : root + "/";
             var guids = AssetDatabase.FindAssets(filter, new[] { root });
-            var count = 0;
             foreach (var guid in guids)
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
@@ -125,10 +130,45 @@ namespace Jiangyu.Mod
                     : Path.GetFileName(path);
                 var stem = relative.Substring(0, relative.Length - extension.Length);
                 var bundleKey = stem.Replace("/", "__").Replace("\\", "__");
-                importer.assetBundleName = bundleKey + ".bundle";
-                count++;
+                var bundleName = bundleKey + ".bundle";
+                importer.assetBundleName = bundleName;
+                into.Add(bundleName);
             }
-            return count;
+        }
+    }
+
+    /// <summary>
+    /// Shared post-build check for the three batchmode bundle builders. A non-null
+    /// <see cref="AssetBundleManifest"/> does not guarantee the expected bundle files were
+    /// written: a cold-project import pass can leave assets unimported, so Unity reports success
+    /// yet emits nothing. Verify each expected bundle actually landed on disk. Unity lowercases
+    /// <c>assetBundleName</c> on assignment, so the written file is the lowercased key. Logs and
+    /// returns false naming the gap otherwise, so the compiler surfaces this rather than the
+    /// opaque downstream "did not produce expected bundle".
+    /// </summary>
+    internal static class BundleBuildVerify
+    {
+        public static bool AllWritten(string outputDir, IEnumerable<string> expectedBundleNames, AssetBundleManifest manifest, string label)
+        {
+            var missing = new List<string>();
+            foreach (var name in expectedBundleNames)
+            {
+                var normalised = name.ToLowerInvariant();
+                if (!File.Exists(Path.Combine(outputDir, normalised)))
+                    missing.Add(normalised);
+            }
+            if (missing.Count == 0)
+                return true;
+
+            var built = manifest != null ? manifest.GetAllAssetBundles() : new string[0];
+            var listing = Directory.Exists(outputDir)
+                ? string.Join(", ", Directory.GetFiles(outputDir).Select(Path.GetFileName))
+                : "(output dir missing)";
+            Debug.LogError(
+                label + ": BuildAssetBundles reported success but did not write expected bundle(s) [" +
+                string.Join(", ", missing) + "] to '" + outputDir + "'. Bundles in manifest: [" +
+                string.Join(", ", built) + "]. Files present: [" + listing + "].");
+            return false;
         }
     }
 }

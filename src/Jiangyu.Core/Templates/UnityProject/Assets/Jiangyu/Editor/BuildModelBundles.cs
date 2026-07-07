@@ -1,5 +1,4 @@
 using System.IO;
-using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -128,15 +127,8 @@ namespace Jiangyu.Mod
             // A non-null manifest does not guarantee our bundle was written (a cold-project
             // import pass can leave the generated prefabs unimported). Fail with an exit code so
             // the compiler surfaces this log rather than the opaque downstream message.
-            var expectedBundle = Path.Combine(outputDir, bundleName);
-            if (!File.Exists(expectedBundle))
+            if (!BundleBuildVerify.AllWritten(outputDir, new[] { bundleName }, manifest, "Jiangyu BuildModelBundles"))
             {
-                var built = manifest.GetAllAssetBundles();
-                var listing = string.Join(", ", Directory.GetFiles(outputDir).Select(Path.GetFileName));
-                Debug.LogError(
-                    "Jiangyu BuildModelBundles: BuildAssetBundles reported success but did not write the expected bundle '" +
-                    bundleName + "' to '" + outputDir + "'. Bundles in manifest: [" + string.Join(", ", built) +
-                    "]. Files present: [" + listing + "].");
                 EditorApplication.Exit(1);
                 return;
             }

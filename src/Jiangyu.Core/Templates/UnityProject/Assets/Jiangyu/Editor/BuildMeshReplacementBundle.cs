@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -282,16 +281,8 @@ namespace Jiangyu.Mod
             // when a cold-project import pass leaves the generated assets unimported). Fail loudly
             // with an exit code so the compiler surfaces this log instead of the opaque
             // "did not produce expected bundle" downstream.
-            if (!File.Exists(outputPath))
+            if (!BundleBuildVerify.AllWritten(outputDir, new[] { Path.GetFileName(outputPath) }, manifest, "[Jiangyu]"))
             {
-                var built = manifest.GetAllAssetBundles();
-                var listing = Directory.Exists(outputDir)
-                    ? string.Join(", ", Directory.GetFiles(outputDir).Select(Path.GetFileName))
-                    : "(output dir missing)";
-                Debug.LogError(
-                    "[Jiangyu] BuildAssetBundles reported success but did not write the expected bundle '" +
-                    Path.GetFileName(outputPath) + "' to '" + outputDir + "'. Bundles in manifest: [" +
-                    string.Join(", ", built) + "]. Files present: [" + listing + "].");
                 EditorApplication.Exit(1);
                 return;
             }

@@ -72,10 +72,11 @@ public sealed class PatchInfo
 
     /// <summary>The original method's return value, boxed, as a postfix handler sees it.
     /// Assigning overrides the value the caller receives. Overriding is honoured for
-    /// targets returning <c>int</c>, <c>bool</c> or <c>float</c>, and only when the
-    /// value assigned is of that exact type (a mismatched type is ignored, never
-    /// coerced); for other return types the assignment is ignored. Always null in a
-    /// prefix handler.</summary>
+    /// targets returning <c>int</c>, <c>bool</c> or <c>float</c> (only when the value
+    /// assigned is of that exact type), and for reference-typed returns (only when the
+    /// value assigned is null or an instance of the return type). A mismatched type is
+    /// ignored, never coerced; other value-typed returns ignore the assignment. Always
+    /// null in a prefix handler.</summary>
     public object Result
     {
         get => _result;

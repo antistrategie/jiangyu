@@ -4,6 +4,7 @@ using System.Reflection;
 using HarmonyLib;
 using Il2CppInterop.Runtime.InteropTypes;
 using Jiangyu.Loader.Logging;
+using Jiangyu.Loader.Templates;
 using Jiangyu.Sdk;
 using PatchInfo = Jiangyu.Sdk.PatchInfo;
 
@@ -63,31 +64,28 @@ internal static class ModPatchCoordinator
         {
             if (kind == ModPatchRegistry.Kind.Prefix)
             {
-                _harmony.Patch(target, prefix: new HarmonyMethod(typeof(ModPatchCoordinator), nameof(DispatchPrefix)));
+                var prefixName = target.IsStatic ? nameof(DispatchPrefixStatic) : nameof(DispatchPrefix);
+                _harmony.Patch(target, prefix: new HarmonyMethod(typeof(ModPatchCoordinator), prefixName));
                 return true;
             }
 
-            var returnType = (target as MethodInfo)?.ReturnType;
-            var typedResult = returnType == typeof(int) || returnType == typeof(bool) || returnType == typeof(float);
-            if (typedResult)
+            // PostfixDispatcherFor is the single source of the return-type -> dispatcher mapping
+            // (an overridable int/bool/float/reference dispatcher, or the result-less one for
+            // other value returns and void). Try it; if binding the typed ref-__result dispatcher
+            // throws (some Il2Cpp value returns do not marshal to a ref parameter), fall back to
+            // the result-less dispatcher so an observe-only postfix still registers.
+            try
             {
-                try
-                {
-                    _harmony.Patch(target, postfix: PostfixDispatcherFor(target));
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    // The typed ref-__result dispatcher could not bind for this
-                    // target (some Il2Cpp value returns do not marshal to a ref
-                    // primitive). Fall back to the result-less dispatcher so an
-                    // observe-only postfix still registers; it just cannot
-                    // override the return value.
-                    log.Warn($"patch: {target.DeclaringType?.Name}.{target.Name} return not overridable ({ex.GetType().Name}); postfix runs observe-only.");
-                }
+                _harmony.Patch(target, postfix: PostfixDispatcherFor(target));
+                return true;
             }
-            _harmony.Patch(target, postfix: new HarmonyMethod(typeof(ModPatchCoordinator), nameof(DispatchPostfix)));
-            return true;
+            catch (Exception ex)
+            {
+                log.Warn($"patch: {target.DeclaringType?.Name}.{target.Name} return not overridable ({ex.GetType().Name}); postfix runs observe-only.");
+                _harmony.Patch(target, postfix: new HarmonyMethod(typeof(ModPatchCoordinator),
+                    target.IsStatic ? nameof(DispatchPostfixStatic) : nameof(DispatchPostfix)));
+                return true;
+            }
         }
         catch (Exception ex)
         {
@@ -97,23 +95,28 @@ internal static class ModPatchCoordinator
         }
     }
 
-    // Harmony writes an overridden return through a typed ref parameter, and a
+    // Harmony writes an overridden return through a typed ref parameter: a
     // ref object __result only binds to reference-typed returns, so value-typed
-    // returns each get their own dispatcher. Targets with other return types use
-    // the no-result dispatcher: PatchInfo.Result stays null and assignments to it
-    // are ignored, as documented on the SDK type.
+    // returns each get their own dispatcher and every reference-typed return
+    // shares the object dispatcher. Targets with other value returns use the
+    // no-result dispatcher: PatchInfo.Result stays null and assignments to it
+    // are ignored, as documented on the SDK type. Static targets take the
+    // instance-less variants: an __instance parameter does not bind to a
+    // static original.
     private static HarmonyMethod PostfixDispatcherFor(MethodBase target)
     {
         var returnType = (target as MethodInfo)?.ReturnType;
         string name;
         if (returnType == typeof(int))
-            name = nameof(DispatchPostfixInt32);
+            name = target.IsStatic ? nameof(DispatchPostfixInt32Static) : nameof(DispatchPostfixInt32);
         else if (returnType == typeof(bool))
-            name = nameof(DispatchPostfixBoolean);
+            name = target.IsStatic ? nameof(DispatchPostfixBooleanStatic) : nameof(DispatchPostfixBoolean);
         else if (returnType == typeof(float))
-            name = nameof(DispatchPostfixSingle);
+            name = target.IsStatic ? nameof(DispatchPostfixSingleStatic) : nameof(DispatchPostfixSingle);
+        else if (returnType != null && !returnType.IsValueType)
+            name = target.IsStatic ? nameof(DispatchPostfixObjectStatic) : nameof(DispatchPostfixObject);
         else
-            name = nameof(DispatchPostfix);
+            name = target.IsStatic ? nameof(DispatchPostfixStatic) : nameof(DispatchPostfix);
         return new HarmonyMethod(typeof(ModPatchCoordinator), name);
     }
 
@@ -126,29 +129,70 @@ internal static class ModPatchCoordinator
     private static void DispatchPostfix(Il2CppObjectBase __instance, object[] __args, MethodBase __originalMethod)
         => Registry.DispatchPostfix(__originalMethod, __instance, __args ?? Array.Empty<object>());
 
-    // The assigned Result must be the target's exact return type: a boxed
-    // value of any other type is ignored, never coerced. Convert.ToXxx would
-    // silently round (2.5 -> 2) or throw (overflow, non-numeric string)
-    // inside the postfix and abort the game call.
+    // Static-target variants take null for the instance: an __instance parameter does not bind to
+    // a static original. Instance and static share each body below through ResolveValue/ResolveObject.
+    private static bool DispatchPrefixStatic(object[] __args, MethodBase __originalMethod)
+        => Registry.DispatchPrefix(__originalMethod, null, __args ?? Array.Empty<object>());
+
+    private static void DispatchPostfixStatic(object[] __args, MethodBase __originalMethod)
+        => Registry.DispatchPostfix(__originalMethod, null, __args ?? Array.Empty<object>());
+
     private static void DispatchPostfixInt32(Il2CppObjectBase __instance, object[] __args, MethodBase __originalMethod, ref int __result)
-    {
-        var result = Registry.DispatchPostfix(__originalMethod, __instance, __args ?? Array.Empty<object>(), __result, out var overridden);
-        if (overridden && result is int value)
-            __result = value;
-    }
+        => __result = ResolveValue(__instance, __args, __originalMethod, __result);
+
+    private static void DispatchPostfixInt32Static(object[] __args, MethodBase __originalMethod, ref int __result)
+        => __result = ResolveValue(null, __args, __originalMethod, __result);
 
     private static void DispatchPostfixBoolean(Il2CppObjectBase __instance, object[] __args, MethodBase __originalMethod, ref bool __result)
-    {
-        var result = Registry.DispatchPostfix(__originalMethod, __instance, __args ?? Array.Empty<object>(), __result, out var overridden);
-        if (overridden && result is bool value)
-            __result = value;
-    }
+        => __result = ResolveValue(__instance, __args, __originalMethod, __result);
+
+    private static void DispatchPostfixBooleanStatic(object[] __args, MethodBase __originalMethod, ref bool __result)
+        => __result = ResolveValue(null, __args, __originalMethod, __result);
 
     private static void DispatchPostfixSingle(Il2CppObjectBase __instance, object[] __args, MethodBase __originalMethod, ref float __result)
+        => __result = ResolveValue(__instance, __args, __originalMethod, __result);
+
+    private static void DispatchPostfixSingleStatic(object[] __args, MethodBase __originalMethod, ref float __result)
+        => __result = ResolveValue(null, __args, __originalMethod, __result);
+
+    private static void DispatchPostfixObject(Il2CppObjectBase __instance, object[] __args, MethodBase __originalMethod, ref object __result)
+        => __result = ResolveObject(__instance, __args, __originalMethod, __result);
+
+    private static void DispatchPostfixObjectStatic(object[] __args, MethodBase __originalMethod, ref object __result)
+        => __result = ResolveObject(null, __args, __originalMethod, __result);
+
+    // Route the call to the mods' handlers, then accept an override only when it is the target's
+    // exact value type. A boxed value of any other type is ignored, never coerced: Convert.ToXxx
+    // would silently round (2.5 -> 2) or throw (overflow, non-numeric string) inside the postfix
+    // and abort the game call.
+    private static T ResolveValue<T>(object instance, object[] args, MethodBase originalMethod, T current) where T : struct
     {
-        var result = Registry.DispatchPostfix(__originalMethod, __instance, __args ?? Array.Empty<object>(), __result, out var overridden);
-        if (overridden && result is float value)
-            __result = value;
+        var result = Registry.DispatchPostfix(originalMethod, instance, args ?? Array.Empty<object>(), current, out var overridden);
+        return overridden && result is T value ? value : current;
+    }
+
+    // Route the call to the mods' handlers, then accept an override only when it is null or
+    // assignable to the target return type. Harmony writes it back into the typed return slot, so
+    // a mismatch would throw inside the patched game call.
+    private static object ResolveObject(object instance, object[] args, MethodBase originalMethod, object current)
+    {
+        var result = Registry.DispatchPostfix(originalMethod, instance, args ?? Array.Empty<object>(), current, out var overridden);
+        return overridden && ResultAssignable(originalMethod, result) ? result : current;
+    }
+
+    // Whether an overriding reference Result can be written into the target's return slot: null,
+    // a managed instance of the return type, or an Il2Cpp object whose native type casts to it.
+    // Managed IsInstanceOfType alone is too strict under Il2Cpp interop, where a valid native
+    // object can be held through a base-typed wrapper (e.g. a GameObject as a UnityEngine.Object).
+    private static bool ResultAssignable(MethodBase originalMethod, object result)
+    {
+        if (result == null)
+            return true;
+        var returnType = (originalMethod as MethodInfo)?.ReturnType;
+        if (returnType == null || returnType.IsInstanceOfType(result))
+            return true;
+        return result is Il2CppObjectBase il2cpp
+            && Il2CppReflectiveCast.CastOrNull(il2cpp, returnType) != null;
     }
 
     private static MethodBase ResolveMethod(string typeName, string methodName, string modId, IModHostLog log)
