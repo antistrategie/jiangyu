@@ -35,6 +35,7 @@ internal sealed class DevServices : IDevServices
             ["scene"] = _ => SceneIdentityInspector.Capture(_context.CurrentScene, _context.CurrentBuildIndex),
             ["templates"] = _ => TemplateStateInspector.Capture(_context.CurrentScene),
             ["winmission"] = _ => MissionAutoWin.Run(_context.Logger),
+            ["skills"] = _ => SkillStateInspector.Capture(),
         };
 
         _bridge = new BridgeServer(context.Logger);
