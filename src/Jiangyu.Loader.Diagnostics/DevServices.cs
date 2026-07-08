@@ -31,7 +31,7 @@ internal sealed class DevServices : IDevServices
         _commands = new Dictionary<string, Func<JsonElement, object>>(StringComparer.Ordinal)
         {
             ["verb"] = args => VerbRunner.Run(args, _context.Logger, _context.ModAssemblies),
-            ["ui"] = _ => UiTreeProbe.CaptureCurrent(_context.CurrentScene),
+            ["ui"] = args => UiTreeProbe.CaptureCurrent(_context.CurrentScene, ReadFlag(args, "allPanels")),
             ["scene"] = _ => SceneIdentityInspector.Capture(_context.CurrentScene, _context.CurrentBuildIndex),
             ["templates"] = _ => TemplateStateInspector.Capture(_context.CurrentScene),
             ["winmission"] = _ => MissionAutoWin.Run(_context.Logger),
@@ -55,6 +55,14 @@ internal sealed class DevServices : IDevServices
         var args = request.TryGetProperty("args", out var a) ? a : default;
         return handler(args);
     }
+
+    // Read a boolean command arg, accepting a JSON true or the string "true" (a client
+    // that stringifies its args). Absent or anything else is false.
+    private static bool ReadFlag(JsonElement args, string name)
+        => args.ValueKind == JsonValueKind.Object
+           && args.TryGetProperty(name, out var value)
+           && (value.ValueKind == JsonValueKind.True
+               || (value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var parsed) && parsed));
 
     public void OnSceneLoaded()
     {

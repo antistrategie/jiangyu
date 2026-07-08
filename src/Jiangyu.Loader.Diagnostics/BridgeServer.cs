@@ -156,7 +156,13 @@ internal sealed class BridgeServer
     }
 
     // camelCase to match Studio's generated [RpcType] types; the envelope keeps its [JsonPropertyName] names.
-    private static readonly JsonSerializerOptions ResponseOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    // Null fields are omitted so an optional result field (e.g. a UI dump's panels/tooltips absent
+    // unless requested) reads as absent on the wire rather than an explicit null.
+    private static readonly JsonSerializerOptions ResponseOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
 
     private static void WriteResponse(NetworkStream stream, object writeLock, string id, object result, string error)
     {

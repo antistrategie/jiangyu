@@ -211,6 +211,13 @@ export interface UiDump {
   screenTree: UiNode | null;
   dialogTree: UiNode | null;
   tooltips?: UiTooltip[] | null;
+  panels?: UiPanel[] | null;
+}
+
+export interface UiPanel {
+  gameObject: string | null;
+  sortingOrder: number;
+  tree: UiNode | null;
 }
 
 export interface UiTooltip {

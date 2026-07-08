@@ -57,9 +57,10 @@ public static partial class RpcHandlers
 
     /// <summary>Capture the game's live UI tree over the bridge. Throws when not connected.</summary>
     [McpTool("jiangyu_ui_capture",
-        "Capture the running game's live UI Toolkit tree over the bridge: the active screen and any open dialog, each node's concrete IL2CPP type, name, USS classes and text. Use to find the element to attach injected UI to.",
+        "Capture the running game's live UI Toolkit tree over the bridge: the active screen and any open dialog, each node's concrete IL2CPP type, name, USS classes and text. Use to find the element to attach injected UI to. Set 'allPanels' true to also walk every live UIDocument root, reaching UI that lives off the active screen's root (e.g. a second UIDocument like the mission-select map).",
         RequiresBridge = true)]
-    internal static JsonElement BridgeUiCapture(JsonElement? __) => Bridge.Request(BridgeMethods.Command, new { name = "ui" });
+    [McpParam("allPanels", "boolean", "Also include every live UIDocument root, not just the active screen and open dialog. Use to reach UI on a second UIDocument (e.g. the mission-select map board). Defaults to false.")]
+    internal static JsonElement BridgeUiCapture(JsonElement? parameters) => Bridge.Request(BridgeMethods.Command, new { name = "ui", args = parameters });
 
     /// <summary>Inspect the running game's current scene over the bridge. Throws when not connected.</summary>
     [McpTool("jiangyu_inspect_scene",
@@ -125,6 +126,26 @@ public static partial class RpcHandlers
         // tooltip capture, so it is not required.
         [JsonPropertyName("tooltips")]
         public List<UiTooltip>? Tooltips { get; set; }
+
+        // Optional: every live UIDocument root, captured only when the request asked for
+        // allPanels. Surfaces UI that lives off the active screen's root (a second
+        // UIDocument, an overlay panel). Absent from a default capture or an older loader.
+        [JsonPropertyName("panels")]
+        public List<UiPanel>? Panels { get; set; }
+    }
+
+    /// <summary>A live UIDocument root panel: its GameObject path, sorting order, and content tree.</summary>
+    [RpcType]
+    internal sealed class UiPanel
+    {
+        [JsonPropertyName("gameObject")]
+        public required string? GameObject { get; set; }
+
+        [JsonPropertyName("sortingOrder")]
+        public required float SortingOrder { get; set; }
+
+        [JsonPropertyName("tree")]
+        public required UiNode? Tree { get; set; }
     }
 
     /// <summary>A live tooltip from the overlay: its id, pin state, the element that triggered it, and its content tree.</summary>

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -62,7 +63,7 @@ namespace Jiangyu.Mod
             // standalone: an Icons texture also referenced by a UXML is pulled out of that UXML's
             // bundle and the styled element loses its background image. Keep UXML-referenced
             // textures outside Assets/UI/Icons.
-            AssignBundleNames("t:Texture2D", "Assets/UI/Icons", ".png", bundleNames);
+            AssignIconTextureBundles("Assets/UI/Icons", bundleNames);
             if (bundleNames.Count == 0)
             {
                 Debug.LogWarning("Jiangyu BuildBundles: no prefabs under Assets/Prefabs/ or UXML under Assets/UI/. Nothing to build.");
@@ -101,22 +102,20 @@ namespace Jiangyu.Mod
         }
 
         /// <summary>
-        /// Give every asset of the matched type under <paramref name="root"/> its own
-        /// AssetBundle, keyed by the asset's path under the root with the extension
-        /// stripped and <c>/</c> translated to <c>__</c> (the KDL <c>asset="dir/name"</c>
-        /// convention). A USS linked from a UXML by a <c>&lt;Style&gt;</c> tag rides
-        /// inside that UXML's bundle as a dependency, so only the UXML is keyed.
-        /// Each assigned bundle name is added to <paramref name="into"/> so the caller can verify
-        /// it was written. A missing root adds nothing.
+        /// Assign an AssetBundle to every asset of the matched type under <paramref name="root"/>,
+        /// keyed by <paramref name="bundleKeyOf"/> applied to each asset's path under the root.
+        /// Each assigned bundle name is recorded in <paramref name="into"/> for the caller to
+        /// verify it was written, deduped case-insensitively because Unity lowercases
+        /// <c>assetBundleName</c> on assignment (so two keys differing only in case land on one
+        /// file). A missing root adds nothing.
         /// </summary>
-        private static void AssignBundleNames(string filter, string root, string extension, ICollection<string> into)
+        private static void AssignBundles(string filter, string root, string extension, ICollection<string> into, Func<string, string> bundleKeyOf)
         {
             if (!AssetDatabase.IsValidFolder(root))
                 return;
 
             var rootPrefix = root.EndsWith("/") ? root : root + "/";
-            var guids = AssetDatabase.FindAssets(filter, new[] { root });
-            foreach (var guid in guids)
+            foreach (var guid in AssetDatabase.FindAssets(filter, new[] { root }))
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
                 if (!path.EndsWith(extension))
@@ -125,15 +124,50 @@ namespace Jiangyu.Mod
                 if (importer == null)
                     continue;
 
-                var relative = path.StartsWith(rootPrefix)
-                    ? path.Substring(rootPrefix.Length)
-                    : Path.GetFileName(path);
-                var stem = relative.Substring(0, relative.Length - extension.Length);
-                var bundleKey = stem.Replace("/", "__").Replace("\\", "__");
-                var bundleName = bundleKey + ".bundle";
+                var relative = path.StartsWith(rootPrefix) ? path.Substring(rootPrefix.Length) : Path.GetFileName(path);
+                var bundleName = bundleKeyOf(relative) + ".bundle";
                 importer.assetBundleName = bundleName;
-                into.Add(bundleName);
+                if (!into.Any(existing => string.Equals(existing, bundleName, StringComparison.OrdinalIgnoreCase)))
+                    into.Add(bundleName);
             }
+        }
+
+        /// <summary>
+        /// Give every asset of the matched type under <paramref name="root"/> its own AssetBundle,
+        /// keyed by the asset's path under the root with the extension stripped and <c>/</c>
+        /// translated to <c>__</c> (the KDL <c>asset="dir/name"</c> convention). A USS linked from
+        /// a UXML by a <c>&lt;Style&gt;</c> tag rides inside that UXML's bundle as a dependency, so
+        /// only the UXML is keyed.
+        /// </summary>
+        private static void AssignBundleNames(string filter, string root, string extension, ICollection<string> into)
+            => AssignBundles(filter, root, extension, into,
+                relative => relative.Substring(0, relative.Length - extension.Length).Replace("/", "__").Replace("\\", "__"));
+
+        /// <summary>
+        /// Textures under <paramref name="root"/> (<c>Assets/UI/Icons</c>), loadable standalone by
+        /// name via <c>Context.Assets.Load</c>. A texture directly in the folder gets its own
+        /// bundle keyed by its leaf name (<c>gift_icon.png</c> to <c>gift_icon.bundle</c>). A
+        /// texture inside a subfolder is grouped into a single bundle keyed
+        /// <c>&lt;Icons&gt;__&lt;subfolder&gt;</c>, so a sprite sequence (many frames) ships as one
+        /// bundle (<c>Icons/campaign/**</c> to <c>Icons__campaign.bundle</c>) rather than a bundle
+        /// per frame. The subfolder key keeps the <c>&lt;category&gt;__</c> prefix that the
+        /// path-flattened prefab/UXML keys use, so a subfolder can never collide with a
+        /// direct-texture leaf or another category's key. The loader resolves each asset by its own
+        /// leaf or category-relative name, so the grouped bundle's file name does not affect loads.
+        /// JIANGYU-CONTRACT: grouping a texture subfolder into one loadable bundle is a
+        /// mod-authoring convention the loader's resolve-by-name relies on, proven for the WOMENACE
+        /// campaign map.
+        /// </summary>
+        private static void AssignIconTextureBundles(string root, ICollection<string> into)
+        {
+            var prefix = root.Substring(root.LastIndexOf('/') + 1) + "__"; // e.g. "Icons__"
+            AssignBundles("t:Texture2D", root, ".png", into, relative =>
+            {
+                var slash = relative.IndexOf('/');
+                return slash >= 0
+                    ? prefix + relative.Substring(0, slash)                    // subfolder: one grouped, namespaced bundle
+                    : relative.Substring(0, relative.Length - ".png".Length);  // direct: own bundle by leaf
+            });
         }
     }
 

@@ -17,6 +17,12 @@ namespace Jiangyu.Loader.Diagnostics.UiProbe;
 /// <para>Concrete element types come from the IL2CPP class (a wrapper's managed
 /// type is only its static cast type), so the dump distinguishes a
 /// <c>ProgressBar</c> or <c>SquaddieRow</c> from a plain <c>VisualElement</c>.</para>
+///
+/// <para>The active screen's root is only one of several runtime panels: a screen can
+/// host content on a second <c>UIDocument</c> outside <c>GetRootElement()</c> (MENACE's
+/// mission-select map is one), and those are invisible to the default capture. The
+/// <c>allPanels</c> mode enumerates every live <c>UIDocument</c>'s root so that
+/// off-screen-root UI can be inspected too.</para>
 /// </summary>
 internal static class UiTreeProbe
 {
@@ -28,8 +34,10 @@ internal static class UiTreeProbe
     /// dialog, and return it. Driven by the <c>ui.capture</c> bridge request; must run
     /// on the Unity main thread. Returns null when no UI manager is up. The return type
     /// is <c>object</c> so the loader can hand it straight to the JSON serialiser.
+    /// <paramref name="allPanels"/> additionally walks every live <c>UIDocument</c> root
+    /// (see the class summary) so UI outside the active screen's root is captured too.
     /// </summary>
-    public static object CaptureCurrent(string sceneTag)
+    public static object CaptureCurrent(string sceneTag, bool allPanels = false)
     {
         UIManager manager;
         try { manager = UIManager.Get(); }
@@ -41,10 +49,10 @@ internal static class UiTreeProbe
         BaseDialog dialog = null;
         try { screen = manager.GetActiveScreen(); } catch { /* none */ }
         try { dialog = manager.GetCurrentDialog(); } catch { /* none */ }
-        return BuildDump(sceneTag, manager, screen, dialog, ConcreteName(screen), ConcreteName(dialog));
+        return BuildDump(sceneTag, manager, screen, dialog, ConcreteName(screen), ConcreteName(dialog), allPanels);
     }
 
-    private static UiDump BuildDump(string sceneTag, UIManager manager, UIScreen screen, BaseDialog dialog, string screenName, string dialogName)
+    private static UiDump BuildDump(string sceneTag, UIManager manager, UIScreen screen, BaseDialog dialog, string screenName, string dialogName, bool allPanels)
     {
         var dump = new UiDump
         {
@@ -64,10 +72,65 @@ internal static class UiTreeProbe
 
         dump.Tooltips = CaptureTooltips(manager, ref nodes);
 
+        if (allPanels)
+            dump.Panels = CapturePanels(ref nodes);
+
         dump.NodeCount = nodes;
         dump.Truncated = nodes >= MaxNodes;
         return dump;
     }
+
+    // Every live UIDocument's root visual element, so UI that lives off the active screen's root
+    // is inspectable. The active screen's own document is included on purpose: GetRootElement()
+    // often returns only a subtree of that document (MENACE's mission-select map POIs are siblings
+    // of the returned window subtree, on the same document), so walking the full document root is
+    // exactly how those off-root nodes are surfaced. Gated behind the allPanels flag because it
+    // walks the whole runtime UI, not just the current screen. Bounded by the shared node cap like
+    // every other walk here. Enumerating UIDocuments mirrors SceneIdentityInspector's pattern.
+    private static List<UiPanel> CapturePanels(ref int nodes)
+    {
+        List<UiPanel> result = null;
+        try
+        {
+            foreach (var obj in UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<UIDocument>(), true))
+            {
+                if (nodes >= MaxNodes)
+                    break;
+                UIDocument doc;
+                try { doc = obj.Cast<UIDocument>(); }
+                catch { continue; }
+                if (doc == null)
+                    continue;
+
+                VisualElement root = null;
+                try { root = doc.rootVisualElement; }
+                catch { /* none */ }
+                if (root == null)
+                    continue;
+
+                var panel = new UiPanel();
+                try { panel.GameObject = SceneIdentityInspector.GameObjectPath(doc.gameObject); } catch { }
+                try
+                {
+                    var settings = doc.panelSettings;
+                    // Guard the float like every other numeric read here: System.Text.Json rejects
+                    // a NaN/Infinity, which would throw away the whole response.
+                    if (settings != null)
+                    {
+                        var order = settings.sortingOrder;
+                        if (!float.IsNaN(order) && !float.IsInfinity(order))
+                            panel.SortingOrder = order;
+                    }
+                }
+                catch { }
+                panel.Tree = Walk(root, 0, ref nodes);
+                (result ??= new List<UiPanel>()).Add(panel);
+            }
+        }
+        catch { /* enumeration unavailable; drop panels rather than the whole dump */ }
+        return result;
+    }
+
 
     // The live tooltips, which render on their own overlay panel that the active-screen and
     // dialog roots above do not reach. UIManager keeps every open tooltip (pinned and the
@@ -317,6 +380,17 @@ internal static class UiTreeProbe
         public UiNode ScreenTree { get; set; }
         public UiNode DialogTree { get; set; }
         public List<UiTooltip> Tooltips { get; set; }
+
+        // Only set when the caller asked for allPanels: every live UIDocument root, so
+        // UI outside the active screen's root can be inspected. Null (omitted) otherwise.
+        public List<UiPanel> Panels { get; set; }
+    }
+
+    private sealed class UiPanel
+    {
+        public string GameObject { get; set; }
+        public float SortingOrder { get; set; }
+        public UiNode Tree { get; set; }
     }
 
     private sealed class UiTooltip

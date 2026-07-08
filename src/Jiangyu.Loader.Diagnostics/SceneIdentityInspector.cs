@@ -151,14 +151,17 @@ internal static class SceneIdentityInspector
     private static string Fmt(Vector3 v)
         => $"({v.x:0.###}, {v.y:0.###}, {v.z:0.###})";
 
-    private static string GameObjectPath(GameObject gameObject)
+    // The scene-graph path of a GameObject. Shared with UiTreeProbe (same diagnostics assembly).
+    // The depth guard stops a pathological parent cycle from spinning forever.
+    internal static string GameObjectPath(GameObject gameObject)
     {
         if (gameObject == null)
             return null;
 
         var parts = new List<string>();
         var transform = gameObject.transform;
-        while (transform != null)
+        var guard = 0;
+        while (transform != null && guard++ < 256)
         {
             parts.Add(transform.name);
             transform = transform.parent;
