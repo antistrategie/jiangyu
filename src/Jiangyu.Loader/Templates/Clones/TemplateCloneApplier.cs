@@ -926,6 +926,19 @@ internal sealed class TemplateCloneApplier
             }
             if (element is not Il2CppObjectBase il2cpp) continue;
 
+            // A mod-injected element must stay SHARED. Object.Instantiate
+            // memcpys the native object including the GC handle that links it
+            // to its managed instance, so the copy's finaliser tears down a
+            // handle it does not own (boot crash via ClassInjector.Finalize).
+            // Sharing is safe: injected handler templates are stateless
+            // factories, and a clone-side patch never addresses them by index
+            // without re-authoring them.
+            if (Sdk.Types.JiangyuTypeRegistry.IsInjectedInstance(il2cpp))
+            {
+                log.Debug($"Template clone '{cloneId}': '{memberName}[{i}]' is a mod-injected type, kept shared with the source.");
+                continue;
+            }
+
             UnityEngine.Object asUnity;
             try { asUnity = il2cpp.Cast<UnityEngine.Object>(); }
             catch (Exception ex)

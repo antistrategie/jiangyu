@@ -16,6 +16,10 @@ internal static class JiangyuTypeRegistry
 {
     private static readonly Dictionary<string, Type> ByQualifiedName = new(StringComparer.Ordinal);
     private static readonly HashSet<Type> Injected = new();
+    // IL2CPP-side full names of the injected types, for recognising a native
+    // instance whose class is mod-injected (its wrapper is typed as the
+    // declared base, so the managed Type alone cannot tell).
+    private static readonly HashSet<string> InjectedFullNames = new(StringComparer.Ordinal);
 
     // ClassInjector only exposes the interface-options overload generically
     // (RegisterTypeInIl2Cpp<T>(RegisterTypeOptions)), so an interface-satisfying
@@ -43,6 +47,8 @@ internal static class JiangyuTypeRegistry
                 {
                     Inject(entry);
                     Injected.Add(entry.ManagedType);
+                    if (entry.ManagedType.FullName != null)
+                        InjectedFullNames.Add(entry.ManagedType.FullName);
                 }
 
                 ByQualifiedName[entry.QualifiedName] = entry.ManagedType;
@@ -70,4 +76,24 @@ internal static class JiangyuTypeRegistry
     /// <summary>Resolve a ns:Name to its injected managed type, if registered.</summary>
     public static bool TryResolve(string qualifiedName, out Type type)
         => ByQualifiedName.TryGetValue(qualifiedName, out type);
+
+    /// <summary>
+    /// Whether the native instance's IL2CPP class is a mod-injected type. Matched by the
+    /// runtime class full name because the managed wrapper in hand is typed as the declared
+    /// base (e.g. SkillEventHandlerTemplate), never as the injected subtype.
+    /// </summary>
+    public static bool IsInjectedInstance(Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase instance)
+    {
+        if (instance == null || InjectedFullNames.Count == 0)
+            return false;
+        try
+        {
+            var fullName = instance.Cast<Il2CppSystem.Object>().GetIl2CppType()?.FullName;
+            return fullName != null && InjectedFullNames.Contains(fullName);
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }
