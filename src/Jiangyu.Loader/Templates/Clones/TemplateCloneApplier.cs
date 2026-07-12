@@ -90,6 +90,191 @@ internal sealed class TemplateCloneApplier
         _pendingSoundBankRegistrations.Clear();
     }
 
+    // Members never re-inherited: object identity and the Odin serialisation
+    // blob (copying it would drag the source's id and serialised state in).
+    private static readonly HashSet<string> NonInheritableMembers = new(StringComparer.Ordinal)
+    {
+        "name", "hideFlags", "m_CachedPtr", "Pointer", "m_ID", "serializationData",
+    };
+
+    /// <summary>
+    /// Phase 3: rebuild each clone whose source is itself a mod clone so it
+    /// inherits the source AS AUTHORED, then re-applies its own ops on top.
+    ///
+    /// A clone is <c>Object.Instantiate</c>d from its source during the clone
+    /// pass, which runs before ANY patch op. So a clone of another mod clone
+    /// carries only the source's vanilla-derived base, never the source's own
+    /// appends/sets (those land in the later patch pass) — the SSR skill that
+    /// clones a modded skill lost the modded EventHandlers, keeping only the
+    /// vanilla knife handler. This pass, after the patch applier:
+    /// <list type="number">
+    /// <item>copies each collection field from the fully-patched source (deep,
+    ///   owned elements copied) so the clone starts from the source's real
+    ///   list, and inherits any non-collection member the clone did not author
+    ///   itself;</item>
+    /// <item>replays the clone's own patch ops on top, so its appends land
+    ///   after the inherited elements and its sets/index-writes/clears apply to
+    ///   the inherited base.</item>
+    /// </list>
+    /// A third pass rather than reordering the two existing ones: a clone's
+    /// inline ops can reference sibling clones declared later, so applying them
+    /// at clone-creation time would break those references, and standalone
+    /// <c>patch</c> blocks must stay order-independent. Running after everything
+    /// exists sidesteps both.
+    /// </summary>
+    public int ReinheritChainedClones(TemplatePatchApplier patchApplier, LoaderLog log)
+    {
+        if (patchApplier == null || !_catalog.HasClones)
+            return 0;
+
+        var done = new HashSet<string>(StringComparer.Ordinal);
+        var total = 0;
+        foreach (var typeEntry in _catalog.EnumerateByType())
+            total += ReinheritType(typeEntry.Key, typeEntry.Value, patchApplier, done, log);
+        return total;
+    }
+
+    private int ReinheritType(
+        string templateTypeName,
+        Dictionary<string, LoadedCloneDirective> directives,
+        TemplatePatchApplier patchApplier,
+        HashSet<string> done,
+        LoaderLog log)
+    {
+        var liveTemplates = TemplateRuntimeAccess.GetAllTemplates(templateTypeName, out var resolvedType, out _);
+        // Only DataTemplate types are m_TemplateMaps-registered and reachable
+        // by id here; the ScriptableObject-only path has no chained-clone use.
+        if (resolvedType == null
+            || liveTemplates.Count == 0
+            || !typeof(DataTemplate).IsAssignableFrom(resolvedType)
+            || !TryGetTemplateMap(resolvedType, out var innerMap))
+            return 0;
+
+        var applied = 0;
+        foreach (var directive in directives.Values)
+            applied += ReinheritOne(templateTypeName, resolvedType, innerMap, directives, directive.CloneId, patchApplier, done, log);
+        return applied;
+    }
+
+    // Re-inherit one clone, first ensuring its source (if itself a clone of
+    // this type) has been re-inherited, so a 3-deep chain resolves base-first
+    // regardless of directive iteration order.
+    private int ReinheritOne(
+        string templateTypeName,
+        Type resolvedType,
+        Il2CppDictionary innerMap,
+        Dictionary<string, LoadedCloneDirective> directives,
+        string cloneId,
+        TemplatePatchApplier patchApplier,
+        HashSet<string> done,
+        LoaderLog log)
+    {
+        if (!done.Add(templateTypeName + "\0" + cloneId))
+            return 0;
+        if (!directives.TryGetValue(cloneId, out var directive))
+            return 0;
+        var sourceId = directive.SourceId;
+        // No source (a 'create'), or a vanilla source: the base instantiate
+        // already gave the correct inheritance, nothing to re-sync.
+        if (string.IsNullOrEmpty(sourceId) || !directives.ContainsKey(sourceId))
+            return 0;
+
+        var applied = ReinheritOne(templateTypeName, resolvedType, innerMap, directives, sourceId, patchApplier, done, log);
+
+        // Set after the source recursion, which leaves the log tagged with the
+        // source directive's owner.
+        log.Mod = directive.OwnerLabel;
+
+        if (!innerMap.TryGetValue(cloneId, out var cloneObj) || cloneObj == null
+            || !innerMap.TryGetValue(sourceId, out var sourceObj) || sourceObj == null)
+            return applied;
+
+        var touched = patchApplier.TouchedTopLevelFields(templateTypeName, cloneId);
+        RebaseOntoSource(cloneObj, sourceObj, resolvedType, touched, cloneId, log);
+        // Re-apply the clone's own ops so its appends/sets land on top of the
+        // freshly inherited base (resolves the concrete template by id itself).
+        patchApplier.ReapplyTemplateEntry(templateTypeName, cloneId, log.Raw);
+        log.Debug($"Template clone '{cloneId}': re-inherited from cloned source '{sourceId}' and replayed own ops.");
+        return applied + 1;
+    }
+
+    // Reset the clone's fields to the patched source's values ahead of an op
+    // replay: every collection field takes a fresh deep copy of the source's
+    // list (owned elements copied, so mutating one never leaks to the other),
+    // and each non-collection member the clone did NOT author itself inherits
+    // the source's value. Authored non-collection members are left alone — the
+    // clone already holds its own value from the clone pass, and copying a
+    // source sub-object the clone then patches would corrupt the source.
+    private static void RebaseOntoSource(
+        Il2CppObjectBase clone, Il2CppObjectBase source, Type concreteType,
+        HashSet<string> touched, string cloneId, LoaderLog log)
+    {
+        var cloneTarget = ReflectionTargetForConcreteType(clone, concreteType, cloneId, log);
+        var sourceTarget = ReflectionTargetForConcreteType(source, concreteType, cloneId, log);
+        if (cloneTarget == null || sourceTarget == null)
+            return;
+
+        var type = cloneTarget.GetType();
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var prop in type.GetProperties(flags))
+        {
+            if (prop.GetIndexParameters().Length != 0 || !prop.CanRead || !prop.CanWrite) continue;
+            if (!seen.Add(prop.Name)) continue;
+            CopyFromSource(cloneTarget, sourceTarget,
+                () => prop.GetValue(sourceTarget), () => prop.GetValue(cloneTarget),
+                v => prop.SetValue(cloneTarget, v), prop.PropertyType, prop.Name, touched, cloneId, log);
+        }
+
+        foreach (var field in type.GetFields(flags))
+        {
+            if (field.IsInitOnly || !seen.Add(field.Name)) continue;
+            CopyFromSource(cloneTarget, sourceTarget,
+                () => field.GetValue(sourceTarget), () => field.GetValue(cloneTarget),
+                v => field.SetValue(cloneTarget, v), field.FieldType, field.Name, touched, cloneId, log);
+        }
+    }
+
+    private static void CopyFromSource(
+        object cloneTarget, object sourceTarget,
+        Func<object> sourceReader, Func<object> cloneReader, Action<object> cloneWriter,
+        Type memberType, string memberName, HashSet<string> touched, string cloneId, LoaderLog log)
+    {
+        if (NonInheritableMembers.Contains(memberName))
+            return;
+
+        var listElement = Il2CppCollectionReflection.GetListElementType(memberType);
+        var isCollection = listElement != null || Il2CppCollectionReflection.GetArrayElementType(memberType) != null;
+
+        // Non-collection the clone authored itself: keep the clone's value. The
+        // replay re-applies its ops, and this avoids sharing a source sub-object
+        // the clone patches.
+        if (!isCollection && touched.Contains(memberName))
+            return;
+
+        object sourceValue;
+        try { sourceValue = sourceReader(); }
+        catch { return; }
+
+        try { cloneWriter(sourceValue); }
+        catch (Exception ex)
+        {
+            log.Warning($"Template clone '{cloneId}': rebase of '{memberName}' threw: {ex.Message}");
+            return;
+        }
+
+        // The clone now shares the source's container/elements: reallocate the
+        // container so the clone owns it, then deep-copy owned elements. The op
+        // replay then mutates only the clone's copies.
+        if (isCollection)
+        {
+            TryReallocCollectionContainer(cloneReader, cloneWriter, memberType, memberName, cloneId, log);
+            if (listElement != null && IsOwnedElementType(listElement))
+                TryDeepCopyMember(cloneTarget, listElement, cloneReader, memberName, cloneId, log, out _);
+        }
+    }
+
     public int TryApply(LoaderLog log)
     {
         if (!_catalog.HasClones)

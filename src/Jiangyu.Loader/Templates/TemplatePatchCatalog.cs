@@ -29,6 +29,57 @@ internal sealed class TemplatePatchCatalog
     public IEnumerable<KeyValuePair<string, Dictionary<string, List<LoadedPatchOperation>>>> EnumerateByType()
         => _patches;
 
+    /// <summary>
+    /// The compiled patch ops for one template, in applied order, or false when
+    /// none exist. The clone applier replays these onto a chained clone after
+    /// rebuilding it from its patched source, so the clone's own appends/sets
+    /// land on top of the inherited fields.
+    /// </summary>
+    public bool TryGetOperations(string templateType, string templateId, out List<LoadedPatchOperation> ops)
+    {
+        ops = null;
+        return templateType != null && templateId != null
+            && _patches.TryGetValue(templateType, out var byId)
+            && byId.TryGetValue(templateId, out ops);
+    }
+
+    /// <summary>
+    /// The set of top-level member names the patch ops for
+    /// <paramref name="templateId"/> write to. The clone applier uses this to
+    /// tell which non-collection fields a clone authored itself, so
+    /// re-inheritance from a cloned source fills only the ones the clone left
+    /// untouched (never overwriting an authored value, nor sharing a mutable
+    /// sub-object the clone will patch). A nested op (descent into a field, or a
+    /// dotted/indexed path) counts against its outermost member.
+    /// </summary>
+    public HashSet<string> TouchedTopLevelFields(string templateType, string templateId)
+    {
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        if (TryGetOperations(templateType, templateId, out var ops))
+            foreach (var op in ops)
+            {
+                var top = TopLevelField(op);
+                if (!string.IsNullOrEmpty(top))
+                    result.Add(top);
+            }
+        return result;
+    }
+
+    // The outermost member an op targets: the first descent step's Field when
+    // the op descends, otherwise the first segment of the inner FieldPath
+    // (before any '.' or '['). Internal so the loader tests can exercise the
+    // extraction directly (InternalsVisibleTo).
+    internal static string TopLevelField(LoadedPatchOperation op)
+    {
+        if (op.Descent is { Count: > 0 })
+            return op.Descent[0].Field;
+        var path = op.FieldPath;
+        if (string.IsNullOrEmpty(path))
+            return null;
+        var cut = path.IndexOfAny(new[] { '.', '[' });
+        return cut < 0 ? path : path.Substring(0, cut);
+    }
+
     public void Load(IReadOnlyList<(DiscoveredMod Mod, CompiledTemplatePatchManifest Templates)> mods, LoaderLog log)
     {
         foreach (var (mod, templates) in mods)

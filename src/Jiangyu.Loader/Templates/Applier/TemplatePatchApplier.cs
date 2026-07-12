@@ -86,6 +86,41 @@ internal sealed partial class TemplatePatchApplier
         return totalApplied;
     }
 
+    // The top-level members a template's ops write to. Passthrough for the
+    // clone applier's chained-clone rebase (which keeps authored non-collection
+    // members and inherits the rest from the patched source).
+    internal HashSet<string> TouchedTopLevelFields(string templateTypeName, string templateId)
+        => _catalog.TouchedTopLevelFields(templateTypeName, templateId);
+
+    // Replay one template's compiled patch ops in authored order. The
+    // chained-clone re-inheritance uses this: it rebuilds a clone from its
+    // patched source and then re-applies the clone's own ops so its appends/sets
+    // land on top of the inherited fields. Resolves the template by id the same
+    // way TryApplyType does, so the ops apply against the CONCRETE wrapper type
+    // (the field visitor reflects on the runtime type; a base DataTemplate
+    // wrapper would expose none of the concrete members). Returns ops applied.
+    //
+    // OnAfterDeserialize is re-invoked even when the template has no ops of its
+    // own: the caller has just rebased the clone's fields from its patched
+    // source, so any deserialise-derived caches are stale regardless of replay.
+    internal int ReapplyTemplateEntry(string templateTypeName, string templateId, MelonLogger.Instance log)
+    {
+        if (!TemplateRuntimeAccess.TryGetTemplateById(templateTypeName, templateId, out var template, out _, out var lookupError))
+        {
+            log.Warning($"Template re-inherit: no live {templateTypeName} '{templateId}' to replay onto ({lookupError}).");
+            return 0;
+        }
+
+        var applied = 0;
+        if (_catalog.TryGetOperations(templateTypeName, templateId, out var ops))
+            foreach (var op in ops)
+                if (TryApplyOperation(template, templateTypeName, templateId, op, _assetResolver, log) == ApplyOutcome.Applied)
+                    applied++;
+
+        TryInvokeOnAfterDeserialize(template, templateTypeName, templateId, log);
+        return applied;
+    }
+
     private int TryApplyType(
         string templateTypeName,
         Dictionary<string, List<LoadedPatchOperation>> patchesForType,

@@ -100,11 +100,28 @@ public sealed class PatchInfo
 public interface IModPatches
 {
     /// <summary>Run <paramref name="handler"/> before <c>typeName.methodName</c>. The
-    /// handler may set <see cref="PatchInfo.Skip"/> to stop the original running.</summary>
+    /// handler may set <see cref="PatchInfo.Skip"/> to stop the original running.
+    /// If the method name is overloaded, no patch is registered and a warning is
+    /// logged: use the <see cref="Prefix(string,string,int,Action{PatchInfo})"/>
+    /// overload to disambiguate by parameter count.</summary>
     void Prefix(string typeName, string methodName, Action<PatchInfo> handler);
 
-    /// <summary>Run <paramref name="handler"/> after <c>typeName.methodName</c> returns.</summary>
+    /// <summary>Run <paramref name="handler"/> after <c>typeName.methodName</c> returns.
+    /// If the method name is overloaded, no patch is registered and a warning is
+    /// logged: use the <see cref="Postfix(string,string,int,Action{PatchInfo})"/>
+    /// overload to disambiguate by parameter count.</summary>
     void Postfix(string typeName, string methodName, Action<PatchInfo> handler);
+
+    /// <summary>As <see cref="Prefix(string,string,Action{PatchInfo})"/>, selecting the
+    /// overload of <c>typeName.methodName</c> that takes exactly
+    /// <paramref name="parameterCount"/> parameters. Use this when the method is
+    /// overloaded (e.g. a method with 3- and 4-argument forms).</summary>
+    void Prefix(string typeName, string methodName, int parameterCount, Action<PatchInfo> handler);
+
+    /// <summary>As <see cref="Postfix(string,string,Action{PatchInfo})"/>, selecting the
+    /// overload of <c>typeName.methodName</c> that takes exactly
+    /// <paramref name="parameterCount"/> parameters.</summary>
+    void Postfix(string typeName, string methodName, int parameterCount, Action<PatchInfo> handler);
 }
 
 /// <summary>

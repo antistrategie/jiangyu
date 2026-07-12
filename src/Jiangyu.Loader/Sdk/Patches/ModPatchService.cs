@@ -32,7 +32,7 @@ internal static class ModPatchCoordinator
 
     public static void Register(
         string modId, ModPatchRegistry.Kind kind, string typeName, string methodName,
-        Action<PatchInfo> handler, IModHostLog log)
+        Action<PatchInfo> handler, IModHostLog log, int? parameterCount = null)
     {
         if (handler == null)
             return;
@@ -42,7 +42,7 @@ internal static class ModPatchCoordinator
             return;
         }
 
-        var target = ResolveMethod(typeName, methodName, modId, log);
+        var target = ResolveMethod(typeName, methodName, parameterCount, modId, log);
         if (target == null)
             return;
 
@@ -195,13 +195,22 @@ internal static class ModPatchCoordinator
             && Il2CppReflectiveCast.CastOrNull(il2cpp, returnType) != null;
     }
 
-    private static MethodBase ResolveMethod(string typeName, string methodName, string modId, IModHostLog log)
+    private static MethodBase ResolveMethod(string typeName, string methodName, int? parameterCount, string modId, IModHostLog log)
     {
         var type = AccessTools.TypeByName(typeName);
         if (type == null)
         {
             log.Warn($"[{modId}] patch target type '{typeName}' not found.");
             return null;
+        }
+
+        // Overloaded target: the caller disambiguates by parameter count.
+        if (parameterCount is { } count)
+        {
+            var byArity = SelectMethodByArity(type.GetMethods(MethodFlags), methodName, count);
+            if (byArity == null)
+                log.Warn($"[{modId}] patch target '{typeName}.{methodName}' has no unique {count}-parameter overload.");
+            return byArity;
         }
 
         try
@@ -213,9 +222,30 @@ internal static class ModPatchCoordinator
         }
         catch (AmbiguousMatchException)
         {
-            log.Warn($"[{modId}] patch target '{typeName}.{methodName}' is overloaded; cannot resolve a single method.");
+            log.Warn($"[{modId}] patch target '{typeName}.{methodName}' is overloaded; pass a parameterCount to disambiguate.");
             return null;
         }
+    }
+
+    // The single method named <paramref name="methodName"/> taking exactly
+    // <paramref name="parameterCount"/> parameters, or null when none or more than
+    // one match (an overload set with two same-arity members cannot be resolved by
+    // count alone). Internal + static so the loader tests can exercise the selection
+    // against a plain test type, without game types.
+    internal static MethodInfo SelectMethodByArity(MethodInfo[] methods, string methodName, int parameterCount)
+    {
+        MethodInfo match = null;
+        foreach (var method in methods)
+        {
+            if (!string.Equals(method.Name, methodName, StringComparison.Ordinal))
+                continue;
+            if (method.GetParameters().Length != parameterCount)
+                continue;
+            if (match != null)
+                return null;
+            match = method;
+        }
+        return match;
     }
 }
 
@@ -238,6 +268,12 @@ internal sealed class ModPatchService : IModPatches
     public void Postfix(string typeName, string methodName, Action<PatchInfo> handler)
         => ModPatchCoordinator.Register(_modId, ModPatchRegistry.Kind.Postfix, typeName, methodName, handler, _log);
 
+    public void Prefix(string typeName, string methodName, int parameterCount, Action<PatchInfo> handler)
+        => ModPatchCoordinator.Register(_modId, ModPatchRegistry.Kind.Prefix, typeName, methodName, handler, _log, parameterCount);
+
+    public void Postfix(string typeName, string methodName, int parameterCount, Action<PatchInfo> handler)
+        => ModPatchCoordinator.Register(_modId, ModPatchRegistry.Kind.Postfix, typeName, methodName, handler, _log, parameterCount);
+
     public void RemoveAll() => ModPatchCoordinator.RemoveMod(_modId);
 }
 
@@ -249,4 +285,8 @@ internal sealed class NullModPatches : IModPatches
     public void Prefix(string typeName, string methodName, Action<PatchInfo> handler) { }
 
     public void Postfix(string typeName, string methodName, Action<PatchInfo> handler) { }
+
+    public void Prefix(string typeName, string methodName, int parameterCount, Action<PatchInfo> handler) { }
+
+    public void Postfix(string typeName, string methodName, int parameterCount, Action<PatchInfo> handler) { }
 }

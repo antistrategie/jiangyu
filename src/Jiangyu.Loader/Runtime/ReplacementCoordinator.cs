@@ -145,6 +145,14 @@ internal class ReplacementCoordinator
         var clonesApplied = _templateCloneApplier.TryApply(new LoaderLog(log));
         var patchesApplied = _templatePatchApplier.TryApply(log);
 
+        // A clone whose source is itself a mod clone was instantiated from the
+        // source's PRE-PATCH base (the clone pass runs before any patch), so it
+        // inherited none of the source's own appends/sets. Now that patches have
+        // landed, rebuild it from the fully patched source and replay its own
+        // ops on top.
+        if (clonesApplied > 0 || patchesApplied > 0)
+            _templateCloneApplier.ReinheritChainedClones(_templatePatchApplier, new LoaderLog(log));
+
         // Type-specific post-patch registration. SoundBank clones need to
         // be registered with Stem's runtime SoundManager only after the
         // bankId patch lands, otherwise Stem indexes them under the source
