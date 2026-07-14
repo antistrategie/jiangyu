@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-06-25T14:01:12.9347911+00:00",
-  "gameAssemblyHash": "c149eacf55753892a9ead99ec7398e1611c6e64f25c5a570ee44257b3a35bfe9",
+  "generatedAt": "2026-07-14T13:09:13.6319318+00:00",
+  "gameAssemblyHash": "659f93daf1551a68de0577a5794ce95c6b5afcea35d4a67db57f076f15b458b4",
   "types": [
     {
       "typeName": "Menace.Tactical.EntityLootEntry",
@@ -628,7 +628,7 @@
     {
       "typeName": "EntityTemplate",
       "category": "template",
-      "fieldCount": 110,
+      "fieldCount": 111,
       "sampleNames": [
         "enemy.pirate_scavengers",
         "player_squad.darby"
@@ -1163,6 +1163,11 @@
           "fieldTypeName": "Single"
         },
         {
+          "name": "CanAlliesPassThrough",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
           "name": "InventoryType",
           "kind": "reference",
           "fieldTypeName": "Menace.Items.InventoryType"
@@ -1233,7 +1238,7 @@
     {
       "typeName": "SkillTemplate",
       "category": "template",
-      "fieldCount": 124,
+      "fieldCount": 125,
       "sampleNames": [
         "active.change_plates",
         "passive.ammo_armor_piercing"
@@ -1345,6 +1350,11 @@
           "name": "AimingType",
           "kind": "enum",
           "fieldTypeName": "Menace.Tactical.AimingType"
+        },
+        {
+          "name": "UsePistolAnimation",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
         },
         {
           "name": "IsOverrideAimSlot",

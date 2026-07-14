@@ -78,8 +78,8 @@ internal sealed class TacticalHookPublisher : HookPublisherBase
         Hook<TacticalManager.OnAfterSkillUseEvent>(tm.add_OnAfterSkillUse, (Action<Skill>)OnSkillCompleted, "OnAfterSkillUse");
         Hook<TacticalManager.OnSkillAddedEvent>(tm.add_OnSkillAdded, (Action<Actor, Skill, Actor, bool>)OnSkillAdded, "OnSkillAdded");
 
-        Hook<TacticalManager.OnOffmapAbilityUsedEvent>(tm.add_OnOffmapAbilityUsed, (Action<OffmapAbilityTemplate, Tile>)OnOffmapAbilityUsed, "OnOffmapAbilityUsed");
-        Hook<TacticalManager.OnOffmapAbilityCanceledEvent>(tm.add_OnOffmapAbilityCanceled, (Action<OffmapAbilityTemplate>)OnOffmapAbilityCanceled, "OnOffmapAbilityCanceled");
+        Hook<TacticalManager.OnOffmapAbilityUsedEvent>(tm.add_OnOffmapAbilityUsed, (Action<OffmapAbilityInstance, Tile>)OnOffmapAbilityUsed, "OnOffmapAbilityUsed");
+        Hook<TacticalManager.OnOffmapAbilityCanceledEvent>(tm.add_OnOffmapAbilityCanceled, (Action<OffmapAbilityInstance>)OnOffmapAbilityCanceled, "OnOffmapAbilityCanceled");
 
         _attachedTo = tm.Pointer;
         Log.Info($"hooks: attached to TacticalManager ({HookedEventCount} events)");
@@ -152,8 +152,8 @@ internal sealed class TacticalHookPublisher : HookPublisherBase
     private void OnSkillAdded(Actor receiver, Skill skill, Actor source, bool success)
         => Publish(new SkillAddedContext { Receiver = receiver, Skill = skill, Source = source, Success = success });
 
-    private void OnOffmapAbilityUsed(OffmapAbilityTemplate ability, Tile tile)
-        => Publish(new OffmapAbilityUsedContext { Ability = ability, Tile = tile });
-    private void OnOffmapAbilityCanceled(OffmapAbilityTemplate ability)
-        => Publish(new OffmapAbilityCanceledContext { Ability = ability });
+    private void OnOffmapAbilityUsed(OffmapAbilityInstance ability, Tile tile)
+        => Publish(new OffmapAbilityUsedContext { Ability = ability?.Template, Tile = tile });
+    private void OnOffmapAbilityCanceled(OffmapAbilityInstance ability)
+        => Publish(new OffmapAbilityCanceledContext { Ability = ability?.Template });
 }

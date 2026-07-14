@@ -81,7 +81,7 @@ public sealed class Tooltip
         FlushStats();
         // _translate: true registers the text into the tooltip's loca store so it renders. The store
         // falls back to the given string, so already-localised text shows as authored.
-        try { _data.AddHeading(text, null, NoIconSize, true); }
+        try { _data.AddHeading(text, null, NoIconSize, NoColor, true); }
         catch (Exception ex) { Log.Warn($"Tooltip.Heading failed: {ex.Message}"); }
         return this;
     }
@@ -90,7 +90,7 @@ public sealed class Tooltip
     public Tooltip Subheading(string text)
     {
         FlushStats();
-        try { _data.AddSubheading(text, null, NoIconSize, true); }
+        try { _data.AddSubheading(text, null, NoIconSize, NoColor, true); }
         catch (Exception ex) { Log.Warn($"Tooltip.Subheading failed: {ex.Message}"); }
         return this;
     }
@@ -99,7 +99,7 @@ public sealed class Tooltip
     public Tooltip Paragraph(string text, Style style = Style.Default)
     {
         FlushStats();
-        try { _data.AddParagraph(text, Map(style), null, NoIconSize, true, false); }
+        try { _data.AddParagraph(text, Map(style), null, NoIconSize, NoColor, true, false); }
         catch (Exception ex) { Log.Warn($"Tooltip.Paragraph failed: {ex.Message}"); }
         return this;
     }
@@ -126,7 +126,7 @@ public sealed class Tooltip
     public Tooltip SectionHeading(string text)
     {
         FlushStats();
-        try { _data.AddSectionHeading(text, null, NoIconSize, true); }
+        try { _data.AddSectionHeading(text, null, NoIconSize, NoColor, true); }
         catch (Exception ex) { Log.Warn($"Tooltip.SectionHeading failed: {ex.Message}"); }
         return this;
     }

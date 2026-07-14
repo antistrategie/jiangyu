@@ -16,7 +16,7 @@ public static partial class Ship
     public static int FilledSlotCount(global::Il2CppMenace.Strategy.ShipUpgradeType p0) => global::Il2CppMenace.States.StrategyState.Get().ShipUpgrades.GetFilledSlotCount(p0);
 
     /// <summary>The slot-type template for the given ship slot index.</summary>
-    public static global::Il2CppMenace.Strategy.ShipUpgradeSlotTemplate SlotType(int p0) => global::Il2CppMenace.States.StrategyState.Get().ShipUpgrades.GetSlotType(p0);
+    public static global::Il2CppMenace.Strategy.ShipUpgradeSlotTemplate SlotType(int p0) => global::Il2CppMenace.States.StrategyState.Get().ShipUpgrades.GetSlotTemplateByIdx(p0);
 
     /// <summary>The OCI components spent on ship-upgrade slots of the given type.</summary>
     public static int SpentComponents(global::Il2CppMenace.Strategy.ShipUpgradeType p0) => global::Il2CppMenace.States.StrategyState.Get().ShipUpgrades.GetSpentOciComponentsBySlotType(p0);

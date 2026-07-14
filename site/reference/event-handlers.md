@@ -111,7 +111,7 @@ The factory the template data holds. `Create()` returns a fresh handler with the
 
 ## Built-in handlers
 
-The 153 handlers the game ships. Name one in `type="<Name>"` to add it, and set the fields listed; every field you do not set takes its type default. A field marked **C# only** is Odin-routed (an `ITacticalCondition` or `IValueProvider`) and cannot be set from KDL, so reach for the [C# path](#lifecycle-methods) when you need it. Enum fields list their allowed values.
+The 155 handlers the game ships. Name one in `type="<Name>"` to add it, and set the fields listed; every field you do not set takes its type default. A field marked **C# only** is Odin-routed (an `ITacticalCondition` or `IValueProvider`) and cannot be set from KDL, so reach for the [C# path](#lifecycle-methods) when you need it. Enum fields list their allowed values.
 
 ```kdl
 append "EventHandlers" type="AddSkill" {
@@ -225,7 +225,7 @@ append "EventHandlers" type="AddSkill" {
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `AttachmentSlot` | `VisualAlterationSlot` | `Animation`, `Back`, `Back_Special`, `EntireModel`, `Hand_L`, `Hand_L_Special`, `Hand_R`, `Hand_R_Special`, `Last`, `Mount01`, `Mount02`, `Mount03`, `None`, `Torso`, `Turret` |
+| `AttachmentSlot` | `VisualAlterationSlot` | `Animation`, `Back`, `Back_Special`, `EntireModel`, `Hand_L`, `Hand_L_Special`, `Hand_R`, `Hand_R_Special`, `Last`, `Mount01`, `Mount02`, `Mount03`, `None`, `Pistol_Holster`, `Torso`, `Turret` |
 | `CancelDelay` | `float` |  |
 | `LocalOffset` | `Vector3` |  |
 | `LocalRotation` | `Vector3` |  |
@@ -267,7 +267,7 @@ append "EventHandlers" type="AddSkill" {
 | `DismemberChance` | `int` |  |
 | `ElementsHit` | `int` |  |
 | `ElementsHitPercentage` | `float` |  |
-| `EntityFlagsRequired` | `EntityFlags` | `CantEnterContainers`, `DesignatedTarget`, `HeavyWeaponsAllowed`, `IgnoreArmorMovementCosts`, `IgnoreDeploymentRequirements`, `IgnoreSuppressedAPLoss`, `ImmuneDesignatedTarget`, `ImmuneToDamage`, `ImmuneToIndirectSuppression`, `ImmuneToLightEffect`, `ImmuneToMorale`, `ImmuneToSuppression`, `ImmuneToSuppressionFromElementLost`, `IrrelevantToMorale`, `None`, `Rooted`, `RootedByStance`, `Stunned` |
+| `EntityFlagsRequired` | `EntityFlags` | `CantEnterContainers`, `Confused`, `DesignatedTarget`, `HeavyWeaponsAllowed`, `IgnoreArmorMovementCosts`, `IgnoreDeploymentRequirements`, `IgnoreSuppressedAPLoss`, `ImmuneDesignatedTarget`, `ImmuneToDamage`, `ImmuneToIndirectSuppression`, `ImmuneToLightEffect`, `ImmuneToMorale`, `ImmuneToSuppression`, `ImmuneToSuppressionFromElementLost`, `IrrelevantToMorale`, `None`, `Rooted`, `RootedByStance`, `Stunned` |
 | `FatalityType` | `FatalityType` | `Burning`, `Default`, `Explosion`, `Laser`, `Plasma` |
 | `IsHalfCoverDestroyedOnAOECenterTileOnly` | `bool` |  |
 | `Suppression` | `float` |  |
@@ -439,9 +439,11 @@ append "EventHandlers" type="AddSkill" {
 | Field | Type | Values / notes |
 | --- | --- | --- |
 | `Condition` | `ITacticalCondition` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `DefaultText` | `string` |  |
 | `Event` | `EventType` | `OnBeforeAnySkillUsed`, `OnUpdate` |
 | `HideIfNotActive` | `bool` |  |
 | `Properties` | `PropertyChange[]` |  |
+| `ShowInTooltipWhenActive` | `bool` |  |
 
 ### ChangePropertyConsecutive
 
@@ -529,6 +531,7 @@ append "EventHandlers" type="AddSkill" {
 | --- | --- | --- |
 | `EffectToApply` | `SkillTemplate` |  |
 | `HideIfNotUsable` | `bool` |  |
+| `TriggerAttack` | `bool` |  |
 
 ### ClearTileEffect
 
@@ -685,7 +688,7 @@ No settable fields. It carries behaviour only.
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `Flag` | `EntityFlags` | `CantEnterContainers`, `DesignatedTarget`, `HeavyWeaponsAllowed`, `IgnoreArmorMovementCosts`, `IgnoreDeploymentRequirements`, `IgnoreSuppressedAPLoss`, `ImmuneDesignatedTarget`, `ImmuneToDamage`, `ImmuneToIndirectSuppression`, `ImmuneToLightEffect`, `ImmuneToMorale`, `ImmuneToSuppression`, `ImmuneToSuppressionFromElementLost`, `IrrelevantToMorale`, `None`, `Rooted`, `RootedByStance`, `Stunned` |
+| `Flag` | `EntityFlags` | `CantEnterContainers`, `Confused`, `DesignatedTarget`, `HeavyWeaponsAllowed`, `IgnoreArmorMovementCosts`, `IgnoreDeploymentRequirements`, `IgnoreSuppressedAPLoss`, `ImmuneDesignatedTarget`, `ImmuneToDamage`, `ImmuneToIndirectSuppression`, `ImmuneToLightEffect`, `ImmuneToMorale`, `ImmuneToSuppression`, `ImmuneToSuppressionFromElementLost`, `IrrelevantToMorale`, `None`, `Rooted`, `RootedByStance`, `Stunned` |
 
 ### DisableItem
 
@@ -1055,6 +1058,13 @@ No settable fields. It carries behaviour only.
 | `Event` | `RemoveTrigger` | `OnAdded`, `OnApply`, `OnRemoved`, `OnUse` |
 | `SkillsToRemove` | `SkillTemplate[]` |  |
 
+### RepeatInAoE
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `MaxTargets` | `int` |  |
+| `TargetCondition` | `ITacticalCondition` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+
 ### ReportAmmoToAnimator
 
 | Field | Type | Values / notes |
@@ -1106,7 +1116,7 @@ No settable fields. It carries behaviour only.
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `Flag` | `EntityFlags` | `CantEnterContainers`, `DesignatedTarget`, `HeavyWeaponsAllowed`, `IgnoreArmorMovementCosts`, `IgnoreDeploymentRequirements`, `IgnoreSuppressedAPLoss`, `ImmuneDesignatedTarget`, `ImmuneToDamage`, `ImmuneToIndirectSuppression`, `ImmuneToLightEffect`, `ImmuneToMorale`, `ImmuneToSuppression`, `ImmuneToSuppressionFromElementLost`, `IrrelevantToMorale`, `None`, `Rooted`, `RootedByStance`, `Stunned` |
+| `Flag` | `EntityFlags` | `CantEnterContainers`, `Confused`, `DesignatedTarget`, `HeavyWeaponsAllowed`, `IgnoreArmorMovementCosts`, `IgnoreDeploymentRequirements`, `IgnoreSuppressedAPLoss`, `ImmuneDesignatedTarget`, `ImmuneToDamage`, `ImmuneToIndirectSuppression`, `ImmuneToLightEffect`, `ImmuneToMorale`, `ImmuneToSuppression`, `ImmuneToSuppressionFromElementLost`, `IrrelevantToMorale`, `None`, `Rooted`, `RootedByStance`, `Stunned` |
 
 ### SetUsesPerElement
 
@@ -1244,6 +1254,10 @@ No settable fields. It carries behaviour only.
 | --- | --- | --- |
 | `ActiveSkills` | `SkillTemplate[]` |  |
 
+### TrackAdjacentKills
+
+No settable fields. It carries behaviour only.
+
 ### TriggerSkillOnHpLost
 
 | Field | Type | Values / notes |
@@ -1335,11 +1349,16 @@ A value provider computes a number for a handler field typed `IValueProvider` (f
 
 - `AdjacentInfantryProvider`
 - `AttackedThisRoundValueProvider`
+- `CoverValueProvider`
 - `DistanceValueProvider`
 - `EnemiesKilledProvider`
+- `EnemyVehiclesDestroyedByPlayerProvider`
+- `EntityPropertyProvider`
 - `MissingHealthProvider`
 - `ProximityValueProvider`
 - `RoundValueProvider`
 - `SquadSizeProvider`
+- `SumProvider`
+- `SuppressedCountProvider`
 - `TilesMovedProvider`
 - `WrecksDestroyedProvider`

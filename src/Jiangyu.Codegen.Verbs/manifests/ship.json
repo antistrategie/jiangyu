@@ -29,7 +29,7 @@
       "group": "Strategy.Ship",
       "name": "SlotType",
       "onType": "Il2CppMenace.Strategy.ShipUpgrades",
-      "method": "GetSlotType",
+      "method": "GetSlotTemplateByIdx",
       "receiver": "global::Il2CppMenace.States.StrategyState.Get().ShipUpgrades",
       "summary": "The slot-type template for the given ship slot index."
     },
