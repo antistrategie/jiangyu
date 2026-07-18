@@ -151,7 +151,19 @@ The runtime reads the live element's concrete type and edits it, leaving every o
 
 Descent blocks may nest: each inner `set "<field>" index=N { ... }` works the same way, descending one level further.
 
-Value-type (struct) elements are the one exception: a `List<SomeStruct>` element can't be edited in place, so `set "<field>" index=N { ... }` into a struct element is rejected. Replace the whole element with `remove` + `insert` instead.
+Value-type (struct) elements edit in place the same way, as long as the struct is blittable (its fields are value types all the way down):
+
+```kdl
+patch "ShipUpgradeTemplate" "oci.faction_zayn_beecher_garage_improved_dropship_engines" {
+    set "Effects" index=0 {
+        set "DelayMods" index=0 {
+            set "MinDelay" 0
+        }
+    }
+}
+```
+
+The runtime reads the element (a struct copies on read), applies the inner ops, and writes the mutated copy back through the collection. A struct that carries a reference or string member is the exception: it can't round-trip reliably into the game's value-type array, so `set "<field>" index=N { ... }` into it is rejected. Replace the whole element with `remove` + `insert`, or edit it from C#.
 
 ## Construction
 

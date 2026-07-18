@@ -236,6 +236,26 @@ Use this flow when the game updates and the committed baseline may no longer ref
 
 Pass `--json` to `audit` when you want the raw machine-readable diff (for scripting or CI) instead of the human-readable report.
 
+The structural baseline is one of several surfaces a game update can move. The full re-audit also covers:
+
+5. Build the solution against the regenerated proxy assemblies. Compile errors in `Jiangyu.Sdk.Menace` and `Jiangyu.Loader` are the contract check for bespoke game calls. Optional parameters typed `Il2CppSystem.Nullable<T>` need a boxed empty nullable, never a bare `null` (it throws in marshalling at runtime and the compiler cannot catch it).
+
+6. Run the codegen generators. Each fails when a bound target no longer resolves and prints the surface drift report. Add `--update-surface` to rewrite the committed baselines once the drift is understood:
+
+   ```bash
+   dotnet run --project src/Jiangyu.Codegen.Verbs -c Release -- src/Jiangyu.Codegen.Verbs/manifests src/Jiangyu.Sdk.Menace/Generated --update-surface
+   dotnet run --project src/Jiangyu.Codegen.Hooks -c Release -- src/Jiangyu.Codegen.Hooks/manifests src/Jiangyu.Sdk/Generated/HookCatalog.g.cs --update-surface
+   dotnet run --project src/Jiangyu.Codegen.Handlers -c Release -- site/reference
+   ```
+
+   The hook check resolves event accessors by name only. A changed delegate parameter type passes generation and fails at runtime attach with `mismatched native type pointers`, so exercise a mission after deploying.
+
+7. Re-strip `menace-ci-dependencies` from the updated install and push it, or CI's loader guard build fails on the old signatures:
+
+   ```bash
+   cd ../../beanpuppy/menace-ci-dependencies && ./update.sh
+   ```
+
 ## Current examples
 
 Reference examples already in the repo:

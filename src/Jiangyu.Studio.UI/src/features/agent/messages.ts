@@ -57,12 +57,7 @@ export interface PermissionMessage extends MessageBase {
 }
 
 export type ChatMessage =
-  | UserMessage
-  | AgentMessage
-  | ThoughtMessage
-  | ToolMessage
-  | PlanMessage
-  | PermissionMessage;
+  UserMessage | AgentMessage | ThoughtMessage | ToolMessage | PlanMessage | PermissionMessage;
 
 let messageIdCounter = 0;
 export function nextMessageId(): string {

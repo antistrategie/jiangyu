@@ -116,3 +116,8 @@ dotnet_diagnostic.IDE0060.severity = silent
 # TemplatePatchApplier: mutation binders keep unused params for signature symmetry
 [src/Jiangyu.Loader/Templates/TemplatePatchApplier.cs]
 dotnet_diagnostic.IDE0060.severity = silent
+
+# Template fixtures mirror Unity's serialised member names (m_ID, m_Ser*):
+# tagged-string detection and template identity resolve those members by name
+[tests/Jiangyu.Core.Tests/Templates/TemplateCatalogFixtures.cs]
+dotnet_diagnostic.IDE1006.severity = silent

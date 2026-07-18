@@ -767,4 +767,48 @@ public class TemplateTypeCatalogTests
             Assert.True(TemplateTypeCatalog.IsSameFilePath(a, b));
         }
     }
+
+    [Fact]
+    public void IsInPlaceEditableStruct_TrueForAllValueTypeStruct()
+    {
+        using var catalog = Load();
+        var type = catalog.ResolveType("FixtureVec3", out _, out _);
+        Assert.NotNull(type);
+        Assert.True(TemplateTypeCatalog.IsInPlaceEditableStruct(type!));
+    }
+
+    [Fact]
+    public void IsInPlaceEditableStruct_TrueForNestedValueTypeStruct()
+    {
+        // FixtureNestedBlittable's members are a float and another blittable
+        // struct (FixtureVec3): value types all the way down.
+        using var catalog = Load();
+        var type = catalog.ResolveType("FixtureNestedBlittable", out _, out _);
+        Assert.NotNull(type);
+        Assert.True(TemplateTypeCatalog.IsInPlaceEditableStruct(type!));
+    }
+
+    [Fact]
+    public void IsInPlaceEditableStruct_FalseForStructWithStringMember()
+    {
+        // FixtureLabelledVec carries a string member; a struct with any
+        // reference member is not blittable and can't round-trip into an
+        // Il2Cpp value-type array.
+        using var catalog = Load();
+        var type = catalog.ResolveType("FixtureLabelledVec", out _, out _);
+        Assert.NotNull(type);
+        Assert.False(TemplateTypeCatalog.IsInPlaceEditableStruct(type!));
+    }
+
+    [Fact]
+    public void IsInPlaceEditableStruct_FalseForReferenceType()
+    {
+        // A class is never an in-place-editable struct. FixtureRefHolder is an
+        // unambiguous short name (FixtureSkillTemplate collides across fixture
+        // namespaces and won't resolve here).
+        using var catalog = Load();
+        var type = catalog.ResolveType("FixtureRefHolder", out _, out _);
+        Assert.NotNull(type);
+        Assert.False(TemplateTypeCatalog.IsInPlaceEditableStruct(type!));
+    }
 }

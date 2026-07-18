@@ -1437,13 +1437,12 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
-    public void ElementEditDescent_IntoStructElement_Errors()
+    public void ElementEditDescent_IntoBlittableStructElement_Validates()
     {
-        // set "Points" index=0 { set "X" 5 } edits a value-type (struct)
-        // element in place. The runtime has no write-back path for in-collection
-        // structs, so the validator rejects it rather than letting the offline
-        // preview (which would apply it) diverge from the live applier (which
-        // rejects it).
+        // set "Points" index=0 { set "X" 5 } edits a blittable value-type
+        // (struct) element in place. FixtureVec3 is value types all the way
+        // down, so the applier can read the element copy, mutate it, and write
+        // it back through the collection indexer. The validator admits it.
         using var catalog = Load();
         var log = new RecordingLog();
         var patches = new[]
@@ -1467,8 +1466,74 @@ public class TemplateCatalogValidatorTests
 
         var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
 
+        Assert.Equal(0, errors);
+    }
+
+    [Fact]
+    public void ElementEditDescent_IntoNestedBlittableStructElement_Validates()
+    {
+        // A blittable struct whose members include another blittable struct is
+        // still editable in place: set "Nested" index=0 { set "Scale" 2.0 }.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureStructListHolder",
+                TemplateId = "x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "Scale",
+                        Descent = [new TemplateDescentStep { Field = "Nested", Index = 0 }],
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Single, Single = 2.0f },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+    }
+
+    [Fact]
+    public void ElementEditDescent_IntoNonBlittableStructElement_Errors()
+    {
+        // FixtureLabelledVec carries a string (reference) member, so it can't
+        // round-trip into an Il2Cpp value-type array. set "Labelled" index=0
+        // { set "X" 5 } is rejected: the offline preview would apply it but the
+        // live applier can't persist it reliably, so the validator refuses
+        // rather than letting the two diverge.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureStructListHolder",
+                TemplateId = "x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "X",
+                        Descent = [new TemplateDescentStep { Field = "Labelled", Index = 0 }],
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 5 },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
         Assert.Equal(1, errors);
         Assert.Contains(log.Errors, e => e.Contains("value-type", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(log.Errors, e => e.Contains("reference or string", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

@@ -400,6 +400,52 @@ public sealed class TemplateTypeCatalog : IDisposable
     }
 
     /// <summary>
+    /// True when <paramref name="type"/> is a value-type struct whose entire
+    /// field graph is value types (no reference or string member at any
+    /// depth). Such a struct is blittable, so the runtime applier can edit one
+    /// of its fields in place inside a collection: read the element copy,
+    /// mutate it, and write it back through the collection indexer
+    /// (<c>collection[i] = mutatedCopy</c>). A struct carrying a reference or
+    /// string member is excluded: marshalling it back into an Il2Cpp
+    /// value-type array is not reliable, so those stay on the C# path and the
+    /// validator keeps rejecting an indexed edit-descent into them. Member
+    /// inspection covers properties as well as fields, so a struct whose only
+    /// reference-typed surface is a computed property (no backing field) is
+    /// excluded too; that over-rejection is deliberate and conservative.
+    /// </summary>
+    public static bool IsInPlaceEditableStruct(Type type)
+        => IsInPlaceEditableStruct(type, []);
+
+    private static bool IsInPlaceEditableStruct(Type type, HashSet<Type> visited)
+    {
+        if (type == null || !type.IsValueType)
+            return false;
+        if (type.IsPrimitive || type.IsEnum)
+            return true;
+
+        // A value type can't contain itself by value, so the graph is finite;
+        // the visited set only guards against a pathological metadata cycle.
+        if (!visited.Add(type))
+            return true;
+
+        foreach (var member in GetMembers(type, includeReadOnly: true))
+        {
+            if (member.MemberType.IsValueType)
+            {
+                if (!IsInPlaceEditableStruct(member.MemberType, visited))
+                    return false;
+            }
+            else
+            {
+                // Reference type or string member: not blittable.
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// True when the assembly contains at least one strict descendant of
     /// <paramref name="baseType"/> that is itself a reference target. Used to
     /// detect polymorphic destinations (e.g. <c>BaseItemTemplate</c> with

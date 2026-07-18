@@ -459,9 +459,7 @@ export function reorderDirectives<T extends StampedDirective>(
  *   directly after the directive currently at index N.
  */
 export type PendingAnchor =
-  | { kind: "end" }
-  | { kind: "start" }
-  | { kind: "afterIndex"; flatIndex: number };
+  { kind: "end" } | { kind: "start" } | { kind: "afterIndex"; flatIndex: number };
 
 export function insertAtPendingAnchor<T>(
   directives: T[],

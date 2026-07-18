@@ -108,26 +108,45 @@ internal sealed partial class TemplatePatchApplier
                 return OperationResult.MemberMissing;
             }
 
-            // In-collection struct mutation isn't supported on this slice:
-            // there's no general write-back path for value-type elements
-            // held inside an Il2Cpp collection. Reject early so modders see
-            // the diagnostic.
+            // In-place struct-element edit. Indexing a value-type collection
+            // hands back a *copy* of the element (structs copy on read), so
+            // mutating it wouldn't reach the collection on its own. Record an
+            // element chain entry carrying the collection and index: after the
+            // inner ops mutate this boxed copy, the write-back loop stores it
+            // back through the collection indexer (collection[index] = copy).
+            // The compile-time validator only admits this descent for blittable
+            // structs (no reference/string members); a non-indexable or
+            // multi-dim shape fails cleanly at write-back via TryBindArrayElement
+            // rather than corrupting state.
+            // JIANGYU-CONTRACT: storing the mutated copy back through the
+            // collection indexer (Il2CppStructArray<T>.Item set, List<T>
+            // indexer) round-trips a blittable struct reliably on this
+            // Il2CppInterop stack. Scope: blittable value-type elements
+            // admitted by the validator. Validated by the live-game edit of
+            // OffmapAbilityDelayMod (ShipUpgradeTemplate DelayMods); the
+            // pure-reflection binder is covered by managed List<T>/T[]
+            // fixtures in Jiangyu.Loader.Tests.
             if (elementType.IsValueType)
             {
-                _log.Warning(FormatPrefix(_templateTypeName, _templateId, _op)
-                    + $"element {index} of '{fieldName}' is a value-type "
-                    + $"({elementType.FullName}); in-collection struct mutation is not supported on this slice.");
-                error = $"element {index} of '{fieldName}' is a value-type.";
-                return OperationResult.MemberMissing;
+                _chain.Add(new ChainEntry
+                {
+                    Parent = value,
+                    ElementIndex = index,
+                    ValueIsStruct = true,
+                });
+                descended = element;
+                _latestCurrent = element;
+                error = null;
+                return OperationResult.Applied;
             }
 
-            // Edit-in-place descent: indexing a List<AbstractBase> hands back a
-            // base-typed wrapper exposing only base members, so detect the live
-            // element's actual concrete type and cast to it; the inner ops then
-            // reach the subclass fields. If the concrete type can't be resolved
-            // the base-typed wrapper stays: ops touching only base members still
-            // apply, and subclass-member ops surface a clear "no writable"
-            // diagnostic.
+            // Reference-type element: edit the live object in place. Indexing a
+            // List<AbstractBase> hands back a base-typed wrapper exposing only
+            // base members, so detect the live element's actual concrete type
+            // and cast to it; the inner ops then reach the subclass fields. If
+            // the concrete type can't be resolved the base-typed wrapper stays:
+            // ops touching only base members still apply, and subclass-member
+            // ops surface a clear "no writable" diagnostic.
             if (TryCastToLiveConcreteType(element, value.GetType(), out var concrete, out _))
             {
                 element = concrete;
@@ -336,36 +355,67 @@ internal sealed partial class TemplatePatchApplier
             // direct parent of the terminal write (post-mutation); each
             // iteration writes a struct level back into its own parent and
             // walks one step up. current advances to entry.Parent on every
-            // level — struct or reference — so a reference level (whose
+            // level, struct or reference, so a reference level (whose
             // in-place mutation already persisted) still hands the correct
             // value to the next-shallower struct level above it.
             var current = _latestCurrent;
             for (var i = _chain.Count - 1; i >= 0; i--)
             {
                 var entry = _chain[i];
-                if (entry.ValueIsStruct)
-                {
-                    if (!TryGetWritableMember(entry.Parent, entry.Name, out _, out var parentSetter, out _))
-                    {
-                        _log.Warning(FormatPrefix(_templateTypeName, _templateId, _op)
-                            + $"write-back after terminal set failed: parent segment '{entry.Name}' on "
-                            + $"{entry.Parent.GetType().FullName} has no writable surface, so the struct mutation may not persist.");
-                        return;
-                    }
-
-                    try
-                    {
-                        parentSetter(current);
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.Warning(FormatPrefix(_templateTypeName, _templateId, _op)
-                            + $"write-back after terminal set threw at segment '{entry.Name}': {ex.Message}");
-                        return;
-                    }
-                }
+                if (entry.ValueIsStruct && !TryWriteBackStructLevel(entry, current))
+                    return;
 
                 current = entry.Parent;
+            }
+        }
+
+        // Writes one mutated struct level back into its parent: through the
+        // collection indexer for a value-type element (Parent[ElementIndex]
+        // = current), through the named-member setter otherwise. A resolve
+        // or write failure warns and stops the chain walk; the terminal set
+        // itself already succeeded, so this stays a warning, not an error.
+        private bool TryWriteBackStructLevel(ChainEntry entry, object current)
+        {
+            Action<object> setter;
+            string target;
+            if (entry.ElementIndex.HasValue)
+            {
+                if (!TryBindArrayElement(
+                        entry.Parent, entry.ElementIndex.Value,
+                        out _, out setter, out _, out var bindError))
+                {
+                    _log.Warning(FormatPrefix(_templateTypeName, _templateId, _op)
+                        + $"write-back after terminal set failed: element {entry.ElementIndex.Value} of "
+                        + $"{entry.Parent.GetType().FullName} has no writable indexer ({bindError}); "
+                        + "the struct mutation may not persist.");
+                    return false;
+                }
+
+                target = $"element {entry.ElementIndex.Value} of {entry.Parent.GetType().FullName}";
+            }
+            else
+            {
+                if (!TryGetWritableMember(entry.Parent, entry.Name, out _, out setter, out _))
+                {
+                    _log.Warning(FormatPrefix(_templateTypeName, _templateId, _op)
+                        + $"write-back after terminal set failed: parent segment '{entry.Name}' on "
+                        + $"{entry.Parent.GetType().FullName} has no writable surface, so the struct mutation may not persist.");
+                    return false;
+                }
+
+                target = $"segment '{entry.Name}'";
+            }
+
+            try
+            {
+                setter(current);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _log.Warning(FormatPrefix(_templateTypeName, _templateId, _op)
+                    + $"write-back after terminal set threw at {target}: {ex.Message}");
+                return false;
             }
         }
 

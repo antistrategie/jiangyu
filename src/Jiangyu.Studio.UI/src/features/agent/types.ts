@@ -110,11 +110,7 @@ export interface AgentPromptResult {
 }
 
 export type AgentStopReason =
-  | "end_turn"
-  | "max_tokens"
-  | "max_turn_requests"
-  | "refusal"
-  | "cancelled";
+  "end_turn" | "max_tokens" | "max_turn_requests" | "refusal" | "cancelled";
 
 // --- Session update notifications (pushed via "agentUpdate") ---
 //
@@ -216,10 +212,7 @@ export interface SessionInfoUpdate {
 // --- Content blocks (used in prompts and message chunks) ---
 
 export type ContentBlock =
-  | TextContentBlock
-  | ImageContentBlock
-  | AudioContentBlock
-  | ResourceLinkContentBlock;
+  TextContentBlock | ImageContentBlock | AudioContentBlock | ResourceLinkContentBlock;
 
 export interface TextContentBlock {
   readonly type: "text";

@@ -15,6 +15,14 @@ internal sealed partial class TemplatePatchApplier
         public object Parent { get; set; }
         public string Name { get; set; }
         public bool ValueIsStruct { get; set; }
+
+        // Set for a value-type element reached by collection descent
+        // (set "Field" index=N { ... }). Parent is then the collection
+        // itself (not the object holding it) and Name is unused: the
+        // write-back stores the mutated struct copy back through the
+        // collection indexer, Parent[ElementIndex] = current, instead of a
+        // named-member setter. Null for ordinary named-member entries.
+        public int? ElementIndex { get; set; }
     }
 
     private static bool TryReadMember(

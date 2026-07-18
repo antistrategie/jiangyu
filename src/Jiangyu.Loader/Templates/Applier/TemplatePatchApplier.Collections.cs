@@ -203,8 +203,11 @@ internal sealed partial class TemplatePatchApplier
     // resolved via CompiledTemplateValueKind.TemplateReference. The
     // setter/getter closures carry the collection + index so ApplyAndVerify
     // can do its read-write-readback loop without caring whether it's writing
-    // a member or an element.
-    private static bool TryBindArrayElement(
+    // a member or an element. The struct write-back chain (OnCompleted) uses
+    // the same binder to store a mutated value-type element copy back through
+    // the collection indexer. Internal so the pure-reflection write-back can
+    // be tested against managed List<T>/T[] fixtures without a live game.
+    internal static bool TryBindArrayElement(
         object collection, int index, out Type elementType, out Action<object> setter, out Func<object> getter, out string error)
     {
         elementType = null;

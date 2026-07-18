@@ -2,12 +2,7 @@ import { rpcCall } from "@shared/rpc";
 import type { AssetExportResult, AssetPreviewResult } from "@shared/rpc";
 
 export type AssetKind =
-  | "GameObject"
-  | "PrefabHierarchyObject"
-  | "Mesh"
-  | "Texture2D"
-  | "Sprite"
-  | "AudioClip";
+  "GameObject" | "PrefabHierarchyObject" | "Mesh" | "Texture2D" | "Sprite" | "AudioClip";
 
 interface AssetEntryBase {
   readonly name: string | null;

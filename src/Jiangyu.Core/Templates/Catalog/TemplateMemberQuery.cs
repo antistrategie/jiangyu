@@ -250,23 +250,29 @@ public static class TemplateMemberQuery
 
             if (elementType != null)
             {
-                // In-collection struct mutation has no runtime write-back path
-                // (value-type elements are copies), so an indexed edit descent
-                // into a struct element is rejected here rather than silently
-                // diverging between the offline preview and the live applier.
-                // A terminal indexer (type discovery, no further segment) is
-                // fine; only descent that then edits the element's fields bites.
+                // Indexed edit-descent into a value-type element is admitted
+                // only for a blittable struct (value types all the way down):
+                // the applier reads the element copy, mutates it, and writes it
+                // back through the collection indexer. A struct carrying a
+                // reference or string member can't round-trip reliably into an
+                // Il2Cpp value-type array, so it's rejected here rather than
+                // silently diverging between the offline preview and the live
+                // applier. A terminal indexer (type discovery, no further
+                // segment) is always fine; only descent that then edits the
+                // element's fields is gated.
                 if (hasIndexer
                     && i < fieldSegments.Length - 1
                     && elementType.IsValueType
-                    && !TemplateTypeCatalog.IsScalar(elementType))
+                    && !TemplateTypeCatalog.IsScalar(elementType)
+                    && !TemplateTypeCatalog.IsInPlaceEditableStruct(elementType))
                 {
                     var attempted = string.Join('.', resolvedPathParts);
                     return QueryResult.FromError(
                         $"cannot edit fields of the value-type element '{segment}' "
-                        + $"({catalog.FriendlyName(elementType)}) at '{attempted}': "
-                        + "in-collection struct mutation is not supported. "
-                        + "Replace the whole element with remove + insert instead.");
+                        + $"({catalog.FriendlyName(elementType)}) at '{attempted}': it carries "
+                        + "reference or string members, so in-collection struct mutation is "
+                        + "not reliable. Replace the whole element with remove + insert, or "
+                        + "edit it from C#.");
                 }
 
                 // Auto-unwrap collections regardless of bracket syntax. jq-like

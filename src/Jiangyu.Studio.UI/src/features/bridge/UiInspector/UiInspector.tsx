@@ -116,9 +116,10 @@ export function UiInspector() {
 
   const openMenu = useCallback(
     (x: number, y: number, node: UiNode) => {
-      const items = selectorsOf(node).map(
-        (s): ContextMenuEntry => ({ label: `Copy ${s}`, onSelect: () => copy(s) }),
-      );
+      const items = selectorsOf(node).map((s): ContextMenuEntry => ({
+        label: `Copy ${s}`,
+        onSelect: () => copy(s),
+      }));
       if (items.length > 0) setMenu({ x, y, items });
     },
     [copy],

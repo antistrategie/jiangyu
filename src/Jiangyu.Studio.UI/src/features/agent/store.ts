@@ -76,8 +76,7 @@ export interface AgentResumeResult {
 /// in `AgentPanel` consumes this and clears it, so a resume failure
 /// doesn't loop into a `create`.
 export type PendingSessionAction =
-  | { readonly kind: "create" }
-  | { readonly kind: "resume"; readonly sessionId: string };
+  { readonly kind: "create" } | { readonly kind: "resume"; readonly sessionId: string };
 
 interface AgentStore {
   // Connection

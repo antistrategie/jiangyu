@@ -113,19 +113,39 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
         public float Cooldown { get; set; }
     }
 
-    // Value-type (struct) collection element. In-collection struct mutation has
-    // no runtime write-back path, so an indexed edit descent into a FixtureVec3
-    // element must be rejected at validation rather than diverging between the
-    // offline preview and the live applier.
+    // Blittable value-type (struct) collection element: its whole field graph
+    // is value types, so an indexed edit descent (set "Points" index=0 { set
+    // "X" 5 }) is admitted. The applier reads the element copy, mutates it, and
+    // writes it back through the collection indexer.
     public struct FixtureVec3
     {
         public int X { get; set; }
         public int Y { get; set; }
     }
 
+    // Nested blittable struct: value types all the way down (FixtureVec3 is
+    // itself blittable), so it too is editable in place.
+    public struct FixtureNestedBlittable
+    {
+        public FixtureVec3 Origin { get; set; }
+        public float Scale { get; set; }
+    }
+
+    // Non-blittable value-type element: carries a string (reference) member, so
+    // it can't round-trip reliably into an Il2Cpp value-type array. An indexed
+    // edit descent into it stays rejected; the modder is pointed at remove +
+    // insert or the C# path.
+    public struct FixtureLabelledVec
+    {
+        public int X { get; set; }
+        public string? Label { get; set; }
+    }
+
     public class FixtureStructListHolder : Menace.Tools.DataTemplate
     {
         public List<FixtureVec3> Points { get; set; } = new();
+        public List<FixtureNestedBlittable> Nested { get; set; } = new();
+        public List<FixtureLabelledVec> Labelled { get; set; } = new();
     }
 
     // Template carrying Unity-asset-typed fields, used by the asset-reference
