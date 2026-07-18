@@ -404,6 +404,16 @@ internal sealed class BundleReplacementCatalog
                 if (mat == null || mat.shader == null) continue;
                 var name = mat.shader.name;
                 if (string.IsNullOrEmpty(name)) continue;
+                // A material whose serialized shader reference dangled at bake time (its
+                // stub's GUID no longer existed in the mod's Unity project) loads on the
+                // builtin error shader. Shader.Find would resolve that name and count it
+                // as a successful rebind while the material renders magenta in-game.
+                if (name == "Hidden/InternalErrorShader")
+                {
+                    log.Warning($"    Material '{mat.name}' has a broken shader reference (dangling stub GUID at bake time) and will render magenta in-game. Re-import the reference prefab and re-bake.");
+                    unresolved++;
+                    continue;
+                }
                 var runtimeShader = Shader.Find(name);
                 if (runtimeShader == null)
                 {
