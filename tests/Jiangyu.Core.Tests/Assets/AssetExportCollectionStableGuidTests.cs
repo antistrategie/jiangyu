@@ -60,4 +60,46 @@ public class AssetExportCollectionStableGuidTests
         Assert.NotEqual(arc, sniper);
         Assert.Equal(arc, arcAgain);
     }
+
+    // Name-keyed GUIDs exist so mod content committed to a repo survives game updates:
+    // a game update re-serialises the source files and reshuffles PathIDs, so any
+    // PathID-derived GUID changes on the next rip. The name-keyed hash ignores both
+    // the collection name and the PathID.
+    [Fact]
+    public void NameKeyedGuidIsIndependentOfBuildIdentity()
+    {
+        var oldBuild = AssetExportCollection<IUnityObjectBase>.ComputeNameStableGuid("arc", "Menace/lit_highlight", 48);
+        var newBuild = AssetExportCollection<IUnityObjectBase>.ComputeNameStableGuid("arc", "Menace/lit_highlight", 48);
+
+        Assert.Equal(oldBuild, newBuild);
+    }
+
+    [Fact]
+    public void NameKeyedGuidDiffersByNamespace()
+    {
+        var arc = AssetExportCollection<IUnityObjectBase>.ComputeNameStableGuid("arc", "Menace/lit_highlight", 48);
+        var sniper = AssetExportCollection<IUnityObjectBase>.ComputeNameStableGuid("sniper", "Menace/lit_highlight", 48);
+
+        Assert.NotEqual(arc, sniper);
+    }
+
+    [Fact]
+    public void NameKeyedGuidDiffersByName()
+    {
+        var highlight = AssetExportCollection<IUnityObjectBase>.ComputeNameStableGuid("arc", "Menace/lit_highlight", 48);
+        var character = AssetExportCollection<IUnityObjectBase>.ComputeNameStableGuid("arc", "Menace/character", 48);
+
+        Assert.NotEqual(highlight, character);
+    }
+
+    // The "name:" domain prefix keeps the two hash families apart even when a collection
+    // name happens to spell out the same bytes as a salted asset name.
+    [Fact]
+    public void NameKeyedGuidDoesNotCollideWithPathIdGuidForSameString()
+    {
+        var nameKeyed = AssetExportCollection<IUnityObjectBase>.ComputeNameStableGuid("arc", "resources.assets", 48);
+        var pathKeyed = AssetExportCollection<IUnityObjectBase>.ComputeStableGuid("arc/resources.assets", 0, 48);
+
+        Assert.NotEqual(nameKeyed, pathKeyed);
+    }
 }

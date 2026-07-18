@@ -92,14 +92,32 @@ public class AssetExportCollection<T> : ExportCollection where T : IUnityObjectB
 	/// Deterministic GUID derived from the asset's identity inside the source bundle, salted with
 	/// <see cref="ExportCollection.GuidNamespace"/> so a shared source asset exported into more than
 	/// one subset directory gets a distinct (but rip-stable) GUID per directory rather than a
-	/// colliding one that Unity re-randomises on import.
+	/// colliding one that Unity re-randomises on import. Assets listed in
+	/// <see cref="ExportCollection.StableNameKeys"/> hash their name instead of collection and
+	/// PathID, which also keeps the GUID stable across game builds.
 	/// </summary>
 	protected virtual UnityGuid ComputeStableGuid(T asset)
 	{
+		string name = asset.GetBestName();
+		if (StableNameKeys.Contains((asset.ClassID, name)))
+		{
+			return ComputeNameStableGuid(GuidNamespace, name, asset.ClassID);
+		}
 		string collectionName = GuidNamespace.Length == 0
 			? asset.Collection.Name
 			: $"{GuidNamespace}/{asset.Collection.Name}";
 		return ComputeStableGuid(collectionName, asset.PathID, asset.ClassID);
+	}
+
+	/// <summary>
+	/// Name-keyed variant of <see cref="ComputeStableGuid(string, long, int)"/> for assets in
+	/// <see cref="ExportCollection.StableNameKeys"/>. The "name:" prefix separates the two hash
+	/// domains so a name can never collide with a collection name.
+	/// </summary>
+	public static UnityGuid ComputeNameStableGuid(string guidNamespace, string name, int classId)
+	{
+		string salted = guidNamespace.Length == 0 ? name : $"{guidNamespace}/{name}";
+		return ComputeStableGuid($"name:{salted}", 0, classId);
 	}
 
 	/// <summary>

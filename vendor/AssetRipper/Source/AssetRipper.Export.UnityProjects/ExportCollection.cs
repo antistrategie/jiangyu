@@ -39,6 +39,17 @@ public abstract class ExportCollection : IExportCollection
 	/// </summary>
 	public static string GuidNamespace { get; set; } = "";
 
+	/// <summary>
+	/// Per-export-pass set of (ClassID, name) keys whose name is unique within the subset being
+	/// exported. Matching assets get a name-derived GUID from
+	/// <see cref="AssetExportCollection{T}.ComputeStableGuid(T)"/> instead of a PathID-derived one,
+	/// so the GUID survives game updates that re-serialise the source files and reshuffle PathIDs.
+	/// Names duplicated inside the subset stay on the PathID hash: a name-derived GUID for those
+	/// could swap between the duplicates from one game build to the next, silently re-linking
+	/// references to the wrong asset. Empty means PathID hashing for everything.
+	/// </summary>
+	public static IReadOnlySet<(int ClassID, string Name)> StableNameKeys { get; set; } = new HashSet<(int, string)>();
+
 	public virtual UnityGuid GUID => throw new NotSupportedException();
 
 	protected static void ExportMeta(IExportContainer container, Meta meta, string filePath, FileSystem fileSystem)
