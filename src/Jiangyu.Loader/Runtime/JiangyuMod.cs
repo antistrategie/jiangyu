@@ -9,7 +9,7 @@ using Jiangyu.Loader.Sdk.Types;
 using MelonLoader;
 using MelonLoader.Utils;
 
-[assembly: MelonInfo(typeof(Jiangyu.Loader.Runtime.JiangyuMod), "Jiangyu", Jiangyu.Loader.BuildInfo.Version, "Antistratégie")]
+[assembly: MelonInfo(typeof(Jiangyu.Loader.Runtime.JiangyuMod), "Jiangyu", Jiangyu.Loader.BuildInfo.Version, "ANTISTRATÉGIE")]
 [assembly: MelonGame("Overhype Studios", "Menace")]
 
 namespace Jiangyu.Loader.Runtime;
