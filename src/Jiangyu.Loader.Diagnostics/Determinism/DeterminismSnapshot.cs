@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text;
 using Il2CppMenace.Tactical;
+using Jiangyu.Loader.Net;
+using Jiangyu.Shared.Net.Sync;
 
 namespace Jiangyu.Loader.Diagnostics.Determinism;
 
@@ -48,7 +50,7 @@ internal sealed class DeterminismSnapshot
                         continue;
                     // One throwing actor must not abandon the snapshot: record the throw as
                     // its line so a broken read is itself a comparable value.
-                    try { snap.ActorLines.Add(Line(actor)); }
+                    try { snap.ActorLines.Add(ActorProjection.Line(actor)); }
                     catch (Exception ex) { snap.ActorLines.Add($"actor|<threw:{ex.GetType().Name}>"); }
                 }
             }
@@ -63,25 +65,6 @@ internal sealed class DeterminismSnapshot
         snap.RngState = ReadUnityRandomState();
         snap.Hash = snap.ComputeHash();
         return snap;
-    }
-
-    private static string Line(Actor actor)
-    {
-        var sb = new StringBuilder(128);
-        sb.Append("actor|").Append(Safe(() => actor.GetFaction().ToString()));
-        sb.Append('|').Append(Safe(() => actor.GetTemplate()?.name ?? "<null>"));
-        var tile = SafeTile(actor);
-        sb.Append('|').Append(tile);
-        sb.Append("|hp=").Append(Safe(() => actor.GetHitpoints().ToString(CultureInfo.InvariantCulture)));
-        sb.Append("|ap=").Append(Safe(() => actor.GetActionPoints().ToString(CultureInfo.InvariantCulture)));
-        sb.Append("|morale=").Append(Safe(() => actor.GetMorale().ToString("R", CultureInfo.InvariantCulture)));
-        sb.Append("|supp=").Append(Safe(() => actor.GetSuppressionPct().ToString("R", CultureInfo.InvariantCulture)));
-        sb.Append("|armour=").Append(Safe(() => actor.GetArmorDurability().ToString(CultureInfo.InvariantCulture)));
-        sb.Append("|stance=").Append(Safe(() => actor.GetStance().ToString()));
-        sb.Append("|alive=").Append(Safe(() => actor.IsAlive().ToString()));
-        sb.Append("|acted=").Append(Safe(() => actor.HasActed().ToString()));
-        sb.Append("|turndone=").Append(Safe(() => actor.IsTurnDone().ToString()));
-        return sb.ToString();
     }
 
     // Identity fragment for the active-actor line: template + tile, no vitals.
@@ -125,21 +108,9 @@ internal sealed class DeterminismSnapshot
           .Append("|rng=").Append(RngState).Append('\n');
         foreach (var line in ActorLines)
             sb.Append(line).Append('\n');
-        return Fnv1a(sb.ToString()).ToString("x16", CultureInfo.InvariantCulture);
-    }
-
-    // FNV-1a 64 over UTF-8. Platform-stable, no crypto needed for a divergence detector.
-    private static ulong Fnv1a(string text)
-    {
-        const ulong offset = 14695981039346656037UL;
-        const ulong prime = 1099511628211UL;
-        var hash = offset;
-        foreach (var b in Encoding.UTF8.GetBytes(text))
-        {
-            hash ^= b;
-            hash *= prime;
-        }
-        return hash;
+        // The one FNV-1a 64 lives in Jiangyu.Shared.Net.Sync.Checksum, so a determinism
+        // journal and a multiplayer barrier checksum hash the same way by construction.
+        return Checksum.Fnv1a(sb.ToString());
     }
 
     // Field-level diff for the replay report: the actor lines present on only one side.

@@ -1,8 +1,10 @@
 using System.Collections;
 using System.Text.Json;
+using Jiangyu.Loader.Net;
 using Jiangyu.Loader.Net.Steam;
 using Jiangyu.Shared.Bundles;
 using Jiangyu.Shared.Net;
+using Jiangyu.Shared.Net.Commands;
 using MelonLoader;
 using MelonLoader.Utils;
 
@@ -60,13 +62,133 @@ internal static class NetProbe
                 case "echo":
                     _echo = args.TryGetProperty("enabled", out var e) && e.ValueKind == JsonValueKind.True;
                     return new { ok = true, echo = _echo };
+                case "apply":
+                    return ApplyCommand(args);
+                case "session":
+                    return RunSessionTest(args);
+                case "session-status":
+                    return SessionStatus();
+                case "session-stop":
+                    return StopSession();
                 default:
-                    return new { error = "net op must be status | loopback | selftest | host | join | leave | send | echo" };
+                    return new { error = "net op must be status | loopback | selftest | host | join | leave | send | echo | apply | session | session-status | session-stop" };
             }
         }
         catch (Exception ex)
         {
             return new { error = $"{ex.GetType().Name}: {ex.Message}" };
+        }
+    }
+
+    // Drive one NetCommand through the loader's CommandApplier against the live mission,
+    // to verify the replay path (resolve actor by Entity.ID, resolve tile/skill, call the
+    // game funnel). The dev op builds the payload from typed args so the bridge caller
+    // does not hand-encode nested JSON; the replicator would encode it the same way.
+    private static object ApplyCommand(JsonElement args)
+    {
+        if (!Il2CppMenace.Tactical.TacticalManager.IsMissionRunning())
+            return new { error = "no mission running" };
+
+        var kind = args.TryGetProperty("kind", out var k) ? k.GetString() : null;
+        var actor = args.TryGetProperty("actor", out var a) && a.TryGetUInt64(out var av) ? av : 0UL;
+        var payload = BuildPayload(kind, args);
+        if (payload == null)
+            return new { error = "apply kind must be move | skill | endturn | skip" };
+
+        var command = new NetCommand { Seq = 0, Source = 0, Kind = kind, Payload = payload };
+        var applier = new CommandApplier(Il2CppMenace.Tactical.TacticalManager.Get());
+        var result = applier.Apply(command);
+        return new { ok = true, kind, actor, result };
+    }
+
+    private static NetMissionSession _missionSession;
+
+    // Single-process proof of the barrier-gated apply loop: start a host NetMissionSession
+    // over an in-process loopback endpoint (no second peer needed to exercise ordering and
+    // barrier gating on the host side), submit a scripted command sequence, and let the
+    // session apply them in order at the game's action barriers. Poll session-status for
+    // the applied log. The two-process cross-sim smoke needs a cross-process transport and
+    // is a separate step.
+    private static object RunSessionTest(JsonElement args)
+    {
+        if (!Il2CppMenace.Tactical.TacticalManager.IsMissionRunning())
+            return new { error = "no mission running" };
+        if (_missionSession != null)
+            return new { error = "a mission session is already running (session-status to inspect)" };
+        if (!args.TryGetProperty("commands", out var cmds) || cmds.ValueKind != JsonValueKind.Array)
+            return new { error = "session needs args.commands (an array of {kind, actor, skill, usage, tile})" };
+
+        var (a, _) = LoopbackTransport.CreatePair(1, 2);
+        var manager = Il2CppMenace.Tactical.TacticalManager.Get();
+        _missionSession = new NetMissionSession(a, a.LocalPeer, new[] { new PeerId(2) }, manager);
+        _missionSession.Start();
+
+        var submitted = 0;
+        foreach (var c in cmds.EnumerateArray())
+        {
+            var kind = c.TryGetProperty("kind", out var k) ? k.GetString() : null;
+            var payload = BuildPayload(kind, c);
+            if (payload == null)
+                continue;
+            _missionSession.SubmitLocal(kind, payload);
+            submitted++;
+        }
+
+        return new { ok = true, submitted, note = "poll net session-status for the applied log" };
+    }
+
+    private static object StopSession()
+    {
+        if (_missionSession == null)
+            return new { ok = true, stopped = false };
+        _missionSession.Stop();
+        _missionSession = null;
+        return new { ok = true, stopped = true };
+    }
+
+    private static object SessionStatus()
+    {
+        if (_missionSession == null)
+            return new { ok = true, running = false };
+        return new
+        {
+            ok = true,
+            running = true,
+            isHost = _missionSession.IsHost,
+            ready = _missionSession.ReadyCount,
+            journal = _missionSession.Journal.Count,
+            applied = _missionSession.Applied.Select(x => new { seq = x.Seq, kind = x.Kind, result = x.Result }).ToArray(),
+            desynced = _missionSession.Desync.IsDesynced,
+            checksums = _missionSession.Checksums
+                .Select(c => new { barrier = c.Barrier, hash = c.Hash, partitions = c.Partitions })
+                .ToArray(),
+        };
+    }
+
+    private static string BuildPayload(string kind, JsonElement c)
+    {
+        var actor = c.TryGetProperty("actor", out var a) && a.TryGetUInt64(out var av) ? av : 0UL;
+        TileRef tile = null;
+        if (c.TryGetProperty("tile", out var t) && t.ValueKind == JsonValueKind.Array && t.GetArrayLength() >= 2)
+            tile = new TileRef { X = t[0].GetInt32(), Z = t[1].GetInt32() };
+        switch (kind)
+        {
+            case CommandKinds.Move:
+                return CommandCodec.Encode(new MoveCommand { Actor = actor, Tile = tile });
+            case CommandKinds.Skill:
+                return CommandCodec.Encode(new SkillCommand
+                {
+                    Actor = actor,
+                    Skill = c.TryGetProperty("skill", out var s) ? s.GetString() : null,
+                    Usage = c.TryGetProperty("usage", out var u) ? u.GetInt32() : 0,
+                    Tile = tile,
+                });
+            case CommandKinds.EndTurn:
+                return CommandCodec.Encode(new EndTurnCommand());
+            case CommandKinds.Skip:
+                return CommandCodec.Encode(new SkipCommand { Actor = actor });
+            default:
+                return null;
         }
     }
 

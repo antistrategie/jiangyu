@@ -2,13 +2,16 @@ using System.Text.Json;
 
 namespace Jiangyu.Shared.Net;
 
-/// <summary>Discriminator byte leading every control-channel message.</summary>
+/// <summary>Discriminator byte leading every net message. Control-channel traffic uses
+/// the handshake and chat types; the replicated command stream on the command channel
+/// uses <see cref="Command"/>.</summary>
 public enum NetMessageType : byte
 {
     Summary = 1,
     Accept = 2,
     Reject = 3,
     Chat = 4,
+    Command = 5,
 }
 
 /// <summary>
@@ -18,14 +21,9 @@ public enum NetMessageType : byte
 /// </summary>
 public static class NetWire
 {
-    private static readonly JsonSerializerOptions Options = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
     public static byte[] Encode<T>(NetMessageType type, T body)
     {
-        var json = JsonSerializer.SerializeToUtf8Bytes(body, Options);
+        var json = JsonSerializer.SerializeToUtf8Bytes(body, JsonOptions.CompactCamel);
         var payload = new byte[json.Length + 1];
         payload[0] = (byte)type;
         json.CopyTo(payload, 1);
@@ -34,7 +32,7 @@ public static class NetWire
 
     public static bool TryReadType(byte[] payload, out NetMessageType type)
     {
-        if (payload is { Length: >= 1 } && payload[0] is >= 1 and <= 4)
+        if (payload is { Length: >= 1 } && Enum.IsDefined(typeof(NetMessageType), payload[0]))
         {
             type = (NetMessageType)payload[0];
             return true;
@@ -53,7 +51,7 @@ public static class NetWire
             return null;
         try
         {
-            return JsonSerializer.Deserialize<T>(payload.AsSpan(1), Options);
+            return JsonSerializer.Deserialize<T>(payload.AsSpan(1), JsonOptions.CompactCamel);
         }
         catch (JsonException)
         {

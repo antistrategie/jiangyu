@@ -1,9 +1,10 @@
 using System.Collections;
 using System.Globalization;
 using System.Reflection;
-using Il2CppInterop.Runtime;
 using Il2CppMenace.Tactical;
 using Il2CppMenace.Tactical.Skills;
+using Jiangyu.Loader.Net;
+using Jiangyu.Loader.Sdk.Hooks;
 using MelonLoader;
 
 namespace Jiangyu.Loader.Diagnostics.Determinism;
@@ -31,8 +32,7 @@ internal sealed class DeterminismSession
     private readonly MelonLogger.Instance _log;
     private readonly Action _onCompleted;
     private readonly DeterminismJournal _journal = new();
-    private readonly List<Action> _detach = new();
-    private readonly List<object> _roots = new();
+    private readonly Il2CppEventSubscriptions _hooks;
     private readonly Dictionary<string, int> _eventCounts = new(StringComparer.Ordinal);
 
     private TacticalManager _manager;
@@ -56,6 +56,7 @@ internal sealed class DeterminismSession
         _reference = reference;
         _log = log;
         _onCompleted = onCompleted;
+        _hooks = new Il2CppEventSubscriptions(message => _log.Warning($"[determinism] {message}"));
     }
 
     public void Begin()
@@ -303,22 +304,12 @@ internal sealed class DeterminismSession
     }
 
     private Tile ResolveTile(DeterminismScript.Step step)
-    {
-        var tile = _manager.GetMap()?.GetTile(step.X, step.Z);
-        return tile ?? throw new InvalidOperationException($"no tile at {step.X},{step.Z}");
-    }
+        => TacticalResolve.Tile(_manager, step.X, step.Z)
+           ?? throw new InvalidOperationException($"no tile at {step.X},{step.Z}");
 
     private static Skill ResolveSkill(Actor actor, string skillId)
-    {
-        var all = actor.GetSkills()?.GetAllSkills();
-        for (var i = 0; all != null && i < all.Count; i++)
-        {
-            var skill = all[i]?.TryCast<Skill>();
-            if (skill != null && string.Equals(skill.GetID(), skillId, StringComparison.Ordinal))
-                return skill;
-        }
-        throw new InvalidOperationException($"skill '{skillId}' not found on actor");
-    }
+        => TacticalResolve.Skill(actor, skillId)
+           ?? throw new InvalidOperationException($"skill '{skillId}' not found on actor");
 
     private int Count(string eventName)
         => _eventCounts.TryGetValue(eventName, out var count) ? count : 0;
@@ -363,32 +354,9 @@ internal sealed class DeterminismSession
 
     private void Hook<TDelegate>(Action<TDelegate> add, Action<TDelegate> remove, Delegate managed, string name)
         where TDelegate : Il2CppSystem.Delegate
-    {
-        try
-        {
-            var proxy = DelegateSupport.ConvertDelegate<TDelegate>(managed);
-            add(proxy);
-            _roots.Add(managed);
-            _roots.Add(proxy);
-            _detach.Add(() =>
-            {
-                try { remove(proxy); }
-                catch { /* manager already gone */ }
-            });
-        }
-        catch (Exception ex)
-        {
-            _log.Warning($"[determinism] failed to attach {name}: {ex.GetType().Name}: {ex.Message}");
-        }
-    }
+        => _hooks.Hook(add, remove, managed, name);
 
-    private void DetachEvents()
-    {
-        foreach (var detach in _detach)
-            detach();
-        _detach.Clear();
-        _roots.Clear();
-    }
+    private void DetachEvents() => _hooks.DetachAll();
 
     // Best-effort read of the mission/game seed through whatever accessor the build
     // exposes (GetMissionSeed / GetSeed / GetGameSeed on the manager or the mission).

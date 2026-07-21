@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json;
 using HarmonyLib;
 using MelonLogger = MelonLoader.MelonLogger;
@@ -110,8 +111,10 @@ internal static class RngTraceProbe
                     return Pin(args, log);
                 case "owners":
                     return Owners();
+                case "xref":
+                    return Xref(args);
                 default:
-                    return new { error = "rngtrace op must be start | stop | dump | status | census | pin | owners" };
+                    return new { error = "rngtrace op must be start | stop | dump | status | census | pin | owners | xref" };
             }
         }
         catch (Exception ex)
@@ -211,46 +214,68 @@ internal static class RngTraceProbe
     {
         var methods = new List<object>();
         foreach (var (label, method) in CensusTargets())
-        {
-            if (method == null)
-            {
-                methods.Add(new { api = label, error = "method not found on the wrapper" });
-                continue;
-            }
-
-            try
-            {
-                var callers = new SortedSet<string>(StringComparer.Ordinal);
-                var unresolved = 0;
-                foreach (var xref in Il2CppInterop.Common.XrefScans.XrefScanner.UsedBy(method))
-                {
-                    System.Reflection.MethodBase resolved = null;
-                    try
-                    {
-                        resolved = Il2CppInterop.Runtime.XrefScans.XrefInstanceExtensions.TryResolve(xref);
-                    }
-                    catch
-                    {
-                    }
-
-                    if (resolved == null)
-                        unresolved++;
-                    else
-                        callers.Add($"{resolved.DeclaringType?.FullName}.{resolved.Name}");
-                }
-
-                methods.Add(new { api = label, callers = callers.ToArray(), unresolved });
-            }
-            catch (Exception ex)
-            {
-                methods.Add(new { api = label, error = $"{ex.GetType().Name}: {ex.Message}" });
-            }
-        }
-
+            methods.Add(CallersOf(label, method));
         return new { ok = true, methods };
     }
 
-    private static IEnumerable<(string Label, System.Reflection.MethodBase Method)> CensusTargets()
+    private static object CallersOf(string label, MethodBase method)
+    {
+        if (method == null)
+            return new { api = label, error = "method not found on the wrapper" };
+        try
+        {
+            var callers = new SortedSet<string>(StringComparer.Ordinal);
+            var unresolved = 0;
+            foreach (var xref in Il2CppInterop.Common.XrefScans.XrefScanner.UsedBy(method))
+            {
+                MethodBase resolved = null;
+                try
+                {
+                    resolved = Il2CppInterop.Runtime.XrefScans.XrefInstanceExtensions.TryResolve(xref);
+                }
+                catch
+                {
+                }
+
+                if (resolved == null)
+                    unresolved++;
+                else
+                    callers.Add($"{resolved.DeclaringType?.FullName}.{resolved.Name}");
+            }
+
+            return new { api = label, callers = callers.ToArray(), unresolved };
+        }
+        catch (Exception ex)
+        {
+            return new { api = label, error = $"{ex.GetType().Name}: {ex.Message}" };
+        }
+    }
+
+    // On-demand caller census of an arbitrary game method: every overload named
+    // `method` on `type` gets its own caller list. Confirms whether a dispatch
+    // entry (e.g. Skill.Use, Actor.MoveTo) is the sole route commands take.
+    private static object Xref(JsonElement args)
+    {
+        var typeName = args.TryGetProperty("type", out var t) ? t.GetString() : null;
+        var methodName = args.TryGetProperty("method", out var m) ? m.GetString() : null;
+        if (string.IsNullOrEmpty(typeName) || string.IsNullOrEmpty(methodName))
+            return new { error = "xref needs args.type (full il2cpp type name) and args.method" };
+        var type = AccessTools.TypeByName(typeName);
+        if (type == null)
+            return new { error = $"type '{typeName}' not found" };
+        var overloads = type
+            .GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
+            .Where(x => x.Name == methodName)
+            .ToArray();
+        if (overloads.Length == 0)
+            return new { error = $"no method '{methodName}' declared on '{typeName}'" };
+        var results = overloads
+            .Select(x => CallersOf($"{typeName}.{methodName}({string.Join(",", x.GetParameters().Select(p => p.ParameterType.Name))})", x))
+            .ToArray();
+        return new { ok = true, methods = results };
+    }
+
+    private static IEnumerable<(string Label, MethodBase Method)> CensusTargets()
     {
         var unity = typeof(UnityEngine.Random);
         yield return ("Random.Range(float)", AccessTools.Method(unity, "Range", new[] { typeof(float), typeof(float) }));

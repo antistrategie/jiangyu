@@ -23,10 +23,18 @@ namespace Jiangyu.Shared;
 ///     no naming policy override. Used by cache payloads that keep PascalCase
 ///     JSON property names (asset index, structural baseline, IL2CPP
 ///     metadata supplement).</item>
+///   <item><see cref="CompactCamel"/> — camelCase, not indented. The net wire
+///     format (control messages and command payloads), kept compact for
+///     bandwidth and readable in desync forensics.</item>
 /// </list></para>
 /// </summary>
 public static class JsonOptions
 {
+    public static readonly JsonSerializerOptions CompactCamel = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
     public static readonly JsonSerializerOptions PrettyCamel = new()
     {
         WriteIndented = true,

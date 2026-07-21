@@ -132,6 +132,38 @@ processes, which is why the sim comparer strips it.
   index 318, the `Range(2, 7)` timer against the shot block, one frame of
   scheduling wobble. Steps 0-3 sim-match, step 4 onward carries the shifted
   values.
+- `mixed` two-process pair (2026-07-21, no pin, no networking): two fresh
+  processes running the same scripted command sequence, a proxy for two peers
+  replaying the same host-ordered stream. Steps: two infantry moves, two shots,
+  end turn (one AI turn). **Result: divergence is confined to combat-roll
+  outputs.** Both moves are bit-identical across processes (same tile, same
+  state, including move-after-move). The shots diverge only on the target's
+  suppression, the target truck's armour, and the shooter's morale, the
+  roll-consuming outputs. Nothing bleeds into tiles, action points, turn order,
+  actor count, stance, or alive/dead. At end turn the AI moved the enemy truck
+  eight tiles to the same destination in both processes despite the earlier
+  combat divergence, so the fractional deltas crossed no decision threshold. The
+  inference: shipping the per-action combat-roll outputs (design doc's Lever 1)
+  makes those fields identical too, and everything else already reproduces, so
+  the whole mission becomes deterministic. Residual risk is a threshold-crossing
+  cascade over longer or lethal play (a kill in one process only), which
+  outcome-shipping removes by construction.
+- `lethal` two-process pair (2026-07-21, four concentrated shots, two shooters):
+  divergence stays confined to armour, suppression and morale across the heavier
+  engagement. Every discrete and structural field (hp, alive, stance, action
+  points, tile, turn order) is identical, and the AI turn reproduces exactly
+  (both enemies move to the same destination in both runs). Four shots did not
+  kill the target (armour absorbs the damage) and suppression stayed below the
+  pin threshold, so an actual discrete threshold crossing was not manufactured.
+  The cascade risk is therefore real-but-unobserved and addressed by construction
+  via outcome-shipping (identical shipped outputs cannot straddle a threshold).
+- `Skill.Use` caller census: `Skill.Use` and `Actor.MoveTo` are each a single
+  execution funnel (0 unresolved xrefs). Callers split into player input (the
+  `SkillAction`/`OffmapAbilityAction`/`SelectAoETilesAction` handlers), AI
+  (`AI.Behaviors.*`), and internal skill-effect chains (counterattack,
+  deathrattle, procs, tile effects). Command capture belongs at the player-input
+  layer, not the funnel: replay calls the funnel directly, AI is host-driven, and
+  internal cascades are deterministic consequences needing no capture.
 
 ## Harness notes
 
@@ -149,3 +181,10 @@ processes, which is why the sim comparer strips it.
   BCL but does not define `System.Void`) or when `Il2CppInterop.Runtime` is
   missing from the resolver. Both failures swallow into empty member lists
   rather than errors.
+- `nav` `enter-mission` must not be issued on `strategy: true` alone: that
+  signal fires when `StrategyState` exists, before the available-operations list
+  populates, and an early call fails with "no available operation at index N".
+  Settle after strategy load (operations appear within tens of seconds) then
+  issue a single `enter-mission`. Rapidly re-issuing it drives repeated scene
+  loads into a half-loaded mission-prep flow and wedges it ("mission prep screen
+  never opened"). One clean attempt per boot.
