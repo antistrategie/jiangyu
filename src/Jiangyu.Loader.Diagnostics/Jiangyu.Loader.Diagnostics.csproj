@@ -39,6 +39,10 @@
       <HintPath>$(MelonLoaderDir)/Il2CppInterop.Runtime.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Il2CppInterop.Common">
+      <HintPath>$(MelonLoaderDir)/Il2CppInterop.Common.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Il2Cppmscorlib">
       <HintPath>$(GameAssembliesDir)/Il2Cppmscorlib.dll</HintPath>
       <Private>false</Private>
@@ -49,6 +53,10 @@
     </Reference>
     <Reference Include="Il2CppSirenix.Serialization">
       <HintPath>$(GameAssembliesDir)/Il2CppSirenix.Serialization.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2Cppcom.rlabrecque.steamworks.net">
+      <HintPath>$(GameAssembliesDir)/Il2Cppcom.rlabrecque.steamworks.net.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">

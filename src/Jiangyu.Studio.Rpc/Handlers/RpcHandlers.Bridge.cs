@@ -74,6 +74,50 @@ public static partial class RpcHandlers
         RequiresBridge = true)]
     internal static JsonElement BridgeInspectTemplates(JsonElement? __) => Bridge.Request(BridgeMethods.Command, new { name = "templates" });
 
+    /// <summary>Drive the record/replay determinism probe over the bridge. Throws when not connected.</summary>
+    [McpTool("jiangyu_determinism_probe",
+        "Drive the tactical determinism probe against the running game. op 'record' {script} drives a scripted command sequence through the live mission, journaling every command with a state hash at each action barrier; op 'replay' {script, journal} replays the same script and reports the first divergent barrier with an actor-level diff; op 'compare' {a, b} diffs two recorded journals offline (record vs record, e.g. cross-machine or same-session runs) and needs no mission; 'status' and 'abort' manage the active run. Scripts and journals live under <game>/UserData/determinism/ (<name>.script.json). record/replay mutate game state by playing the mission and start from the same loaded save.",
+        RequiresBridge = true)]
+    [McpParam("op", "string", "record | replay | compare | status | abort.", Required = true)]
+    [McpParam("script", "string", "Script name for record/replay (loads <game>/UserData/determinism/<script>.script.json).")]
+    [McpParam("journal", "string", "Journal filename for replay (a <script>-record-*.journal.json under determinism/).")]
+    [McpParam("a", "string", "First journal filename for compare (under determinism/).")]
+    [McpParam("b", "string", "Second journal filename for compare (under determinism/).")]
+    internal static JsonElement BridgeDeterminismProbe(JsonElement? parameters)
+        => Bridge.Request(BridgeMethods.Command, new { name = "determinism", args = parameters });
+
+    /// <summary>Drive unattended session navigation over the bridge. Throws when not connected.</summary>
+    [McpTool("jiangyu_nav",
+        "Drive unattended navigation of the running game: op 'load' {save} loads a named save (fixture flow: the game autosaves over latest on operation start, so rigs load their fixture by name); op 'load-latest' loads the most recent save (title-screen Continue); op 'enter-mission' waits for the strategy layer, starts operation 'operation' (index, default 0) with mission 'mission' (index, default 0), opens mission prep and launches into tactical; op 'status' reports the driver phase. Mutates game state: it loads saves and starts missions.",
+        RequiresBridge = true)]
+    [McpParam("op", "string", "load | load-latest | enter-mission | status.", Required = true)]
+    [McpParam("save", "string", "Save name for load (filename, extension optional; determinism runs use the dedicated fixture save).")]
+    [McpParam("operation", "integer", "Available-operation index for enter-mission. Defaults to 0.")]
+    [McpParam("mission", "integer", "Mission index within the operation for enter-mission. Defaults to 0.")]
+    internal static JsonElement BridgeNav(JsonElement? parameters)
+        => Bridge.Request(BridgeMethods.Command, new { name = "nav", args = parameters });
+
+    /// <summary>Drive the RNG draw tracer over the bridge. Throws when not connected.</summary>
+    [McpTool("jiangyu_rngtrace",
+        "Trace the running game's RNG draws at the source: Harmony hooks on UnityEngine.Random (the global frame-shared stream) and Menace's seeded PseudoRandom instances record every draw with sequence, frame, api, arguments, result, and (for PseudoRandom) the owning stream's instance pointer. op 'start' {cap} installs hooks and begins capturing into a ring buffer (default 4096); 'stop' pauses capture; 'dump' {tail} returns the most recent draws; 'status' reports counts. Two processes' traces diff by sequence to the first divergent draw, localising RNG consumers precisely. Hooks cannot see native callers: attribution is by draw order and stream identity.",
+        RequiresBridge = true)]
+    [McpParam("op", "string", "start | stop | dump | status.", Required = true)]
+    [McpParam("cap", "integer", "Ring buffer capacity for start. Defaults to 4096.")]
+    [McpParam("tail", "integer", "How many trailing draws dump returns. Defaults to 256.")]
+    internal static JsonElement BridgeRngTrace(JsonElement? parameters)
+        => Bridge.Request(BridgeMethods.Command, new { name = "rngtrace", args = parameters });
+
+    /// <summary>Drive the multiplayer net probe over the bridge. Throws when not connected.</summary>
+    [McpTool("jiangyu_net",
+        "Drive the multiplayer transport and lobby probe against the running game. op 'loopback' runs the in-process transport pair self-test (handshake to Ready, chat echo, and a deliberate mod-set mismatch) synchronously with no Steam dependency; 'selftest' runs the same handshake and echo against the local SteamID over the real Steam messages transport (poll status for the verdict); 'host' creates a friends-only Steam lobby awaiting a second member; 'join' {lobby} joins a lobby by id; 'send' {text} sends a chat line on the ready session; 'echo' {enabled} toggles auto-echo of received chat; 'leave' tears the session down; 'status' reports steam liveness, lobby membership, session phase, reject differences and the chat transcript. SteamID64 and lobby ids travel as decimal strings.",
+        RequiresBridge = true)]
+    [McpParam("op", "string", "status | loopback | selftest | host | join | leave | send | echo.", Required = true)]
+    [McpParam("lobby", "string", "Lobby id for join, as the decimal string from the host's status.")]
+    [McpParam("text", "string", "Chat line for send.")]
+    [McpParam("enabled", "boolean", "Echo toggle for echo. Defaults to false.")]
+    internal static JsonElement BridgeNet(JsonElement? parameters)
+        => Bridge.Request(BridgeMethods.Command, new { name = "net", args = parameters });
+
     private static bool IsBridgeEnabled()
     {
         var dir = UserDataDir();
@@ -83,7 +127,7 @@ public static partial class RpcHandlers
     private static string? UserDataDir()
     {
         var (gameDir, _) = GlobalConfig.ResolveGamePath(GlobalConfig.Load());
-        return gameDir is null ? null : System.IO.Path.Combine(gameDir, "UserData");
+        return gameDir is null ? null : Path.Combine(gameDir, "UserData");
     }
 
     [RpcType]

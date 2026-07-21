@@ -1,6 +1,4 @@
-using System;
 using System.Collections;
-using System.Collections.Generic;
 using System.Text.Json;
 using Jiangyu.Loader.Diagnostics.UiProbe;
 using Jiangyu.Loader.Runtime;
@@ -36,10 +34,14 @@ internal sealed class DevServices : IDevServices
             ["templates"] = _ => TemplateStateInspector.Capture(_context.CurrentScene),
             ["winmission"] = _ => MissionAutoWin.Run(_context.Logger),
             ["skills"] = _ => SkillStateInspector.Capture(),
+            ["determinism"] = args => Determinism.DeterminismProbe.Run(args, _context.Logger),
+            ["nav"] = args => NavDriver.Run(args, _context.Logger),
+            ["net"] = args => Net.NetProbe.Run(args, _context.Logger),
+            ["rngtrace"] = args => RngTraceProbe.Run(args, _context.Logger),
         };
 
         _bridge = new BridgeServer(context.Logger);
-        _bridge.On(BridgeMethods.Ping, _ => new { ok = true, version = Jiangyu.Loader.BuildInfo.Version, protocol = BridgeProtocol.Version });
+        _bridge.On(BridgeMethods.Ping, _ => new { ok = true, version = BuildInfo.Version, protocol = BridgeProtocol.Version });
         _bridge.On(BridgeMethods.Command, HandleCommand);
     }
 

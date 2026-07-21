@@ -96,6 +96,10 @@
       <HintPath>$(GameAssembliesDir)/Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Il2Cppcom.rlabrecque.steamworks.net">
+      <HintPath>$(GameAssembliesDir)/Il2Cppcom.rlabrecque.steamworks.net.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Il2CppSirenix.Serialization">
       <HintPath>$(GameAssembliesDir)/Il2CppSirenix.Serialization.dll</HintPath>
       <Private>false</Private>
