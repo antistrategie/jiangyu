@@ -292,6 +292,53 @@ internal sealed class TemplateCloneApplier
         return totalApplied;
     }
 
+    // Order clone directives so a clone-of-clone always applies after its source clone, wherever
+    // the two are declared. sourceRegistered reports whether an id already exists in the live
+    // template map (a vanilla template, or a clone registered in an earlier session). Anything
+    // whose source is neither live nor a sibling clone lands in unresolved (missing source), as do
+    // cyclic chains; the caller warns for each.
+    internal static List<LoadedCloneDirective> OrderBySourceAvailability(
+        IEnumerable<LoadedCloneDirective> directives,
+        Func<string, bool> sourceRegistered,
+        out List<LoadedCloneDirective> unresolved)
+    {
+        var ordered = new List<LoadedCloneDirective>();
+        var emitted = new HashSet<string>(StringComparer.Ordinal);
+        unresolved = new List<LoadedCloneDirective>();
+        var pending = new List<LoadedCloneDirective>(directives);
+        for (var progress = true; progress && pending.Count > 0;)
+        {
+            progress = false;
+            var deferred = new List<LoadedCloneDirective>();
+            foreach (var directive in pending)
+            {
+                if (string.IsNullOrEmpty(directive.SourceId)
+                    || sourceRegistered(directive.SourceId)
+                    || emitted.Contains(directive.SourceId))
+                {
+                    ordered.Add(directive);
+                    emitted.Add(directive.CloneId);
+                    progress = true;
+                }
+                else if (!pending.Exists(d => d.CloneId == directive.SourceId))
+                {
+                    // The source is neither live nor a sibling clone: it will never appear.
+                    unresolved.Add(directive);
+                    progress = true;
+                }
+                else
+                {
+                    // The source is a later sibling clone: defer to the next round.
+                    deferred.Add(directive);
+                }
+            }
+            pending = deferred;
+        }
+        // Whatever remains forms a cycle (or clones itself).
+        unresolved.AddRange(pending);
+        return ordered;
+    }
+
     private int TryApplyType(
         string templateTypeName,
         Dictionary<string, LoadedCloneDirective> directives,
@@ -335,7 +382,27 @@ internal sealed class TemplateCloneApplier
             return 0;
 
         var applied = 0;
-        foreach (var directive in directives.Values)
+
+        // Order so every clone-of-clone applies after its source: a single pass would skip a clone
+        // whose source is a mod clone declared LATER (another KDL file, or later in the same one),
+        // so declaration order must never decide whether a chained clone registers.
+        var ordered = OrderBySourceAvailability(directives.Values, innerMap.ContainsKey, out var unresolved);
+        foreach (var directive in ordered)
+            ApplyOne(directive);
+        // Unresolvable sources (no live template, no sibling clone) and cycles: warn once each,
+        // as the single pass used to.
+        foreach (var directive in unresolved)
+        {
+            log.Mod = directive.OwnerLabel;
+            log.Warning(
+                $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
+                + "source template not found in DataTemplateLoader.");
+        }
+
+        _appliedTypes.Add(templateTypeName);
+        return applied;
+
+        void ApplyOne(LoadedCloneDirective directive)
         {
             log.Mod = directive.OwnerLabel;
             if (!innerMap.TryGetValue(directive.CloneId, out var clone))
@@ -346,7 +413,7 @@ internal sealed class TemplateCloneApplier
                 if (isCreate)
                 {
                     if (!TryCreateTemplate(resolvedType, directive.CloneId, log, out clone))
-                        continue;
+                        return;
                 }
                 else
                 {
@@ -355,11 +422,11 @@ internal sealed class TemplateCloneApplier
                         log.Warning(
                             $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
                             + "source template not found in DataTemplateLoader.");
-                        continue;
+                        return;
                     }
 
                     if (!TryCloneTemplate(source, directive.CloneId, log, out clone))
-                        continue;
+                        return;
 
                     // Object.Instantiate shallow-copies the clone's collection
                     // containers: clone.List<T> / clone.T[] field instances are
@@ -391,9 +458,6 @@ internal sealed class TemplateCloneApplier
 
             MirrorCloneToAncestors(resolvedType, directive.CloneId, clone, log);
         }
-
-        _appliedTypes.Add(templateTypeName);
-        return applied;
     }
 
     /// <summary>
