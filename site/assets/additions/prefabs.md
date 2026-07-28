@@ -46,6 +46,36 @@ Then KDL reference is `asset="MyCharacter/main"`.
 - LOD meshes named `<basename>_LOD0..LODN`. Basename is auto-detected from the mesh names.
 :::
 
+#### Copying a vanilla sub-assembly into your prefab
+
+Some vanilla prefabs carry sub-assemblies that are more than geometry. The CQB assault rifle's laser pointer (`rifle_red_laser` on `pv.assault_rifle_cqb`) is three unlit quads driven by MENACE's `LookAtCamera`, `ExpandRetract` and `VisibilityChangeListener` scripts. Copy that node into your own weapon prefab in the Unity Editor and the GameObjects, transforms, meshes and materials come across fine, but every one of those components is dropped: your project has no reference to the game's script assemblies, so there is nothing for Unity to serialise into the bundle. The laser ships as a dead quad that never faces the camera and never pulses.
+
+Mark the copied node and the loader restores the scripts from the live vanilla prefab at load time. **Imports carry the marks for you**: when a prefab lands in `Assets/Imported/`, every node that had scripts stripped gets an empty marker child named `__jiangyu_scripts:<prefab>@<path>`, so a sub-assembly you copy out of it brings its markers along and just works. Delete a marker to keep a copy scripts-free. For a copy built any other way, add the marker yourself: an empty child GameObject under the copied node, named `__jiangyu_scripts:` plus the vanilla prefab's name:
+
+```text
+my_rifle                                  your prefab root
+├── my_rifle_mesh
+├── muzzle
+└── rifle_red_laser                       copied from pv.assault_rifle_cqb
+    ├── __jiangyu_scripts:pv.assault_rifle_cqb
+    └── halo_funky
+        ├── HALO_HALO
+        ├── HALO_STAR
+        └── HALO_STAR_001
+```
+
+At load time Jiangyu finds `pv.assault_rifle_cqb` in the game's asset registry, locates the node named `rifle_red_laser` in it, pairs the two subtrees by name, attaches the missing components and copies their field values across. References a component holds to another node in the same sub-assembly are remapped onto your copy, so nothing reaches back into the vanilla prefab.
+
+Rules to author against:
+
+- **Keep the vanilla node names.** Pairing is by name, level by level, from the marked node down. Rename `HALO_STAR` and it gets no scripts.
+- **Marked node name is the lookup key.** The name of the node the sentinel sits on has to match its counterpart in the vanilla prefab, and be unique there. If you renamed it, or the name repeats in vanilla, name the counterpart explicitly: `__jiangyu_scripts:pv.assault_rifle_cqb@rifle_red_laser`, where the suffix is the path from the vanilla prefab's root.
+- **A sentinel on your prefab's own root** pairs the two prefab roots instead, which restores scripts across a whole prefab you built from `jiangyu unity import-prefab`.
+- **Components you authored yourself win.** Anything already on a node is left exactly as you made it, never overwritten.
+- **Materials rebind too.** A renderer slot whose material still carries the vanilla material's name is swapped for the live vanilla material object. The copies in your bundle are extractions on stub shaders, and HDRP surface state (the transparency keyword, the render queue) does not survive that round trip — the CQB laser's additive quads come back opaque white without the swap. Rename a material to keep an edit of your own.
+- **Several sub-assemblies are fine**, from different vanilla prefabs, each with its own sentinel.
+- Watch the loader log. It reports how many components were restored per marked node, and warns when the vanilla side has no matching node, when part of what you copied is missing, or when a restored component references a vanilla node you did not copy.
+
 ### Pre-built bundle drop (escape hatch)
 
 If you already have an AssetBundle (built in your own Unity project, or shared from another mod), drop it directly under `assets/additions/prefabs/<name>.bundle`. The compile pipeline picks it up alongside Unity-built bundles. The filename stem is the asset name your KDL references, and the Object.name on the GameObject inside the bundle does not have to match.
@@ -118,4 +148,4 @@ The lookup against the vanilla asset registry is by Unity Object name and is cas
 - Forward slashes only in `asset="..."` references. Backslashes are rejected at parse time. Slashes mirror the prefab's relative path under `Assets/Prefabs/`, so `asset="MyCharacter/main"` resolves to the bundle built from `Assets/Prefabs/MyCharacter/main.prefab`.
 - **Bundled materials must use `Menace/*` shaders** (`Menace/building`, etc.). MENACE doesn't ship URP's stock `Universal Render Pipeline/Lit` / `Unlit`, so materials referencing those render magenta at runtime. The `Menace/*` shaders also render magenta in the Unity Editor preview (they're stubs in your project), so iterate in-game rather than trusting the editor preview. `BakeHumanoid` clones the shader from the reference soldier material for you; only matters if you author a material by hand.
 - **Bundled meshes and materials must be project assets**, not Unity built-in references. A prefab created from `GameObject.CreatePrimitive(Cube)` references Unity's built-in cube mesh and `Default-Material` by hardcoded ID, and production game runtimes commonly strip those built-ins, so the prefab spawns as an invisible ghost. Import a model (glTF/FBX) or import an existing vanilla prefab via `jiangyu unity import-prefab` for assets that bundle correctly.
-- The scaffolded project ships no game-asset reference DLLs. Pure-visual prefabs (SkinnedMeshRenderer with materials, no scripts) build cleanly without them. Soldier-shape humanoid additions also build cleanly: the loader mirrors MENACE's `Footprints` and `Ragdoll` components from the reference vanilla soldier you passed to `BakeHumanoid` (template + skeletal root + per-foot transforms + decals), and the bake also copies supplementary non-bone, non-LOD children from the reference (footstep dust spawn containers, audio markers) onto the output prefab. The reference identity is encoded in a hidden sentinel child the bake writes, so `_referencePrefab` is load-bearing for runtime behaviour, not just material and avatar cloning. If you need other MENACE MonoBehaviours on a non-humanoid prefab, copy the wrapper DLLs from `<game>/MelonLoader/Il2CppAssemblies/` into `Assets/Plugins/` manually.
+- The scaffolded project ships no game-asset reference DLLs. Pure-visual prefabs (SkinnedMeshRenderer with materials, no scripts) build cleanly without them. Soldier-shape humanoid additions also build cleanly: the loader mirrors MENACE's `Footprints` and `Ragdoll` components from the reference vanilla soldier you passed to `BakeHumanoid` (template + skeletal root + per-foot transforms + decals), and the bake also copies supplementary non-bone, non-LOD children from the reference (footstep dust spawn containers, audio markers) onto the output prefab. The reference identity is encoded in a hidden sentinel child the bake writes, so `_referencePrefab` is load-bearing for runtime behaviour, not just material and avatar cloning. For any other MENACE MonoBehaviour, copy the vanilla sub-assembly that carries it and mark it with a `__jiangyu_scripts:` sentinel (see [copying a vanilla sub-assembly](#copying-a-vanilla-sub-assembly-into-your-prefab)).

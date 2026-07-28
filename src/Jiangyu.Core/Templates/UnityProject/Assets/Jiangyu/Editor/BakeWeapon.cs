@@ -215,13 +215,30 @@ namespace Jiangyu.Mod
                 var renderers = instance.GetComponentsInChildren<MeshRenderer>(includeInactive: true);
                 if (renderers.Length == 0)
                     throw new InvalidOperationException("glTF prefab '" + _gltfAsset.name + "' has no MeshRenderer. Weapon bake expects rigid meshes.");
+                var replaced = 0;
+                var kept = 0;
                 foreach (var renderer in renderers)
                 {
                     var slots = renderer.sharedMaterials;
                     for (int i = 0; i < slots.Length; i++)
+                    {
+                        // A slot that already renders in MENACE is the modder's own doing:
+                        // a sub-assembly copied across from a vanilla prefab, such as the
+                        // CQB rifle's laser, which carries its own unlit materials. Only
+                        // the glTF import's materials need replacing, because those sit on
+                        // stock Unity shaders the game does not ship.
+                        if (IsGameMaterial(slots[i]))
+                        {
+                            kept++;
+                            continue;
+                        }
                         slots[i] = newMaterial;
+                        replaced++;
+                    }
                     renderer.sharedMaterials = slots;
                 }
+                if (kept > 0)
+                    Debug.Log("Jiangyu BakeWeapon: kept " + kept + " material slot(s) already on a game shader, replaced " + replaced + ".");
 
                 var prefabPath = characterDir + "/main.prefab";
                 PrefabUtility.SaveAsPrefabAsset(instance, prefabPath);
@@ -233,6 +250,28 @@ namespace Jiangyu.Mod
             {
                 UnityEngine.Object.DestroyImmediate(instance);
             }
+        }
+
+        // Whether a material is already renderable in MENACE. A material asset under
+        // Assets/Imported/ came out of a vanilla extraction, whatever shader name the
+        // extraction gave it (Shader Graph shaders carry no recognisable prefix), and
+        // a hand-authored material opts in through the game's own shader families
+        // (Menace/*, or the HDRP built-ins its effects use). Anything else came out of
+        // the glTF import on a shader the game does not have, and a null slot needs
+        // filling regardless.
+        private static bool IsGameMaterial(Material material)
+        {
+            if (material == null)
+                return false;
+            var assetPath = AssetDatabase.GetAssetPath(material);
+            if (!string.IsNullOrEmpty(assetPath)
+                && assetPath.StartsWith("Assets/Imported/", StringComparison.Ordinal))
+                return true;
+            var shader = material.shader;
+            if (shader == null || string.IsNullOrEmpty(shader.name))
+                return false;
+            return shader.name.StartsWith("Menace/", StringComparison.Ordinal)
+                || shader.name.StartsWith("HDRP/", StringComparison.Ordinal);
         }
 
         private static Material BuildBakedMaterial(

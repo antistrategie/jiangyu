@@ -167,13 +167,13 @@ internal class ReplacementCoordinator
         // the source text, so they overwrite English in the same pass the base patches land.
         _localeApplier?.Apply(log);
 
-        // Humanoid-addition prefab script-config mirrors deferred from
+        // Addition-prefab script-config mirrors deferred from
         // addition-prefab loading. Resources is populated by this pass
         // (clone applier had access to per-type ScriptableObject
-        // inventories above), so the vanilla reference soldier lookup
+        // inventories above), so the vanilla reference prefab lookup
         // that missed during early boot will now resolve. Drains the
         // queue on success.
-        _catalog.HumanoidMirror.DrainPending(log);
+        _catalog.PrefabMirrors.DrainPending(log);
 
         if (_templateWorkSeen && !_templatesAppliedRaised
             && !_templatePatchApplier.HasPendingPatches && !_templateCloneApplier.HasPendingClones)

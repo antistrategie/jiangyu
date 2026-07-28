@@ -24,18 +24,17 @@ internal sealed class BundleReplacementCatalog
     // different-cased name.
     private readonly Dictionary<string, string> _additionPrefabOwners = new(StringComparer.OrdinalIgnoreCase);
 
-    // Humanoid addition prefabs need their MonoBehaviour config
-    // Humanoid addition prefabs need Ragdoll/Footprints field data
-    // mirrored from a canonical reference vanilla soldier prefab —
-    // AssetRipper strips field values on extract, so the addition
-    // reaches the loader with the components attached by bake but no
-    // field data. (Hierarchy children like dust spawn markers are
-    // mirrored at bake time inside BakeHumanoid, where Editor APIs can
-    // mutate the prefab on disk.) The reference lookup needs MENACE's
-    // asset registry to be populated, which isn't true during early-boot
-    // mod load, so the scheduler queues prefabs and drains during the
-    // loader's ApplyReplacements pass.
-    public readonly HumanoidMirrorScheduler HumanoidMirror = new();
+    // Addition prefabs that declare a vanilla reference need MENACE
+    // MonoBehaviours a modder's Unity project cannot author: Ragdoll and
+    // Footprints field data on a soldier-shape addition, and the whole
+    // script set on a vanilla sub-assembly copied into any prefab.
+    // (Hierarchy children like dust spawn markers are mirrored at bake
+    // time inside BakeHumanoid, where Editor APIs can mutate the prefab
+    // on disk.) The reference lookup needs MENACE's asset registry to be
+    // populated, which isn't true during early-boot mod load, so the
+    // scheduler queues prefabs and drains during the loader's
+    // ApplyReplacements pass.
+    public readonly PrefabMirrorScheduler PrefabMirrors = new();
 
     public Dictionary<string, ReplacementMesh> Meshes { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, Texture2D> ReplacementTextures { get; } = new(StringComparer.Ordinal);
@@ -427,7 +426,7 @@ internal sealed class BundleReplacementCatalog
             renderer.sharedMaterials = mats;
         }
 
-        var soldierScripts = HumanoidMirror.Queue(prefab, log.Raw);
+        var mirrorNotes = PrefabMirrors.Queue(prefab, key, log.Raw);
 
         if (_additionPrefabOwners.TryGetValue(key, out var previousOwner))
             log.Warning($"  Override addition prefab '{key}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
@@ -437,7 +436,7 @@ internal sealed class BundleReplacementCatalog
         var shaderSuffix = unresolved > 0
             ? $"; rebound {rebinds} shader(s); {unresolved} unresolved (will render magenta)"
             : $"; rebound {rebinds} shader(s)";
-        log.Debug($"  Registered addition prefab: {key} (object name: {prefab.name}{shaderSuffix}{soldierScripts})");
+        log.Debug($"  Registered addition prefab: {key} (object name: {prefab.name}{shaderSuffix}{mirrorNotes})");
     }
 
     private void RegisterMeshAsset(

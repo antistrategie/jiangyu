@@ -1,4 +1,3 @@
-using Il2CppInterop.Runtime;
 using MelonLoader;
 using UnityEngine;
 using Jiangyu.Loader.Logging;
@@ -96,7 +95,8 @@ internal static class HumanoidPrefabMirror
     /// was present but the named reference isn't loaded yet — caller
     /// should re-queue and retry during a later loader pass.
     /// </summary>
-    public static bool Mirror(GameObject addition, MelonLogger.Instance log)
+    public static bool Mirror(
+        GameObject addition, MelonLogger.Instance log, bool warnWhenReferenceMissing = false)
     {
         var (sentinel, referenceName) = FindReferenceSentinel(addition);
         if (string.IsNullOrEmpty(referenceName))
@@ -106,13 +106,18 @@ internal static class HumanoidPrefabMirror
             return true;
         }
 
-        var reference = FindReferencePrefab(referenceName);
+        var reference = MirrorReferenceLookup.FindPrefab(referenceName, addition);
         if (reference == null)
         {
             // Not loaded yet — caller re-queues us until ApplyReplacements
             // catches a pass where MENACE's asset registry includes the
             // reference. Keep the sentinel in place so the next pass can
             // find it again.
+            if (warnWhenReferenceMissing)
+                log.Warning(
+                    $"Component mirror on '{addition.name}': reference soldier '{referenceName}' is not "
+                    + "in the asset registry yet; retrying each apply pass. A name the game never "
+                    + "loads waits forever — check the bake's reference prefab.");
             return false;
         }
 
@@ -138,27 +143,6 @@ internal static class HumanoidPrefabMirror
         log.Debug(
             $"  Humanoid mirror on '{addition.name}': configured from reference '{referenceName}'.");
         return true;
-    }
-
-    /// <summary>
-    /// Looks up a vanilla prefab in Unity's loaded asset registry by
-    /// runtime Object.name. Returns null when the named prefab isn't
-    /// loaded yet, so callers can re-queue. Filters out scene
-    /// instantiations: we only mirror from clean prefab assets, never
-    /// from live scene objects whose state is mid-frame.
-    /// </summary>
-    private static GameObject FindReferencePrefab(string name)
-    {
-        var gameObjects = Resources.FindObjectsOfTypeAll(Il2CppType.Of<GameObject>());
-        foreach (var obj in gameObjects)
-        {
-            if (obj == null) continue;
-            var go = obj.TryCast<GameObject>();
-            if (go == null) continue;
-            if (go.scene.handle != 0) continue;
-            if (go.name == name) return go;
-        }
-        return null;
     }
 
     private static (Transform Sentinel, string ReferenceName) FindReferenceSentinel(GameObject addition)

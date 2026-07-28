@@ -365,6 +365,12 @@ namespace Jiangyu.Mod
                 if (bones.Contains(child)) continue;
                 if (existing.Contains(child.name)) continue;
                 if (SubtreeContainsSkinnedMesh(child)) continue;
+                // Imported vanilla prefabs carry __jiangyu_scripts markers on
+                // script-bearing nodes. Those are for sub-assemblies a modder
+                // copies deliberately; a humanoid bake mirrors its soldier
+                // config through HumanoidPrefabMirror instead, so markers must
+                // not ride the supplementary copy onto the baked character.
+                if (child.name.StartsWith("__jiangyu_scripts", System.StringComparison.Ordinal)) continue;
 
                 // Editor-side Instantiate-with-parent works on assets
                 // because the baked GameObject lives in the editor
@@ -375,6 +381,7 @@ namespace Jiangyu.Mod
                 // copied subtree.
                 var clone = (GameObject)UnityEngine.Object.Instantiate(child.gameObject, bakedTransform, worldPositionStays: false);
                 clone.name = child.name;
+                StripScriptMarkers(clone.transform);
                 copied++;
             }
 
@@ -382,6 +389,19 @@ namespace Jiangyu.Mod
                 Debug.Log(
                     $"Jiangyu BakeHumanoid: copied {copied} supplementary child subtree(s) from "
                     + $"'{reference.name}' onto baked prefab.");
+        }
+
+        private static void StripScriptMarkers(Transform subtree)
+        {
+            for (int i = subtree.childCount - 1; i >= 0; i--)
+            {
+                var child = subtree.GetChild(i);
+                if (child == null) continue;
+                if (child.name.StartsWith("__jiangyu_scripts", System.StringComparison.Ordinal))
+                    UnityEngine.Object.DestroyImmediate(child.gameObject);
+                else
+                    StripScriptMarkers(child);
+            }
         }
 
         // Copy the reference soldier's per-bone Rigidbody / Collider /

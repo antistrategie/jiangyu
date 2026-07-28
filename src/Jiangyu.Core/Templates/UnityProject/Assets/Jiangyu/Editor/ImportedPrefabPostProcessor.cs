@@ -33,11 +33,13 @@ namespace Jiangyu.Mod
                 try
                 {
                     root = PrefabUtility.LoadPrefabContents(path);
-                    var removed = StripRecursive(root);
-                    if (removed > 0)
+                    var stamped = 0;
+                    var removed = StripRecursive(root, root, ref stamped);
+                    if (removed > 0 || stamped > 0)
                     {
                         PrefabUtility.SaveAsPrefabAsset(root, path);
-                        Debug.Log("Jiangyu: stripped " + removed + " missing-script component(s) from '" + path + "'");
+                        Debug.Log("Jiangyu: stripped " + removed + " missing-script component(s), stamped "
+                            + stamped + " script marker(s) on '" + path + "'");
                     }
                 }
                 catch (System.Exception ex)
@@ -52,12 +54,46 @@ namespace Jiangyu.Mod
             }
         }
 
-        private static int StripRecursive(GameObject go)
+        // Each node that had scripts stripped gets a __jiangyu_scripts marker
+        // child, so a sub-assembly copied out of the import carries its markers
+        // with it and the loader restores those scripts from the live vanilla
+        // prefab at load time. The marker names the counterpart explicitly by
+        // path from the vanilla prefab's root, so pairing survives node renames
+        // and repeated names. Delete a marker to keep a copy scripts-free.
+        private static int StripRecursive(GameObject go, GameObject root, ref int stamped)
         {
-            var removed = GameObjectUtility.RemoveMonoBehavioursWithMissingScript(go);
+            var own = GameObjectUtility.RemoveMonoBehavioursWithMissingScript(go);
+            var removed = own;
             foreach (Transform child in go.transform)
-                removed += StripRecursive(child.gameObject);
+            {
+                if (child.name.StartsWith("__jiangyu_scripts", System.StringComparison.Ordinal)) continue;
+                removed += StripRecursive(child.gameObject, root, ref stamped);
+            }
+            if (own > 0 && !HasMarker(go))
+            {
+                var marker = new GameObject(MarkerName(go, root));
+                marker.transform.SetParent(go.transform, worldPositionStays: false);
+                stamped++;
+            }
             return removed;
+        }
+
+        private static bool HasMarker(GameObject go)
+        {
+            foreach (Transform child in go.transform)
+                if (child.name.StartsWith("__jiangyu_scripts", System.StringComparison.Ordinal))
+                    return true;
+            return false;
+        }
+
+        private static string MarkerName(GameObject go, GameObject root)
+        {
+            if (go == root)
+                return "__jiangyu_scripts:" + root.name;
+            var path = go.name;
+            for (var node = go.transform.parent; node != null && node.gameObject != root; node = node.parent)
+                path = node.name + "/" + path;
+            return "__jiangyu_scripts:" + root.name + "@" + path;
         }
     }
 }
