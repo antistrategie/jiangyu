@@ -77,28 +77,67 @@ namespace Jiangyu.Mod
             var outputDir = Path.Combine(modRoot, ".jiangyu", "unity_build");
             Directory.CreateDirectory(outputDir);
 
-            // ForceRebuildAssetBundle: never trust Unity's own incremental bundle cache. A stale
-            // .manifest left in the output dir (e.g. a delete that a Windows file lock defeated)
-            // otherwise makes Unity decide the bundle is current and skip it, emitting no file
-            // while still succeeding. Jiangyu already skips the whole Unity invocation when its
-            // inputs are unchanged, so a full rebuild here has no extra cost when Unity does run.
+            // Let Unity's own per-bundle hashing decide what to rebuild. A mod with many
+            // prefabs (dozens of character rigs) pays real time here, and rebuilding every
+            // bundle because one prefab moved is most of a compile. Jiangyu's fingerprint
+            // gates whether this pass runs at all, but it cannot tell WHICH bundle changed,
+            // and Unity can.
+            //
+            // The hazard ForceRebuildAssetBundle used to paper over is a stale .manifest
+            // surviving in the output dir (e.g. a delete a file lock defeated): Unity then
+            // decides the bundle is current, skips it, and emits no file while still
+            // reporting success. That is exactly what AllWritten detects, so the recovery
+            // is one forced retry rather than forcing every build.
+            var manifest = BuildIncrementalThenForceOnGap(outputDir, bundleNames);
+            if (manifest == null)
+                return false;
+
+            Debug.Log("Jiangyu BuildBundles: built " + manifest.GetAllAssetBundles().Length + " bundle(s) into " + outputDir);
+            return true;
+        }
+
+        /// <summary>
+        /// Build the assigned bundles incrementally, and when any expected bundle is missing
+        /// afterwards, rebuild once with <c>ForceRebuildAssetBundle</c>. Returns the manifest
+        /// of the build that produced a complete output set, or null when even the forced
+        /// rebuild left a gap (already logged by <see cref="BundleBuildVerify"/>).
+        /// </summary>
+        private static AssetBundleManifest BuildIncrementalThenForceOnGap(string outputDir, List<string> bundleNames)
+        {
             var manifest = BuildPipeline.BuildAssetBundles(
+                outputDir,
+                BuildAssetBundleOptions.ChunkBasedCompression,
+                EditorUserBuildSettings.activeBuildTarget);
+
+            // A null manifest is a build error, not a stale-cache gap: a forced retry would
+            // only repeat it.
+            if (manifest == null)
+            {
+                Debug.LogError("Jiangyu BuildBundles: BuildAssetBundles returned null.");
+                return null;
+            }
+
+            if (BundleBuildVerify.AllWritten(outputDir, bundleNames, manifest, "Jiangyu BuildBundles (incremental)"))
+                return manifest;
+
+            Debug.LogWarning(
+                "Jiangyu BuildBundles: incremental build left expected bundle(s) unwritten, " +
+                "retrying with ForceRebuildAssetBundle.");
+
+            manifest = BuildPipeline.BuildAssetBundles(
                 outputDir,
                 BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle,
                 EditorUserBuildSettings.activeBuildTarget);
 
             if (manifest == null)
             {
-                Debug.LogError("Jiangyu BuildBundles: BuildAssetBundles returned null.");
-                return false;
+                Debug.LogError("Jiangyu BuildBundles: forced BuildAssetBundles returned null.");
+                return null;
             }
 
-            Debug.Log("Jiangyu BuildBundles: built " + manifest.GetAllAssetBundles().Length + " bundle(s) into " + outputDir);
-
-            // A non-null manifest does not guarantee each expected bundle was written (a
-            // cold-project import pass can leave assets unimported), so verify every assigned
-            // bundle actually landed on disk.
-            return BundleBuildVerify.AllWritten(outputDir, bundleNames, manifest, "Jiangyu BuildBundles");
+            return BundleBuildVerify.AllWritten(outputDir, bundleNames, manifest, "Jiangyu BuildBundles (forced)")
+                ? manifest
+                : null;
         }
 
         /// <summary>
