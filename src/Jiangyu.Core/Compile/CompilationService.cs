@@ -466,32 +466,46 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         const string PrefabPhase = "prefabs";
         const string AssetsPhase = "assets";
-        // The unity/ project (editor scripts plus any prefabs) feeds both the prefab and the
-        // raw-GLB passes, so fingerprint it once and reuse. Only computed when a pass that
-        // reads it will run, since hashing the tree (which can include large imported rips)
-        // is wasted otherwise.
-        var unityInputsFingerprint = (useRawGlbPipeline || hasPrefabWork)
-            ? PrefabInputsFingerprint(userUnityDir, gameVersion?.ToString())
+        // The two Unity outputs read DISJOINT mod inputs: the prefab bundles come from
+        // unity/Assets (prefabs, UXML, and the authored/imported assets they depend on),
+        // the replacement bundle from assets/additions plus the staged mesh data. Only the
+        // surrounding Unity project (editor scripts, ProjectSettings, package versions) is
+        // shared. Fingerprinting them separately is what lets a prefab edit skip the
+        // replacement bundle and an audio or sprite edit skip the prefab bundles, instead
+        // of either one invalidating both.
+        var unityProjectFingerprint = (useRawGlbPipeline || hasPrefabWork)
+            ? UnityProjectFingerprint(userUnityDir, gameVersion?.ToString())
             : string.Empty;
-        // Reuse the raw-GLB Unity pass (the texture/sprite/mesh bundle, plus the folded prefab
-        // build in the combined case) when its inputs are unchanged and the cached outputs
-        // survive. This Unity cold start is the bulk of compile time, so skipping it is the
-        // main incremental win. The mesh metadata it produces is cached alongside the
-        // fingerprint and restored on reuse. --clean starts from an empty build state.
+        // Only computed when a pass that reads it will run, since hashing the tree (which
+        // can include large imported rips and authored sources) is wasted otherwise.
+        var prefabInputsFingerprint = hasPrefabWork
+            ? PrefabInputsFingerprint(userUnityDir, unityProjectFingerprint)
+            : string.Empty;
+        // Reuse the raw-GLB Unity pass (the texture/sprite/audio/mesh bundle) when its own
+        // inputs are unchanged and the cached output survives. This is the most expensive
+        // single part of a compile, so skipping it is the main incremental win. The mesh
+        // metadata it produces is cached alongside the fingerprint and restored on reuse.
+        // --clean starts from an empty build state.
         var assetsFingerprint = useRawGlbPipeline
-            ? AssetInputsFingerprint(projectDir, unityInputsFingerprint)
+            ? AssetInputsFingerprint(projectDir, unityProjectFingerprint)
             : string.Empty;
         var reuseRawGlb = useRawGlbPipeline
             && buildState.Matches(AssetsPhase, assetsFingerprint)
-            && File.Exists(builtBundle)
-            && (!combinedUnityPass || (Directory.Exists(unityBuildDir) && Directory.EnumerateFiles(unityBuildDir, "*.bundle").Any()));
+            && File.Exists(builtBundle);
+        // In the combined case the prefab bundles ship from the same Unity launch, so they
+        // get their own reuse test against their own fingerprint. Either half being stale
+        // launches Unity; each half is then told whether to do its work.
+        var reuseCombinedPrefabs = combinedUnityPass
+            && buildState.Matches(PrefabPhase, prefabInputsFingerprint)
+            && Directory.Exists(unityBuildDir)
+            && Directory.EnumerateFiles(unityBuildDir, "*.bundle").Any();
         if (!combinedUnityPass)
         {
             // Skip the prefab batchmode (a Unity cold start) when its inputs are unchanged
             // since the last successful compile and its cached bundles are still present.
             // Staging below always reruns from the cached output, so compiled/ is reassembled
             // either way; only the slow Unity invocation is avoided.
-            var prefabFingerprint = hasPrefabWork ? unityInputsFingerprint : string.Empty;
+            var prefabFingerprint = prefabInputsFingerprint;
             var reuseCachedPrefabs = hasPrefabWork
                 && buildState.Matches(PrefabPhase, prefabFingerprint)
                 && Directory.Exists(unityBuildDir)
@@ -523,10 +537,13 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 gameDataPath,
                 _log);
         }
-        else if (!reuseRawGlb)
+        else if (!reuseCombinedPrefabs)
         {
-            // The folded prefab build is about to rerun in the raw-GLB pass; clear its stale
-            // output first. When reusing, keep the cached prefab bundles for staging.
+            // The prefab build is about to rerun (folded into the raw-GLB pass, or on its
+            // own when only the prefab half is stale); clear its stale output first. Gated
+            // on the PREFAB half, not the asset half: an audio or sprite edit reruns the
+            // raw-GLB pass while the prefab bundles stay current, and wiping them there
+            // would leave nothing for staging to copy.
             AdditionPrefabStaging.ClearStaleBuildOutput(unityBuildDir);
         }
 
@@ -542,7 +559,24 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         if (useRawGlbPipeline)
         {
-            if (reuseRawGlb)
+            // A mod with no prefab work has no prefab half to keep current.
+            var prefabHalfCurrent = !combinedUnityPass || reuseCombinedPrefabs;
+            if (reuseRawGlb && !prefabHalfCurrent)
+            {
+                // The expensive half (staging every addition asset, then baking one large
+                // replacement bundle) is current while the prefab bundles are not. Run the
+                // standalone prefab pass instead of the combined one: it costs an extra Unity
+                // cold start but skips the replacement-bundle work entirely, and Unity's own
+                // per-bundle hashing means only the prefabs that actually changed rebuild.
+                _log.Info("  Incremental: asset inputs unchanged, rebuilding prefab bundles only.");
+                await BuildUnityAdditionPrefabs(
+                    projectDir, unityBuildDir, unityEditorPath,
+                    preserveBundlePath: builtBundle);
+                buildState.Record(PrefabPhase, prefabInputsFingerprint);
+                compiledManifest.Meshes = buildState.GetData<Dictionary<string, MeshManifestEntry>>(AssetsPhase)
+                    ?? new Dictionary<string, MeshManifestEntry>(StringComparer.Ordinal);
+            }
+            else if (reuseRawGlb)
             {
                 _log.Info("  Incremental: asset inputs unchanged, reusing cached bundles.");
                 compiledManifest.Meshes = buildState.GetData<Dictionary<string, MeshManifestEntry>>(AssetsPhase)
@@ -573,7 +607,11 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                         replacementAudio,
                         gameDataPath,
                         targetMeshNamesByBundleMesh,
-                        runPrefabs: combinedUnityPass,
+                        // Fold the prefab build in only when the prefab half is actually
+                        // stale. An audio or sprite edit reruns this pass with the prefab
+                        // bundles already current, and rebuilding all of them would add the
+                        // whole prefab bundle cost back for nothing.
+                        runPrefabs: combinedUnityPass && !reuseCombinedPrefabs,
                         log: _log);
                     compiledManifest.Meshes = new Dictionary<string, MeshManifestEntry>(StringComparer.Ordinal);
                     foreach (var entry in replacementEntries)
@@ -616,7 +654,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                     _log);
                 // Prefabs ship from this same pass; record their fingerprint so a later
                 // non-combined compile can reuse the cached bundles too.
-                buildState.Record(PrefabPhase, unityInputsFingerprint);
+                buildState.Record(PrefabPhase, prefabInputsFingerprint);
             }
         }
         else
@@ -661,13 +699,13 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             || relative.StartsWith("Temp/", StringComparison.Ordinal)
             || relative.StartsWith("obj/", StringComparison.Ordinal);
 
-    // Fingerprint of the inputs Unity reads when building the addition-prefab bundles: the
-    // mod's unity/ project content. Build-generated subtrees (Library/, Temp/, build.log in the
-    // unity/ root, plus Assets/Jiangyu/Staging/ and editor caches under Assets/) are excluded so
-    // an unchanged source tree yields a stable fingerprint and incremental reuse can hit.
-    private static string PrefabInputsFingerprint(string unityDir, string? gameVersion)
+    // Fingerprint of the surrounding Unity project, shared by both bundle passes because both
+    // run inside it: editor scripts, project settings, package versions. Deliberately excludes
+    // Assets/ content, so each pass can add just the part of Assets/ it actually reads and a
+    // change to one pass's inputs cannot invalidate the other's.
+    private static string UnityProjectFingerprint(string unityDir, string? gameVersion)
         => FileFingerprint.Combine(
-            FileFingerprint.OfDirectory(Path.Combine(unityDir, "Assets"), IsRegeneratedAssetPath),
+            FileFingerprint.OfDirectory(Path.Combine(unityDir, "Assets", "Jiangyu", "Editor")),
             FileFingerprint.OfDirectory(Path.Combine(unityDir, "ProjectSettings")),
             FileFingerprint.OfFile(Path.Combine(unityDir, "Packages", "manifest.json")),
             // Bundle format tracks the Unity editor (resolved from the game's Unity version),
@@ -677,13 +715,31 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             gameVersion ?? string.Empty,
             JiangyuVersion.Current);
 
-    // Fingerprint of the inputs the raw-GLB Unity pass reads: the mod's authored assets plus
-    // the (already-computed) unity/ project fingerprint, which carries the game and toolchain
-    // versions.
-    private static string AssetInputsFingerprint(string projectDir, string unityInputsFingerprint)
+    // Fingerprint of the inputs Unity reads when building the addition-prefab bundles: the
+    // mod's unity/Assets content. Build-generated subtrees (Assets/Jiangyu/Staging/ and editor
+    // caches) are excluded so an unchanged source tree yields a stable fingerprint and
+    // incremental reuse can hit.
+    //
+    // This hashes all of Assets/, not just Assets/Prefabs and Assets/UI, because a prefab's
+    // bundle pulls in whatever it references: baked meshes under Assets/Authored (a doll's
+    // main.prefab points at its model.gltf) and shared rig assets under Assets/Imported (the
+    // animator controller, the ragdoll physics material). Narrowing this to the two bundle-root
+    // folders would under-invalidate and ship a stale prefab bundle after a retexture or a
+    // re-bake, which is far worse than hashing some source files that no bundle reads.
+    private static string PrefabInputsFingerprint(string unityDir, string unityProjectFingerprint)
+        => FileFingerprint.Combine(
+            FileFingerprint.OfDirectory(Path.Combine(unityDir, "Assets"), IsRegeneratedAssetPath),
+            unityProjectFingerprint);
+
+    // Fingerprint of the inputs the raw-GLB Unity pass reads: the mod's assets/ tree (every
+    // replacement and addition texture, sprite, audio clip and mesh) plus the surrounding Unity
+    // project, which carries the game and toolchain versions. Deliberately NOT the unity/Assets
+    // content: that pass stages everything it needs out of assets/, so a prefab re-bake leaves
+    // this bundle current.
+    private static string AssetInputsFingerprint(string projectDir, string unityProjectFingerprint)
         => FileFingerprint.Combine(
             FileFingerprint.OfDirectory(Path.Combine(projectDir, "assets")),
-            unityInputsFingerprint);
+            unityProjectFingerprint);
 
     /// <summary>
     /// Emits the localisation outputs under <c>compiled/locales/</c>: the source catalogue
