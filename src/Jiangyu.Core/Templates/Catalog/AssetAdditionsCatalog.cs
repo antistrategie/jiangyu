@@ -123,6 +123,13 @@ public sealed class FileSystemAssetAdditionsCatalog : IAssetAdditionsCatalog
         return _byCategory.TryGetValue(category, out var set) && set.Contains(name);
     }
 
+    /// <summary>
+    /// Every logical name indexed for <paramref name="category"/> (empty when the
+    /// category has no files).
+    /// </summary>
+    public IReadOnlyCollection<string> Names(string category)
+        => _byCategory.TryGetValue(category, out var set) ? set : [];
+
     private static string StripExtension(string path)
     {
         var ext = Path.GetExtension(path);

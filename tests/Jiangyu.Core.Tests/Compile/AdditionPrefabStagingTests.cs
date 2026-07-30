@@ -175,25 +175,27 @@ public sealed class AdditionPrefabStagingTests : IDisposable
     }
 
     [Fact]
-    public void ClearStaleBuildOutput_PreservesTheNamedBundle_ClearsEverythingElse()
+    public void ClearStaleBuildOutput_LeavesReplacementBundlesAndManifestsAlone()
     {
-        // The regression this guards: a texture/sprite/audio-only mod caches its raw-GLB bundle
-        // (named after the mod, no .bundle extension) in unity_build/. On the next compile the
-        // reuse path relies on that bundle, but the prefab-hygiene wipe runs first and used to
-        // delete it, so the compile failed with "did not produce expected bundle" on every second
-        // run. The preserved file must survive while stale prefab bundles/manifests are removed.
+        // The replacement bundles (extensionless, per-group) and their Unity manifests
+        // share unity_build/ with the prefab bundles and are the incremental state that
+        // lets an unchanged replacement bundle skip rebuilding. The prefab clear must
+        // only ever touch prefab-shaped files, whatever the compile is doing.
         var buildDir = Path.Combine(_tempRoot, ".jiangyu", "unity_build");
         Directory.CreateDirectory(buildDir);
-        var reusedBundle = Path.Combine(buildDir, "test"); // raw-GLB bundle, extensionless
-        File.WriteAllText(reusedBundle, "cached raw-glb bundle");
+        var audio = Path.Combine(buildDir, "test__audio__alpha");
+        var audioManifest = Path.Combine(buildDir, "test__audio__alpha.manifest");
+        File.WriteAllText(audio, "cached audio bundle");
+        File.WriteAllText(audioManifest, "unity incremental state");
         File.WriteAllText(Path.Combine(buildDir, "widget.bundle"), "stale prefab bundle");
-        File.WriteAllText(Path.Combine(buildDir, "test.manifest"), "stale unity manifest");
+        File.WriteAllText(Path.Combine(buildDir, "widget.bundle.manifest"), "stale prefab manifest");
 
-        AdditionPrefabStaging.ClearStaleBuildOutput(buildDir, preservePath: reusedBundle);
+        AdditionPrefabStaging.ClearStaleBuildOutput(buildDir);
 
-        Assert.True(File.Exists(reusedBundle));
+        Assert.True(File.Exists(audio));
+        Assert.True(File.Exists(audioManifest));
         Assert.False(File.Exists(Path.Combine(buildDir, "widget.bundle")));
-        Assert.False(File.Exists(Path.Combine(buildDir, "test.manifest")));
+        Assert.False(File.Exists(Path.Combine(buildDir, "widget.bundle.manifest")));
     }
 
     [Fact]
@@ -214,6 +216,80 @@ public sealed class AdditionPrefabStagingTests : IDisposable
 
         Assert.Null(manifest.AdditionPrefabs);
         Assert.Empty(Directory.GetFiles(_outputDir));
+    }
+
+    [Fact]
+    public void Stage_WithCacheDir_StoresRestoredOutputAndKey()
+    {
+        var manifest = NewManifest();
+        var sourceDir = MakeSourceDir("primary", ("widget", "widget contents"));
+        var cacheDir = Path.Combine(_tempRoot, "restored_bundles");
+
+        AdditionPrefabStaging.Stage([sourceDir], _outputDir, manifest, _gameDataDir, _log, cacheDir, cacheKeyContext: "game-1.0");
+
+        Assert.True(File.Exists(Path.Combine(cacheDir, "widget.bundle")));
+        Assert.True(File.Exists(Path.Combine(cacheDir, "widget.bundle.key")));
+    }
+
+    [Fact]
+    public void Stage_UnchangedSource_ShipsTheCachedRestoredCopy()
+    {
+        var manifest = NewManifest();
+        var sourceDir = MakeSourceDir("primary", ("widget", "widget contents"));
+        var cacheDir = Path.Combine(_tempRoot, "restored_bundles");
+        AdditionPrefabStaging.Stage([sourceDir], _outputDir, manifest, _gameDataDir, _log, cacheDir, cacheKeyContext: "game-1.0");
+
+        // The cached copy stands in for the restored output, so a tampered marker in it
+        // proves the second staging shipped the cache rather than re-restoring the source.
+        File.WriteAllText(Path.Combine(cacheDir, "widget.bundle"), "cached sentinel");
+
+        AdditionPrefabStaging.Stage([sourceDir], _outputDir, NewManifest(), _gameDataDir, _log, cacheDir, cacheKeyContext: "game-1.0");
+
+        Assert.Equal("cached sentinel", File.ReadAllText(Path.Combine(_outputDir, "widget.bundle")));
+        Assert.Contains(_log.Infos, m => m.Contains("reused from the restored cache"));
+    }
+
+    [Fact]
+    public void Stage_ChangedSource_BypassesAndRefreshesTheCache()
+    {
+        var manifest = NewManifest();
+        var sourceDir = MakeSourceDir("primary", ("widget", "widget contents"));
+        var cacheDir = Path.Combine(_tempRoot, "restored_bundles");
+        AdditionPrefabStaging.Stage([sourceDir], _outputDir, manifest, _gameDataDir, _log, cacheDir, cacheKeyContext: "game-1.0");
+
+        File.WriteAllText(Path.Combine(sourceDir, "widget.bundle"), "edited contents");
+        AdditionPrefabStaging.Stage([sourceDir], _outputDir, NewManifest(), _gameDataDir, _log, cacheDir, cacheKeyContext: "game-1.0");
+
+        Assert.Equal("edited contents", File.ReadAllText(Path.Combine(_outputDir, "widget.bundle")));
+        Assert.Equal("edited contents", File.ReadAllText(Path.Combine(cacheDir, "widget.bundle")));
+    }
+
+    [Fact]
+    public void Stage_ChangedGameContext_BypassesTheCache()
+    {
+        var sourceDir = MakeSourceDir("primary", ("widget", "widget contents"));
+        var cacheDir = Path.Combine(_tempRoot, "restored_bundles");
+        AdditionPrefabStaging.Stage([sourceDir], _outputDir, NewManifest(), _gameDataDir, _log, cacheDir, cacheKeyContext: "game-1.0");
+        File.WriteAllText(Path.Combine(cacheDir, "widget.bundle"), "cached sentinel");
+
+        AdditionPrefabStaging.Stage([sourceDir], _outputDir, NewManifest(), _gameDataDir, _log, cacheDir, cacheKeyContext: "game-2.0");
+
+        Assert.Equal("widget contents", File.ReadAllText(Path.Combine(_outputDir, "widget.bundle")));
+    }
+
+    [Fact]
+    public void Stage_DroppedBundle_IsPrunedFromTheCache()
+    {
+        var sourceDir = MakeSourceDir("primary", ("alpha", "a"), ("beta", "b"));
+        var cacheDir = Path.Combine(_tempRoot, "restored_bundles");
+        AdditionPrefabStaging.Stage([sourceDir], _outputDir, NewManifest(), _gameDataDir, _log, cacheDir, cacheKeyContext: "game-1.0");
+
+        File.Delete(Path.Combine(sourceDir, "beta.bundle"));
+        AdditionPrefabStaging.Stage([sourceDir], _outputDir, NewManifest(), _gameDataDir, _log, cacheDir, cacheKeyContext: "game-1.0");
+
+        Assert.True(File.Exists(Path.Combine(cacheDir, "alpha.bundle")));
+        Assert.False(File.Exists(Path.Combine(cacheDir, "beta.bundle")));
+        Assert.False(File.Exists(Path.Combine(cacheDir, "beta.bundle.key")));
     }
 
     private string MakeSourceDir(string name, params (string stem, string contents)[] bundles)

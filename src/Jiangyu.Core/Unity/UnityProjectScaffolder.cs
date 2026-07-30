@@ -99,6 +99,52 @@ public sealed class UnityProjectScaffolder
     /// version. Missing files count as drift. Empty when <c>unity/</c> is absent.
     /// </summary>
     public IReadOnlyList<string> FindDriftedManagedFiles(string projectRoot)
+        => FindDrifted(projectRoot, entry => true);
+
+    /// <summary>
+    /// Like <see cref="FindDriftedManagedFiles"/>, but only the managed editor
+    /// scripts under <c>Assets/Jiangyu/Editor/</c>: the files whose content is a
+    /// hard protocol with the compile pipeline. The other managed files
+    /// (README, <c>.gitignore</c>) do not affect a build and stay untouched
+    /// outside an explicit <c>jiangyu unity sync</c>.
+    /// </summary>
+    public IReadOnlyList<string> FindDriftedEditorScripts(string projectRoot)
+        => FindDrifted(projectRoot, IsEditorScript);
+
+    /// <summary>
+    /// Rewrites the drifted managed editor scripts from this Jiangyu version's
+    /// embedded templates, returning how many were refreshed.
+    /// </summary>
+    public int RefreshDriftedEditorScripts(string projectRoot)
+    {
+        if (string.IsNullOrWhiteSpace(projectRoot))
+            return 0;
+        var unityDir = Path.Combine(projectRoot, "unity");
+        if (!Directory.Exists(unityDir))
+            return 0;
+        var refreshed = 0;
+        foreach (var (templatePath, destParts) in OverwriteManagedTemplates)
+        {
+            if (!IsEditorScript(destParts))
+                continue;
+            var destPath = Path.Combine(unityDir, Path.Combine(destParts));
+            var expected = ScaffoldFiles.LoadEmbeddedTemplate(templatePath);
+            if (File.Exists(destPath) && string.Equals(expected, File.ReadAllText(destPath), StringComparison.Ordinal))
+                continue;
+            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+            File.WriteAllText(destPath, expected);
+            refreshed++;
+        }
+        return refreshed;
+    }
+
+    private static bool IsEditorScript(string[] destParts)
+        => destParts.Length >= 4
+            && destParts[0] == "Assets"
+            && destParts[1] == "Jiangyu"
+            && destParts[2] == "Editor";
+
+    private IReadOnlyList<string> FindDrifted(string projectRoot, Func<string[], bool> include)
     {
         if (string.IsNullOrWhiteSpace(projectRoot))
             return Array.Empty<string>();
@@ -110,6 +156,8 @@ public sealed class UnityProjectScaffolder
         var drifted = new List<string>();
         foreach (var (templatePath, destParts) in OverwriteManagedTemplates)
         {
+            if (!include(destParts))
+                continue;
             var destPath = Path.Combine(unityDir, Path.Combine(destParts));
             if (!File.Exists(destPath))
             {

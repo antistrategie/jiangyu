@@ -11,18 +11,19 @@ namespace Jiangyu.Core.Compile;
 /// </summary>
 public static class FileFingerprint
 {
-    /// <summary>SHA-256 over every file under <paramref name="dir"/> (relative path + content),
-    /// or empty when the directory is absent. <paramref name="excludeRelative"/>, when given, is
-    /// tested against each file's forward-slashed path relative to <paramref name="dir"/>; matches
-    /// are skipped (and their bytes never read), so build-generated subtrees can be left out of an
-    /// otherwise source-only fingerprint.</summary>
-    public static string OfDirectory(string dir, Func<string, bool>? excludeRelative = null)
+    /// <summary>SHA-256 over every file under <paramref name="dir"/> matching
+    /// <paramref name="searchPattern"/> (relative path + content), or empty when the directory is
+    /// absent. <paramref name="excludeRelative"/>, when given, is tested against each file's
+    /// forward-slashed path relative to <paramref name="dir"/>; matches are skipped (and their
+    /// bytes never read), so build-generated subtrees can be left out of an otherwise source-only
+    /// fingerprint.</summary>
+    public static string OfDirectory(string dir, Func<string, bool>? excludeRelative = null, string searchPattern = "*")
     {
         if (!Directory.Exists(dir))
             return string.Empty;
 
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        var files = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
+        var files = Directory.EnumerateFiles(dir, searchPattern, SearchOption.AllDirectories)
             .Select(path => (Relative: Path.GetRelativePath(dir, path).Replace('\\', '/'), Full: path))
             .Where(entry => excludeRelative is null || !excludeRelative(entry.Relative))
             .OrderBy(entry => entry.Relative, StringComparer.Ordinal);
@@ -32,6 +33,27 @@ public static class FileFingerprint
             hash.AppendData(Encoding.UTF8.GetBytes(relative + "\n"));
             AppendFile(hash, full);
         }
+
+        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+    }
+
+    /// <summary>SHA-256 over every file's (relative path, length, last write time) under
+    /// <paramref name="dir"/>, or empty when the directory is absent. No content is read, so this
+    /// is cheap enough for trees far too large to hash (a game install) while still moving
+    /// whenever any file there is added, removed, resized, or rewritten.</summary>
+    public static string OfDirectoryMetadata(string dir)
+    {
+        if (!Directory.Exists(dir))
+            return string.Empty;
+
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var files = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
+            .Select(path => new FileInfo(path))
+            .Select(info => (Relative: Path.GetRelativePath(dir, info.FullName).Replace('\\', '/'), info.Length, info.LastWriteTimeUtc.Ticks))
+            .OrderBy(entry => entry.Relative, StringComparer.Ordinal);
+
+        foreach (var (relative, length, ticks) in files)
+            hash.AppendData(Encoding.UTF8.GetBytes($"{relative}\n{length}\n{ticks}\n"));
 
         return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
     }

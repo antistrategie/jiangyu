@@ -33,7 +33,31 @@ namespace Jiangyu.Mod
 
         public static void BuildAll()
         {
-            EditorApplication.Exit(RunCore() ? 0 : 1);
+            if (!RunCore())
+            {
+                EditorApplication.Exit(1);
+                return;
+            }
+
+            // Written last: the compile pipeline treats a fresh marker carrying its token
+            // as the only proof this script ran to completion, since the bundle files
+            // themselves persist across compiles as incremental state.
+            var completionToken = GetArg(Environment.GetCommandLineArgs(), "-completionToken");
+            if (!string.IsNullOrEmpty(completionToken))
+            {
+                var projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                var modRoot = Path.GetFullPath(Path.Combine(projectRoot, ".."));
+                File.WriteAllText(Path.Combine(modRoot, ".jiangyu", "unity_build_prefabs.done"), completionToken);
+            }
+            EditorApplication.Exit(0);
+        }
+
+        private static string GetArg(string[] args, string name)
+        {
+            for (var i = 0; i < args.Length - 1; i++)
+                if (string.Equals(args[i], name, StringComparison.Ordinal))
+                    return args[i + 1];
+            return null;
         }
 
         /// <summary>
@@ -77,6 +101,13 @@ namespace Jiangyu.Mod
             var outputDir = Path.Combine(modRoot, ".jiangyu", "unity_build");
             Directory.CreateDirectory(outputDir);
 
+            // A bundle whose prefab, UXML, or icon no longer exists must not linger for
+            // staging to re-ship, and its stale .manifest must not confuse the incremental
+            // build. Everything still assigned keeps its file and manifest: that is the
+            // incremental state that lets an unchanged prefab's bundle skip rebuilding.
+            // Extensionless replacement bundle files are not touched.
+            PruneStaleBundles(outputDir, bundleNames);
+
             // Let Unity's own per-bundle hashing decide what to rebuild. A mod with many
             // prefabs (dozens of character rigs) pays real time here, and rebuilding every
             // bundle because one prefab moved is most of a compile. Jiangyu's fingerprint
@@ -94,6 +125,25 @@ namespace Jiangyu.Mod
 
             Debug.Log("Jiangyu BuildBundles: built " + manifest.GetAllAssetBundles().Length + " bundle(s) into " + outputDir);
             return true;
+        }
+
+        private static void PruneStaleBundles(string outputDir, List<string> expected)
+        {
+            var live = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var name in expected)
+                live.Add(name);
+            foreach (var file in Directory.GetFiles(outputDir))
+            {
+                var name = Path.GetFileName(file);
+                var stem = name.EndsWith(".manifest", StringComparison.Ordinal)
+                    ? name.Substring(0, name.Length - ".manifest".Length)
+                    : name;
+                if (!stem.EndsWith(".bundle", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (live.Contains(stem))
+                    continue;
+                File.Delete(file);
+            }
         }
 
         /// <summary>
