@@ -68,6 +68,8 @@ public static class GlbMeshBundleCompiler
     {
         public required Dictionary<string, string[]> MeshBoneNames { get; init; }
         public required Dictionary<string, List<CompiledMaterialBinding>> MeshMaterialBindings { get; init; }
+        /// <summary>Extensionless bundle files the build produced in <c>unity_build/</c>.</summary>
+        public required IReadOnlyList<string> BundleFiles { get; init; }
     }
 
     internal sealed class MeshBuildContract
@@ -140,6 +142,15 @@ public static class GlbMeshBundleCompiler
             if (meshes.Count == 0 && textures.Count == 0 && directSprites.Count == 0 && directAudioAssets.Count == 0)
                 throw new InvalidOperationException("No replacement assets were extracted.");
 
+            // The early validation gate saw only the discovered textures; the GLB-extracted
+            // names merged above land in the same Generated/<name>.asset space, so check the
+            // full set before any Unity work depends on it.
+            var generatedConflicts = Compile.ReplacementNameValidation.FindGeneratedConflicts(
+                textures.Keys, meshes.Select(m => m.Name), directSprites);
+            if (generatedConflicts.Count > 0)
+                throw new InvalidOperationException(
+                    "Asset name conflict(s) involving GLB-extracted textures: " + string.Join("; ", generatedConflicts));
+
             var modRoot = Path.GetFullPath(Path.Combine(unityProjectDir, ".."));
             var bundleFileName = Path.GetFileName(outputBundlePath);
             var diagnosticsDir = Path.Combine(modRoot, ".jiangyu", "diagnostics");
@@ -154,10 +165,19 @@ public static class GlbMeshBundleCompiler
             MeshBundleStager.WriteMeshData(meshDataPath, meshes);
             MeshBundleStager.WriteTextureData(textureDataPath, [.. textures.Values.OrderBy(texture => texture.Name, StringComparer.Ordinal)]);
             await MeshBundleUnityBuild.StageReplacementAssetsAsync(unityProjectDir, directSprites, directAudioAssets);
-            log?.Info($"  [timing]   Write staging data: {sw.Elapsed.TotalSeconds:F1}s");
+            var plan = ReplacementBundlePlan.Build(
+                bundleName,
+                [.. meshes.Select(m => m.Name)],
+                textures.Values,
+                directSprites,
+                directAudioAssets);
+            var bundlePlanPath = Path.Combine(glbStagingDir, "bundleplan.txt");
+            await File.WriteAllTextAsync(bundlePlanPath, plan.PlanText);
+            log?.Info($"  [timing]   Write staging data: {sw.Elapsed.TotalSeconds:F1}s ({plan.BundleFiles.Count} planned bundle(s))");
             var diagnosticsPath = Path.Combine(diagnosticsDir, bundleFileName + ".unity-diagnostics.json");
             var contractPath = Path.Combine(glbStagingDir, "meshcontract.bin");
-            var firstPassOutputPath = outputBundlePath;
+            var unityBuildDir = Path.GetDirectoryName(outputBundlePath)!;
+            var plannedOutputPaths = plan.BundleFiles.Select(name => Path.Combine(unityBuildDir, name)).ToArray();
 
             var allTargetMeshNames = entries
                 .Select(entry => entry.TargetMeshName)
@@ -167,18 +187,20 @@ public static class GlbMeshBundleCompiler
 
             var needsSecondPass = !string.IsNullOrWhiteSpace(gameDataPath) &&
                                   Directory.Exists(gameDataPath) &&
-                                  allTargetMeshNames.Length > 0;
-            if (needsSecondPass)
-                firstPassOutputPath = outputBundlePath + ".pass1";
+                                  allTargetMeshNames.Length > 0 &&
+                                  plan.MeshesBundleFile is not null;
 
             sw.Restart();
-            await MeshBundleUnityBuild.InvokeUnityBuildAsync(unityEditor, unityProjectDir, firstPassOutputPath, bundleName, meshDataPath, textureDataPath, diagnosticsPath, meshContractPath: null, runPrefabs: runPrefabs, log: log);
+            await MeshBundleUnityBuild.InvokeUnityBuildAsync(unityEditor, unityProjectDir, outputBundlePath, bundleName, meshDataPath, textureDataPath, diagnosticsPath, bundlePlanPath, plannedOutputPaths, meshContractPath: null, runPrefabs: runPrefabs, log: log);
             log?.Info($"  [timing] Unity pass 1: {sw.Elapsed.TotalSeconds:F1}s{(runPrefabs ? " (with prefab pass)" : "")}");
 
             if (needsSecondPass)
             {
                 sw.Restart();
-                var extractedContracts = MeshContractExtractor.Extract(firstPassOutputPath, gameDataPath!, allTargetMeshNames);
+                // Meshes ship in their own planned bundle, so the extractor reads just that
+                // file rather than the whole replacement set.
+                var meshesBundlePath = Path.Combine(unityBuildDir, plan.MeshesBundleFile!);
+                var extractedContracts = MeshContractExtractor.Extract(meshesBundlePath, gameDataPath!, allTargetMeshNames);
                 log?.Info($"  [timing] Mesh contract extraction: {sw.Elapsed.TotalSeconds:F1}s");
 
                 // Contract stamping (bone name hashes, bindposes) only fires for non-ambiguous
@@ -208,12 +230,11 @@ public static class GlbMeshBundleCompiler
                 {
                     MeshBundleStager.WriteMeshContracts(contractPath, contracts);
                     sw.Restart();
-                    await MeshBundleUnityBuild.InvokeUnityBuildAsync(unityEditor, unityProjectDir, outputBundlePath, bundleName, meshDataPath, textureDataPath, diagnosticsPath, contractPath, log: log);
+                    // Contract stamping recreates the mesh assets, so Unity's incremental
+                    // build rewrites the meshes bundle in place while the other planned
+                    // bundles hash as current.
+                    await MeshBundleUnityBuild.InvokeUnityBuildAsync(unityEditor, unityProjectDir, outputBundlePath, bundleName, meshDataPath, textureDataPath, diagnosticsPath, bundlePlanPath, plannedOutputPaths, contractPath, log: log);
                     log?.Info($"  [timing] Unity pass 2: {sw.Elapsed.TotalSeconds:F1}s");
-                }
-                else if (!string.Equals(firstPassOutputPath, outputBundlePath, StringComparison.Ordinal))
-                {
-                    File.Copy(firstPassOutputPath, outputBundlePath, overwrite: true);
                 }
             }
 
@@ -221,6 +242,7 @@ public static class GlbMeshBundleCompiler
             {
                 MeshBoneNames = meshes.ToDictionary(m => m.Name, m => m.BoneNames, StringComparer.Ordinal),
                 MeshMaterialBindings = meshMaterialBindings,
+                BundleFiles = plan.BundleFiles,
             };
         }
         finally

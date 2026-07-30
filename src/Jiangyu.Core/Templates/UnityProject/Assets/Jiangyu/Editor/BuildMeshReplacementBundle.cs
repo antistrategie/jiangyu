@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
@@ -33,6 +34,8 @@ namespace Jiangyu.Mod
             var outputPath = GetArg(args, "-outputPath");
             var diagnosticsPath = GetArg(args, "-diagnosticsPath");
             var bundleName = GetArg(args, "-bundleName") ?? "meshes";
+            var bundlePlanPath = GetArg(args, "-bundlePlanPath");
+            var completionToken = GetArg(args, "-completionToken");
             var runPrefabs = string.Equals(GetArg(args, "-runPrefabs"), "true", StringComparison.OrdinalIgnoreCase);
 
             // Co-locating the prefab pass with the mesh-replacement pass in
@@ -49,9 +52,9 @@ namespace Jiangyu.Mod
                 }
             }
 
-            if (string.IsNullOrEmpty(meshDataPath) || string.IsNullOrEmpty(outputPath))
+            if (string.IsNullOrEmpty(meshDataPath) || string.IsNullOrEmpty(outputPath) || string.IsNullOrEmpty(bundlePlanPath))
             {
-                Debug.LogError("[Jiangyu] Missing required args: -meshDataPath and -outputPath");
+                Debug.LogError("[Jiangyu] Missing required args: -meshDataPath, -outputPath and -bundlePlanPath");
                 EditorApplication.Exit(1);
                 return;
             }
@@ -66,33 +69,66 @@ namespace Jiangyu.Mod
             var meshes = ReadMeshData(meshDataPath);
             var textures = ReadTextureData(textureDataPath);
             var contracts = ReadMeshContracts(meshContractPath);
+            var plan = BundlePlan.Load(bundlePlanPath);
 
-            if (Directory.Exists(GeneratedDir))
-                Directory.Delete(GeneratedDir, true);
+            var projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            var modRoot = Path.GetFullPath(Path.Combine(projectRoot, ".."));
+            var bakedStatePath = Path.Combine(modRoot, ".jiangyu", "generated_baked");
+            // What the previous successful build materialised under Generated/, by input
+            // hash. An unchanged input keeps its .asset (and with it the GUID Unity's
+            // per-bundle hashing sees), so its bundle hashes as current and is skipped.
+            // A changed one is deleted and recreated, which is exactly the signal that
+            // rebuilds its bundle. The file is written only after a verified build, so a
+            // failed bake re-bakes on the next run.
+            var bakedState = LoadBakedState(bakedStatePath);
+            var newBakedState = new Dictionary<string, string>();
+            var expectedGenerated = new HashSet<string>();
+
             Directory.CreateDirectory(GeneratedDir);
             AssetDatabase.Refresh();
 
-            var assetPaths = new List<string>();
+            // Every asset is collected into its planned bundle and shipped via the explicit
+            // AssetBundleBuild map passed to BuildAssetBundles below. Nothing gets a
+            // persistent assetBundleName: the prefab pass (BuildBundles) builds every
+            // assignment in the project, so an assignment on a staged or generated asset
+            // would fold the whole replacement set into that pass as well.
+            var assetsByBundle = new Dictionary<string, List<string>>();
             var diagnostics = new StringBuilder();
             foreach (var meshData in meshes)
             {
                 contracts.TryGetValue(meshData.Name, out var contract);
                 var mesh = CreateMesh(meshData, contract);
                 var assetPath = $"{GeneratedDir}/{mesh.name}.asset";
+                // Meshes are always re-baked: contract stamping in the second pass mutates
+                // them, so their input is not a pure function of meshdata.bin alone.
+                if (File.Exists(assetPath))
+                    AssetDatabase.DeleteAsset(assetPath);
                 AssetDatabase.CreateAsset(mesh, assetPath);
                 ApplyMeshContract(mesh, contract);
                 diagnostics.AppendLine(BuildDiagnostics(mesh, contract));
-                AssetImporter.GetAtPath(assetPath).assetBundleName = bundleName;
-                assetPaths.Add(assetPath);
+                expectedGenerated.Add($"{mesh.name}.asset");
+                AddToBundle(assetsByBundle, plan.MeshesBundle, assetPath);
             }
 
             foreach (var textureData in textures)
             {
-                var texture = CreateTexture(textureData);
-                var assetPath = $"{GeneratedDir}/{texture.name}.asset";
-                AssetDatabase.CreateAsset(texture, assetPath);
-                AssetImporter.GetAtPath(assetPath).assetBundleName = bundleName;
-                assetPaths.Add(assetPath);
+                string bundle;
+                if (!plan.TextureBundles.TryGetValue(textureData.Name, out bundle))
+                    throw new InvalidDataException($"Bundle plan has no entry for texture '{textureData.Name}'");
+                var assetPath = $"{GeneratedDir}/{textureData.Name}.asset";
+                var hash = plan.TextureHashes[textureData.Name];
+                var bakedKey = "texture:" + textureData.Name;
+                string bakedHash;
+                if (!(bakedState.TryGetValue(bakedKey, out bakedHash) && bakedHash == hash && File.Exists(assetPath)))
+                {
+                    if (File.Exists(assetPath))
+                        AssetDatabase.DeleteAsset(assetPath);
+                    var texture = CreateTexture(textureData);
+                    AssetDatabase.CreateAsset(texture, assetPath);
+                }
+                newBakedState[bakedKey] = hash;
+                expectedGenerated.Add($"{textureData.Name}.asset");
+                AddToBundle(assetsByBundle, bundle, assetPath);
             }
 
             var spriteAssetCount = 0;
@@ -119,34 +155,50 @@ namespace Jiangyu.Mod
                     if (spriteName.StartsWith(prefix, StringComparison.Ordinal))
                         spriteName = spriteName.Substring(prefix.Length);
 
-                    var sourceTexture = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: false, linear: false);
-                    sourceTexture.name = prefix + spriteName;
-                    if (!ImageConversion.LoadImage(sourceTexture, File.ReadAllBytes(pngFile), markNonReadable: false))
-                        throw new InvalidDataException($"Failed to decode sprite source '{pngFile}'");
-                    sourceTexture.wrapMode = TextureWrapMode.Clamp;
-                    sourceTexture.filterMode = FilterMode.Bilinear;
-                    sourceTexture.Apply(updateMipmaps: false, makeNoLongerReadable: false);
+                    var textureAssetPath = $"{GeneratedDir}/{prefix}{spriteName}.asset";
+                    var assetPath = $"{GeneratedDir}/{spriteName}.asset";
+                    string sourceHash;
+                    if (!plan.SpriteSourceHashes.TryGetValue(spriteName, out sourceHash))
+                        throw new InvalidDataException($"Bundle plan has no entry for replacement sprite '{spriteName}'");
+                    var bakedKey = "spritesource:" + spriteName;
+                    string bakedHash;
+                    // The sprite object and its backing texture are one unit: the sprite
+                    // references the texture, so they are kept or recreated together.
+                    if (!(bakedState.TryGetValue(bakedKey, out bakedHash) && bakedHash == sourceHash
+                          && File.Exists(textureAssetPath) && File.Exists(assetPath)))
+                    {
+                        if (File.Exists(assetPath))
+                            AssetDatabase.DeleteAsset(assetPath);
+                        if (File.Exists(textureAssetPath))
+                            AssetDatabase.DeleteAsset(textureAssetPath);
 
-                    var textureAssetPath = $"{GeneratedDir}/{sourceTexture.name}.asset";
-                    AssetDatabase.CreateAsset(sourceTexture, textureAssetPath);
-                    AssetImporter.GetAtPath(textureAssetPath).assetBundleName = bundleName;
-                    assetPaths.Add(textureAssetPath);
+                        var sourceTexture = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: false, linear: false);
+                        sourceTexture.name = prefix + spriteName;
+                        if (!ImageConversion.LoadImage(sourceTexture, File.ReadAllBytes(pngFile), markNonReadable: false))
+                            throw new InvalidDataException($"Failed to decode sprite source '{pngFile}'");
+                        sourceTexture.wrapMode = TextureWrapMode.Clamp;
+                        sourceTexture.filterMode = FilterMode.Bilinear;
+                        sourceTexture.Apply(updateMipmaps: false, makeNoLongerReadable: false);
+                        AssetDatabase.CreateAsset(sourceTexture, textureAssetPath);
 
-                    var sprite = Sprite.Create(
-                        sourceTexture,
-                        new Rect(0f, 0f, sourceTexture.width, sourceTexture.height),
-                        new Vector2(0.5f, 0.5f),
-                        pixelsPerUnit: 100f);
-                    sprite.name = spriteName;
+                        var sprite = Sprite.Create(
+                            sourceTexture,
+                            new Rect(0f, 0f, sourceTexture.width, sourceTexture.height),
+                            new Vector2(0.5f, 0.5f),
+                            pixelsPerUnit: 100f);
+                        sprite.name = spriteName;
 
-                    // Use plain .asset (matching textures) rather than .sprite.asset.
-                    // The .sprite.asset suffix bakes ".sprite" into the runtime
-                    // sprite.name, which would break catalog lookups against the
-                    // game's live sprite name.
-                    var assetPath = $"{GeneratedDir}/{sprite.name}.asset";
-                    AssetDatabase.CreateAsset(sprite, assetPath);
-                    AssetImporter.GetAtPath(assetPath).assetBundleName = bundleName;
-                    assetPaths.Add(assetPath);
+                        // Use plain .asset (matching textures) rather than .sprite.asset.
+                        // The .sprite.asset suffix bakes ".sprite" into the runtime
+                        // sprite.name, which would break catalog lookups against the
+                        // game's live sprite name.
+                        AssetDatabase.CreateAsset(sprite, assetPath);
+                    }
+                    newBakedState[bakedKey] = sourceHash;
+                    expectedGenerated.Add($"{prefix}{spriteName}.asset");
+                    expectedGenerated.Add($"{spriteName}.asset");
+                    AddToBundle(assetsByBundle, plan.SpritesBundle, textureAssetPath);
+                    AddToBundle(assetsByBundle, plan.SpritesBundle, assetPath);
                     spriteAssetCount++;
                 }
             }
@@ -165,27 +217,50 @@ namespace Jiangyu.Mod
                     if (!IsSpriteSourceExtension(pngFile))
                         continue;
 
-                    AssetDatabase.ImportAsset(pngFile, ImportAssetOptions.ForceSynchronousImport);
                     var importer = AssetImporter.GetAtPath(pngFile) as TextureImporter;
+                    if (importer == null)
+                    {
+                        // A freshly staged file has no meta yet, so import once to
+                        // materialise the importer before configuring it.
+                        AssetDatabase.ImportAsset(pngFile, ImportAssetOptions.ForceSynchronousImport);
+                        importer = AssetImporter.GetAtPath(pngFile) as TextureImporter;
+                    }
                     if (importer == null)
                         throw new InvalidDataException($"Failed to acquire TextureImporter for '{pngFile}'");
 
-                    importer.textureType = TextureImporterType.Sprite;
-                    importer.spriteImportMode = SpriteImportMode.Single;
-                    importer.alphaIsTransparency = true;
-                    importer.alphaSource = TextureImporterAlphaSource.FromInput;
-                    importer.mipmapEnabled = false;
-                    importer.filterMode = FilterMode.Bilinear;
-                    importer.wrapMode = TextureWrapMode.Clamp;
-                    importer.textureCompression = TextureImporterCompression.Uncompressed;
-                    importer.assetBundleName = bundleName;
-                    importer.SaveAndReimport();
+                    // Reconfigure and reimport only when the saved settings differ.
+                    // Staging keeps unchanged files and their metas in place across
+                    // builds, so on a warm project this loop costs no imports.
+                    if (importer.textureType != TextureImporterType.Sprite
+                        || importer.spriteImportMode != SpriteImportMode.Single
+                        || !importer.alphaIsTransparency
+                        || importer.alphaSource != TextureImporterAlphaSource.FromInput
+                        || importer.mipmapEnabled
+                        || importer.filterMode != FilterMode.Bilinear
+                        || importer.wrapMode != TextureWrapMode.Clamp
+                        || importer.textureCompression != TextureImporterCompression.Uncompressed)
+                    {
+                        importer.textureType = TextureImporterType.Sprite;
+                        importer.spriteImportMode = SpriteImportMode.Single;
+                        importer.alphaIsTransparency = true;
+                        importer.alphaSource = TextureImporterAlphaSource.FromInput;
+                        importer.mipmapEnabled = false;
+                        importer.filterMode = FilterMode.Bilinear;
+                        importer.wrapMode = TextureWrapMode.Clamp;
+                        importer.textureCompression = TextureImporterCompression.Uncompressed;
+                        importer.SaveAndReimport();
+                    }
+
+                    // Persistent staging means this meta survives into prefab-pass runs,
+                    // so scrub any bundle assignment it carries.
+                    if (!string.IsNullOrEmpty(importer.assetBundleName))
+                        importer.assetBundleName = string.Empty;
 
                     var importedSprite = AssetDatabase.LoadAssetAtPath<Sprite>(pngFile);
                     if (importedSprite == null)
                         throw new InvalidDataException($"Failed to import sprite '{pngFile}'");
 
-                    assetPaths.Add(pngFile);
+                    AddToBundle(assetsByBundle, plan.SpritesBundle, pngFile);
                     spriteAssetCount++;
                 }
             }
@@ -217,16 +292,33 @@ namespace Jiangyu.Mod
                     }
                 }
 
-                importer.assetBundleName = bundleName;
-                assetPaths.Add(assetPath);
+                // Persistent staging means this meta survives into prefab-pass runs,
+                // so scrub any bundle assignment it carries.
+                if (!string.IsNullOrEmpty(importer.assetBundleName))
+                    importer.assetBundleName = string.Empty;
+                var clipName = Path.GetFileNameWithoutExtension(assetPath);
+                string audioBundle;
+                if (!plan.AudioBundles.TryGetValue(clipName, out audioBundle))
+                    throw new InvalidDataException($"Bundle plan has no entry for audio clip '{clipName}'");
+                AddToBundle(assetsByBundle, audioBundle, assetPath);
                 audioAssetCount++;
             }
 
-            if (assetPaths.Count == 0)
+            if (assetsByBundle.Count == 0)
             {
                 Debug.LogError("[Jiangyu] No meshes, textures, sprites, or audio assets found to bundle");
                 EditorApplication.Exit(1);
                 return;
+            }
+
+            // Anything materialised by a previous plan but absent from this one is dead:
+            // its input left the mod, so its asset (and meta) must not linger in Generated/
+            // where a later bundle could still pull it in.
+            foreach (var file in Directory.GetFiles(GeneratedDir, "*.asset", SearchOption.TopDirectoryOnly))
+            {
+                var fileName = Path.GetFileName(file);
+                if (!expectedGenerated.Contains(fileName))
+                    AssetDatabase.DeleteAsset($"{GeneratedDir}/{fileName}");
             }
 
             AssetDatabase.SaveAssets();
@@ -243,31 +335,33 @@ namespace Jiangyu.Mod
             if (!string.IsNullOrEmpty(outputDir))
                 Directory.CreateDirectory(outputDir);
 
-            Debug.Log($"[Jiangyu] Prepared {meshes.Count} mesh(es), {textures.Count} texture(s), {spriteAssetCount} sprite(s), {audioAssetCount} audio clip(s) for bundle '{bundleName}'");
+            Debug.Log($"[Jiangyu] Prepared {meshes.Count} mesh(es), {textures.Count} texture(s), {spriteAssetCount} sprite(s), {audioAssetCount} audio clip(s) across {assetsByBundle.Count} bundle(s) for '{bundleName}'");
 
-            var builds = new[]
-            {
-                new AssetBundleBuild
+            var builds = assetsByBundle
+                .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
+                .Select(kvp => new AssetBundleBuild
                 {
-                    assetBundleName = Path.GetFileName(outputPath),
-                    assetNames = assetPaths.ToArray(),
-                }
-            };
+                    assetBundleName = kvp.Key,
+                    assetNames = kvp.Value.ToArray(),
+                })
+                .ToArray();
+            var expectedBundles = new List<string>(assetsByBundle.Keys);
 
-            // LZ4 (chunk-based): compresses the bundle FILE on disk without changing the assets inside.
-            // Additions are dominated by uncompressed RGBA32 textures (large flat/transparent regions) and
-            // PCM audio, both of which LZ4 shrinks well, so the shipped file is much smaller. LZ4 is block
-            // compression decoded on demand by LoadFromFile, so load stays streamed (no LoadFromMemory /
-            // full-inflate spike) and runtime memory is unchanged.
-            // ForceRebuildAssetBundle: never trust Unity's own incremental bundle cache. A stale
-            // .manifest surviving in the output dir (e.g. a delete a Windows file lock defeated)
-            // otherwise makes Unity decide the bundle is current and skip it, emitting no file
-            // while still succeeding. Jiangyu already gates the Unity invocation on its own input
-            // fingerprints, so a full rebuild here costs nothing extra when Unity does run.
+            // LZ4 (chunk-based): compresses each bundle FILE on disk without changing the assets
+            // inside. Additions are dominated by uncompressed RGBA32 textures (large
+            // flat/transparent regions) and PCM audio, both of which LZ4 shrinks well, so the
+            // shipped files are much smaller. LZ4 is block compression decoded on demand by
+            // LoadFromFile, so load stays streamed and runtime memory is unchanged.
+            //
+            // Incremental first: with stable staged GUIDs and the baked-state skip above, an
+            // unchanged group's bundle hashes as current and is not rebuilt, which is the whole
+            // point of splitting. The stale-manifest hazard (Unity skipping a bundle yet writing
+            // nothing while reporting success) is caught by the verify below and recovered with
+            // one forced rebuild.
             var manifest = BuildPipeline.BuildAssetBundles(
                 outputDir,
                 builds,
-                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle,
+                BuildAssetBundleOptions.ChunkBasedCompression,
                 EditorUserBuildSettings.activeBuildTarget);
 
             if (manifest == null)
@@ -277,17 +371,119 @@ namespace Jiangyu.Mod
                 return;
             }
 
-            // BuildAssetBundles can return a non-null manifest yet skip writing our bundle (e.g.
-            // when a cold-project import pass leaves the generated assets unimported). Fail loudly
-            // with an exit code so the compiler surfaces this log instead of the opaque
-            // "did not produce expected bundle" downstream.
-            if (!BundleBuildVerify.AllWritten(outputDir, new[] { Path.GetFileName(outputPath) }, manifest, "[Jiangyu]"))
+            if (!BundleBuildVerify.AllWritten(outputDir, expectedBundles, manifest, "[Jiangyu] (incremental)"))
             {
-                EditorApplication.Exit(1);
-                return;
+                Debug.LogWarning("[Jiangyu] incremental replacement build left expected bundle(s) unwritten, retrying with ForceRebuildAssetBundle.");
+                manifest = BuildPipeline.BuildAssetBundles(
+                    outputDir,
+                    builds,
+                    BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle,
+                    EditorUserBuildSettings.activeBuildTarget);
+                if (manifest == null || !BundleBuildVerify.AllWritten(outputDir, expectedBundles, manifest, "[Jiangyu] (forced)"))
+                {
+                    EditorApplication.Exit(1);
+                    return;
+                }
             }
 
+            SaveBakedState(bakedStatePath, newBakedState);
+            // Written last: the compile pipeline treats a fresh marker carrying its token
+            // as the only proof this script ran to completion, since the bundle files
+            // themselves persist across compiles as incremental state.
+            if (!string.IsNullOrEmpty(completionToken))
+                File.WriteAllText(Path.Combine(modRoot, ".jiangyu", "unity_build_mesh.done"), completionToken);
             EditorApplication.Exit(0);
+        }
+
+        private static void AddToBundle(Dictionary<string, List<string>> assetsByBundle, string bundle, string assetPath)
+        {
+            if (string.IsNullOrEmpty(bundle))
+                throw new InvalidDataException($"Bundle plan assigns no bundle for '{assetPath}'");
+            List<string> assets;
+            if (!assetsByBundle.TryGetValue(bundle, out assets))
+            {
+                assets = new List<string>();
+                assetsByBundle[bundle] = assets;
+            }
+            assets.Add(assetPath);
+        }
+
+        private static Dictionary<string, string> LoadBakedState(string path)
+        {
+            var state = new Dictionary<string, string>();
+            if (!File.Exists(path))
+                return state;
+            foreach (var line in File.ReadAllLines(path))
+            {
+                var parts = line.Split('\t');
+                if (parts.Length == 2)
+                    state[parts[0]] = parts[1];
+            }
+            return state;
+        }
+
+        private static void SaveBakedState(string path, Dictionary<string, string> state)
+        {
+            var dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+            var lines = new List<string>(state.Count);
+            foreach (var kvp in state)
+                lines.Add(kvp.Key + "\t" + kvp.Value);
+            lines.Sort(StringComparer.Ordinal);
+            File.WriteAllLines(path, lines);
+        }
+
+        /// <summary>
+        /// The compile-side bundle plan (see Jiangyu's ReplacementBundlePlan): which bundle
+        /// each replacement asset ships in, plus input hashes for the Generated/ assets so
+        /// unchanged ones can keep their files and GUIDs across builds.
+        /// </summary>
+        private sealed class BundlePlan
+        {
+            public readonly Dictionary<string, string> AudioBundles = new Dictionary<string, string>();
+            public readonly Dictionary<string, string> TextureBundles = new Dictionary<string, string>();
+            public readonly Dictionary<string, string> TextureHashes = new Dictionary<string, string>();
+            public readonly Dictionary<string, string> SpriteSourceHashes = new Dictionary<string, string>();
+            public string SpritesBundle;
+            public string MeshesBundle;
+
+            public static BundlePlan Load(string path)
+            {
+                var lines = File.ReadAllLines(path);
+                if (lines.Length == 0 || lines[0] != "jiangyu-bundle-plan 1")
+                    throw new InvalidDataException($"Unrecognised bundle plan at '{path}'");
+
+                var plan = new BundlePlan();
+                for (var i = 1; i < lines.Length; i++)
+                {
+                    if (string.IsNullOrWhiteSpace(lines[i]))
+                        continue;
+                    var parts = lines[i].Split('\t');
+                    switch (parts[0])
+                    {
+                        case "audio":
+                            plan.AudioBundles[parts[1]] = parts[2];
+                            break;
+                        case "sprites":
+                            plan.SpritesBundle = parts[1];
+                            break;
+                        case "spritesource":
+                            plan.SpriteSourceHashes[parts[1]] = parts[2];
+                            break;
+                        case "texture":
+                            plan.TextureBundles[parts[1]] = parts[2];
+                            plan.TextureHashes[parts[1]] = parts[3];
+                            break;
+                        case "meshes":
+                            plan.MeshesBundle = parts[1];
+                            break;
+                        default:
+                            throw new InvalidDataException($"Unrecognised bundle plan entry '{parts[0]}' at '{path}'");
+                    }
+                }
+                return plan;
+            }
         }
 
         private static Mesh CreateMesh(MeshData data, MeshContract? contract)

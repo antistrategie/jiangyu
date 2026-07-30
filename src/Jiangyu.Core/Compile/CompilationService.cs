@@ -155,16 +155,16 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         if (importValidationError != null)
             return Fail(importValidationError);
 
-        // Stale Jiangyu-managed editor scripts silently skip new batchmode pipeline steps.
-        var drifted = new UnityProjectScaffolder(_log).FindDriftedManagedFiles(projectDir);
-        if (drifted.Count > 0)
-        {
-            _log.Warning(
-                $"Jiangyu-managed Unity Editor scripts are out of sync with this Jiangyu version ({drifted.Count} file(s)):");
-            foreach (var path in drifted)
-                _log.Warning($"  {Path.GetRelativePath(projectDir, path)}");
-            _log.Warning("Run 'jiangyu unity sync' to refresh. Compile will continue, but bundles may not build correctly.");
-        }
+        // Stale Jiangyu-managed editor scripts would run an older batchmode pipeline
+        // against this compiler's expectations (wrong bundle layout, missing steps), and
+        // the bundle plan the compiler hands the Unity build is a hard protocol between
+        // the two sides. The scripts are Jiangyu-owned, so refresh them in place rather
+        // than warning and failing later. Only the editor scripts: the other managed
+        // files (README, unity/.gitignore) do not affect a build, so a modder's local
+        // edits to them survive until an explicit 'jiangyu unity sync'.
+        var refreshedScripts = new UnityProjectScaffolder(_log).RefreshDriftedEditorScripts(projectDir);
+        if (refreshedScripts > 0)
+            _log.Info($"  Refreshed {refreshedScripts} Jiangyu-managed Unity Editor script(s) to this Jiangyu version.");
 
         _log.Info($"  [timing] Setup/validation: {phaseSw.Elapsed.TotalSeconds:F1}s");
         phaseSw.Restart();
@@ -232,6 +232,24 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             $"  {modelFiles.Count} model file(s), {replacementTextures.Count} texture replacement(s), {totalSpriteCount} sprite replacement(s), {replacementAudio.Count} audio replacement(s), {replacementEntries.Count} replacement mesh target(s)");
 
         var bundleName = manifest.Name.ToLowerInvariant().Replace(" ", "_");
+
+        var additionsCatalog = new FileSystemAssetAdditionsCatalog(
+            additionRoot,
+            unityPrefabsDir: Path.Combine(projectDir, "unity", "Assets", "Prefabs"));
+        var nameConflicts = ReplacementNameValidation.FindConflicts(
+            replacementAudio,
+            replacementSprites,
+            replacementTextures,
+            replacementEntries.Select(entry => entry.BundleMeshName),
+            bundleName,
+            additionsCatalog.Names(Jiangyu.Shared.Replacements.AssetCategory.Prefabs));
+        if (nameConflicts.Count > 0)
+        {
+            foreach (var conflict in nameConflicts)
+                _log.Error($"Asset name conflict: {conflict}");
+            return Fail($"Asset name validation failed with {nameConflicts.Count} conflict(s). See errors above.");
+        }
+
         // Start every compile from a clean output tree: everything under compiled/ is build
         // output regenerated below, so wiping first is the one step that clears whatever a
         // previous compile left (a removed bundle, a now-empty templates.json, a renamed code
@@ -248,6 +266,25 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         // skips expensive generation (the Unity prefab batchmode) when its inputs are
         // unchanged and its cached output is still present, never reuses a stale compiled/.
         var buildState = input.Clean ? new BuildState() : BuildState.Load(projectDir);
+        if (input.Clean)
+        {
+            // --clean means "trust nothing cached": drop every incremental cache the
+            // compile maintains, not just the fingerprint state, so the escape hatch
+            // covers the caches too.
+            var jiangyuDir = Path.Combine(projectDir, ".jiangyu");
+            foreach (var file in new[] { "staged_inputs", "generated_baked", "code_build_state" })
+            {
+                var path = Path.Combine(jiangyuDir, file);
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            var restoredCache = Path.Combine(jiangyuDir, "restored_bundles");
+            if (Directory.Exists(restoredCache))
+                Directory.Delete(restoredCache, recursive: true);
+            // The cached bundles and their Unity manifests are incremental state too.
+            if (Directory.Exists(unityBuildDir))
+                Directory.Delete(unityBuildDir, recursive: true);
+        }
 
         var useRawGlbPipeline = replacementAssetCount > 0;
 
@@ -280,7 +317,8 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         // cross-check every type="ns:Name" against the [JiangyuType]s it produced.
         var gameRoot = Path.GetDirectoryName(gameDataPath)!;
         var (codeSdkDir, _) = GlobalConfig.ResolveSdkDir(config);
-        var codeBuild = await new CodeBuildService(_log).BuildAsync(projectDir, gameRoot, codeSdkDir, devSources: !input.Release);
+        var codeBuild = await new CodeBuildService(_log).BuildAsync(
+            projectDir, gameRoot, codeSdkDir, devSources: !input.Release, cacheContext: gameVersion?.ToString());
         if (codeBuild is { Success: false })
             return Fail(codeBuild.Error!);
 
@@ -328,9 +366,6 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
                 var supplement = Il2CppMetadataCache.LoadIfPresent(input.Config.GetCachePath());
                 using var catalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirs, supplement, codeAssemblies);
-                var additionsCatalog = new FileSystemAssetAdditionsCatalog(
-                    additionRoot,
-                    unityPrefabsDir: Path.Combine(projectDir, "unity", "Assets", "Prefabs"));
                 foreach (var conflict in additionsCatalog.ConflictingNames)
                 {
                     _log.Error($"Asset addition '{conflict}': two files share the same logical name in the same category. Rename one or remove the duplicate.");
@@ -453,7 +488,9 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 Path.Combine(outputDir, CompiledTemplatePatchManifest.FileName),
                 compiledTemplates.ToJson());
 
+        phaseSw.Restart();
         await EmitLocalisationAsync(projectDir, outputDir, manifest.Name, compiledTemplates);
+        _log.Info($"  [timing] Localisation: {phaseSw.Elapsed.TotalSeconds:F1}s");
 
         // Detect the combined-Unity-pass case: a mod with both addition
         // prefabs AND mesh-replacement work pays two cold starts today. When
@@ -473,6 +510,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         // shared. Fingerprinting them separately is what lets a prefab edit skip the
         // replacement bundle and an audio or sprite edit skip the prefab bundles, instead
         // of either one invalidating both.
+        phaseSw.Restart();
         var unityProjectFingerprint = (useRawGlbPipeline || hasPrefabWork)
             ? UnityProjectFingerprint(userUnityDir, gameVersion?.ToString())
             : string.Empty;
@@ -487,18 +525,30 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         // metadata it produces is cached alongside the fingerprint and restored on reuse.
         // --clean starts from an empty build state.
         var assetsFingerprint = useRawGlbPipeline
-            ? AssetInputsFingerprint(projectDir, unityProjectFingerprint)
+            ? AssetInputsFingerprint(projectDir, unityProjectFingerprint, bundleName)
             : string.Empty;
+        _log.Info($"  [timing] Input fingerprints: {phaseSw.Elapsed.TotalSeconds:F1}s");
+        // Each half's output is a SET of bundle files recorded with its phase. Reuse
+        // requires every recorded file to still be present: an any-file-exists test would
+        // silently ship a mod minus whichever bundle went missing.
+        var recordedAssets = buildState.GetData<AssetsPhaseState>(AssetsPhase);
+        var recordedBundlePaths = (recordedAssets?.BundleFiles ?? [])
+            .Select(name => Path.Combine(unityBuildDir, name))
+            .ToList();
         var reuseRawGlb = useRawGlbPipeline
             && buildState.Matches(AssetsPhase, assetsFingerprint)
-            && File.Exists(builtBundle);
+            && recordedBundlePaths.Count > 0
+            && recordedBundlePaths.All(File.Exists);
+        var recordedPrefabBundles = buildState.GetData<List<string>>(PrefabPhase) ?? [];
+        var prefabBundlesAllPresent = recordedPrefabBundles.Count > 0
+            && recordedPrefabBundles.All(name => File.Exists(Path.Combine(unityBuildDir, name)));
         // In the combined case the prefab bundles ship from the same Unity launch, so they
         // get their own reuse test against their own fingerprint. Either half being stale
         // launches Unity; each half is then told whether to do its work.
         var reuseCombinedPrefabs = combinedUnityPass
             && buildState.Matches(PrefabPhase, prefabInputsFingerprint)
-            && Directory.Exists(unityBuildDir)
-            && Directory.EnumerateFiles(unityBuildDir, "*.bundle").Any();
+            && prefabBundlesAllPresent;
+        var assetPassPlan = PlanUnityAssetPass(combinedUnityPass, reuseRawGlb, reuseCombinedPrefabs);
         if (!combinedUnityPass)
         {
             // Skip the prefab batchmode (a Unity cold start) when its inputs are unchanged
@@ -508,8 +558,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             var prefabFingerprint = prefabInputsFingerprint;
             var reuseCachedPrefabs = hasPrefabWork
                 && buildState.Matches(PrefabPhase, prefabFingerprint)
-                && Directory.Exists(unityBuildDir)
-                && Directory.EnumerateFiles(unityBuildDir, "*.bundle").Any();
+                && prefabBundlesAllPresent;
 
             if (reuseCachedPrefabs)
             {
@@ -517,35 +566,29 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             }
             else
             {
-                // The prefab-hygiene wipe inside here must not delete the raw-GLB bundle when
-                // this compile is reusing it: the two share unity_build/, and without this the
-                // reuse path below finds nothing to copy and the compile fails on the second run
-                // after every full build.
-                await BuildUnityAdditionPrefabs(
-                    projectDir, unityBuildDir, unityEditorPath,
-                    preserveBundlePath: reuseRawGlb ? builtBundle : null);
+                await BuildUnityAdditionPrefabs(projectDir, unityBuildDir, unityEditorPath);
                 if (hasPrefabWork)
-                    buildState.Record(PrefabPhase, prefabFingerprint);
+                    buildState.Record(PrefabPhase, prefabFingerprint, PrefabBundleFileNames(unityBuildDir));
                 else
                     buildState.Remove(PrefabPhase);
             }
 
+            phaseSw.Restart();
             AdditionPrefabStaging.Stage(
                 sourceDirs: [Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Prefabs), unityBuildDir],
                 bundlesDir,
                 compiledManifest,
                 gameDataPath,
-                _log);
+                _log,
+                restoredCacheDir: Path.Combine(projectDir, ".jiangyu", "restored_bundles"),
+                cacheKeyContext: gameVersion?.ToString());
+            _log.Info($"  [timing] Prefab bundle staging: {phaseSw.Elapsed.TotalSeconds:F1}s");
         }
-        else if (!reuseCombinedPrefabs)
-        {
-            // The prefab build is about to rerun (folded into the raw-GLB pass, or on its
-            // own when only the prefab half is stale); clear its stale output first. Gated
-            // on the PREFAB half, not the asset half: an audio or sprite edit reruns the
-            // raw-GLB pass while the prefab bundles stay current, and wiping them there
-            // would leave nothing for staging to copy.
-            AdditionPrefabStaging.ClearStaleBuildOutput(unityBuildDir);
-        }
+        // No pre-wipe when the prefab build is about to rerun: the cached bundles and
+        // their Unity manifests ARE the incremental state that lets an unchanged prefab's
+        // bundle skip rebuilding. BuildBundles prunes bundles whose prefab no longer
+        // exists, and its verify-with-forced-retry covers the stale-manifest hazard the
+        // wipe used to paper over.
 
         // Template-only compile: no asset replacements, just emit the compiled manifest.
         if (totalCompileInputCount == 0)
@@ -557,30 +600,29 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             return new CompilationResult { Success = true };
         }
 
+        List<string>? shippedBundleFiles = null;
         if (useRawGlbPipeline)
         {
-            // A mod with no prefab work has no prefab half to keep current.
-            var prefabHalfCurrent = !combinedUnityPass || reuseCombinedPrefabs;
-            if (reuseRawGlb && !prefabHalfCurrent)
+            if (assetPassPlan == UnityAssetPassPlan.RebuildPrefabsOnly)
             {
-                // The expensive half (staging every addition asset, then baking one large
-                // replacement bundle) is current while the prefab bundles are not. Run the
+                // The expensive half (staging every addition asset, then baking the
+                // replacement bundles) is current while the prefab bundles are not. Run the
                 // standalone prefab pass instead of the combined one: it costs an extra Unity
                 // cold start but skips the replacement-bundle work entirely, and Unity's own
                 // per-bundle hashing means only the prefabs that actually changed rebuild.
                 _log.Info("  Incremental: asset inputs unchanged, rebuilding prefab bundles only.");
-                await BuildUnityAdditionPrefabs(
-                    projectDir, unityBuildDir, unityEditorPath,
-                    preserveBundlePath: builtBundle);
-                buildState.Record(PrefabPhase, prefabInputsFingerprint);
-                compiledManifest.Meshes = buildState.GetData<Dictionary<string, MeshManifestEntry>>(AssetsPhase)
+                await BuildUnityAdditionPrefabs(projectDir, unityBuildDir, unityEditorPath);
+                buildState.Record(PrefabPhase, prefabInputsFingerprint, PrefabBundleFileNames(unityBuildDir));
+                compiledManifest.Meshes = recordedAssets?.Meshes
                     ?? new Dictionary<string, MeshManifestEntry>(StringComparer.Ordinal);
+                shippedBundleFiles = recordedAssets!.BundleFiles;
             }
-            else if (reuseRawGlb)
+            else if (assetPassPlan == UnityAssetPassPlan.ReuseCachedBundles)
             {
                 _log.Info("  Incremental: asset inputs unchanged, reusing cached bundles.");
-                compiledManifest.Meshes = buildState.GetData<Dictionary<string, MeshManifestEntry>>(AssetsPhase)
+                compiledManifest.Meshes = recordedAssets?.Meshes
                     ?? new Dictionary<string, MeshManifestEntry>(StringComparer.Ordinal);
+                shippedBundleFiles = recordedAssets!.BundleFiles;
             }
             else
             {
@@ -611,7 +653,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                         // stale. An audio or sprite edit reruns this pass with the prefab
                         // bundles already current, and rebuilding all of them would add the
                         // whole prefab bundle cost back for nothing.
-                        runPrefabs: combinedUnityPass && !reuseCombinedPrefabs,
+                        runPrefabs: assetPassPlan == UnityAssetPassPlan.RunRawGlbWithPrefabs,
                         log: _log);
                     compiledManifest.Meshes = new Dictionary<string, MeshManifestEntry>(StringComparer.Ordinal);
                     foreach (var entry in replacementEntries)
@@ -633,6 +675,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                             }
                         };
                     }
+                    shippedBundleFiles = [.. buildResult.BundleFiles];
                 }
                 catch (Exception ex)
                 {
@@ -640,21 +683,30 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 }
                 _log.Info($"  [timing] Asset bundle build: {phaseSw.Elapsed.TotalSeconds:F1}s");
 
-                // Cache the mesh metadata so a later reuse can restore it without the Unity pass.
-                buildState.Record(AssetsPhase, assetsFingerprint, compiledManifest.Meshes);
+                // Cache the mesh metadata and the planned bundle list so a later reuse can
+                // restore both without the Unity pass.
+                buildState.Record(AssetsPhase, assetsFingerprint, new AssetsPhaseState
+                {
+                    Meshes = compiledManifest.Meshes,
+                    BundleFiles = shippedBundleFiles,
+                });
             }
 
             if (combinedUnityPass)
             {
+                phaseSw.Restart();
                 AdditionPrefabStaging.Stage(
                     sourceDirs: [Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Prefabs), unityBuildDir],
                     bundlesDir,
                     compiledManifest,
                     gameDataPath,
-                    _log);
-                // Prefabs ship from this same pass; record their fingerprint so a later
-                // non-combined compile can reuse the cached bundles too.
-                buildState.Record(PrefabPhase, prefabInputsFingerprint);
+                    _log,
+                    restoredCacheDir: Path.Combine(projectDir, ".jiangyu", "restored_bundles"),
+                    cacheKeyContext: gameVersion?.ToString());
+                _log.Info($"  [timing] Prefab bundle staging: {phaseSw.Elapsed.TotalSeconds:F1}s");
+                // Prefabs ship from this same pass; record their fingerprint and bundle
+                // list so a later compile can reuse the cached bundles too.
+                buildState.Record(PrefabPhase, prefabInputsFingerprint, PrefabBundleFileNames(unityBuildDir));
             }
         }
         else
@@ -669,17 +721,64 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         }
 
         // Collect output
-        if (!File.Exists(builtBundle))
-            return Fail(DescribeMissingBundle(projectDir, builtBundle, unityBuildDir, useRawGlbPipeline));
+        phaseSw.Restart();
+        string destBundle;
+        if (useRawGlbPipeline)
+        {
+            var toShip = shippedBundleFiles ?? [];
+            var missingBundles = toShip
+                .Where(name => !File.Exists(Path.Combine(unityBuildDir, name)))
+                .ToList();
+            if (toShip.Count == 0 || missingBundles.Count > 0)
+                return Fail(DescribeMissingBundle(projectDir, Path.Combine(unityBuildDir, missingBundles.FirstOrDefault() ?? bundleName), unityBuildDir, useRawGlbPipeline));
 
-        var destBundle = Path.Combine(bundlesDir, $"{bundleName}.bundle");
-        File.Copy(builtBundle, destBundle, overwrite: true);
+            // Replacement bundle files and addition prefab bundles share compiled/bundles/
+            // (and the loader's mod dir), so a name landing in both would clobber on copy.
+            var additionClash = toShip
+                .Intersect(compiledManifest.AdditionPrefabs ?? [], StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (additionClash.Count > 0)
+                return Fail($"Replacement bundle name(s) [{string.Join(", ", additionClash)}] collide with addition bundle names. Rename the colliding prefab, UXML, or icon.");
+
+            foreach (var name in toShip)
+                File.Copy(Path.Combine(unityBuildDir, name), Path.Combine(bundlesDir, $"{name}.bundle"), overwrite: true);
+            // Drop replacement outputs a previous plan produced but this one does not
+            // (any extensionless file plus its Unity .manifest sibling that is not in
+            // the current plan), so unity_build/ never accumulates dead bundles. Not
+            // limited to the current name prefix: a mod rename leaves the old prefix
+            // behind, and prefab bundles are excluded by their .bundle extension.
+            var live = toShip.ToHashSet(StringComparer.Ordinal);
+            foreach (var file in Directory.EnumerateFiles(unityBuildDir))
+            {
+                var name = Path.GetFileName(file);
+                var stem = name.EndsWith(".manifest", StringComparison.Ordinal)
+                    ? name[..^".manifest".Length]
+                    : name;
+                if (stem.EndsWith(".bundle", StringComparison.Ordinal))
+                    continue;
+                if (stem == Path.GetFileName(unityBuildDir))
+                    continue;
+                if (live.Contains(stem))
+                    continue;
+                ResilientFs.DeleteFile(file);
+            }
+            destBundle = Path.Combine(bundlesDir, $"{toShip[0]}.bundle");
+            _log.Info($"  [timing] Replacement bundle copy: {phaseSw.Elapsed.TotalSeconds:F1}s ({toShip.Count} bundle(s))");
+        }
+        else
+        {
+            if (!File.Exists(builtBundle))
+                return Fail(DescribeMissingBundle(projectDir, builtBundle, unityBuildDir, useRawGlbPipeline));
+            destBundle = Path.Combine(bundlesDir, $"{bundleName}.bundle");
+            File.Copy(builtBundle, destBundle, overwrite: true);
+            _log.Info($"  [timing] Replacement bundle copy: {phaseSw.Elapsed.TotalSeconds:F1}s");
+        }
 
         // Copy manifest alongside the bundle
         await File.WriteAllTextAsync(Path.Combine(outputDir, ModManifest.FileName), compiledManifest.ToJson());
         buildState.Save(projectDir);
 
-        _log.Info($"  -> {destBundle}");
+        _log.Info($"  -> {Path.GetDirectoryName(destBundle)}");
         _log.Info($"  [timing] Total: {totalSw.Elapsed.TotalSeconds:F1}s");
         _log.Info("Done.");
 
@@ -699,13 +798,74 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             || relative.StartsWith("Temp/", StringComparison.Ordinal)
             || relative.StartsWith("obj/", StringComparison.Ordinal);
 
+    /// <summary>
+    /// Which Unity work the asset section of a compile runs, given the reuse state of its two
+    /// independently fingerprinted halves (the raw-GLB replacement bundle and the addition
+    /// prefab bundles).
+    /// </summary>
+    internal enum UnityAssetPassPlan
+    {
+        /// <summary>Both halves current: no Unity launch, cached bundles feed staging.</summary>
+        ReuseCachedBundles,
+        /// <summary>Asset half current, prefab half stale: the standalone prefab pass runs,
+        /// paying one Unity cold start to skip the replacement-bundle work entirely.</summary>
+        RebuildPrefabsOnly,
+        /// <summary>Asset half stale, prefab half current (or the mod has no prefab half):
+        /// the raw-GLB pass runs without the folded prefab build.</summary>
+        RunRawGlb,
+        /// <summary>Both halves stale: the raw-GLB pass runs with the prefab build folded in,
+        /// one Unity launch covering both.</summary>
+        RunRawGlbWithPrefabs,
+    }
+
+    /// <summary>
+    /// The assets phase's cached payload: the mesh metadata the Unity pass derives and the
+    /// planned replacement bundle files it produced. Reuse restores both without a Unity
+    /// launch; a payload in an older shape deserialises to nulls and simply rebuilds.
+    /// </summary>
+    internal sealed class AssetsPhaseState
+    {
+        public Dictionary<string, MeshManifestEntry>? Meshes { get; set; }
+        public List<string>? BundleFiles { get; set; }
+    }
+
+    // The prefab phase's cached payload: the bundle files the pass produced, recorded so
+    // reuse can demand every one of them rather than accepting any surviving file.
+    private static List<string> PrefabBundleFileNames(string unityBuildDir)
+        => Directory.Exists(unityBuildDir)
+            ? [.. Directory.EnumerateFiles(unityBuildDir, "*.bundle")
+                .Select(Path.GetFileName)
+                .Where(name => name is not null)
+                .Cast<string>()
+                .OrderBy(name => name, StringComparer.Ordinal)]
+            : [];
+
+    // The whole point of the split fingerprints: each half's staleness triggers only its own
+    // work. Kept pure so the truth table is directly testable.
+    internal static UnityAssetPassPlan PlanUnityAssetPass(bool combinedUnityPass, bool reuseRawGlb, bool reuseCombinedPrefabs)
+    {
+        var prefabHalfCurrent = !combinedUnityPass || reuseCombinedPrefabs;
+        if (reuseRawGlb && !prefabHalfCurrent)
+            return UnityAssetPassPlan.RebuildPrefabsOnly;
+        if (reuseRawGlb)
+            return UnityAssetPassPlan.ReuseCachedBundles;
+        return combinedUnityPass && !reuseCombinedPrefabs
+            ? UnityAssetPassPlan.RunRawGlbWithPrefabs
+            : UnityAssetPassPlan.RunRawGlb;
+    }
+
     // Fingerprint of the surrounding Unity project, shared by both bundle passes because both
     // run inside it: editor scripts, project settings, package versions. Deliberately excludes
     // Assets/ content, so each pass can add just the part of Assets/ it actually reads and a
     // change to one pass's inputs cannot invalidate the other's.
-    private static string UnityProjectFingerprint(string unityDir, string? gameVersion)
+    internal static string UnityProjectFingerprint(string unityDir, string? gameVersion)
         => FileFingerprint.Combine(
             FileFingerprint.OfDirectory(Path.Combine(unityDir, "Assets", "Jiangyu", "Editor")),
+            // Any C# under Assets/ (a modder's AssetPostprocessor, editor utilities) is
+            // compiled into every batchmode session and can change how BOTH passes import
+            // and bake, so it belongs to the shared project fingerprint, not just the
+            // prefab half's full-tree hash.
+            FileFingerprint.OfDirectory(Path.Combine(unityDir, "Assets"), IsRegeneratedAssetPath, "*.cs"),
             FileFingerprint.OfDirectory(Path.Combine(unityDir, "ProjectSettings")),
             FileFingerprint.OfFile(Path.Combine(unityDir, "Packages", "manifest.json")),
             // Bundle format tracks the Unity editor (resolved from the game's Unity version),
@@ -726,7 +886,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
     // animator controller, the ragdoll physics material). Narrowing this to the two bundle-root
     // folders would under-invalidate and ship a stale prefab bundle after a retexture or a
     // re-bake, which is far worse than hashing some source files that no bundle reads.
-    private static string PrefabInputsFingerprint(string unityDir, string unityProjectFingerprint)
+    internal static string PrefabInputsFingerprint(string unityDir, string unityProjectFingerprint)
         => FileFingerprint.Combine(
             FileFingerprint.OfDirectory(Path.Combine(unityDir, "Assets"), IsRegeneratedAssetPath),
             unityProjectFingerprint);
@@ -736,10 +896,13 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
     // project, which carries the game and toolchain versions. Deliberately NOT the unity/Assets
     // content: that pass stages everything it needs out of assets/, so a prefab re-bake leaves
     // this bundle current.
-    private static string AssetInputsFingerprint(string projectDir, string unityProjectFingerprint)
+    // The bundle name is an input too: it prefixes every planned bundle file, so a mod
+    // rename must rebuild rather than reuse bundles recorded under the old name.
+    internal static string AssetInputsFingerprint(string projectDir, string unityProjectFingerprint, string bundleName)
         => FileFingerprint.Combine(
             FileFingerprint.OfDirectory(Path.Combine(projectDir, "assets")),
-            unityProjectFingerprint);
+            unityProjectFingerprint,
+            bundleName);
 
     /// <summary>
     /// Emits the localisation outputs under <c>compiled/locales/</c>: the source catalogue
@@ -847,18 +1010,36 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
     /// <see cref="AdditionPrefabStaging.ShouldInvokeUnityForPrefabs"/> returns
     /// false.
     /// </summary>
-    private async Task BuildUnityAdditionPrefabs(string projectDir, string unityBuildOutputDir, string unityEditorPath, string? preserveBundlePath = null)
+    private async Task BuildUnityAdditionPrefabs(string projectDir, string unityBuildOutputDir, string unityEditorPath)
     {
-        AdditionPrefabStaging.ClearStaleBuildOutput(unityBuildOutputDir, preserveBundlePath);
-
         if (!AdditionPrefabStaging.ShouldInvokeUnityForPrefabs(projectDir))
+        {
+            // The modder removed their last prefab: clear the previous compile's prefab
+            // bundles so Stage does not re-ship them. Replacement bundles and their
+            // manifests stay. When prefabs DO exist there is no wipe at all: the cached
+            // bundles and their Unity manifests are the incremental state that lets
+            // unchanged prefabs skip rebuilding, and BuildBundles prunes individual
+            // stale bundles itself.
+            AdditionPrefabStaging.ClearStaleBuildOutput(unityBuildOutputDir);
             return;
+        }
+
+        Directory.CreateDirectory(unityBuildOutputDir);
 
         var unityProjectDir = Path.Combine(projectDir, "unity");
         var prefabsDir = Path.Combine(unityProjectDir, "Assets", "Prefabs");
         var prefabFiles = Directory.EnumerateFiles(prefabsDir, "*.prefab", SearchOption.AllDirectories).ToArray();
 
         _log.Info($"  Building {prefabFiles.Length} prefab(s) from unity/Assets/Prefabs/...");
+
+        // Bundle files persist across compiles as incremental state, so their existence
+        // proves nothing about this run. The build script writes this token to the
+        // marker as its last act; a fresh marker with the right token is the only
+        // acceptable success signal (same protocol as the mesh pass).
+        var markerPath = Path.Combine(projectDir, ".jiangyu", "unity_build_prefabs.done");
+        var completionToken = Guid.NewGuid().ToString("N");
+        if (File.Exists(markerPath))
+            File.Delete(markerPath);
 
         var logFile = Path.Combine(unityProjectDir, "build.log");
         var result = await UnityBundleInvoker.InvokeAsync(new UnityBundleInvocation
@@ -867,11 +1048,17 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             ProjectPath = unityProjectDir,
             ExecuteMethod = "Jiangyu.Mod.BuildBundles.BuildAll",
             LogFile = logFile,
+            ExtraArgs = [new("completionToken", completionToken)],
+            ExpectedOutputPath = markerPath,
         });
 
-        if (!result.Success)
+        var completed = File.Exists(markerPath)
+            && string.Equals(File.ReadAllText(markerPath).Trim(), completionToken, StringComparison.Ordinal);
+        if (!result.Success || !completed)
         {
-            _log.Error($"Unity exited with code {result.ExitCode} building unity/ prefab bundles.");
+            _log.Error(result.Success
+                ? "Unity exited successfully but never reached the end of the prefab build script (no completion marker)."
+                : $"Unity exited with code {result.ExitCode} building unity/ prefab bundles.");
             _log.Error($"  Log: {logFile}");
             foreach (var line in result.LogTailLines)
                 _log.Error($"  {line}");

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 using Jiangyu.Core.Abstractions;
+using Jiangyu.Core.Compile;
 
 namespace Jiangyu.Core.Code;
 
@@ -18,7 +19,7 @@ public sealed class CodeBuildService(ILogSink log)
     /// when there is no code project to build, a failed result on build error, or a
     /// built result carrying the output DLLs and their <c>[JiangyuType]</c> names.
     /// </summary>
-    public async Task<CodeBuildResult?> BuildAsync(string projectDir, string gameDir, string? sdkDir, bool devSources = true)
+    public async Task<CodeBuildResult?> BuildAsync(string projectDir, string gameDir, string? sdkDir, bool devSources = true, string? cacheContext = null)
     {
         var codeDir = Path.Combine(projectDir, "code");
         if (!Directory.Exists(codeDir)
@@ -40,6 +41,27 @@ public sealed class CodeBuildService(ILogSink log)
                 "code/ present but the Jiangyu SDK path is unresolved. Set \"sdk\" in your global config, or build src/Jiangyu.Sdk.");
 
         var binDir = Path.Combine(codeDir, "bin", "Release");
+
+        var buildKey = ComputeBuildKey(codeDir, gameDir, sdkDir, devSources, cacheContext);
+        var buildStateFile = Path.Combine(projectDir, ".jiangyu", "code_build_state");
+        if (File.Exists(buildStateFile)
+            && string.Equals(File.ReadAllText(buildStateFile), buildKey, StringComparison.Ordinal)
+            && Directory.Exists(binDir))
+        {
+            var cachedDlls = Directory.EnumerateFiles(binDir, "*.dll", SearchOption.TopDirectoryOnly).ToList();
+            if (cachedDlls.Count > 0)
+            {
+                var cachedTypeNames = ReadJiangyuTypeNames(cachedDlls, gameDir, sdkDir);
+                log.Info($"  Incremental: code/ inputs unchanged, reusing built dll(s); [JiangyuType]: {(cachedTypeNames.Count == 0 ? "(none)" : string.Join(", ", cachedTypeNames))}");
+                return CodeBuildResult.Built(cachedDlls, cachedTypeNames);
+            }
+        }
+
+        // A rebuild is starting: drop the recorded key first, so a build that fails
+        // partway can never leave an older key validating whatever bin/ then contains.
+        if (File.Exists(buildStateFile))
+            File.Delete(buildStateFile);
+
         try { if (Directory.Exists(binDir)) Directory.Delete(binDir, recursive: true); }
         catch { /* a locked stale output is non-fatal; the build overwrites it */ }
 
@@ -98,8 +120,33 @@ public sealed class CodeBuildService(ILogSink log)
 
         var typeNames = ReadJiangyuTypeNames(dlls, gameDir, sdkDir);
         log.Info($"  Built code/ -> {dlls.Count} dll(s); [JiangyuType]: {(typeNames.Count == 0 ? "(none)" : string.Join(", ", typeNames))}");
+        Directory.CreateDirectory(Path.GetDirectoryName(buildStateFile)!);
+        await File.WriteAllTextAsync(buildStateFile, buildKey);
         return CodeBuildResult.Built(dlls, typeNames);
     }
+
+    // Everything the build reads is in the key: the code/ sources and project files,
+    // the SDK binaries the DLL compiles against, the game assemblies it references
+    // (metadata only, since a game install is too large to content-hash, and a game
+    // update rewrites sizes and mtimes under MelonLoader/ even when the engine version
+    // stays put), the configured game and SDK paths, the dev/release source set, and
+    // the Jiangyu version (the [JiangyuType] reader rides this service).
+    internal static string ComputeBuildKey(string codeDir, string gameDir, string sdkDir, bool devSources, string? cacheContext)
+        => FileFingerprint.Combine(
+            FileFingerprint.OfDirectory(codeDir, IsCodeBuildOutputPath),
+            FileFingerprint.OfDirectory(sdkDir),
+            FileFingerprint.OfDirectoryMetadata(Path.Combine(gameDir, "MelonLoader")),
+            gameDir,
+            sdkDir,
+            devSources ? "dev" : "release",
+            cacheContext ?? string.Empty,
+            JiangyuVersion.Current);
+
+    // Build outputs under code/ must not feed the input key: obj/ carries generated
+    // sources that change per build and bin/ is the output being keyed.
+    private static bool IsCodeBuildOutputPath(string relative)
+        => relative.StartsWith("bin/", StringComparison.Ordinal)
+            || relative.StartsWith("obj/", StringComparison.Ordinal);
 
     // True when code/ holds at least one hand-written C# source. The build's own bin/ and
     // obj/ are ignored: obj/ carries generated .cs (AssemblyInfo, global usings) that exist
