@@ -410,7 +410,11 @@ namespace Jiangyu.Mod
             var sm = ac.layers[0].stateMachine;
             var idle = sm.AddState("Idle");
             idle.writeDefaultValues = false;
-            idle.motion = new AnimationClip { name = "vehicle_idle_static" };
+            // The jy_empty_ prefix marks an authored-empty clip: the compile's
+            // clip restoration leaves it alone silently instead of warning
+            // that no game clip matches (playing empty is the intent here,
+            // the idle state must not disturb the rest pose).
+            idle.motion = new AnimationClip { name = "jy_empty_vehicle_idle" };
             AssetDatabase.AddObjectToAsset(idle.motion, ac);
             var moveState = sm.AddState("Move");
             moveState.writeDefaultValues = false;

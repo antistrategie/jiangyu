@@ -327,13 +327,13 @@ namespace Jiangyu.Mod
             var normalDefault = EnsureDefaultTexture(
                 "Assets/Materials/Jiangyu/_jiangyu_flat_normal.png",
                 new Color32(128, 128, 255, 255),
-                isNormalMap: true);
+                isNormalMap: true, linear: true);
             AssignTexture(mat, normalMap ?? normalDefault, new[] { "_NormalMap", "_BumpMap", "_Normal" });
 
             var maskDefault = EnsureDefaultTexture(
                 "Assets/Materials/Jiangyu/_jiangyu_neutral_mask.png",
                 new Color32(0, 255, 0, 128),
-                isNormalMap: false);
+                isNormalMap: false, linear: true);
             AssignTexture(mat, maskMap ?? maskDefault, new[] { "_MaskMap", "_Mask", "_MetallicGlossMap" });
 
             return mat;
@@ -376,29 +376,36 @@ namespace Jiangyu.Mod
             return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
         }
 
-        private static Texture2D EnsureDefaultTexture(string assetPath, Color32 colour, bool isNormalMap)
+        private static Texture2D EnsureDefaultTexture(string assetPath, Color32 colour, bool isNormalMap, bool linear)
         {
             var existing = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
-            if (existing != null) return existing;
-
-            var dir = Path.GetDirectoryName(assetPath);
-            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
-
-            var tex = new Texture2D(1, 1, TextureFormat.RGBA32, mipChain: false, linear: isNormalMap);
-            tex.SetPixels32(new[] { colour });
-            tex.Apply();
-            File.WriteAllBytes(assetPath, tex.EncodeToPNG());
-            UnityEngine.Object.DestroyImmediate(tex);
-
-            AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
+            if (existing == null)
+            {
+                var dir = Path.GetDirectoryName(assetPath);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                    Directory.CreateDirectory(dir);
+                var tex = new Texture2D(1, 1, TextureFormat.RGBA32, mipChain: false, linear: linear);
+                tex.SetPixels32(new[] { colour });
+                tex.Apply();
+                File.WriteAllBytes(assetPath, tex.EncodeToPNG());
+                UnityEngine.Object.DestroyImmediate(tex);
+                AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
+            }
+            // Enforce the requested import settings even on a pre-existing
+            // asset: sibling bake tools share default-texture paths, and the
+            // first tool to run must not lock in conflicting settings.
             var importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
             if (importer != null)
             {
-                importer.textureType = isNormalMap ? TextureImporterType.NormalMap : TextureImporterType.Default;
-                importer.sRGBTexture = !isNormalMap;
-                importer.mipmapEnabled = false;
-                importer.SaveAndReimport();
+                var wantType = isNormalMap ? TextureImporterType.NormalMap : TextureImporterType.Default;
+                var wantSrgb = !isNormalMap && !linear;
+                if (importer.textureType != wantType || importer.sRGBTexture != wantSrgb || importer.mipmapEnabled)
+                {
+                    importer.textureType = wantType;
+                    importer.sRGBTexture = wantSrgb;
+                    importer.mipmapEnabled = false;
+                    importer.SaveAndReimport();
+                }
             }
             return AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
         }

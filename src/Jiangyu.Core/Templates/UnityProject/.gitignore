@@ -11,7 +11,7 @@ obj/
 Assets/Jiangyu/Staging/
 
 # Host-game prefab rips. Auto-populated by `jiangyu compile` from the list
-# in jiangyu.json's `importedPrefabs` field. The user's game install is the
+# in jiangyu.json's `imports` array. The user's game install is the
 # source of truth, so the committed repo never ships derivative host
 # content. Authored mod content lives in Assets/Authored/ and IS committed.
 Assets/Imported/

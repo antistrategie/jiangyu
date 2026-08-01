@@ -296,7 +296,14 @@ internal static class AnimationClipRestoration
                     var name = baseField["m_Name"].AsString;
                     if (!gameClips.TryGetClip(name, out var original, out var matchedName))
                     {
-                        missing.Add(name);
+                        // The jy_empty_ prefix marks a clip authored empty on
+                        // purpose (BakeVehicle's static idle state ships one):
+                        // playing it empty is the intent, so no warning. The
+                        // marker must be a name convention because the bundle
+                        // build floors an empty clip's serialised duration to
+                        // one second, leaving no intrinsic signature.
+                        if (!name.StartsWith("jy_empty_", StringComparison.Ordinal))
+                            missing.Add(name);
                         continue;
                     }
                     if (gameClips.AmbiguousNames.Contains(name) || gameClips.AmbiguousNames.Contains(matchedName))
