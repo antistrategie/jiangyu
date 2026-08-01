@@ -23,8 +23,8 @@ namespace Jiangyu.Mod
     ///
     /// Doors runtime contract: when -doorOpenClip is given, the doors layer is
     /// driven by a mod-owned Bool parameter (default name "DoorsOut"). Nothing
-    /// in the game or the loader sets it — the vanilla driver's aiming
-    /// parameters proved unusable for entity-granted skills — so the mod MUST
+    /// in the game or the loader sets it (the vanilla driver's aiming
+    /// parameters are write-only noise for entity-granted skills), so the mod MUST
     /// ship runtime code that sets the parameter true when the doors should
     /// open (for example on its firing skill's OnUse) and false when they
     /// should close (OnAfterUse). Doors then close on their own after
@@ -34,18 +34,18 @@ namespace Jiangyu.Mod
     ///   -executeMethod Jiangyu.Mod.BakeVehicle.BakeBatch
     ///   -fbxPath Assets/Authored/&lt;vehicle&gt;/raw.fbx     (required)
     ///   -outputName &lt;vehicle&gt;/&lt;variant&gt;                (required)
-    ///   -targetLength 6.0            (required; metres, longest dimension, scale is solved to hit it)
-    ///   -moveClip &lt;take&gt;             (required; looping locomotion clip)
-    ///   -doorOpenClip &lt;take&gt;         (optional; builds the doors layer when present)
+    ///   -targetLength 6.0            (required. metres, longest dimension, scale is solved to hit it)
+    ///   -moveClip &lt;take&gt;             (required. looping locomotion clip)
+    ///   -doorOpenClip &lt;take&gt;         (optional. builds the doors layer when present)
     ///   -doorCloseClip &lt;take&gt;        (optional)
-    ///   -doorsParam &lt;name&gt;           (optional; doors layer Bool parameter, default DoorsOut)
-    ///   -doorLingerSeconds 2.0       (optional; doors hold open this long after the parameter drops)
-    ///   -idleSpeedThreshold 0.05     (optional; driver Speed below this counts as idle)
-    ///   -outputRoot Assets/Prefabs   (optional; root folder the &lt;vehicle&gt;/&lt;variant&gt; output lands under)
-    ///   -dropMeshes &lt;substrings&gt;     (optional; comma-separated renderer names to delete)
-    ///   -materialManifest &lt;json&gt;    (optional; {"materials":[{"name","base","normal","mask"}]} paths per material)
-    ///   -graftNodes &lt;spec,...&gt;       (optional; &lt;importedPrefabPath&gt;@&lt;childPath&gt; sub-assemblies to copy in)
-    ///   -muzzleAnchors &lt;spec,...&gt;    (optional; &lt;parentTransform&gt;:&lt;muzzleName&gt; fire-skill origin anchors)
+    ///   -doorsParam &lt;name&gt;           (optional. doors layer Bool parameter, default DoorsOut)
+    ///   -doorLingerSeconds 2.0       (optional. doors hold open this long after the parameter drops)
+    ///   -idleSpeedThreshold 0.05     (optional. driver Speed below this counts as idle)
+    ///   -outputRoot Assets/Prefabs   (optional. root folder the &lt;vehicle&gt;/&lt;variant&gt; output lands under)
+    ///   -dropMeshes &lt;substrings&gt;     (optional. comma-separated renderer names to delete)
+    ///   -materialManifest &lt;json&gt;    (optional. {"materials":[{"name","base","normal","mask"}]} paths per material)
+    ///   -graftNodes &lt;spec,...&gt;       (optional. &lt;importedPrefabPath&gt;@&lt;childPath&gt; sub-assemblies to copy in)
+    ///   -muzzleAnchors &lt;spec,...&gt;    (optional. &lt;parentTransform&gt;:&lt;muzzleName&gt; fire-skill origin anchors)
     /// </summary>
     internal static class BakeVehicle
     {
@@ -113,7 +113,10 @@ namespace Jiangyu.Mod
                     doorCloseClip: Arg("-doorCloseClip", null),
                     doorsParam: Arg("-doorsParam", "DoorsOut"),
                     doorLingerSeconds: FloatArg("-doorLingerSeconds", 2f),
-                    idleSpeedThreshold: FloatArg("-idleSpeedThreshold", 0.05f),
+                    // Clamped positive: at 0 the two-sided idle return
+                    // (Speed < t AND Speed > -t) becomes unsatisfiable and
+                    // the wheels never stop.
+                    idleSpeedThreshold: Mathf.Max(FloatArg("-idleSpeedThreshold", 0.05f), 0.001f),
                     outputRoot: Arg("-outputRoot", "Assets/Prefabs"),
                     dropMeshes: Arg("-dropMeshes", "").Split(',').Where(s => s.Length > 0).ToArray(),
                     materialManifest: Arg("-materialManifest", null),
@@ -150,7 +153,7 @@ namespace Jiangyu.Mod
             imp.animationType = ModelImporterAnimationType.Generic;
             imp.importAnimation = true;
             // Standard material import keeps the authored material NAMES on the
-            // renderer slots — that's the submesh -> texture-set mapping. The
+            // renderer slots: that is the submesh -> texture-set mapping. The
             // materials themselves get replaced by baked Menace ones below.
             imp.materialImportMode = ModelImporterMaterialImportMode.ImportStandard;
             imp.useFileScale = false;
@@ -259,7 +262,7 @@ namespace Jiangyu.Mod
 
                 // Named projectile-origin anchors that fire skills resolve via
                 // the MuzzleType enum (Muzzle -> "muzzle", Muzzle2 -> "muzzle2",
-                // ...). Spec: <parentTransform>:<muzzleName>[,...] — a zero-offset
+                // ...). Spec: <parentTransform>:<muzzleName>[,...], a zero-offset
                 // child is parented onto each named node so it inherits the
                 // node's animated pose.
                 var allTransforms = instance.GetComponentsInChildren<Transform>(true);
@@ -307,14 +310,14 @@ namespace Jiangyu.Mod
 
         // MENACE vehicle convention (read off el.carrier_open_transport: rear
         // door at local -Z, wheels at min Y): forward = +Z, up = +Y, grounded
-        // at y=0. Orientation is the authored FBX's job — these are heuristic
+        // at y=0. Orientation is the authored FBX's job. These are heuristic
         // warnings only; a deliberately tall or short vehicle can ignore them.
         private static void ValidateOrientation(GameObject instance)
         {
             var bounds = GeometryBounds(instance);
             var s = bounds.size;
             if (s.z < s.x)
-                Debug.LogWarning($"Jiangyu BakeVehicle: model is wider (X) than long (Z) (size {s}). MENACE vehicles face +Z — if the vehicle should be longer than wide, check the authored FBX's orientation. Ignore for intentionally wide vehicles.");
+                Debug.LogWarning($"Jiangyu BakeVehicle: model is wider (X) than long (Z) (size {s}). MENACE vehicles face +Z. If the vehicle should be longer than wide, check the authored FBX's orientation. Ignore for intentionally wide vehicles.");
             if (Mathf.Abs(bounds.min.y) > 0.25f)
                 Debug.LogWarning($"Jiangyu BakeVehicle: model is not grounded (bounds min.y = {bounds.min.y:F3}); wheels should sit at y=0 in the authored FBX.");
         }
@@ -413,12 +416,20 @@ namespace Jiangyu.Mod
             moveState.writeDefaultValues = false;
             moveState.motion = move;
             sm.defaultState = idle;
+            // Move on |Speed| beyond the threshold: the driver feeds a signed
+            // Speed and a reversing vehicle must roll its wheels too. Unity ORs
+            // across transitions and ANDs within one, so forward and reverse get
+            // a transition each and the idle return needs both bounds at once.
             var toMove = idle.AddTransition(moveState);
             toMove.hasExitTime = false; toMove.duration = 0.05f;
             toMove.AddCondition(AnimatorConditionMode.Greater, idleSpeedThreshold, "Speed");
+            var toMoveReverse = idle.AddTransition(moveState);
+            toMoveReverse.hasExitTime = false; toMoveReverse.duration = 0.05f;
+            toMoveReverse.AddCondition(AnimatorConditionMode.Less, -idleSpeedThreshold, "Speed");
             var toIdle = moveState.AddTransition(idle);
             toIdle.hasExitTime = false; toIdle.duration = 0.1f;
             toIdle.AddCondition(AnimatorConditionMode.Less, idleSpeedThreshold, "Speed");
+            toIdle.AddCondition(AnimatorConditionMode.Greater, -idleSpeedThreshold, "Speed");
 
             // Doors layer: closed at rest, driven by the mod-owned doors
             // parameter (see the doors runtime contract in the class header).
@@ -453,7 +464,7 @@ namespace Jiangyu.Mod
                     // a dedicated dummy child (so no real bone is disturbed),
                     // sized to the linger duration. The exit transition sits
                     // below normalised time 1 on a looping clip, so Mecanim
-                    // re-evaluates it every loop — the doors close on the
+                    // re-evaluates it every loop, so the doors close on the
                     // first cycle where the parameter reads false, however
                     // long the signal stayed up.
                     var lingerClip = new AnimationClip { name = "doors_linger_hold" };
@@ -501,7 +512,7 @@ namespace Jiangyu.Mod
         // read from the FBX itself (the authored source materials carry their
         // texture bindings through the import). Normals and masks come from the
         // -materialManifest JSON: {"materials": [{"name": "<materialName>",
-        // "base": "path", "normal": "path", "mask": "path"}, ...]} — the texture
+        // "base": "path", "normal": "path", "mask": "path"}, ...]}: the texture
         // fields are optional, "base" overrides the FBX-bound diffuse. Path
         // conventions of whatever asset source the mod rips from are the mod
         // build script's business, not this tool's. A missing mask falls back to
@@ -513,6 +524,14 @@ namespace Jiangyu.Mod
 
         private static void BakeMaterials(GameObject instance, string materialManifest, string outDir, List<Transform> graftRoots)
         {
+            // Purge baked_*.mat left by earlier runs before generating: a
+            // renamed material or a debug bake otherwise leaves an orphan
+            // beside the live set, and committed orphan .mat files are the
+            // exact surface where machine-local stub-shader GUIDs go dangling
+            // (the magenta-model failure).
+            foreach (var stale in Directory.GetFiles(outDir, "baked_*.mat"))
+                AssetDatabase.DeleteAsset(stale.Replace('\\', '/'));
+
             var manifest = LoadManifest(materialManifest);
             var usedManifestKeys = new HashSet<string>();
             var lit = Shader.Find("Menace/character") ?? Shader.Find("Standard");
