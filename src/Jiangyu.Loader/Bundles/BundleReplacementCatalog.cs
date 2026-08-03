@@ -181,48 +181,51 @@ internal sealed class BundleReplacementCatalog
 
         foreach (var assetName in assetNames)
         {
-            var assetPtr = bundle.LoadAsset(assetName, goTypePtr);
-            if (assetPtr != IntPtr.Zero)
+            var registered = false;
+            foreach (var kind in ProbeOrderFor(assetName))
             {
-                var prefab = new GameObject(assetPtr);
-                if (isAdditionBundle)
+                // Each LoadAsset miss is a native bundle lookup that costs the
+                // same as a hit, so the asset's own extension picks which type
+                // to try first. Every kind is still attempted, and the first
+                // type that loads is the one the asset registers as.
+                var typePtr = kind switch
                 {
-                    RegisterAdditionPrefab(ownerLabel, prefab, bundleStem, log);
-                }
-                else
+                    AssetProbeKind.GameObject => goTypePtr,
+                    AssetProbeKind.Sprite => spriteTypePtr,
+                    AssetProbeKind.Texture => textureTypePtr,
+                    _ => audioClipTypePtr,
+                };
+
+                var ptr = bundle.LoadAsset(assetName, typePtr);
+                if (ptr == IntPtr.Zero)
+                    continue;
+
+                switch (kind)
                 {
-                    RegisterPrefabAsset(ownerLabel, assetName, prefab, bundleToGame, meshMetadata, log);
+                    case AssetProbeKind.GameObject:
+                        var prefab = new GameObject(ptr);
+                        if (isAdditionBundle)
+                            RegisterAdditionPrefab(ownerLabel, prefab, bundleStem, log);
+                        else
+                            RegisterPrefabAsset(ownerLabel, assetName, prefab, bundleToGame, meshMetadata, log);
+                        break;
+                    case AssetProbeKind.Sprite:
+                        RegisterSpriteAsset(ownerLabel, ptr, log);
+                        break;
+                    case AssetProbeKind.Texture:
+                        RegisterTextureAsset(ownerLabel, ptr, log);
+                        break;
+                    default:
+                        RegisterAudioAsset(ownerLabel, ptr, log);
+                        break;
                 }
-                continue;
+
+                registered = true;
+                break;
             }
 
-            // Try Sprite before Texture2D: PNG assets imported via Unity's
-            // TextureImporter produce a single bundle asset where both types
-            // are loadable from the same name (Texture2D is the main asset
-            // and Sprite is a sub-asset). Loading Texture2D first would hide
-            // the sprite from the catalog and break KDL asset= references
-            // typed against Sprite. Pure texture replacements (no sprite
-            // sub-asset) return null here and fall through cleanly.
-            var spritePtr = bundle.LoadAsset(assetName, spriteTypePtr);
-            if (spritePtr != IntPtr.Zero)
-            {
-                RegisterSpriteAsset(ownerLabel, spritePtr, log);
+            if (registered)
                 continue;
-            }
-
-            var texturePtr = bundle.LoadAsset(assetName, textureTypePtr);
-            if (texturePtr != IntPtr.Zero)
-            {
-                RegisterTextureAsset(ownerLabel, texturePtr, log);
-                continue;
-            }
-
-            var audioClipPtr = bundle.LoadAsset(assetName, audioClipTypePtr);
-            if (audioClipPtr != IntPtr.Zero)
-            {
-                RegisterAudioAsset(ownerLabel, audioClipPtr, log);
-                continue;
-            }
 
             if (meshMetadata == null || meshMetadata.Count == 0)
                 continue;
@@ -230,6 +233,65 @@ internal sealed class BundleReplacementCatalog
             var meshPtr = bundle.LoadAsset(assetName, meshTypePtr);
             if (meshPtr != IntPtr.Zero)
                 RegisterMeshAsset(ownerLabel, meshPtr, bundleToGame, meshMetadata, log);
+        }
+    }
+
+    internal enum AssetProbeKind { GameObject, Sprite, Texture, Audio }
+
+    // Sprite BEFORE Texture2D in every ordering below, without exception. A PNG
+    // imported through Unity's TextureImporter is one bundle asset loadable as
+    // either type (Texture2D main asset, Sprite sub-asset), so probing Texture2D
+    // first would hide the sprite from the catalog and break KDL asset=
+    // references typed against Sprite. Pure texture replacements have no sprite
+    // sub-asset, miss the Sprite probe, and fall through cleanly.
+    //
+    // ProbeImage is the one ordering that demotes GameObject, so it is limited
+    // to extensions whose importer emits no prefab. Formats that can carry one
+    // (.psd through the PSD importer in rig mode) keep ProbePrefab.
+    private static readonly AssetProbeKind[] ProbePrefab =
+        { AssetProbeKind.GameObject, AssetProbeKind.Sprite, AssetProbeKind.Texture, AssetProbeKind.Audio };
+    private static readonly AssetProbeKind[] ProbeImage =
+        { AssetProbeKind.Sprite, AssetProbeKind.Texture, AssetProbeKind.GameObject, AssetProbeKind.Audio };
+    private static readonly AssetProbeKind[] ProbeAudio =
+        { AssetProbeKind.Audio, AssetProbeKind.GameObject, AssetProbeKind.Sprite, AssetProbeKind.Texture };
+
+    /// <summary>
+    /// Probe order for one bundle asset, hinted by its file extension. Every
+    /// kind is tried in every ordering, so an unrecognised or wrong extension
+    /// costs wasted probes and nothing else.
+    /// </summary>
+    internal static AssetProbeKind[] ProbeOrderFor(string assetName)
+    {
+        var dot = assetName.LastIndexOf('.');
+        if (dot < 0 || dot == assetName.Length - 1)
+            return ProbePrefab;
+
+        var ext = assetName[(dot + 1)..].ToLowerInvariant();
+        switch (ext)
+        {
+            case "wav":
+            case "ogg":
+            case "mp3":
+            case "aif":
+            case "aiff":
+            case "flac":
+            case "m4a":
+                return ProbeAudio;
+            case "png":
+            case "jpg":
+            case "jpeg":
+            case "tga":
+            case "bmp":
+            case "exr":
+            case "gif":
+            case "tif":
+            case "tiff":
+            case "webp":
+                return ProbeImage;
+            default:
+                // .prefab / .fbx / .gltf / .glb / .obj / .psd and anything
+                // unknown keep the GameObject-first order.
+                return ProbePrefab;
         }
     }
 

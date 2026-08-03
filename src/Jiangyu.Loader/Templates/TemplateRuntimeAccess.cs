@@ -30,6 +30,55 @@ internal static class TemplateRuntimeAccess
 
     public const string DefaultTemplateTypeName = nameof(EntityTemplate);
 
+    // Memoised name -> Type resolutions. ResolveTemplateType is called once per
+    // composite construction, and a miss in the primary assembly walks every
+    // loaded assembly calling GetTypes() on each — several ms a call with the
+    // ~440 assemblies Il2CppInterop generates. Types whose declaring assembly
+    // is not the primary one (Stem.Sound and Stem.SoundVariation are the hot
+    // pair: one composite per voice line) hit that walk on every construction.
+    //
+    // Only successful resolutions are cached: a name that fails to resolve now
+    // may resolve later once a mod assembly loads, so caching the failure would
+    // freeze a transient miss. Loading a new assembly can also make a
+    // previously unique short name ambiguous, so the cache is dropped whenever
+    // the assembly set grows. AssemblyLoad can fire on any thread, so reads and
+    // writes both take the lock rather than risk tearing the dictionary.
+    private static readonly Dictionary<string, Type> ResolvedTypeCache = new(StringComparer.Ordinal);
+    private static readonly object ResolvedTypeCacheGate = new();
+    private static bool _assemblyLoadHooked;
+
+    // Subscribed under the same gate that guards the cache, so no thread can
+    // observe a live cache that nothing invalidates.
+    private static void EnsureAssemblyLoadHook()
+    {
+        lock (ResolvedTypeCacheGate)
+        {
+            if (_assemblyLoadHooked)
+                return;
+            AppDomain.CurrentDomain.AssemblyLoad += OnAssemblyLoaded;
+            _assemblyLoadHooked = true;
+        }
+    }
+
+    private static void OnAssemblyLoaded(object sender, AssemblyLoadEventArgs args)
+    {
+        lock (ResolvedTypeCacheGate)
+            ResolvedTypeCache.Clear();
+    }
+
+    private static bool TryGetCachedType(string templateTypeName, out Type cached)
+    {
+        lock (ResolvedTypeCacheGate)
+            return ResolvedTypeCache.TryGetValue(templateTypeName, out cached);
+    }
+
+    private static Type CacheResolvedType(string templateTypeName, Type resolved)
+    {
+        lock (ResolvedTypeCacheGate)
+            ResolvedTypeCache[templateTypeName] = resolved;
+        return resolved;
+    }
+
     /// <summary>
     /// Looks up a single live template by its identity string. Dispatches by
     /// base class:
@@ -268,12 +317,18 @@ internal static class TemplateRuntimeAccess
         error = null;
 
         // A ns:Name names a code-defined [JiangyuType] injected at mod load.
+        // Checked ahead of the cache so a later-injected type always wins over
+        // a name that happened to resolve against a game assembly earlier.
         if (JiangyuTypeRegistry.TryResolve(templateTypeName, out var injected))
             return injected;
 
+        EnsureAssemblyLoadHook();
+        if (TryGetCachedType(templateTypeName, out var memoised))
+            return memoised;
+
         var primaryMatch = ResolveInAssembly(typeof(DataTemplateLoader).Assembly, templateTypeName, out var primaryAmbiguous, out var primaryCandidates);
         if (primaryMatch != null)
-            return primaryMatch;
+            return CacheResolvedType(templateTypeName, primaryMatch);
         if (primaryAmbiguous)
         {
             error = $"template type name '{templateTypeName}' is ambiguous; candidates: {string.Join(", ", primaryCandidates)}.";
@@ -303,7 +358,7 @@ internal static class TemplateRuntimeAccess
         }
 
         if (fallbackMatches.Count == 1)
-            return fallbackMatches[0];
+            return CacheResolvedType(templateTypeName, fallbackMatches[0]);
         if (fallbackMatches.Count > 1)
         {
             var candidates = string.Join(", ", fallbackMatches.Select(t => t.FullName).Distinct());
@@ -402,22 +457,50 @@ internal static class TemplateRuntimeAccess
         }
     }
 
+    // Both the open GetAll<> definition and each closed instantiation are
+    // resolved once. Clone application calls this per clone per ancestor slot
+    // (hundreds of clones times the BaseType chain), so GetMethods() +
+    // MakeGenericMethod runs once per template type rather than once per call.
+    // The resolved flag is set last, so a caller that sees it set also sees
+    // the definition it guards.
+    private static MethodInfo _getAllDefinition;
+    private static bool _getAllDefinitionResolved;
+    private static readonly Dictionary<Type, MethodInfo> GetAllByType = new();
+
     private static object TryInvokeGetAll(Type templateType)
     {
-        var loaderType = typeof(DataTemplateLoader);
+        if (!_getAllDefinitionResolved)
+        {
+            _getAllDefinition = typeof(DataTemplateLoader)
+                .GetMethods(BindingFlags.Public | BindingFlags.Static)
+                .FirstOrDefault(method => method.Name == "GetAll"
+                                          && method.IsGenericMethodDefinition
+                                          && method.GetParameters().Length == 0);
+            _getAllDefinitionResolved = true;
+        }
 
-        var getAllMethod = loaderType
-            .GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .FirstOrDefault(method => method.Name == "GetAll"
-                                      && method.IsGenericMethodDefinition
-                                      && method.GetParameters().Length == 0);
+        if (_getAllDefinition == null)
+            return null;
 
-        if (getAllMethod == null)
+        if (!GetAllByType.TryGetValue(templateType, out var bound))
+        {
+            try
+            {
+                bound = _getAllDefinition.MakeGenericMethod(templateType);
+            }
+            catch
+            {
+                bound = null;
+            }
+            GetAllByType[templateType] = bound;
+        }
+
+        if (bound == null)
             return null;
 
         try
         {
-            return getAllMethod.MakeGenericMethod(templateType).Invoke(null, null);
+            return bound.Invoke(null, null);
         }
         catch
         {

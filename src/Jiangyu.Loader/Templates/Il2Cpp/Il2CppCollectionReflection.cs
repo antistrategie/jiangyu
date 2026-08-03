@@ -248,6 +248,75 @@ internal static class Il2CppCollectionReflection
     }
 
     /// <summary>
+    /// Build a fresh array of <paramref name="newLength"/> holding
+    /// <paramref name="source"/>'s elements, one allocation and one source
+    /// pass regardless of the size change. Slots past the source's length
+    /// keep the element default; a shorter target truncates. The element
+    /// and array types come from <paramref name="source"/> itself, so the
+    /// result is the same wrapper type. Used by the SoundBank fixup to
+    /// align <c>busIndices</c> with <c>sounds</c>.
+    /// </summary>
+    public static bool TryResizeArray(
+        object source, int newLength, out object fresh, out string error)
+    {
+        fresh = null;
+        error = null;
+        if (source == null) { error = "source array is null."; return false; }
+        if (newLength < 0) { error = $"target length {newLength} is negative."; return false; }
+
+        var srcType = source.GetType();
+        // Any single-argument generic wrapper is accepted, not just the two
+        // named IL2CPP array types: the Length, indexer and ctor lookups below
+        // gate whether it is really array-shaped.
+        var elementType = GetArrayElementType(srcType)
+            ?? (srcType.IsGenericType && srcType.GetGenericArguments().Length == 1
+                ? srcType.GetGenericArguments()[0]
+                : null);
+        if (elementType == null)
+        {
+            error = $"{srcType.FullName} is not array-shaped.";
+            return false;
+        }
+
+        try
+        {
+            var managed = Array.CreateInstance(elementType, newLength);
+
+            if (source is Array managedSource)
+            {
+                Array.Copy(managedSource, managed, Math.Min(managedSource.Length, newLength));
+                fresh = managed;
+                return true;
+            }
+
+            var lengthProp = srcType.GetProperty("Length", BindingFlags.Instance | BindingFlags.Public);
+            var indexer = Il2CppIndexerLookup.FindIntIndexer(srcType);
+            var ctor = srcType.GetConstructor(new[] { elementType.MakeArrayType() });
+            if (lengthProp == null || indexer == null || ctor == null)
+            {
+                error = $"{srcType.FullName} is missing Length, an int indexer, or a managed-array ctor.";
+                return false;
+            }
+
+            var copyCount = Math.Min((int)lengthProp.GetValue(source), newLength);
+            var readArgs = new object[1];
+            for (var i = 0; i < copyCount; i++)
+            {
+                readArgs[0] = i;
+                managed.SetValue(indexer.GetValue(source, readArgs), i);
+            }
+
+            fresh = ctor.Invoke(new object[] { managed });
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"resize to {newLength} threw {ex.GetType().Name}: {ex.Message}.";
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Build a fresh empty IL2CPP array wrapper via the type's
     /// managed-array constructor, or a plain managed <c>T[]</c> when the
     /// destination is a real array. Used by the composite constructor.

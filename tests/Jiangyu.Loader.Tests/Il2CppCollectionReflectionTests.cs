@@ -185,4 +185,122 @@ public sealed class Il2CppCollectionReflectionTests
         Assert.Same(x, freshArray[0]);
         Assert.Same(y, freshArray[1]);
     }
+
+    // The SoundBank fixup grows busIndices to sounds.Count. Extending must
+    // carry every existing bus assignment over: a dropped entry silently
+    // re-routes that sound to bus 0.
+    [Fact]
+    public void Resize_Extend_KeepsExistingEntriesAndDefaultsTheRest()
+    {
+        var source = new FakeRefArray<int>(new[] { 3, 1, 4 });
+
+        var ok = Il2CppCollectionReflection.TryResizeArray(source, 5, out var fresh, out var error);
+
+        Assert.True(ok, error);
+        var freshArray = Assert.IsType<FakeRefArray<int>>(fresh);
+        Assert.Equal(5, freshArray.Length);
+        Assert.Equal(3, freshArray[0]);
+        Assert.Equal(1, freshArray[1]);
+        Assert.Equal(4, freshArray[2]);
+        Assert.Equal(0, freshArray[3]);
+        Assert.Equal(0, freshArray[4]);
+    }
+
+    [Fact]
+    public void Resize_Shrink_TruncatesWithoutThrowing()
+    {
+        var source = new FakeRefArray<int>(new[] { 3, 1, 4, 1, 5 });
+
+        var ok = Il2CppCollectionReflection.TryResizeArray(source, 2, out var fresh, out var error);
+
+        Assert.True(ok, error);
+        var freshArray = (FakeRefArray<int>)fresh;
+        Assert.Equal(2, freshArray.Length);
+        Assert.Equal(3, freshArray[0]);
+        Assert.Equal(1, freshArray[1]);
+    }
+
+    [Fact]
+    public void Resize_SameLength_CopiesEveryEntry()
+    {
+        var source = new FakeRefArray<int>(new[] { 7, 8 });
+
+        var ok = Il2CppCollectionReflection.TryResizeArray(source, 2, out var fresh, out var error);
+
+        Assert.True(ok, error);
+        var freshArray = (FakeRefArray<int>)fresh;
+        Assert.NotSame(source, fresh);
+        Assert.Equal(7, freshArray[0]);
+        Assert.Equal(8, freshArray[1]);
+    }
+
+    [Fact]
+    public void Resize_SourceUnchanged()
+    {
+        var source = new FakeRefArray<int>(new[] { 3, 1, 4 });
+        var snapshot = source.Snapshot();
+
+        Il2CppCollectionReflection.TryResizeArray(source, 6, out _, out _);
+
+        Assert.Equal(snapshot.Length, source.Length);
+        for (var i = 0; i < snapshot.Length; i++)
+            Assert.Equal(snapshot[i], source[i]);
+    }
+
+    [Fact]
+    public void Resize_PlainManagedArray_ResizesInKind()
+    {
+        var ok = Il2CppCollectionReflection.TryResizeArray(new[] { 3, 1 }, 4, out var fresh, out var error);
+
+        Assert.True(ok, error);
+        Assert.Equal(new[] { 3, 1, 0, 0 }, Assert.IsType<int[]>(fresh));
+    }
+
+    [Fact]
+    public void Resize_PreservesReferenceIdentity()
+    {
+        var a = new Element("a");
+        var source = new FakeRefArray<Element>(new[] { a });
+
+        var ok = Il2CppCollectionReflection.TryResizeArray(source, 3, out var fresh, out var error);
+
+        Assert.True(ok, error);
+        var freshArray = (FakeRefArray<Element>)fresh;
+        Assert.Same(a, freshArray[0]);
+        Assert.Null(freshArray[1]);
+    }
+
+    [Fact]
+    public void Resize_NullSource_ReportsError()
+    {
+        var ok = Il2CppCollectionReflection.TryResizeArray(null, 3, out var fresh, out var error);
+
+        Assert.False(ok);
+        Assert.Null(fresh);
+        Assert.Contains("source array is null", error);
+    }
+
+    [Fact]
+    public void Resize_NegativeLength_ReportsError()
+    {
+        var ok = Il2CppCollectionReflection.TryResizeArray(
+            new FakeRefArray<int>(new[] { 1 }), -1, out var fresh, out var error);
+
+        Assert.False(ok);
+        Assert.Null(fresh);
+        Assert.Contains("negative", error);
+    }
+
+    // A shape with no managed-array ctor must report rather than resize, so
+    // the SoundBank fixup leaves busIndices alone instead of blanking it.
+    [Fact]
+    public void Resize_NonArrayShape_ReportsErrorAndResizesNothing()
+    {
+        var ok = Il2CppCollectionReflection.TryResizeArray(
+            new System.Collections.Generic.List<int> { 1, 2 }, 4, out var fresh, out var error);
+
+        Assert.False(ok);
+        Assert.Null(fresh);
+        Assert.False(string.IsNullOrEmpty(error));
+    }
 }

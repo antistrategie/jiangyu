@@ -241,9 +241,9 @@ internal sealed partial class TemplatePatchApplier
     // IndexOutOfRange if busIndices is shorter than sounds. When a modder
     // appends to sounds without explicitly appending matching busIndices
     // entries, align the lengths by extending busIndices with 0 (default
-    // bus). Synthesises an internal Append op per missing entry so all
-    // the existing array-resize machinery handles the heavy lifting.
-    private void TrySoundBankAlignBusIndices(
+    // bus). One resize to the target length, so a bank costs a single
+    // array rebuild no matter how many sounds the patch appended.
+    private static void TrySoundBankAlignBusIndices(
         Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase bank,
         string bankId,
         MelonLogger.Instance log)
@@ -256,11 +256,23 @@ internal sealed partial class TemplatePatchApplier
             return;
 
         var soundsCount = (int)(soundsType.GetProperty("Count")?.GetValue(soundsObj) ?? 0);
+
+        // An unreadable length can't be told apart from an aligned one, and
+        // resizing on the assumption of 0 would drop every existing entry.
+        var busType = busObj.GetType();
+        var busLengthProp = busType.GetProperty("Length") ?? busType.GetProperty("Count");
+        if (busLengthProp == null)
+        {
+            log.Warning(
+                $"Template patch 'SoundBank:{bankId}': busIndices ({busType.FullName}) exposes no "
+                + "Length or Count; leaving it untouched. OnAfterDeserialize may throw on a length mismatch.");
+            return;
+        }
+
         int busCount;
         try
         {
-            var busLengthProp = busObj.GetType().GetProperty("Length") ?? busObj.GetType().GetProperty("Count");
-            busCount = (int)(busLengthProp?.GetValue(busObj) ?? 0);
+            busCount = (int)(busLengthProp.GetValue(busObj) ?? 0);
         }
         catch
         {
@@ -269,31 +281,36 @@ internal sealed partial class TemplatePatchApplier
 
         if (busCount >= soundsCount) return;
 
-        var missing = soundsCount - busCount;
-        var appendOp = new LoadedPatchOperation(
-            CompiledTemplateOp.Append,
-            "busIndices",
-            index: null,
-            indexPath: Array.Empty<int>(),
-            descent: Array.Empty<Jiangyu.Shared.Templates.TemplateDescentStep>(),
-            value: new Jiangyu.Shared.Templates.CompiledTemplateValue
-            {
-                Kind = Jiangyu.Shared.Templates.CompiledTemplateValueKind.Int32,
-                Int32 = 0,
-            },
-            ownerLabel: "soundbank:align-busIndices");
-
-        var applied = 0;
-        for (var i = 0; i < missing; i++)
+        if (!TryGetWritableMember(bank, "busIndices", out _, out var busSetter, out _))
         {
-            if (TryApplyOperation(bank, "SoundBank", bankId, appendOp, _assetResolver, log) == ApplyOutcome.Applied)
-                applied++;
-            else
-                break;
+            log.Warning($"Template patch 'SoundBank:{bankId}': busIndices is not writable; cannot align to sounds.Count.");
+            return;
         }
 
-        if (applied > 0)
-            log.Debug($"Template patch 'SoundBank:{bankId}': auto-extended busIndices by {applied} (sounds.Count={soundsCount}, prior busIndices.Length={busCount}).");
+        // New entries stay at the element default, which is bus 0.
+        if (!Il2CppCollectionReflection.TryResizeArray(busObj, soundsCount, out var resized, out var resizeError))
+        {
+            log.Warning(
+                $"Template patch 'SoundBank:{bankId}': cannot resize busIndices to {soundsCount} "
+                + $"({resizeError}); OnAfterDeserialize may throw on the length mismatch.");
+            return;
+        }
+
+        try
+        {
+            busSetter(resized);
+        }
+        catch (Exception ex)
+        {
+            log.Warning(
+                $"Template patch 'SoundBank:{bankId}': writing the resized busIndices threw "
+                + $"{ex.GetType().Name}: {ex.Message}.");
+            return;
+        }
+
+        log.Debug(
+            $"Template patch 'SoundBank:{bankId}': auto-extended busIndices by {soundsCount - busCount} "
+            + $"(sounds.Count={soundsCount}, prior busIndices.Length={busCount}).");
     }
 
     // SoundBank-specific post-apply fixup. Iterates bank.sounds[]; for any

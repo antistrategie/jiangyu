@@ -97,6 +97,26 @@ internal sealed class TemplateCloneApplier
         "name", "hideFlags", "m_CachedPtr", "Pointer", "m_ID", "serializationData",
     };
 
+    // Every member sweep in this class walks the same instance/public/nonpublic
+    // set, and GetProperties/GetFields hand back a freshly allocated array on
+    // each call. The clone pass runs four such sweeps per clone across hundreds
+    // of clones, all over the same handful of wrapper types, so the arrays are
+    // cached per type. The cached arrays are shared: iterate them, never sort
+    // or write a slot.
+    private const BindingFlags MemberSweepFlags =
+        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+    private static readonly Dictionary<Type, (PropertyInfo[] Properties, FieldInfo[] Fields)> MemberSweepCache = new();
+
+    private static (PropertyInfo[] Properties, FieldInfo[] Fields) SweepMembers(Type type)
+    {
+        if (MemberSweepCache.TryGetValue(type, out var cached))
+            return cached;
+        cached = (type.GetProperties(MemberSweepFlags), type.GetFields(MemberSweepFlags));
+        MemberSweepCache[type] = cached;
+        return cached;
+    }
+
     /// <summary>
     /// Phase 3: rebuild each clone whose source is itself a mod clone so it
     /// inherits the source AS AUTHORED, then re-applies its own ops on top.
@@ -215,10 +235,10 @@ internal sealed class TemplateCloneApplier
             return;
 
         var type = cloneTarget.GetType();
-        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        var (sweepProperties, sweepFields) = SweepMembers(type);
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var prop in type.GetProperties(flags))
+        foreach (var prop in sweepProperties)
         {
             if (prop.GetIndexParameters().Length != 0 || !prop.CanRead || !prop.CanWrite) continue;
             if (!seen.Add(prop.Name)) continue;
@@ -227,7 +247,7 @@ internal sealed class TemplateCloneApplier
                 v => prop.SetValue(cloneTarget, v), prop.PropertyType, prop.Name, touched, cloneId, log);
         }
 
-        foreach (var field in type.GetFields(flags))
+        foreach (var field in sweepFields)
         {
             if (field.IsInitOnly || !seen.Add(field.Name)) continue;
             CopyFromSource(cloneTarget, sourceTarget,
@@ -892,10 +912,10 @@ internal sealed class TemplateCloneApplier
         if (reflectionTarget == null) return;
 
         var type = reflectionTarget.GetType();
-        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        var (sweepProperties, sweepFields) = SweepMembers(type);
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var prop in type.GetProperties(flags))
+        foreach (var prop in sweepProperties)
         {
             if (prop.GetIndexParameters().Length != 0) continue;
             if (!prop.CanRead || !prop.CanWrite) continue;
@@ -909,7 +929,7 @@ internal sealed class TemplateCloneApplier
                 log);
         }
 
-        foreach (var field in type.GetFields(flags))
+        foreach (var field in sweepFields)
         {
             if (!seen.Add("F:" + field.Name)) continue;
             if (field.IsInitOnly) continue;
@@ -1067,10 +1087,10 @@ internal sealed class TemplateCloneApplier
         // leaf type covers SkillTemplate.EventHandlers via PerkTemplate and
         // similar inheritance shapes. Walking the BaseType chain in addition
         // would visit the same member multiple times.
-        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        var (sweepProperties, sweepFields) = SweepMembers(type);
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var prop in type.GetProperties(flags))
+        foreach (var prop in sweepProperties)
         {
             if (prop.GetIndexParameters().Length != 0) continue;
             if (!prop.CanRead) continue;
@@ -1088,7 +1108,7 @@ internal sealed class TemplateCloneApplier
             }
         }
 
-        foreach (var field in type.GetFields(flags))
+        foreach (var field in sweepFields)
         {
             if (!seen.Add("F:" + field.Name)) continue;
 
@@ -1336,16 +1356,15 @@ internal sealed class TemplateCloneApplier
         }
         if (fresh == null) return null;
 
-        const BindingFlags flags =
-            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
-        foreach (var prop in type.GetProperties(flags))
+        var (sweepProperties, sweepFields) = SweepMembers(type);
+        foreach (var prop in sweepProperties)
         {
             if (prop.GetIndexParameters().Length != 0) continue;
             if (!prop.CanRead || !prop.CanWrite) continue;
             try { prop.SetValue(fresh, ReseatStringListIfPresent(prop.GetValue(source))); }
             catch (Exception ex) { log?.Warning($"  {contextLabel}.{prop.Name}: {ex.Message}"); }
         }
-        foreach (var field in type.GetFields(flags))
+        foreach (var field in sweepFields)
         {
             if (field.IsInitOnly) continue;
             try { field.SetValue(fresh, ReseatStringListIfPresent(field.GetValue(source))); }

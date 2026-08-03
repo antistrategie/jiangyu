@@ -69,68 +69,93 @@ internal sealed class ModAssetRegistry : IModAssets
         }
 
         EnsureNameIndex();
+        var lower = name.ToLowerInvariant();
+
+        // An indexed match in ANY bundle wins over a raw-name match in any
+        // bundle: the index pass runs to completion first, and only names no
+        // bundle indexes reach the raw pass. The two passes are what keep the
+        // lookup cheap. An index probe is a dictionary hit, so a request some
+        // bundle indexes costs one native LoadAsset in total, where an
+        // interleaved order costs a raw probe per bundle ahead of the match
+        // (a native bundle scan whether or not that bundle holds the asset).
+        // The orders differ only when two bundles claim the same name, one by
+        // index and one by Unity's own resolution.
         for (var i = 0; i < _bundles.Count; i++)
         {
-            foreach (var candidate in ResolveCandidates(i, name))
-            {
-                // Cache by the resolved asset name, not the request spelling, so the
-                // same asset fetched by short name and by full path shares one load and
-                // one pin instead of loading and pinning it twice.
-                var resolvedKey = (typeof(T), candidate);
-                if (_cache.TryGetValue(resolvedKey, out var hit))
-                {
-                    _cache[requestKey] = hit;
-                    return (T)hit;
-                }
+            if (!_nameIndex[i].TryGetValue(lower, out var fullPath))
+                continue;
+            if (TryLoadFrom<T>(i, fullPath, name, requestKey, typePtr, out var indexed, out var indexedAbort))
+                return indexed;
+            if (indexedAbort)
+                return null;
+        }
 
-                IntPtr ptr;
-                try
-                {
-                    ptr = _bundles[i].LoadAsset(candidate, typePtr);
-                }
-                catch (Exception ex)
-                {
-                    _log.Warn($"[{_modId}] assets: loading '{name}' as {typeof(T).Name} threw {ex.GetType().Name}: {ex.Message}.");
-                    continue;
-                }
-                if (ptr == IntPtr.Zero)
-                    continue;
-
-                T asset;
-                try
-                {
-                    asset = (T)Activator.CreateInstance(typeof(T), ptr);
-                }
-                catch (Exception ex)
-                {
-                    _log.Warn($"[{_modId}] assets: wrapping '{name}' as {typeof(T).Name} threw {ex.GetType().Name}: {ex.Message}.");
-                    return null;
-                }
-
-                if (asset is UnityEngine.Object unityObject)
-                {
-                    unityObject.hideFlags = HideFlags.DontUnloadUnusedAsset;
-                    _pinned.Add(unityObject);
-                }
-                _cache[resolvedKey] = asset;
-                _cache[requestKey] = asset;
-                return asset;
-            }
+        // Fallback: the raw request spelling, so Unity's own short-name
+        // resolution still gets a chance at names our index didn't capture.
+        for (var i = 0; i < _bundles.Count; i++)
+        {
+            if (TryLoadFrom<T>(i, name, name, requestKey, typePtr, out var raw, out var rawAbort))
+                return raw;
+            if (rawAbort)
+                return null;
         }
 
         return null;
     }
 
-    // The asset names to try for a request: the indexed match (full path, the path under
-    // the category folder such as "dir/bar", or the leaf name), then the raw request so
-    // Unity's own short-name resolution still gets a chance.
-    private IEnumerable<string> ResolveCandidates(int bundleIndex, string name)
+    // abort=true means the request cannot succeed in any bundle (the loaded
+    // pointer would not wrap as T), so the caller stops rather than repeating
+    // the same failure and warning once per bundle.
+    private bool TryLoadFrom<T>(
+        int bundleIndex, string candidate, string requestName,
+        (Type, string) requestKey, IntPtr typePtr, out T asset, out bool abort) where T : class
     {
-        var index = _nameIndex[bundleIndex];
-        var lower = name.ToLowerInvariant();
-        if (index.TryGetValue(lower, out var fullPath))
-            yield return fullPath;
-        yield return name;
+        asset = null;
+        abort = false;
+
+        // Cache by the resolved asset name, not the request spelling, so the
+        // same asset fetched by short name and by full path shares one load and
+        // one pin instead of loading and pinning it twice.
+        var resolvedKey = (typeof(T), candidate);
+        if (_cache.TryGetValue(resolvedKey, out var hit))
+        {
+            _cache[requestKey] = hit;
+            asset = (T)hit;
+            return true;
+        }
+
+        IntPtr ptr;
+        try
+        {
+            ptr = _bundles[bundleIndex].LoadAsset(candidate, typePtr);
+        }
+        catch (Exception ex)
+        {
+            _log.Warn($"[{_modId}] assets: loading '{requestName}' as {typeof(T).Name} threw {ex.GetType().Name}: {ex.Message}.");
+            return false;
+        }
+        if (ptr == IntPtr.Zero)
+            return false;
+
+        try
+        {
+            asset = (T)Activator.CreateInstance(typeof(T), ptr);
+        }
+        catch (Exception ex)
+        {
+            _log.Warn($"[{_modId}] assets: wrapping '{requestName}' as {typeof(T).Name} threw {ex.GetType().Name}: {ex.Message}.");
+            abort = true;
+            return false;
+        }
+
+        if (asset is UnityEngine.Object unityObject)
+        {
+            unityObject.hideFlags = HideFlags.DontUnloadUnusedAsset;
+            _pinned.Add(unityObject);
+        }
+        _cache[resolvedKey] = asset;
+        _cache[requestKey] = asset;
+        return true;
     }
 
     private void EnsureNameIndex()
