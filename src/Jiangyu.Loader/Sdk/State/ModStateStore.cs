@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using Jiangyu.Loader.Logging;
+using Jiangyu.Shared.State;
 
 namespace Jiangyu.Loader.Sdk.State;
 
@@ -29,11 +30,17 @@ internal sealed class ModStateStore
 
         foreach (var context in _host.Contexts)
         {
-            if (context.State is not PersistentModState state || !state.HasState)
+            if (context.State is not PersistentModState state)
                 continue;
+            var sidecar = SidecarPath(savePath, context.ModId);
             try
             {
-                File.WriteAllText(SidecarPath(savePath, context.ModId), state.Serialize());
+                if (state.HasState)
+                    File.WriteAllText(sidecar, state.Serialize());
+                // A mod with nothing to say about this save must leave nothing behind either:
+                // whatever sits here belongs to the game that occupied the slot before.
+                else if (File.Exists(sidecar))
+                    File.Delete(sidecar);
             }
             catch (Exception ex)
             {
@@ -74,6 +81,43 @@ internal sealed class ModStateStore
         }
     }
 
+    /// <summary>Delete every mod's sidecar beside <paramref name="savePath"/>, for a save the game
+    /// is dropping. Sweeps the folder rather than the loaded mods, so a sidecar left by a mod that
+    /// is disabled this session goes with the save it belonged to.</summary>
+    public void DeleteAll(string savePath)
+    {
+        if (string.IsNullOrEmpty(savePath))
+            return;
+
+        var folder = Path.GetDirectoryName(savePath);
+        if (string.IsNullOrEmpty(folder))
+            return;
+
+        try
+        {
+            // Names, not paths: the two spellings of the folder need not agree character for
+            // character, and every sidecar for this save sits right beside it.
+            var saveFile = Path.GetFileName(savePath);
+            foreach (var sidecar in Directory.GetFiles(folder, ModStateSidecar.SearchPattern))
+            {
+                if (ModStateSidecar.SavePathFor(Path.GetFileName(sidecar)) != saveFile)
+                    continue;
+                try
+                {
+                    File.Delete(sidecar);
+                }
+                catch (Exception ex)
+                {
+                    _log.Error($"mod state: failed to delete {Path.GetFileName(sidecar)}: {ex.GetType().Name}: {ex.Message}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"mod state: failed to sweep sidecars for {Path.GetFileName(savePath)}: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
     /// <summary>Drop every mod's state, e.g. when a new game starts (which never triggers a load),
     /// so nothing carries over from the previous session.</summary>
     public void ResetAll()
@@ -83,5 +127,5 @@ internal sealed class ModStateStore
     }
 
     private static string SidecarPath(string savePath, string modId)
-        => $"{savePath}.jiangyu.{modId}.json";
+        => ModStateSidecar.PathFor(savePath, modId);
 }
