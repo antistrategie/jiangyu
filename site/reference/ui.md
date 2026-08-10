@@ -90,12 +90,13 @@ A window-framed panel that can dismiss itself on any outside click. Wraps the ga
 
 ### ItemTile
 
-A native item tile: the game's loot slot rendering an item (icon, stack, trade value), with native hover, the game's .slot-selected-border highlight while chosen, and a chosen-count badge. Left-click and right-click adjust the count through OnAdjust. It is an open wrapper: Root and Badge are real elements to restyle or extend.
+A native item tile: the game's loot slot rendering an item (icon, stack, trade value), with native hover, the game's .slot-selected-border highlight while chosen, and a chosen-count badge. Left-click and right-click adjust the count through OnAdjust, or OnAdjust to have a held button repeat. It is an open wrapper: Root and Badge are real elements to restyle or extend.
 
 | Member | Description |
 | --- | --- |
 | `Badge` | The chosen-count badge (hidden at zero). Restyle it if you like. |
 | `OnAdjust(Action)` | Left-click calls onDelta with +1, right-click with -1. |
+| `OnAdjust(Action)` | Left-click calls onDelta with +1, right-click with -1, and holding the button down repeats that: nothing for a moment, so an ordinary click stays a single step, then repeats that start slow and accelerate for as long as the button is held. The second argument is false for the press and true for every repeat, so a caller can keep click sounds and other one-shot feedback on the press alone. Repeats stop on release, on the pointer leaving the tile, and once the count last reported through SetChosen has run out of room in the direction being held. |
 | `Owned` | How many the player owns, the natural clamp ceiling for selection. |
 | `Root` | The tile element. Inject this. |
 | `SetChosen(int)` | Reflect a chosen count: the selected border and the badge text. |
