@@ -238,6 +238,50 @@ internal sealed class BundleReplacementCatalog
 
     internal enum AssetProbeKind { GameObject, Sprite, Texture, Audio }
 
+    internal enum ShaderRebindAction
+    {
+        /// <summary>The runtime owns a shader of this name. Point the material at it.</summary>
+        Rebind,
+        /// <summary>The shader travelled in the mod's own bundle. Leave the material on it.</summary>
+        KeepModShipped,
+        /// <summary>An extraction stub for a shader the runtime does not own. Renders wrong.</summary>
+        BrokenStub,
+    }
+
+    // Shader namespaces that only ever reach a mod bundle by extraction: the
+    // engine's own families plus MENACE's. A modder authoring a shader picks
+    // their own namespace, so a name in one of these that the runtime cannot
+    // resolve is a stale or foreign stub rather than shipped work.
+    private static readonly string[] ExtractedShaderNamespaces =
+        { "Hidden/", "HDRP/", "Menace/", "Shader Graphs/", "Universal Render Pipeline/" };
+
+    /// <summary>
+    /// Decide what to do with one bundled material's shader reference.
+    /// <paramref name="resolvedAtRuntime"/> is whether <c>Shader.Find</c> found a
+    /// shader of this name, which is the test for "the game owns this shader".
+    /// </summary>
+    internal static ShaderRebindAction ClassifyShader(string shaderName, bool resolvedAtRuntime)
+    {
+        // A material whose serialized shader reference dangled at bake time (its
+        // stub's GUID no longer existed in the mod's Unity project) loads on the
+        // builtin error shader. Shader.Find resolves that name, so the check for
+        // it has to come before the resolved case or it counts as a rebind while
+        // the material renders magenta in-game.
+        if (shaderName == "Hidden/InternalErrorShader")
+            return ShaderRebindAction.BrokenStub;
+
+        if (resolvedAtRuntime)
+            return ShaderRebindAction.Rebind;
+
+        foreach (var prefix in ExtractedShaderNamespaces)
+        {
+            if (shaderName.StartsWith(prefix, StringComparison.Ordinal))
+                return ShaderRebindAction.BrokenStub;
+        }
+
+        return ShaderRebindAction.KeepModShipped;
+    }
+
     // Sprite BEFORE Texture2D in every ordering below, without exception. A PNG
     // imported through Unity's TextureImporter is one bundle asset loadable as
     // either type (Texture2D main asset, Sprite sub-asset), so probing Texture2D
@@ -443,18 +487,21 @@ internal sealed class BundleReplacementCatalog
         // Rebind shaders to the runtime's resolved shader by name.
         // AssetRipper extracts shaders as stubs (real HLSL isn't recoverable
         // from compiled bytecode), so bundled materials would otherwise fall
-        // back to Hidden/InternalErrorShader (magenta) at render time. The
-        // runtime has the real shaders loaded for the game's own assets, so
-        // Shader.Find(name) resolves to a working shader of the same name.
-        // Material properties (colors, textures, keywords) are preserved
-        // because we only swap the shader pointer.
+        // back to the stub's dummy pass at render time. The runtime has the
+        // real shaders loaded for the game's own assets, so Shader.Find(name)
+        // resolves to a working shader of the same name. Material properties
+        // (colors, textures, keywords) are preserved because we only swap the
+        // shader pointer.
         //
-        // Materials whose shader name doesn't resolve at runtime (e.g.
-        // "Universal Render Pipeline/Lit" — MENACE ships its own Menace/*
-        // family and not the URP package's stock shaders) are left on their
-        // broken stub shader so the magenta render in-game makes the
-        // mis-authoring visible.
+        // A shader the mod authored itself travels inside this bundle as a
+        // dependency of the material that references it, already compiled, so
+        // its material is left exactly as it loaded. Such a shader is not
+        // addressable by name here: GetAllAssetNames lists a bundle's
+        // explicitly-assigned assets and not the dependencies pulled in
+        // alongside them, so the shader never reaches the probe loop and the
+        // classification runs off the name instead.
         var rebinds = 0;
+        var modShipped = 0;
         var unresolved = 0;
         foreach (var renderer in prefab.GetComponentsInChildren<Renderer>(true))
         {
@@ -465,25 +512,26 @@ internal sealed class BundleReplacementCatalog
                 if (mat == null || mat.shader == null) continue;
                 var name = mat.shader.name;
                 if (string.IsNullOrEmpty(name)) continue;
-                // A material whose serialized shader reference dangled at bake time (its
-                // stub's GUID no longer existed in the mod's Unity project) loads on the
-                // builtin error shader. Shader.Find would resolve that name and count it
-                // as a successful rebind while the material renders magenta in-game.
-                if (name == "Hidden/InternalErrorShader")
+
+                var runtimeShader = name == "Hidden/InternalErrorShader" ? null : Shader.Find(name);
+                switch (ClassifyShader(name, runtimeShader != null))
                 {
-                    log.Warning($"    Material '{mat.name}' has a broken shader reference (dangling stub GUID at bake time) and will render magenta in-game. Re-import the reference prefab and re-bake.");
-                    unresolved++;
-                    continue;
+                    case ShaderRebindAction.Rebind:
+                        mat.shader = runtimeShader;
+                        rebinds++;
+                        break;
+                    case ShaderRebindAction.KeepModShipped:
+                        log.Debug($"    Material '{mat.name}' keeps mod-shipped shader '{name}'.");
+                        modShipped++;
+                        break;
+                    default:
+                        log.Warning(
+                            name == "Hidden/InternalErrorShader"
+                                ? $"    Material '{mat.name}' has a broken shader reference (dangling stub GUID at bake time) and will render magenta in-game. Re-import the reference prefab and re-bake."
+                                : $"    Material '{mat.name}' references shader '{name}', which no runtime shader provides. An extraction stub of a shader this game does not ship renders wrong. Use a Menace/* shader, or ship your own shader under your own namespace.");
+                        unresolved++;
+                        break;
                 }
-                var runtimeShader = Shader.Find(name);
-                if (runtimeShader == null)
-                {
-                    log.Warning($"    Material '{mat.name}' references shader '{name}' but Shader.Find returned null; will render magenta in-game. Use a Menace/* shader instead.");
-                    unresolved++;
-                    continue;
-                }
-                mat.shader = runtimeShader;
-                rebinds++;
             }
             renderer.sharedMaterials = mats;
         }
@@ -495,9 +543,11 @@ internal sealed class BundleReplacementCatalog
 
         AdditionPrefabs[key] = prefab;
         _additionPrefabOwners[key] = ownerLabel;
-        var shaderSuffix = unresolved > 0
-            ? $"; rebound {rebinds} shader(s); {unresolved} unresolved (will render magenta)"
-            : $"; rebound {rebinds} shader(s)";
+        var shaderSuffix = $"; rebound {rebinds} shader(s)";
+        if (modShipped > 0)
+            shaderSuffix += $"; kept {modShipped} mod-shipped shader(s)";
+        if (unresolved > 0)
+            shaderSuffix += $"; {unresolved} unresolved (will render wrong)";
         log.Debug($"  Registered addition prefab: {key} (object name: {prefab.name}{shaderSuffix}{mirrorNotes})");
     }
 
