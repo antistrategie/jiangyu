@@ -240,7 +240,7 @@ Every verb in the `Jiangyu.Game` namespace, generated from the SDK. Verbs are pl
 | `Tiles.DirectionTo(Tile, BaseTile)` | The direction from this tile to another. |
 | `Tiles.Distance(Tile, Tile)` | The grid distance from from to to. |
 | `Tiles.Elevation(Tile)` | The tile's elevation. |
-| `Tiles.ElevationAt(float, float)` | The terrain elevation at grid coordinate (x, z). |
+| `Tiles.ElevationAt(Vector3, bool)` | The terrain elevation at world-space pos. Raycasting reads through terrain the heightmap alone does not describe, at the cost of a physics query per call: pass false to sample the heightmap only. |
 | `Tiles.Entity(Tile)` | The entity occupying the tile, or null. |
 | `Tiles.HasActor(Tile)` | Whether an actor stands on the tile. |
 | `Tiles.HasCover(Tile)` | Whether the tile provides any cover. |
@@ -260,7 +260,7 @@ Every verb in the `Jiangyu.Game` namespace, generated from the SDK. Verbs are pl
 | `Tiles.IsIsolated(Tile)` | Whether the tile is isolated (unreachable by movement). |
 | `Tiles.IsTemporarilyOccupied(Tile)` | Whether the tile is temporarily occupied (e.g. mid-move). |
 | `Tiles.IsValidMovementDestination(Tile)` | Whether the tile is a valid destination for a move. |
-| `Tiles.IsValidPosition(Vector3)` | Whether the given world-space position lies on the map. |
+| `Tiles.IsValidPosition(Vector3)` | Whether the given world-space position lies on a valid tile of the map. |
 | `Tiles.IsValidTile(int, int)` | Whether the given grid coordinate is a valid tile. |
 | `Tiles.IsVisibleToFaction(Tile, int)` | Whether the given faction can currently see the tile. |
 | `Tiles.IsVisibleToPlayer(Tile)` | Whether the player can currently see the tile. |
@@ -279,7 +279,7 @@ Every verb in the `Jiangyu.Game` namespace, generated from the SDK. Verbs are pl
 | `Tiles.Slope(Vector3)` | The terrain slope at a world-space position. |
 | `Tiles.SurfaceType(Tile)` | The tile's surface type. |
 | `Tiles.SurfaceTypeAtPos(Vector3)` | The surface type under a world-space position. |
-| `Tiles.TerrainHeight` | The map's terrain height. |
+| `Tiles.TerrainHeight` | The map's maximum possible terrain elevation. |
 | `Tiles.TileAtPos(Vector3)` | The tile under a world-space position. |
 | `Tiles.UnblockLineOfSight(Tile)` | Pop a line-of-sight block off the tile. |
 | `Tiles.VisibleMask(Tile)` | The bitmask of factions that can currently see the tile. |

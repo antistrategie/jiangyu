@@ -30,6 +30,7 @@
         "System.Int32 GetVarRaw(Il2CppMenace.Strategy.StrategyVars)",
         "System.Int64 GetConversationVarNameHash(Il2CppSystem.ReadOnlySpan\u00601[[System.Char, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]])",
         "System.Single CalcOciCostsMult()",
+        "System.Single CalcPromotionCostMult(System.Int32, Il2CppSystem.Collections.Generic.List\u00601[[Il2CppMenace.Strategy.Origin, Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null]]\u0026)",
         "System.Single GetCampaignProgress(Il2CppMenace.Strategy.CampaignProgressType)",
         "System.String GetIronmanSaveGameName()",
         "System.String GetTranslatedChangeVarText(Il2CppMenace.Strategy.StrategyVars, System.Int32)",
@@ -242,6 +243,7 @@
         "System.Int32 GetAvailableOperationsOfClient(Il2CppMenace.Strategy.StoryFactionTemplate, Il2CppMenace.Strategy.OperationType)",
         "System.Int32 GetFinishedCountAgainst(Il2CppMenace.Tactical.FactionType, Il2CppSystem.Nullable\u00601[[Il2CppMenace.Strategy.OperationStatus, Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null]])",
         "System.Void FillUpOperations(Il2CppMenace.Strategy.Operation)",
+        "System.Void FixNoAvailableOperations()",
         "System.Void ForEachOperationOnPlanet(Il2CppMenace.Strategy.PlanetType, Il2CppMenace.Strategy.OperationType, Il2CppSystem.Action\u00602[[Il2CppMenace.Strategy.Operation, Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null],[System.Int32, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]])",
         "System.Void GenerateInitialOperations()",
         "System.Void MakeAllOperationsOfFactionUnavailable(Il2CppMenace.Strategy.StoryFaction)",
@@ -290,6 +292,7 @@
         "Il2CppSystem.Collections.Generic.IReadOnlyList\u00601[[Il2CppMenace.Strategy.Squaddie, Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null]] GetAllAlive()",
         "Il2CppSystem.Collections.Generic.IReadOnlyList\u00601[[Il2CppMenace.Strategy.Squaddie, Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null]] GetAllKilled()",
         "System.Boolean AddDefaultSquaddiesToLeader(Il2CppMenace.Strategy.BaseUnitLeader)",
+        "System.Boolean AreCorruptedByCheats()",
         "System.Boolean IncrementMissionsParticipated(System.Int32)",
         "System.Boolean IsAlive(System.Int32)",
         "System.Boolean IsNameUsed(System.String)",
@@ -299,7 +302,6 @@
         "System.Boolean TryAddAlive(System.Int32, Il2CppMenace.Strategy.HomePlanetType, Il2CppSystem.Nullable\u00601[[Il2CppMenace.Tactical.Gender, Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null]], Il2CppSystem.Nullable\u00601[[Il2CppMenace.Tactical.SkinColor, Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null]], System.String, System.String)",
         "System.Int32 GetAliveCount()",
         "System.Int32 GetAliveUnused()",
-        "System.Int32 GetNextSquaddieId()",
         "System.Void EnforceMaxSquaddies(System.Int32)",
         "System.Void Init()",
         "System.Void ProcessSaveState(Il2CppMenace.Strategy.SaveState)",
@@ -344,11 +346,10 @@
         "Il2CppMenace.Tactical.AI.BaseFaction GetFaction(System.Int32)",
         "Il2CppMenace.Tactical.AI.BaseFaction GetPlayerFaction()",
         "Il2CppMenace.Tactical.Actor GetActiveActor()",
+        "Il2CppMenace.Tactical.Actor GetActorByID(System.Int32)",
         "Il2CppMenace.Tactical.Actor GetUserOfLastUsedSkill()",
-        "Il2CppMenace.Tactical.DecalManager GetDecals()",
         "Il2CppMenace.Tactical.Map GetMap()",
         "Il2CppMenace.Tactical.Objectives.ObjectiveState GetPrimaryObjectivesState(System.Boolean)",
-        "Il2CppMenace.Tactical.PathfindingManager GetPathfinding()",
         "Il2CppMenace.Tactical.TacticalCamera GetCamera()",
         "Il2CppMenace.Tactical.TacticalFinishReason GetFinishReason()",
         "Il2CppMenace.Tactical.TacticalManager Get()",
@@ -492,8 +493,7 @@
         "UnityEngine.GameObject GetDismemberedRoot()",
         "UnityEngine.GameObject GetEffectsRoot()",
         "UnityEngine.GameObject GetLevelRoot()",
-        "UnityEngine.Rendering.Volume GetVolume()",
-        "UnityEngine.Terrain GetTerrain()"
+        "UnityEngine.Rendering.Volume GetVolume()"
       ]
     }
   ]

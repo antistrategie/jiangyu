@@ -1,5 +1,5 @@
 {
-  "_comment": "Tile and Map verbs. Tile reads/mutations take the Tile as their first arg (receiver \"self\"); Map queries route through TacticalManager.Get().GetMap(). Overloaded, out-param, list-returning and static map lookups are hand-written in Tactical/Tiles.cs, not here.",
+  "_comment": "Tile and Map verbs. Tile reads/mutations take the Tile as their first arg (receiver \"self\"); Map queries route through TacticalManager.Get().GetMap(). Overloaded, out-param, list-returning, property-backed, multi-call and static map lookups are hand-written in Tactical/Tiles.cs, not here.",
   "verbs": [
     {
       "group": "Tactical.Tiles",
@@ -372,14 +372,6 @@
     },
     {
       "group": "Tactical.Tiles",
-      "name": "TerrainHeight",
-      "onType": "Il2CppMenace.Tactical.Map",
-      "method": "GetTerrainHeight",
-      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap()",
-      "summary": "The map's terrain height."
-    },
-    {
-      "group": "Tactical.Tiles",
       "name": "Slope",
       "onType": "Il2CppMenace.Tactical.Map",
       "method": "GetSlope",
@@ -404,35 +396,11 @@
     },
     {
       "group": "Tactical.Tiles",
-      "name": "MapSizeX",
-      "onType": "Il2CppMenace.Tactical.Map",
-      "method": "GetSizeX",
-      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap()",
-      "summary": "The map's tile count along X."
-    },
-    {
-      "group": "Tactical.Tiles",
-      "name": "MapSizeZ",
-      "onType": "Il2CppMenace.Tactical.Map",
-      "method": "GetSizeZ",
-      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap()",
-      "summary": "The map's tile count along Z."
-    },
-    {
-      "group": "Tactical.Tiles",
       "name": "IsValidTile",
       "onType": "Il2CppMenace.Tactical.Map",
       "method": "IsValidTile",
       "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap()",
       "summary": "Whether the given grid coordinate is a valid tile."
-    },
-    {
-      "group": "Tactical.Tiles",
-      "name": "IsValidPosition",
-      "onType": "Il2CppMenace.Tactical.Map",
-      "method": "IsValidPosition",
-      "receiver": "global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap()",
-      "summary": "Whether the given world-space position lies on the map."
     }
   ]
 }

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-07-14T13:09:13.6319318+00:00",
-  "gameAssemblyHash": "659f93daf1551a68de0577a5794ce95c6b5afcea35d4a67db57f076f15b458b4",
+  "generatedAt": "2026-08-10T13:28:46.6796084+00:00",
+  "gameAssemblyHash": "1b70ee342ce502c2261d276e4575f9c807fb3a1dd47aba5b3504936587023059",
   "types": [
     {
       "typeName": "Menace.Tactical.EntityLootEntry",
@@ -628,7 +628,7 @@
     {
       "typeName": "EntityTemplate",
       "category": "template",
-      "fieldCount": 111,
+      "fieldCount": 112,
       "sampleNames": [
         "enemy.pirate_scavengers",
         "player_squad.darby"
@@ -946,6 +946,11 @@
           "fieldTypeName": "UnityEngine.Vector2Int"
         },
         {
+          "name": "OccupyWholeBoundingBox",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
           "name": "Badge",
           "kind": "reference",
           "fieldTypeName": "UnityEngine.Sprite"
@@ -1238,7 +1243,7 @@
     {
       "typeName": "SkillTemplate",
       "category": "template",
-      "fieldCount": 125,
+      "fieldCount": 124,
       "sampleNames": [
         "active.change_plates",
         "passive.ammo_armor_piercing"
@@ -1597,11 +1602,6 @@
           "name": "AoEType",
           "kind": "enum",
           "fieldTypeName": "Menace.Tactical.Skills.SkillAoEType"
-        },
-        {
-          "name": "TargetFaction",
-          "kind": "enum",
-          "fieldTypeName": "Menace.Tactical.FactionType"
         },
         {
           "name": "AoEChanceToHitCenter",

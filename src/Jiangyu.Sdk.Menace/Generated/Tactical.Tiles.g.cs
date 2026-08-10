@@ -150,9 +150,6 @@ public static partial class Tiles
     /// <summary>The world-space centre of the map.</summary>
     public static global::UnityEngine.Vector3 CenterWorldPos() => global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap().GetCenterWorldPos();
 
-    /// <summary>The map's terrain height.</summary>
-    public static float TerrainHeight() => global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap().GetTerrainHeight();
-
     /// <summary>The terrain slope at a world-space position.</summary>
     public static float Slope(global::UnityEngine.Vector3 p0) => global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap().GetSlope(p0);
 
@@ -162,15 +159,6 @@ public static partial class Tiles
     /// <summary>Whether the map is using fog of war.</summary>
     public static bool MapUsesFogOfWar() => global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap().IsUsingFogOfWar();
 
-    /// <summary>The map's tile count along X.</summary>
-    public static int MapSizeX() => global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap().GetSizeX();
-
-    /// <summary>The map's tile count along Z.</summary>
-    public static int MapSizeZ() => global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap().GetSizeZ();
-
     /// <summary>Whether the given grid coordinate is a valid tile.</summary>
     public static bool IsValidTile(int p0, int p1) => global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap().IsValidTile(p0, p1);
-
-    /// <summary>Whether the given world-space position lies on the map.</summary>
-    public static bool IsValidPosition(global::UnityEngine.Vector3 p0) => global::Il2CppMenace.Tactical.TacticalManager.Get().GetMap().IsValidPosition(p0);
 }
