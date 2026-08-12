@@ -3,6 +3,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Jiangyu.Core.Config;
 using Jiangyu.Shared.Bridge;
 
@@ -19,6 +20,15 @@ namespace Jiangyu.Studio.Rpc;
 internal sealed class GameBridgeClient
 {
     private const int ReadTimeoutMs = 5000;
+
+    // Connect() honours neither ReceiveTimeout nor SendTimeout: those cover an
+    // established socket, not the handshake. Without a bound of its own, a port
+    // that neither accepts nor refuses (a firewall filtering loopback, or a port
+    // file left behind by a game that crashed) blocks for the OS-level timeout,
+    // and it does so holding the lock every other RPC dispatches under. A live
+    // local bridge answers in well under a millisecond, so this only ever cuts
+    // short an attempt that was not going to succeed.
+    private const int ConnectTimeoutMs = 1000;
 
     // A valid JSON `null` element, returned when a response carries no result, so
     // callers never hand a default(JsonElement) (ValueKind Undefined) to the
@@ -109,19 +119,50 @@ internal sealed class GameBridgeClient
         if (port <= 0)
             return false;
         _remoteProtocol = protocol;
+        // Held outside the try so a refused connect disposes the socket it opened.
+        // A refusal throws out of the connect, and the field-based Cleanup cannot
+        // reach a client that was never assigned: with the bridge toggle on and the
+        // game down, this path runs on every poll, so the handles add up.
+        TcpClient? client = null;
         try
         {
-            var client = new TcpClient { ReceiveTimeout = ReadTimeoutMs, SendTimeout = ReadTimeoutMs };
-            client.Connect(IPAddress.Loopback, port);
-            _client = client;
-            _stream = client.GetStream();
+            client = new TcpClient { ReceiveTimeout = ReadTimeoutMs, SendTimeout = ReadTimeoutMs };
+            var connected = AwaitConnect(client, client.ConnectAsync(IPAddress.Loopback, port), ConnectTimeoutMs);
+            if (connected is null)
+            {
+                Cleanup();
+                return false;
+            }
+            _client = connected;
+            _stream = connected.GetStream();
             return true;
         }
         catch
         {
+            try { client?.Dispose(); } catch { }
             Cleanup();
             return false;
         }
+    }
+
+    /// <summary>
+    /// Waits <paramref name="timeoutMs"/> for <paramref name="connecting"/>, returning
+    /// the client when it lands and null when it does not.
+    /// </summary>
+    /// <remarks>
+    /// Split out from the connect itself so the bound can be tested without a socket
+    /// that stalls on cue. Abandoning the attempt disposes the client, which faults
+    /// the pending task, so the fault is observed here rather than left to surface
+    /// through <c>TaskScheduler.UnobservedTaskException</c>.
+    /// </remarks>
+    internal static TcpClient? AwaitConnect(TcpClient client, Task connecting, int timeoutMs)
+    {
+        if (connecting.Wait(timeoutMs))
+            return client;
+
+        _ = connecting.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+        try { client.Dispose(); } catch { }
+        return null;
     }
 
     private void Cleanup()
