@@ -9,7 +9,6 @@ import styles from "./SettingsModal.module.css";
 const STUDIO_VERSION = __STUDIO_VERSION__;
 const REPO_URL = "https://github.com/antistrategie/jiangyu";
 const DOCS_URL = "https://antistrategie.github.io/jiangyu/";
-const DISCORD_URL = "https://discord.com/invite/XcfYGmxvde";
 
 export function AboutSection() {
   return (
@@ -25,9 +24,6 @@ export function AboutSection() {
       </Field>
       <Field label="Documentation">
         <ExternalLinkButton url={DOCS_URL} />
-      </Field>
-      <Field label="Antistratégie Discord">
-        <ExternalLinkButton url={DISCORD_URL} />
       </Field>
       <SectionHeader title="Credits · 致谢" />
       <p className={styles.muted}>
