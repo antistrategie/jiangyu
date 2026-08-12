@@ -184,7 +184,9 @@ public sealed class RpcTypeGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
-        return sb.ToString();
+        // The blank line after each interface leaves one at the end of the
+        // file, which Prettier reads as a formatting error.
+        return sb.ToString().TrimEnd() + Environment.NewLine;
     }
 
     private static string? GetJsonPropertyName(IPropertySymbol prop)
