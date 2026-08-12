@@ -46,8 +46,23 @@ namespace Jiangyu.Mod
     {
         private DefaultAsset _sourceFolder;
         private GameObject _referencePrefab;
+        private Shader _overrideShader;
+        // Per source-material overrides, keyed by the glTF material name that
+        // also names the baked asset. Takes precedence over _overrideShader.
+        // A list rather than a dictionary so the window can show partly filled
+        // rows while the modder is still typing.
+        private readonly List<MaterialShaderOverride> _overrideShaderRows =
+            new List<MaterialShaderOverride>();
+        // Extra textures to set on a baked material, for maps a custom shader
+        // declares beyond the base colour the bake already assigns. Flat rather
+        // than nested per slot so one row reads as one assignment.
+        private readonly List<MaterialTextureOverride> _textureRows =
+            new List<MaterialTextureOverride>();
+        private readonly List<MaterialFloatOverride> _floatRows =
+            new List<MaterialFloatOverride>();
         private string _outputName = "";
         private string _outputDir = "Assets/Prefabs";
+        private Vector2 _scroll;
 
         [MenuItem("Jiangyu/Bake humanoid prefab from glTF…")]
         private static void ShowWindow()
@@ -62,7 +77,11 @@ namespace Jiangyu.Mod
         //         -gltfFolder <Assets/Authored/MyCharacter> \
         //         -referencePrefab <Assets/Imported/.../soldier.prefab> \
         //         -outputDir <Assets/Prefabs> \
-        //         -outputName <MyCharacter>
+        //         -outputName <MyCharacter> \
+        //         [-overrideShader <Womenace/DollToon>] \
+        //         [-overrideShaderFor <Face=Womenace/DollFace,Hair=Womenace/DollHair>] \
+        //         [-setTextureFor <Hair:_RampMap=Assets/.../ramp_hair.png,...>]
+        //         [-setFloatFor <Face:_UseBlendTex=1,Hair:_AnisotropicSpecular=1>]
         // Requires the Unity Editor instance for this project to be closed
         // (Unity single-instances each project via Library/UnityLockfile).
         public static void BakeBatch()
@@ -78,6 +97,10 @@ namespace Jiangyu.Mod
             var referencePrefabPath = Arg("-referencePrefab", null);
             var outputDir = Arg("-outputDir", "Assets/Prefabs");
             var outputName = Arg("-outputName", null);
+            var overrideShaderArg = Arg("-overrideShader", null);
+            var overrideShaderForArg = Arg("-overrideShaderFor", null);
+            var setTextureForArg = Arg("-setTextureFor", null);
+            var setFloatForArg = Arg("-setFloatFor", null);
 
             if (string.IsNullOrEmpty(gltfFolder)
                 || string.IsNullOrEmpty(referencePrefabPath)
@@ -112,6 +135,10 @@ namespace Jiangyu.Mod
                 window._referencePrefab = refPrefab;
                 window._outputDir = outputDir;
                 window._outputName = outputName;
+                window._overrideShader = ResolveOverrideShader(overrideShaderArg);
+                ParseOverrideShaderFor(overrideShaderForArg, window._overrideShaderRows);
+                ParseSetTextureFor(setTextureForArg, window._textureRows);
+                ParseSetFloatFor(setFloatForArg, window._floatRows);
                 window.Bake();
                 Debug.Log("Jiangyu BakeHumanoid: success.");
                 EditorApplication.Exit(0);
@@ -125,6 +152,8 @@ namespace Jiangyu.Mod
 
         private void OnGUI()
         {
+            _scroll = EditorGUILayout.BeginScrollView(_scroll);
+
             EditorGUILayout.HelpBox(
                 "Bakes a humanoid addition prefab from a glTF source.\n\n"
                 + "Requirements:\n"
@@ -152,6 +181,19 @@ namespace Jiangyu.Mod
                     + "Provides the Menace/* shader and AnimatorController."),
                 _referencePrefab, typeof(GameObject), false);
 
+            _overrideShader = (Shader)EditorGUILayout.ObjectField(
+                new GUIContent("Override shader (optional)",
+                    "A shader your mod ships. Leave empty to bake against the reference prefab's "
+                    + "Menace/* shader, which the loader rebinds at runtime. Set it and the baked "
+                    + "materials use your shader with its own authored defaults, and the loader "
+                    + "keeps them on it. Source textures are assigned to whichever base-map, "
+                    + "normal-map and mask-map property names your shader declares."),
+                _overrideShader, typeof(Shader), false);
+
+            DrawOverrideShaderRows();
+            DrawTextureRows();
+            DrawFloatRows();
+
             _outputDir = EditorGUILayout.TextField(
                 new GUIContent("Output dir",
                     "Parent folder for the per-character subdir (relative to Assets/). "
@@ -173,6 +215,8 @@ namespace Jiangyu.Mod
                     Bake();
                 }
             }
+
+            EditorGUILayout.EndScrollView();
         }
 
         private bool CanBake() =>
@@ -199,7 +243,8 @@ namespace Jiangyu.Mod
             if (gltfPrefab == null)
             {
                 EditorUtility.DisplayDialog("Bake failed",
-                    "Could not load glTF at " + gltfPath + ". Make sure the source folder contains model.gltf.",
+                    "Could not load glTF at " + gltfPath + ". Make sure the source folder contains model.gltf."
+                    + SourceFolderHint(sourceFolderPath),
                     "OK");
                 return;
             }
@@ -269,7 +314,7 @@ namespace Jiangyu.Mod
                     var avatarPath = characterDir + "/avatar.asset";
                     AssetDatabase.CreateAsset(avatar, avatarPath);
 
-                    BakeMaterialsForSmrs(instance, referenceMaterial, characterDir);
+                    BakeMaterialsForSmrs(instance, referenceMaterial, characterDir, _overrideShader, BuildOverrideShaderMap(), _textureRows, _floatRows);
                     ConfigureAnimator(instance, avatar, referenceAnimator);
                     ConfigureLodGroup(instance);
 
@@ -505,22 +550,137 @@ namespace Jiangyu.Mod
             return node.GetComponentInChildren<SkinnedMeshRenderer>(includeInactive: true) != null;
         }
 
-        private static Material BuildBakedMaterial(Material reference, Texture2D baseColor)
+        // Resolve an override shader from a batch argument. Accepts an asset
+        // path (Assets/Shaders/DollToon.shader) or a shader name
+        // (Womenace/DollToon). An absent argument returns null, which bakes
+        // against the reference material as usual. An argument that resolves to
+        // nothing throws rather than falling back, so a typo cannot quietly
+        // ship a doll on the vanilla shader.
+        private static Shader ResolveOverrideShader(string arg)
         {
-            var shader = reference.shader;
-            var mat = new Material(shader)
+            if (string.IsNullOrEmpty(arg)) return null;
+            var byPath = AssetDatabase.LoadAssetAtPath<Shader>(arg);
+            if (byPath != null) return byPath;
+            var byName = Shader.Find(arg);
+            if (byName != null) return byName;
+            throw new System.InvalidOperationException(
+                "Jiangyu BakeHumanoid: override shader not found: '" + arg
+                + "'. Give a shader asset path or a shader name.");
+        }
+
+        // Parse a comma-separated per-material override list of the form
+        // "Face=Womenace/DollFace,Hair=Womenace/DollHair". The key is the glTF
+        // source material name, which is also the name the baked asset takes.
+        private static void ParseOverrideShaderFor(string arg, List<MaterialShaderOverride> into)
+        {
+            if (string.IsNullOrEmpty(arg)) return;
+            foreach (var pair in arg.Split(','))
             {
-                name = "baked",
-                enableInstancing = reference.enableInstancing,
-                globalIlluminationFlags = reference.globalIlluminationFlags,
-                renderQueue = reference.renderQueue,
-            };
+                if (pair.Length == 0) continue;
+                var split = pair.IndexOf('=');
+                if (split <= 0)
+                    throw new System.InvalidOperationException(
+                        "Jiangyu BakeHumanoid: -overrideShaderFor entry '" + pair
+                        + "' is not of the form <sourceMaterial>=<shader>.");
+                var key = pair.Substring(0, split).Trim();
+                var value = pair.Substring(split + 1).Trim();
+                into.Add(new MaterialShaderOverride { sourceMaterial = key, shader = ResolveOverrideShader(value) });
+            }
+        }
 
-            // Copy keywords (e.g. _DISABLE_DECALS, _DISABLE_SSR) so the Menace
-            // shader picks the same variant as the reference.
-            mat.shaderKeywords = reference.shaderKeywords;
+        // Parse a comma-separated list of the form
+        // "Hair:_RampMap=Assets/.../ramp_hair.png,Face:_SdfMap=Assets/.../sdf.png".
+        // The key before the colon is the glTF source material name and the one
+        // after it is the shader property to set.
+        private static void ParseSetTextureFor(string arg, List<MaterialTextureOverride> into)
+        {
+            if (string.IsNullOrEmpty(arg)) return;
+            foreach (var entry in arg.Split(','))
+            {
+                if (entry.Length == 0) continue;
+                var eq = entry.IndexOf('=');
+                var colon = entry.IndexOf(':');
+                if (eq <= 0 || colon <= 0 || colon > eq)
+                    throw new System.InvalidOperationException(
+                        "Jiangyu BakeHumanoid: -setTextureFor entry '" + entry
+                        + "' is not of the form <sourceMaterial>:<property>=<texture asset path>.");
 
-            var count = shader.GetPropertyCount();
+                var slot = entry.Substring(0, colon).Trim();
+                var property = entry.Substring(colon + 1, eq - colon - 1).Trim();
+                var path = entry.Substring(eq + 1).Trim();
+                var texture = AssetDatabase.LoadAssetAtPath<Texture>(path);
+                if (texture == null)
+                    throw new System.InvalidOperationException(
+                        "Jiangyu BakeHumanoid: -setTextureFor texture not found: '" + path + "'.");
+                into.Add(new MaterialTextureOverride
+                {
+                    sourceMaterial = slot,
+                    propertyName = property,
+                    texture = texture,
+                });
+            }
+        }
+
+        // Parse a comma-separated list of the form
+        // "Face:_UseBlendTex=1,Hair:_AnisotropicSpecular=1". The key before the
+        // colon is the glTF source material name and the one after it is the
+        // shader property to set.
+        //
+        // A shader cannot read a texture's filename or tell a keyword from its
+        // absence, so a feature the material has to declare arrives as a float:
+        // whether an RMO map holds roughness or smoothness, whether a material
+        // takes the hair path, whether a face runs its SDF shading. Without this,
+        // those either sit at a shader-wide default or get inferred from a
+        // sentinel value packed into a texture.
+        private static void ParseSetFloatFor(string arg, List<MaterialFloatOverride> into)
+        {
+            if (string.IsNullOrEmpty(arg)) return;
+            foreach (var entry in arg.Split(','))
+            {
+                if (entry.Length == 0) continue;
+                var eq = entry.IndexOf('=');
+                var colon = entry.IndexOf(':');
+                if (eq <= 0 || colon <= 0 || colon > eq)
+                    throw new System.InvalidOperationException(
+                        "Jiangyu BakeHumanoid: -setFloatFor entry '" + entry
+                        + "' is not of the form <sourceMaterial>:<property>=<number>.");
+
+                var slot = entry.Substring(0, colon).Trim();
+                var property = entry.Substring(colon + 1, eq - colon - 1).Trim();
+                var raw = entry.Substring(eq + 1).Trim();
+                if (!float.TryParse(raw, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var value))
+                    throw new System.InvalidOperationException(
+                        "Jiangyu BakeHumanoid: -setFloatFor value '" + raw + "' is not a number.");
+                into.Add(new MaterialFloatOverride
+                {
+                    sourceMaterial = slot,
+                    propertyName = property,
+                    value = value,
+                });
+            }
+        }
+
+        private static Material BuildBakedMaterial(Material reference, Texture2D baseColor, Shader overrideShader)
+        {
+            // An override shader keeps its own authored defaults. The reference
+            // material's property values and keywords belong to the Menace
+            // shader, and copying them across would zero the override's
+            // defaults wherever the two disagree on a property name.
+            var shader = overrideShader != null ? overrideShader : reference.shader;
+            var mat = new Material(shader) { name = "baked" };
+            if (overrideShader == null)
+            {
+                mat.enableInstancing = reference.enableInstancing;
+                mat.globalIlluminationFlags = reference.globalIlluminationFlags;
+                mat.renderQueue = reference.renderQueue;
+
+                // Copy keywords (e.g. _DISABLE_DECALS, _DISABLE_SSR) so the Menace
+                // shader picks the same variant as the reference.
+                mat.shaderKeywords = reference.shaderKeywords;
+            }
+
+            var count = overrideShader != null ? 0 : shader.GetPropertyCount();
             for (int i = 0; i < count; i++)
             {
                 var name = shader.GetPropertyName(i);
@@ -783,10 +943,400 @@ namespace Jiangyu.Mod
         // baked asset (dedupe by texture). Works for both single-texture
         // glTFs (one baked material out) and multi-texture glTFs (one per
         // unique source texture).
-        private static void BakeMaterialsForSmrs(GameObject root, Material referenceMaterial, string characterDir)
+        // The source folder is the one directly holding model.gltf. A character
+        // with several outfits keeps one glTF per outfit subfolder, so the
+        // character folder itself holds none and is the easy wrong pick. Name
+        // the subfolders that do hold one so the right choice is visible.
+        private static string SourceFolderHint(string sourceFolderPath)
         {
-            var bakedByTexture = new Dictionary<Texture, Material>();
+            if (string.IsNullOrEmpty(sourceFolderPath) || !Directory.Exists(sourceFolderPath))
+                return "";
+
+            // Assets/Prefabs/ is where the bake writes its output, so a folder
+            // picked from there is the result of a previous bake rather than a
+            // source. The source folder mirrors the same relative path under
+            // Assets/Authored/, so name it directly when it exists.
+            const string outputPrefix = "Assets/Prefabs/";
+            var normalised = sourceFolderPath.Replace('\\', '/');
+            if (normalised.StartsWith(outputPrefix, System.StringComparison.Ordinal))
+            {
+                var mirrored = "Assets/Authored/" + normalised.Substring(outputPrefix.Length);
+                var mirroredHasGltf = File.Exists(Path.Combine(mirrored, "model.gltf"));
+                return " Assets/Prefabs/ holds bake output, not sources."
+                    + (mirroredHasGltf
+                        ? " The source for this one is '" + mirrored + "'."
+                        : " Sources live under Assets/Authored/.");
+            }
+
+            var candidates = Directory.GetDirectories(sourceFolderPath)
+                .Where(d => File.Exists(Path.Combine(d, "model.gltf")))
+                .Select(Path.GetFileName)
+                .OrderBy(n => n, StringComparer.Ordinal)
+                .ToArray();
+            if (candidates.Length == 0)
+                return "";
+            return " Subfolders that do hold one: " + string.Join(", ", candidates)
+                + ". Pick one of those instead.";
+        }
+
+        [System.Serializable]
+        private class MaterialShaderOverride
+        {
+            public string sourceMaterial = "";
+            public Shader shader;
+        }
+
+        [System.Serializable]
+        private class MaterialTextureOverride
+        {
+            public string sourceMaterial = "";
+            public string propertyName = "";
+            public Texture texture;
+        }
+
+        [System.Serializable]
+        private class MaterialFloatOverride
+        {
+            public string sourceMaterial = "";
+            public string propertyName = "";
+            public float value;
+        }
+
+        // Per-material overrides in the window. The same rows the
+        // -overrideShaderFor batch argument fills, so neither entry point is
+        // more capable than the other.
+        private void DrawOverrideShaderRows()
+        {
+            GUILayout.Space(6);
+            EditorGUILayout.LabelField("Per-material shader overrides (optional)", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Give one material its own shader, keyed by the glTF material name (the name the "
+                + "baked asset takes). Takes precedence over the blanket override shader above. "
+                + "Use it where one slot needs different treatment, such as keeping an outline "
+                + "pass off a face or eyes.\n\n"
+                + "\"Fill from source glTF\" lists the material names the source actually has, so "
+                + "the keys do not have to be typed from memory.",
+                MessageType.None);
+
+            var removeAt = -1;
+            for (int i = 0; i < _overrideShaderRows.Count; i++)
+            {
+                var row = _overrideShaderRows[i];
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    row.sourceMaterial = EditorGUILayout.TextField(row.sourceMaterial);
+                    row.shader = (Shader)EditorGUILayout.ObjectField(row.shader, typeof(Shader), false);
+                    if (GUILayout.Button("Remove", GUILayout.Width(70)))
+                        removeAt = i;
+                }
+            }
+            if (removeAt >= 0)
+                _overrideShaderRows.RemoveAt(removeAt);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Add override"))
+                    _overrideShaderRows.Add(new MaterialShaderOverride());
+                using (new EditorGUI.DisabledScope(_sourceFolder == null))
+                {
+                    if (GUILayout.Button("Fill from source glTF"))
+                        FillOverrideShaderRowsFromSource();
+                }
+            }
+        }
+
+        // Extra texture assignments in the window, the same rows the
+        // -setTextureFor batch argument fills.
+        private void DrawTextureRows()
+        {
+            GUILayout.Space(6);
+            EditorGUILayout.LabelField("Extra material textures (optional)", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Set a texture on a baked material beyond the base colour the bake assigns, for "
+                + "maps a custom shader declares such as a ramp atlas or a face threshold map. "
+                + "Name the glTF source material, the shader property, and the texture. Source "
+                + "materials that share a base colour texture bake into one material, so naming "
+                + "any one of them assigns to the whole group.",
+                MessageType.None);
+
+            var removeAt = -1;
+            for (int i = 0; i < _textureRows.Count; i++)
+            {
+                var row = _textureRows[i];
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    row.sourceMaterial = EditorGUILayout.TextField(row.sourceMaterial);
+                    row.propertyName = EditorGUILayout.TextField(row.propertyName);
+                    row.texture = (Texture)EditorGUILayout.ObjectField(
+                        row.texture, typeof(Texture), false);
+                    if (GUILayout.Button("Remove", GUILayout.Width(70)))
+                        removeAt = i;
+                }
+            }
+            if (removeAt >= 0)
+                _textureRows.RemoveAt(removeAt);
+
+            if (GUILayout.Button("Add texture"))
+                _textureRows.Add(new MaterialTextureOverride());
+        }
+
+        // Per-material float assignments in the window, the same rows the
+        // -setFloatFor batch argument fills.
+        private void DrawFloatRows()
+        {
+            GUILayout.Space(6);
+            EditorGUILayout.LabelField("Material flags and values (optional)", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Set a float on a baked material. This is how a material declares a feature its "
+                + "shader cannot detect for itself: a shader cannot read a texture's filename or "
+                + "tell a keyword from its absence, so whether an RMO map holds roughness or "
+                + "smoothness, whether a material takes the hair path, or whether a face runs its "
+                + "SDF shading all have to arrive as a number.\n\n"
+                + "Name the glTF source material, the shader property, and the value. Source "
+                + "materials that share a base colour texture bake into one material, so naming "
+                + "any one of them assigns to the whole group.",
+                MessageType.None);
+
+            var removeAt = -1;
+            for (int i = 0; i < _floatRows.Count; i++)
+            {
+                var row = _floatRows[i];
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    row.sourceMaterial = EditorGUILayout.TextField(row.sourceMaterial);
+                    row.propertyName = EditorGUILayout.TextField(row.propertyName);
+                    row.value = EditorGUILayout.FloatField(row.value, GUILayout.Width(70));
+                    if (GUILayout.Button("Remove", GUILayout.Width(70)))
+                        removeAt = i;
+                }
+            }
+            if (removeAt >= 0)
+                _floatRows.RemoveAt(removeAt);
+
+            if (GUILayout.Button("Add value"))
+                _floatRows.Add(new MaterialFloatOverride());
+        }
+
+        // Add a row per material name the source glTF carries, leaving the
+        // shader empty. Existing rows are kept, so this is safe to press twice.
+        private void FillOverrideShaderRowsFromSource()
+        {
+            var sourceFolderPath = AssetDatabase.GetAssetPath(_sourceFolder);
+            var gltfPath = Path.Combine(sourceFolderPath, "model.gltf").Replace('\\', '/');
+            GameObject gltfPrefab = null;
+            if (File.Exists(gltfPath))
+            {
+                AssetDatabase.ImportAsset(gltfPath, ImportAssetOptions.ForceSynchronousImport);
+                gltfPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(gltfPath);
+            }
+            if (gltfPrefab == null)
+            {
+                Debug.LogError(
+                    "Jiangyu BakeHumanoid: no model.gltf to read directly inside '" + sourceFolderPath
+                    + "'." + SourceFolderHint(sourceFolderPath));
+                return;
+            }
+
+            var names = gltfPrefab.GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: true)
+                .SelectMany(smr => smr.sharedMaterials)
+                .Where(m => m != null && !string.IsNullOrEmpty(m.name))
+                .Select(m => m.name)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
+
+            var added = 0;
+            foreach (var name in names)
+            {
+                var already = _overrideShaderRows.Any(r => string.Equals(
+                    r.sourceMaterial, name, System.StringComparison.OrdinalIgnoreCase));
+                if (already) continue;
+                _overrideShaderRows.Add(new MaterialShaderOverride { sourceMaterial = name });
+                added++;
+            }
+            Debug.Log("Jiangyu BakeHumanoid: added " + added + " material row(s) from " + gltfPath + ".");
+        }
+
+        // Project the rows into a lookup. Rows missing either half are skipped:
+        // in the window they are a row the modder has not finished filling in,
+        // and the batch path already threw on an unresolvable shader name.
+        private Dictionary<string, Shader> BuildOverrideShaderMap()
+        {
+            var map = new Dictionary<string, Shader>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in _overrideShaderRows)
+            {
+                if (row == null || row.shader == null) continue;
+                if (string.IsNullOrWhiteSpace(row.sourceMaterial)) continue;
+                map[row.sourceMaterial.Trim()] = row.shader;
+            }
+            return map;
+        }
+
+        // Match an override key against a source material name. Three forms are
+        // accepted so a modder can write the name they see: the raw glTF name,
+        // the sanitised form the baked asset is named after, and the name with a
+        // trailing duplicate suffix removed. That suffix (Hair.001, Teeth.001)
+        // is an exporter artefact for a repeated name, not a distinct part, so
+        // "Hair" is taken to mean Hair and Hair.001 both.
+        //
+        // How specifically the key names this material: 3 for the material's
+        // own name, 2 for the sanitised form, 1 for the suffix-stripped form,
+        // and 0 for no match. A key that names the material exactly outranks
+        // one that reached it by having its duplicate suffix stripped, so
+        // "Hair.001" can be given its own treatment while "Hair" still covers
+        // the pair by default.
+        private static int MatchPrecision(string key, Material srcMat)
+        {
+            if (srcMat == null || string.IsNullOrWhiteSpace(key)) return 0;
+            var k = key.Trim();
+            var name = srcMat.name ?? "";
+            if (string.Equals(k, name, System.StringComparison.OrdinalIgnoreCase)) return 3;
+            if (string.Equals(k, SanitiseAssetName(name), System.StringComparison.OrdinalIgnoreCase)) return 2;
+            if (string.Equals(k, StripDuplicateSuffix(name), System.StringComparison.OrdinalIgnoreCase)) return 1;
+            return 0;
+        }
+
+        private static string StripDuplicateSuffix(string name)
+            => string.IsNullOrEmpty(name) ? name : Regex.Replace(name, @"\.\d+$", "");
+
+        // A source material's own entry wins, then the blanket override, then
+        // null, which leaves the reference material's shader in place.
+        private static Shader ResolveShaderForSource(
+            Material srcMat, Shader blanket, Dictionary<string, Shader> bySource)
+        {
+            if (srcMat != null && bySource != null)
+            {
+                Shader best = null;
+                var bestPrecision = 0;
+                foreach (var pair in bySource)
+                {
+                    var precision = MatchPrecision(pair.Key, srcMat);
+                    if (precision <= bestPrecision) continue;
+                    best = pair.Value;
+                    bestPrecision = precision;
+                }
+                if (best != null) return best;
+            }
+            return blanket;
+        }
+
+        // One assignment per shader property, taking the most specifically
+        // named row. Without collapsing per property, a material reachable by
+        // two equivalent keys would carry the assignment twice and so bake apart
+        // from its own duplicate, which is the split this is meant to avoid.
+        private static List<MaterialTextureOverride> ResolveExtrasForSource(
+            Material srcMat, List<MaterialTextureOverride> textureRows)
+        {
+            var result = new List<MaterialTextureOverride>();
+            if (srcMat == null || textureRows == null) return result;
+
+            var bestByProperty = new Dictionary<string, MaterialTextureOverride>(StringComparer.OrdinalIgnoreCase);
+            var precisionByProperty = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in textureRows)
+            {
+                if (row == null || row.texture == null) continue;
+                if (string.IsNullOrWhiteSpace(row.propertyName)) continue;
+                var precision = MatchPrecision(row.sourceMaterial, srcMat);
+                if (precision == 0) continue;
+                var property = row.propertyName.Trim();
+                if (precisionByProperty.TryGetValue(property, out var already) && already >= precision)
+                    continue;
+                bestByProperty[property] = row;
+                precisionByProperty[property] = precision;
+            }
+            foreach (var property in bestByProperty.Keys.OrderBy(k => k, StringComparer.Ordinal))
+                result.Add(bestByProperty[property]);
+            return result;
+        }
+
+        // The float equivalent of ResolveExtrasForSource, collapsed per property
+        // by the same precision rule so a material reachable by two equivalent
+        // rows does not bake apart from its own duplicate.
+        private static List<MaterialFloatOverride> ResolveFloatsForSource(
+            Material srcMat, List<MaterialFloatOverride> floatRows)
+        {
+            var result = new List<MaterialFloatOverride>();
+            if (srcMat == null || floatRows == null) return result;
+
+            var bestByProperty = new Dictionary<string, MaterialFloatOverride>(StringComparer.OrdinalIgnoreCase);
+            var precisionByProperty = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in floatRows)
+            {
+                if (row == null) continue;
+                if (string.IsNullOrWhiteSpace(row.propertyName)) continue;
+                var precision = MatchPrecision(row.sourceMaterial, srcMat);
+                if (precision == 0) continue;
+                var property = row.propertyName.Trim();
+                if (precisionByProperty.TryGetValue(property, out var already) && already >= precision)
+                    continue;
+                bestByProperty[property] = row;
+                precisionByProperty[property] = precision;
+            }
+            foreach (var property in bestByProperty.Keys.OrderBy(k => k, StringComparer.Ordinal))
+                result.Add(bestByProperty[property]);
+            return result;
+        }
+
+        // Everything that makes a baked material distinct, so two source
+        // materials merge only when the result would be identical. Sharing a
+        // BaseColor texture is not enough on its own: a body texture can carry
+        // bare skin, a cloth layer and stockings, and those take different
+        // shaders and different ramp atlases, so they have to bake apart.
+        private static string BakeKeyFor(
+            Texture textureKey, Shader shader, List<MaterialTextureOverride> extras,
+            List<MaterialFloatOverride> floats)
+        {
+            var key = (textureKey != null ? textureKey.GetInstanceID() : 0).ToString()
+                + "|" + (shader != null ? shader.GetInstanceID() : 0).ToString();
+            if (extras != null && extras.Count > 0)
+            {
+                foreach (var e in extras
+                    .OrderBy(x => x.propertyName, StringComparer.Ordinal)
+                    .ThenBy(x => x.texture != null ? x.texture.GetInstanceID() : 0))
+                {
+                    key += "|" + e.propertyName + "="
+                        + (e.texture != null ? e.texture.GetInstanceID() : 0).ToString();
+                }
+            }
+            if (floats != null && floats.Count > 0)
+            {
+                foreach (var f in floats.OrderBy(x => x.propertyName, StringComparer.Ordinal))
+                {
+                    key += "|" + f.propertyName + "="
+                        + f.value.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+                }
+            }
+            return key;
+        }
+
+        private static void BakeMaterialsForSmrs(
+            GameObject root, Material referenceMaterial, string characterDir,
+            Shader overrideShader, Dictionary<string, Shader> overrideShaderBySource,
+            List<MaterialTextureOverride> textureRows,
+            List<MaterialFloatOverride> floatRows)
+        {
             var smrs = root.GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: true);
+            // Captured before the bake loop swaps the baked materials in, so
+            // the unmatched-key check at the end still sees the source names.
+            var sourceMaterials = smrs
+                .SelectMany(smr => smr.sharedMaterials ?? new Material[0])
+                .Where(m => m != null)
+                .Distinct()
+                .ToArray();
+
+            // Purge the previous run's output before generating. A renamed source
+            // material, or one that now shares a baked material with another,
+            // otherwise leaves an orphan .mat beside the live set, and a
+            // committed orphan is where a machine-local stub-shader GUID goes
+            // dangling: the magenta-model failure.
+            foreach (var stale in Directory.GetFiles(characterDir, "baked*.mat"))
+                AssetDatabase.DeleteAsset(stale.Replace('\\', '/'));
+
+            var bakedByKey = new Dictionary<string, Material>(StringComparer.Ordinal);
+            var usedFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // Which baked materials each texture produced, so a texture that
+            // bakes into more than one can say so rather than surprise anyone.
+            var namesByTexture = new Dictionary<Texture, List<string>>();
+
             foreach (var smr in smrs)
             {
                 var source = smr.sharedMaterials;
@@ -798,21 +1348,108 @@ namespace Jiangyu.Mod
                 {
                     var srcMat = source[i];
                     var srcTexture = ExtractBaseColorTexture(srcMat);
-                    var key = srcTexture != null ? (Texture)srcTexture : (Texture)Texture2D.whiteTexture;
-                    if (!bakedByTexture.TryGetValue(key, out var bakedMat))
+                    var textureKey = TextureKeyFor(srcMat);
+                    var shaderForSlot = ResolveShaderForSource(srcMat, overrideShader, overrideShaderBySource);
+                    var extras = ResolveExtrasForSource(srcMat, textureRows);
+                    var floats = ResolveFloatsForSource(srcMat, floatRows);
+                    var key = BakeKeyFor(textureKey, shaderForSlot, extras, floats);
+
+                    if (!bakedByKey.TryGetValue(key, out var bakedMat))
                     {
-                        bakedMat = BuildBakedMaterial(referenceMaterial, srcTexture);
-                        var matName = (srcMat != null && !string.IsNullOrEmpty(srcMat.name))
+                        bakedMat = BuildBakedMaterial(referenceMaterial, srcTexture, shaderForSlot);
+                        foreach (var row in extras)
+                        {
+                            // A property the shader does not declare is a typo
+                            // worth surfacing: SetTexture would accept it
+                            // silently and the map would never bind.
+                            if (!bakedMat.HasProperty(row.propertyName))
+                            {
+                                Debug.LogWarning(
+                                    "Jiangyu BakeHumanoid: shader '" + bakedMat.shader.name
+                                    + "' has no texture property '" + row.propertyName
+                                    + "', so the assignment for source material '"
+                                    + row.sourceMaterial + "' is skipped.");
+                                continue;
+                            }
+                            bakedMat.SetTexture(row.propertyName, row.texture);
+                        }
+                        foreach (var row in floats)
+                        {
+                            if (!bakedMat.HasProperty(row.propertyName))
+                            {
+                                Debug.LogWarning(
+                                    "Jiangyu BakeHumanoid: shader '" + bakedMat.shader.name
+                                    + "' has no float property '" + row.propertyName
+                                    + "', so the assignment for source material '"
+                                    + row.sourceMaterial + "' is skipped.");
+                                continue;
+                            }
+                            bakedMat.SetFloat(row.propertyName, row.value);
+                        }
+
+                        var stem = (srcMat != null && !string.IsNullOrEmpty(srcMat.name))
                             ? "baked_" + SanitiseAssetName(srcMat.name)
                             : "baked";
+                        var matName = stem;
+                        for (int n = 2; !usedFileNames.Add(matName); n++)
+                            matName = stem + "_" + n;
                         bakedMat.name = matName;
                         AssetDatabase.CreateAsset(bakedMat, characterDir + "/" + matName + ".mat");
-                        bakedByTexture[key] = bakedMat;
+                        bakedByKey[key] = bakedMat;
+
+                        if (!namesByTexture.TryGetValue(textureKey, out var list))
+                            namesByTexture[textureKey] = list = new List<string>();
+                        list.Add(matName);
                     }
                     baked[i] = bakedMat;
                 }
                 smr.sharedMaterials = baked;
             }
+
+            foreach (var pair in namesByTexture)
+            {
+                if (pair.Value.Count < 2) continue;
+                Debug.Log(
+                    "Jiangyu BakeHumanoid: one BaseColor texture baked into "
+                    + pair.Value.Count + " materials because their shader or textures differ: "
+                    + string.Join(", ", pair.Value) + ".");
+            }
+
+            WarnUnmatchedOverrideKeys(sourceMaterials, overrideShaderBySource, textureRows, floatRows);
+        }
+
+        // A row keyed on a name no source material carries is a typo worth
+        // surfacing: the bake would otherwise complete cleanly with the
+        // override silently unapplied.
+        private static void WarnUnmatchedOverrideKeys(
+            Material[] sourceMaterials, Dictionary<string, Shader> overrideShaderBySource,
+            List<MaterialTextureOverride> textureRows, List<MaterialFloatOverride> floatRows)
+        {
+            var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (overrideShaderBySource != null)
+                keys.UnionWith(overrideShaderBySource.Keys);
+            if (textureRows != null)
+                keys.UnionWith(textureRows
+                    .Where(r => r != null && r.texture != null && !string.IsNullOrWhiteSpace(r.sourceMaterial))
+                    .Select(r => r.sourceMaterial.Trim()));
+            if (floatRows != null)
+                keys.UnionWith(floatRows
+                    .Where(r => r != null && !string.IsNullOrWhiteSpace(r.sourceMaterial))
+                    .Select(r => r.sourceMaterial.Trim()));
+
+            var unmatched = keys
+                .Where(k => !sourceMaterials.Any(m => MatchPrecision(k, m) > 0))
+                .OrderBy(k => k, StringComparer.Ordinal)
+                .ToArray();
+            if (unmatched.Length > 0)
+                Debug.LogWarning("Jiangyu BakeHumanoid: override rows matched no source material: "
+                    + string.Join(", ", unmatched) + ".");
+        }
+
+        private static Texture TextureKeyFor(Material srcMat)
+        {
+            var srcTexture = ExtractBaseColorTexture(srcMat);
+            return srcTexture != null ? (Texture)srcTexture : (Texture)Texture2D.whiteTexture;
         }
 
         private static Texture2D ExtractBaseColorTexture(Material mat)

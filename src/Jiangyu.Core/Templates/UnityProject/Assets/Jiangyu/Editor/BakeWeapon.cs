@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
@@ -34,8 +35,14 @@ namespace Jiangyu.Mod
         private Texture2D _textureBase;
         private Texture2D _textureNormal;
         private Texture2D _textureMask;
+        private Shader _overrideShader;
+        private string _materialManifest = "";
+        // Per-slot overrides authored in the window. The friendly half of the
+        // same feature the material manifest provides for batchmode.
+        private readonly List<SlotOverride> _slotOverrides = new List<SlotOverride>();
         private string _outputDir = "Assets/Prefabs";
         private string _outputName = "";
+        private Vector2 _scroll;
 
         [MenuItem("Jiangyu/Bake weapon prefab from glTF…")]
         private static void ShowWindow()
@@ -54,6 +61,16 @@ namespace Jiangyu.Mod
         //         -textureBase <Assets/.../base.tga> \
         //         -textureNormal <Assets/.../normal.tga> \
         //         -textureMask <Assets/.../mask.png>   (optional)
+        //         [-overrideShader <Womenace/DollToon>]
+        //         [-materialManifest <Assets/.../weapon-materials.json>]
+        // The manifest gives one slot its own textures, shader, extra maps and
+        // material values:
+        //   {"materials":[{"name":"Blade","base":"...","normal":"...",
+        //                  "mask":"...","shader":"Womenace/DollToon",
+        //                  "extras":[{"property":"_RampMap","path":"Assets/.../ramp.png"}],
+        //                  "floats":[{"property":"_MaskRoughnessInverted","value":1}]}]}
+        // Slots with no entry keep the blanket textures and shader above, so a
+        // bake with no manifest behaves exactly as one without the flag.
         // Texture flags are optional. When omitted, the bake slots a 1x1
         // neutral default in place of any missing slot.
         public static void BakeBatch()
@@ -72,6 +89,8 @@ namespace Jiangyu.Mod
             var textureBase = Arg("-textureBase", null);
             var textureNormal = Arg("-textureNormal", null);
             var textureMask = Arg("-textureMask", null);
+            var overrideShaderArg = Arg("-overrideShader", null);
+            var materialManifestArg = Arg("-materialManifest", null);
 
             if (string.IsNullOrEmpty(gltfPath) || string.IsNullOrEmpty(referencePrefabPath) || string.IsNullOrEmpty(outputName))
             {
@@ -96,6 +115,8 @@ namespace Jiangyu.Mod
                 window._textureBase = LoadTextureAsset(textureBase, sRGB: true, isNormal: false);
                 window._textureNormal = LoadTextureAsset(textureNormal, sRGB: false, isNormal: true);
                 window._textureMask = LoadTextureAsset(textureMask, sRGB: false, isNormal: false);
+                window._overrideShader = ResolveOverrideShader(overrideShaderArg);
+                window._materialManifest = materialManifestArg ?? "";
                 window.Bake();
                 Debug.Log("Jiangyu BakeWeapon: success.");
                 EditorApplication.Exit(0);
@@ -109,6 +130,8 @@ namespace Jiangyu.Mod
 
         private void OnGUI()
         {
+            _scroll = EditorGUILayout.BeginScrollView(_scroll);
+
             EditorGUILayout.HelpBox(
                 "Bakes a weapon addition prefab from a glTF source.\n\n"
                 + "Input glTF: produced by scripts/bake_weapon.py. Contains a "
@@ -150,6 +173,27 @@ namespace Jiangyu.Mod
                     + "Sunborn _rmo file. Channel order differs and would render chrome blue."),
                 _textureMask, typeof(Texture2D), false);
 
+            _overrideShader = (Shader)EditorGUILayout.ObjectField(
+                new GUIContent("Override shader (optional)",
+                    "A shader your mod ships. Leave empty to bake against the reference prefab's "
+                    + "Menace/* shader, which the loader rebinds at runtime. Set it and the baked "
+                    + "material uses your shader with its own authored defaults, and the loader "
+                    + "keeps it on it. The base, normal and mask textures are assigned to "
+                    + "whichever matching property names your shader declares."),
+                _overrideShader, typeof(Shader), false);
+
+            DrawSlotOverrides();
+
+            GUILayout.Space(6);
+            _materialManifest = EditorGUILayout.TextField(
+                new GUIContent("Material manifest (batchmode)",
+                    "Optional path to a JSON file carrying the same per-slot overrides for "
+                    + "scripted bakes: {\"materials\":[{\"name\",\"base\",\"normal\",\"mask\",\"shader\"}]}. "
+                    + "Authoring by hand belongs in the rows above. Where both name the same "
+                    + "slot, each row field that is set wins and empty row fields keep the "
+                    + "manifest's values."),
+                _materialManifest);
+
             EditorGUILayout.LabelField("Output", EditorStyles.boldLabel);
             _outputDir = EditorGUILayout.TextField(
                 new GUIContent("Output dir", "Parent folder for the per-weapon subdir, relative to project root."),
@@ -173,6 +217,8 @@ namespace Jiangyu.Mod
                     }
                 }
             }
+
+            EditorGUILayout.EndScrollView();
         }
 
         private bool CanBake() =>
@@ -201,6 +247,15 @@ namespace Jiangyu.Mod
             var characterDir = (_outputDir.TrimEnd('/') + "/" + _outputName).Replace('\\', '/');
             Directory.CreateDirectory(characterDir);
 
+            // Purge baked materials left by earlier runs before generating. The
+            // blanket path writes baked.mat and the per-slot path writes
+            // baked_<slot>.mat, so a weapon that gains or loses a manifest entry
+            // leaves the other naming behind as an orphan beside the live set.
+            // Committed orphan .mat files are the exact surface where machine-local
+            // stub-shader GUIDs go dangling, which is the magenta-model failure.
+            foreach (var stale in Directory.GetFiles(characterDir, "baked*.mat"))
+                AssetDatabase.DeleteAsset(stale.Replace('\\', '/'));
+
             var instance = (GameObject)PrefabUtility.InstantiatePrefab(_gltfAsset);
             PrefabUtility.UnpackPrefabInstance(
                 instance, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
@@ -208,15 +263,85 @@ namespace Jiangyu.Mod
             {
                 instance.name = Path.GetFileName(_outputName);
 
-                var newMaterial = BuildBakedMaterial(referenceMaterial, _textureBase, _textureNormal, _textureMask);
-                var matPath = characterDir + "/baked.mat";
-                AssetDatabase.CreateAsset(newMaterial, matPath);
+                var slotOverrides = BuildSlotOverrides();
+
+                // The blanket material covers every slot no override names, and
+                // is the only material when nothing is overridden. It
+                // is built on first use so a fully covered weapon does not leave
+                // an unused baked.mat behind: an orphan .mat is where a
+                // machine-local stub-shader GUID goes dangling.
+                Material blanket = null;
+                var matPaths = new List<string>();
+                Material Blanket()
+                {
+                    if (blanket == null)
+                    {
+                        blanket = BuildBakedMaterial(
+                            referenceMaterial, _textureBase, _textureNormal, _textureMask, _overrideShader);
+                        var blanketPath = characterDir + "/baked.mat";
+                        AssetDatabase.CreateAsset(blanket, blanketPath);
+                        matPaths.Add(blanketPath);
+                    }
+                    return blanket;
+                }
+
+                // One material per named slot, cached so slots sharing a source
+                // material share the baked asset. Case-insensitive so slot names
+                // differing only by capitalisation share one baked .mat rather
+                // than colliding on a case-insensitive filesystem.
+                var perSlot = new Dictionary<string, Material>(StringComparer.OrdinalIgnoreCase);
+                Material ForSlot(string srcName, ResolvedSlot slot)
+                {
+                    if (perSlot.TryGetValue(srcName, out var cached))
+                        return cached;
+                    var mat = BuildBakedMaterial(
+                        referenceMaterial,
+                        slot.BaseMap ?? _textureBase,
+                        slot.NormalMap ?? _textureNormal,
+                        slot.MaskMap ?? _textureMask,
+                        slot.Shader ?? _overrideShader);
+                    foreach (var extra in slot.Extras)
+                    {
+                        if (extra == null || extra.texture == null) continue;
+                        if (string.IsNullOrWhiteSpace(extra.propertyName)) continue;
+                        // A property the shader does not declare is a typo worth
+                        // surfacing: SetTexture accepts it silently otherwise.
+                        if (!mat.HasProperty(extra.propertyName))
+                        {
+                            Debug.LogWarning(
+                                "Jiangyu BakeWeapon: shader '" + mat.shader.name
+                                + "' has no texture property '" + extra.propertyName
+                                + "', so the assignment for slot '" + srcName + "' is skipped.");
+                            continue;
+                        }
+                        mat.SetTexture(extra.propertyName, extra.texture);
+                    }
+                    foreach (var value in slot.Floats)
+                    {
+                        if (value == null || string.IsNullOrWhiteSpace(value.propertyName)) continue;
+                        if (!mat.HasProperty(value.propertyName))
+                        {
+                            Debug.LogWarning(
+                                "Jiangyu BakeWeapon: shader '" + mat.shader.name
+                                + "' has no property '" + value.propertyName
+                                + "', so the value for slot '" + srcName + "' is skipped.");
+                            continue;
+                        }
+                        mat.SetFloat(value.propertyName, value.value);
+                    }
+                    var path = characterDir + "/baked_" + Sanitise(srcName) + ".mat";
+                    AssetDatabase.CreateAsset(mat, path);
+                    matPaths.Add(path);
+                    perSlot[srcName] = mat;
+                    return mat;
+                }
 
                 var renderers = instance.GetComponentsInChildren<MeshRenderer>(includeInactive: true);
                 if (renderers.Length == 0)
                     throw new InvalidOperationException("glTF prefab '" + _gltfAsset.name + "' has no MeshRenderer. Weapon bake expects rigid meshes.");
                 var replaced = 0;
                 var kept = 0;
+                var perSlotCount = 0;
                 foreach (var renderer in renderers)
                 {
                     var slots = renderer.sharedMaterials;
@@ -232,13 +357,30 @@ namespace Jiangyu.Mod
                             kept++;
                             continue;
                         }
-                        slots[i] = newMaterial;
+                        var srcName = slots[i] != null ? slots[i].name : null;
+                        if (srcName != null && slotOverrides.TryGetValue(srcName, out var slot))
+                        {
+                            slots[i] = ForSlot(srcName, slot);
+                            perSlotCount++;
+                        }
+                        else
+                        {
+                            slots[i] = Blanket();
+                        }
                         replaced++;
                     }
                     renderer.sharedMaterials = slots;
                 }
                 if (kept > 0)
                     Debug.Log("Jiangyu BakeWeapon: kept " + kept + " material slot(s) already on a game shader, replaced " + replaced + ".");
+                if (perSlotCount > 0)
+                    Debug.Log("Jiangyu BakeWeapon: " + perSlotCount + " slot(s) took a per-slot override, "
+                        + (replaced - perSlotCount) + " took the blanket material.");
+                var unusedKeys = slotOverrides.Keys.Where(k => !perSlot.ContainsKey(k)).OrderBy(k => k, StringComparer.Ordinal).ToArray();
+                if (unusedKeys.Length > 0)
+                    Debug.LogWarning("Jiangyu BakeWeapon: per-slot overrides matched no material slot: "
+                        + string.Join(", ", unusedKeys) + ".");
+                var matPath = matPaths.Count == 1 ? matPaths[0] : string.Join(", ", matPaths);
 
                 var prefabPath = characterDir + "/main.prefab";
                 PrefabUtility.SaveAsPrefabAsset(instance, prefabPath);
@@ -274,20 +416,335 @@ namespace Jiangyu.Mod
                 || shader.name.StartsWith("HDRP/", StringComparison.Ordinal);
         }
 
-        private static Material BuildBakedMaterial(
-            Material reference, Texture2D baseColor, Texture2D normalMap, Texture2D maskMap)
+        // Resolve an override shader from a batch argument. Accepts an asset
+        // path (Assets/Shaders/DollToon.shader) or a shader name
+        // (Womenace/DollToon). An absent argument returns null, which bakes
+        // against the reference material as usual. An argument that resolves to
+        // nothing throws rather than falling back, so a typo cannot quietly
+        // ship a weapon on the vanilla shader.
+        private static Shader ResolveOverrideShader(string arg)
         {
-            var shader = reference.shader;
-            var mat = new Material(shader)
-            {
-                name = "baked",
-                enableInstancing = reference.enableInstancing,
-                globalIlluminationFlags = reference.globalIlluminationFlags,
-                renderQueue = reference.renderQueue,
-            };
-            mat.shaderKeywords = reference.shaderKeywords;
+            if (string.IsNullOrEmpty(arg)) return null;
+            var byPath = AssetDatabase.LoadAssetAtPath<Shader>(arg);
+            if (byPath != null) return byPath;
+            var byName = Shader.Find(arg);
+            if (byName != null) return byName;
+            throw new InvalidOperationException(
+                "Jiangyu BakeWeapon: override shader not found: '" + arg
+                + "'. Give a shader asset path or a shader name.");
+        }
 
-            var count = shader.GetPropertyCount();
+        [Serializable]
+        private class SlotOverride
+        {
+            public string sourceMaterial = "";
+            public Texture2D baseMap;
+            public Texture2D normalMap;
+            public Texture2D maskMap;
+            public Shader shader;
+            // Maps a custom shader declares beyond base, normal and mask.
+            public List<ExtraTexture> extras = new List<ExtraTexture>();
+            // Flags and values a custom shader declares.
+            public List<FloatValue> floats = new List<FloatValue>();
+        }
+
+        [Serializable]
+        private class ExtraTexture
+        {
+            public string propertyName = "";
+            public Texture texture;
+        }
+
+        // A float a shader needs told rather than able to work out. A shader cannot
+        // read a texture's filename or tell a keyword from its absence, so whether a
+        // mask holds roughness or smoothness, or whether a material takes a
+        // particular shading path, has to arrive as a number.
+        [Serializable]
+        private class FloatValue
+        {
+            public string propertyName = "";
+            public float value;
+        }
+
+        [Serializable] private class ManifestExtra { public string property; public string path; }
+        [Serializable] private class ManifestFloat { public string property; public float value; }
+
+        // One slot's overrides after the manifest paths and the window rows are
+        // normalised to the same shape. A null field falls back to the blanket
+        // value, so a slot can override the shader alone, or one map alone.
+        private sealed class ResolvedSlot
+        {
+            public Texture2D BaseMap;
+            public Texture2D NormalMap;
+            public Texture2D MaskMap;
+            public Shader Shader;
+            public List<ExtraTexture> Extras = new List<ExtraTexture>();
+            public List<FloatValue> Floats = new List<FloatValue>();
+        }
+
+        [Serializable] private class ManifestEntry { public string name; public string @base; public string normal; public string mask; public string shader; public List<ManifestExtra> extras; public List<ManifestFloat> floats; }
+        [Serializable] private class ManifestFile { public List<ManifestEntry> materials; }
+
+        // Per-slot overrides in the window. Authoring these here rather than in
+        // the manifest JSON is the point: the names come from the source glTF
+        // and the textures and shader are drag targets.
+        private void DrawSlotOverrides()
+        {
+            GUILayout.Space(6);
+            EditorGUILayout.LabelField("Per-slot overrides (optional)", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Give one material slot its own textures and shader, keyed by the glTF material "
+                + "name. Anything left empty on a row falls back to the textures and shader set "
+                + "above, so a row can override the shader alone.\n\n"
+                + "\"Fill from source glTF\" lists the slots the source actually has. A row that "
+                + "overrides nothing is ignored, so filling first and choosing after is safe.",
+                MessageType.None);
+
+            var removeAt = -1;
+            for (int i = 0; i < _slotOverrides.Count; i++)
+            {
+                var row = _slotOverrides[i];
+                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+                {
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        row.sourceMaterial = EditorGUILayout.TextField("Slot", row.sourceMaterial);
+                        if (GUILayout.Button("Remove", GUILayout.Width(70)))
+                            removeAt = i;
+                    }
+                    row.baseMap = (Texture2D)EditorGUILayout.ObjectField(
+                        "Base map", row.baseMap, typeof(Texture2D), false);
+                    row.normalMap = (Texture2D)EditorGUILayout.ObjectField(
+                        "Normal map", row.normalMap, typeof(Texture2D), false);
+                    row.maskMap = (Texture2D)EditorGUILayout.ObjectField(
+                        "Mask map", row.maskMap, typeof(Texture2D), false);
+                    row.shader = (Shader)EditorGUILayout.ObjectField(
+                        "Shader", row.shader, typeof(Shader), false);
+
+                    if (row.extras == null) row.extras = new List<ExtraTexture>();
+                    var dropAt = -1;
+                    for (int e = 0; e < row.extras.Count; e++)
+                    {
+                        var extra = row.extras[e];
+                        using (new EditorGUILayout.HorizontalScope())
+                        {
+                            EditorGUILayout.LabelField("Extra", GUILayout.Width(40));
+                            extra.propertyName = EditorGUILayout.TextField(extra.propertyName);
+                            extra.texture = (Texture)EditorGUILayout.ObjectField(
+                                extra.texture, typeof(Texture), false);
+                            if (GUILayout.Button("x", GUILayout.Width(22)))
+                                dropAt = e;
+                        }
+                    }
+                    if (dropAt >= 0) row.extras.RemoveAt(dropAt);
+                    if (GUILayout.Button("Add extra texture"))
+                        row.extras.Add(new ExtraTexture());
+
+                    if (row.floats == null) row.floats = new List<FloatValue>();
+                    var dropFloatAt = -1;
+                    for (int f = 0; f < row.floats.Count; f++)
+                    {
+                        var value = row.floats[f];
+                        using (new EditorGUILayout.HorizontalScope())
+                        {
+                            EditorGUILayout.LabelField("Value", GUILayout.Width(40));
+                            value.propertyName = EditorGUILayout.TextField(value.propertyName);
+                            value.value = EditorGUILayout.FloatField(value.value, GUILayout.Width(70));
+                            if (GUILayout.Button("x", GUILayout.Width(22)))
+                                dropFloatAt = f;
+                        }
+                    }
+                    if (dropFloatAt >= 0) row.floats.RemoveAt(dropFloatAt);
+                    if (GUILayout.Button("Add value"))
+                        row.floats.Add(new FloatValue());
+                }
+            }
+            if (removeAt >= 0)
+                _slotOverrides.RemoveAt(removeAt);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Add slot"))
+                    _slotOverrides.Add(new SlotOverride());
+                using (new EditorGUI.DisabledScope(_gltfAsset == null))
+                {
+                    if (GUILayout.Button("Fill from source glTF"))
+                        FillSlotOverridesFromSource();
+                }
+            }
+        }
+
+        // Add a row per material name the source glTF carries. Existing rows are
+        // kept, so this is safe to press twice.
+        private void FillSlotOverridesFromSource()
+        {
+            var names = _gltfAsset.GetComponentsInChildren<MeshRenderer>(includeInactive: true)
+                .SelectMany(r => r.sharedMaterials)
+                .Where(m => m != null && !string.IsNullOrEmpty(m.name))
+                .Select(m => m.name)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(n => n, StringComparer.Ordinal)
+                .ToArray();
+
+            if (names.Length == 0)
+            {
+                Debug.LogWarning("Jiangyu BakeWeapon: '" + _gltfAsset.name
+                    + "' has no MeshRenderer materials to list.");
+                return;
+            }
+
+            var added = 0;
+            foreach (var name in names)
+            {
+                var already = _slotOverrides.Any(r => string.Equals(
+                    r.sourceMaterial, name, StringComparison.OrdinalIgnoreCase));
+                if (already) continue;
+                _slotOverrides.Add(new SlotOverride { sourceMaterial = name });
+                added++;
+            }
+            Debug.Log("Jiangyu BakeWeapon: added " + added + " slot row(s) from '" + _gltfAsset.name + "'.");
+        }
+
+        // The manifest first, then the window rows merged over the top field by
+        // field, the same way BakeVehicle layers the two: an in-window edit
+        // wins over a file the modder may not have open, and a row field left
+        // empty keeps the manifest's value for that field rather than
+        // discarding the whole entry. A row naming a slot but overriding
+        // nothing is inert, which is what makes the "Fill from source glTF"
+        // button safe to press. Case-insensitive like the humanoid bake's row
+        // matching, so a hand-typed slot name cannot miss by capitalisation
+        // alone.
+        private Dictionary<string, ResolvedSlot> BuildSlotOverrides()
+        {
+            var map = new Dictionary<string, ResolvedSlot>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in LoadManifest(_materialManifest))
+            {
+                var e = pair.Value;
+                map[pair.Key] = new ResolvedSlot
+                {
+                    BaseMap = e.@base != null ? LoadTextureAsset(e.@base, sRGB: true, isNormal: false) : null,
+                    NormalMap = e.normal != null ? LoadTextureAsset(e.normal, sRGB: false, isNormal: true) : null,
+                    MaskMap = e.mask != null ? LoadTextureAsset(e.mask, sRGB: false, isNormal: false) : null,
+                    Shader = ResolveOverrideShader(e.shader),
+                    Extras = ResolveManifestExtras(e.extras),
+                    Floats = ResolveManifestFloats(e.floats),
+                };
+            }
+            foreach (var row in _slotOverrides)
+            {
+                if (row == null || string.IsNullOrWhiteSpace(row.sourceMaterial)) continue;
+                var rowExtras = (row.extras ?? new List<ExtraTexture>())
+                    .Where(x => x != null && x.texture != null && !string.IsNullOrWhiteSpace(x.propertyName))
+                    .ToList();
+                var rowFloats = (row.floats ?? new List<FloatValue>())
+                    .Where(x => x != null && !string.IsNullOrWhiteSpace(x.propertyName))
+                    .ToList();
+                if (row.baseMap == null && row.normalMap == null && row.maskMap == null
+                    && row.shader == null && rowExtras.Count == 0 && rowFloats.Count == 0)
+                    continue;
+                var key = row.sourceMaterial.Trim();
+                map.TryGetValue(key, out var fromManifest);
+                map[key] = new ResolvedSlot
+                {
+                    BaseMap = row.baseMap ?? fromManifest?.BaseMap,
+                    NormalMap = row.normalMap ?? fromManifest?.NormalMap,
+                    MaskMap = row.maskMap ?? fromManifest?.MaskMap,
+                    Shader = row.shader ?? fromManifest?.Shader,
+                    Extras = MergeByProperty(fromManifest?.Extras, rowExtras, x => x.propertyName),
+                    Floats = MergeByProperty(fromManifest?.Floats, rowFloats, x => x.propertyName),
+                };
+            }
+            return map;
+        }
+
+        // Layer row entries over manifest entries per property name, so a row
+        // setting one property keeps the manifest's assignments for the rest.
+        private static List<T> MergeByProperty<T>(List<T> fromManifest, List<T> fromRow, Func<T, string> property)
+        {
+            var byProperty = new Dictionary<string, T>(StringComparer.OrdinalIgnoreCase);
+            foreach (var item in fromManifest ?? new List<T>())
+                byProperty[property(item).Trim()] = item;
+            foreach (var item in fromRow)
+                byProperty[property(item).Trim()] = item;
+            return byProperty.Values.ToList();
+        }
+
+        // Same manifest shape BakeVehicle reads. An unset path yields an empty
+        // lookup, which is what keeps a manifest-free bake on the single-material
+        // path it has always taken.
+        private static Dictionary<string, ManifestEntry> LoadManifest(string path)
+        {
+            var result = new Dictionary<string, ManifestEntry>(StringComparer.Ordinal);
+            if (string.IsNullOrWhiteSpace(path)) return result;
+            if (!File.Exists(path))
+                throw new InvalidOperationException("-materialManifest not found: " + path);
+            var parsed = JsonUtility.FromJson<ManifestFile>(File.ReadAllText(path));
+            if (parsed?.materials == null)
+                throw new InvalidOperationException(
+                    "-materialManifest has no \"materials\" list (expected {\"materials\":[{\"name\",...}]}): " + path);
+            foreach (var entry in parsed.materials)
+            {
+                if (string.IsNullOrEmpty(entry.name))
+                {
+                    Debug.LogWarning("Jiangyu BakeWeapon: manifest entry without a \"name\" ignored.");
+                    continue;
+                }
+                result[entry.name] = entry;
+            }
+            return result;
+        }
+
+        private static List<ExtraTexture> ResolveManifestExtras(List<ManifestExtra> extras)
+        {
+            var result = new List<ExtraTexture>();
+            if (extras == null) return result;
+            foreach (var e in extras)
+            {
+                if (e == null || string.IsNullOrWhiteSpace(e.property) || string.IsNullOrWhiteSpace(e.path))
+                    continue;
+                var tex = AssetDatabase.LoadAssetAtPath<Texture>(e.path);
+                if (tex == null)
+                    throw new InvalidOperationException(
+                        "Jiangyu BakeWeapon: manifest extra texture not found: '" + e.path + "'.");
+                result.Add(new ExtraTexture { propertyName = e.property.Trim(), texture = tex });
+            }
+            return result;
+        }
+
+        private static List<FloatValue> ResolveManifestFloats(List<ManifestFloat> floats)
+        {
+            var result = new List<FloatValue>();
+            if (floats == null) return result;
+            foreach (var f in floats)
+            {
+                if (f == null || string.IsNullOrWhiteSpace(f.property)) continue;
+                result.Add(new FloatValue { propertyName = f.property.Trim(), value = f.value });
+            }
+            return result;
+        }
+
+        private static string Sanitise(string s) =>
+            new string(s.Select(c => char.IsLetterOrDigit(c) || c == '_' ? c : '_').ToArray());
+
+        private static Material BuildBakedMaterial(
+            Material reference, Texture2D baseColor, Texture2D normalMap, Texture2D maskMap,
+            Shader overrideShader)
+        {
+            // An override shader keeps its own authored defaults. The reference
+            // material's property values and keywords belong to the Menace
+            // shader, and copying them across would zero the override's
+            // defaults wherever the two disagree on a property name.
+            var shader = overrideShader != null ? overrideShader : reference.shader;
+            var mat = new Material(shader) { name = "baked" };
+            if (overrideShader == null)
+            {
+                mat.enableInstancing = reference.enableInstancing;
+                mat.globalIlluminationFlags = reference.globalIlluminationFlags;
+                mat.renderQueue = reference.renderQueue;
+                mat.shaderKeywords = reference.shaderKeywords;
+            }
+
+            var count = overrideShader != null ? 0 : shader.GetPropertyCount();
             for (int i = 0; i < count; i++)
             {
                 var name = shader.GetPropertyName(i);

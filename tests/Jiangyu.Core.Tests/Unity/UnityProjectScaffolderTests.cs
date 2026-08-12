@@ -34,10 +34,71 @@ public sealed class UnityProjectScaffolderTests : IDisposable
         Assert.True(File.Exists(Path.Combine(unityDir, "Assets", "Jiangyu", "Editor", "BuildMeshReplacementBundle.cs")));
         Assert.True(File.Exists(Path.Combine(unityDir, "Assets", "Jiangyu", "Editor", "ImportedPrefabPostProcessor.cs")));
         Assert.True(File.Exists(Path.Combine(unityDir, "Assets", "Jiangyu", "Editor", "BakeHumanoid.cs")));
+        Assert.True(File.Exists(Path.Combine(unityDir, "Assets", "Jiangyu", "Editor", "BakeWeapon.cs")));
+        Assert.True(File.Exists(Path.Combine(unityDir, "Assets", "Jiangyu", "Editor", "BakeVehicle.cs")));
         Assert.True(File.Exists(Path.Combine(unityDir, "Assets", "Jiangyu", "README.md")));
         Assert.True(File.Exists(Path.Combine(unityDir, "Assets", "Prefabs", ".gitkeep")));
         Assert.True(File.Exists(Path.Combine(unityDir, "Packages", "manifest.json")));
         Assert.True(File.Exists(Path.Combine(unityDir, ".gitignore")));
+    }
+
+    // The expected set is derived from the embedded templates rather than
+    // listed by hand. A hand-written list cannot catch the failure this guards
+    // against: an editor script that ships as a template but was never added
+    // to the scaffolder, so no scaffolded project ever receives it. Adding a
+    // template without scaffolding it fails here, and so does scaffolding a
+    // path with no matching template.
+    [Fact]
+    public void FreshInit_WritesEveryEmbeddedEditorScript()
+    {
+        var scaffolder = new UnityProjectScaffolder(new NullLog());
+        scaffolder.Init(_tempRoot);
+
+        const string prefix = "UnityProject/Assets/Jiangyu/Editor/";
+        var expected = typeof(UnityProjectScaffolder).Assembly
+            .GetManifestResourceNames()
+            .Where(n => n.StartsWith(prefix, StringComparison.Ordinal)
+                        && n.EndsWith(".cs", StringComparison.Ordinal))
+            .Select(n => n.Substring(prefix.Length))
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToArray();
+
+        // Guard against a silently vacuous pass if the resource naming ever
+        // changes: an empty expectation would match an empty directory.
+        Assert.NotEmpty(expected);
+        Assert.Contains("BakeVehicle.cs", expected);
+
+        var editorDir = Path.Combine(_tempRoot, "unity", "Assets", "Jiangyu", "Editor");
+        var actual = Directory.GetFiles(editorDir, "*.cs")
+            .Select(Path.GetFileName)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(expected, actual);
+    }
+
+    // BakeVehicle is managed like its BakeHumanoid and BakeWeapon siblings, so
+    // the compile-time refresh has to see it drift and put it back. Without
+    // this the template and a modder's copy diverge unnoticed.
+    [Fact]
+    public void RefreshDriftedEditorScripts_RestoresBakeVehicle()
+    {
+        var scaffolder = new UnityProjectScaffolder(new NullLog());
+        scaffolder.Init(_tempRoot);
+
+        var bakeVehiclePath = Path.Combine(
+            _tempRoot, "unity", "Assets", "Jiangyu", "Editor", "BakeVehicle.cs");
+        File.WriteAllText(bakeVehiclePath, "// modder hacked this");
+
+        Assert.Contains(bakeVehiclePath, scaffolder.FindDriftedEditorScripts(_tempRoot));
+
+        var refreshed = scaffolder.RefreshDriftedEditorScripts(_tempRoot);
+
+        Assert.Equal(1, refreshed);
+        var content = File.ReadAllText(bakeVehiclePath);
+        Assert.DoesNotContain("modder hacked this", content);
+        Assert.Contains("class BakeVehicle", content);
+        Assert.Empty(scaffolder.FindDriftedEditorScripts(_tempRoot));
     }
 
     [Fact]

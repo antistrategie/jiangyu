@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace Jiangyu.Mod
 {
@@ -30,6 +31,16 @@ namespace Jiangyu.Mod
     public static class BuildBundles
     {
         private const string ExpectedUnityVersion = "6000.0.72f1";
+
+        // Bundles must be built for the target whose graphics API the game runs
+        // on. MENACE runs through Proton and DXVK, so its API is D3D11, and a
+        // bundle built for another target compiles its shaders for that
+        // target's APIs instead. Shaders a mod ships then have no variant the
+        // runtime can load and render magenta. The extraction stubs hide this,
+        // because the loader rebinds those by name to the game's own compiled
+        // shaders and their variants are never used.
+        private const BuildTarget ExpectedBuildTarget = BuildTarget.StandaloneWindows64;
+        private const GraphicsDeviceType RequiredGraphicsApi = GraphicsDeviceType.Direct3D11;
 
         public static void BuildAll()
         {
@@ -77,6 +88,9 @@ namespace Jiangyu.Mod
                     "Open this project in the matching Unity Editor before building.");
                 return false;
             }
+
+            if (!EnsureBuildTarget())
+                return false;
 
             var bundleNames = new List<string>();
             AssignBundleNames("t:Prefab", "Assets/Prefabs", ".prefab", bundleNames);
@@ -144,6 +158,64 @@ namespace Jiangyu.Mod
                     continue;
                 File.Delete(file);
             }
+        }
+
+        /// <summary>
+        /// Put the editor on <see cref="ExpectedBuildTarget"/> and confirm that
+        /// target compiles the graphics API the game runs on. Returns false when
+        /// the build must not proceed.
+        ///
+        /// The <c>-buildTarget</c> command-line flag is not enough on its own:
+        /// Unity ignores it when the platform module is absent, leaving the
+        /// editor on its own platform and silently building bundles whose
+        /// shaders carry the wrong API.
+        /// </summary>
+        private static bool EnsureBuildTarget()
+        {
+            if (EditorUserBuildSettings.activeBuildTarget != ExpectedBuildTarget)
+            {
+                if (!BuildPipeline.IsBuildTargetSupported(BuildTargetGroup.Standalone, ExpectedBuildTarget))
+                {
+                    Debug.LogError(
+                        "Jiangyu BuildBundles: this editor cannot build for " + ExpectedBuildTarget
+                        + ", so its module is missing. Active target is "
+                        + EditorUserBuildSettings.activeBuildTarget
+                        + ", whose shader variants the game cannot load. Install the matching "
+                        + "build-support module through Unity Hub (Installs, the gear on "
+                        + ExpectedUnityVersion + ", Add modules) and build again.");
+                    return false;
+                }
+
+                if (!EditorUserBuildSettings.SwitchActiveBuildTarget(
+                        BuildTargetGroup.Standalone, ExpectedBuildTarget))
+                {
+                    Debug.LogError(
+                        "Jiangyu BuildBundles: could not switch the active build target from "
+                        + EditorUserBuildSettings.activeBuildTarget + " to " + ExpectedBuildTarget
+                        + ". Set it in Build Settings and build again.");
+                    return false;
+                }
+
+                Debug.Log("Jiangyu BuildBundles: switched the active build target to " + ExpectedBuildTarget + ".");
+            }
+
+            // Auto graphics APIs give Direct3D11 for a Windows target. An
+            // explicit list that leaves it out ships variants the game cannot
+            // load, which is the same failure by a different route.
+            var apis = PlayerSettings.GetGraphicsAPIs(ExpectedBuildTarget);
+            if (apis == null || !apis.Contains(RequiredGraphicsApi))
+            {
+                Debug.LogError(
+                    "Jiangyu BuildBundles: " + ExpectedBuildTarget + " is set to build "
+                    + (apis == null || apis.Length == 0 ? "no graphics API" : string.Join(", ", apis))
+                    + ", which excludes " + RequiredGraphicsApi
+                    + ". Shaders a mod ships would have no variant the game can load. Enable "
+                    + RequiredGraphicsApi + " for this target in Player Settings, or turn "
+                    + "Auto Graphics API back on.");
+                return false;
+            }
+
+            return true;
         }
 
         /// <summary>

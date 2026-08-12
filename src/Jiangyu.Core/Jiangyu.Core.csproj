@@ -47,6 +47,8 @@
                       LogicalName="UnityProject/Assets/Jiangyu/Editor/BakeHumanoid.cs" />
     <EmbeddedResource Include="Templates/UnityProject/Assets/Jiangyu/Editor/BakeWeapon.cs"
                       LogicalName="UnityProject/Assets/Jiangyu/Editor/BakeWeapon.cs" />
+    <EmbeddedResource Include="Templates/UnityProject/Assets/Jiangyu/Editor/BakeVehicle.cs"
+                      LogicalName="UnityProject/Assets/Jiangyu/Editor/BakeVehicle.cs" />
     <EmbeddedResource Include="Templates/UnityProject/Assets/Jiangyu/README.md"
                       LogicalName="UnityProject/Assets/Jiangyu/README.md" />
     <EmbeddedResource Include="Templates/UnityProject/Packages/manifest.json"

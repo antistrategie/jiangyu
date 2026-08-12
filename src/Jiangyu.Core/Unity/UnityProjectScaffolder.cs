@@ -36,6 +36,7 @@ public sealed class UnityProjectScaffolder
         ("UnityProject/Assets/Jiangyu/Editor/ImportedPrefabPostProcessor.cs", new[] { "Assets", "Jiangyu", "Editor", "ImportedPrefabPostProcessor.cs" }),
         ("UnityProject/Assets/Jiangyu/Editor/BakeHumanoid.cs", new[] { "Assets", "Jiangyu", "Editor", "BakeHumanoid.cs" }),
         ("UnityProject/Assets/Jiangyu/Editor/BakeWeapon.cs", new[] { "Assets", "Jiangyu", "Editor", "BakeWeapon.cs" }),
+        ("UnityProject/Assets/Jiangyu/Editor/BakeVehicle.cs", new[] { "Assets", "Jiangyu", "Editor", "BakeVehicle.cs" }),
         ("UnityProject/Assets/Jiangyu/README.md", new[] { "Assets", "Jiangyu", "README.md" }),
         ("UnityProject/.gitignore", new[] { ".gitignore" }),
     };

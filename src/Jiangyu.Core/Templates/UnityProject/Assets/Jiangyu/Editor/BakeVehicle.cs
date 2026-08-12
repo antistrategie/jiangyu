@@ -43,12 +43,315 @@ namespace Jiangyu.Mod
     ///   -idleSpeedThreshold 0.05     (optional. driver Speed below this counts as idle)
     ///   -outputRoot Assets/Prefabs   (optional. root folder the &lt;vehicle&gt;/&lt;variant&gt; output lands under)
     ///   -dropMeshes &lt;substrings&gt;     (optional. comma-separated renderer names to delete)
-    ///   -materialManifest &lt;json&gt;    (optional. {"materials":[{"name","base","normal","mask"}]} paths per material)
+    ///   -materialManifest &lt;json&gt;    (optional. {"materials":[{"name","base","normal","mask","shader","extras":[{"property","path"}],"floats":[{"property","value"}]}]} per material)
     ///   -graftNodes &lt;spec,...&gt;       (optional. &lt;importedPrefabPath&gt;@&lt;childPath&gt; sub-assemblies to copy in)
     ///   -muzzleAnchors &lt;spec,...&gt;    (optional. &lt;parentTransform&gt;:&lt;muzzleName&gt; fire-skill origin anchors)
     /// </summary>
-    internal static class BakeVehicle
+    internal sealed class BakeVehicle : EditorWindow
     {
+        // Window state. The same inputs the batch arguments carry, so neither entry
+        // point is more capable than the other: a vehicle that can only be baked
+        // from a command line is a vehicle nobody can iterate on.
+        private DefaultAsset _fbxFolder;
+        private string _fbxPath = "";
+        private string _outputName = "";
+        private string _outputRoot = "Assets/Prefabs";
+        private float _targetLength = 6f;
+        private string _moveClip = "";
+        private string _doorOpenClip = "";
+        private string _doorCloseClip = "";
+        private string _doorsParam = "DoorsOut";
+        private float _doorLingerSeconds = 2f;
+        private float _idleSpeedThreshold = 0.05f;
+        private string _dropMeshes = "";
+        private string _graftNodes = "";
+        private string _muzzleAnchors = "";
+        private string _materialManifest = "";
+        private Shader _overrideShader;
+        private readonly List<VehicleSlot> _slotOverrides = new List<VehicleSlot>();
+        private Vector2 _scroll;
+
+        [MenuItem("Jiangyu/Bake vehicle prefab from FBX…")]
+        private static void ShowWindow()
+        {
+            GetWindow<BakeVehicle>(true, "Bake vehicle prefab", true).minSize =
+                new Vector2(560f, 640f);
+        }
+
+        private void OnGUI()
+        {
+            using (var scroll = new EditorGUILayout.ScrollViewScope(_scroll))
+            {
+                _scroll = scroll.scrollPosition;
+
+                EditorGUILayout.LabelField("Source and output", EditorStyles.boldLabel);
+                EditorGUILayout.HelpBox(
+                    "Bakes an authored vehicle FBX into an addition prefab: a Generic rig with "
+                    + "true world size in the bind pose, an AnimatorController speaking the vanilla "
+                    + "vehicle driver's parameter contract, and one baked material per source "
+                    + "material slot.\n\n"
+                    + "The model is scaled so its longest dimension measures Target length, so that "
+                    + "value is in metres and is solved for rather than guessed.",
+                    MessageType.None);
+
+                _fbxPath = EditorGUILayout.TextField(
+                    new GUIContent("FBX path", "Assets-relative path to the authored FBX."),
+                    _fbxPath);
+                var picked = (DefaultAsset)EditorGUILayout.ObjectField(
+                    new GUIContent("… or drop the FBX", "Drag the FBX in to fill the path above."),
+                    _fbxFolder, typeof(DefaultAsset), false);
+                if (picked != _fbxFolder)
+                {
+                    _fbxFolder = picked;
+                    if (picked != null) _fbxPath = AssetDatabase.GetAssetPath(picked);
+                }
+
+                _outputName = EditorGUILayout.TextField(
+                    new GUIContent("Output name", "<vehicle>/<variant>, e.g. koleda_car/default."),
+                    _outputName);
+                _outputRoot = EditorGUILayout.TextField("Output root", _outputRoot);
+                _targetLength = EditorGUILayout.FloatField(
+                    new GUIContent("Target length (m)", "Longest model dimension in metres."),
+                    _targetLength);
+
+                GUILayout.Space(6);
+                EditorGUILayout.LabelField("Animation takes", EditorStyles.boldLabel);
+                EditorGUILayout.HelpBox(
+                    "Clip names are the FBX take names of this vehicle. The move clip is required "
+                    + "and loops. Door clips are optional: giving an open clip is what builds the "
+                    + "doors layer at all, and that layer is driven by a Bool parameter the mod's "
+                    + "own runtime code has to set, because nothing in the game sets it.",
+                    MessageType.None);
+                _moveClip = EditorGUILayout.TextField("Move clip", _moveClip);
+                _doorOpenClip = EditorGUILayout.TextField("Door open clip", _doorOpenClip);
+                _doorCloseClip = EditorGUILayout.TextField("Door close clip", _doorCloseClip);
+                _doorsParam = EditorGUILayout.TextField("Doors parameter", _doorsParam);
+                _doorLingerSeconds = EditorGUILayout.FloatField("Doors linger (s)", _doorLingerSeconds);
+                _idleSpeedThreshold = EditorGUILayout.FloatField("Idle speed threshold", _idleSpeedThreshold);
+
+                GUILayout.Space(6);
+                EditorGUILayout.LabelField("Model surgery (optional)", EditorStyles.boldLabel);
+                _dropMeshes = EditorGUILayout.TextField(
+                    new GUIContent("Drop meshes", "Comma-separated renderer name substrings to delete."),
+                    _dropMeshes);
+                _graftNodes = EditorGUILayout.TextField(
+                    new GUIContent("Graft nodes", "<importedPrefabPath>@<childPath>, comma-separated."),
+                    _graftNodes);
+                _muzzleAnchors = EditorGUILayout.TextField(
+                    new GUIContent("Muzzle anchors", "<parentTransform>:<muzzleName>, comma-separated."),
+                    _muzzleAnchors);
+
+                GUILayout.Space(6);
+                EditorGUILayout.LabelField("Materials", EditorStyles.boldLabel);
+                _overrideShader = (Shader)EditorGUILayout.ObjectField(
+                    new GUIContent("Override shader",
+                        "Blanket shader for every baked material. Leave empty for the Menace default."),
+                    _overrideShader, typeof(Shader), false);
+                _materialManifest = EditorGUILayout.TextField(
+                    new GUIContent("Material manifest", "Optional JSON path. Window rows below win over it."),
+                    _materialManifest);
+
+                DrawSlotOverrides();
+
+                GUILayout.Space(10);
+                using (new EditorGUI.DisabledScope(
+                    string.IsNullOrWhiteSpace(_fbxPath) || string.IsNullOrWhiteSpace(_outputName)
+                    || string.IsNullOrWhiteSpace(_moveClip) || _targetLength <= 0f))
+                {
+                    if (GUILayout.Button("Bake vehicle prefab", GUILayout.Height(30)))
+                        RunFromWindow();
+                }
+            }
+        }
+
+        private void RunFromWindow()
+        {
+            try
+            {
+                Bake(
+                    fbxPath: _fbxPath.Trim(),
+                    outputName: _outputName.Trim(),
+                    targetLength: _targetLength,
+                    moveClip: _moveClip.Trim(),
+                    doorOpenClip: Blank(_doorOpenClip),
+                    doorCloseClip: Blank(_doorCloseClip),
+                    doorsParam: string.IsNullOrWhiteSpace(_doorsParam) ? "DoorsOut" : _doorsParam.Trim(),
+                    doorLingerSeconds: _doorLingerSeconds,
+                    idleSpeedThreshold: Mathf.Max(_idleSpeedThreshold, 0.001f),
+                    outputRoot: string.IsNullOrWhiteSpace(_outputRoot) ? "Assets/Prefabs" : _outputRoot.Trim(),
+                    dropMeshes: Split(_dropMeshes),
+                    materialManifest: Blank(_materialManifest),
+                    overrideShader: null,
+                    graftNodes: Split(_graftNodes),
+                    muzzleAnchors: Split(_muzzleAnchors),
+                    slotOverrides: _slotOverrides,
+                    overrideShaderAsset: _overrideShader);
+                Debug.Log("Jiangyu BakeVehicle: success.");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError("Jiangyu BakeVehicle failed: " + ex);
+                EditorUtility.DisplayDialog("Bake vehicle prefab",
+                    "Bake failed:\n\n" + ex.Message + "\n\nThe Console carries the full trace.", "OK");
+            }
+        }
+
+        private static string Blank(string s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+        private static string[] Split(string s) => string.IsNullOrWhiteSpace(s)
+            ? new string[0]
+            : s.Split(',').Select(x => x.Trim()).Where(x => x.Length > 0).ToArray();
+
+        // Per-material overrides authored in the window. The same ground the manifest
+        // JSON covers, with the shader and textures as drag targets and the material
+        // names taken from the imported FBX rather than typed from memory.
+        private void DrawSlotOverrides()
+        {
+            GUILayout.Space(6);
+            EditorGUILayout.LabelField("Per-material overrides (optional)", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Give one material slot its own shader, maps and values, keyed by the FBX material "
+                + "name. Anything left empty falls back to the blanket shader above, so a row can "
+                + "override the shader alone.\n\n"
+                + "Values are how a material declares what its shader cannot detect: a shader "
+                + "cannot read a texture's filename or tell a keyword from its absence, so a flag "
+                + "such as _MaskRoughnessInverted has to arrive as a number.",
+                MessageType.None);
+
+            var removeAt = -1;
+            for (int i = 0; i < _slotOverrides.Count; i++)
+            {
+                var row = _slotOverrides[i];
+                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+                {
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        row.sourceMaterial = EditorGUILayout.TextField("Slot", row.sourceMaterial);
+                        if (GUILayout.Button("Remove", GUILayout.Width(70)))
+                            removeAt = i;
+                    }
+                    row.baseMap = (Texture2D)EditorGUILayout.ObjectField(
+                        "Base map", row.baseMap, typeof(Texture2D), false);
+                    row.normalMap = (Texture2D)EditorGUILayout.ObjectField(
+                        "Normal map", row.normalMap, typeof(Texture2D), false);
+                    row.maskMap = (Texture2D)EditorGUILayout.ObjectField(
+                        "Mask map", row.maskMap, typeof(Texture2D), false);
+                    row.shader = (Shader)EditorGUILayout.ObjectField(
+                        "Shader", row.shader, typeof(Shader), false);
+
+                    if (row.extras == null) row.extras = new List<VehicleExtra>();
+                    var dropAt = -1;
+                    for (int e = 0; e < row.extras.Count; e++)
+                    {
+                        var extra = row.extras[e];
+                        using (new EditorGUILayout.HorizontalScope())
+                        {
+                            EditorGUILayout.LabelField("Extra", GUILayout.Width(40));
+                            extra.propertyName = EditorGUILayout.TextField(extra.propertyName);
+                            extra.texture = (Texture)EditorGUILayout.ObjectField(
+                                extra.texture, typeof(Texture), false);
+                            if (GUILayout.Button("x", GUILayout.Width(22)))
+                                dropAt = e;
+                        }
+                    }
+                    if (dropAt >= 0) row.extras.RemoveAt(dropAt);
+                    if (GUILayout.Button("Add extra texture"))
+                        row.extras.Add(new VehicleExtra());
+
+                    if (row.floats == null) row.floats = new List<VehicleFloat>();
+                    var dropFloatAt = -1;
+                    for (int f = 0; f < row.floats.Count; f++)
+                    {
+                        var value = row.floats[f];
+                        using (new EditorGUILayout.HorizontalScope())
+                        {
+                            EditorGUILayout.LabelField("Value", GUILayout.Width(40));
+                            value.propertyName = EditorGUILayout.TextField(value.propertyName);
+                            value.value = EditorGUILayout.FloatField(value.value, GUILayout.Width(70));
+                            if (GUILayout.Button("x", GUILayout.Width(22)))
+                                dropFloatAt = f;
+                        }
+                    }
+                    if (dropFloatAt >= 0) row.floats.RemoveAt(dropFloatAt);
+                    if (GUILayout.Button("Add value"))
+                        row.floats.Add(new VehicleFloat());
+                }
+            }
+            if (removeAt >= 0)
+                _slotOverrides.RemoveAt(removeAt);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Add slot"))
+                    _slotOverrides.Add(new VehicleSlot());
+                using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(_fbxPath)))
+                {
+                    if (GUILayout.Button("Fill from source FBX"))
+                        FillSlotOverridesFromSource();
+                }
+            }
+        }
+
+        // Add a row per material name the FBX carries. Existing rows are kept, so
+        // this is safe to press twice.
+        private void FillSlotOverridesFromSource()
+        {
+            var asset = AssetDatabase.LoadAssetAtPath<GameObject>(_fbxPath.Trim());
+            if (asset == null)
+            {
+                Debug.LogWarning("Jiangyu BakeVehicle: no model asset at '" + _fbxPath + "'.");
+                return;
+            }
+            var names = asset.GetComponentsInChildren<Renderer>(includeInactive: true)
+                .SelectMany(r => r.sharedMaterials)
+                .Where(m => m != null && !string.IsNullOrEmpty(m.name))
+                .Select(m => m.name)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(n => n, StringComparer.Ordinal)
+                .ToArray();
+            if (names.Length == 0)
+            {
+                Debug.LogWarning("Jiangyu BakeVehicle: '" + _fbxPath + "' has no renderer materials to list.");
+                return;
+            }
+            var added = 0;
+            foreach (var name in names)
+            {
+                if (_slotOverrides.Any(r => string.Equals(
+                        r.sourceMaterial, name, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                _slotOverrides.Add(new VehicleSlot { sourceMaterial = name });
+                added++;
+            }
+            Debug.Log("Jiangyu BakeVehicle: added " + added + " slot row(s) from '" + _fbxPath + "'.");
+        }
+
+        [Serializable]
+        internal class VehicleSlot
+        {
+            public string sourceMaterial = "";
+            public Texture2D baseMap;
+            public Texture2D normalMap;
+            public Texture2D maskMap;
+            public Shader shader;
+            public List<VehicleExtra> extras = new List<VehicleExtra>();
+            public List<VehicleFloat> floats = new List<VehicleFloat>();
+        }
+
+        [Serializable]
+        internal class VehicleExtra
+        {
+            public string propertyName = "";
+            public Texture texture;
+        }
+
+        [Serializable]
+        internal class VehicleFloat
+        {
+            public string propertyName = "";
+            public float value;
+        }
+
         // Parameters the vanilla vehicle driver sets, dumped from
         // aco.carrier_chassis / aco.carrier_chassis_inside string tables.
         // A missing parameter turns the driver's Set* call into a warning, so
@@ -120,6 +423,7 @@ namespace Jiangyu.Mod
                     outputRoot: Arg("-outputRoot", "Assets/Prefabs"),
                     dropMeshes: Arg("-dropMeshes", "").Split(',').Where(s => s.Length > 0).ToArray(),
                     materialManifest: Arg("-materialManifest", null),
+                    overrideShader: Arg("-overrideShader", null),
                     graftNodes: Arg("-graftNodes", "").Split(',').Where(s => s.Length > 0).ToArray(),
                     muzzleAnchors: Arg("-muzzleAnchors", "").Split(',').Where(s => s.Length > 0).ToArray());
                 Debug.Log("Jiangyu BakeVehicle: success.");
@@ -136,7 +440,9 @@ namespace Jiangyu.Mod
             string fbxPath, string outputName, float targetLength,
             string moveClip, string doorOpenClip, string doorCloseClip,
             string doorsParam, float doorLingerSeconds, float idleSpeedThreshold, string outputRoot,
-            string[] dropMeshes, string materialManifest, string[] graftNodes, string[] muzzleAnchors)
+            string[] dropMeshes, string materialManifest, string overrideShader, string[] graftNodes,
+            string[] muzzleAnchors, List<VehicleSlot> slotOverrides = null,
+            Shader overrideShaderAsset = null)
         {
             if (string.IsNullOrEmpty(fbxPath) || string.IsNullOrEmpty(outputName) || string.IsNullOrEmpty(moveClip))
                 throw new InvalidOperationException("-fbxPath, -outputName, -targetLength, and -moveClip are required.");
@@ -243,7 +549,7 @@ namespace Jiangyu.Mod
                         + " at local " + copy.transform.localPosition);
                 }
 
-                BakeMaterials(instance, materialManifest, outDir, graftRoots);
+                BakeMaterials(instance, materialManifest, outDir, graftRoots, overrideShader, slotOverrides, overrideShaderAsset);
 
                 foreach (var smr in instance.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                 {
@@ -523,10 +829,32 @@ namespace Jiangyu.Mod
         // a neutral 1x1 (the Menace shader's default mask reads Metallic=1 and
         // renders chrome). Grafted vanilla subtrees are left untouched so the
         // loader's name-matched material rebind still recognises their slots.
-        [Serializable] private class ManifestEntry { public string name; public string @base; public string normal; public string mask; }
+        [Serializable] private class ManifestExtra { public string property; public string path; }
+        [Serializable] private class ManifestFloat { public string property; public float value; }
+        [Serializable] private class ManifestEntry { public string name; public string @base; public string normal; public string mask; public string shader; public List<ManifestExtra> extras; public List<ManifestFloat> floats; }
         [Serializable] private class ManifestFile { public List<ManifestEntry> materials; }
 
-        private static void BakeMaterials(GameObject instance, string materialManifest, string outDir, List<Transform> graftRoots)
+        // Resolve a shader from a manifest entry or a batch argument. Accepts
+        // an asset path (Assets/Shaders/DollToon.shader) or a shader name
+        // (Womenace/DollToon). An absent value returns null so the caller falls
+        // through to its next choice. A value that resolves to nothing throws
+        // rather than falling back, so a typo cannot quietly ship a vehicle on
+        // the vanilla shader.
+        private static Shader ResolveOverrideShader(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return null;
+            var byPath = AssetDatabase.LoadAssetAtPath<Shader>(value);
+            if (byPath != null) return byPath;
+            var byName = Shader.Find(value);
+            if (byName != null) return byName;
+            throw new InvalidOperationException(
+                "Jiangyu BakeVehicle: shader not found: '" + value
+                + "'. Give a shader asset path or a shader name.");
+        }
+
+        private static void BakeMaterials(GameObject instance, string materialManifest, string outDir,
+            List<Transform> graftRoots, string overrideShader, List<VehicleSlot> slotOverrides = null,
+            Shader overrideShaderAsset = null)
         {
             // Purge baked_*.mat left by earlier runs before generating: a
             // renamed material or a debug bake otherwise leaves an orphan
@@ -537,8 +865,29 @@ namespace Jiangyu.Mod
                 AssetDatabase.DeleteAsset(stale.Replace('\\', '/'));
 
             var manifest = LoadManifest(materialManifest);
+
+            // Window rows over the manifest: an in-window edit wins over a file the
+            // modder may not have open. A row naming a slot but overriding nothing is
+            // inert, which is what makes "Fill from source FBX" safe to press.
+            // Case-insensitive like the humanoid bake's row matching, so a
+            // hand-typed slot name cannot miss by capitalisation alone.
+            var rows = new Dictionary<string, VehicleSlot>(StringComparer.OrdinalIgnoreCase);
+            if (slotOverrides != null)
+            {
+                foreach (var row in slotOverrides)
+                {
+                    if (row == null || string.IsNullOrWhiteSpace(row.sourceMaterial)) continue;
+                    rows[row.sourceMaterial.Trim()] = row;
+                }
+            }
             var usedManifestKeys = new HashSet<string>();
-            var lit = Shader.Find("Menace/character") ?? Shader.Find("Standard");
+            var usedRowKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // A material's own manifest "shader" wins, then the blanket
+            // -overrideShader, then MENACE's vanilla character shader. The
+            // window hands its blanket shader over as the object itself, so a
+            // shader with no loadable asset path still resolves.
+            var defaultShader = overrideShaderAsset ?? ResolveOverrideShader(overrideShader)
+                ?? Shader.Find("Menace/character") ?? Shader.Find("Standard");
             var maskDefault = EnsureDefaultTexture(
                 "Assets/Materials/Jiangyu/_jiangyu_neutral_mask.png",
                 new Color32(0, 255, 0, 128), isNormalMap: false, linear: true);
@@ -562,11 +911,15 @@ namespace Jiangyu.Mod
                         continue;
                     }
                     var srcName = src != null ? src.name : r.name + "_" + i + "_slot" + (++slotFallbacks);
-                    var baked = new Material(lit) { name = "baked_" + srcName };
                     manifest.TryGetValue(srcName, out var entry);
                     if (entry != null) usedManifestKeys.Add(srcName);
+                    rows.TryGetValue(srcName, out var row);
+                    if (row != null) usedRowKeys.Add(srcName);
+                    var shaderForEntry = row?.shader ?? ResolveOverrideShader(entry?.shader) ?? defaultShader;
+                    var baked = new Material(shaderForEntry) { name = "baked_" + srcName };
 
-                    var diffuse = entry?.@base != null ? LoadManifestTexture(entry.@base, srcName, "base", EnsureSrgb) : ResolveDiffuse(src);
+                    var diffuse = row?.baseMap
+                        ?? (entry?.@base != null ? LoadManifestTexture(entry.@base, srcName, "base", EnsureSrgb) : ResolveDiffuse(src));
                     if (diffuse != null)
                     {
                         baked.SetTexture("_BaseColorMap", diffuse);
@@ -578,11 +931,93 @@ namespace Jiangyu.Mod
                         Debug.LogWarning("Jiangyu BakeVehicle: no diffuse texture resolved for material '" + srcName + "'.");
                     }
 
-                    var normal = entry?.normal != null ? LoadManifestTexture(entry.normal, srcName, "normal", EnsureNormal) : null;
+                    var normal = row?.normalMap
+                        ?? (entry?.normal != null ? LoadManifestTexture(entry.normal, srcName, "normal", EnsureNormal) : null);
                     if (normal != null && baked.HasProperty("_NormalMap")) baked.SetTexture("_NormalMap", normal);
 
-                    var mask = entry?.mask != null ? LoadManifestTexture(entry.mask, srcName, "mask", EnsureLinear) : null;
+                    var mask = row?.maskMap
+                        ?? (entry?.mask != null ? LoadManifestTexture(entry.mask, srcName, "mask", EnsureLinear) : null);
                     AssignFirst(baked, mask ?? maskDefault, "_MaskMap", "_Mask", "_MetallicGlossMap");
+
+                    // Maps a custom shader declares beyond base, normal and
+                    // mask. A property the shader does not declare is a typo
+                    // worth surfacing: SetTexture accepts it silently otherwise.
+                    if (entry?.extras != null)
+                    {
+                        foreach (var extra in entry.extras)
+                        {
+                            if (extra == null) continue;
+                            if (string.IsNullOrWhiteSpace(extra.property) || string.IsNullOrWhiteSpace(extra.path))
+                                continue;
+                            var extraTex = AssetDatabase.LoadAssetAtPath<Texture>(extra.path);
+                            if (extraTex == null)
+                                throw new InvalidOperationException(
+                                    "Jiangyu BakeVehicle: manifest extra texture not found: '" + extra.path + "'.");
+                            if (!baked.HasProperty(extra.property))
+                            {
+                                Debug.LogWarning(
+                                    "Jiangyu BakeVehicle: shader '" + baked.shader.name
+                                    + "' has no texture property '" + extra.property
+                                    + "', so the assignment for material '" + srcName + "' is skipped.");
+                                continue;
+                            }
+                            baked.SetTexture(extra.property, extraTex);
+                        }
+                    }
+
+                    // Flags and values a custom shader declares. A shader cannot
+                    // read a texture's filename or tell a keyword from its absence,
+                    // so whether a mask holds roughness or smoothness, or whether a
+                    // material takes a particular shading path, arrives as a number.
+                    if (entry?.floats != null)
+                    {
+                        foreach (var value in entry.floats)
+                        {
+                            if (value == null || string.IsNullOrWhiteSpace(value.property)) continue;
+                            if (!baked.HasProperty(value.property))
+                            {
+                                Debug.LogWarning(
+                                    "Jiangyu BakeVehicle: shader '" + baked.shader.name
+                                    + "' has no property '" + value.property
+                                    + "', so the value for material '" + srcName + "' is skipped.");
+                                continue;
+                            }
+                            baked.SetFloat(value.property, value.value);
+                        }
+                    }
+
+                    // The window's own rows last, so a row and a manifest entry naming
+                    // the same property leave the row's value in place.
+                    if (row != null)
+                    {
+                        foreach (var extra in row.extras ?? new List<VehicleExtra>())
+                        {
+                            if (extra == null || extra.texture == null) continue;
+                            if (string.IsNullOrWhiteSpace(extra.propertyName)) continue;
+                            if (!baked.HasProperty(extra.propertyName))
+                            {
+                                Debug.LogWarning(
+                                    "Jiangyu BakeVehicle: shader '" + baked.shader.name
+                                    + "' has no texture property '" + extra.propertyName
+                                    + "', so the assignment for material '" + srcName + "' is skipped.");
+                                continue;
+                            }
+                            baked.SetTexture(extra.propertyName, extra.texture);
+                        }
+                        foreach (var value in row.floats ?? new List<VehicleFloat>())
+                        {
+                            if (value == null || string.IsNullOrWhiteSpace(value.propertyName)) continue;
+                            if (!baked.HasProperty(value.propertyName))
+                            {
+                                Debug.LogWarning(
+                                    "Jiangyu BakeVehicle: shader '" + baked.shader.name
+                                    + "' has no property '" + value.propertyName
+                                    + "', so the value for material '" + srcName + "' is skipped.");
+                                continue;
+                            }
+                            baked.SetFloat(value.propertyName, value.value);
+                        }
+                    }
 
                     // Native unit materials opt out of receiving decals so
                     // road and other ground decals do not project onto them.
@@ -600,6 +1035,8 @@ namespace Jiangyu.Mod
             }
             foreach (var key in manifest.Keys.Where(k => !usedManifestKeys.Contains(k)))
                 Debug.LogWarning("Jiangyu BakeVehicle: manifest entry '" + key + "' matched no material slot on the model (typo?).");
+            foreach (var key in rows.Keys.Where(k => !usedRowKeys.Contains(k)).OrderBy(k => k, StringComparer.Ordinal))
+                Debug.LogWarning("Jiangyu BakeVehicle: per-material override row '" + key + "' matched no material slot on the model (typo?).");
             Debug.Log("Jiangyu BakeVehicle: baked " + usedFileNames.Count + " material(s) (" + manifest.Count + " manifest entr(ies)).");
         }
 
