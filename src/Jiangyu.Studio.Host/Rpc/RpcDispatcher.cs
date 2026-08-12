@@ -436,10 +436,32 @@ public static partial class RpcDispatcher
         return NullElement;
     }
 
+    /// <summary>
+    /// A starting directory for a file dialog, or null to let the dialog choose.
+    /// </summary>
+    /// <remarks>
+    /// The path is handed to the native dialog as-is, and a directory that does
+    /// not exist can stop it opening at all. A failed dialog and a cancelled one
+    /// are indistinguishable here (both yield no selection), so the button
+    /// appears to do nothing whatsoever. The stale path that provokes it is
+    /// ordinary: a configured Unity that was upgraded or uninstalled leaves one
+    /// behind, which is exactly when someone reaches for this button.
+    /// </remarks>
+    internal static string? ExistingDialogDirectory(string? path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return null;
+        if (Directory.Exists(path))
+            return path;
+        var parent = Path.GetDirectoryName(path);
+        return !string.IsNullOrEmpty(parent) && Directory.Exists(parent) ? parent : null;
+    }
+
     private static JsonElement HandleSetGamePath(IInfiniFrameWindow window, JsonElement? _)
     {
         var config = Jiangyu.Core.Config.GlobalConfig.Load();
-        var defaultPath = !string.IsNullOrEmpty(config.Game) ? Jiangyu.Core.Config.GlobalConfig.ExpandHome(config.Game) : null;
+        var defaultPath = ExistingDialogDirectory(
+            !string.IsNullOrEmpty(config.Game) ? Jiangyu.Core.Config.GlobalConfig.ExpandHome(config.Game) : null);
         var results = window.ShowOpenFolder("Select MENACE game directory", defaultPath: defaultPath);
         var path = results.FirstOrDefault(p => p is not null);
         if (path is null)
@@ -451,16 +473,34 @@ public static partial class RpcDispatcher
         return RpcHandlers.GetConfigStatus(null);
     }
 
+    /// <summary>
+    /// File filters for the Unity editor picker, or null for no filtering.
+    /// </summary>
+    /// <remarks>
+    /// Only Windows gets one. Elsewhere the editor binary is named <c>Unity</c>
+    /// with no extension, and the dialog layer rewrites every filter pattern to
+    /// <c>*.&lt;ext&gt;</c> form: a "*" filter becomes "*.*", which matches only
+    /// names containing a dot. That hides the very binary being asked for, and
+    /// with one filter offered there is no "all files" entry to escape to.
+    /// </remarks>
+    internal static (string Name, string[] Extensions)[]? UnityEditorFileFilters(bool isWindows)
+        => isWindows ? [("Unity Editor", ["exe"])] : null;
+
     private static JsonElement HandleSetUnityEditorPath(IInfiniFrameWindow window, JsonElement? _)
     {
         var config = Jiangyu.Core.Config.GlobalConfig.Load();
-        var defaultDir = !string.IsNullOrEmpty(config.UnityEditor)
-            ? Path.GetDirectoryName(Jiangyu.Core.Config.GlobalConfig.ExpandHome(config.UnityEditor))
-            : null;
+        // Fall back to the resolved editor when none is configured, so a pick
+        // triggered by a version mismatch opens beside the installs rather than
+        // wherever the dialog last was.
+        var configured = !string.IsNullOrEmpty(config.UnityEditor)
+            ? Jiangyu.Core.Config.GlobalConfig.ExpandHome(config.UnityEditor)
+            : Jiangyu.Core.Config.GlobalConfig.ResolveUnityEditorPath(config).editorPath;
+        var defaultDir = ExistingDialogDirectory(
+            configured is not null ? Path.GetDirectoryName(configured) : null);
         var results = window.ShowOpenFile(
             "Select Unity Editor binary",
             defaultPath: defaultDir,
-            filters: [("Unity Editor", ["*"])]);
+            filters: UnityEditorFileFilters(OperatingSystem.IsWindows()));
         var path = results.FirstOrDefault(p => p is not null);
         if (path is null)
             return NullElement;
