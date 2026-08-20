@@ -36,6 +36,9 @@ internal sealed class DevServices : IDevServices
             ["templates"] = _ => TemplateStateInspector.Capture(_context.CurrentScene),
             ["winmission"] = _ => MissionAutoWin.Run(_context.Logger),
             ["skills"] = _ => SkillStateInspector.Capture(),
+            ["ai"] = _ => AiStateInspector.Capture(),
+            ["aiscore"] = _ => AiScoreProbe.Capture(),
+            ["nav"] = args => NavDriver.Run(args, _context.Logger),
         };
 
         _bridge = new BridgeServer(context.Logger);

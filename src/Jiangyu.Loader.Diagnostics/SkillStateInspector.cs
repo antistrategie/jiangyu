@@ -5,8 +5,8 @@ using Il2CppMenace.Tactical.Skills;
 
 namespace Jiangyu.Loader.Diagnostics;
 
-// Dev command (skills): dump the usability state of every player-controlled actor's skills in the
-// running mission. Built to diagnose "skills greyed / unusable even with AP": IsUsable() is the
+// Dev command (skills): dump the usability state of every living actor's skills, across all
+// factions, in the running mission. Built to diagnose "skills greyed / unusable even with AP": IsUsable() is the
 // gate the skill bar greys on, and the neighbouring fields (uses left, AP cost, AP consumer bound,
 // disabled-by-defect) say WHY it is false. Read-only, dev-loader only, main thread.
 internal static class SkillStateInspector
@@ -33,9 +33,9 @@ internal static class SkillStateInspector
                     try
                     {
                         var actor = list[a];
-                        if (actor == null || !actor.IsPlayerControlled(true) || actor.GetHitpoints() <= 0)
+                        if (actor == null || actor.GetHitpoints() <= 0)
                             continue;
-                        actors.Add(DumpActor(actor));
+                        actors.Add(DumpActor(f, actor));
                     }
                     catch (Exception ex)
                     {
@@ -51,7 +51,7 @@ internal static class SkillStateInspector
         }
     }
 
-    private static object DumpActor(Actor actor)
+    private static object DumpActor(int faction, Actor actor)
     {
         var ap = SafeInt(() => actor.GetActionPoints());
         var apMax = SafeInt(() => actor.GetActionPointsAtTurnStart());
@@ -70,7 +70,9 @@ internal static class SkillStateInspector
             if (skill != null)
                 skills.Add(DumpSkill(skill, apForUses));
         }
-        return new { ap, apMax, propsNull, skills };
+        var entity = SafeStr(() => actor.GetTemplate()?.GetID());
+        var tile = SafeStr(() => $"{actor.GetTile().GetX()},{actor.GetTile().GetZ()}");
+        return new { faction, entity, tile, ap, apMax, propsNull, skills };
     }
 
     private static object DumpSkill(Skill s, int ap) => new
