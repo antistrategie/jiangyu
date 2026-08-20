@@ -440,7 +440,7 @@ append "EventHandlers" type="AddSkill" {
 | --- | --- | --- |
 | `Condition` | `ITacticalCondition` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
 | `DefaultText` | `string` |  |
-| `Event` | `EventType` | `OnBeforeAnySkillUsed`, `OnUpdate` |
+| `Event` | `EventType` | `OnBeforeAnySkillUsed`, `OnBeingAttacked`, `OnThisSkillUsed`, `OnUpdate` |
 | `HideIfNotActive` | `bool` |  |
 | `Properties` | `PropertyChange[]` |  |
 | `ShowInTooltipWhenActive` | `bool` |  |
@@ -1347,6 +1347,7 @@ The game models these reusable conditions (`TacticalCondition` subtypes). They l
 
 A value provider computes a number for a handler field typed `IValueProvider` (for example `ChangeProperty.ValueProvider`). These are Odin-routed too, so they are **C# only**. The providers the game ships:
 
+- `AdjacentEnemiesKilledByPlayerProvider`
 - `AdjacentInfantryProvider`
 - `AttackedThisRoundValueProvider`
 - `CoverValueProvider`
@@ -1358,6 +1359,7 @@ A value provider computes a number for a handler field typed `IValueProvider` (f
 - `ProximityValueProvider`
 - `RoundValueProvider`
 - `SquadSizeProvider`
+- `SquaddiesLostProvider`
 - `SumProvider`
 - `SuppressedCountProvider`
 - `TilesMovedProvider`
