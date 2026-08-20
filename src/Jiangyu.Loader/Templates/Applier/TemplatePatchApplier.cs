@@ -433,12 +433,92 @@ internal sealed partial class TemplatePatchApplier
     // returns false for two wrappers pooled over the same native object).
     // Everything else (scalar boxed values, strings, enums) goes through
     // object.Equals as normal.
+    //
+    // Il2Cpp value types are the exception to the pointer rule. A non-blittable
+    // value type is projected as a class over a boxed native instance, so a
+    // collection Add copies the value into the collection's own storage and the
+    // readback indexer boxes a fresh copy at a new address. The two pointers
+    // never match, including when the write landed, so a value type compares
+    // field by field through its generated properties instead.
     private static bool ReadbackMatches(object written, object readback)
     {
         if (written is Il2CppObjectBase writtenObj && readback is Il2CppObjectBase readbackObj)
-            return writtenObj.Pointer == readbackObj.Pointer;
+        {
+            if (writtenObj.Pointer == readbackObj.Pointer)
+                return true;
+
+            var type = written.GetType();
+            return readback.GetType() == type
+                   && IsIl2CppValueType(type)
+                   && GeneratedPropertiesMatch(written, readback);
+        }
+
         return Equals(written, readback);
     }
+
+    // Ask the IL2CPP runtime whether a wrapper type projects a value type.
+    // Type.IsValueType answers only for the blittable ones, which
+    // Il2CppInterop projects as real C# structs. The rest arrive as classes
+    // deriving from Il2CppSystem.ValueType, and the native class flag is what
+    // separates those from ordinary reference wrappers.
+    private static bool IsIl2CppValueType(Type type)
+    {
+        try
+        {
+            var klass = Il2CppClassPointerStore.GetNativeClassPointer(type);
+            return klass != IntPtr.Zero && IL2CPP.il2cpp_class_is_valuetype(klass);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // Compare two wrappers over one type field by field, reading through the
+    // properties Il2CppInterop generates for the native fields. Each pair goes
+    // back through ReadbackMatches, so a nested value type recurses and a
+    // reference-typed field compares by pointer. Recursion terminates: a value
+    // type cannot contain itself.
+    //
+    // A getter that throws leaves that field unverified and the walk carries
+    // on, and a type projecting no readable field reports a match, which is the
+    // same answer as skipping verification. Both are the right trade for a
+    // diagnostic, where a warning on every write costs more than a missed one.
+    // Internal so the reflection can be tested against plain managed fixtures
+    // without a live game.
+    internal static bool GeneratedPropertiesMatch(object written, object readback)
+    {
+        foreach (var property in GeneratedFieldProperties(written.GetType()))
+        {
+            object writtenValue;
+            object readbackValue;
+            try
+            {
+                writtenValue = property.GetValue(written);
+                readbackValue = property.GetValue(readback);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (!ReadbackMatches(writtenValue, readbackValue))
+                return false;
+        }
+
+        return true;
+    }
+
+    // The properties Il2CppInterop projects from a type's native fields.
+    // Pointer and WasCollected come from Il2CppObjectBase rather than the
+    // native type and differ between any two wrappers, so anything declared
+    // there is left out along with the indexers and the write-only properties.
+    private static IEnumerable<PropertyInfo> GeneratedFieldProperties(Type type)
+        => type.GetProperties(BindingFlags.Instance | BindingFlags.Public)
+            .Where(property => property.GetIndexParameters().Length == 0
+                               && property.GetGetMethod() != null
+                               && (property.DeclaringType == null
+                                   || !property.DeclaringType.IsAssignableFrom(typeof(Il2CppObjectBase))));
 
     // Identity formatter for log lines. Each template base class has a
     // different identity field, so dispatch by type rather than probe-then-
@@ -460,7 +540,33 @@ internal sealed partial class TemplatePatchApplier
         else
             id = null;
 
-        return string.IsNullOrWhiteSpace(id) ? typeName : $"{typeName} '{id}'";
+        if (!string.IsNullOrWhiteSpace(id))
+            return $"{typeName} '{id}'";
+
+        // A value type carries no identity of its own, so the type name alone
+        // tells a reader nothing about which entry a line is about. Spell out
+        // the fields instead. Reference-typed fields recurse to pick up their
+        // template ids.
+        if (IsIl2CppValueType(value.GetType()))
+        {
+            var fields = new List<string>();
+            foreach (var property in GeneratedFieldProperties(value.GetType()))
+            {
+                try
+                {
+                    fields.Add($"{property.Name}={FormatValue(property.GetValue(value))}");
+                }
+                catch (Exception ex)
+                {
+                    fields.Add($"{property.Name}=<{ex.GetType().Name}>");
+                }
+            }
+
+            if (fields.Count > 0)
+                return $"{typeName}({string.Join(", ", fields)})";
+        }
+
+        return typeName;
     }
 
     private enum ApplyOutcome

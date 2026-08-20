@@ -97,7 +97,8 @@ internal sealed partial class TemplatePatchApplier
             if (!ReadbackMatches(converted, readback))
             {
                 log.Warning(FormatPrefix(templateTypeName, templateId, op)
-                    + $"wrote {converted}, read back {readback ?? "null"}: the write did not propagate to the live template.");
+                    + $"wrote {FormatValue(converted)}, read back {FormatValue(readback)}: "
+                    + "the write did not propagate to the live template.");
             }
         }
 
