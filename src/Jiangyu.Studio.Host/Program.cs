@@ -35,6 +35,7 @@ public static class Program
         // a stable origin keeps localStorage intact across launches.
         var devUrl = Environment.GetEnvironmentVariable("JIANGYU_DEV_URL");
         var startUrl = string.IsNullOrEmpty(devUrl) ? hostUrl : devUrl;
+        RpcDispatcher.StartUrl = startUrl;
 
         var builder = InfiniFrameWebApplication.CreateBuilder(args);
 
@@ -46,8 +47,8 @@ public static class Program
             .SetTitle("Jiangyu Studio")
             .SetSize(new Size(1680, 1050))
             .SetIconFile(Path.Combine(AppContext.BaseDirectory, "icon.png"))
-            .Center()
-            .SetStartUrl(startUrl)
+            .CenteredOnMainMonitor()
+            .SetStartPageUrl(startUrl)
             .RegisterWebMessagePostHandler(RpcDispatcher.RpcMessageId,
                 (window, payload) =>
                     RpcDispatcher.HandleMessage(window, payload ?? string.Empty, window.SendWebMessage))

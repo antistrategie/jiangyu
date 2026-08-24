@@ -43,10 +43,15 @@ public static partial class RpcDispatcher
     // secondary's own InfiniFrame event pump.
     private static IInfiniFrameWindow? _primary;
 
+    // Set by Program.Main before the host starts. Pane URLs derive from the
+    // URL the primary was launched with, not the window's current URL, so
+    // SPA navigation in the primary can't leak into new pane windows.
+    internal static string? StartUrl { get; set; }
+
     private static JsonElement HandleOpenPaneWindow(IInfiniFrameWindow primary, JsonElement? parameters)
     {
-        var startUrl = primary.StartUrl
-            ?? throw new InvalidOperationException("Primary window has no StartUrl.");
+        var startUrl = StartUrl
+            ?? throw new InvalidOperationException("Host start URL not set.");
 
         var paneUrl = AppendQuery(startUrl, "window", "pane");
         var kind = TryGetString(parameters, "kind");
@@ -87,8 +92,8 @@ public static partial class RpcDispatcher
             var secondary = InfiniFrameWindowBuilder.Create()
                 .SetTitle(title)
                 .SetSize(new Size(1200, 800))
-                .SetStartUrl(paneUrl)
-                .Center()
+                .SetStartPageUrl(paneUrl)
+                .CenteredOnMainMonitor()
                 .RegisterWebMessagePostHandler(RpcMessageId,
                     (window, payload) =>
                         HandleMessage(window, payload ?? string.Empty, window.SendWebMessage))
