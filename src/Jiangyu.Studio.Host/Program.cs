@@ -39,6 +39,15 @@ public static class Program
 
         var builder = InfiniFrameWebApplication.CreateBuilder(args);
 
+        // InfiniFrame registers these as scoped but resolves the primary
+        // window (which depends on them) from the root provider, which
+        // ASP.NET's Development-mode scope validation rejects. Promote them
+        // to singletons: the primary is the only window built from this
+        // provider, so root-lifetime is what every environment gets anyway.
+        builder.Services.AddSingleton<IInfiniFrameEvents, InfiniFrameEvents>();
+        builder.Services.AddSingleton<IInfiniFrameEventsStore, InfiniFrameEventsStore>();
+        builder.Services.AddSingleton<IInfiniFrameWindowConfiguration, InfiniFrameWindowConfiguration>();
+
         // Pin working directory to the app directory so standalone runs
         // (e.g. from ~/Downloads) resolve wwwroot/ relative to the binary.
         Directory.SetCurrentDirectory(AppContext.BaseDirectory);

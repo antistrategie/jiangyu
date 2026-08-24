@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" href="/icon.png" />
     <title>Jiangyu Studio</title>
+    <script>
+      // InfiniFrame 0.60's Linux native layer delivers host messages by
+      // evaluating __dispatchMessageCallback(...), but its injected bridge
+      // script only defines __infiniframe_dispatch. Forward at call time so
+      // injection order doesn't matter; no-op outside the InfiniFrame shell.
+      // TODO: remove once https://github.com/InfiniLore/InfiniFrame/issues/407 is fixed
+      window.__dispatchMessageCallback = (m) => window.__infiniframe_dispatch?.(m);
+    </script>
   </head>
   <body>
     <div id="root">
