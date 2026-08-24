@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.Animations;
 using UnityEngine;
 
 namespace Jiangyu.Mod
@@ -15,8 +16,17 @@ namespace Jiangyu.Mod
     /// GLB containing one mesh and attach-point empties under a shared root,
     /// clones the reference vanilla weapon's Menace/* shader material, slots
     /// the modder's textures into _BaseColorMap / _NormalMap / _MaskMap,
-    /// applies the new material to the MeshRenderer, and writes the result
+    /// applies the new material to every renderer, and writes the result
     /// as an addition prefab.
+    ///
+    /// The mesh may be rigid or skinned. A skinned weapon with moving parts
+    /// ships its own Animator: pass <c>-controller</c> with a JSON spec naming
+    /// the glTF's animations per state, and the bake builds an
+    /// AnimatorController beside the prefab. MENACE forwards every parameter
+    /// it sets on the soldier's Animator to each attachment Animator that
+    /// declares the same name (Shoot_Single, Stance, AmmoCount, ...), so a
+    /// weapon that names its parameters after the soldier's needs no runtime
+    /// code; the vanilla RPG and tripod rigs are built the same way.
     ///
     /// Two ways to drive it:
     ///
@@ -25,7 +35,8 @@ namespace Jiangyu.Mod
     /// <item>Batchmode: <c>-executeMethod Jiangyu.Mod.BakeWeapon.BakeBatch</c>
     ///   with <c>-gltfPath</c>, <c>-referencePrefab</c>, <c>-outputDir</c>,
     ///   <c>-outputName</c>, and optional <c>-textureBase</c>,
-    ///   <c>-textureNormal</c>, <c>-textureMask</c>.</item>
+    ///   <c>-textureNormal</c>, <c>-textureMask</c>, <c>-materialManifest</c>,
+    ///   <c>-controller</c>.</item>
     /// </list>
     /// </summary>
     internal sealed class BakeWeapon : EditorWindow
@@ -37,6 +48,7 @@ namespace Jiangyu.Mod
         private Texture2D _textureMask;
         private Shader _overrideShader;
         private string _materialManifest = "";
+        private string _controllerSpec = "";
         // Per-slot overrides authored in the window. The friendly half of the
         // same feature the material manifest provides for batchmode.
         private readonly List<SlotOverride> _slotOverrides = new List<SlotOverride>();
@@ -73,6 +85,17 @@ namespace Jiangyu.Mod
         // bake with no manifest behaves exactly as one without the flag.
         // Texture flags are optional. When omitted, the bake slots a 1x1
         // neutral default in place of any missing slot.
+        //         [-controller <Assets/.../controller.json>]
+        // The controller spec builds an Animator for a weapon with moving parts
+        // from the glTF's own animations:
+        //   {"parameters":[{"name":"Shoot_Single","type":"Trigger"},{"name":"Stance","type":"Int"}],
+        //    "states":[{"name":"Stowed","clip":"stow","loop":true,"default":true},
+        //              {"name":"Fire","clip":"fire"}],
+        //    "transitions":[{"from":"Stowed","to":"Fire","conditions":[["Shoot_Single","Trigger"]]},
+        //                   {"from":"Fire","to":"Stowed","exitTime":1.0,"duration":0.05}]}
+        // Condition modes: Equals, NotEqual, Greater, Less (with a value), If,
+        // IfNot (bools) and Trigger. A transition with exitTime and no
+        // conditions fires when the clip reaches that normalised time.
         public static void BakeBatch()
         {
             var args = Environment.GetCommandLineArgs();
@@ -91,6 +114,7 @@ namespace Jiangyu.Mod
             var textureMask = Arg("-textureMask", null);
             var overrideShaderArg = Arg("-overrideShader", null);
             var materialManifestArg = Arg("-materialManifest", null);
+            var controllerArg = Arg("-controller", null);
 
             if (string.IsNullOrEmpty(gltfPath) || string.IsNullOrEmpty(referencePrefabPath) || string.IsNullOrEmpty(outputName))
             {
@@ -117,6 +141,7 @@ namespace Jiangyu.Mod
                 window._textureMask = LoadTextureAsset(textureMask, sRGB: false, isNormal: false);
                 window._overrideShader = ResolveOverrideShader(overrideShaderArg);
                 window._materialManifest = materialManifestArg ?? "";
+                window._controllerSpec = controllerArg ?? "";
                 window.Bake();
                 Debug.Log("Jiangyu BakeWeapon: success.");
                 EditorApplication.Exit(0);
@@ -194,6 +219,14 @@ namespace Jiangyu.Mod
                     + "manifest's values."),
                 _materialManifest);
 
+            _controllerSpec = EditorGUILayout.TextField(
+                new GUIContent("Controller spec (optional)",
+                    "Path to a JSON file describing the weapon's Animator: parameters, states "
+                    + "(each naming one of the glTF's animations) and transitions. Leave empty "
+                    + "for a rigid weapon. The controller is built beside the prefab and the "
+                    + "prefab root gets the Animator."),
+                _controllerSpec);
+
             EditorGUILayout.LabelField("Output", EditorStyles.boldLabel);
             _outputDir = EditorGUILayout.TextField(
                 new GUIContent("Output dir", "Parent folder for the per-weapon subdir, relative to project root."),
@@ -261,6 +294,8 @@ namespace Jiangyu.Mod
                 instance, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
             try
             {
+                if (!string.IsNullOrWhiteSpace(_controllerSpec))
+                    instance = AttachController(instance, gltfPath, characterDir, _controllerSpec.Trim());
                 instance.name = Path.GetFileName(_outputName);
 
                 var slotOverrides = BuildSlotOverrides();
@@ -336,9 +371,10 @@ namespace Jiangyu.Mod
                     return mat;
                 }
 
-                var renderers = instance.GetComponentsInChildren<MeshRenderer>(includeInactive: true);
+                var renderers = instance.GetComponentsInChildren<Renderer>(includeInactive: true)
+                    .Where(r => r is MeshRenderer || r is SkinnedMeshRenderer).ToArray();
                 if (renderers.Length == 0)
-                    throw new InvalidOperationException("glTF prefab '" + _gltfAsset.name + "' has no MeshRenderer. Weapon bake expects rigid meshes.");
+                    throw new InvalidOperationException("glTF prefab '" + _gltfAsset.name + "' has no MeshRenderer or SkinnedMeshRenderer.");
                 var replaced = 0;
                 var kept = 0;
                 var perSlotCount = 0;
@@ -392,6 +428,229 @@ namespace Jiangyu.Mod
             {
                 UnityEngine.Object.DestroyImmediate(instance);
             }
+        }
+
+        // ---- animated weapons -------------------------------------------------
+
+        [Serializable] private class ControllerParam { public string name; public string type; }
+        [Serializable] private class ControllerState { public string name; public string clip; public bool loop; public bool @default; }
+        [Serializable] private class ControllerTransition { public string from; public string to; public float exitTime = -1f; public float duration = 0.05f; [NonSerialized] public List<List<string>> conditions; }
+        [Serializable] private class ControllerSpec { public List<ControllerParam> parameters; public List<ControllerState> states; public List<ControllerTransition> transitions; }
+
+        // JsonUtility cannot read a list of lists, so the conditions are parsed
+        // by hand from the raw text: each is [parameter, mode] or
+        // [parameter, mode, value].
+        private static ControllerSpec ReadControllerSpec(string path)
+        {
+            var full = Path.IsPathRooted(path) ? path : Path.Combine(Directory.GetCurrentDirectory(), path);
+            if (!File.Exists(full))
+                throw new InvalidOperationException("Controller spec not found at " + path);
+            var text = File.ReadAllText(full);
+            var spec = JsonUtility.FromJson<ControllerSpec>(text);
+            if (spec == null || spec.states == null || spec.states.Count == 0)
+                throw new InvalidOperationException("Controller spec " + path + " declares no states.");
+            spec.parameters ??= new List<ControllerParam>();
+            spec.transitions ??= new List<ControllerTransition>();
+            // second pass for the conditions
+            var transitionsText = ExtractArray(text, "\"transitions\"");
+            var entries = SplitObjects(transitionsText);
+            if (entries.Count != spec.transitions.Count)
+                throw new InvalidOperationException("Controller spec " + path + ": could not pair the transitions with their conditions.");
+            for (int i = 0; i < entries.Count; i++)
+                spec.transitions[i].conditions = ParseConditions(entries[i]);
+            return spec;
+        }
+
+        private static string ExtractArray(string text, string key)
+        {
+            var at = text.IndexOf(key, StringComparison.Ordinal);
+            if (at < 0) return "[]";
+            var start = text.IndexOf('[', at);
+            int depth = 0;
+            for (int i = start; i < text.Length; i++)
+            {
+                if (text[i] == '[') depth++;
+                else if (text[i] == ']' && --depth == 0)
+                    return text.Substring(start, i - start + 1);
+            }
+            return "[]";
+        }
+
+        private static List<string> SplitObjects(string array)
+        {
+            var result = new List<string>();
+            int depth = 0, start = -1;
+            for (int i = 0; i < array.Length; i++)
+            {
+                var c = array[i];
+                if (c == '{')
+                {
+                    if (depth == 0) start = i;
+                    depth++;
+                }
+                else if (c == '}' && --depth == 0)
+                    result.Add(array.Substring(start, i - start + 1));
+            }
+            return result;
+        }
+
+        private static List<List<string>> ParseConditions(string transitionObject)
+        {
+            var result = new List<List<string>>();
+            var inner = ExtractArray(transitionObject, "\"conditions\"");
+            int depth = 0, start = -1;
+            for (int i = 0; i < inner.Length; i++)
+            {
+                var c = inner[i];
+                if (c == '[')
+                {
+                    depth++;
+                    if (depth == 2) start = i + 1;
+                }
+                else if (c == ']')
+                {
+                    if (depth == 2)
+                    {
+                        var items = inner.Substring(start, i - start).Split(',')
+                            .Select(x => x.Trim().Trim('"')).Where(x => x.Length > 0).ToList();
+                        result.Add(items);
+                    }
+                    depth--;
+                }
+            }
+            return result;
+        }
+
+        // glTFast wraps an animated scene in one extra root GameObject (the
+        // clips' paths are relative to it). The weapon contract wants the
+        // authored root as the prefab root, with `muzzle` and `weapon_hand_l`
+        // directly under it like every rigid weapon, so the authored root is
+        // lifted out and the clip paths lose their first segment.
+        private static GameObject AttachController(GameObject instance, string gltfPath, string outDir, string specPath)
+        {
+            var spec = ReadControllerSpec(specPath);
+            var sourceClips = AssetDatabase.LoadAllAssetsAtPath(gltfPath).OfType<AnimationClip>()
+                .Where(c => !c.name.StartsWith("__preview", StringComparison.Ordinal)).ToList();
+            if (sourceClips.Count == 0)
+                throw new InvalidOperationException("glTF at " + gltfPath + " carries no animations; a controller spec needs them.");
+
+            string stripPrefix = null;
+            var root = instance;
+            bool wrapper = instance.transform.childCount == 1
+                && instance.GetComponent<Renderer>() == null
+                && instance.GetComponentsInChildren<Renderer>(true).All(r => r.gameObject != instance);
+            if (wrapper)
+            {
+                var authored = instance.transform.GetChild(0);
+                stripPrefix = authored.name + "/";
+                authored.SetParent(null, worldPositionStays: false);
+                authored.localPosition = Vector3.zero;
+                authored.localRotation = Quaternion.identity;
+                authored.localScale = Vector3.one;
+                UnityEngine.Object.DestroyImmediate(instance);
+                root = authored.gameObject;
+                Debug.Log("Jiangyu BakeWeapon: lifted '" + root.name + "' out of the glTF scene wrapper.");
+            }
+            foreach (var stale in root.GetComponentsInChildren<Animator>(true))
+                UnityEngine.Object.DestroyImmediate(stale);
+
+            var path = outDir + "/weapon.controller";
+            AssetDatabase.DeleteAsset(path);
+            var ac = AnimatorController.CreateAnimatorControllerAtPath(path);
+            foreach (var p in spec.parameters)
+            {
+                if (!Enum.TryParse<AnimatorControllerParameterType>(p.type, true, out var type))
+                    throw new InvalidOperationException("Controller parameter '" + p.name + "' has unknown type '" + p.type + "' (Float, Int, Bool, Trigger).");
+                ac.AddParameter(p.name, type);
+            }
+
+            // clips are copied so the prefab never references the glTF asset:
+            // the path strip and the loop flag both need a clip of our own
+            var clips = new Dictionary<string, AnimationClip>(StringComparer.Ordinal);
+            AnimationClip ClipFor(string name, bool loop)
+            {
+                if (clips.TryGetValue(name, out var cached))
+                    return cached;
+                var src = sourceClips.FirstOrDefault(c => c.name == name)
+                    ?? sourceClips.FirstOrDefault(c => c.name.EndsWith("/" + name, StringComparison.Ordinal) || c.name.EndsWith("|" + name, StringComparison.Ordinal));
+                if (src == null)
+                    throw new InvalidOperationException("Controller state clip '" + name + "' is not among the glTF animations: " + string.Join(", ", sourceClips.Select(c => c.name)));
+                var clip = new AnimationClip { name = name, frameRate = src.frameRate, legacy = false };
+                foreach (var binding in AnimationUtility.GetCurveBindings(src))
+                {
+                    var b = binding;
+                    if (stripPrefix != null)
+                    {
+                        if (!b.path.StartsWith(stripPrefix, StringComparison.Ordinal))
+                            throw new InvalidOperationException("Clip '" + name + "' binds '" + b.path + "', which is not under the authored root '" + stripPrefix + "'.");
+                        b.path = b.path.Substring(stripPrefix.Length);
+                    }
+                    AnimationUtility.SetEditorCurve(clip, b, AnimationUtility.GetEditorCurve(src, binding));
+                }
+                var settings = AnimationUtility.GetAnimationClipSettings(clip);
+                settings.loopTime = loop;
+                AnimationUtility.SetAnimationClipSettings(clip, settings);
+                AssetDatabase.AddObjectToAsset(clip, ac);
+                clips[name] = clip;
+                return clip;
+            }
+
+            var sm = ac.layers[0].stateMachine;
+            var states = new Dictionary<string, AnimatorState>(StringComparer.Ordinal);
+            AnimatorState defaultState = null;
+            foreach (var st in spec.states)
+            {
+                var state = sm.AddState(st.name);
+                // every clip keys the full pose, so nothing is left for write
+                // defaults to restore; off keeps the prefab's rest pose intact
+                // for any state that animates fewer bones
+                state.writeDefaultValues = false;
+                state.motion = ClipFor(st.clip, st.loop);
+                states[st.name] = state;
+                if (st.@default)
+                    defaultState = state;
+            }
+            sm.defaultState = defaultState ?? states[spec.states[0].name];
+
+            foreach (var tr in spec.transitions)
+            {
+                if (!states.TryGetValue(tr.from, out var from) || !states.TryGetValue(tr.to, out var to))
+                    throw new InvalidOperationException("Controller transition " + tr.from + " -> " + tr.to + " names an unknown state.");
+                var t = from.AddTransition(to);
+                t.duration = tr.duration;
+                t.hasExitTime = tr.exitTime >= 0f;
+                if (t.hasExitTime) t.exitTime = tr.exitTime;
+                foreach (var cond in tr.conditions ?? new List<List<string>>())
+                {
+                    if (cond.Count < 2)
+                        throw new InvalidOperationException("Controller transition " + tr.from + " -> " + tr.to + " has a condition without a mode.");
+                    var param = cond[0];
+                    var mode = cond[1];
+                    float value = cond.Count > 2 ? float.Parse(cond[2], System.Globalization.CultureInfo.InvariantCulture) : 0f;
+                    AnimatorConditionMode m;
+                    switch (mode)
+                    {
+                        case "Equals": m = AnimatorConditionMode.Equals; break;
+                        case "NotEqual": m = AnimatorConditionMode.NotEqual; break;
+                        case "Greater": m = AnimatorConditionMode.Greater; break;
+                        case "Less": m = AnimatorConditionMode.Less; break;
+                        case "If": case "Trigger": m = AnimatorConditionMode.If; break;
+                        case "IfNot": m = AnimatorConditionMode.IfNot; break;
+                        default: throw new InvalidOperationException("Controller condition mode '" + mode + "' is not one of Equals, NotEqual, Greater, Less, If, IfNot, Trigger.");
+                    }
+                    t.AddCondition(m, value, param);
+                }
+                if (!t.hasExitTime && (tr.conditions == null || tr.conditions.Count == 0))
+                    throw new InvalidOperationException("Controller transition " + tr.from + " -> " + tr.to + " has neither conditions nor an exit time.");
+            }
+
+            var animator = root.AddComponent<Animator>();
+            animator.runtimeAnimatorController = ac;
+            animator.applyRootMotion = false;
+            animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+            AssetDatabase.SaveAssets();
+            Debug.Log("Jiangyu BakeWeapon: wrote " + path + " (" + spec.states.Count + " states, " + clips.Count + " clips).");
+            return root;
         }
 
         // Whether a material is already renderable in MENACE. A material asset under
