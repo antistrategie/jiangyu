@@ -99,15 +99,17 @@ public static partial class RpcHandlers
     // UiDump/UiNode define the ui.capture wire contract. The loader emits this shape (camelCase)
     // and BridgeUiCapture passes it through verbatim; [RpcType] generates the matching TS in the UI.
     // Mirror of the loader's UiTreeProbe dump (Jiangyu.Loader/Diagnostics/UiProbe/UiTreeProbe.cs).
+    // The bridge serialiser omits null fields, so every nullable field below is optional:
+    // absent on the wire, `undefined` in the generated TS.
     /// <summary>A live capture of the game's UI tree: the active screen, any open dialog, and the live tooltip overlay.</summary>
     [RpcType]
     internal sealed class UiDump
     {
         [JsonPropertyName("activeScreen")]
-        public required string? ActiveScreen { get; set; }
+        public string? ActiveScreen { get; set; }
 
         [JsonPropertyName("currentDialog")]
-        public required string? CurrentDialog { get; set; }
+        public string? CurrentDialog { get; set; }
 
         [JsonPropertyName("nodeCount")]
         public required int NodeCount { get; set; }
@@ -116,18 +118,18 @@ public static partial class RpcHandlers
         public required bool Truncated { get; set; }
 
         [JsonPropertyName("screenTree")]
-        public required UiNode? ScreenTree { get; set; }
+        public UiNode? ScreenTree { get; set; }
 
         [JsonPropertyName("dialogTree")]
-        public required UiNode? DialogTree { get; set; }
+        public UiNode? DialogTree { get; set; }
 
-        // Optional: the live tooltips on the overlay panel (pinned tooltips and nested children),
-        // captured from UIManager's tooltip stack. Absent in captures from a loader that predates
-        // tooltip capture, so it is not required.
+        // The live tooltips on the overlay panel (pinned tooltips and nested children),
+        // captured from UIManager's tooltip stack. Absent in captures from a loader that
+        // predates tooltip capture.
         [JsonPropertyName("tooltips")]
         public List<UiTooltip>? Tooltips { get; set; }
 
-        // Optional: every live UIDocument root, captured only when the request asked for
+        // Every live UIDocument root, captured only when the request asked for
         // allPanels. Surfaces UI that lives off the active screen's root (a second
         // UIDocument, an overlay panel). Absent from a default capture or an older loader.
         [JsonPropertyName("panels")]
@@ -139,13 +141,13 @@ public static partial class RpcHandlers
     internal sealed class UiPanel
     {
         [JsonPropertyName("gameObject")]
-        public required string? GameObject { get; set; }
+        public string? GameObject { get; set; }
 
         [JsonPropertyName("sortingOrder")]
         public required float SortingOrder { get; set; }
 
         [JsonPropertyName("tree")]
-        public required UiNode? Tree { get; set; }
+        public UiNode? Tree { get; set; }
     }
 
     /// <summary>A live tooltip from the overlay: its id, pin state, the element that triggered it, and its content tree.</summary>
@@ -153,16 +155,16 @@ public static partial class RpcHandlers
     internal sealed class UiTooltip
     {
         [JsonPropertyName("tooltipId")]
-        public required string? TooltipId { get; set; }
+        public string? TooltipId { get; set; }
 
         [JsonPropertyName("isPinned")]
         public required bool IsPinned { get; set; }
 
         [JsonPropertyName("trigger")]
-        public required UiNode? Trigger { get; set; }
+        public UiNode? Trigger { get; set; }
 
         [JsonPropertyName("tree")]
-        public required UiNode? Tree { get; set; }
+        public UiNode? Tree { get; set; }
     }
 
     /// <summary>A node in a captured UI tree.</summary>
@@ -170,23 +172,23 @@ public static partial class RpcHandlers
     internal sealed class UiNode
     {
         [JsonPropertyName("type")]
-        public required string? Type { get; set; }
+        public string? Type { get; set; }
 
         [JsonPropertyName("name")]
-        public required string? Name { get; set; }
+        public string? Name { get; set; }
 
         [JsonPropertyName("text")]
-        public required string? Text { get; set; }
+        public string? Text { get; set; }
 
         [JsonPropertyName("classes")]
-        public required List<string>? Classes { get; set; }
+        public List<string>? Classes { get; set; }
 
         [JsonPropertyName("children")]
-        public required List<UiNode>? Children { get; set; }
+        public List<UiNode>? Children { get; set; }
 
         // Computed style snapshot from the probe: geometry (x/y/w/h), colours (rgba
         // strings), fonts, borders, layout. Values are strings or numbers.
         [JsonPropertyName("style")]
-        public required Dictionary<string, object>? Style { get; set; }
+        public Dictionary<string, object>? Style { get; set; }
     }
 }

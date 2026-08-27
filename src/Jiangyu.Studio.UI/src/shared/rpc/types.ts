@@ -205,36 +205,36 @@ export interface BridgeStatusResult {
 }
 
 export interface UiDump {
-  activeScreen: string | null;
-  currentDialog: string | null;
+  activeScreen?: string | null;
+  currentDialog?: string | null;
   nodeCount: number;
   truncated: boolean;
-  screenTree: UiNode | null;
-  dialogTree: UiNode | null;
+  screenTree?: UiNode | null;
+  dialogTree?: UiNode | null;
   tooltips?: UiTooltip[] | null;
   panels?: UiPanel[] | null;
 }
 
 export interface UiPanel {
-  gameObject: string | null;
+  gameObject?: string | null;
   sortingOrder: number;
-  tree: UiNode | null;
+  tree?: UiNode | null;
 }
 
 export interface UiTooltip {
-  tooltipId: string | null;
+  tooltipId?: string | null;
   isPinned: boolean;
-  trigger: UiNode | null;
-  tree: UiNode | null;
+  trigger?: UiNode | null;
+  tree?: UiNode | null;
 }
 
 export interface UiNode {
-  type: string | null;
-  name: string | null;
-  text: string | null;
-  classes: string[] | null;
-  children: UiNode[] | null;
-  style: Record<string, unknown> | null;
+  type?: string | null;
+  name?: string | null;
+  text?: string | null;
+  classes?: string[] | null;
+  children?: UiNode[] | null;
+  style?: Record<string, unknown> | null;
 }
 
 export interface CodeSyncResult {

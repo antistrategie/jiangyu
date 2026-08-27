@@ -75,8 +75,8 @@ export function UiInspector() {
       }
       return false;
     };
-    if (dump.screenTree !== null) walk(dump.screenTree, "s");
-    if (dump.dialogTree !== null) walk(dump.dialogTree, "d");
+    if (dump.screenTree != null) walk(dump.screenTree, "s");
+    if (dump.dialogTree != null) walk(dump.dialogTree, "d");
     return { visible, matched };
   }, [dump, deferredQuery]);
 
@@ -174,7 +174,7 @@ export function UiInspector() {
             )}
             <span className={styles.label}>
               <span className={styles.type}>{node.type ?? "?"}</span>
-              {node.name !== null && node.name !== "" && (
+              {node.name != null && node.name !== "" && (
                 <span className={styles.name}>#{node.name}</span>
               )}
               {[...new Set(node.classes ?? [])].map((c) => (
@@ -182,7 +182,7 @@ export function UiInspector() {
                   .{c}
                 </span>
               ))}
-              {node.text !== null && node.text !== "" && (
+              {node.text != null && node.text !== "" && (
                 <span className={styles.text}>&ldquo;{truncate(node.text)}&rdquo;</span>
               )}
             </span>
@@ -211,19 +211,19 @@ export function UiInspector() {
       <div className={styles.body}>
         <div className={styles.meta}>
           <span>{dump.activeScreen ?? "(no screen)"}</span>
-          {dump.currentDialog !== null && <span>dialog: {dump.currentDialog}</span>}
+          {dump.currentDialog != null && <span>dialog: {dump.currentDialog}</span>}
           <span>{dump.nodeCount} nodes</span>
           {dump.truncated && <span className={styles.truncated}>truncated</span>}
         </div>
         <div className={styles.tree} ref={treeRef}>
-          {dump.screenTree !== null && renderNode(dump.screenTree, "s", 0)}
-          {dump.dialogTree !== null && (
+          {dump.screenTree != null && renderNode(dump.screenTree, "s", 0)}
+          {dump.dialogTree != null && (
             <>
               <div className={styles.section}>Dialog</div>
               {renderNode(dump.dialogTree, "d", 0)}
             </>
           )}
-          {dump.screenTree === null && dump.dialogTree === null && (
+          {dump.screenTree == null && dump.dialogTree == null && (
             <div className={styles.section}>No UI tree captured.</div>
           )}
         </div>
