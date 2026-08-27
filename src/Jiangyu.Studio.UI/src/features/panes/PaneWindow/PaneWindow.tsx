@@ -4,7 +4,7 @@ import { TemplateBrowser } from "@features/templates/TemplateBrowser/TemplateBro
 import { SimplePaneView } from "@features/panes/paneComponents";
 import { TabbedMonacoEditor } from "@features/editor/CodeEditor/TabbedMonacoEditor";
 import { rpcCall, subscribe } from "@shared/rpc";
-import { useApplyUiFontScale } from "@features/settings/settings";
+import { useApplyTheme, useApplyUiFontScale } from "@features/settings/settings";
 import { useEditorContent, useEditorContentSync } from "@features/editor/content";
 import {
   CROSS_TAB_MIME,
@@ -50,6 +50,7 @@ export function PaneWindow({
   browserState,
 }: PaneWindowProps) {
   useApplyUiFontScale();
+  useApplyTheme();
 
   useEffect(() => {
     document.title = titleFor(paneKind, activeFilePath);

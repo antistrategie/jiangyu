@@ -12,9 +12,9 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--ink-0);
+  background: var(--bg-inverse);
   color: var(--fg-on-inverse);
-  border-right: 1px solid var(--ink-0);
+  border-right: 1px solid var(--bg-inverse);
 }
 
 .logEyebrow {
@@ -40,21 +40,21 @@
   line-height: 1.75;
   color: var(--fg-on-inverse);
   scrollbar-width: thin;
-  scrollbar-color: var(--ink-2) var(--ink-0);
+  scrollbar-color: var(--scrollbar-on-inverse) var(--bg-inverse);
 }
 
 .log::-webkit-scrollbar {
   width: 6px;
-  background: var(--ink-0);
+  background: var(--bg-inverse);
 }
 .log::-webkit-scrollbar-track {
-  background: var(--ink-0);
+  background: var(--bg-inverse);
 }
 .log::-webkit-scrollbar-thumb {
-  background: var(--ink-2);
+  background: var(--scrollbar-on-inverse);
 }
 .log::-webkit-scrollbar-thumb:hover {
-  background: var(--ink-3);
+  background: var(--scrollbar-on-inverse-hover);
 }
 
 .logIdle {
@@ -94,7 +94,7 @@
   display: inline-block;
   width: 16px;
   flex-shrink: 0;
-  color: var(--paper-3);
+  color: var(--fg-on-inverse-muted);
 }
 
 .logMessage {

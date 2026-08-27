@@ -128,13 +128,13 @@
 }
 
 .dropTarget {
-  background: var(--cinnabar-1);
-  color: var(--paper-0);
+  background: var(--accent-fill);
+  color: var(--fg-on-accent);
 }
 
 .dropTarget .icon,
 .dropTarget .entryName {
-  color: var(--paper-0);
+  color: var(--fg-on-accent);
 }
 
 .renameInput {
@@ -169,6 +169,6 @@
 }
 
 .resizeHandle:hover {
-  background: var(--cinnabar-1);
+  background: var(--accent-fill);
   opacity: 0.3;
 }

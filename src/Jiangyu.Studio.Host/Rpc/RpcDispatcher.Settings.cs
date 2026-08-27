@@ -47,6 +47,10 @@ public static partial class RpcDispatcher
                     StudioSettings.UiFontScaleMin,
                     StudioSettings.UiFontScaleMax);
                 break;
+            case "theme":
+                var theme = valueElement.GetString() ?? "light";
+                settings.Theme = theme is "dark" ? "dark" : "light";
+                break;
             case "editorWordWrap":
                 var ww = valueElement.GetString() ?? "on";
                 settings.EditorWordWrap = ww is "off" ? "off" : "on";

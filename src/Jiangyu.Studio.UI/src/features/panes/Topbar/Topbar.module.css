@@ -3,10 +3,10 @@
   align-items: center;
   gap: var(--space-4);
   padding: var(--space-1) var(--space-2);
-  background: var(--ink-0);
+  background: var(--bg-inverse);
   border-bottom: 1px solid var(--rule-on-inverse);
   flex-shrink: 0;
-  color: var(--paper-0);
+  color: var(--fg-on-inverse);
 }
 
 .wordmark {
@@ -25,7 +25,7 @@
   font-size: 22px;
   font-weight: 900;
   letter-spacing: var(--tracking-wide);
-  color: var(--paper-0);
+  color: var(--fg-on-inverse);
 }
 
 .separator {
@@ -38,7 +38,7 @@
 .breadcrumb {
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
-  color: var(--paper-3);
+  color: var(--fg-on-inverse-muted);
 }
 
 .branch {
@@ -47,7 +47,7 @@
   gap: var(--space-1);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
-  color: var(--ink-4);
+  color: var(--fg-on-inverse-subtle);
   /* Tight line-height keeps the icon and text centres aligned so the
      branch reads as one unit rather than a wobbly glyph + label. */
   line-height: 1;
@@ -68,8 +68,8 @@
   padding: var(--space-1) var(--space-3);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
-  color: var(--paper-3);
-  background: var(--ink-1);
+  color: var(--fg-on-inverse-muted);
+  background: var(--bg-inverse-2);
   border: 1px solid var(--rule-on-inverse);
   cursor: pointer;
   min-width: 260px;
@@ -89,5 +89,5 @@
   font-size: var(--fs-xs);
   border: 1px solid var(--rule-on-inverse);
   padding: 1px var(--space-1);
-  color: var(--paper-3);
+  color: var(--fg-on-inverse-muted);
 }

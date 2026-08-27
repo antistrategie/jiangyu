@@ -29,6 +29,11 @@ public sealed class StudioSettings
     [JsonPropertyName("uiFontScale")]
     public int UiFontScale { get; set; } = UiFontScaleDefault;
 
+    /// <summary>"light" or "dark". Drives the `data-theme` attribute on the
+    /// Studio document root.</summary>
+    [JsonPropertyName("theme")]
+    public string Theme { get; set; } = "light";
+
     [JsonPropertyName("editorWordWrap")]
     public string EditorWordWrap { get; set; } = "on";
 

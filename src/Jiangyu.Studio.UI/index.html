@@ -13,6 +13,19 @@
       // TODO: remove once https://github.com/InfiniLore/InfiniFrame/issues/407 is fixed
       window.__dispatchMessageCallback = (m) => window.__infiniframe_dispatch?.(m);
     </script>
+    <script>
+      // Paint in the user's theme from the first frame. Studio's settings
+      // layer mirrors every preference into localStorage, so the value is
+      // readable synchronously here, ahead of the bundle and ahead of the
+      // RPC round-trip that reconciles against studio.json.
+      try {
+        const raw = localStorage.getItem("jiangyu:setting:theme");
+        const theme = raw === null ? "light" : JSON.parse(raw);
+        document.documentElement.dataset.theme = theme === "dark" ? "dark" : "light";
+      } catch {
+        document.documentElement.dataset.theme = "light";
+      }
+    </script>
   </head>
   <body>
     <div id="root">
@@ -27,13 +40,25 @@
           }
         }
 
+        :root {
+          --jy-splash-bg: #ebe4d6;
+          --jy-splash-fg: #6e655a;
+          --jy-splash-track: #ddd3c0;
+        }
+
+        [data-theme="dark"] {
+          --jy-splash-bg: #1a1714;
+          --jy-splash-fg: #8f8676;
+          --jy-splash-track: #2b2721;
+        }
+
         .jy-splash {
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
           height: 100dvh;
-          background: #ebe4d6;
+          background: var(--jy-splash-bg);
         }
 
         .jy-splash-image {
@@ -47,7 +72,7 @@
           display: flex;
           align-items: center;
           gap: 8px;
-          color: #6e655a;
+          color: var(--jy-splash-fg);
           font-size: 14px;
           letter-spacing: 0.04em;
           text-transform: uppercase;
@@ -56,8 +81,8 @@
         .jy-splash-spinner {
           width: 14px;
           height: 14px;
-          border: 2px solid #ddd3c0;
-          border-top-color: #6e655a;
+          border: 2px solid var(--jy-splash-track);
+          border-top-color: var(--jy-splash-fg);
           border-radius: 50%;
           animation: jy-splash-spin 0.8s linear infinite;
         }

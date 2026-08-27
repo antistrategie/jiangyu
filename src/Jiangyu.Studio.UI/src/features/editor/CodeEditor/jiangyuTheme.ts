@@ -8,8 +8,8 @@ import type { editor } from "monaco-editor";
 // prefixed. Blended overlays (selection/find highlights) are composed by
 // suffixing a 2-hex-digit alpha onto a resolved token.
 
-function readToken(name: string): string {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+function readToken(style: CSSStyleDeclaration, name: string): string {
+  const raw = style.getPropertyValue(name).trim();
   return raw.startsWith("#") ? raw.slice(1) : raw;
 }
 
@@ -18,28 +18,32 @@ function hashed(hex: string): string {
 }
 
 export function buildJiangyuTheme(): editor.IStandaloneThemeData {
-  const ink0 = readToken("--ink-0");
-  const ink1 = readToken("--ink-1");
-  const ink2 = readToken("--ink-2");
-  const ink3 = readToken("--ink-3");
-  const ink4 = readToken("--ink-4");
-  const paper0 = readToken("--paper-0");
-  const paper1 = readToken("--paper-1");
-  const paper2 = readToken("--paper-2");
-  const paper3 = readToken("--paper-3");
-  const cinnabar0 = readToken("--cinnabar-0");
-  const cinnabar1 = readToken("--cinnabar-1");
-  const gold0 = readToken("--gold-0");
-  const gold2 = readToken("--gold-2");
-  const jade0 = readToken("--jade-0");
-  const jade1 = readToken("--jade-1");
-  // Editorial fallback for escape sequences / predefined variables — a darker
-  // gold that doesn't currently have a token. Kept inline rather than promoted
-  // because it only appears inside the Monaco theme.
-  const goldDark = "6e5520";
+  // `inherit: false` means the base only supplies Monaco's own defaults for
+  // colours the rules below leave unset, but those defaults still have to sit
+  // on the right side of the surface.
+  const base = document.documentElement.dataset.theme === "dark" ? "vs-dark" : "vs";
+  // One style resolution for the whole theme. getComputedStyle forces a style
+  // recalc on the root, and this runs on every theme switch.
+  const style = getComputedStyle(document.documentElement);
+  const ink0 = readToken(style, "--ink-0");
+  const ink1 = readToken(style, "--ink-1");
+  const ink2 = readToken(style, "--ink-2");
+  const ink3 = readToken(style, "--ink-3");
+  const ink4 = readToken(style, "--ink-4");
+  const paper0 = readToken(style, "--paper-0");
+  const paper1 = readToken(style, "--paper-1");
+  const paper2 = readToken(style, "--paper-2");
+  const paper3 = readToken(style, "--paper-3");
+  const cinnabar0 = readToken(style, "--cinnabar-0");
+  const cinnabar1 = readToken(style, "--cinnabar-1");
+  const gold0 = readToken(style, "--gold-0");
+  const gold2 = readToken(style, "--gold-2");
+  const jade0 = readToken(style, "--jade-0");
+  const jade1 = readToken(style, "--jade-1");
+  const goldDark = readToken(style, "--gold-deep");
 
   return {
-    base: "vs",
+    base,
     inherit: false,
     rules: [
       { token: "", foreground: ink1, background: paper0 },

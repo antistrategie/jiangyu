@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import indexHtml from "../../../index.html?raw";
 import {
   EDITOR_FONT_SIZE_DEFAULT,
   EDITOR_FONT_SIZE_MAX,
@@ -8,6 +9,7 @@ import {
   SESSION_RESTORE_PROJECT_DEFAULT,
   SESSION_RESTORE_TABS_DEFAULT,
   SIDEBAR_HIDDEN_DEFAULT,
+  THEME_DEFAULT,
   AI_ENABLED_DEFAULT,
   UI_FONT_SCALE_DEFAULT,
   UI_FONT_SCALE_MAX,
@@ -18,6 +20,7 @@ import {
   loadSessionRestoreProject,
   loadSessionRestoreTabs,
   loadSidebarHidden,
+  loadTheme,
   loadUiFontScale,
   loadAiEnabled,
   saveEditorFontSize,
@@ -26,6 +29,7 @@ import {
   saveSessionRestoreProject,
   saveSessionRestoreTabs,
   saveSidebarHidden,
+  saveTheme,
   saveUiFontScale,
   saveAiEnabled,
 } from "./settings";
@@ -120,6 +124,43 @@ describe("editor word wrap", () => {
   it("falls back to default for unrecognised values", () => {
     localStorage.setItem("jiangyu:setting:editorWordWrap", JSON.stringify("sideways"));
     expect(loadEditorWordWrap()).toBe(EDITOR_WORD_WRAP_DEFAULT);
+  });
+});
+
+// The boot script in index.html stamps data-theme before the bundle loads, so
+// it reads the localStorage mirror by hand. Tie its literal key to the key the
+// setting actually writes, since a drift between them is silent: the boot
+// script just falls back to light and the app flashes on every launch.
+describe("boot script", () => {
+  it("reads the same storage key the theme setting writes", () => {
+    const written: string[] = [];
+    vi.stubGlobal("localStorage", {
+      getItem: () => null,
+      setItem: (key: string) => written.push(key),
+      removeItem: () => {},
+      clear: () => {},
+    });
+
+    saveTheme("dark");
+
+    expect(written).toHaveLength(1);
+    expect(indexHtml).toContain(`localStorage.getItem("${written[0] ?? ""}")`);
+  });
+});
+
+describe("theme", () => {
+  it("returns the default when nothing is stored", () => {
+    expect(loadTheme()).toBe(THEME_DEFAULT);
+  });
+
+  it("round-trips 'dark'", () => {
+    saveTheme("dark");
+    expect(loadTheme()).toBe("dark");
+  });
+
+  it("falls back to default for unrecognised values", () => {
+    localStorage.setItem("jiangyu:setting:theme", JSON.stringify("sepia"));
+    expect(loadTheme()).toBe(THEME_DEFAULT);
   });
 });
 

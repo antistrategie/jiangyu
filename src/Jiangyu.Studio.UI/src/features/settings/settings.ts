@@ -14,7 +14,7 @@
  * Hook updates are broadcast via a local pub-sub so multiple editor panes
  * reading the same setting stay in lock-step within one window.
  */
-import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useSyncExternalStore } from "react";
 import { rpcCall, type StudioSettings } from "@shared/rpc";
 import { loadRaw, saveJson } from "@shared/storage";
 
@@ -31,6 +31,16 @@ function subscribe(fn: () => void): () => void {
 
 function notify(): void {
   for (const fn of subscribers) fn();
+}
+
+// The pub-sub above is per document, and a torn-out pane window is its own
+// document. localStorage is the shared surface between them: a write in one
+// window raises `storage` in the others, which re-reads the mirror and lets
+// hooks like useApplyTheme run there too.
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (event.key === null || event.key.startsWith(STORAGE_PREFIX)) notify();
+  });
 }
 
 // --- setting factory ---------------------------------------------------------
@@ -128,6 +138,35 @@ export function useApplyUiFontScale(): void {
   useEffect(() => {
     document.documentElement.style.setProperty("--fs-scale", String(scale / 100));
   }, [scale]);
+}
+
+// --- theme -----------------------------------------------------------------
+
+export type Theme = "light" | "dark";
+export const THEME_DEFAULT: Theme = "light";
+
+const theme = defineSetting<Theme>("theme", {
+  default: THEME_DEFAULT,
+  parse: parseEnum(["light", "dark"], THEME_DEFAULT),
+});
+
+export const loadTheme = theme.load;
+export const saveTheme = theme.save;
+export const useTheme = theme.use;
+
+/** Side-effect hook: mirror the theme onto `data-theme` on the document
+ *  root, which is what tokens.css keys the dark ramps off. Call once at
+ *  each window's root. The boot script in index.html sets the same
+ *  attribute before first paint, so this reconciles rather than initialises. */
+export function useApplyTheme(): void {
+  const [value] = useTheme();
+  // Layout effect, not a passive one: the Monaco theme is rebuilt from the
+  // resolved token values in a passive effect, and React flushes every layout
+  // effect in a commit before any passive one. Downgrading this to useEffect
+  // would leave the editor rebuilt from the outgoing palette.
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = value;
+  }, [value]);
 }
 
 // --- editor word wrap ------------------------------------------------------

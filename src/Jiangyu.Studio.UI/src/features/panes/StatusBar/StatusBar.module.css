@@ -3,10 +3,10 @@
   align-items: center;
   height: 26px;
   padding: 0 var(--space-1);
-  background: var(--ink-0);
+  background: var(--bg-inverse);
   border-top: 1px solid var(--rule-on-inverse);
   flex-shrink: 0;
-  color: var(--paper-3);
+  color: var(--fg-on-inverse-muted);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   /* line-height: 1 keeps text boxes tight so icons and text glyphs centre
@@ -28,7 +28,7 @@
 }
 
 .barRunning {
-  background: var(--jade-0);
+  background: var(--bg-status-running);
   border-top-color: var(--jade-1);
 }
 
@@ -50,7 +50,7 @@
 
 .progressFill {
   height: 100%;
-  background: var(--cinnabar-1);
+  background: var(--accent-fill);
   transition: width 200ms linear;
 }
 
@@ -63,14 +63,14 @@
   padding: 0;
   background: transparent;
   border: none;
-  color: var(--paper-3);
+  color: var(--fg-on-inverse-muted);
   cursor: pointer;
   flex-shrink: 0;
   transition: color var(--ease-fast);
 }
 
 .sidebarToggle:hover {
-  color: var(--paper-0);
+  color: var(--fg-on-inverse);
 }
 
 /* Vertical rule between the sidebar toggle and the compile region.
@@ -88,7 +88,7 @@
 }
 
 .statusIconIdle {
-  color: var(--paper-3);
+  color: var(--fg-on-inverse-muted);
   flex-shrink: 0;
 }
 
@@ -120,16 +120,16 @@
 }
 
 .compileRegion:hover {
-  color: var(--paper-0);
+  color: var(--fg-on-inverse);
 }
 
 .phase {
-  color: var(--paper-0);
+  color: var(--fg-on-inverse);
   font-weight: 500;
 }
 
 .statusLine {
-  color: var(--paper-3);
+  color: var(--fg-on-inverse-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -137,7 +137,7 @@
 }
 
 .duration {
-  color: var(--paper-3);
+  color: var(--fg-on-inverse-muted);
   flex-shrink: 0;
 }
 
@@ -155,7 +155,7 @@
 }
 
 .idle {
-  color: var(--paper-3);
+  color: var(--fg-on-inverse-muted);
 }
 
 .spacer {
@@ -165,6 +165,6 @@
 .kbd {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  color: var(--ink-4);
+  color: var(--fg-on-inverse-subtle);
   flex-shrink: 0;
 }

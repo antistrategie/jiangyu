@@ -14,7 +14,7 @@
   width: min(640px, 90vw);
   max-height: 72vh;
   background: var(--bg-raised);
-  border: 1px solid var(--ink-0);
+  border: 1px solid var(--rule-strong);
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;

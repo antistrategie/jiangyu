@@ -13,6 +13,7 @@ import { rpcCall } from "@shared/rpc";
 import {
   loadSessionRestoreProject,
   useAiEnabled,
+  useApplyTheme,
   useApplyUiFontScale,
   useSidebarHidden,
 } from "@features/settings/settings";
@@ -98,6 +99,7 @@ function packageMod(): void {
 
 export function App() {
   useApplyUiFontScale();
+  useApplyTheme();
   useEditorContentSync();
 
   const [sidebarHidden, setSidebarHidden] = useSidebarHidden();

@@ -16,7 +16,7 @@
 }
 
 .searchInput:focus {
-  border-color: var(--ink-0);
+  border-color: var(--rule-strong);
 }
 
 .searchInput::placeholder {

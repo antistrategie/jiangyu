@@ -753,16 +753,16 @@
   text-transform: uppercase;
   letter-spacing: var(--tracking-wider);
   padding: 4px 12px;
-  border: 1px solid var(--ink-0);
-  background: var(--ink-0);
-  color: var(--paper-0);
+  border: 1px solid var(--bg-inverse);
+  background: var(--bg-inverse);
+  color: var(--fg-on-inverse);
   cursor: pointer;
   white-space: nowrap;
   transition: background var(--ease-fast);
 }
 
 .sendBtn:hover {
-  background: var(--ink-1);
+  background: var(--bg-inverse-2);
 }
 
 .sendBtn:disabled {
@@ -841,14 +841,14 @@
 
 /* Active boolean toggle reads as "filled". */
 .optionsTriggerActive {
-  background: var(--ink-0);
-  color: var(--paper-0);
-  border-color: var(--ink-0);
+  background: var(--bg-inverse);
+  color: var(--fg-on-inverse);
+  border-color: var(--bg-inverse);
 }
 
 .optionsTriggerActive:hover {
-  background: var(--ink-1);
-  color: var(--paper-0);
+  background: var(--bg-inverse-2);
+  color: var(--fg-on-inverse);
 }
 
 .optionsTriggerLabel {
@@ -875,7 +875,7 @@
    for visual parity with the choice-list popover. */
 .optionsFreeform {
   background: var(--bg-raised);
-  border: 1px solid var(--ink-0);
+  border: 1px solid var(--rule-strong);
   padding: var(--space-2);
 }
 
@@ -893,5 +893,5 @@
 .optionsTextInput:focus,
 .optionsNumberInput:focus {
   outline: none;
-  border-color: var(--ink-2);
+  border-color: var(--rule);
 }

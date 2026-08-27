@@ -337,7 +337,7 @@
 
 .matrixCellTrue {
   background: var(--cinnabar-2);
-  color: var(--cinnabar-0);
+  color: var(--fg-on-accent-weak);
   border-color: var(--cinnabar-1);
 }
 
@@ -926,7 +926,7 @@
 
 .dropIndicator {
   height: 2px;
-  background: var(--cinnabar-1);
+  background: var(--accent-fill);
   pointer-events: none;
   margin: -1px 0;
   position: relative;

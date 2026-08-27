@@ -55,14 +55,14 @@
 }
 
 .kindPillActive {
-  color: var(--paper-0);
-  background: var(--cinnabar-1);
+  color: var(--fg-on-accent);
+  background: var(--accent-fill);
   border-color: var(--cinnabar-1);
 }
 
 .kindPillActive:hover {
-  color: var(--paper-0);
-  background: var(--cinnabar-1);
+  color: var(--fg-on-accent);
+  background: var(--accent-fill);
 }
 
 .collectionSelect {
@@ -215,7 +215,7 @@
 }
 
 .splitHandle:hover::before {
-  background: var(--cinnabar-1);
+  background: var(--accent-fill);
 }
 
 .detailsPanel {
@@ -395,7 +395,7 @@
   top: 0;
   left: 0;
   height: 100%;
-  background: var(--cinnabar-1);
+  background: var(--accent-fill);
   pointer-events: none;
 }
 
@@ -466,6 +466,6 @@
   top: 0;
   bottom: 0;
   left: 0;
-  background: var(--cinnabar-1);
+  background: var(--accent-fill);
   transition: width var(--ease-fast-linear);
 }

@@ -12,6 +12,37 @@ Five families. Tokens in `src/Jiangyu.Studio.UI/src/styles/tokens.css`.
 - **Gold** — decorative eyebrows on dark panels only
 - **Jade** — informational/verified states
 
+### Two ramps, two roles
+
+Ink and paper are ramps, not colours. `--paper-*` is the surface ramp (paper-1 the base,
+paper-0 the raised panel, paper-2 the hover and well fill, paper-3 the strongest row
+selection). `--ink-*` is the mark ramp (ink-0 the strongest, ink-4 the faintest). Everything
+else follows: `--bg*`, `--fg*` and `--rule*` alias the two ramps, and the dark theme swaps the
+ramps under `[data-theme="dark"]`.
+
+Painting a surface from the ink ramp or a mark from the paper ramp reads correctly in light
+and inverts into illegibility in dark, so the semantic tokens carry the places that want the
+other ramp:
+
+- `--bg-inverse` / `--bg-inverse-2`: ink chrome, meaning the topbar, status bar, compile log
+  and filled ink controls. Dark sinks this below the workspace so the frame still reads as a
+  frame.
+- `--fg-on-inverse`, `--fg-on-inverse-muted`, `--fg-on-inverse-subtle`, `--rule-on-inverse`:
+  marks and seams on that chrome.
+- `--fg-on-accent`: ink on a cinnabar fill. Cinnabar carries its own contrast, so this is the
+  same colour in both themes.
+- `--accent-fill` and `--bg-status-running`: cinnabar and jade in their fill role. On paper one
+  colour serves both roles, on ink they pull apart, because a fill sitting under near-white ink
+  has to be deep while a mark on a dark surface has to be bright. `--cinnabar-*` and `--jade-*`
+  stay marks, so never paint a fill from them.
+- `--fg-on-accent-weak`: the deep mark that sits on `--accent-weak`, which is a light fill in
+  dark.
+
+`src/styles/tokens.test.ts` enforces three things: no component stylesheet paints across the
+ramps, every literal colour in `:root` is restated in the dark block, and every foreground and
+surface pairing clears its contrast floor in both themes. Add a pair to that list whenever a
+token starts carrying text.
+
 ## Typography
 
 Six semantic roles in `tokens.css`. Do not mix them up.
@@ -30,6 +61,11 @@ Western labels are ALL CAPS with `--tracking-wider` / `--tracking-section`. Chin
 - **Corner radii**: `0` everywhere. Jiangyu is hard-edged.
 - **Borders**: hairline-first. 1px default, 2px for emphasis. Double keyline (nested 1px with 4px gap) for hero frames only.
 - **Shadows**: essentially none. Depth comes from hairline borders and paper-vs-ink contrast.
+- **Theme**: light and dark, chosen in Settings · Appearance and persisted as `theme` in
+  `studio.json`. The boot script in `index.html` stamps `data-theme` before first paint, and a
+  switch rebuilds the Monaco theme from the resolved tokens. Torn-out pane windows are separate
+  documents, so they follow through the localStorage mirror's `storage` event rather than the
+  in-document pub-sub.
 - **Animation**: minimal. Fades only, 80–120ms, `ease-out`. No bounces, springs, or parallax. Hover = instant colour swap. Press = 1px inset shadow (no scale).
 - **Iconography**: hairline SVG icons, 24px grid, `stroke-width: 1.25`. No icon fonts, no emoji, no PNG icons.
 - **Imagery tone**: warm, painted, hand-rendered. Grain preserved. Never cold, never purple, never gradients.

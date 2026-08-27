@@ -85,6 +85,7 @@ export interface PaneWindowOpenedAck {
 export interface StudioSettings {
   editorFontSize: number;
   uiFontScale: number;
+  theme?: string;
   editorWordWrap?: string;
   sidebarHidden: boolean;
   sessionRestoreProject: boolean;

@@ -60,6 +60,10 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // Process CSS so `?raw` imports resolve to stylesheet source. The theme
+    // token guard in src/styles/tokens.test.ts reads the component
+    // stylesheets that way.
+    css: true,
     include: ["src/**/*.test.ts"],
   },
 });

@@ -16,6 +16,7 @@ import {
   useEditorFontSize,
   useEditorKeybindMode,
   useEditorWordWrap,
+  useTheme,
   useTemplateEditorMode,
   type TemplateEditorMode,
 } from "@features/settings/settings";
@@ -165,6 +166,7 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
   const [fontSize] = useEditorFontSize();
   const [wordWrap] = useEditorWordWrap();
   const [keybindMode] = useEditorKeybindMode();
+  const [theme] = useTheme();
   const [defaultEditorMode] = useTemplateEditorMode();
   const projectPath = useProjectStore((s) => s.projectPath);
   // Per-file mode overrides: paths in this set deviate from the global default.
@@ -270,6 +272,15 @@ export function TabbedMonacoEditor(props: TabbedMonacoEditorProps) {
       adapter?.dispose();
     };
   }, [editor, keybindMode]);
+
+  // The theme is built from the resolved :root tokens, so a theme switch has
+  // to rebuild it. defineTheme under the same name updates every live editor.
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    if (!monaco) return;
+    monaco.editor.defineTheme("jiangyu", buildJiangyuTheme());
+    monaco.editor.setTheme("jiangyu");
+  }, [theme]);
 
   // KDL parse diagnostics: run templatesParse on template KDL files and set
   // Monaco model markers so errors appear as squiggles in source mode.

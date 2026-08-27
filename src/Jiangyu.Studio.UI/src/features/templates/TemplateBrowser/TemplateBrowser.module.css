@@ -182,7 +182,7 @@
 }
 
 .splitHandle:hover::before {
-  background: var(--cinnabar-1);
+  background: var(--accent-fill);
 }
 
 /* --- Rows --- */
@@ -376,8 +376,8 @@
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   padding: var(--space-1) var(--space-3);
-  background: var(--cinnabar-1);
-  color: var(--paper-0);
+  background: var(--accent-fill);
+  color: var(--fg-on-accent);
   border: 1px solid var(--cinnabar-1);
   cursor: pointer;
   transition: filter var(--ease-fast);
@@ -672,7 +672,7 @@
 
 .matrixCellTrue {
   background: var(--cinnabar-2);
-  color: var(--cinnabar-0);
+  color: var(--fg-on-accent-weak);
   border-color: var(--cinnabar-1);
 }
 

@@ -38,8 +38,7 @@
   width: 120px;
   height: auto;
   opacity: 0.85;
-  filter: brightness(0) saturate(100%) invert(18%) sepia(75%) saturate(2800%) hue-rotate(355deg)
-    brightness(110%) contrast(98%);
+  filter: var(--tint-accent);
 }
 
 .subtitle {

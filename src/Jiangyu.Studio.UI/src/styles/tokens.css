@@ -51,6 +51,7 @@
   --cinnabar-2: #c23b29;
 
   /* Gold */
+  --gold-deep: #6e5520;
   --gold-0: #8a6d2a;
   --gold-1: #b89248;
   --gold-2: #d4b26a;
@@ -74,14 +75,32 @@
   --fg-subtle: var(--ink-4);
   --fg-on-inverse: var(--paper-0);
   --fg-on-inverse-muted: var(--paper-3);
+  /* Quietest mark on ink chrome: the git branch, keyboard hints. */
+  --fg-on-inverse-subtle: var(--ink-4);
 
-  /* Accent */
+  /* Accent. The fill and the mark are separate roles: on paper one colour
+     serves both, on ink they pull apart, since a fill under near-white ink
+     has to be deep and a mark on a dark surface has to be bright. */
   --accent: var(--cinnabar-1);
   --accent-strong: var(--cinnabar-0);
   --accent-weak: var(--cinnabar-2);
+  --accent-fill: var(--cinnabar-1);
+  /* Text and glyphs sitting on a cinnabar fill. Cinnabar carries its own
+     weight in both themes, so this stays paper in both. */
+  --fg-on-accent: #f4efe6;
+  /* Ink on the weak accent fill, which is light enough to take a deep mark. */
+  --fg-on-accent-weak: var(--cinnabar-0);
+
+  /* Text selection. The fill is its own token: cinnabar rises in the dark
+     ramp, which would leave the selected glyphs washed out. */
+  --selection-bg: var(--cinnabar-2);
+  --selection-fg: var(--ink-0);
 
   /* Status */
   --success: #5a7a3a;
+  /* Fill for the status bar's running state, which is chrome rather than a
+     mark, so it stays deep in both themes. */
+  --bg-status-running: var(--jade-0);
   --warning: var(--gold-1);
   --danger: var(--cinnabar-1);
   --info: var(--jade-1);
@@ -94,6 +113,9 @@
   /* Hairline on ink-0 surfaces (topbar, statusbar): a touch lighter than ink-1
      so the panel edge reads as a seam, not as a flat block. */
   --rule-on-inverse: #3a332b;
+  /* Scrollbar thumb on an ink surface (the compile log). */
+  --scrollbar-on-inverse: var(--ink-2);
+  --scrollbar-on-inverse-hover: var(--ink-3);
 
   /* Type stacks — families map to semantic roles per the Jiangyu Design System.
      Cormorant SC is the chiseled carved-stone western display serif; pair with
@@ -154,6 +176,11 @@
   --shadow-sm: 0 6px 24px rgba(0, 0, 0, 0.18);
   --shadow-lg: 0 18px 60px rgba(30, 26, 22, 0.25);
 
+  /* Filter chain that tints black line art (the welcome-screen stroke) to
+     cinnabar. The dark theme lifts the same chain rather than swapping art. */
+  --tint-accent: brightness(0) saturate(100%) invert(18%) sepia(75%) saturate(2800%)
+    hue-rotate(355deg) brightness(110%) contrast(98%);
+
   /* Track colour behind the spinner when it sits on an accent surface. */
   --track-on-accent: rgba(255, 255, 255, 0.3);
 
@@ -170,4 +197,83 @@
   --z-toast: 9000; /* transient feedback */
   --z-portal: 9999; /* portaled dropdowns that must sit above modals */
   --z-drag-chip: 2147483647; /* cross-window drag image */
+}
+
+/* =========================================================================
+   Dark theme, set by `data-theme="dark"` on the document root (see the
+   theme setting in features/settings/settings.ts and the boot script in
+   index.html).
+
+   The ramps carry the flip. `--paper-*` is the surface ramp and `--ink-*`
+   is the mark ramp, so redefining the two ramps re-points every semantic
+   token and every `color-mix` overlay derived from them. Rules, inverse
+   chrome, and the status hues are restated below where a straight ramp
+   swap would land in the wrong place.
+   ========================================================================= */
+[data-theme="dark"] {
+  /* Surfaces. Ordered by distance from the base rather than by lightness:
+     paper-1 is the workspace, paper-0 the raised panel, paper-2 the hover
+     and well fill, paper-3 the strongest row selection. */
+  --paper-0: #221f1a;
+  --paper-1: #1a1714;
+  --paper-2: #2b2721;
+  --paper-3: #3a352d;
+
+  /* Marks. Warm off-whites so the ink keeps its sumi cast. */
+  --ink-0: #f2ece0;
+  --ink-1: #e2dbcc;
+  --ink-2: #b4ab99;
+  --ink-3: #8f8676;
+  --ink-4: #6d6559;
+
+  /* Cinnabar, gold and jade lift so they carry against ink. Ordering flips
+     with them: the 0 step is the emphatic one, the 2 step the quietest. Every
+     step here is a mark. Fills take --accent-fill and --bg-status-running,
+     which travel the other way. */
+  --cinnabar-0: #f09580;
+  --cinnabar-1: #e0705a;
+  --cinnabar-2: #d96a54;
+
+  --gold-deep: #a8853f;
+  --gold-0: #c9a45a;
+  --gold-1: #d4ab5e;
+  --gold-2: #e6cd92;
+
+  --jade-0: #a9cfc0;
+  --jade-1: #7fa697;
+  --jade-2: #9dbfb2;
+
+  --accent-fill: #c0402c;
+  --fg-on-accent-weak: #2b0d08;
+  --bg-status-running: #1c3a33;
+
+  /* Inverse chrome (topbar, status bar, compile log, filled ink controls)
+     sinks below the workspace rather than rising above it, so the frame
+     still reads as a frame. */
+  --bg-inverse: #0e0c0a;
+  --bg-inverse-2: #171410;
+  --fg-on-inverse: #e8e1d2;
+  --fg-on-inverse-muted: #8f8778;
+  --fg-on-inverse-subtle: #7a7164;
+  --rule-on-inverse: #2a251f;
+  --scrollbar-on-inverse: #3b352c;
+  --scrollbar-on-inverse-hover: #5a5346;
+
+  /* Rules are seams, not marks, so they take their own values instead of
+     following the ink ramp up. */
+  --rule: #3b352c;
+  --rule-strong: #5a5346;
+  --rule-muted: #302b24;
+  --rule-faint: rgba(242, 236, 224, 0.12);
+
+  --selection-bg: #7a2a1e;
+
+  --tint-accent: brightness(0) saturate(100%) invert(30%) sepia(75%) saturate(2800%)
+    hue-rotate(355deg) brightness(125%) contrast(98%);
+
+  --success: #8fb05e;
+
+  --scrim: rgba(0, 0, 0, 0.55);
+  --shadow-sm: 0 6px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 18px 60px rgba(0, 0, 0, 0.6);
 }

@@ -30,7 +30,7 @@
 }
 
 .colResizer:hover::before {
-  background: var(--cinnabar-1);
+  background: var(--accent-fill);
 }
 
 .paneResizer {
@@ -49,7 +49,7 @@
 }
 
 .paneResizer:hover::before {
-  background: var(--cinnabar-1);
+  background: var(--accent-fill);
 }
 
 .dropOverlay {
@@ -60,7 +60,7 @@
 
 .dropZone {
   position: absolute;
-  background: var(--cinnabar-1);
+  background: var(--accent-fill);
   opacity: 0.18;
   pointer-events: none;
   transition: inset var(--ease-fast);
@@ -425,8 +425,8 @@
   letter-spacing: var(--tracking-wider);
   text-transform: uppercase;
   padding: var(--space-1) var(--space-3);
-  background: var(--cinnabar-1);
-  color: var(--paper-0);
+  background: var(--accent-fill);
+  color: var(--fg-on-accent);
   border: none;
   cursor: pointer;
 }
