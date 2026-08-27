@@ -48,6 +48,11 @@
     <Content Update="wwwroot/**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- The evaluation-time view of the bundle. Vite deletes these files and writes new
+         content-hashed names during the build, and a wildcard Remove inside a target
+         expands against the filesystem, so it cannot match a name that is already gone.
+         BuildStudioFrontend drops the snapshot by item spec instead. -->
+    <_StudioBundleSnapshot Include="wwwroot/**" />
     <!-- OS window icon — shipped from the UI project so there's a single source
          of truth (UI/public/icon.png is also the web favicon). Copied to the
          output as "icon.png" so SetIconFile can resolve it via AppContext.BaseDirectory. -->
@@ -56,16 +61,6 @@
     </Content>
   </ItemGroup>
 
-  <!--
-    Release builds bundle the frontend into wwwroot so the host ships with
-    an up-to-date SPA. Debug builds skip this: dev workflow uses Vite HMR via
-    JIANGYU_DEV_URL, so the static bundle is irrelevant. Set SkipStudioFrontend=true
-    to bypass (useful if bun isn't available on the host running the build).
-
-    Hooks into ResolveProjectStaticWebAssets so the Web SDK re-globs wwwroot
-    after Vite writes fresh hashed filenames; otherwise the SDK's evaluation-
-    time snapshot would reference files that no longer exist.
-  -->
   <!-- Drop the Mcp build output into Host's bin/bin/ on dev runs so
        AgentProcessManager.BuildMcpServerConfig (which resolves via
        <AppContext.BaseDirectory>/bin/jiangyu-mcp) finds it. The release
@@ -80,12 +75,22 @@
     <Copy SourceFiles="@(McpOutput)" DestinationFolder="$(OutDir)bin/%(RecursiveDir)" SkipUnchangedFiles="true" />
   </Target>
 
+  <!--
+    Release builds bundle the frontend into wwwroot so the host ships with
+    an up-to-date SPA. Debug builds skip this: dev workflow uses Vite HMR via
+    JIANGYU_DEV_URL, so the static bundle is irrelevant. Set SkipStudioFrontend=true
+    to bypass (useful if bun isn't available on the host running the build).
+
+    Hooks into ResolveProjectStaticWebAssets so the Web SDK sees the filenames Vite
+    just wrote: the evaluation-time snapshot goes out by item spec, then wwwroot is
+    re-globbed off disk.
+  -->
   <Target Name="BuildStudioFrontend" BeforeTargets="ResolveProjectStaticWebAssets" Condition="'$(Configuration)' == 'Release' And '$(SkipStudioFrontend)' != 'true'">
     <Message Importance="high" Text="Building Studio frontend bundle…" />
     <Exec Command="bun install --frozen-lockfile" WorkingDirectory="$(MSBuildThisFileDirectory)../Jiangyu.Studio.UI" />
     <Exec Command="bun run build" WorkingDirectory="$(MSBuildThisFileDirectory)../Jiangyu.Studio.UI" />
     <ItemGroup>
-      <Content Remove="wwwroot/**" />
+      <Content Remove="@(_StudioBundleSnapshot)" />
       <Content Include="wwwroot/**">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Content>
