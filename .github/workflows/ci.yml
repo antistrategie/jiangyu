@@ -279,6 +279,24 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7.0.1
+
+      # The release body is this version's CHANGELOG.md section. A tag with no
+      # section fails here, BEFORE the release exists: write the section, then
+      # re-push the tag. The generated notes below still append the commit
+      # list and compare link under it.
+      - name: Extract this version's changelog section
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v ver="$version" '
+            /^## / { inside = ($2 == ver); next }
+            inside { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::CHANGELOG.md has no '## ${version}' section for tag ${GITHUB_REF_NAME}." >&2
+            exit 1
+          fi
+
       - name: Download all artefacts
         uses: actions/download-artifact@v8
 
@@ -308,6 +326,7 @@ jobs:
         uses: softprops/action-gh-release@v3.0.2
         with:
           name: ${{ github.ref_name }}
+          body_path: release-notes.md
           generate_release_notes: true
           files: |
             Jiangyu.Loader.dll/Jiangyu.Loader.dll
