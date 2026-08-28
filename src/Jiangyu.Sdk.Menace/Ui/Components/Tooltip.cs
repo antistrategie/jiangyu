@@ -278,6 +278,25 @@ public sealed class Tooltip
     {
         public bool Registered;
         public string ShownId;
+        public IVisualElementScheduledItem Pending;
+    }
+
+    /// <summary>
+    /// The game's own hover-to-tooltip delay in milliseconds. The player setting is stored in
+    /// milliseconds and the vanilla hover path (UIManager.Update) divides it by 1000 to compare
+    /// against hover time in seconds, so this is exactly the pause vanilla tooltips wait.
+    /// </summary>
+    public static long HoverDelayMs()
+    {
+        try
+        {
+            return Math.Max(0, Il2CppMenace.PlayerSettings.IntPlayerSettingExtensions.Get(
+                Il2CppMenace.PlayerSettings.IntPlayerSetting.GeneralUITooltipDelay));
+        }
+        catch
+        {
+            return 500;
+        }
     }
 
     // Per-anchor hover state, keyed weakly so it dies with the element. Replaces a single shared
@@ -304,16 +323,32 @@ public sealed class Tooltip
             anchor.RegisterCallback<PointerEnterEvent>(DelegateSupport.ConvertDelegate<EventCallback<PointerEnterEvent>>(
                 (Action<PointerEnterEvent>)(_ =>
                 {
-                    Tooltip tooltip = null;
-                    try { tooltip = build(); } catch { }
-                    if (tooltip == null)
+                    var show = (Action)(() =>
+                    {
+                        Tooltip tooltip = null;
+                        try { tooltip = build(); } catch { }
+                        if (tooltip == null)
+                            return;
+                        state.ShownId = tooltip._id;
+                        tooltip.Show(anchor, stickToMouse);
+                    });
+                    // Vanilla tooltips wait the player's hover delay before appearing, so
+                    // these do too: an instant tooltip beside delayed native ones reads as
+                    // a glitch. The pending show dies with the pointer leaving.
+                    var delay = HoverDelayMs();
+                    if (delay <= 0)
+                    {
+                        show();
                         return;
-                    state.ShownId = tooltip._id;
-                    tooltip.Show(anchor, stickToMouse);
+                    }
+                    state.Pending?.Pause();
+                    state.Pending = anchor.schedule.Execute(DelegateSupport.ConvertDelegate<Il2CppSystem.Action>(show));
+                    state.Pending.ExecuteLater(delay);
                 })));
             anchor.RegisterCallback<PointerLeaveEvent>(DelegateSupport.ConvertDelegate<EventCallback<PointerLeaveEvent>>(
                 (Action<PointerLeaveEvent>)(_ =>
                 {
+                    state.Pending?.Pause();
                     var shownId = state.ShownId;
                     state.ShownId = null;
                     if (shownId == null)
