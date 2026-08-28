@@ -573,7 +573,11 @@ internal sealed class InventoryFilterPatch : IHarmonyPatchModule
                 // armor/weapon) OR items carrying the restriction tag in their own Tags (vehicles:
                 // a chassis tagged jy_vehicle_restricted). Tags is on the base ItemTemplate, so it
                 // reads off the list element directly, unlike VehicleItemTemplate.EntityTemplate.
-                keep = ItemAllowedFor(item, unitTags) || ItemOwnTagsHaveAny(item, applicableTags);
+                // The own-tag keep applies only to items with NO OnlyEquipableBy of their own: an
+                // item that names its unit (one doll's exclusive weapon) must not surface for a
+                // DIFFERENT restricted unit merely because both ride the restriction mechanism.
+                keep = ItemAllowedFor(item, unitTags)
+                    || (ItemOwnTagsHaveAny(item, applicableTags) && !ItemNamesItsUnits(item));
             }
             else
             {
@@ -587,6 +591,27 @@ internal sealed class InventoryFilterPatch : IHarmonyPatchModule
                 try { removeAt.Invoke(resultList, new object[] { i }); } catch { /* skip */ }
             }
         }
+    }
+
+    /// <summary>
+    /// True if the item declares any OnlyEquipableBy entries, i.e. it names the unit(s) it
+    /// belongs to. Such an item is judged by <see cref="ItemAllowedFor"/> alone; the own-tag
+    /// keep is reserved for items that cannot name a unit (a chassis whose vanilla
+    /// OnlyEquipableBy the loader removed).
+    /// <para>
+    /// This means a restriction-tagged item must declare EITHER an OnlyEquipableBy or the
+    /// restriction tag, never both. Both together leave it judged by OnlyEquipableBy alone, and a
+    /// pilot with no vehicle equipped reads no EntityTemplate tags, so a chassis that named its
+    /// pilot AND carried jy_vehicle_restricted would vanish from the dropdown with no way back.
+    /// Vehicles avoid this by design: jy_vehicle_restricted exists precisely for chassis whose
+    /// OnlyEquipableBy was cleared, so the two never coincide.
+    /// </para>
+    /// </summary>
+    private static bool ItemNamesItsUnits(object item)
+    {
+        if (item == null) return false;
+        var onlyEquipable = ReadMember(item, item.GetType(), "OnlyEquipableBy");
+        return onlyEquipable != null && ReadTagNames(onlyEquipable).Count > 0;
     }
 
     /// <summary>
