@@ -142,6 +142,29 @@ internal sealed class TemplateCloneApplier
     /// <c>patch</c> blocks must stay order-independent. Running after everything
     /// exists sidesteps both.
     /// </summary>
+    /// <summary>Whether this template is a clone whose source is itself a mod
+    /// clone. Such a template's ops are fully replayed by
+    /// <see cref="ReinheritChainedClones"/> after the rebase onto its patched
+    /// source, so the first patch pass skips them outright: applied there they
+    /// resolve against the not-yet-inherited vanilla-derived base, do no
+    /// lasting good, and warn about members the wrong handlers lack.</summary>
+    public bool IsChainedClone(string templateTypeName, string templateId)
+    {
+        foreach (var typeEntry in _catalog.EnumerateByType())
+        {
+            if (!string.Equals(typeEntry.Key, templateTypeName, StringComparison.Ordinal))
+                continue;
+            return IsChained(typeEntry.Value, templateId);
+        }
+        return false;
+    }
+
+    internal static bool IsChained(Dictionary<string, LoadedCloneDirective> directives, string templateId)
+        => directives != null
+            && directives.TryGetValue(templateId, out var directive)
+            && !string.IsNullOrEmpty(directive.SourceId)
+            && directives.ContainsKey(directive.SourceId);
+
     public int ReinheritChainedClones(TemplatePatchApplier patchApplier, LoaderLog log)
     {
         if (patchApplier == null || !_catalog.HasClones)

@@ -18,6 +18,24 @@ public class TemplateCloneChainedOrderTests
         => directives.ConvertAll(d => d.CloneId);
 
     [Fact]
+    public void IsChained_TrueOnlyWhenTheSourceIsItselfAModClone()
+    {
+        var directives = new Dictionary<string, LoadedCloneDirective>
+        {
+            ["weapon.sextans_ssr"] = Clone("weapon.sextans", "weapon.sextans_ssr"),
+            ["weapon.sextans_ssr_r1"] = Clone("weapon.sextans_ssr", "weapon.sextans_ssr_r1"),
+        };
+
+        // Vanilla source: the base instantiate already inherited correctly, so
+        // the first patch pass owns its ops.
+        Assert.False(TemplateCloneApplier.IsChained(directives, "weapon.sextans_ssr"));
+        // Mod-clone source: the chained-clone replay owns the ops.
+        Assert.True(TemplateCloneApplier.IsChained(directives, "weapon.sextans_ssr_r1"));
+        // Not a clone at all.
+        Assert.False(TemplateCloneApplier.IsChained(directives, "weapon.sextans"));
+    }
+
+    [Fact]
     public void SourceDeclaredLater_AppliesAfterSource()
     {
         // The SSR rank case: the rank clone is declared before its source clone exists.

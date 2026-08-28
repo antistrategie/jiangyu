@@ -45,6 +45,14 @@ internal sealed partial class TemplatePatchApplier
         _assetResolver = assetResolver;
     }
 
+    /// <summary>Set by the coordinator: names the templates whose ops the
+    /// chained-clone replay owns (a clone of another mod clone). The first
+    /// pass skips them, because at that point the template still holds its
+    /// vanilla-derived base: index ops would resolve against the wrong
+    /// elements and warn about members those elements lack, all of it thrown
+    /// away by the rebase-and-replay that follows.</summary>
+    internal Func<string, string, bool> DeferToChainedReplay { get; set; }
+
     /// <summary>Running tally of how the patch ops fared against the live game,
     /// accumulated as each type latches. A non-zero mismatch count means the live
     /// game no longer matches what the mods were compiled against.</summary>
@@ -154,6 +162,8 @@ internal sealed partial class TemplatePatchApplier
 
         foreach (var templateEntry in patchesForType)
         {
+            if (DeferToChainedReplay?.Invoke(templateTypeName, templateEntry.Key) == true)
+                continue;
             if (!TemplateRuntimeAccess.TryGetTemplateById(
                     templateTypeName, templateEntry.Key,
                     out var template, out _, out var lookupError))

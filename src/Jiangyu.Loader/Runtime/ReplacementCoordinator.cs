@@ -50,6 +50,7 @@ internal class ReplacementCoordinator
         _templatePatchApplier = new TemplatePatchApplier(_templatePatches, new ModAssetResolver(_catalog));
         _templateClones = new TemplateCloneCatalog();
         _templateCloneApplier = new TemplateCloneApplier(_templateClones);
+        _templatePatchApplier.DeferToChainedReplay = _templateCloneApplier.IsChainedClone;
         _harmonyPatchInstaller = new LoaderHarmonyPatchInstaller(
             new IHarmonyPatchModule[]
             {
