@@ -727,6 +727,109 @@ public class ModHostTests
     }
 
     [Fact]
+    public void Patch_registry_prefix_skip_carries_an_assigned_result()
+    {
+        var registry = new ModPatchRegistry();
+        registry.Add(ModPatchRegistry.Kind.Prefix, "key", "mymod", "T.M", info =>
+        {
+            info.Skip = true;
+            info.Result = 42;
+        }, new CollectingLog());
+
+        var run = registry.DispatchPrefix("key", null, Array.Empty<object>(), out var overridden, out var result);
+
+        Assert.False(run);
+        Assert.True(overridden);
+        Assert.Equal(42, result);
+    }
+
+    [Fact]
+    public void Patch_registry_prefix_skip_without_a_result_reports_no_override()
+    {
+        var registry = new ModPatchRegistry();
+        registry.Add(ModPatchRegistry.Kind.Prefix, "key", "mymod", "T.M", info => info.Skip = true, new CollectingLog());
+
+        var run = registry.DispatchPrefix("key", null, Array.Empty<object>(), out var overridden, out var result);
+
+        Assert.False(run);
+        Assert.False(overridden);
+        Assert.Null(result);
+    }
+
+    // A Result without a Skip changes nothing: the original still runs and produces its own
+    // return value. Overriding a value the original computed is the postfix path's job.
+    [Fact]
+    public void Patch_registry_prefix_result_without_skip_still_runs_the_original()
+    {
+        var registry = new ModPatchRegistry();
+        registry.Add(ModPatchRegistry.Kind.Prefix, "key", "mymod", "T.M", info => info.Result = 42, new CollectingLog());
+
+        var run = registry.DispatchPrefix("key", null, Array.Empty<object>(), out var overridden, out _);
+
+        Assert.True(run);
+        // Assigning Result without Skip is a documented no-op: the value is
+        // discarded outright, never reported as an override.
+        Assert.False(overridden);
+    }
+
+    [Fact]
+    public void Patch_registry_prefix_result_from_one_mod_never_rides_another_mods_skip()
+    {
+        var registry = new ModPatchRegistry();
+        registry.Add(ModPatchRegistry.Kind.Prefix, "key", "moda", "T.M", info => info.Result = 99, new CollectingLog());
+        registry.Add(ModPatchRegistry.Kind.Prefix, "key", "modb", "T.M", info => info.Skip = true, new CollectingLog());
+
+        var run = registry.DispatchPrefix("key", null, Array.Empty<object>(), out var overridden, out var result);
+
+        Assert.False(run);
+        Assert.False(overridden);
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void Patch_registry_prefix_skip_with_result_overrides_beside_a_no_op_assignment()
+    {
+        var registry = new ModPatchRegistry();
+        registry.Add(ModPatchRegistry.Kind.Prefix, "key", "moda", "T.M", info => info.Result = 99, new CollectingLog());
+        registry.Add(ModPatchRegistry.Kind.Prefix, "key", "modb", "T.M", info =>
+        {
+            info.Skip = true;
+            info.Result = 7;
+        }, new CollectingLog());
+
+        var run = registry.DispatchPrefix("key", null, Array.Empty<object>(), out var overridden, out var result);
+
+        Assert.False(run);
+        Assert.True(overridden);
+        Assert.Equal(7, result);
+    }
+
+    private static int? BoxedNullableTarget() => 1;
+
+    private static int BoxedIntTarget() => 1;
+
+    [Fact]
+    public void Patch_boxed_gate_accepts_null_for_a_nullable_return_only()
+    {
+        var gate = typeof(Jiangyu.Loader.Sdk.Patches.ModPatchCoordinator).GetMethod(
+            "BoxedMatchesReturn", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(gate);
+        var nullableTarget = typeof(ModHostTests).GetMethod(nameof(BoxedNullableTarget),
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        var intTarget = typeof(ModHostTests).GetMethod(nameof(BoxedIntTarget),
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+
+        // A boxed empty Nullable<T> is a null reference, so null is a valid
+        // override for a nullable return and only there.
+        Assert.True((bool)gate!.Invoke(null, new object?[] { nullableTarget, null })!);
+        Assert.False((bool)gate.Invoke(null, new object?[] { intTarget, null })!);
+        // The boxed representation of both is the underlying value type.
+        Assert.True((bool)gate.Invoke(null, new object?[] { nullableTarget, 5 })!);
+        Assert.True((bool)gate.Invoke(null, new object?[] { intTarget, 5 })!);
+        Assert.False((bool)gate.Invoke(null, new object?[] { intTarget, 5f })!);
+    }
+
+    [Fact]
     public void Patch_registry_runs_the_original_without_a_prefix_skip()
     {
         var registry = new ModPatchRegistry();

@@ -64,16 +64,31 @@ internal static class ModPatchCoordinator
         {
             if (kind == ModPatchRegistry.Kind.Prefix)
             {
-                var prefixName = target.IsStatic ? nameof(DispatchPrefixStatic) : nameof(DispatchPrefix);
-                _harmony.Patch(target, prefix: new HarmonyMethod(typeof(ModPatchCoordinator), prefixName));
-                return true;
+                // Mirror of the postfix machinery below: a typed ref-__result prefix
+                // dispatcher lets a handler that skips the original also set the
+                // skipped call's return value. Fall back to the result-less prefix
+                // when the typed one does not bind, so skip-only prefixes still work.
+                try
+                {
+                    _harmony.Patch(target, prefix: PrefixDispatcherFor(target));
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    log.Warn($"patch: {target.DeclaringType?.Name}.{target.Name} return not settable from a prefix ({ex.GetType().Name}); a skipping prefix leaves the default return.");
+                    var prefixName = target.IsStatic ? nameof(DispatchPrefixStatic) : nameof(DispatchPrefix);
+                    _harmony.Patch(target, prefix: new HarmonyMethod(typeof(ModPatchCoordinator), prefixName));
+                    return true;
+                }
             }
 
-            // PostfixDispatcherFor is the single source of the return-type -> dispatcher mapping
-            // (an overridable int/bool/float/reference dispatcher, or the result-less one for
-            // other value returns and void). Try it; if binding the typed ref-__result dispatcher
-            // throws (some Il2Cpp value returns do not marshal to a ref parameter), fall back to
-            // the result-less dispatcher so an observe-only postfix still registers.
+            // PostfixDispatcherFor maps the return type to its dispatcher (typed
+            // int/bool/float, the reference-typed object dispatcher, the boxed one for other
+            // value returns, or the result-less one for void). Try it; if binding the typed
+            // ref-__result dispatcher throws (some Il2Cpp value returns do not marshal to a
+            // ref parameter), fall back to the result-less dispatcher so an observe-only
+            // postfix still registers. PrefixDispatcherFor mirrors the same mapping and the
+            // two must move together.
             try
             {
                 _harmony.Patch(target, postfix: PostfixDispatcherFor(target));
@@ -96,13 +111,13 @@ internal static class ModPatchCoordinator
     }
 
     // Harmony writes an overridden return through a typed ref parameter: a
-    // ref object __result only binds to reference-typed returns, so value-typed
-    // returns each get their own dispatcher and every reference-typed return
-    // shares the object dispatcher. Targets with other value returns use the
-    // no-result dispatcher: PatchInfo.Result stays null and assignments to it
-    // are ignored, as documented on the SDK type. Static targets take the
-    // instance-less variants: an __instance parameter does not bind to a
-    // static original.
+    // ref object __result only binds to reference-typed returns, so int, bool
+    // and float each get their own dispatcher and every reference-typed
+    // return shares the object dispatcher. Other value returns (structs,
+    // nullables) ride the BOXED dispatcher, whose exact-type gate
+    // (BoxedMatchesReturn) accepts an override or drops it. Static targets
+    // take the instance-less variants: an __instance parameter does not bind
+    // to a static original.
     private static HarmonyMethod PostfixDispatcherFor(MethodBase target)
     {
         var returnType = (target as MethodInfo)?.ReturnType;
@@ -115,8 +130,32 @@ internal static class ModPatchCoordinator
             name = target.IsStatic ? nameof(DispatchPostfixSingleStatic) : nameof(DispatchPostfixSingle);
         else if (returnType != null && !returnType.IsValueType)
             name = target.IsStatic ? nameof(DispatchPostfixObjectStatic) : nameof(DispatchPostfixObject);
+        else if (returnType != null && returnType.IsValueType && returnType != typeof(void))
+            name = target.IsStatic ? nameof(DispatchPostfixBoxedStatic) : nameof(DispatchPostfixBoxed);
         else
             name = target.IsStatic ? nameof(DispatchPostfixStatic) : nameof(DispatchPostfix);
+        return new HarmonyMethod(typeof(ModPatchCoordinator), name);
+    }
+
+    // The prefix mapping is the same shape as PostfixDispatcherFor: typed ref-__result
+    // dispatchers so a skipping prefix can set the return, the result-less pair for
+    // void returns and the binding-failure fallback.
+    private static HarmonyMethod PrefixDispatcherFor(MethodBase target)
+    {
+        var returnType = (target as MethodInfo)?.ReturnType;
+        string name;
+        if (returnType == typeof(int))
+            name = target.IsStatic ? nameof(DispatchPrefixInt32Static) : nameof(DispatchPrefixInt32);
+        else if (returnType == typeof(bool))
+            name = target.IsStatic ? nameof(DispatchPrefixBooleanStatic) : nameof(DispatchPrefixBoolean);
+        else if (returnType == typeof(float))
+            name = target.IsStatic ? nameof(DispatchPrefixSingleStatic) : nameof(DispatchPrefixSingle);
+        else if (returnType != null && !returnType.IsValueType && returnType != typeof(void))
+            name = target.IsStatic ? nameof(DispatchPrefixObjectStatic) : nameof(DispatchPrefixObject);
+        else if (returnType != null && returnType.IsValueType && returnType != typeof(void))
+            name = target.IsStatic ? nameof(DispatchPrefixBoxedStatic) : nameof(DispatchPrefixBoxed);
+        else
+            name = target.IsStatic ? nameof(DispatchPrefixStatic) : nameof(DispatchPrefix);
         return new HarmonyMethod(typeof(ModPatchCoordinator), name);
     }
 
@@ -136,6 +175,121 @@ internal static class ModPatchCoordinator
 
     private static void DispatchPostfixStatic(object[] __args, MethodBase __originalMethod)
         => Registry.DispatchPostfix(__originalMethod, null, __args ?? Array.Empty<object>());
+
+    // Typed prefix dispatchers: run the handlers; when one skipped the original AND
+    // assigned Result, write it into the return slot the skipped call leaves behind.
+    // Type gates match the postfix Resolve helpers (exact value type, assignable
+    // reference, exactly-typed boxed struct).
+    private static bool DispatchPrefixInt32(Il2CppObjectBase __instance, object[] __args, MethodBase __originalMethod, ref int __result)
+        => PrefixValue(__instance, __args, __originalMethod, ref __result);
+
+    private static bool DispatchPrefixInt32Static(object[] __args, MethodBase __originalMethod, ref int __result)
+        => PrefixValue(null, __args, __originalMethod, ref __result);
+
+    private static bool DispatchPrefixBoolean(Il2CppObjectBase __instance, object[] __args, MethodBase __originalMethod, ref bool __result)
+        => PrefixValue(__instance, __args, __originalMethod, ref __result);
+
+    private static bool DispatchPrefixBooleanStatic(object[] __args, MethodBase __originalMethod, ref bool __result)
+        => PrefixValue(null, __args, __originalMethod, ref __result);
+
+    private static bool DispatchPrefixSingle(Il2CppObjectBase __instance, object[] __args, MethodBase __originalMethod, ref float __result)
+        => PrefixValue(__instance, __args, __originalMethod, ref __result);
+
+    private static bool DispatchPrefixSingleStatic(object[] __args, MethodBase __originalMethod, ref float __result)
+        => PrefixValue(null, __args, __originalMethod, ref __result);
+
+    private static bool DispatchPrefixObject(Il2CppObjectBase __instance, object[] __args, MethodBase __originalMethod, ref object __result)
+        => PrefixObject(__instance, __args, __originalMethod, ref __result);
+
+    private static bool DispatchPrefixObjectStatic(object[] __args, MethodBase __originalMethod, ref object __result)
+        => PrefixObject(null, __args, __originalMethod, ref __result);
+
+    private static bool DispatchPrefixBoxed(Il2CppObjectBase __instance, object[] __args, MethodBase __originalMethod, ref object __result)
+        => PrefixBoxed(__instance, __args, __originalMethod, ref __result);
+
+    private static bool DispatchPrefixBoxedStatic(object[] __args, MethodBase __originalMethod, ref object __result)
+        => PrefixBoxed(null, __args, __originalMethod, ref __result);
+
+    // The postfix twins below fall back to the ORIGINAL call's return value when they reject a
+    // mismatched override, which makes rejection harmless there. A prefix that has already set Skip
+    // has no such value to fall back on: Harmony's __result is still zero-initialised, so a rejected
+    // override hands the caller default(T) rather than either the value the handler meant or
+    // vanilla's. The rejection itself stands (coercing would round or throw inside the patched call,
+    // see ResolveValue), but it is never silent: the symptom is a plain wrong number surfacing far
+    // from the handler that caused it, and `info.Result = 12` on a float-returning method is the
+    // natural way to write it.
+    private static bool PrefixValue<T>(object instance, object[] args, MethodBase originalMethod, ref T result) where T : struct
+    {
+        var run = Registry.DispatchPrefix(originalMethod, instance, args ?? Array.Empty<object>(), out var overridden, out var value);
+        if (!run && overridden)
+        {
+            if (value is T typed)
+                result = typed;
+            else
+                WarnRejectedPrefixResult(originalMethod, value);
+        }
+        return run;
+    }
+
+    private static bool PrefixObject(object instance, object[] args, MethodBase originalMethod, ref object result)
+    {
+        var run = Registry.DispatchPrefix(originalMethod, instance, args ?? Array.Empty<object>(), out var overridden, out var value);
+        if (!run && overridden)
+        {
+            if (ResultAssignable(originalMethod, value))
+                result = value;
+            else
+                WarnRejectedPrefixResult(originalMethod, value);
+        }
+        return run;
+    }
+
+    private static bool PrefixBoxed(object instance, object[] args, MethodBase originalMethod, ref object result)
+    {
+        var run = Registry.DispatchPrefix(originalMethod, instance, args ?? Array.Empty<object>(), out var overridden, out var value);
+        if (!run && overridden)
+        {
+            if (BoxedMatchesReturn(originalMethod, value))
+                result = value;
+            else
+                WarnRejectedPrefixResult(originalMethod, value);
+        }
+        return run;
+    }
+
+    // Boxing a Nullable<T> yields a boxed T (or a null reference), never a boxed Nullable<T>, so a
+    // nullable return has to be compared against its underlying type or the exact-type gate can
+    // never be satisfied. Null passes for a nullable return and only there: a boxed empty
+    // Nullable<T> IS a null reference, and rejecting it made 'return null' impossible to express.
+    private static bool BoxedMatchesReturn(MethodBase originalMethod, object value)
+    {
+        var returnType = (originalMethod as MethodInfo)?.ReturnType;
+        if (returnType == null)
+            return false;
+        var underlying = Nullable.GetUnderlyingType(returnType);
+        if (value == null)
+            return underlying != null;
+        return value.GetType() == (underlying ?? returnType);
+    }
+
+    // Once per method: the rejection repeats on every invocation of the
+    // patched call, and a hot method would otherwise flood the log with a
+    // stack-walking warn per frame.
+    private static readonly HashSet<MethodBase> WarnedRejected = new();
+
+    private static void WarnRejectedPrefixResult(MethodBase originalMethod, object value)
+    {
+        lock (WarnedRejected)
+        {
+            if (originalMethod != null && !WarnedRejected.Add(originalMethod))
+                return;
+        }
+        var returnType = (originalMethod as MethodInfo)?.ReturnType;
+        Log.Warn(
+            $"patch: a skipping prefix on {originalMethod?.DeclaringType?.Name}.{originalMethod?.Name} set Result to " +
+            $"{value?.GetType().Name ?? "null"}, but the method returns {returnType?.Name ?? "?"}. The override was " +
+            "ignored and the caller receives the default value; assign a Result of exactly the return type.");
+    }
 
     private static void DispatchPostfixInt32(Il2CppObjectBase __instance, object[] __args, MethodBase __originalMethod, ref int __result)
         => __result = ResolveValue(__instance, __args, __originalMethod, __result);
@@ -161,6 +315,16 @@ internal static class ModPatchCoordinator
     private static void DispatchPostfixObjectStatic(object[] __args, MethodBase __originalMethod, ref object __result)
         => __result = ResolveObject(null, __args, __originalMethod, __result);
 
+    // Other value-typed returns (structs beyond int/bool/float) ride Harmony's
+    // boxed ref object __result: HarmonyX boxes the value on the way in and
+    // unboxes an override on the way out, so the dispatcher only has to keep
+    // the exact-type gate.
+    private static void DispatchPostfixBoxed(Il2CppObjectBase __instance, object[] __args, MethodBase __originalMethod, ref object __result)
+        => __result = ResolveBoxed(__instance, __args, __originalMethod, __result);
+
+    private static void DispatchPostfixBoxedStatic(object[] __args, MethodBase __originalMethod, ref object __result)
+        => __result = ResolveBoxed(null, __args, __originalMethod, __result);
+
     // Route the call to the mods' handlers, then accept an override only when it is the target's
     // exact value type. A boxed value of any other type is ignored, never coerced: Convert.ToXxx
     // would silently round (2.5 -> 2) or throw (overflow, non-numeric string) inside the postfix
@@ -169,6 +333,16 @@ internal static class ModPatchCoordinator
     {
         var result = Registry.DispatchPostfix(originalMethod, instance, args ?? Array.Empty<object>(), current, out var overridden);
         return overridden && result is T value ? value : current;
+    }
+
+    // As ResolveValue, for the boxed struct path: an override is accepted only when the assigned
+    // boxed value is EXACTLY the target's return type. Anything else (null included: a struct
+    // return has no null) is ignored, never coerced, so a stray assignment cannot corrupt the
+    // patched game call's return slot.
+    private static object ResolveBoxed(object instance, object[] args, MethodBase originalMethod, object current)
+    {
+        var result = Registry.DispatchPostfix(originalMethod, instance, args ?? Array.Empty<object>(), current, out var overridden);
+        return overridden && BoxedMatchesReturn(originalMethod, result) ? result : current;
     }
 
     // Route the call to the mods' handlers, then accept an override only when it is null or

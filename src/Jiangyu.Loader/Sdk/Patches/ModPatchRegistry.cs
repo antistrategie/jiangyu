@@ -39,14 +39,39 @@ internal sealed class ModPatchRegistry
 
     /// <summary>Runs the prefix handlers and returns whether the original should run.</summary>
     public bool DispatchPrefix(object key, object instance, object[] args)
+        => DispatchPrefix(key, instance, args, out _, out _);
+
+    /// <summary>Runs the prefix handlers. Returns whether the original should run; when a
+    /// handler skipped the original, <paramref name="overridden"/> and
+    /// <paramref name="result"/> carry any <see cref="PatchInfo.Result"/> it assigned, for
+    /// the dispatcher to write into the skipped call's return slot.</summary>
+    public bool DispatchPrefix(object key, object instance, object[] args, out bool overridden, out object result)
     {
+        overridden = false;
+        result = null;
         if (!_prefixes.TryGetValue(key, out var entries))
             return true;
 
-        var info = new PatchInfo(instance, args);
+        // One PatchInfo PER HANDLER, not shared: Skip and Result pair up
+        // within a single handler's invocation, so mod A assigning Result
+        // without Skip (a documented no-op) can never become the return
+        // value of a skip that mod B requested. Skips still OR together,
+        // and when several handlers skip with a Result, the last one wins.
+        var skip = false;
         foreach (var entry in entries.ToArray())
+        {
+            var info = new PatchInfo(instance, args);
             Invoke(entry, info, Kind.Prefix);
-        return !info.Skip;
+            if (!info.Skip)
+                continue;
+            skip = true;
+            if (info.IsResultOverridden)
+            {
+                overridden = true;
+                result = info.Result;
+            }
+        }
+        return !skip;
     }
 
     public void DispatchPostfix(object key, object instance, object[] args)
