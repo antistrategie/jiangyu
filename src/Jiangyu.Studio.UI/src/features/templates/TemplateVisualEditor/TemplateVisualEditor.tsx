@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus } from "lucide-react";
-import type { EditorError, EditorNodeKind } from "./types";
+import type { EditorDocument, EditorError, EditorNodeKind } from "./types";
 import { parseCrossMemberPayload } from "@features/templates/crossMember";
 import {
   parseCrossInstancePayload,
@@ -46,7 +46,13 @@ import {
 interface TemplateVisualEditorProps {
   readonly content: string;
   readonly filePath?: string | null | undefined;
-  readonly onChange: (content: string) => void;
+  /** Write `content` back to the buffer. `expectedPrevious` is a
+   *  compare-and-swap guard: the consumer applies the write only when the
+   *  buffer still holds that text, and reports back whether it did. The
+   *  editor serialises asynchronously, so by the time a write lands the
+   *  modder may already be typing into the source view over the same
+   *  buffer; without the guard that typing gets overwritten. */
+  readonly onChange: (content: string, expectedPrevious?: string) => boolean;
   readonly onRequestSourceMode?: (() => void) | undefined;
 }
 
@@ -68,6 +74,7 @@ export function TemplateVisualEditor({
   const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsed(cacheKey));
   const lastSerialisedRef = useRef<string>("");
   const serialiseVersionRef = useRef(0);
+  const parseVersionRef = useRef(0);
 
   // Undo/redo history. undoMetaRef carries the coalescing state: the key
   // and timestamp of the last undo push, so a per-keystroke dispatch burst
@@ -85,9 +92,20 @@ export function TemplateVisualEditor({
   // scheduleSerialise / dispatch (and with them the dispatch context value)
   // after every parent re-render.
   const onChangeRef = useRef(onChange);
+  // Latest-value mirror of the edited file. A serialise that resolves after
+  // a tab switch must not advance `lastSerialisedRef` — that ref describes
+  // the file the editor is showing now, not the one the write was for.
+  const filePathRef = useRef(filePath);
   useEffect(() => {
     onChangeRef.current = onChange;
-  }, [onChange]);
+    filePathRef.current = filePath;
+  }, [onChange, filePath]);
+
+  // Line comments trailing the last node. They belong to no node, so the
+  // reducer's node list can't carry them; parking them here keeps them on
+  // the document across the parse/serialise round trip instead of dropping
+  // them on the modder's first visual edit.
+  const trailingCommentsRef = useRef<string[] | null>(null);
 
   // Latest-value mirrors of the collapse maps and cache key, so the
   // collapse callbacks and the composite-collapse control below can stay
@@ -105,16 +123,35 @@ export function TemplateVisualEditor({
   // run after each mutation to push the new content out via onChange and
   // refresh parse-error diagnostics.
   const serialiseTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The scheduled-but-not-yet-run serialise, held so the editor can run it
+  // immediately when it is about to stop observing the file (see
+  // flushSerialise).
+  const pendingSerialiseRef = useRef<(() => void) | null>(null);
 
   const scheduleSerialise = useCallback((updated: StampedNode[]) => {
     const version = ++serialiseVersionRef.current;
-    clearTimeout(serialiseTimerRef.current);
-    serialiseTimerRef.current = setTimeout(() => {
-      const doc = { nodes: updated, errors: [] as EditorError[] };
+    // Snapshot everything the write depends on. The RPC resolves at least a
+    // round trip later, by which point the editor may be showing a different
+    // file or be unmounted entirely by a switch to source mode: reading
+    // these at resolve time would send this file's text to whichever file is
+    // active then.
+    const emit = onChangeRef.current;
+    const baseline = lastSerialisedRef.current;
+    const path = filePathRef.current;
+    const trailingComments = trailingCommentsRef.current;
+
+    const run = () => {
+      const doc: EditorDocument = { nodes: updated, errors: [] as EditorError[] };
+      if (trailingComments !== null) doc.trailingComments = trailingComments;
       void templatesSerialise(stripUiIds(doc)).then(async (result) => {
         if (version !== serialiseVersionRef.current) return;
+        // Compare-and-swap on `baseline`: the buffer may have moved under us
+        // since this edit was made (source-mode typing after a mode switch,
+        // a reload of an external change). A rejected write leaves
+        // lastSerialisedRef alone so the parse-on-content path reconciles.
+        if (!emit(result.text, baseline)) return;
+        if (filePathRef.current !== path) return;
         lastSerialisedRef.current = result.text;
-        onChangeRef.current(result.text);
         // Refresh validation errors after local edits — the parse-on-content
         // path is gated by `content === lastSerialisedRef.current` to avoid
         // clobbering in-progress nodes, so errors would otherwise go stale.
@@ -126,8 +163,34 @@ export function TemplateVisualEditor({
           /* keep previous errors — a failed re-parse shouldn't wipe them */
         }
       });
+    };
+
+    clearTimeout(serialiseTimerRef.current);
+    pendingSerialiseRef.current = run;
+    serialiseTimerRef.current = setTimeout(() => {
+      pendingSerialiseRef.current = null;
+      run();
     }, 150);
   }, []);
+
+  // Run a scheduled serialise now rather than at the end of its debounce.
+  // Fires when the editor stops observing the file — a switch to source
+  // mode, a tab switch, a closed pane — so the edit reaches the buffer
+  // before the source view renders, instead of landing on top of whatever
+  // the modder typed there in the meantime.
+  const flushSerialise = useCallback(() => {
+    const run = pendingSerialiseRef.current;
+    if (run === null) return;
+    clearTimeout(serialiseTimerRef.current);
+    pendingSerialiseRef.current = null;
+    run();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      flushSerialise();
+    };
+  }, [filePath, flushSerialise]);
 
   // The dispatch handle exposed via context. Wraps the pure reducer with
   // undo-stack bookkeeping and the serialise side effect. Identity-stable
@@ -173,9 +236,23 @@ export function TemplateVisualEditor({
   useEffect(() => {
     if (content === lastSerialisedRef.current) return;
 
+    // Content moved without us: an external write reloaded into the buffer,
+    // or another view of the same file wrote to it. A serialise still in the
+    // debounce window holds the pre-change tree, so drop it rather than let
+    // it fire and write that tree back over the change.
+    clearTimeout(serialiseTimerRef.current);
+    pendingSerialiseRef.current = null;
+
+    const version = ++parseVersionRef.current;
     void templatesParse(content)
       .then((doc) => {
+        // A burst of external changes leaves several parses in flight and
+        // they can resolve out of order; without the guard a late response
+        // loads a tree the buffer no longer holds, and the editor stays
+        // wrong until the next change.
+        if (version !== parseVersionRef.current) return;
         lastSerialisedRef.current = content;
+        trailingCommentsRef.current = doc.trailingComments ?? null;
         dispatch({ type: "load", nodes: stampNodes(doc.nodes) });
         setParseErrors(doc.errors);
         setRpcError(null);
@@ -183,6 +260,7 @@ export function TemplateVisualEditor({
         redoStackRef.current = [];
       })
       .catch((err: unknown) => {
+        if (version !== parseVersionRef.current) return;
         setRpcError(err instanceof Error ? err.message : "Parse RPC failed");
       });
   }, [content, dispatch]);

@@ -63,9 +63,7 @@ export function normaliseCompositeTypeShortName(compositeType: string | null | u
   return lastDot >= 0 ? normalised.substring(lastDot + 1) : normalised;
 }
 
-export function templatesParse(
-  text: string,
-): Promise<{ nodes: import("../types").EditorNode[]; errors: import("../types").EditorError[] }> {
+export function templatesParse(text: string): Promise<import("../types").EditorDocument> {
   return rpcCall("templatesParse", { text });
 }
 

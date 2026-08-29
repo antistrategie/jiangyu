@@ -40,7 +40,12 @@ export interface TabbedMonacoEditorProps {
 
   readonly onSelectTab: (path: string) => void;
   readonly onCloseTab: (path: string) => void;
-  readonly onActiveContentChange: (value: string) => void;
+  // Write `value` into the active buffer, returning whether it was applied.
+  // `expectedPrevious` is a compare-and-swap guard used by the visual
+  // editor, whose text arrives a serialise RPC after the edit that produced
+  // it: the write is dropped when the buffer has moved on since. Monaco
+  // edits the buffer directly and omits it.
+  readonly onActiveContentChange: (value: string, expectedPrevious?: string) => boolean;
   readonly onSave: () => void | Promise<void>;
   readonly onReload: () => void | Promise<void>;
   readonly onDismissConflict: () => void;

@@ -30,6 +30,19 @@ interface EditorContentState {
   // clears it).
   readonly setContent: (path: string, text: string) => void;
 
+  // Write an editor edit into the buffer and mark it dirty, returning
+  // whether the write was applied.
+  //
+  // `expectedPrevious` makes the write a compare-and-swap: it is applied
+  // only while the buffer still holds that text. Views that produce their
+  // text asynchronously (the template visual editor serialises over an RPC)
+  // pass the text they based the edit on, so an edit that resolves after
+  // the buffer moved on — the modder switched to source mode and started
+  // typing, an external change reloaded — is dropped instead of reverting
+  // the newer content. Views that edit the buffer directly (Monaco) omit it
+  // and always win.
+  readonly applyEdit: (path: string, text: string, expectedPrevious?: string) => boolean;
+
   readonly markDirty: (path: string, isDirty: boolean) => void;
   readonly save: (path: string) => Promise<void>;
   readonly reload: (path: string) => Promise<void>;
@@ -107,6 +120,14 @@ export const useEditorContent = create<EditorContentState>((set, get) => ({
 
   setContent: (path, text) => {
     set((s) => (s.contents[path] === text ? s : { contents: { ...s.contents, [path]: text } }));
+  },
+
+  applyEdit: (path, text, expectedPrevious) => {
+    if (expectedPrevious !== undefined && get().contents[path] !== expectedPrevious) return false;
+    const s = get();
+    s.setContent(path, text);
+    s.markDirty(path, true);
+    return true;
   },
 
   markDirty: (path, isDirty) => {

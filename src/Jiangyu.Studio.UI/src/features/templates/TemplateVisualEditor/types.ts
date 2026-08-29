@@ -82,6 +82,10 @@ export interface EditorDirective {
    *  consecutive directives sharing the same descent prefix back into one
    *  outer `set "Field" index=N type="X" { ... }` block. */
   descent?: DescentStep[];
+  /** Line comments authored immediately above this directive in source.
+   *  Round-tripped untouched so a visual edit doesn't strip the modder's
+   *  commentary. Mirrors KdlEditorDirective.LeadingComments on the host. */
+  leadingComments?: string[];
   /** UI-only stable identity for drag/reorder. Not serialised. */
   _uiId?: string;
 }
@@ -97,6 +101,9 @@ export interface EditorNode {
   /** Clone/Create: the new template id. */
   cloneId?: string;
   directives: EditorDirective[];
+  /** Line comments authored immediately above this node in source. See
+   *  EditorDirective.leadingComments. */
+  leadingComments?: string[];
   /** UI-only stable identity for drag/reorder. Not serialised. */
   _uiId?: string;
 }
@@ -109,4 +116,9 @@ export interface EditorError {
 export interface EditorDocument {
   nodes: EditorNode[];
   errors: EditorError[];
+  /** Line comments that followed the last node in source. Node-level
+   *  commentary rides along on each node, but these belong to no node, so
+   *  the editor carries them across the parse/serialise round trip
+   *  explicitly. Mirrors KdlEditorDocument.TrailingComments on the host. */
+  trailingComments?: string[];
 }

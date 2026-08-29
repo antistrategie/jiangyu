@@ -65,6 +65,43 @@ describe("editorContent store", () => {
     });
   });
 
+  describe("applyEdit", () => {
+    it("writes the buffer and marks it dirty", () => {
+      const applied = useEditorContent.getState().applyEdit("/a", "next");
+      expect(applied).toBe(true);
+      expect(useEditorContent.getState().contents["/a"]).toBe("next");
+      expect(useEditorContent.getState().dirty.has("/a")).toBe(true);
+    });
+
+    it("applies when the buffer still holds the expected text", () => {
+      useEditorContent.getState().setContent("/a", "base");
+      const applied = useEditorContent.getState().applyEdit("/a", "next", "base");
+      expect(applied).toBe(true);
+      expect(useEditorContent.getState().contents["/a"]).toBe("next");
+    });
+
+    it("drops the write when the buffer moved on since the edit", () => {
+      useEditorContent.getState().setContent("/a", "typed in source");
+      const applied = useEditorContent.getState().applyEdit("/a", "stale", "base");
+      expect(applied).toBe(false);
+      expect(useEditorContent.getState().contents["/a"]).toBe("typed in source");
+      expect(useEditorContent.getState().dirty.has("/a")).toBe(false);
+    });
+
+    it("drops the write when the path is no longer tracked", () => {
+      const applied = useEditorContent.getState().applyEdit("/gone", "stale", "base");
+      expect(applied).toBe(false);
+      expect(useEditorContent.getState().contents["/gone"]).toBeUndefined();
+    });
+
+    it("applies without a baseline even when the buffer moved on", () => {
+      useEditorContent.getState().setContent("/a", "typed in source");
+      const applied = useEditorContent.getState().applyEdit("/a", "next");
+      expect(applied).toBe(true);
+      expect(useEditorContent.getState().contents["/a"]).toBe("next");
+    });
+  });
+
   describe("loadContent", () => {
     it("reads the file once and caches the result", async () => {
       mockRpc.mockResolvedValueOnce("contents");

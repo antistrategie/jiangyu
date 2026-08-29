@@ -82,11 +82,17 @@ internal sealed class AcpClientHandler : IAcpClientHandler
     {
         EnsurePathInsideProject(request.Path);
 
-        // Atomic write so a mid-write crash can't corrupt the user's file,
-        // and suppress watcher events for this window so the editor doesn't
-        // show a "changed externally" banner for its own agent's edit.
+        // Atomic write so a mid-write crash can't corrupt the user's file.
+        //
+        // Only the staging file is suppressed. The agent authors content this
+        // window's editor has never seen, so the window needs the fileChanged
+        // event for the real path just as much as any other watcher: a clean
+        // buffer reloads silently and an open template picks the edit up,
+        // while a dirty one raises the conflict banner, which is the honest
+        // answer when the agent and the modder have both edited the file.
+        // writeFile suppression is different — there the window already holds
+        // exactly what was written.
         var tmp = request.Path + ".jiangyu.tmp";
-        ProjectWatcher.SuppressFor(request.Path, _window.Id);
         ProjectWatcher.SuppressFor(tmp, _window.Id);
         try
         {

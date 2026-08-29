@@ -300,12 +300,10 @@ export function CodePane({
         dirtyFiles={dirtyFiles}
         onSelectTab={(path) => useLayoutStore.getState().selectTab(pane.id, path)}
         onCloseTab={(path) => useLayoutStore.getState().closeTabsInPane(pane.id, [path])}
-        onActiveContentChange={(value) => {
-          if (activeFile === null) return;
-          const store = useEditorContent.getState();
-          store.setContent(activeFile, value);
-          store.markDirty(activeFile, true);
-        }}
+        onActiveContentChange={(value, expectedPrevious) =>
+          activeFile !== null &&
+          useEditorContent.getState().applyEdit(activeFile, value, expectedPrevious)
+        }
         onSave={() => {
           if (activeFile !== null) void useEditorContent.getState().save(activeFile);
         }}

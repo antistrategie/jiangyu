@@ -286,12 +286,10 @@ function CodePaneShell({
         dirtyFiles={dirtyFiles}
         onSelectTab={setActivePath}
         onCloseTab={handleCloseTab}
-        onActiveContentChange={(value) => {
-          if (activePath === null) return;
-          const store = useEditorContent.getState();
-          store.setContent(activePath, value);
-          store.markDirty(activePath, true);
-        }}
+        onActiveContentChange={(value, expectedPrevious) =>
+          activePath !== null &&
+          useEditorContent.getState().applyEdit(activePath, value, expectedPrevious)
+        }
         onSave={() => {
           if (activePath !== null) void useEditorContent.getState().save(activePath);
         }}
