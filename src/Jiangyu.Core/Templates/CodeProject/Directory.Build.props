@@ -10,11 +10,15 @@
   </PropertyGroup>
 
   <!--
-    Game and SDK paths. The defaults assume a standard Steam install; override
-    them in local.props (gitignored, written by `jiangyu code sync`). `jiangyu
-    compile` injects these from your global config, so a fresh clone compiles
+    Game and SDK paths. local.props (gitignored, written by `jiangyu code sync`)
+    is imported before the defaults below, so the paths it sets feed MelonLoaderDir
+    and GameAssembliesDir. The defaults assume a standard Steam install and apply
+    only when local.props is absent. `jiangyu compile` injects the same properties
+    on the command line, where they win over both, so a fresh clone compiles
     without running sync first.
   -->
+  <Import Project="$(MSBuildThisFileDirectory)local.props" Condition="Exists('$(MSBuildThisFileDirectory)local.props')" />
+
   <PropertyGroup Condition="'$(GameDir)' == '' AND '$(OS)' == 'Unix'">
     <GameDir>$(HOME)/.local/share/Steam/steamapps/common/Menace</GameDir>
   </PropertyGroup>
@@ -37,7 +41,5 @@
   <PropertyGroup Condition="'$(JiangyuDev)' == 'true'">
     <DefineConstants>$(DefineConstants);JIANGYU_DEV</DefineConstants>
   </PropertyGroup>
-
-  <Import Project="local.props" Condition="Exists('local.props')" />
 
 </Project>
