@@ -225,9 +225,13 @@ public static partial class RpcDispatcher
         sendResponse(JsonSerializer.Serialize(response, RpcJsonContext.Default.RpcResponse));
     }
 
-    private static JsonElement HandleOpenFolder(IInfiniFrameWindow window, JsonElement? _)
+    private static JsonElement HandleOpenFolder(IInfiniFrameWindow window, JsonElement? parameters)
     {
-        var results = window.ShowOpenFolder("Open Jiangyu project");
+        var initial = TryGetString(parameters, "initial");
+        if (initial is not null && !Directory.Exists(initial))
+            initial = null;
+
+        var results = window.ShowOpenFolder("Open Jiangyu project", defaultPath: initial);
         var path = results.FirstOrDefault(p => p is not null);
         if (path is null)
             return JsonSerializer.SerializeToElement<string?>(null);

@@ -2,7 +2,11 @@ import { useState } from "react";
 import { CircleX, TriangleAlert, Info, X } from "lucide-react";
 import { rpcCall } from "@shared/rpc";
 import { pickProjectFolder } from "@features/project/commands";
-import { loadRecentProjects, removeRecentProject } from "@features/project/recent";
+import {
+  loadRecentProjects,
+  recentProjectParent,
+  removeRecentProject,
+} from "@features/project/recent";
 import { useConfigStatus } from "@features/settings/useConfigStatus";
 import { Spinner } from "@shared/ui/Spinner/Spinner";
 import { Button } from "@shared/ui/Button/Button";
@@ -23,7 +27,7 @@ export function WelcomeScreen({ onOpenProject }: WelcomeScreenProps) {
   };
 
   const handleOpen = async () => {
-    const path = await pickProjectFolder();
+    const path = await pickProjectFolder(recentProjectParent());
     if (path !== null) onOpenProject(path);
   };
 

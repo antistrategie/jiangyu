@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearRecentProjects,
   loadRecentProjects,
+  recentProjectParent,
   recordRecentProject,
   removeRecentProject,
 } from "@features/project/recent";
@@ -72,5 +73,27 @@ describe("clearRecentProjects", () => {
     recordRecentProject("/proj/b");
     clearRecentProjects();
     expect(loadRecentProjects()).toEqual([]);
+  });
+});
+
+describe("recentProjectParent", () => {
+  it("returns null with no history", () => {
+    expect(recentProjectParent()).toBeNull();
+  });
+
+  it("returns the folder holding the newest project", () => {
+    recordRecentProject("/home/me/mods/alpha");
+    recordRecentProject("/home/me/work/beta");
+    expect(recentProjectParent()).toBe("/home/me/work");
+  });
+
+  it("handles trailing separators and Windows paths", () => {
+    recordRecentProject("D:\\mods\\alpha\\");
+    expect(recentProjectParent()).toBe("D:\\mods");
+  });
+
+  it("stops at the root", () => {
+    recordRecentProject("/alpha");
+    expect(recentProjectParent()).toBe("/");
   });
 });

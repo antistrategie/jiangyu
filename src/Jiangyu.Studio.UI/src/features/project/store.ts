@@ -5,7 +5,7 @@ import { usePaneWindowStore } from "@features/panes/paneWindowStore";
 import { agentStop } from "@features/agent/rpc";
 import { useAgentStore } from "@features/agent/store";
 import { pickProjectFolder } from "./commands";
-import { loadRecentProjects, recordRecentProject } from "./recent";
+import { loadRecentProjects, recentProjectParent, recordRecentProject } from "./recent";
 
 /// Tear down any active agent session before swapping projects. The agent
 /// session is bound to its starting cwd via session/new, but our filesystem
@@ -44,7 +44,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   recentProjects: loadRecentProjects(),
 
   openProject: async () => {
-    const path = await pickProjectFolder();
+    const path = await pickProjectFolder(recentProjectParent());
     if (path !== null) get().switchProject(path);
   },
 

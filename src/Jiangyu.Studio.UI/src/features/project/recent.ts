@@ -46,3 +46,22 @@ export function removeRecentProject(path: string): readonly string[] {
 export function clearRecentProjects(): void {
   save([]);
 }
+
+/** Parent of `path`, forward- or back-slashed. Null when `path` has no separator. */
+function parentDirectory(path: string): string | null {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  const cut = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  if (cut < 0) return null;
+  if (cut === 0) return "/";
+  if (trimmed[cut - 1] === ":") return trimmed.slice(0, cut + 1);
+  return trimmed.slice(0, cut);
+}
+
+/**
+ * Folder the Open Project picker starts in: the one holding the most recent
+ * project, so its siblings are on screen. Null when there is no history.
+ */
+export function recentProjectParent(): string | null {
+  const [latest] = loadRecentProjects();
+  return latest === undefined ? null : parentDirectory(latest);
+}

@@ -108,6 +108,17 @@ describe("projectStore", () => {
       expect(useProjectStore.getState().projectPath).toBe("/picked");
     });
 
+    it("seeds the picker with the folder holding the last project", async () => {
+      useProjectStore.setState({ recentProjects: [] });
+      mockPick.mockResolvedValueOnce("/home/me/mods/alpha");
+      await useProjectStore.getState().openProject();
+      expect(mockPick).toHaveBeenLastCalledWith(null);
+
+      mockPick.mockResolvedValueOnce("/home/me/mods/beta");
+      await useProjectStore.getState().openProject();
+      expect(mockPick).toHaveBeenLastCalledWith("/home/me/mods");
+    });
+
     it("is a no-op when the picker is cancelled", async () => {
       mockPick.mockResolvedValueOnce(null);
       await useProjectStore.getState().openProject();
