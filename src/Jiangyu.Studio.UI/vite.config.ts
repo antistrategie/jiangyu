@@ -29,6 +29,13 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
       "@features": fileURLToPath(new URL("./src/features", import.meta.url)),
       "@shared": fileURLToPath(new URL("./src/shared", import.meta.url)),
+      // monaco-editor's package exports map rewrites every subpath through
+      // esm/vs, so the old-style "monaco-editor/esm/vs/..." specifiers that
+      // monaco-vim still emits resolve to esm/vs/esm/vs/... and fail. Point
+      // the legacy prefix straight at the real directory.
+      "monaco-editor/esm/vs": fileURLToPath(
+        new URL("./node_modules/monaco-editor/esm/vs", import.meta.url),
+      ),
     },
   },
   define: {
