@@ -194,6 +194,49 @@ internal static class Il2CppCollectionReflection
     }
 
     /// <summary>
+    /// The elements of an Il2Cpp reference array or <c>List&lt;T&gt;</c>, in order, read through the
+    /// collection's own <c>Length</c>/<c>Count</c> and int indexer.
+    ///
+    /// <para>Callers that need to decide membership should compare on the elements' native identity
+    /// rather than on managed wrapper identity: Il2CppInterop pools wrappers weakly and builds a
+    /// fresh one after a GC, so the same native object is reached through different wrappers over
+    /// its life. Deciding what identity means is the caller's business, which is why this returns
+    /// the elements rather than a set of keys.</para>
+    /// </summary>
+    public static bool TryReadElements(object collection, out List<object> elements, out string error)
+    {
+        elements = null;
+        error = null;
+        if (collection == null) { error = "collection is null."; return false; }
+
+        var type = collection.GetType();
+        var countProp = type.GetProperty("Length", BindingFlags.Instance | BindingFlags.Public)
+            ?? type.GetProperty("Count", BindingFlags.Instance | BindingFlags.Public);
+        var indexer = FindIntIndexer(type);
+        if (countProp == null || indexer == null)
+        {
+            error = $"{type.FullName} has no Length/Count or int indexer.";
+            return false;
+        }
+
+        int count;
+        try { count = (int)countProp.GetValue(collection); }
+        catch (Exception ex) { error = $"count read threw: {ex.Message}."; return false; }
+
+        var read = new List<object>(count);
+        var args = new object[1];
+        for (var i = 0; i < count; i++)
+        {
+            args[0] = i;
+            try { read.Add(indexer.GetValue(collection, args)); }
+            catch (Exception ex) { error = $"read of element [{i}] threw: {ex.Message}."; return false; }
+        }
+
+        elements = read;
+        return true;
+    }
+
+    /// <summary>
     /// Append-multiple variant of <see cref="TryRebuildReferenceArray"/>. One
     /// allocation + one source pass for the whole batch, instead of N rebuilds
     /// when adding N elements one at a time. Used by the conversation registry

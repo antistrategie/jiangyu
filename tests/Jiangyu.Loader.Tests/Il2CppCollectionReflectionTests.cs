@@ -34,6 +34,20 @@ public sealed class Il2CppCollectionReflectionTests
         public T[] Snapshot() => (T[])_items.Clone();
     }
 
+    // Count rather than Length, the shape Il2CppSystem.Collections.Generic.List<T> presents.
+    private sealed class FakeList<T>
+    {
+        private readonly System.Collections.Generic.List<T> _items;
+        public FakeList(params T[] items) => _items = new System.Collections.Generic.List<T>(items);
+        public int Count => _items.Count;
+        public T this[int i] { get => _items[i]; set => _items[i] = value; }
+    }
+
+    // Neither Length/Count nor an indexer: the shape the helper has to refuse rather than guess at.
+    private sealed class Opaque
+    {
+    }
+
     private sealed class Element
     {
         public string Name;
@@ -302,5 +316,56 @@ public sealed class Il2CppCollectionReflectionTests
         Assert.False(ok);
         Assert.Null(fresh);
         Assert.False(string.IsNullOrEmpty(error));
+    }
+
+    [Fact]
+    public void ReadElements_ReadsAnArrayShapeInOrder()
+    {
+        var a = new Element("a");
+        var b = new Element("b");
+        var source = new FakeRefArray<Element>(new[] { a, b });
+
+        Assert.True(Il2CppCollectionReflection.TryReadElements(source, out var elements, out var error), error);
+        Assert.Equal(new object[] { a, b }, elements);
+    }
+
+    [Fact]
+    public void ReadElements_ReadsAListShapeThroughCount()
+    {
+        // The conversation registry checks a per-trigger bucket, which is a List, and a master
+        // array, which is not. One helper has to read both.
+        var a = new Element("a");
+        var b = new Element("b");
+        var source = new FakeList<Element>(a, b);
+
+        Assert.True(Il2CppCollectionReflection.TryReadElements(source, out var elements, out var error), error);
+        Assert.Equal(new object[] { a, b }, elements);
+    }
+
+    [Fact]
+    public void ReadElements_EmptyCollectionSucceedsWithNoElements()
+    {
+        var source = new FakeRefArray<Element>(System.Array.Empty<Element>());
+
+        Assert.True(Il2CppCollectionReflection.TryReadElements(source, out var elements, out var error), error);
+        Assert.Empty(elements);
+    }
+
+    [Fact]
+    public void ReadElements_RefusesAShapeItCannotWalk()
+    {
+        // Must fail rather than report an empty collection: a caller deciding membership from an
+        // empty answer would conclude nothing is present and append a duplicate of everything.
+        Assert.False(Il2CppCollectionReflection.TryReadElements(new Opaque(), out var elements, out var error));
+        Assert.Null(elements);
+        Assert.Contains("Length/Count", error);
+    }
+
+    [Fact]
+    public void ReadElements_NullCollectionFails()
+    {
+        Assert.False(Il2CppCollectionReflection.TryReadElements(null, out var elements, out var error));
+        Assert.Null(elements);
+        Assert.Contains("null", error);
     }
 }

@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Reflection;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
@@ -67,11 +68,30 @@ internal static class ConversationManagerRegistry
         PreparedClone[] clonesSnapshot;
         lock (Sync)
         {
-            // Dedup: this method gets called from a per-trigger hot postfix,
-            // so the same manager pointer will arrive many times. Register
-            // only the first call per pointer; the matcher's index is
-            // stable from then on.
-            if (ManagerCaches.ContainsKey(pointer)) return;
+            // Dedup: this method gets called from a per-trigger hot prefix, so the same
+            // manager pointer arrives many times. Register only the first call per LIVE
+            // manager; the matcher's index is stable from then on.
+            if (ManagerCaches.TryGetValue(pointer, out var existing))
+            {
+                // Still the manager we injected into: its indexes already carry our clones.
+                if (existing.Manager.TryGetTarget(out _))
+                    return;
+
+                // A dead target may mean IL2CPP handed this address to a NEW manager, or merely
+                // that the wrapper was collected while the manager lives on. Re-registering is the
+                // safe answer to both: keying on the raw pointer alone would skip a new manager for
+                // good and nothing would ever put our clones in its indexes, so every doll would go
+                // quiet for the rest of the session while vanilla conversations, which the manager
+                // builds natively, kept working. Re-injecting into a manager that already has them
+                // costs nothing, because the append checks the manager's indexes first.
+                ManagerCaches.Remove(pointer);
+            }
+
+            // The dictionary only ever grew, one entry per manager the session had seen.
+            // Dropping the collected ones keeps it to the live set and keeps a recycled
+            // address from finding a stale entry in the first place.
+            PruneCollectedManagers();
+
             managerCache = TryBuildManagerCache(manager);
             if (managerCache == null) return;
             ManagerCaches[pointer] = managerCache;
@@ -81,6 +101,22 @@ internal static class ConversationManagerRegistry
         var managerTypeName = manager.GetType().FullName ?? "<unknown>";
         _log?.Debug($"  Conversation manager registered: {managerTypeName} (replaying {clonesSnapshot.Length} known clone(s)).");
         BatchInjectClonesIntoManager(managerCache, clonesSnapshot);
+    }
+
+    // Entries whose manager has been collected. Called under Sync.
+    private static void PruneCollectedManagers()
+    {
+        List<IntPtr> dead = null;
+        foreach (var (pointer, cache) in ManagerCaches)
+        {
+            if (cache.Manager.TryGetTarget(out _))
+                continue;
+            (dead ??= new List<IntPtr>()).Add(pointer);
+        }
+        if (dead == null)
+            return;
+        foreach (var pointer in dead)
+            ManagerCaches.Remove(pointer);
     }
 
     /// <summary>Called by <see cref="TemplateCloneApplier"/> after a
@@ -226,6 +262,8 @@ internal static class ConversationManagerRegistry
         if (hasKey)
         {
             list = managerCache.BucketGetItem.Invoke(dict, new[] { triggerKey });
+            if (AlreadyHolds(list, clone))
+                return false;
         }
         else
         {
@@ -240,6 +278,58 @@ internal static class ConversationManagerRegistry
     // Master array rebuild (the expensive part — batched when possible).
     // -----------------------------------------------------------------
 
+    // Injection is idempotent, decided by what the manager's own indexes already hold rather than
+    // by whether we remember registering it. Wrapper identity cannot carry that memory: Il2CppInterop
+    // pools wrappers weakly and rebuilds them after a GC, so a manager we injected into an hour ago
+    // is reached through a different wrapper now, and a registry that trusted wrapper liveness would
+    // replay all of its clones into indexes that already have them. The collection is the one stable
+    // native record of what went in.
+    private static bool AlreadyHolds(object collection, object clone)
+    {
+        if (clone is not Il2CppObjectBase typed)
+            return false;
+        var present = NativePointersIn(collection, "appending");
+        return present != null && present.Contains(typed.Pointer);
+    }
+
+    // The native pointers a collection already holds. Native identity, not the managed wrapper's:
+    // Il2CppInterop pools wrappers weakly and rebuilds them after a GC, so one native object is
+    // reached through different wrappers over its life. Null when the collection cannot be read,
+    // which the callers treat as "cannot tell, append anyway".
+    private static HashSet<IntPtr> NativePointersIn(object collection, string fallbackAction)
+    {
+        if (!Il2CppCollectionReflection.TryReadElements(collection, out var elements, out var error))
+        {
+            _log?.Debug($"  Conversation clone injection: membership check unavailable ({error}); {fallbackAction}.");
+            return null;
+        }
+
+        var pointers = new HashSet<IntPtr>();
+        foreach (var element in elements)
+            if (element is Il2CppObjectBase typed)
+                pointers.Add(typed.Pointer);
+        return pointers;
+    }
+
+    private static IReadOnlyList<object> WithoutAlreadyPresent(object collection, IReadOnlyList<object> clones)
+    {
+        var present = NativePointersIn(collection, "appending all");
+        if (present == null)
+            return clones;
+
+        List<object> kept = null;
+        for (var i = 0; i < clones.Count; i++)
+        {
+            if (clones[i] is Il2CppObjectBase typed && present.Contains(typed.Pointer))
+            {
+                kept ??= new List<object>(clones.Take(i));
+                continue;
+            }
+            kept?.Add(clones[i]);
+        }
+        return kept ?? clones;
+    }
+
     private static bool TryAppendToMasterArraySingle(ManagerCache managerCache, object clone)
         => TryAppendToMasterArrayBatch(managerCache, new[] { clone }) > 0;
 
@@ -253,6 +343,9 @@ internal static class ConversationManagerRegistry
             _log?.Warning("  Conversation clone injection: m_ConversationTemplates is null.");
             return 0;
         }
+
+        clones = WithoutAlreadyPresent(array, clones);
+        if (clones.Count == 0) return 0;
 
         if (!Il2CppCollectionReflection.TryRebuildReferenceArrayBatch(
                 array, managerCache.MasterArrayType, managerCache.MasterArrayElementType,
@@ -578,11 +671,10 @@ internal static class ConversationManagerRegistry
 
     private sealed class ManagerCache
     {
-        // Weak so the registry doesn't pin destroyed managers. Readers must
-        // TryGetTarget; a dead target means the manager has been collected
-        // and the cache entry is stale (we leave it in the dictionary for
-        // now — the pointer key would collide if reused, but IL2CPP pointers
-        // typically don't recycle within a session).
+        // Weak so the registry doesn't pin destroyed managers. A dead target means the
+        // manager has been collected and the entry is stale, which RegisterManager treats
+        // as "not registered": IL2CPP does reuse an address within a session, and a stale
+        // entry sitting on a recycled one would silently deny the new manager its clones.
         public WeakReference<Il2CppObjectBase> Manager;
         public Type ManagerType;
         public int? ConversationType;
