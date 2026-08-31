@@ -36,6 +36,13 @@ public sealed class TemplateDescentStep
     /// <summary>
     /// Zero-based element index inside <see cref="Field"/> for collection
     /// descent. Null for object-field descent into a non-collection member.
+    ///
+    /// <para>A negative value counts back from the end (-1 is the last
+    /// element), resolved against the live collection length when the descent
+    /// is walked. Only the localisation pipeline mints these: an element a
+    /// patch <c>append</c>ed has no compile-time absolute index, but appends
+    /// land at the end in op order, so its distance from the end is known.
+    /// KDL-authored descent is always non-negative.</para>
     /// </summary>
     [JsonPropertyName("index")]
     public int? Index { get; set; }

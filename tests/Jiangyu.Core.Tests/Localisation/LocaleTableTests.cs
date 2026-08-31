@@ -112,6 +112,27 @@ public class LocaleTableTests
         Assert.Equal("Ligne traduite", op.Value!.String);
     }
 
+    [Theory]
+    [InlineData("Tooltips[^1]", "Tooltips", -1)]
+    [InlineData("Tooltips[^12]", "Tooltips", -12)]
+    [InlineData("Tooltips[0]", "Tooltips", 0)]
+    public void Descent_RoundTripsAbsoluteAndFromEndIndices(string path, string field, int index)
+    {
+        var steps = LocaleCoordinate.ParseDescent(path);
+        var step = Assert.Single(steps!);
+        Assert.Equal(field, step.Field);
+        Assert.Equal(index, step.Index);
+        Assert.Equal(path, LocaleCoordinate.EncodeDescent(steps!));
+    }
+
+    [Theory]
+    [InlineData("Tooltips[^0]")]     // ^0 names nothing
+    [InlineData("Tooltips[^]")]
+    [InlineData("Tooltips[^x]")]
+    [InlineData("Tooltips[-1]")]     // a bare negative is not the from-end spelling
+    public void Descent_RejectsMalformedFromEndIndices(string path)
+        => Assert.Null(LocaleCoordinate.ParseDescent(path));
+
     [Fact]
     public void Compile_ConversationSubtitle_RoundTripsFromNestedSayNode()
     {

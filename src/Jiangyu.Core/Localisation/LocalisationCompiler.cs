@@ -6,11 +6,12 @@ namespace Jiangyu.Core.Localisation;
 
 /// <summary>
 /// Builds a mod's translation source catalogue (the POT). It collects every translatable string a
-/// mod ships: each <c>m_DefaultTranslation</c> a clone or patch sets (at any descent depth), plus
-/// code strings from literal <c>Locale.Text("key","fallback")</c> calls and UXML labels named
-/// <c>name="@key"</c>. Translators fill in the resulting <c>&lt;mod&gt;.po</c>. Turning a filled PO
-/// back into the loader's apply manifests is <see cref="LocaleTable"/> in Jiangyu.Shared, used by
-/// the loader, so a translation mod ships its PO directly with no compiled table.
+/// mod ships: each <c>m_DefaultTranslation</c> a clone or patch writes, at any descent depth and
+/// inside any composite it constructs (including elements it appends to a list), plus code strings
+/// from literal <c>Locale.Text("key","fallback")</c> calls and UXML labels named <c>name="@key"</c>.
+/// Translators fill in the resulting <c>&lt;mod&gt;.po</c>. Turning a filled PO back into the
+/// loader's apply manifests is <see cref="LocaleTable"/> in Jiangyu.Shared, used by the loader, so a
+/// translation mod ships its PO directly with no compiled table.
 /// </summary>
 public static class LocalisationCompiler
 {
@@ -23,25 +24,43 @@ public static class LocalisationCompiler
         if (templates.TemplatePatches == null)
             return po;
 
+        // Append positions are counted per TARGET, not per patch block: the loader merges every block
+        // and every mod's operations for one template into a single stream before applying, so blocks
+        // that both append to a collection land one after the other and a per-block count would place
+        // the earlier block's elements too near the end.
+        var appendPositions = MapAppendPositions(templates.TemplatePatches, out var unstableAppends);
+
         foreach (var patch in templates.TemplatePatches)
         {
             var templateType = string.IsNullOrEmpty(patch.TemplateType) ? "EntityTemplate" : patch.TemplateType!;
-            foreach (var op in patch.Set)
-            {
-                if (!TryReadLocalisedWrite(op, out var path, out var source))
-                {
-                    if (IsLocalisedWrite(op))
-                        skipped++;
-                    continue;
-                }
 
+            void Emit(string path, string source)
+            {
                 var key = LocaleCoordinate.Build(modName, templateType, patch.TemplateId, path);
                 if (!seen.Add(key))
-                    continue;
-
+                    return;
                 var entry = new PoEntry { Context = key, Id = source, Str = string.Empty };
                 entry.ExtractedComments.Add($"{CategoryFor(templateType)} · {templateType} {patch.TemplateId} · {path}");
                 po.Entries.Add(entry);
+            }
+
+            foreach (var op in patch.Set)
+            {
+                if (TryReadLocalisedWrite(op, out var path, out var source))
+                    Emit(path, source);
+                else if (IsLocalisedWrite(op))
+                    skipped++;
+
+                // A composite value builds a fresh instance, so any localised line inside it is
+                // authored text too, however deep. Appended elements have no absolute index until
+                // apply time, so they are addressed from the end.
+                var prefix = PrefixFor(op, appendPositions, unstableAppends);
+                if (prefix == null)
+                {
+                    skipped += CountLocalisedWrites(op.Value);
+                    continue;
+                }
+                WalkComposite(op.Value, prefix, Emit, ref skipped);
             }
 
             if (templateType == "ConversationTemplate")
@@ -49,6 +68,170 @@ public static class LocalisationCompiler
         }
 
         return po;
+    }
+
+    // The descent path naming the instance an op's composite value becomes, or null when the op's
+    // position cannot be named. A Set writes a member outright, so its path is the descent plus the
+    // field. An Append lands at the end, so the j-th of a field's k appends sits k-j back from the
+    // end once the patch has run.
+    private static string? PrefixFor(
+        CompiledTemplateSetOperation op,
+        IReadOnlyDictionary<CompiledTemplateSetOperation, int> appendPositions,
+        IReadOnlySet<(string Descent, string Field)> unstableAppends)
+    {
+        if (op.Value?.Composite == null && op.Value?.TypeConstruction == null)
+            return null;
+        if (string.IsNullOrEmpty(op.FieldPath))
+            return null;
+
+        var descent = op.Descent is { Count: > 0 } ? LocaleCoordinate.EncodeDescent(op.Descent) : string.Empty;
+        if (descent == null)
+            return null;
+        var head = descent.Length > 0 ? descent + "/" : string.Empty;
+
+        // A Set with index= replaces one element (KDL `set "Field" index=N type="X" { ... }`), so the
+        // element it writes is what the coordinate has to name.
+        if (op.Op == CompiledTemplateOp.Set)
+            return op.Index is { } index and >= 0
+                ? $"{head}{op.FieldPath}[{index}]"
+                : head + op.FieldPath;
+
+        if (op.Op != CompiledTemplateOp.Append)
+            return null;
+        if (unstableAppends.Contains(AppendGroup(op)) || !appendPositions.TryGetValue(op, out var fromEnd))
+            return null;
+        return $"{head}{op.FieldPath}[^{fromEnd}]";
+    }
+
+    // From-end positions for every Append op, and the collection groups whose appends cannot be
+    // addressed at all. Appends to one collection land in op order, so counting them gives each a
+    // fixed distance from the end. A Clear, Remove or InsertAt on the same collection AFTER an append
+    // moves elements the appends already placed, so that group is given up rather than mis-addressed.
+    // The whole manifest's appends, grouped by the template each block targets so blocks sharing a
+    // target are counted as the one stream the loader will apply.
+    private static Dictionary<CompiledTemplateSetOperation, int> MapAppendPositions(
+        IReadOnlyList<CompiledTemplatePatch> patches, out IReadOnlySet<(string Descent, string Field)> unstable)
+    {
+        var byTarget = new Dictionary<(string Type, string Id), List<CompiledTemplateSetOperation>>();
+        foreach (var patch in patches)
+        {
+            var key = (string.IsNullOrEmpty(patch.TemplateType) ? "EntityTemplate" : patch.TemplateType!, patch.TemplateId);
+            if (!byTarget.TryGetValue(key, out var ops))
+                byTarget[key] = ops = [];
+            ops.AddRange(patch.Set);
+        }
+
+        var positions = new Dictionary<CompiledTemplateSetOperation, int>();
+        var spoiled = new HashSet<(string Descent, string Field)>();
+        foreach (var ops in byTarget.Values)
+        {
+            var targetPositions = MapAppendPositions(ops, out var targetUnstable);
+            foreach (var (op, fromEnd) in targetPositions)
+                positions[op] = fromEnd;
+            foreach (var group in targetUnstable)
+                spoiled.Add(group);
+        }
+
+        unstable = spoiled;
+        return positions;
+    }
+
+    private static Dictionary<CompiledTemplateSetOperation, int> MapAppendPositions(
+        IReadOnlyList<CompiledTemplateSetOperation> ops, out IReadOnlySet<(string Descent, string Field)> unstable)
+    {
+        var appendsByGroup = new Dictionary<(string, string), List<CompiledTemplateSetOperation>>();
+        var spoiled = new HashSet<(string Descent, string Field)>();
+
+        foreach (var op in ops)
+        {
+            var group = AppendGroup(op);
+            if (op.Op == CompiledTemplateOp.Append)
+            {
+                if (!appendsByGroup.TryGetValue(group, out var list))
+                    appendsByGroup[group] = list = [];
+                list.Add(op);
+                continue;
+            }
+
+            if (op.Op is CompiledTemplateOp.Clear or CompiledTemplateOp.Remove or CompiledTemplateOp.InsertAt
+                && appendsByGroup.ContainsKey(group))
+                spoiled.Add(group);
+        }
+
+        // Keyed by op identity: the model declares no value equality, so two structurally identical
+        // appends stay distinct entries.
+        var positions = new Dictionary<CompiledTemplateSetOperation, int>();
+        foreach (var (group, list) in appendsByGroup)
+        {
+            if (spoiled.Contains(group))
+                continue;
+            for (var i = 0; i < list.Count; i++)
+                positions[list[i]] = list.Count - i;
+        }
+
+        unstable = spoiled;
+        return positions;
+    }
+
+    // Identifies the collection an op targets: its descent prefix plus the field name. Ops with an
+    // unencodable descent share the null group, which is never addressable anyway.
+    private static (string Descent, string Field) AppendGroup(CompiledTemplateSetOperation op)
+    {
+        var descent = op.Descent is { Count: > 0 } ? LocaleCoordinate.EncodeDescent(op.Descent) : string.Empty;
+        return (descent ?? string.Empty, op.FieldPath ?? string.Empty);
+    }
+
+    // Collect every m_DefaultTranslation inside a composite, recursing through nested composites and
+    // through elements the composite itself appends. `prefix` is the descent path to this instance.
+    private static void WalkComposite(
+        CompiledTemplateValue? value, string prefix, Action<string, string> emit, ref int skipped)
+    {
+        var composite = value?.Composite ?? value?.TypeConstruction;
+        if (composite == null)
+            return;
+
+        var appendPositions = MapAppendPositions(composite.Operations, out var unstableAppends);
+        foreach (var op in composite.Operations)
+        {
+            if (op.Op == CompiledTemplateOp.Set
+                && op.FieldPath == LocaleCoordinate.DefaultTranslationMember
+                && op.Value is { Kind: CompiledTemplateValueKind.String, String: { } text })
+            {
+                // The composite IS the localised line: its own descent path is the coordinate.
+                var descent = op.Descent is { Count: > 0 } ? LocaleCoordinate.EncodeDescent(op.Descent) : string.Empty;
+                if (descent == null)
+                    skipped++;
+                else
+                    emit(descent.Length > 0 ? $"{prefix}/{descent}" : prefix, text);
+                continue;
+            }
+
+            var inner = PrefixFor(op, appendPositions, unstableAppends);
+            if (inner == null)
+                skipped += CountLocalisedWrites(op.Value);
+            else
+                WalkComposite(op.Value, $"{prefix}/{inner}", emit, ref skipped);
+        }
+    }
+
+    // How many localised strings a value carries, for the coverage report when its position could not
+    // be named and the whole subtree is given up.
+    private static int CountLocalisedWrites(CompiledTemplateValue? value)
+    {
+        var composite = value?.Composite ?? value?.TypeConstruction;
+        if (composite == null)
+            return 0;
+
+        var count = 0;
+        foreach (var op in composite.Operations)
+        {
+            if (op.FieldPath == LocaleCoordinate.DefaultTranslationMember
+                && op.Value is { Kind: CompiledTemplateValueKind.String })
+                count++;
+            else
+                count += CountLocalisedWrites(op.Value);
+        }
+        return count;
     }
 
     // A conversation SAY node's subtitle is a plain Text string on the node, not a LocalizedLine, so it

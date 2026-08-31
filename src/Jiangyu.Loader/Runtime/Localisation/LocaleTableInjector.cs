@@ -16,8 +16,7 @@ namespace Jiangyu.Loader.Runtime.Localisation;
 /// it writes two places:
 /// <list type="bullet">
 ///   <item>the <c>LocaData</c> entry the UI reads, keyed
-///     <c>&lt;Category&gt;/&lt;templateId&gt;/&lt;fieldName&gt;</c> (the category and field name come
-///     from the live line, so the key matches what the game builds for its own CSV entries);</item>
+///     <c>&lt;Category&gt;/&lt;templateId&gt;/&lt;fieldName&gt;</c>;</item>
 ///   <item>the live <c>BaseLocalizedString</c>'s default translation, for code paths that read it
 ///     directly.</item>
 /// </list>
@@ -135,8 +134,11 @@ internal static class LocaleTableInjector
         try { line.SetDefaultTranslation(value); }
         catch (Exception ex) { log.Warning($"Locale inject: {templateId}: set default failed: {ex.Message}"); }
 
-        // The LocaData entry the UI reads. Key and category come from the live line, so they match
-        // exactly what the game builds when it looks the field up.
+        // The LocaData entry the UI reads. Keyed by TEMPLATE ID, which is unique per clone. The
+        // line's own key is not usable here: Object.Instantiate leaves every clone of one source
+        // carrying that source's name, so all of them would write to a single entry and the last
+        // one would win. For a clone the entry is therefore inert and the default write above is
+        // what carries the translation; for a patched vanilla template the two keys agree.
         try
         {
             var category = line.m_Category;

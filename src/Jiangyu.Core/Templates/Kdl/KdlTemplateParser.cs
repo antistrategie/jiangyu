@@ -863,7 +863,7 @@ public static class KdlTemplateParser
             }
 
             var removeIndexProp = GetPropertyValue(node, "index");
-            var hasIndex = removeIndexProp != null && removeIndexProp.AsInt32() != null;
+            var hasIndex = removeIndexProp?.AsInt32() >= 0;
             var hasValue =
                 node.Arguments.Count >= 2
                 || GetProperty(node, "enum") != null
@@ -915,12 +915,20 @@ public static class KdlTemplateParser
         if (opKind == CompiledTemplateOp.InsertAt)
         {
             var indexProp = GetPropertyValue(node, "index");
-            if (indexProp == null || indexProp.AsInt32() == null)
+            if (indexProp == null || indexProp.AsInt32() is not { } insertIndex)
             {
                 log.Error($"{pos}: 'insert' requires an index=N property.");
                 return false;
             }
-            parsedIndex = indexProp.AsInt32();
+            // Negative is rejected here rather than left to the applier: the localisation coordinate
+            // gives a negative index the meaning "counted back from the end", so an authored one
+            // would read as a position it was never meant to name.
+            if (insertIndex < 0)
+            {
+                log.Error($"{pos}: 'insert' index= must be a non-negative integer.");
+                return false;
+            }
+            parsedIndex = insertIndex;
         }
         else if (opKind == CompiledTemplateOp.Set)
         {
@@ -928,12 +936,12 @@ public static class KdlTemplateParser
             if (indexProp != null)
             {
                 var parsed = indexProp.AsInt32();
-                if (parsed == null)
+                if (parsed is not { } setIndex || setIndex < 0)
                 {
                     log.Error($"{pos}: 'set' index= must be a non-negative integer.");
                     return false;
                 }
-                parsedIndex = parsed;
+                parsedIndex = setIndex;
             }
 
             // Edit-in-place descent (no type=, no from=, no cell=):

@@ -2,6 +2,13 @@
 
 Changes relevant to modders building with Jiangyu, and to players running Jiangyu mods where they can see the difference. Entries are scoped Loader, Studio, CLI, MCP or SDK.
 
+## 1.4.1
+
+- (Loader) Fixed a clone showing English for text it inherited from its source and never overrode, which left a cloned weapon skill untranslated while the vanilla skill it came from translated normally. It now reads as its source does in every language, with nothing for a translator to fill in
+- (Loader) Fixed localised text nested inside an appended list element never reaching the POT, so barks on a leader's emotional-state responses and entries appended to a tooltip config could not be translated at all
+- (Loader) Fixed the POT keying text written through an indexed `set "Field" index=N type="..."` as if the field were not a collection, which no translation could then apply against. Retranslate any entry whose key gains an `[N]`
+- (Loader) Changed `index=` to be rejected at compile time when negative, rather than compiling and failing when the patch applied
+
 ## 1.4.0
 
 - (SDK) Added prefix patches that skip the original and set its return value (`info.Skip` + `info.Result`, typed and boxed returns, `null` for nullable returns)

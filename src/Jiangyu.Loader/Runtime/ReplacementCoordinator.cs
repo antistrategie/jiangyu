@@ -88,7 +88,7 @@ internal class ReplacementCoordinator
             .ToList();
         _templateClones.Load(templates, new LoaderLog(log));
         _templatePatches.Load(templates, new LoaderLog(log));
-        _localeApplier = new LocaleApplier(plan.LoadableMods);
+        _localeApplier = new LocaleApplier(plan.LoadableMods, _templateClones, _templatePatches);
         return summary;
     }
 
@@ -162,10 +162,18 @@ internal class ReplacementCoordinator
         // applier did work avoids re-deserialising every clone on each of
         // the ~25 post-scene-load polls.
         if (clonesApplied > 0 || patchesApplied > 0)
+        {
             _templateCloneApplier.RunPostPatchHooks(new LoaderLog(log));
+            // Newly registered templates are the only reason the locale pass would see more than it
+            // did last time, so it re-runs here rather than on every poll.
+            _localeApplier?.NotifyTemplatesChanged();
+        }
 
         // Active-language translations rewrite m_DefaultTranslation after the base patches set
-        // the source text, so they overwrite English in the same pass the base patches land.
+        // the source text, so they overwrite English in the same pass the base patches land. Never
+        // gated on the appliers settling: a patch for a type with no live template in this scene
+        // leaves them pending for the whole session, and holding localisation back for that would
+        // strand every unrelated UI string too. The inheritance pass inside carries its own retry.
         _localeApplier?.Apply(log);
 
         // Addition-prefab script-config mirrors deferred from

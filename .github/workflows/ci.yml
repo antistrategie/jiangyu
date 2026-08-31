@@ -281,10 +281,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
-      # The release body is this version's CHANGELOG.md section. A tag with no
-      # section fails here, BEFORE the release exists: write the section, then
-      # re-push the tag. The generated notes below still append the commit
-      # list and compare link under it.
+      # The release body is this version's CHANGELOG.md section and nothing else:
+      # the changelog is written for modders and players, which a generated commit
+      # list underneath would only dilute. A tag with no section fails here, BEFORE
+      # the release exists: write the section, then re-push the tag.
       - name: Extract this version's changelog section
         run: |
           version="${GITHUB_REF_NAME#v}"
@@ -327,7 +327,6 @@ jobs:
         with:
           name: ${{ github.ref_name }}
           body_path: release-notes.md
-          generate_release_notes: true
           files: |
             Jiangyu.Loader.dll/Jiangyu.Loader.dll
             jiangyu-cli-linux-x64.zip

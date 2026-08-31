@@ -1,3 +1,4 @@
+using Jiangyu.Loader.Templates;
 using Jiangyu.Shared.Bundles;
 using Jiangyu.Shared.Localisation;
 using MelonLoader;
@@ -15,25 +16,45 @@ namespace Jiangyu.Loader.Runtime.Localisation;
 /// (<see cref="Reapply"/>, driven by the <c>SetCurrentLanguage</c> hook, which rebuilds <c>LocaData</c>
 /// from the new language's CSV) first lays down the <c>msgid</c> baseline across all shipped PO files,
 /// then overlays the new language, and rebuilds injected mod UI so open screens update.</para>
+///
+/// <para>Once the mods' own text is in, <see cref="LocaleInheritance"/> gives each clone the active
+/// language's version of the text it inherited and never overrode, which no PO covers.</para>
 /// </summary>
 internal sealed class LocaleApplier
 {
     private static LocaleApplier _current;
 
     private readonly IReadOnlyList<DiscoveredMod> _mods;
+    private readonly TemplateCloneCatalog _clones;
+    private readonly TemplatePatchCatalog _patches;
+
+    // Inherited entries written for the current language, accumulated over the passes it takes for
+    // every clone to register, so the summary line reports the total rather than the last pass.
+    private (string Token, int Written) _inheritedForToken;
 
     // The language token (locale code, or "<source>") of the last successful apply. Null until the
     // load-time apply lands, which is also the "pending" signal, and the dedup for a repeated apply.
     private string _appliedToken;
 
-    public LocaleApplier(IReadOnlyList<DiscoveredMod> mods)
+    public LocaleApplier(
+        IReadOnlyList<DiscoveredMod> mods, TemplateCloneCatalog clones, TemplatePatchCatalog patches)
     {
         _mods = mods;
+        _clones = clones;
+        _patches = patches;
         _current = this;
     }
 
     /// <summary>True while the load-time apply has not yet completed.</summary>
     public bool Pending => _appliedToken == null;
+
+    /// <summary>
+    /// Re-run the apply once, after the clone or patch appliers have registered more templates. The
+    /// inheritance pass reads live templates, so clones that arrive on a later poll are only seen if
+    /// it looks again, and this is the signal that looking is worthwhile. Anything already decided
+    /// stays decided, so the extra pass is cheap.
+    /// </summary>
+    public void NotifyTemplatesChanged() => _appliedToken = null;
 
     /// <summary>Re-apply after an in-game language change. Invoked by the SetCurrentLanguage hook.</summary>
     public static void NotifyLanguageReloaded(MelonLogger.Instance log) => _current?.Reapply(log);
@@ -82,25 +103,37 @@ internal sealed class LocaleApplier
         // falls back to the English literal.
         Jiangyu.Sdk.Locale.Install(plan.Ui);
 
-        if (plan.LoadList.Count == 0 && plan.Conversations.Count == 0)
+        if (plan.LoadList.Count > 0 || plan.Conversations.Count > 0)
         {
-            _appliedToken = token;
-            note = state == LocaleResolver.State.Translatable
-                ? $"language '{code}': no translations shipped, defaults in use"
-                : $"language '{language}' is the source, defaults in use";
-            return true;
+            var fieldsResolved = LocaleTableInjector.Apply(plan.LoadList, log);
+            var conversationsResolved = LocaleTableInjector.ApplyConversations(plan.Conversations, log);
+            if (!fieldsResolved || !conversationsResolved)
+                return false;
         }
 
-        var fieldsResolved = LocaleTableInjector.Apply(plan.LoadList, log);
-        var conversationsResolved = LocaleTableInjector.ApplyConversations(plan.Conversations, log);
-        if (!fieldsResolved || !conversationsResolved)
-            return false;
+        // Inherited text carries no PO entry, so this runs whether or not a translation shipped, and
+        // for the source language too: the text is written onto the clone's line, so English has to
+        // be put back rather than merely not overwritten. Counted across passes, since a clone that
+        // only registers later is written on the pass that first sees it.
+        if (_inheritedForToken.Token != token)
+            _inheritedForToken = (token, 0);
+        _inheritedForToken.Written += LocaleInheritance.Apply(
+            _clones, _patches, log, state == LocaleResolver.State.Translatable);
 
         _appliedToken = token;
-        note = state == LocaleResolver.State.Translatable
-            ? $"applied '{code}' ({plan.TranslatedOps} field op(s))"
-            : $"restored source ({language})";
+        note = Describe(state, code, language, plan.TranslatedOps, _inheritedForToken.Written);
         return true;
+    }
+
+    private static string Describe(
+        LocaleResolver.State state, string code, string language, int translatedOps, int inherited)
+    {
+        if (state != LocaleResolver.State.Translatable)
+            return $"language '{language}' is the source, defaults in use";
+        if (translatedOps == 0 && inherited == 0)
+            return $"language '{code}': no translations shipped, defaults in use";
+        var inheritNote = inherited > 0 ? $", {inherited} inherited field(s)" : string.Empty;
+        return $"applied '{code}' ({translatedOps} field op(s){inheritNote})";
     }
 
     // Parse every loaded mod's locales/**/*.po into a LocalePo (all codes; the planner filters to the

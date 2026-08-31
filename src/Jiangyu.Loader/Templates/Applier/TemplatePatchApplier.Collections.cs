@@ -538,13 +538,11 @@ internal sealed partial class TemplatePatchApplier
         return ctor.Invoke(new[] { managed });
     }
 
-    // Soft bounds check via reflection on Length/Count. Returns true when the
-    // index is known-in-range OR when we couldn't read a length (in which case
-    // the indexer itself will throw). False only on a confirmed overflow.
-    private static bool WithinCollectionBounds(object collection, Type collectionType, int index, out string error)
+    // The element count via reflection on Length/Count, or null when the shape
+    // exposes neither (callers then proceed without a length and let the
+    // indexer throw).
+    internal static int? TryReadCollectionLength(object collection, Type collectionType)
     {
-        error = null;
-
         var lengthMember = collectionType.GetProperty(
             "Length",
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
@@ -553,19 +551,32 @@ internal sealed partial class TemplatePatchApplier
                 BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
         if (lengthMember == null || lengthMember.GetIndexParameters().Length != 0)
-            return true;
+            return null;
 
         try
         {
-            if (lengthMember.GetValue(collection) is int length && (index < 0 || index >= length))
-            {
-                error = $"index {index} out of bounds (length={length}).";
-                return false;
-            }
+            return lengthMember.GetValue(collection) as int?;
         }
         catch
         {
-            // Proceed without a pre-check; the indexer will throw.
+            return null;
+        }
+    }
+
+    // Soft bounds check via reflection on Length/Count. Returns true when the
+    // index is known-in-range OR when we couldn't read a length (in which case
+    // the indexer itself will throw). False only on a confirmed overflow.
+    private static bool WithinCollectionBounds(object collection, Type collectionType, int index, out string error)
+    {
+        error = null;
+
+        if (TryReadCollectionLength(collection, collectionType) is not { } length)
+            return true;
+
+        if (index < 0 || index >= length)
+        {
+            error = $"index {index} out of bounds (length={length}).";
+            return false;
         }
 
         return true;

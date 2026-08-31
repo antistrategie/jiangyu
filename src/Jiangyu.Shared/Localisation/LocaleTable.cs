@@ -8,9 +8,12 @@ namespace Jiangyu.Shared.Localisation;
 /// loader (which parses them back). A template coordinate is
 /// <c>modId::TemplateType/templateId/descent</c>, where the descent is a <c>/</c>-joined path of
 /// field steps, each optionally <c>Field[index]</c> for an array element (so a LocalizedLine nested
-/// in an array round-trips). A code/UXML coordinate is <c>modId::ui/name</c>. A conversation subtitle
-/// (a SAY node's voiced line) is <c>modId::conv/convId/nodeGuid</c>, where the node guid is the
-/// deterministic value the compiler fills in, so it is stable across rebuilds.
+/// in an array round-trips). <c>Field[^n]</c> counts n back from the end, which is how an element the
+/// mod <c>append</c>ed is named: appends land at the end in op order, so the position of the j-th of
+/// a patch's k appends is known at compile time only relative to the end. A code/UXML coordinate is
+/// <c>modId::ui/name</c>. A conversation subtitle (a SAY node's voiced line) is
+/// <c>modId::conv/convId/nodeGuid</c>, where the node guid is the deterministic value the compiler
+/// fills in, so it is stable across rebuilds.
 /// </summary>
 public static class LocaleCoordinate
 {
@@ -40,7 +43,7 @@ public static class LocaleCoordinate
                 sb.Append('/');
             sb.Append(step.Field);
             if (step.Index is { } index)
-                sb.Append('[').Append(index).Append(']');
+                sb.Append('[').Append(index < 0 ? "^" + (-index) : index.ToString()).Append(']');
         }
         return sb.Length > 0 ? sb.ToString() : null;
     }
@@ -63,9 +66,17 @@ public static class LocaleCoordinate
                 return null;
             var field = segment[..bracket];
             var indexText = segment[(bracket + 1)..^1];
-            if (field.Length == 0 || !int.TryParse(indexText, out var index))
+            if (field.Length == 0)
                 return null;
-            steps.Add(new TemplateDescentStep { Field = field, Index = index });
+
+            // "[^n]" is n back from the end; carried as a negative Index, which the loader resolves
+            // against the live collection length. n must be at least 1: "[^0]" names nothing.
+            var fromEnd = indexText.StartsWith('^');
+            if (fromEnd)
+                indexText = indexText[1..];
+            if (!int.TryParse(indexText, out var index) || index < 0 || (fromEnd && index == 0))
+                return null;
+            steps.Add(new TemplateDescentStep { Field = field, Index = fromEnd ? -index : index });
         }
         return steps.Count == 0 ? null : steps;
     }
