@@ -30,6 +30,9 @@ internal class ReplacementCoordinator
     // Per-SMR dedupe so an SMR already handled is skipped on later sweeps, alongside the
     // "[jiangyu]" sharedMesh marker the mesh-rebind path leaves.
     private readonly HashSet<int> _processedSmrInstanceIds = new();
+    // Screens already swept by the activation-time texture pass, so a screen reopened or
+    // reactivated does not re-sweep. Scene-scoped, cleared with the scene's screens.
+    private readonly HashSet<int> _screenTexturePassIds = new();
 
     private bool _templateWorkSeen;
     private bool _templatesAppliedRaised;
@@ -62,7 +65,7 @@ internal class ReplacementCoordinator
                 new ModularVehicleSpawnGuardPatch(),
                 new SuppressionHandlerGuardPatch(),
                 new LocaleReloadPatch(),
-                new UiInjectionActivatePatch(),
+                new UiInjectionActivatePatch(this),
                 new Jiangyu.Loader.Sdk.Hooks.TacticalManagerStartPatch(),
                 new Jiangyu.Loader.Sdk.Hooks.StrategyHarmonyPatch(),
                 new Jiangyu.Loader.Sdk.Hooks.StrategyAttachPatch(),
@@ -106,7 +109,36 @@ internal class ReplacementCoordinator
         // across scenes and avoids (theoretical) ID-recycling false-negatives
         // on later-scene SMRs that happen to reuse a destroyed ID.
         _processedSmrInstanceIds.Clear();
+        _screenTexturePassIds.Clear();
+        _textureMutation.OnSceneUnloaded();
         _meshPreparation.ClearPreparedAssignments();
+    }
+
+    /// <summary>
+    /// Texture mutations at screen-activation time, driven by the UI injection postfix.
+    /// A screen's own textures only enter the object graph when that screen is built, which
+    /// falls between the scene-load pass and the next poll tick, so a poll-driven swap lands up
+    /// to five frames after the screen has already painted the original and reads as a flicker.
+    /// The activation postfix runs in the frame the screen is created, before its first paint.
+    /// </summary>
+    public void ApplyScreenTextures(int screenId, MelonLogger.Instance log)
+    {
+        if (!_textureMutation.MayHaveUnresolvedTargets)
+            return;
+
+        // Once per screen instance, but only counted once the pass has actually placed something.
+        // Recording the screen up front would retire it on the sweep that found nothing, which is
+        // exactly the case worth retrying: a screen whose content is built after activation, or
+        // reopened from a pool with different content.
+        if (_screenTexturePassIds.Contains(screenId))
+            return;
+
+        var mutated = _textureMutation.ApplyPending(log);
+        if (mutated <= 0)
+            return;
+
+        _screenTexturePassIds.Add(screenId);
+        log.Msg($"Applied {mutated} texture mutation(s) on screen activation.");
     }
 
     public void ApplyReplacements(MelonLogger.Instance log, bool includeTextures = true)

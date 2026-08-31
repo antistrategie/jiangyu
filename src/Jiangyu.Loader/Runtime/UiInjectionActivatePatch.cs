@@ -14,10 +14,22 @@ namespace Jiangyu.Loader.Runtime;
 /// Replaces the per-frame active-screen poll: <see cref="UI"/> re-applies immediately and
 /// hooks the screen root's GeometryChangedEvent so content built after the open still
 /// lands, without a settle loop.
+///
+/// <para>Screen activation is also when a screen's own textures first enter the object graph,
+/// so the coordinator's texture pass rides the same postfix. The coordinator is handed in via
+/// the static <see cref="Coordinator"/> because the postfixes are static.</para>
 /// </summary>
 internal sealed class UiInjectionActivatePatch : IHarmonyPatchModule
 {
+    internal static ReplacementCoordinator Coordinator;
     private static MelonLogger.Instance _log;
+
+    public UiInjectionActivatePatch(ReplacementCoordinator coordinator)
+    {
+        // Straight to the static: the postfixes Harmony calls are static, and keeping an instance
+        // copy as well only creates a second place for the two to disagree.
+        Coordinator = coordinator;
+    }
 
     public void Install(HarmonyLib.Harmony harmony, LoaderHarmonyPatchContext context)
     {
@@ -44,6 +56,10 @@ internal sealed class UiInjectionActivatePatch : IHarmonyPatchModule
             }
 
             UI.NotifyScreenActivated(screen == null ? null : screen.GetRootElement());
+
+            // In the same frame the screen is built, so a swapped UI texture is in place
+            // before its first paint rather than a few poll frames later.
+            Coordinator?.ApplyScreenTextures(screen == null ? 0 : screen.GetInstanceID(), _log);
         }
         catch (Exception ex)
         {

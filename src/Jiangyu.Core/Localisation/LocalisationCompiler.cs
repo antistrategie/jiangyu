@@ -8,7 +8,8 @@ namespace Jiangyu.Core.Localisation;
 /// Builds a mod's translation source catalogue (the POT). It collects every translatable string a
 /// mod ships: each <c>m_DefaultTranslation</c> a clone or patch writes, at any descent depth and
 /// inside any composite it constructs (including elements it appends to a list), plus code strings
-/// from literal <c>Locale.Text("key","fallback")</c> calls and UXML labels named <c>name="@key"</c>.
+/// from literal <c>Locale.Text("key","fallback")</c> and <c>Locale.Format("key","fallback",...)</c>
+/// calls and UXML labels named <c>name="@key"</c>.
 /// Translators fill in the resulting <c>&lt;mod&gt;.po</c>. Turning a filled PO back into the
 /// loader's apply manifests is <see cref="LocaleTable"/> in Jiangyu.Shared, used by the loader, so a
 /// translation mod ships its PO directly with no compiled table.
@@ -290,10 +291,12 @@ public static class LocalisationCompiler
         return haveGuid && !string.IsNullOrEmpty(text);
     }
 
-    // Matches Locale.Text("key", "fallback") with simple string literals (the common case). Computed
-    // keys or fallbacks are not statically extractable and are skipped.
+    // Matches Locale.Text("key", "fallback") and Locale.Format("key", "fallback", args) with simple
+    // string literals (the common case). Both take the pair in the same two leading positions, so
+    // one pattern covers them. Computed keys or fallbacks are not statically extractable and are
+    // skipped.
     private static readonly Regex LocaleTextCall = new(
-        """\bLocale\s*\.\s*Text\s*\(\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)""",
+        """\bLocale\s*\.\s*(?:Text|Format)\s*\(\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)""",
         RegexOptions.Compiled);
 
     // Matches new LocalisedText("key", "fallback"): a translatable string declared as DATA (stored in

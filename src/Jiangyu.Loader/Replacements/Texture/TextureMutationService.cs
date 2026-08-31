@@ -20,10 +20,35 @@ internal sealed class TextureMutationService
     private readonly HashSet<int> _mutatedInstanceIds = new();
     private readonly HashSet<int> _failedInstanceIds = new();
     private readonly HashSet<IntPtr> _spriteTextureCastBlocklist = new();
+    // Registered names placed at least once in the current scene, the unit MayHaveUnresolvedTargets
+    // counts in. Separate from the instance sets because a name can own several instances.
+    private readonly HashSet<string> _resolvedNames = new(StringComparer.Ordinal);
 
     public TextureMutationService(Dictionary<string, Texture2D> replacementTextures)
     {
         _replacementTextures = replacementTextures;
+    }
+
+    /// <summary>
+    /// A cheap, sweep-free "is any registered name still unplaced in this scene" gate for the
+    /// screen-activation pass. Counted by NAME, not by instance: one name routinely resolves to
+    /// several instances, because a bundle sprite registers its backing texture under the sprite's
+    /// name too, so counting instances would clear the gate while names were still unresolved.
+    /// Scene-scoped, because a new scene loads new instances of the same names.
+    /// </summary>
+    public bool MayHaveUnresolvedTargets => _resolvedNames.Count < _replacementTextures.Count;
+
+    /// <summary>
+    /// Drop the scene's dedupe state. Instance ids and sprite pointers both belong to objects the
+    /// scene owns, so carrying them into the next scene both leaks entries and risks a recycled id
+    /// being mistaken for one already handled. Mirrors the SMR set the coordinator clears.
+    /// </summary>
+    public void OnSceneUnloaded()
+    {
+        _mutatedInstanceIds.Clear();
+        _failedInstanceIds.Clear();
+        _spriteTextureCastBlocklist.Clear();
+        _resolvedNames.Clear();
     }
 
     public bool HasPendingTargets()
@@ -84,6 +109,7 @@ internal sealed class TextureMutationService
             if (TextureMutationHelpers.MutateInPlace(replacement, gameTexture, log))
             {
                 _mutatedInstanceIds.Add(instanceId);
+                _resolvedNames.Add(gameTexture.name);
                 mutated++;
                 log.Msg($"  Mutated texture in place: {gameTexture.name} ({gameTexture.width}x{gameTexture.height}, {gameTexture.format})");
             }

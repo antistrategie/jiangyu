@@ -20,6 +20,8 @@ clone "WeaponTemplate" from="..." id="weapon.ak15" {
 
 **Code strings** become translatable by routing user-facing text through `Locale.Text`. The first argument is a key namespaced by your mod id, the second is the English fallback shown when no translation is installed.
 
+For a string with placeholders, use `Locale.Format(key, fallback, args)` rather than `string.Format(Locale.Text(...), args)`. The placeholders are part of what a translator edits, so a translation can drop one, renumber it, or leave a brace unclosed; `Locale.Format` falls back to your English rather than throwing in the middle of whatever was building the screen. It is extracted to the catalogue exactly as `Locale.Text` is.
+
 ```csharp
 using Jiangyu.Sdk;
 
@@ -32,7 +34,7 @@ new TextButton(Locale.Text("MyMod::ui/swap_form", "SWAP FORM"));
 <ui:Label name="@MyMod::ui/give_gifts" text="GIVE GIFTS" />
 ```
 
-**Data-table strings** use `LocalisedText`. The extractor only sees *literal* `Locale.Text("key", "fallback")` calls, so a string stored in a table and read with a computed key would be missed. Declare it as a `new LocalisedText("key", "English")` literal instead (the extractor picks that up), store it, and resolve it at display time with `.Resolve()`.
+**Data-table strings** use `LocalisedText`. The extractor only sees *literal* `Locale.Text("key", "fallback")` and `Locale.Format("key", "fallback", ...)` calls, so a string stored in a table and read with a computed key would be missed. Declare it as a `new LocalisedText("key", "English")` literal instead (the extractor picks that up), store it, and resolve it at display time with `.Resolve()`.
 
 ```csharp
 // in a data table
@@ -43,7 +45,7 @@ label.text = unlock.Title.Resolve();
 
 **Voice-line subtitles** are extracted automatically. The text of every spoken bark (a SAY node in a conversation) becomes a catalogue entry, so a translator can localise what your characters say on screen. This covers the subtitle text only, not the audio: the voice clips stay as recorded, the words shown change with the language.
 
-Literal `Locale.Text` calls and `@`-marked UXML labels are collected into the catalogue automatically, so they reach translators alongside your KDL text.
+Literal `Locale.Text` / `Locale.Format` calls and `@`-marked UXML labels are collected into the catalogue automatically, so they reach translators alongside your KDL text.
 
 ## Add a language
 

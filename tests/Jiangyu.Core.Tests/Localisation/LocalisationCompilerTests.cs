@@ -329,6 +329,17 @@ public class LocalisationCompilerTests
     }
 
     [Fact]
+    public void ExtractUiKeys_FindsLiteralLocaleFormatCalls()
+    {
+        // Format takes the key and fallback in the same two leading positions as Text, so one
+        // pattern covers both. Without this, narrowing the alternation drops Format silently.
+        const string source =
+            """label.text = Locale.Format("WOMENACE::ui/affinity/level", "LEVEL {0:00}", level);""";
+        var keys = LocalisationCompiler.ExtractUiKeys(source).ToList();
+        Assert.Contains(("WOMENACE::ui/affinity/level", "LEVEL {0:00}"), keys);
+    }
+
+    [Fact]
     public void ExtractUiKeys_FindsDeclarativeLocalisedTextLiterals()
     {
         // A data-table entry: the runtime read uses computed args, but the literal declaration is

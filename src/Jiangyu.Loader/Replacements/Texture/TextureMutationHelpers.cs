@@ -22,6 +22,20 @@ internal static class TextureMutationHelpers
         Texture2D staging = null;
         try
         {
+            // Pin the destination. Every asset the loader itself brings in is pinned against
+            // Resources.UnloadUnusedAssets (clones, patched template values, bundle assets,
+            // meshes); the one object a mutation WRITES to was not. A destination whose pixels
+            // stream from a .resS side file can be unloaded and re-read from disk, which
+            // silently restores the vanilla image and undoes the mutation.
+            try { destination.hideFlags |= HideFlags.DontUnloadUnusedAsset; }
+            catch (Exception ex)
+            {
+                // Not fatal, but say so: unpinned, this texture can be re-read from its .resS side
+                // file later and the vanilla image comes back with nothing to explain it.
+                log.Warning($"  Could not pin '{destination.name}' against unload "
+                    + $"({ex.GetType().Name}: {ex.Message}); the mutation may not survive a scene change.");
+            }
+
             var stagingFormat = ChooseStagingFormat(destination.format);
             rt = RenderTexture.GetTemporary(
                 destination.width,
@@ -29,8 +43,9 @@ internal static class TextureMutationHelpers
                 0,
                 RenderTextureFormat.ARGB32,
                 RenderTextureReadWrite.sRGB);
-            rt.useMipMap = destination.mipmapCount > 1;
-            rt.autoGenerateMips = destination.mipmapCount > 1;
+            // No mip settings on the RT: GetTemporary hands back an already-created texture (so
+            // assigning them is a Unity error), Blit only writes level 0, and ReadPixels only reads
+            // level 0. Staging's chain comes from Apply below.
             rt.wrapMode = TextureWrapMode.Clamp;
             rt.filterMode = FilterMode.Bilinear;
 
@@ -38,11 +53,16 @@ internal static class TextureMutationHelpers
 
             previousActive = RenderTexture.active;
             RenderTexture.active = rt;
+            // mipCount taken from the destination rather than mipChain:true. Graphics.CopyTexture
+            // needs the two chains to be the same length, and a game texture is often authored with
+            // a partial chain, so asking for a full one guarantees the mismatch the copy then has
+            // no way to resolve: ConvertTexture is unreliable into a compressed destination, and a
+            // texture that fails both is blocklisted for good.
             staging = new Texture2D(
                 destination.width,
                 destination.height,
                 stagingFormat,
-                mipChain: destination.mipmapCount > 1,
+                mipCount: Math.Max(destination.mipmapCount, 1),
                 linear: false);
             staging.ReadPixels(new Rect(0, 0, destination.width, destination.height), 0, 0, recalculateMipMaps: false);
             staging.Apply(updateMipmaps: destination.mipmapCount > 1, makeNoLongerReadable: false);
@@ -50,7 +70,7 @@ internal static class TextureMutationHelpers
             previousActive = null;
 
             staging.Compress(highQuality: true);
-            if (staging.format == destination.format)
+            if (CanCopy(staging, destination))
             {
                 Graphics.CopyTexture(staging, destination);
                 return true;
@@ -65,7 +85,10 @@ internal static class TextureMutationHelpers
                 return true;
 
             log.Warning(
-                $"  Texture mutation format path failed for '{destination.name}': compress produced {staging.format}, destination is {destination.format}, ConvertTexture returned false.");
+                $"  Texture mutation format path failed for '{destination.name}': compress produced "
+                + $"{staging.format} {staging.width}x{staging.height} mips={staging.mipmapCount}, destination is "
+                + $"{destination.format} {destination.width}x{destination.height} mips={destination.mipmapCount}, "
+                + "ConvertTexture returned false.");
             return false;
         }
         catch (Exception ex)
@@ -83,6 +106,16 @@ internal static class TextureMutationHelpers
                 RenderTexture.ReleaseTemporary(rt);
         }
     }
+
+    // Graphics.CopyTexture is a straight memory copy and does not resample: the two textures must
+    // agree on size, format and mip count. Staging is built from the destination's size and mip
+    // count, so those hold by construction and only the format is genuinely in question, Compress
+    // being the one step that can land somewhere other than intended. The mip count is compared
+    // anyway, cheaply, so a future change to how staging is built cannot reintroduce a copy whose
+    // preconditions do not hold.
+    private static bool CanCopy(Texture2D source, Texture2D destination) =>
+        source.format == destination.format
+        && source.mipmapCount == destination.mipmapCount;
 
     private static TextureFormat ChooseStagingFormat(TextureFormat destinationFormat)
     {
