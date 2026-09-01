@@ -14,6 +14,8 @@ public sealed class ModLoadPlan(IReadOnlyList<DiscoveredMod> loadableMods, IRead
 public sealed class DiscoveredMod(
     string name,
     string version,
+    string? compiledForUnity,
+    string? compiledForJiangyu,
     string directoryPath,
     string relativeDirectoryPath,
     string manifestPath,
@@ -23,6 +25,16 @@ public sealed class DiscoveredMod(
 {
     public string Name { get; } = name;
     public string Version { get; } = version;
+
+    /// <summary>The game's Unity version the mod was compiled against, and the Jiangyu
+    /// toolchain that compiled it. Carried off the manifest read during discovery so the
+    /// startup version gates read it here rather than parsing every jiangyu.json again.
+    /// Null on a hand-written manifest the compiler never stamped.</summary>
+    public string? CompiledForUnity { get; } = compiledForUnity;
+
+    /// <inheritdoc cref="CompiledForUnity"/>
+    public string? CompiledForJiangyu { get; } = compiledForJiangyu;
+
     public string DirectoryPath { get; } = directoryPath;
     public string RelativeDirectoryPath { get; } = relativeDirectoryPath;
     public string ManifestPath { get; } = manifestPath;
@@ -274,6 +286,8 @@ public static class ModLoadPlanBuilder
             mod = new DiscoveredMod(
                 manifest.Name.Trim(),
                 manifest.Version ?? string.Empty,
+                manifest.CompiledForUnity,
+                manifest.CompiledForJiangyu,
                 modDir,
                 relativeDirectoryPath,
                 manifestPath,

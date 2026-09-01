@@ -6,6 +6,7 @@ using Jiangyu.Loader.Sdk.Hooks;
 using Jiangyu.Loader.Sdk.Patches;
 using Jiangyu.Loader.Sdk.State;
 using Jiangyu.Loader.Sdk.Types;
+using Jiangyu.Shared.Bundles;
 using MelonLoader;
 using MelonLoader.Utils;
 
@@ -49,19 +50,22 @@ public class JiangyuMod : MelonMod, IDevServicesContext
         LoggerInstance.Msg(
             $"Resolved {loadSummary.LoadableModCount} loadable mod(s), skipped {loadSummary.BlockedModCount} blocked mod(s), loaded {loadSummary.LoadedBundleCount} bundle(s).");
 
-        var versionStamps = ReadModManifests(modsDir).ToList();
+        // The stamps come off the plan, which parsed each manifest during discovery, so no
+        // jiangyu.json is read twice. A gate names the mod by its id, which is what the rest
+        // of the loader calls it. The bundle loader has already logged the folder it is in.
+        var mods = _replacementCoordinator.LoadableMods;
         GameVersionGate.Check(
             UnityEngine.Application.unityVersion,
-            versionStamps.Select(stamp => (stamp.ModId, stamp.Manifest.CompiledForUnity)),
+            VersionStamps(mods, mod => mod.CompiledForUnity),
             LoggerInstance.Warning);
         JiangyuVersionGate.Check(
             BuildInfo.Version,
-            versionStamps.Select(stamp => (stamp.ModId, stamp.Manifest.CompiledForJiangyu)),
+            VersionStamps(mods, mod => mod.CompiledForJiangyu),
             LoggerInstance.Warning);
 
         _replacementCoordinator.InstallHarmonyPatches(HarmonyInstance, LoggerInstance);
 
-        InitialiseCodeMods(modsDir);
+        InitialiseCodeMods(modsDir, mods);
 
         // The dev surface (Studio bridge + probes) is merged into the dev loader DLL
         // only. The user loader DLL has no implementation to discover, so this is a
@@ -115,7 +119,7 @@ public class JiangyuMod : MelonMod, IDevServicesContext
         LoaderDebug.SyncSdkLog();
     }
 
-    private void InitialiseCodeMods(string modsDir)
+    private void InitialiseCodeMods(string modsDir, IReadOnlyList<DiscoveredMod> mods)
     {
         try
         {
@@ -130,12 +134,21 @@ public class JiangyuMod : MelonMod, IDevServicesContext
             var hotkeyDispatch = new Sdk.Input.HotkeyDispatch();
             var hotkeyRegistry = new Sdk.Input.HotkeyRegistry(hotkeyDispatch, asm => _modHost?.ModIdForAssembly(asm));
 
+            // A mod is identified by its manifest name, and its folder can be called
+            // anything, so the two only coincide by convention. The plan already knows both,
+            // and this is the one place that pairs them. Everything downstream takes the id.
+            // Duplicate names are blocked before a mod becomes loadable, so ids are unique.
+            var modDirsById = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var mod in mods)
+                modDirsById[mod.Name] = mod.DirectoryPath;
+
             _modHost = new ModHost(hostLog, LoaderModContext.Factory(
                 hostLog, _hookBus, modsDir,
                 assetsProvider: modId => _replacementCoordinator.AssetsFor(modId, hostLog),
                 coroutineStart: MelonCoroutines.Start,
                 coroutineStop: MelonCoroutines.Stop,
-                patchingEnabled: true),
+                patchingEnabled: true,
+                modFolderResolver: modId => modDirsById.TryGetValue(modId, out var dir) ? dir : null),
                 clearModHotkeys: hotkeyRegistry.ClearMod);
             _tacticalHooks = new TacticalHookPublisher(_hookBus, hostLog);
             _strategyHooks = new StrategyHookPublisher(_hookBus, hostLog);
@@ -145,13 +158,13 @@ public class JiangyuMod : MelonMod, IDevServicesContext
             ModStatePersistencePatch.Store = new ModStateStore(_modHost, hostLog);
             _replacementCoordinator.TemplatesApplied = () => _modHost.TemplatesApplied();
 
-            foreach (var modDir in Jiangyu.Shared.Bundles.ModLoadPlanBuilder.ModDirectoriesInLoadOrder(modsDir))
+            foreach (var mod in mods)
             {
-                var codeDir = Path.Combine(modDir, Jiangyu.Shared.Bundles.CompiledLayout.CodeDirName);
+                var codeDir = Path.Combine(mod.DirectoryPath, CompiledLayout.CodeDirName);
                 if (!Directory.Exists(codeDir))
                     continue;
 
-                var modId = ResolveModId(modDir);
+                var modId = mod.Name;
                 // Load every code DLL first, then register the mod's systems together, so
                 // [DependsOn] orders across a multi-DLL mod rather than within one DLL.
                 var assemblies = new List<Assembly>();
@@ -213,28 +226,14 @@ public class JiangyuMod : MelonMod, IDevServicesContext
         }
     }
 
-    // The mod id namespacing every [JiangyuType] as 'modId:Name'. It must match the ns:
-    // prefix the compiler baked into the template type= references, which is the manifest
-    // Name, so prefer that over the folder name: a renamed Mods/<folder> still resolves
-    // its types. Fall back to the folder name when there is no manifest.
-    internal static string ResolveModId(string modDir)
+    // Each loadable mod's id paired with one of its compile-time stamps, in the shape both
+    // version gates take.
+    private static IEnumerable<(string ModId, string Stamp)> VersionStamps(
+        IReadOnlyList<DiscoveredMod> mods,
+        Func<DiscoveredMod, string> stamp)
     {
-        if (Jiangyu.Shared.Bundles.LoaderManifest.TryRead(modDir, out var manifest)
-            && !string.IsNullOrWhiteSpace(manifest.Name))
-            return manifest.Name;
-        return Path.GetFileName(modDir);
-    }
-
-    // Each deployed mod's folder name paired with its manifest, read once so the version
-    // gates (game Unity build, Jiangyu toolchain) share a single read rather than each
-    // re-parsing every jiangyu.json.
-    private static IEnumerable<(string ModId, Jiangyu.Shared.Bundles.LoaderManifest Manifest)> ReadModManifests(string modsDir)
-    {
-        foreach (var modDir in Jiangyu.Shared.Bundles.ModLoadPlanBuilder.ModDirectoriesInLoadOrder(modsDir))
-        {
-            if (Jiangyu.Shared.Bundles.LoaderManifest.TryRead(modDir, out var manifest) && manifest != null)
-                yield return (Path.GetFileName(modDir), manifest);
-        }
+        foreach (var mod in mods)
+            yield return (mod.Name, stamp(mod));
     }
 
     public override void OnSceneWasLoaded(int buildIndex, string sceneName)

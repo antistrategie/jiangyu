@@ -73,9 +73,15 @@ internal class ReplacementCoordinator
             });
     }
 
-    /// <summary>The mod's own bundled assets, keyed by mod folder name.</summary>
-    public Jiangyu.Sdk.IModAssets AssetsFor(string modFolder, IModHostLog hostLog)
-        => _catalog.AssetsFor(modFolder, hostLog);
+    /// <summary>The mod's own bundled assets, keyed by mod id.</summary>
+    public Jiangyu.Sdk.IModAssets AssetsFor(string modId, IModHostLog hostLog)
+        => _catalog.AssetsFor(modId, hostLog);
+
+    /// <summary>The mods the load plan resolved as loadable, in load order. Retained so
+    /// code-mod initialisation reuses this discovery rather than re-walking Mods/: the plan
+    /// already pairs each mod's id with the directory it was found in, whatever that
+    /// directory is called and however deeply it is nested.</summary>
+    public IReadOnlyList<DiscoveredMod> LoadableMods { get; private set; } = Array.Empty<DiscoveredMod>();
 
     public BundleLoadSummary LoadBundles(string modsDir, MelonLogger.Instance log)
     {
@@ -83,6 +89,7 @@ internal class ReplacementCoordinator
             return new BundleLoadSummary(0, 0, 0);
 
         var plan = ModLoadPlanBuilder.Build(modsDir, BuildInfo.Version);
+        LoadableMods = plan.LoadableMods;
         var summary = _catalog.LoadBundles(plan, new LoaderLog(log));
         // Read each mod's compiled template program once and feed both catalogs, rather
         // than each catalog re-reading and re-parsing the same templates.json.

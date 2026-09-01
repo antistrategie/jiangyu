@@ -4,13 +4,15 @@ Changes relevant to modders building with Jiangyu, and to players running Jiangy
 
 ## 1.4.1
 
-- (SDK) Added `Locale.Format(key, fallback, args)` for a translatable string carrying placeholders. Placeholders are part of what a translator edits, so a translation can drop one, renumber it or leave a brace unclosed; this falls back to the mod's own English rather than throwing part-way through building a screen, and reaches the POT exactly as `Locale.Text` does
-- (Loader) Fixed four ways localised text went missing. A clone showed English for text it inherited from its source and never overrode, leaving a cloned weapon skill untranslated while the vanilla skill it came from translated normally; it now reads as its source does in every language, with nothing for a translator to fill in. Text nested inside an appended list element never reached the POT at all, so barks on a leader's emotional-state responses and entries appended to a tooltip config could not be translated. Text written through an indexed `set "Field" index=N type="..."` was keyed as if the field were not a collection, which no translation could apply against, so retranslate any entry whose key gains an `[N]`. And a negative `index=` is now rejected at compile time rather than compiling and failing when the patch applied
+- (SDK) Added `Locale.Format(key, fallback, args)` for a translatable string carrying placeholders, falling back to the mod's own English when a translation breaks one
+- (Loader) Fixed a clone showing English for text it inherited from its source, so a cloned skill now translates wherever the vanilla skill it came from does
+- (Loader) Fixed text inside an appended list element never reaching the POT, which left appended barks and tooltip entries untranslatable
+- (Loader) Fixed text written through an indexed `set` being keyed as if the field were not a collection, and made a negative `index=` a compile error. Retranslate any entry whose key gains an `[N]`
 - (Loader) Fixed a mod's cloned conversations going silent partway through a session, leaving the game's own dialogue working until a restart
-- (Loader) Fixed a replaced texture reverting to the original after a scene change, when the game texture it was written into was one the engine could unload and re-read from disk
-- (Loader) Fixed a replaced texture silently not applying when its mipmap chain differed from the game texture's, which left the original in place with only a warning
-- (Loader) Fixed a replaced UI texture landing a few frames after the screen that draws it had already painted, so the original flashed on screen first
-- (Loader) Set `[MelonPriority]` on the loader to -100
+- (Loader) Fixed replaced textures reverting after a scene change, not applying when their mipmap chain differed from the game's, and flashing the original before a UI replacement landed
+- (Loader) Fixed a mod losing its bundled UI and icons when its folder was renamed. A mod's folder can now be named anything and sit anywhere under `Mods/`
+- (Loader) Stopped a blocked mod loading its code, which used to run against the bundles and templates the mod was denied
+- (Loader) Set the loader to load before other MelonLoader mods
 
 ## 1.4.0
 

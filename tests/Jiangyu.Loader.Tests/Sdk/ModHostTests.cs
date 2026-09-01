@@ -251,6 +251,31 @@ public class ModHostTests
     }
 
     [Fact]
+    public void Context_folder_and_version_follow_a_renamed_directory()
+    {
+        // A mod's folder is not its id: a player who prefixes it to order the load keeps
+        // the id from the manifest, and the context has to reach the real directory anyway.
+        const string modId = "renamedmod";
+        var folder = Path.Combine(ModsDir, "000-" + modId);
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "jiangyu.json"), "{ \"name\": \"renamedmod\", \"version\": \"4.5.6\" }");
+        try
+        {
+            var log = new CollectingLog();
+            var context = LoaderModContext.Factory(
+                log, new InProcessHookBus(log), ModsDir,
+                modFolderResolver: id => id == modId ? folder : null)(modId);
+
+            Assert.Equal(folder, context.ModFolder);
+            Assert.Equal("4.5.6", context.Version);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Register_discovers_concrete_systems()
     {
         var host = NewHost(out _);

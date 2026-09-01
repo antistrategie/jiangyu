@@ -48,11 +48,16 @@ internal sealed class LoaderModContext : ModContext
     public override IModPatches Patches { get; }
 
     /// <summary>A factory that shares one hook bus and host log across every mod,
-    /// resolving each mod's folder as <c>&lt;modsDir&gt;/&lt;modId&gt;</c>, reading its
+    /// resolving each mod's folder through <paramref name="modFolderResolver"/>, reading its
     /// version from the deployed <c>jiangyu.json</c>, resolving its bundled assets
     /// through <paramref name="assetsProvider"/>, driving its coroutines through
     /// <paramref name="coroutineStart"/> and <paramref name="coroutineStop"/>, and
-    /// exposing method patching when <paramref name="patchingEnabled"/>.</summary>
+    /// exposing method patching when <paramref name="patchingEnabled"/>.
+    ///
+    /// <paramref name="modFolderResolver"/> is how a mod's id reaches the directory it was
+    /// discovered in, which is not derivable from the id: a mod's folder can be named
+    /// anything. Without one the folder falls back to <c>&lt;modsDir&gt;/&lt;modId&gt;</c>,
+    /// which is right only when the two happen to match.</summary>
     public static Func<string, ModContext> Factory(
         IModHostLog hostLog,
         InProcessHookBus hooks,
@@ -60,10 +65,11 @@ internal sealed class LoaderModContext : ModContext
         Func<string, IModAssets> assetsProvider = null,
         Func<System.Collections.IEnumerator, object> coroutineStart = null,
         Action<object> coroutineStop = null,
-        bool patchingEnabled = false)
+        bool patchingEnabled = false,
+        Func<string, string> modFolderResolver = null)
         => modId =>
         {
-            var modFolder = Path.Combine(modsDir, modId);
+            var modFolder = modFolderResolver?.Invoke(modId) ?? Path.Combine(modsDir, modId);
             var assets = assetsProvider?.Invoke(modId);
             IModCoroutines coroutines = coroutineStart != null
                 ? new ModCoroutineRunner(modId, coroutineStart, coroutineStop, hostLog)

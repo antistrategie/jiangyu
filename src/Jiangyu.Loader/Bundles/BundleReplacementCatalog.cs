@@ -11,8 +11,12 @@ namespace Jiangyu.Loader.Bundles;
 internal sealed class BundleReplacementCatalog
 {
     private readonly List<UnityEngine.Object> _pinned;
-    // The loaded bundle handles per mod folder name (matches ModContext.ModId), so a
-    // mod can load its own bundled assets by name through ModContext.Assets.
+    // The loaded bundle handles per mod id (the manifest name, matching ModContext.ModId),
+    // so a mod can load its own bundled assets by name through ModContext.Assets. Keyed on
+    // the id and never the folder name: a mod's directory can be named anything, and a
+    // player who prefixes it to order the load ("000-WOMENACE") would otherwise file the
+    // bundles under a key nothing looks them up by, leaving the mod unable to find its own
+    // assets while everything global about it still worked.
     private readonly Dictionary<string, List<Il2CppAssetBundle>> _bundlesByMod = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IModAssets> _assetsByMod = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _meshOwners = new(StringComparer.Ordinal);
@@ -57,17 +61,17 @@ internal sealed class BundleReplacementCatalog
         _pinned = pinned;
     }
 
-    /// <summary>The mod's own bundled assets, keyed by mod folder name. Mods that
-    /// ship no bundles get an empty view. Cached per mod so the name index is built once.</summary>
-    public IModAssets AssetsFor(string modFolder, IModHostLog hostLog)
+    /// <summary>The mod's own bundled assets, keyed by mod id. Mods that ship no
+    /// bundles get an empty view. Cached per mod so the name index is built once.</summary>
+    public IModAssets AssetsFor(string modId, IModHostLog hostLog)
     {
-        if (_assetsByMod.TryGetValue(modFolder, out var existing))
+        if (_assetsByMod.TryGetValue(modId, out var existing))
             return existing;
 
-        var assets = _bundlesByMod.TryGetValue(modFolder, out var bundles) && bundles.Count > 0
-            ? new ModAssetRegistry(modFolder, bundles, _pinned, hostLog)
+        var assets = _bundlesByMod.TryGetValue(modId, out var bundles) && bundles.Count > 0
+            ? new ModAssetRegistry(modId, bundles, _pinned, hostLog)
             : (IModAssets)NullModAssets.Instance;
-        _assetsByMod[modFolder] = assets;
+        _assetsByMod[modId] = assets;
         return assets;
     }
 
@@ -153,9 +157,8 @@ internal sealed class BundleReplacementCatalog
             return;
         }
 
-        var modFolder = Path.GetFileName(mod.DirectoryPath);
-        if (!_bundlesByMod.TryGetValue(modFolder, out var modBundles))
-            _bundlesByMod[modFolder] = modBundles = new List<Il2CppAssetBundle>();
+        if (!_bundlesByMod.TryGetValue(mod.Name, out var modBundles))
+            _bundlesByMod[mod.Name] = modBundles = new List<Il2CppAssetBundle>();
         modBundles.Add(bundle);
 
         Dictionary<string, string> bundleToGame = null;
