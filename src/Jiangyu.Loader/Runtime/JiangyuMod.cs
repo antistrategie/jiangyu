@@ -145,7 +145,7 @@ public class JiangyuMod : MelonMod, IDevServicesContext
             ModStatePersistencePatch.Store = new ModStateStore(_modHost, hostLog);
             _replacementCoordinator.TemplatesApplied = () => _modHost.TemplatesApplied();
 
-            foreach (var modDir in Directory.GetDirectories(modsDir))
+            foreach (var modDir in Jiangyu.Shared.Bundles.ModLoadPlanBuilder.ModDirectoriesInLoadOrder(modsDir))
             {
                 var codeDir = Path.Combine(modDir, Jiangyu.Shared.Bundles.CompiledLayout.CodeDirName);
                 if (!Directory.Exists(codeDir))
@@ -155,7 +155,7 @@ public class JiangyuMod : MelonMod, IDevServicesContext
                 // Load every code DLL first, then register the mod's systems together, so
                 // [DependsOn] orders across a multi-DLL mod rather than within one DLL.
                 var assemblies = new List<Assembly>();
-                foreach (var dll in Directory.GetFiles(codeDir, "*.dll"))
+                foreach (var dll in Directory.GetFiles(codeDir, "*.dll").OrderBy(path => path, StringComparer.Ordinal))
                 {
                     try
                     {
@@ -230,10 +230,7 @@ public class JiangyuMod : MelonMod, IDevServicesContext
     // re-parsing every jiangyu.json.
     private static IEnumerable<(string ModId, Jiangyu.Shared.Bundles.LoaderManifest Manifest)> ReadModManifests(string modsDir)
     {
-        if (!Directory.Exists(modsDir))
-            yield break;
-
-        foreach (var modDir in Directory.GetDirectories(modsDir))
+        foreach (var modDir in Jiangyu.Shared.Bundles.ModLoadPlanBuilder.ModDirectoriesInLoadOrder(modsDir))
         {
             if (Jiangyu.Shared.Bundles.LoaderManifest.TryRead(modDir, out var manifest) && manifest != null)
                 yield return (Path.GetFileName(modDir), manifest);
