@@ -11,6 +11,7 @@ using MelonLoader.Utils;
 
 [assembly: MelonInfo(typeof(Jiangyu.Loader.Runtime.JiangyuMod), "Jiangyu", Jiangyu.Loader.BuildInfo.Version, "ΔNTISTRATÉGIE")]
 [assembly: MelonGame("Overhype Studios", "Menace")]
+[assembly: MelonPriority(-100)]
 
 namespace Jiangyu.Loader.Runtime;
 

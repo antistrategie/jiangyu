@@ -10,6 +10,7 @@ Changes relevant to modders building with Jiangyu, and to players running Jiangy
 - (Loader) Fixed a replaced texture reverting to the original after a scene change, when the game texture it was written into was one the engine could unload and re-read from disk
 - (Loader) Fixed a replaced texture silently not applying when its mipmap chain differed from the game texture's, which left the original in place with only a warning
 - (Loader) Fixed a replaced UI texture landing a few frames after the screen that draws it had already painted, so the original flashed on screen first
+- (Loader) Set `[MelonPriority]` on the loader to -100
 
 ## 1.4.0
 
