@@ -23,7 +23,7 @@ internal static class LoaderDebug
 
     public static void Write(MelonLogger.Instance log, string message)
     {
-        if (Enabled)
+        if (Enabled && log != null)
             log.Msg(Decorate(message));
     }
 

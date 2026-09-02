@@ -4,6 +4,7 @@ using System.IO;
 using System.Reflection;
 using HarmonyLib;
 using Il2CppMenace.Strategy;
+using Jiangyu.Loader.Logging;
 using Jiangyu.Loader.Runtime.Patching;
 using Jiangyu.Shared.State;
 using MelonLoader;
@@ -70,7 +71,7 @@ internal sealed class ModStatePersistencePatch : IHarmonyPatchModule
             {
                 if (string.IsNullOrEmpty(path) || !written.Add(path))
                     continue;
-                _log.Msg($"mod state: save -> {path}");
+                LoaderDebug.Write(_log, $"mod state: save -> {path}");
                 store.WriteAll(path);
             }
         }
@@ -208,7 +209,7 @@ internal sealed class ModStatePersistencePatch : IHarmonyPatchModule
             // Sweep before the load, so a sidecar reattached here is one this load can still read.
             ModStateSidecarRepair.RunOnce(_log);
             var path = __0.GetFilePath();
-            _log.Msg($"mod state: load <- {path}");
+            LoaderDebug.Write(_log, $"mod state: load <- {path}");
             Store?.LoadAll(path);
         }
         catch (Exception ex)

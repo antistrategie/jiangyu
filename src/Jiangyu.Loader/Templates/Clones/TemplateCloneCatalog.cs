@@ -39,7 +39,7 @@ internal sealed class TemplateCloneCatalog
             .OrderBy(kv => kv.Key, StringComparer.Ordinal)
             .Select(kv => $"{kv.Key}: {kv.Value.Count} clone(s)");
 
-        log.Msg(
+        log.Debug(
             $"Loaded {CloneCount} template clone directive(s): {string.Join("; ", typeSummaries)}.");
     }
 

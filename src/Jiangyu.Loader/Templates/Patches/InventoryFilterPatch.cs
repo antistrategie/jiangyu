@@ -109,7 +109,7 @@ internal sealed class InventoryFilterPatch : IHarmonyPatchModule
                 finalizer: new HarmonyMethod(typeof(InventoryFilterPatch), nameof(PanelFinalizer)));
             harmony.Patch(filterMethod,
                 postfix: new HarmonyMethod(typeof(InventoryFilterPatch), nameof(FilterPostfix)));
-            _log.Msg($"Inventory filter: hooked {panelMethod.DeclaringType?.Name}.{PanelMethodName} + {filterMethod.DeclaringType?.Name}.{FilterMethodName}.");
+            HarmonyPatching.Installed(_log, $"Inventory filter: hooked {panelMethod.DeclaringType?.Name}.{PanelMethodName} + {filterMethod.DeclaringType?.Name}.{FilterMethodName}.");
         }
         catch (Exception ex)
         {
@@ -130,7 +130,7 @@ internal sealed class InventoryFilterPatch : IHarmonyPatchModule
         {
             harmony.Patch(ownedFilterMethod,
                 postfix: new HarmonyMethod(typeof(InventoryFilterPatch), nameof(OwnedItemFilterPostfix)));
-            _log.Msg($"Inventory filter: hooked {ownedFilterMethod.DeclaringType?.Name}.{FilterMethodName} (BaseItem variant) for the restricted-item trade guard.");
+            HarmonyPatching.Installed(_log, $"Inventory filter: hooked {ownedFilterMethod.DeclaringType?.Name}.{FilterMethodName} (BaseItem variant) for the restricted-item trade guard.");
         }
         catch (Exception ex)
         {
@@ -154,7 +154,7 @@ internal sealed class InventoryFilterPatch : IHarmonyPatchModule
         {
             harmony.Patch(sellPanelMethod,
                 prefix: new HarmonyMethod(typeof(InventoryFilterPatch), nameof(SellPanelPrefix)));
-            _log.Msg("Inventory filter: hooked BlackMarketUIScreen.UpdateItemSlots for the sell-list guard.");
+            HarmonyPatching.Installed(_log, "Inventory filter: hooked BlackMarketUIScreen.UpdateItemSlots for the sell-list guard.");
         }
         catch (Exception ex)
         {

@@ -86,6 +86,10 @@ internal class ReplacementCoordinator
     /// directory is called and however deeply it is nested.</summary>
     public IReadOnlyList<DiscoveredMod> LoadableMods { get; private set; } = Array.Empty<DiscoveredMod>();
 
+    /// <summary>Per-mod counts of what the session loaded, written as one line per mod once
+    /// code mods are up.</summary>
+    public ModLoadReport LoadReport { get; } = new();
+
     public BundleLoadSummary LoadBundles(string modsDir, MelonLogger.Instance log)
     {
         if (!Directory.Exists(modsDir))
@@ -101,13 +105,30 @@ internal class ReplacementCoordinator
             .ToList();
         _templateClones.Load(templates, new LoaderLog(log));
         _templatePatches.Load(templates, new LoaderLog(log));
+        foreach (var (mod, manifest) in templates)
+        {
+            var counts = LoadReport.For(mod.Name);
+            counts.Bundles = _catalog.BundleCountFor(mod.Name);
+            counts.Clones = manifest?.TemplateClones?.Count ?? 0;
+            counts.PatchOps = manifest?.TemplatePatches?.Sum(patch => patch.Set?.Count ?? 0) ?? 0;
+            counts.Locales = CountLocaleFiles(mod);
+        }
         _localeApplier = new LocaleApplier(plan.LoadableMods, _templateClones, _templatePatches);
         return summary;
+    }
+
+    private static int CountLocaleFiles(DiscoveredMod mod)
+    {
+        var localesDir = Path.Combine(mod.DirectoryPath, CompiledLayout.LocalesDirName);
+        return Directory.Exists(localesDir)
+            ? Directory.EnumerateFiles(localesDir, "*.po", SearchOption.AllDirectories).Count()
+            : 0;
     }
 
     public void InstallHarmonyPatches(HarmonyLib.Harmony harmony, MelonLogger.Instance log)
     {
         _harmonyPatchInstaller.Install(harmony, new LoaderHarmonyPatchContext(log));
+        log.Msg($"Installed {HarmonyPatching.InstalledCount} loader patch(es).");
     }
 
     public bool HasMeshReplacements => _catalog.Meshes.Count > 0;
@@ -243,7 +264,8 @@ internal class ReplacementCoordinator
         var check = _templatePatchApplier.SelfCheck;
         if (check.Mismatches == 0)
         {
-            log.Msg($"Template self-check: all {check.Applied} patch op(s) matched the current game.");
+            var clones = _templateClones.CloneCount > 0 ? $"{_templateClones.CloneCount} clone(s) registered, " : string.Empty;
+            log.Msg($"Template self-check: {clones}all {check.Applied} patch op(s) matched the current game.");
             return;
         }
 
@@ -323,7 +345,7 @@ internal class ReplacementCoordinator
         }
 
         if (applied > 0)
-            log.Msg($"Applied {applied} visual replacement(s) to a spawned unit.");
+            LoaderDebug.Write(log, $"Applied {applied} visual replacement(s) to a spawned unit.");
     }
 
     // Resolve and apply the mesh or driven-prefab replacement for one live SMR. Shared by

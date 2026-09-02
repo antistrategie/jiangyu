@@ -49,10 +49,13 @@ internal static class ModPatchCoordinator
         var label = $"{typeName}.{methodName}";
         Registry.Add(kind, target, modId, label, handler, log);
         if (EnsurePatched(kind, target, log))
-            log.Info($"[{modId}] patch {kind.ToString().ToLowerInvariant()} registered on {label}");
+            log.Debug($"[{modId}] patch {kind.ToString().ToLowerInvariant()} registered on {label}");
     }
 
     public static void RemoveMod(string modId) => Registry.RemoveMod(modId);
+
+    /// <summary>How many handlers <paramref name="modId"/> has registered, across both kinds.</summary>
+    public static int CountForMod(string modId) => Registry.CountForMod(modId);
 
     private static bool EnsurePatched(ModPatchRegistry.Kind kind, MethodBase target, IModHostLog log)
     {

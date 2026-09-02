@@ -95,6 +95,11 @@ internal sealed class ModPatchRegistry
 
     /// <summary>Drop every handler a mod registered, on its unload or quarantine. The
     /// shared dispatcher stays on the target but finds no handlers and does nothing.</summary>
+    /// <summary>How many handlers <paramref name="modId"/> has registered, across both kinds.</summary>
+    public int CountForMod(string modId)
+        => _prefixes.Values.Concat(_postfixes.Values)
+            .Sum(entries => entries.Count(entry => string.Equals(entry.ModId, modId, StringComparison.Ordinal)));
+
     public void RemoveMod(string modId)
     {
         foreach (var map in new[] { _prefixes, _postfixes })

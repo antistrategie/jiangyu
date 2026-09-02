@@ -1,4 +1,5 @@
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
+using Jiangyu.Loader.Logging;
 using MelonLoader;
 using UnityEngine;
 
@@ -101,7 +102,7 @@ internal sealed class DirectMeshReplacementApplier
                 _materialReplacements.ApplyBindings(log, smr.sharedMaterials, replacement.MaterialBindings);
             }
 
-            log.Msg($"  Swapped: {smr.sharedMesh.name} (readable={smr.sharedMesh.isReadable}, rootBone={smr.rootBone?.name ?? "<null>"}, boundsCenter={SkeletonTraversal.FormatVector3(safeBounds.center)}, boundsSize={SkeletonTraversal.FormatVector3(safeBounds.size)}, updateWhenOffscreen={smr.updateWhenOffscreen})");
+            LoaderDebug.Write(log, $"  Swapped: {smr.sharedMesh.name} (readable={smr.sharedMesh.isReadable}, rootBone={smr.rootBone?.name ?? "<null>"}, boundsCenter={SkeletonTraversal.FormatVector3(safeBounds.center)}, boundsSize={SkeletonTraversal.FormatVector3(safeBounds.size)}, updateWhenOffscreen={smr.updateWhenOffscreen})");
             return true;
         }
         catch (Exception ex)

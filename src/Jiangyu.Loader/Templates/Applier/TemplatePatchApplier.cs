@@ -32,6 +32,8 @@ internal sealed partial class TemplatePatchApplier
     private readonly TemplatePatchCatalog _catalog;
     private readonly ModAssetResolver _assetResolver;
     private readonly HashSet<string> _appliedTypes = new(StringComparer.Ordinal);
+    // Chained clones whose replay the self-check has already counted, keyed type\0id.
+    private readonly HashSet<string> _replayedEntries = new(StringComparer.Ordinal);
 
     private int _appliedTotal;
     private int _unresolvedTypeTotal;
@@ -54,8 +56,9 @@ internal sealed partial class TemplatePatchApplier
     internal Func<string, string, bool> DeferToChainedReplay { get; set; }
 
     /// <summary>Running tally of how the patch ops fared against the live game,
-    /// accumulated as each type latches. A non-zero mismatch count means the live
-    /// game no longer matches what the mods were compiled against.</summary>
+    /// accumulated as each type latches and as each chained clone's ops are replayed,
+    /// so it covers every op the catalogue loaded. A non-zero mismatch count means
+    /// the live game no longer matches what the mods were compiled against.</summary>
     public TemplateApplySelfCheck SelfCheck =>
         new(_appliedTotal, _unresolvedTypeTotal, _missingTemplateTotal, _missingMemberTotal, _conversionFailedTotal);
 
@@ -108,6 +111,10 @@ internal sealed partial class TemplatePatchApplier
     // (the field visitor reflects on the runtime type; a base DataTemplate
     // wrapper would expose none of the concrete members). Returns ops applied.
     //
+    // The outcomes feed the self-check once per template: the first pass skipped
+    // these ops, and the chained-clone pass runs again whenever a later poll
+    // registers more templates, replaying the same ops onto the same clone.
+    //
     // OnAfterDeserialize is re-invoked even when the template has no ops of its
     // own: the caller has just rebased the clone's fields from its patched
     // source, so any deserialise-derived caches are stale regardless of replay.
@@ -120,10 +127,33 @@ internal sealed partial class TemplatePatchApplier
         }
 
         var applied = 0;
+        var missingMember = 0;
+        var conversionFailed = 0;
         if (_catalog.TryGetOperations(templateTypeName, templateId, out var ops))
+        {
             foreach (var op in ops)
-                if (TryApplyOperation(template, templateTypeName, templateId, op, _assetResolver, log) == ApplyOutcome.Applied)
-                    applied++;
+            {
+                switch (TryApplyOperation(template, templateTypeName, templateId, op, _assetResolver, log))
+                {
+                    case ApplyOutcome.Applied:
+                        applied++;
+                        break;
+                    case ApplyOutcome.MemberMissing:
+                        missingMember++;
+                        break;
+                    case ApplyOutcome.ConversionFailed:
+                        conversionFailed++;
+                        break;
+                }
+            }
+        }
+
+        if (_replayedEntries.Add(templateTypeName + "\0" + templateId))
+        {
+            _appliedTotal += applied;
+            _missingMemberTotal += missingMember;
+            _conversionFailedTotal += conversionFailed;
+        }
 
         TryInvokeOnAfterDeserialize(template, templateTypeName, templateId, log);
         return applied;
@@ -235,7 +265,7 @@ internal sealed partial class TemplatePatchApplier
         _missingMemberTotal += missingMember;
         _conversionFailedTotal += conversionFailed;
         _appliedTypes.Add(templateTypeName);
-        log.Msg(
+        LoaderDebug.Write(log,
             $"Applied {applied} {templateTypeName} patch op(s). "
             + $"[skipped: missingTemplate={missingTemplate} missingMember={missingMember} "
             + $"conversion={conversionFailed}]");

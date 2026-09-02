@@ -31,11 +31,12 @@ internal static class JiangyuTypeRegistry
                     && p[0].ParameterType == typeof(RegisterTypeOptions));
 
     /// <summary>Inject and record every discovered type from a mod-assembly scan.</summary>
-    public static void Register(JiangyuTypeScan scan, IModHostLog log)
+    public static int Register(JiangyuTypeScan scan, IModHostLog log)
     {
         foreach (var error in scan.Errors)
             log.Error(error);
 
+        var injected = 0;
         foreach (var entry in scan.Entries)
         {
             try
@@ -52,13 +53,16 @@ internal static class JiangyuTypeRegistry
                 }
 
                 ByQualifiedName[entry.QualifiedName] = entry.ManagedType;
-                log.Info($"injected {entry.QualifiedName} ({entry.ManagedType.Name})");
+                injected++;
+                log.Debug($"injected {entry.QualifiedName} ({entry.ManagedType.Name})");
             }
             catch (Exception ex)
             {
                 log.Error($"injection failed for {entry.QualifiedName}: {ex.GetType().Name}: {ex.Message}");
             }
         }
+
+        return injected;
     }
 
     private static void Inject(JiangyuTypeEntry entry)

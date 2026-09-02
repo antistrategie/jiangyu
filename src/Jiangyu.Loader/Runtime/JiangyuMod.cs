@@ -66,6 +66,7 @@ public class JiangyuMod : MelonMod, IDevServicesContext
         _replacementCoordinator.InstallHarmonyPatches(HarmonyInstance, LoggerInstance);
 
         InitialiseCodeMods(modsDir, mods);
+        _replacementCoordinator.LoadReport.Write(mods, LoggerInstance);
 
         // The dev surface (Studio bridge + probes) is merged into the dev loader DLL
         // only. The user loader DLL has no implementation to discover, so this is a
@@ -165,6 +166,7 @@ public class JiangyuMod : MelonMod, IDevServicesContext
                     continue;
 
                 var modId = mod.Name;
+                var counts = _replacementCoordinator.LoadReport.For(modId);
                 // Load every code DLL first, then register the mod's systems together, so
                 // [DependsOn] orders across a multi-DLL mod rather than within one DLL.
                 var assemblies = new List<Assembly>();
@@ -174,7 +176,7 @@ public class JiangyuMod : MelonMod, IDevServicesContext
                     {
                         var asm = Assembly.LoadFrom(dll);
                         assemblies.Add(asm);
-                        JiangyuTypeRegistry.Register(JiangyuTypeCatalog.Scan(asm, modId), hostLog);
+                        counts.Types += JiangyuTypeRegistry.Register(JiangyuTypeCatalog.Scan(asm, modId), hostLog);
                     }
                     catch (Exception ex)
                     {
@@ -186,7 +188,7 @@ public class JiangyuMod : MelonMod, IDevServicesContext
                 {
                     try
                     {
-                        _modHost.Register(assemblies, modId);
+                        counts.Systems = _modHost.Register(assemblies, modId).Count;
                     }
                     catch (Exception ex)
                     {
@@ -219,6 +221,10 @@ public class JiangyuMod : MelonMod, IDevServicesContext
                 ex => LoggerInstance.Error($"Hotkey handler threw and was removed: {ex.GetType().Name}: {ex.Message}")));
 
             _modHost.InitAll();
+
+            // Systems register their patches from init, so the count is read once that has run.
+            foreach (var mod in mods)
+                _replacementCoordinator.LoadReport.For(mod.Name).Patches = ModPatchCoordinator.CountForMod(mod.Name);
         }
         catch (Exception ex)
         {
@@ -251,7 +257,7 @@ public class JiangyuMod : MelonMod, IDevServicesContext
         _tacticalHooks?.Reset();
         _dev?.OnSceneLoaded();
 
-        LoggerInstance.Msg($"Scene loaded: {sceneName} ({buildIndex})");
+        LoaderDebug.Write(LoggerInstance, $"Scene loaded: {sceneName} ({buildIndex})");
 
         _modHost?.SceneLoaded(buildIndex, sceneName);
 

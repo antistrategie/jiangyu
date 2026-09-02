@@ -1,5 +1,6 @@
 using System.Reflection;
 using HarmonyLib;
+using Jiangyu.Loader.Logging;
 using Jiangyu.Loader.Runtime.Patching;
 using MelonLoader;
 
@@ -63,7 +64,7 @@ internal sealed class SuppressionHandlerGuardPatch : IHarmonyPatchModule
         {
             harmony.Patch(method,
                 prefix: new HarmonyMethod(typeof(SuppressionHandlerGuardPatch), nameof(Prefix)));
-            _log.Msg($"{Label}: hooked {method.DeclaringType?.Name}.{MethodName} (skips off-mission).");
+            HarmonyPatching.Installed(_log, $"{Label}: hooked {method.DeclaringType?.Name}.{MethodName} (skips off-mission).");
         }
         catch (Exception ex)
         {
@@ -87,7 +88,7 @@ internal sealed class SuppressionHandlerGuardPatch : IHarmonyPatchModule
             if (!inMission && !_loggedSkip)
             {
                 _loggedSkip = true;
-                _log?.Msg($"{Label}: {MethodName} called off-mission; skipping (per-tick tactical effect).");
+                LoaderDebug.Write(_log, $"{Label}: {MethodName} called off-mission; skipping (per-tick tactical effect).");
             }
             return inMission;
         }

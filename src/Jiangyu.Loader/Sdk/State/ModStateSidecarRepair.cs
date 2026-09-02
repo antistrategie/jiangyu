@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using Il2CppMenace.Strategy;
+using Jiangyu.Loader.Logging;
 using Jiangyu.Shared.State;
 using MelonLoader;
 
@@ -40,7 +41,7 @@ internal static class ModStateSidecarRepair
                         case SidecarRepairAction.Reattach:
                             File.Move(repair.SidecarPath, repair.TargetPath);
                             reattached++;
-                            log.Msg($"mod state: reattached {Path.GetFileName(repair.SidecarPath)} -> {Path.GetFileName(repair.TargetPath)}");
+                            LoaderDebug.Write(log, $"mod state: reattached {Path.GetFileName(repair.SidecarPath)} -> {Path.GetFileName(repair.TargetPath)}");
                             break;
                         case SidecarRepairAction.Retire:
                             // An orphan already parked under this name is the same sidecar from an
@@ -49,7 +50,7 @@ internal static class ModStateSidecarRepair
                             {
                                 File.Move(repair.SidecarPath, repair.TargetPath);
                                 retired++;
-                                log.Msg($"mod state: retired {Path.GetFileName(repair.SidecarPath)}, its save already carries state");
+                                LoaderDebug.Write(log, $"mod state: retired {Path.GetFileName(repair.SidecarPath)}, its save already carries state");
                             }
                             break;
                         default:

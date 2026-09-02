@@ -102,7 +102,7 @@ internal sealed class TemplatePatchCatalog
                 return $"{kv.Key}: {opsInType} op(s) across {templatesInType} template(s)";
             });
 
-        log.Msg(
+        log.Debug(
             $"Loaded {PatchCount} template patch operation(s): {string.Join("; ", typeSummaries)}.");
     }
 

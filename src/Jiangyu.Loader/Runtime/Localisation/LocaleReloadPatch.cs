@@ -36,7 +36,7 @@ internal sealed class LocaleReloadPatch : IHarmonyPatchModule
         try
         {
             harmony.Patch(method, postfix: postfix);
-            _log.Msg($"{Label}: hooked LocaManager.{methodName}.");
+            HarmonyPatching.Installed(_log, $"{Label}: hooked LocaManager.{methodName}.");
             return true;
         }
         catch (Exception ex)

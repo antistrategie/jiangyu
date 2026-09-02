@@ -63,6 +63,9 @@ internal sealed class BundleReplacementCatalog
 
     /// <summary>The mod's own bundled assets, keyed by mod id. Mods that ship no
     /// bundles get an empty view. Cached per mod so the name index is built once.</summary>
+    public int BundleCountFor(string modId)
+        => _bundlesByMod.TryGetValue(modId, out var bundles) ? bundles.Count : 0;
+
     public IModAssets AssetsFor(string modId, IModHostLog hostLog)
     {
         if (_assetsByMod.TryGetValue(modId, out var existing))
@@ -92,11 +95,10 @@ internal sealed class BundleReplacementCatalog
 
             if (mod.BundlePaths.Count == 0)
             {
-                log.Msg($"No bundle files in [{mod.RelativeDirectoryPath}]; treated as present for dependency checks.");
+                log.Debug($"No bundle files in [{mod.RelativeDirectoryPath}]; treated as present for dependency checks.");
                 continue;
             }
 
-            log.Msg($"Loading from [{mod.RelativeDirectoryPath}]");
             foreach (var bundlePath in mod.BundlePaths)
             {
                 try
@@ -687,7 +689,7 @@ internal sealed class BundleReplacementCatalog
         }
 
         if (result.Count > 0)
-            log.Msg($"  Loaded compiled metadata for {result.Count} mesh asset(s)");
+            log.Debug($"  Loaded compiled metadata for {result.Count} mesh asset(s)");
 
         return result;
     }
@@ -719,7 +721,8 @@ internal sealed class BundleReplacementCatalog
             result[path] = GetBundleMeshNameFromSourceRef(entry.Source);
         }
 
-        log.Msg($"  Loaded {result.Count} mesh mapping(s) from jiangyu.json");
+        if (result.Count > 0)
+            log.Debug($"  Loaded {result.Count} mesh mapping(s) from jiangyu.json");
         return result;
     }
 

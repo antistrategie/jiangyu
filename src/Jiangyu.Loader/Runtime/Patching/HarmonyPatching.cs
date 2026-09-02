@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using HarmonyLib;
+using Jiangyu.Loader.Logging;
 using MelonLoader;
 
 namespace Jiangyu.Loader.Runtime.Patching;
@@ -13,6 +14,17 @@ internal static class HarmonyPatching
 {
     private const BindingFlags MethodFlags =
         BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+
+    /// <summary>Loader patches installed so far this session, reported as one line at startup.</summary>
+    public static int InstalledCount { get; private set; }
+
+    /// <summary>Record one installed loader patch. The line itself is debug: the startup log
+    /// carries the aggregate, and a failed install is a warning on its own.</summary>
+    public static void Installed(MelonLogger.Instance log, string line)
+    {
+        InstalledCount++;
+        LoaderDebug.Write(log, line);
+    }
 
     public static void TryPostfix(
         HarmonyLib.Harmony harmony, string typeName, string method,
@@ -35,7 +47,7 @@ internal static class HarmonyPatching
         try
         {
             harmony.Patch(target, postfix: new HarmonyMethod(postfixType, postfixName));
-            log.Msg($"{label}: patched {typeName}.{method}");
+            Installed(log, $"{label}: patched {typeName}.{method}");
         }
         catch (Exception ex)
         {

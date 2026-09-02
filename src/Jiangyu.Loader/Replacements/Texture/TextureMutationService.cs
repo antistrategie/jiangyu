@@ -1,4 +1,5 @@
 using Il2CppInterop.Runtime;
+using Jiangyu.Loader.Logging;
 using MelonLoader;
 using UnityEngine;
 
@@ -111,7 +112,7 @@ internal sealed class TextureMutationService
                 _mutatedInstanceIds.Add(instanceId);
                 _resolvedNames.Add(gameTexture.name);
                 mutated++;
-                log.Msg($"  Mutated texture in place: {gameTexture.name} ({gameTexture.width}x{gameTexture.height}, {gameTexture.format})");
+                LoaderDebug.Write(log, $"  Mutated texture in place: {gameTexture.name} ({gameTexture.width}x{gameTexture.height}, {gameTexture.format})");
             }
             else
             {
@@ -168,7 +169,7 @@ internal sealed class TextureMutationService
                 _mutatedInstanceIds.Add(instanceId);
                 _resolvedNames.Add(gameSprite.name);
                 mutated++;
-                log.Msg($"  Mutated sprite-backing texture in place: {gameSprite.name} -> {gameTexture.name} ({gameTexture.width}x{gameTexture.height}, {gameTexture.format})");
+                LoaderDebug.Write(log, $"  Mutated sprite-backing texture in place: {gameSprite.name} -> {gameTexture.name} ({gameTexture.width}x{gameTexture.height}, {gameTexture.format})");
             }
             else
             {

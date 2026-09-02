@@ -13,6 +13,7 @@ Changes relevant to modders building with Jiangyu, and to players running Jiangy
 - (Loader) Fixed a mod losing its bundled UI and icons when its folder was renamed. A mod's folder can now be named anything and sit anywhere under `Mods/`
 - (Loader) Stopped a blocked mod loading its code, which used to run against the bundles and templates the mod was denied
 - (Loader) Set the loader to load before other MelonLoader mods
+- (Loader) Cut the play log to one line per mod plus one summary per subsystem. Per-item detail (each hook, system, patch, template type, mesh or texture) now needs the `debug` dev flag
 
 ## 1.4.0
 

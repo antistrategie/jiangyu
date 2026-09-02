@@ -82,7 +82,7 @@ internal sealed class TacticalHookPublisher : HookPublisherBase
         Hook<TacticalManager.OnOffmapAbilityCanceledEvent>(tm.add_OnOffmapAbilityCanceled, (Action<OffmapAbilityInstance>)OnOffmapAbilityCanceled, "OnOffmapAbilityCanceled");
 
         _attachedTo = tm.Pointer;
-        Log.Info($"hooks: attached to TacticalManager ({HookedEventCount} events)");
+        Log.Debug($"hooks: attached to TacticalManager ({HookedEventCount} events)");
         Publish(new MissionStartedContext());
     }
 

@@ -65,7 +65,7 @@ internal sealed class ConversationManagerTrackingPatch : IHarmonyPatchModule
                 prefix: new HarmonyMethod(
                     typeof(ConversationManagerTrackingPatch),
                     nameof(ManagerMethodPrefix)));
-            _log.Msg($"Conversation manager tracking: prefix installed on {BaseManagerTypeName}.{GetAvailableMethodName}.");
+            HarmonyPatching.Installed(_log, $"Conversation manager tracking: prefix installed on {BaseManagerTypeName}.{GetAvailableMethodName}.");
         }
         catch (Exception ex)
         {

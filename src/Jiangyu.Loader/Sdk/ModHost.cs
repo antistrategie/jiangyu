@@ -99,7 +99,7 @@ internal sealed class ModHost
             {
                 var instance = (JiangyuSystem)Activator.CreateInstance(type)!;
                 registered.Add(Adopt(modId, instance, type.FullName ?? type.Name));
-                _log.Info($"[{modId}] registered system {type.Name}");
+                _log.Debug($"[{modId}] registered system {type.Name}");
             }
             catch (Exception ex)
             {

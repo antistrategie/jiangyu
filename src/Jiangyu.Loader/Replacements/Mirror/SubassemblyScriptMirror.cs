@@ -1,3 +1,4 @@
+using Jiangyu.Loader.Logging;
 using MelonLoader;
 using UnityEngine;
 
@@ -150,11 +151,8 @@ internal static class SubassemblyScriptMirror
         if (result.DanglingReferences > 0)
             extra += $", {result.DanglingReferences} reference(s) escaping the copy";
 
-        // Reported unconditionally rather than behind the debug flag. A
-        // marked sub-assembly is a rare, deliberate act by the modder, and
-        // a silently unrestored one looks like a broken effect in-game with
-        // nothing in the log to explain it.
-        log.Msg(
+        // Per-node detail. A node that could not be restored is warned above.
+        LoaderDebug.Write(log,
             $"  Script restore on '{label}': node '{additionScope.name}' restored "
             + $"{result.ComponentsAdded} component(s) from '{referenceName}' across "
             + $"{result.NodesPaired} node(s){extra}.");

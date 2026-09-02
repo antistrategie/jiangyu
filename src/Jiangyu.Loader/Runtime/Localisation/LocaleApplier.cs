@@ -36,6 +36,11 @@ internal sealed class LocaleApplier
     // Every loaded mod's PO files, parsed once. They do not change while the game runs.
     private List<LocalePo> _poSources;
 
+    // The last state line written. The load-time pass re-runs whenever the appliers register
+    // more templates, and the switch hook fires during boot ahead of it, so one state would
+    // otherwise print more than once.
+    private string _lastNote;
+
     // The language token (locale code, or "<source>") of the last successful apply. Null until the
     // load-time apply lands, which is also the "pending" signal, and the dedup for a repeated apply.
     private string _appliedToken;
@@ -68,8 +73,8 @@ internal sealed class LocaleApplier
     {
         if (_appliedToken != null)
             return;
-        if (TryApplyCurrentLanguage(log, revertFirst: false, out var note) && note != null)
-            log.Msg($"Locale apply: {note}");
+        if (TryApplyCurrentLanguage(log, revertFirst: false, out var note))
+            Report(log, "Locale apply", note);
     }
 
     private void Reapply(MelonLogger.Instance log)
@@ -82,8 +87,16 @@ internal sealed class LocaleApplier
         try { Jiangyu.Game.Ui.UI.RelocaliseAll(); }
         catch (Exception ex) { log.Warning($"Locale switch: UI refresh failed: {ex.Message}"); }
 
-        if (note != null)
-            log.Msg($"Locale switch: {note}");
+        Report(log, "Locale switch", note);
+    }
+
+    // One line per change of state.
+    private void Report(MelonLogger.Instance log, string prefix, string note)
+    {
+        if (note == null || note == _lastNote)
+            return;
+        _lastNote = note;
+        log.Msg($"{prefix}: {note}");
     }
 
     // Returns true when the apply is complete (or there was nothing to apply). Returns false when the

@@ -1,5 +1,6 @@
 using System.Reflection;
 using HarmonyLib;
+using Jiangyu.Loader.Logging;
 using Jiangyu.Loader.Runtime.Patching;
 using MelonLoader;
 
@@ -204,7 +205,7 @@ internal sealed class TemplateCloneEarlyInjectionPatch : IHarmonyPatchModule
     private static void PatchMethod(HarmonyLib.Harmony harmony, MethodInfo target, string prefixName)
     {
         harmony.Patch(target, prefix: new HarmonyMethod(typeof(TemplateCloneEarlyInjectionPatch), prefixName));
-        _log.Msg($"Patched {target.DeclaringType?.Name}.{target.Name} for early template clone injection.");
+        HarmonyPatching.Installed(_log, $"Patched {target.DeclaringType?.Name}.{target.Name} for early template clone injection.");
     }
 
     private static Type ResolveSaveSystemType()
@@ -255,6 +256,6 @@ internal sealed class TemplateCloneEarlyInjectionPatch : IHarmonyPatchModule
             return;
         }
 
-        _log.Msg($"Template clone early injection via {trigger}: applied {applied} clone registration(s).");
+        LoaderDebug.Write(_log, $"Template clone early injection via {trigger}: applied {applied} clone registration(s).");
     }
 }

@@ -1,4 +1,5 @@
 using HarmonyLib;
+using Jiangyu.Loader.Logging;
 using Jiangyu.Loader.Runtime.Patching;
 using MelonLoader;
 
@@ -44,7 +45,7 @@ internal sealed class ModularVehicleSpawnGuardPatch : IHarmonyPatchModule
         {
             harmony.Patch(method,
                 finalizer: new HarmonyMethod(typeof(ModularVehicleSpawnGuardPatch), nameof(Finalizer)));
-            _log.Msg($"Modular vehicle spawn guard: hooked {method.DeclaringType?.Name}.{MethodName}.");
+            HarmonyPatching.Installed(_log, $"Modular vehicle spawn guard: hooked {method.DeclaringType?.Name}.{MethodName}.");
         }
         catch (Exception ex)
         {
@@ -76,7 +77,7 @@ internal sealed class ModularVehicleSpawnGuardPatch : IHarmonyPatchModule
             if (signature.Length > 200)
                 signature = signature.Substring(0, 200);
             if (_warnedSignatures.Add(signature))
-                _log?.Msg($"Modular vehicle spawn guard: swallowed in {MethodName}, spawn continues without mounted weapons (expected for weaponless modular vehicles). {signature}");
+                LoaderDebug.Write(_log, $"Modular vehicle spawn guard: swallowed in {MethodName}, spawn continues without mounted weapons (expected for weaponless modular vehicles). {signature}");
         }
         return null;
     }

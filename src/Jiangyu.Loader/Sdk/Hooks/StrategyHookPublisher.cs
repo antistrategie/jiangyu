@@ -60,7 +60,7 @@ internal sealed class StrategyHookPublisher : HookPublisherBase
         if (_subscribed.Add(ss.Pointer))
         {
             Hook<StrategyState.ConversationVarChangedDelegate>(ss.add_OnConversationVarChanged, (Action<string, int, int>)OnConversationVarChanged, "OnConversationVarChanged");
-            Log.Info("hooks: attached to StrategyState");
+            Log.Debug("hooks: attached to StrategyState");
         }
 
         var squaddies = ss.Squaddies;
@@ -103,7 +103,7 @@ internal sealed class StrategyHookPublisher : HookPublisherBase
         Hook<StoryFaction.TrustChangedDelegate>(faction.add_OnTrustChanged, (Action<StoryFaction, int, int>)OnFactionTrustChanged, "OnTrustChanged");
         Hook<StoryFaction.StatusChangedDelegate>(faction.add_OnStatusChanged, (Action<StoryFaction, StoryFactionStatus, StoryFactionStatus>)OnFactionStatusChanged, "OnStatusChanged");
         Hook<StoryFaction.UpgradeUnlockedDelegate>(faction.add_OnUpgradeUnlocked, (Action<StoryFaction, ShipUpgradeTemplate>)OnFactionUpgradeUnlocked, "OnUpgradeUnlocked");
-        Log.Info($"hooks: story factions subscribed ({++_factionsHooked})");
+        Log.Debug($"hooks: story factions subscribed ({++_factionsHooked})");
     }
 
     private void OnConversationVarChanged(string name, int oldValue, int newValue)
