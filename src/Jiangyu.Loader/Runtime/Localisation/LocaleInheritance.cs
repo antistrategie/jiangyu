@@ -5,6 +5,7 @@ using Jiangyu.Shared.Localisation;
 using MelonLoader;
 using BaseLocalizedString = Il2CppMenace.Tools.BaseLocalizedString;
 using LocaData = Il2CppMenace.Tools.LocaData;
+using LocaEntryType = Il2CppMenace.Tools.LocaEntryType;
 using LocaManager = Il2CppMenace.Tools.LocaManager;
 
 namespace Jiangyu.Loader.Runtime.Localisation;
@@ -31,7 +32,8 @@ namespace Jiangyu.Loader.Runtime.Localisation;
 /// resolves through a key built from the object name <c>Object.Instantiate</c> gave it, which is its
 /// SOURCE's name, so every clone of one source shares that key and a table entry there would serve
 /// whichever clone wrote last. The line is per clone, so its default is the one place this text can
-/// live and stay right.</para>
+/// live and stay right. The source's entry is also copied under the clone's own template id, a key
+/// the game never reads but a clone of this clone does.</para>
 ///
 /// <para>Cost matters, because a mod's roster runs to hundreds of clones and resolving a template
 /// that does not inherit <c>DataTemplate</c> costs a <c>Resources.FindObjectsOfTypeAll</c> scan. The
@@ -48,11 +50,14 @@ internal static class LocaleInheritance
 
     /// <summary>
     /// Copy each clone's un-overridden text from its source's entry, for the active language, or put
-    /// the original English back when the source language is active. Returns how many lines changed.
+    /// the original English back when the source language is active. <paramref name="decided"/>
+    /// holds the clones already handled for the active language and gains the ones this pass
+    /// resolves, so a clone is visited once per language however many passes it takes for every
+    /// clone to register. Returns how many lines this pass changed.
     /// </summary>
     public static int Apply(
         TemplateCloneCatalog clones, TemplatePatchCatalog patches, MelonLogger.Instance log,
-        bool translatable)
+        bool translatable, HashSet<string> decided)
     {
         if (clones == null || !clones.HasClones)
             return 0;
@@ -91,32 +96,38 @@ internal static class LocaleInheritance
 
             foreach (var directive in ordered)
             {
-                if (string.IsNullOrEmpty(directive.SourceId))
+                if (string.IsNullOrEmpty(directive.SourceId) || decided.Contains(directive.CloneId))
                     continue;
-                written += MirrorOne(directive, resolvedType, members, authored, data, translatable, log);
+                if (!MirrorOne(directive, resolvedType, members, authored, data, translatable, log, out var mirrored))
+                    continue;   // not registered yet; a later pass looks again
+                decided.Add(directive.CloneId);
+                written += mirrored;
             }
         }
 
         return written;
     }
 
-    private static int MirrorOne(
+    // False when the clone is not live yet. True once every member has been decided, whether or
+    // not any was written.
+    private static bool MirrorOne(
         LoadedCloneDirective directive,
         Type resolvedType,
         PropertyInfo[] members,
         IReadOnlyDictionary<string, HashSet<string>> authored,
         LocaData data,
         bool translatable,
-        MelonLogger.Instance log)
+        MelonLogger.Instance log,
+        out int written)
     {
+        written = 0;
         if (!TemplateRuntimeAccess.TryGetTemplateById(
                 resolvedType, directive.CloneId, out var cloneWrapper, out _)
             || !Il2CppReflectiveCast.TryCast(cloneWrapper, resolvedType, out var clone, out _))
-            return 0;   // not registered yet; a later pass picks it up
+            return false;
 
         authored.TryGetValue(directive.CloneId, out var authoredHere);
 
-        var written = 0;
         foreach (var member in members)
         {
             if (authoredHere != null && authoredHere.Contains(member.Name))
@@ -152,19 +163,31 @@ internal static class LocaleInheritance
                 if (!categoryData.HasEntry(sourceKey))
                     continue;   // the game ships no text for this field on the source either
 
-                var translated = categoryData.GetEntry(sourceKey).Translation;
+                var sourceEntry = categoryData.GetEntry(sourceKey);
+                var translated = sourceEntry.Translation;
                 if (string.IsNullOrEmpty(translated))
                     continue;
 
-                // Written onto the line, not into the table. A clone resolves through a key built
-                // from the object name Object.Instantiate gave it, which is its SOURCE's name, so
-                // every clone of one source shares that key and a table entry would serve whichever
-                // clone wrote last. The line is per clone, so its default is the one place this text
-                // can live and stay right. It is the clone's own line, never the source's.
+                // Written onto the line, not into the entry the game reads. A clone resolves through
+                // a key built from the object name Object.Instantiate gave it, which is its SOURCE's
+                // name, so every clone of one source shares that key and a table entry there would
+                // serve whichever clone wrote last. The line is per clone, so its default is the one
+                // place this text can live and stay right. It is the clone's own line, never the
+                // source's.
                 var key = (directive.CloneId, member.Name);
                 if (!OriginalDefaults.ContainsKey(key))
                     OriginalDefaults[key] = line.m_DefaultTranslation;
                 line.SetDefaultTranslation(translated);
+
+                // The source's entry copied under the clone's own id as well. The game never looks
+                // this key up, but a clone of this clone does: its source key is this clone's id,
+                // and the clones are ordered so the source is written first.
+                var cloneKey = $"{category}/{directive.CloneId}/{fieldName}";
+                var cloneEntry = categoryData.HasEntry(cloneKey)
+                    ? categoryData.GetEntry(cloneKey)
+                    : categoryData.AddEntry(cloneKey, null, LocaEntryType.Text, false);
+                cloneEntry.DefaultTranslation = sourceEntry.DefaultTranslation;
+                cloneEntry.Translation = translated;
                 written++;
             }
             catch (Exception ex)
@@ -173,7 +196,7 @@ internal static class LocaleInheritance
             }
         }
 
-        return written;
+        return true;
     }
 
     // Per template id, the top-level members the mod writes localised text into. Two shapes reach a

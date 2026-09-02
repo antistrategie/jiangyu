@@ -107,7 +107,8 @@ public static class LocalisationCompiler
     // From-end positions for every Append op, and the collection groups whose appends cannot be
     // addressed at all. Appends to one collection land in op order, so counting them gives each a
     // fixed distance from the end. A Clear, Remove or InsertAt on the same collection AFTER an append
-    // moves elements the appends already placed, so that group is given up rather than mis-addressed.
+    // moves elements the appends already placed, and a Set without index= replaces the collection
+    // outright, so that group is given up rather than mis-addressed.
     // The whole manifest's appends, grouped by the template each block targets so blocks sharing a
     // target are counted as the one stream the loader will apply.
     private static Dictionary<CompiledTemplateSetOperation, int> MapAppendPositions(
@@ -154,8 +155,9 @@ public static class LocalisationCompiler
                 continue;
             }
 
-            if (op.Op is CompiledTemplateOp.Clear or CompiledTemplateOp.Remove or CompiledTemplateOp.InsertAt
-                && appendsByGroup.ContainsKey(group))
+            var disturbs = op.Op is CompiledTemplateOp.Clear or CompiledTemplateOp.Remove or CompiledTemplateOp.InsertAt
+                || (op.Op == CompiledTemplateOp.Set && op.Index == null);
+            if (disturbs && appendsByGroup.ContainsKey(group))
                 spoiled.Add(group);
         }
 

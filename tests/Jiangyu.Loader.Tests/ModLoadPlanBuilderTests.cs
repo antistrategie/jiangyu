@@ -26,28 +26,6 @@ public sealed class ModLoadPlanBuilderTests : IDisposable
     }
 
     [Fact]
-    public void ModDirectoriesInLoadOrder_SortsOrdinallyRegardlessOfCreationOrder()
-    {
-        Directory.CreateDirectory(Path.Combine(_modsDir, "30-third"));
-        Directory.CreateDirectory(Path.Combine(_modsDir, "10-first"));
-        Directory.CreateDirectory(Path.Combine(_modsDir, "20-second"));
-
-        var ordered = ModLoadPlanBuilder.ModDirectoriesInLoadOrder(_modsDir);
-
-        Assert.Equal(
-            ["10-first", "20-second", "30-third"],
-            ordered.Select(dir => new DirectoryInfo(dir).Name).ToArray());
-    }
-
-    [Fact]
-    public void ModDirectoriesInLoadOrder_ReturnsEmptyForMissingDirectory()
-    {
-        var missing = Path.Combine(_modsDir, "absent");
-
-        Assert.Empty(ModLoadPlanBuilder.ModDirectoriesInLoadOrder(missing));
-    }
-
-    [Fact]
     public void Build_TreatsJiangyuDependencyAsPresent()
     {
         CreateMod("10-example", "Example", depends: ["Jiangyu >= 1.0.0"]);

@@ -863,7 +863,13 @@ public static class KdlTemplateParser
             }
 
             var removeIndexProp = GetPropertyValue(node, "index");
-            var hasIndex = removeIndexProp?.AsInt32() >= 0;
+            var removeIndex = removeIndexProp?.AsInt32();
+            if (removeIndexProp != null && removeIndex is not >= 0)
+            {
+                log.Error($"{pos}: 'remove' index= must be a non-negative integer.");
+                return false;
+            }
+            var hasIndex = removeIndex != null;
             var hasValue =
                 node.Arguments.Count >= 2
                 || GetProperty(node, "enum") != null
@@ -890,7 +896,7 @@ public static class KdlTemplateParser
                 {
                     Op = opKind,
                     FieldPath = fieldPath,
-                    Index = removeIndexProp!.AsInt32(),
+                    Index = removeIndex,
                     SourceLine = node.SourcePosition?.Line,
                 });
                 return true;

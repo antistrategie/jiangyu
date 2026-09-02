@@ -28,9 +28,13 @@ internal sealed class LocaleApplier
     private readonly TemplateCloneCatalog _clones;
     private readonly TemplatePatchCatalog _patches;
 
-    // Inherited entries written for the current language, accumulated over the passes it takes for
-    // every clone to register, so the summary line reports the total rather than the last pass.
-    private (string Token, int Written) _inheritedForToken;
+    // Inheritance progress for the current language: the clones already decided, and the lines
+    // written for them. Kept across the passes it takes for every clone to register, so a pass
+    // visits only the clones that arrived since the last one and the summary reports the total.
+    private (string Token, HashSet<string> Decided, int Written) _inherited;
+
+    // Every loaded mod's PO files, parsed once. They do not change while the game runs.
+    private List<LocalePo> _poSources;
 
     // The language token (locale code, or "<source>") of the last successful apply. Null until the
     // load-time apply lands, which is also the "pending" signal, and the dedup for a repeated apply.
@@ -97,7 +101,7 @@ internal sealed class LocaleApplier
         if (_appliedToken == token)
             return true;
 
-        var plan = LocalePlanner.Build(ReadPoSources(log), state, code, revertFirst);
+        var plan = LocalePlanner.Build(_poSources ??= ReadPoSources(log), state, code, revertFirst);
 
         // The active language's UI strings, or an empty map for the source language so Locale.Text
         // falls back to the English literal.
@@ -113,15 +117,15 @@ internal sealed class LocaleApplier
 
         // Inherited text carries no PO entry, so this runs whether or not a translation shipped, and
         // for the source language too: the text is written onto the clone's line, so English has to
-        // be put back rather than merely not overwritten. Counted across passes, since a clone that
-        // only registers later is written on the pass that first sees it.
-        if (_inheritedForToken.Token != token)
-            _inheritedForToken = (token, 0);
-        _inheritedForToken.Written += LocaleInheritance.Apply(
-            _clones, _patches, log, state == LocaleResolver.State.Translatable);
+        // be put back rather than merely not overwritten. A clone that only registers later is
+        // decided on the pass that first sees it, and the count carries across passes.
+        if (_inherited.Token != token)
+            _inherited = (token, new HashSet<string>(StringComparer.Ordinal), 0);
+        _inherited.Written += LocaleInheritance.Apply(
+            _clones, _patches, log, state == LocaleResolver.State.Translatable, _inherited.Decided);
 
         _appliedToken = token;
-        note = Describe(state, code, language, plan.TranslatedOps, _inheritedForToken.Written);
+        note = Describe(state, code, language, plan.TranslatedOps, _inherited.Written);
         return true;
     }
 

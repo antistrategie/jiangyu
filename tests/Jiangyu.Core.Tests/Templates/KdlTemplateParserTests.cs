@@ -282,6 +282,19 @@ public class KdlTemplateParserTests
     }
 
     [Fact]
+    public void Parse_RemoveWithNegativeIndex_FailsWithClearError()
+    {
+        var dir = SetupKdl("remove_negative.kdl", """
+            patch "WeaponTemplate" "weapon.test" {
+                remove "ItemSlots" index=-1
+            }
+            """);
+
+        var result = KdlTemplateParser.ParseAll(dir, _log);
+        Assert.True(result.ErrorCount > 0);
+    }
+
+    [Fact]
     public void ParseAll_ClearRejectsIndex()
     {
         var dir = SetupKdl("clear-with-index.kdl", """

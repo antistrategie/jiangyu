@@ -30,9 +30,12 @@ internal class ReplacementCoordinator
     // Per-SMR dedupe so an SMR already handled is skipped on later sweeps, alongside the
     // "[jiangyu]" sharedMesh marker the mesh-rebind path leaves.
     private readonly HashSet<int> _processedSmrInstanceIds = new();
-    // Screens already swept by the activation-time texture pass, so a screen reopened or
-    // reactivated does not re-sweep. Scene-scoped, cleared with the scene's screens.
-    private readonly HashSet<int> _screenTexturePassIds = new();
+    // Sweeps the activation-time texture pass has run per screen instance. A screen retires once
+    // a sweep places something, or once the budget is spent, so a screen whose content never
+    // carries a registered texture stops costing a sweep on every reactivation. Scene-scoped,
+    // cleared with the scene's screens.
+    private readonly Dictionary<int, int> _screenTextureSweeps = new();
+    private const int ScreenTextureSweepBudget = 2;
 
     private bool _templateWorkSeen;
     private bool _templatesAppliedRaised;
@@ -116,7 +119,7 @@ internal class ReplacementCoordinator
         // across scenes and avoids (theoretical) ID-recycling false-negatives
         // on later-scene SMRs that happen to reuse a destroyed ID.
         _processedSmrInstanceIds.Clear();
-        _screenTexturePassIds.Clear();
+        _screenTextureSweeps.Clear();
         _textureMutation.OnSceneUnloaded();
         _meshPreparation.ClearPreparedAssignments();
     }
@@ -133,19 +136,18 @@ internal class ReplacementCoordinator
         if (!_textureMutation.MayHaveUnresolvedTargets)
             return;
 
-        // Once per screen instance, but only counted once the pass has actually placed something.
-        // Recording the screen up front would retire it on the sweep that found nothing, which is
-        // exactly the case worth retrying: a screen whose content is built after activation, or
-        // reopened from a pool with different content.
-        if (_screenTexturePassIds.Contains(screenId))
+        // A sweep is two FindObjectsOfTypeAll scans, so each screen gets a bounded number. The
+        // first empty sweep does not retire a screen: content built after activation, or a pooled
+        // screen reopened with different content, gets one more look. A texture that enters the
+        // graph after that is placed by the scene poll.
+        _screenTextureSweeps.TryGetValue(screenId, out var sweeps);
+        if (sweeps >= ScreenTextureSweepBudget)
             return;
 
         var mutated = _textureMutation.ApplyPending(log);
-        if (mutated <= 0)
-            return;
-
-        _screenTexturePassIds.Add(screenId);
-        log.Msg($"Applied {mutated} texture mutation(s) on screen activation.");
+        _screenTextureSweeps[screenId] = mutated > 0 ? ScreenTextureSweepBudget : sweeps + 1;
+        if (mutated > 0)
+            log.Msg($"Applied {mutated} texture mutation(s) on screen activation.");
     }
 
     public void ApplyReplacements(MelonLogger.Instance log, bool includeTextures = true)

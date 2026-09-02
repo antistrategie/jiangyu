@@ -74,16 +74,16 @@ internal static class ConversationManagerRegistry
             if (ManagerCaches.TryGetValue(pointer, out var existing))
             {
                 // Still the manager we injected into: its indexes already carry our clones.
-                if (existing.Manager.TryGetTarget(out _))
+                if (existing.IsAlive)
                     return;
 
-                // A dead target may mean IL2CPP handed this address to a NEW manager, or merely
-                // that the wrapper was collected while the manager lives on. Re-registering is the
-                // safe answer to both: keying on the raw pointer alone would skip a new manager for
-                // good and nothing would ever put our clones in its indexes, so every doll would go
+                // The manager at this address was freed and IL2CPP has handed the address to a
+                // new one. Nothing has put our clones in its indexes, so it registers afresh.
+                // Keying on the raw pointer alone would skip it for good, and every doll would go
                 // quiet for the rest of the session while vanilla conversations, which the manager
-                // builds natively, kept working. Re-injecting into a manager that already has them
-                // costs nothing, because the append checks the manager's indexes first.
+                // builds natively, kept working. The append checks the manager's indexes first, so
+                // a replay is idempotent.
+                existing.Release();
                 ManagerCaches.Remove(pointer);
             }
 
@@ -109,14 +109,17 @@ internal static class ConversationManagerRegistry
         List<IntPtr> dead = null;
         foreach (var (pointer, cache) in ManagerCaches)
         {
-            if (cache.Manager.TryGetTarget(out _))
+            if (cache.IsAlive)
                 continue;
             (dead ??= new List<IntPtr>()).Add(pointer);
         }
         if (dead == null)
             return;
         foreach (var pointer in dead)
+        {
+            ManagerCaches[pointer].Release();
             ManagerCaches.Remove(pointer);
+        }
     }
 
     /// <summary>Called by <see cref="TemplateCloneApplier"/> after a
@@ -369,14 +372,11 @@ internal static class ConversationManagerRegistry
 
     private static ManagerCache TryBuildManagerCache(Il2CppObjectBase manager)
     {
+        ManagerCache cache = null;
         try
         {
             var managerType = manager.GetType();
-            var cache = new ManagerCache
-            {
-                Manager = new WeakReference<Il2CppObjectBase>(manager),
-                ManagerType = managerType,
-            };
+            cache = new ManagerCache(manager);
 
             cache.MasterArrayProp = managerType.GetProperty("m_ConversationTemplates",
                 BindingFlags.Public | BindingFlags.Instance);
@@ -416,6 +416,7 @@ internal static class ConversationManagerRegistry
         catch (Exception ex)
         {
             _log?.Warning($"  Conversation manager cache build failed: {ex.Message}");
+            cache?.Release();
             return null;
         }
     }
@@ -671,11 +672,15 @@ internal static class ConversationManagerRegistry
 
     private sealed class ManagerCache
     {
-        // Weak so the registry doesn't pin destroyed managers. A dead target means the
-        // manager has been collected and the entry is stale, which RegisterManager treats
-        // as "not registered": IL2CPP does reuse an address within a session, and a stale
-        // entry sitting on a recycled one would silently deny the new manager its clones.
-        public WeakReference<Il2CppObjectBase> Manager;
+        // Liveness is the NATIVE manager's, through a weak IL2CPP GC handle. A managed wrapper is
+        // pooled weakly and rebuilt after a GC, so its collection says nothing about the manager.
+        // The handle's target drops to zero exactly when the IL2CPP GC frees the manager, which
+        // is the only point at which its address can be handed to another one, and RegisterManager
+        // treats that as "not registered". Weak so the registry never pins a destroyed manager.
+        private readonly IntPtr _pointer;
+        private nint _weakHandle;
+        private WeakReference<Il2CppObjectBase> _wrapper;
+
         public Type ManagerType;
         public int? ConversationType;
 
@@ -692,8 +697,42 @@ internal static class ConversationManagerRegistry
         public MethodInfo BucketListAdd;
         public ConstructorInfo BucketListCtor;
 
+        public ManagerCache(Il2CppObjectBase manager)
+        {
+            _pointer = manager.Pointer;
+            _weakHandle = IL2CPP.il2cpp_gchandle_new_weakref(_pointer, false);
+            _wrapper = new WeakReference<Il2CppObjectBase>(manager);
+            ManagerType = manager.GetType();
+        }
+
+        public bool IsAlive
+            => _weakHandle != 0 && IL2CPP.il2cpp_gchandle_get_target(_weakHandle) == _pointer;
+
+        // The manager's wrapper, rebuilt over the same native object when the pooled one has
+        // been collected. Reflection through the cached PropertyInfos needs one of the manager's
+        // own type.
         public bool TryGetManager(out Il2CppObjectBase target)
-            => Manager.TryGetTarget(out target);
+        {
+            if (_wrapper.TryGetTarget(out target))
+                return true;
+            if (!IsAlive)
+            {
+                target = null;
+                return false;
+            }
+            target = (Il2CppObjectBase)Activator.CreateInstance(ManagerType, _pointer);
+            _wrapper = new WeakReference<Il2CppObjectBase>(target);
+            return true;
+        }
+
+        // Frees the handle. Called when the entry leaves the registry.
+        public void Release()
+        {
+            if (_weakHandle == 0)
+                return;
+            IL2CPP.il2cpp_gchandle_free(_weakHandle);
+            _weakHandle = 0;
+        }
     }
 
     private sealed class CloneTypeCache

@@ -166,6 +166,7 @@ internal sealed class TextureMutationService
             if (TextureMutationHelpers.MutateInPlace(replacement, gameTexture, log))
             {
                 _mutatedInstanceIds.Add(instanceId);
+                _resolvedNames.Add(gameSprite.name);
                 mutated++;
                 log.Msg($"  Mutated sprite-backing texture in place: {gameSprite.name} -> {gameTexture.name} ({gameTexture.width}x{gameTexture.height}, {gameTexture.format})");
             }

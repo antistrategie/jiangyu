@@ -283,6 +283,43 @@ public class LocalisationCompilerTests
     }
 
     [Fact]
+    public void ExtractCatalogue_GivesUpOnAppendsAWholeCollectionSetReplaces()
+    {
+        // A Set without index= after the appends replaces the collection, so the appended element is
+        // no longer there to name.
+        var manifest = new CompiledTemplatePatchManifest
+        {
+            TemplatePatches =
+            [
+                new CompiledTemplatePatch
+                {
+                    TemplateType = "UnitLeaderTemplate",
+                    TemplateId = "squad_leader.asteria",
+                    Set =
+                    [
+                        Append("EmotionalStateResponses", Line("Text", "first")),
+                        new CompiledTemplateSetOperation
+                        {
+                            Op = CompiledTemplateOp.Set,
+                            FieldPath = "EmotionalStateResponses",
+                            Value = new CompiledTemplateValue
+                            {
+                                Kind = CompiledTemplateValueKind.Composite,
+                                Composite = new CompiledTemplateComposite { TypeName = "List", Operations = [] },
+                            },
+                        },
+                    ],
+                },
+            ],
+        };
+
+        var po = LocalisationCompiler.ExtractCatalogue(manifest, "WOMENACE", out var skipped);
+
+        Assert.Empty(po.Entries);
+        Assert.Equal(1, skipped);
+    }
+
+    [Fact]
     public void ExtractCatalogue_ReachesLocalisedTextNestedBelowTheReplacedField()
     {
         // A composite that is not itself a line but carries one deeper still reaches the POT.

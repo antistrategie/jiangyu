@@ -80,14 +80,6 @@ public static class ModLoadPlanBuilder
         @"^\s*(?<name>.+?)(?:\s*(?<operator>>=|<=|==|!=|>|<|=)\s*(?<constraint>.+))?\s*$",
         RegexOptions.Compiled);
 
-    /// <summary>The mod folders directly under <paramref name="modsDir"/>, in the ordinal
-    /// order <see cref="Build"/> applies. <c>Directory.GetDirectories</c> returns raw
-    /// filesystem order: name-ordered on NTFS, arbitrary on ext4.</summary>
-    public static string[] ModDirectoriesInLoadOrder(string modsDir)
-        => Directory.Exists(modsDir)
-            ? [.. Directory.GetDirectories(modsDir).OrderBy(dir => dir, StringComparer.Ordinal)]
-            : [];
-
     /// <summary>Discover, validate, and dependency-gate the mods under <paramref name="modsDir"/>.
     /// <paramref name="loaderVersion"/> is the running Jiangyu version that satisfies a
     /// <c>Jiangyu</c> dependency or conflict constraint; pass null offline to fall back to a
