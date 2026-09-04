@@ -1,14 +1,14 @@
 # Changelog
 
-Changes relevant to modders building with Jiangyu, and to players running Jiangyu mods where they can see the difference. Entries are scoped Loader, Studio, CLI, MCP or SDK.
+Changes relevant to modders building with Jiangyu, and to players running Jiangyu mods where they can see the difference. Entries are scoped Loader, Compiler, Studio, CLI, MCP or SDK.
 
 ## 1.4.2
 
 - (Loader) Stopped the clone pass loading every template asset in the game at the title screen, which took gigabytes of memory before a campaign existed. Clones still land in every family slot the game reads, and cloned conversations find their sources through their own Resources folder
 - (Loader) Added a memory line to the play log after bundle load and after the first scene's replacement passes, naming the machine's RAM and graphics memory, so a crash report from a machine short on memory carries the figures
 - (Loader) Loads a mod's bundled sprites, textures, audio clips and prefabs on first use instead of all at start-up, so a mod holds in memory what the session touches rather than everything it ships. Code that loads a prefab through `Context.Assets` gets the same shader rebind and script restore a KDL reference does
-- (CLI) Compiled addition textures to DXT5 and addition sprites to BC7 wherever their dimensions divide by four, the formats the game uses for its own portraits and icons. A 2192x3668 portrait drops from 43 MB to 10 MB in memory
-- (CLI) Compiled audio clips to Vorbis held compressed in memory, in place of PCM decoded at load, so a clip sits in memory at about a tenth of its former size. Clips above 48 kHz keep PCM, since that rate marks a short effect fired in quantity, where PCM's memory is small and concurrent decodes are not
+- (Compiler) Compiled addition textures to DXT5 and addition sprites to BC7 wherever their dimensions divide by four, the formats the game uses for its own portraits and icons. A 2192x3668 portrait drops from 43 MB to 10 MB in memory
+- (Compiler) Compiled audio clips to Vorbis held compressed in memory, in place of PCM decoded at load, so a clip sits in memory at about a tenth of its former size. Clips above 48 kHz keep PCM, since that rate marks a short effect fired in quantity, where PCM's memory is small and concurrent decodes are not
 
 ## 1.4.1
 
