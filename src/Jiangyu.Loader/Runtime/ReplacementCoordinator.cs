@@ -48,8 +48,8 @@ internal class ReplacementCoordinator
     public ReplacementCoordinator()
     {
         _catalog = new BundleReplacementCatalog(_pinned);
-        _materialReplacements = new MaterialReplacementService(_catalog.ReplacementTextures);
-        _textureMutation = new TextureMutationService(_catalog.ReplacementTextures);
+        _materialReplacements = new MaterialReplacementService(_catalog.Assets);
+        _textureMutation = new TextureMutationService(_catalog.Assets);
         _meshPreparation = new MeshPreparationService(_pinned);
         _directReplacements = new DirectMeshReplacementApplier(_materialReplacements, _meshPreparation);
         _prefabRebindApplier = new PrefabMeshRebindApplier(_catalog, _directReplacements);
@@ -62,7 +62,7 @@ internal class ReplacementCoordinator
             new IHarmonyPatchModule[]
             {
                 new TemplateCloneEarlyInjectionPatch(_templateCloneApplier),
-                new AudioReplacementPatch(_catalog.ReplacementAudioClips),
+                new AudioReplacementPatch(_catalog.Assets),
                 new Jiangyu.Loader.Replacements.ElementSpawnReplacementPatch(this),
                 new ConversationManagerTrackingPatch(),
                 new InventoryFilterPatch(),
@@ -174,10 +174,14 @@ internal class ReplacementCoordinator
 
     public void ApplyReplacements(MelonLogger.Instance log, bool includeTextures = true)
     {
+        // A prefab loaded before the game's asset registry was populated waits here for
+        // its script mirror, so a queued mirror is work even for a mod that ships nothing
+        // else.
         if (_catalog.Meshes.Count == 0 &&
-            _catalog.ReplacementTextures.Count == 0 &&
-            _catalog.ReplacementSprites.Count == 0 &&
-            _catalog.ReplacementAudioClips.Count == 0 &&
+            _catalog.Assets.TextureCount == 0 &&
+            _catalog.Assets.SpriteCount == 0 &&
+            _catalog.Assets.AudioCount == 0 &&
+            !_catalog.PrefabMirrors.HasPending &&
             !_templatePatchApplier.HasPendingPatches &&
             !_templateCloneApplier.HasPendingClones &&
             !(_localeApplier?.Pending ?? false))
@@ -291,13 +295,14 @@ internal class ReplacementCoordinator
 
     public bool HasReplacementTargets()
     {
-        if (_templatePatchApplier.HasPendingPatches || _templateCloneApplier.HasPendingClones)
+        if (_templatePatchApplier.HasPendingPatches || _templateCloneApplier.HasPendingClones
+            || _catalog.PrefabMirrors.HasPending)
             return true;
 
         if (_catalog.Meshes.Count == 0 &&
-            _catalog.ReplacementTextures.Count == 0 &&
-            _catalog.ReplacementSprites.Count == 0 &&
-            _catalog.ReplacementAudioClips.Count == 0)
+            _catalog.Assets.TextureCount == 0 &&
+            _catalog.Assets.SpriteCount == 0 &&
+            _catalog.Assets.AudioCount == 0)
             return false;
 
         if (_catalog.Meshes.Count > 0)

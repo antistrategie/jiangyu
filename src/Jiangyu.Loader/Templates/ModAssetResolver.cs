@@ -19,7 +19,7 @@ namespace Jiangyu.Loader.Templates;
 // Scope: the supported destination types match AssetCategory.IsSupported
 // (Sprite, Texture2D, AudioClip, Material, GameObject). GameObject additions
 // flow from `assets/additions/prefabs/<name>.bundle` and are registered into
-// `BundleReplacementCatalog.AdditionPrefabs` when the bundle is loaded; the
+// `BundleReplacementCatalog.Assets` on first request; the
 // `additionPrefabs` list on jiangyu.json tells the loader which bundled
 // GameObjects to treat as additions vs mesh-replacement targets. Mesh and
 // PrefabHierarchyObject still defer to the prefab-construction layer.
@@ -53,19 +53,19 @@ internal sealed class ModAssetResolver
         switch (unityType.Name)
         {
             case nameof(Sprite):
-                if (_bundles.ReplacementSprites.TryGetValue(bundleKey, out var sprite))
+                if (_bundles.Assets.TryGetSprite(bundleKey, out var sprite))
                     return sprite;
                 break;
             case nameof(Texture2D):
-                if (_bundles.ReplacementTextures.TryGetValue(bundleKey, out var texture))
+                if (_bundles.Assets.TryGetTexture(bundleKey, out var texture))
                     return texture;
                 break;
             case nameof(AudioClip):
-                if (_bundles.ReplacementAudioClips.TryGetValue(bundleKey, out var audio))
+                if (_bundles.Assets.TryGetAudioClip(bundleKey, out var audio))
                     return audio;
                 break;
             case nameof(GameObject):
-                if (_bundles.AdditionPrefabs.TryGetValue(bundleKey, out var prefab))
+                if (_bundles.Assets.TryGetAdditionPrefab(bundleKey, out var prefab))
                     return prefab;
                 break;
                 // Material additions don't have a dedicated bundle dictionary

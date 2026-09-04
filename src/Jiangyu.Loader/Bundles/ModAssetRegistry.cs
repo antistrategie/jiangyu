@@ -19,18 +19,28 @@ internal sealed class ModAssetRegistry : IModAssets
     private readonly IReadOnlyList<Il2CppAssetBundle> _bundles;
     private readonly List<UnityEngine.Object> _pinned;
     private readonly IModHostLog _log;
+    private readonly Func<string, GameObject> _additionPrefab;
+    private readonly Func<Il2CppAssetBundle, string, GameObject> _additionPrefabIn;
 
     private readonly Dictionary<(Type, string), object> _cache = new();
     private List<string> _names;
     // Per bundle, a lowercased short-name (no extension) to full-path index, built once.
     private Dictionary<string, string>[] _nameIndex;
 
-    public ModAssetRegistry(string modId, IReadOnlyList<Il2CppAssetBundle> bundles, List<UnityEngine.Object> pinned, IModHostLog log)
+    public ModAssetRegistry(
+        string modId,
+        IReadOnlyList<Il2CppAssetBundle> bundles,
+        List<UnityEngine.Object> pinned,
+        IModHostLog log,
+        Func<string, GameObject> additionPrefab = null,
+        Func<Il2CppAssetBundle, string, GameObject> additionPrefabIn = null)
     {
         _modId = modId;
         _bundles = bundles;
         _pinned = pinned;
         _log = log;
+        _additionPrefab = additionPrefab;
+        _additionPrefabIn = additionPrefabIn;
     }
 
     public IReadOnlyList<string> Names
@@ -56,6 +66,16 @@ internal sealed class ModAssetRegistry : IModAssets
         var requestKey = (typeof(T), name);
         if (_cache.TryGetValue(requestKey, out var cached))
             return (T)cached;
+
+        // An addition prefab comes through the catalog, which rebinds its shaders and
+        // restores its vanilla scripts on first load; a raw bundle load would hand back
+        // the bare asset.
+        if (_additionPrefab != null && typeof(T) == typeof(GameObject))
+        {
+            var prefab = _additionPrefab(Jiangyu.Shared.Replacements.AssetCategory.ToBundleAssetName(name));
+            if (prefab != null)
+                return (T)(object)prefab;
+        }
 
         IntPtr typePtr;
         try
@@ -122,6 +142,20 @@ internal sealed class ModAssetRegistry : IModAssets
             _cache[requestKey] = hit;
             asset = (T)hit;
             return true;
+        }
+
+        // A prefab named by path or leaf instead of its key still belongs to the catalog,
+        // which processes it on first load; the bare bundle asset never stands in for it.
+        if (_additionPrefabIn != null && typeof(T) == typeof(GameObject))
+        {
+            var processed = _additionPrefabIn(_bundles[bundleIndex], candidate);
+            if (processed != null)
+            {
+                asset = (T)(object)processed;
+                _cache[resolvedKey] = asset;
+                _cache[requestKey] = asset;
+                return true;
+            }
         }
 
         IntPtr ptr;

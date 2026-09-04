@@ -20,13 +20,7 @@ internal sealed class BundleReplacementCatalog
     private readonly Dictionary<string, List<Il2CppAssetBundle>> _bundlesByMod = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IModAssets> _assetsByMod = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _meshOwners = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _textureOwners = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _spriteOwners = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _audioOwners = new(StringComparer.Ordinal);
-    // Mirrors AdditionPrefabs' case-insensitive keying so duplicate-detection
-    // stays consistent when a later mod ships the same prefab under a
-    // different-cased name.
-    private readonly Dictionary<string, string> _additionPrefabOwners = new(StringComparer.OrdinalIgnoreCase);
+    private MelonLogger.Instance _hostLog;
 
     // Addition prefabs that declare a vanilla reference need MENACE
     // MonoBehaviours a modder's Unity project cannot author: Ragdoll and
@@ -41,24 +35,15 @@ internal sealed class BundleReplacementCatalog
     public readonly PrefabMirrorScheduler PrefabMirrors = new();
 
     public Dictionary<string, ReplacementMesh> Meshes { get; } = new(StringComparer.Ordinal);
-    public Dictionary<string, Texture2D> ReplacementTextures { get; } = new(StringComparer.Ordinal);
-    public Dictionary<string, Sprite> ReplacementSprites { get; } = new(StringComparer.Ordinal);
-    public Dictionary<string, AudioClip> ReplacementAudioClips { get; } = new(StringComparer.Ordinal);
 
-    // Mod-shipped addition prefabs declared on jiangyu.json's additionPrefabs
-    // list. Looked up by Unity Object.name, satisfying KDL asset= references
-    // targeting GameObject-typed fields via ModAssetResolver Phase 1 before
-    // the Phase 2 fallback consults the live game-asset registry.
-    //
-    // Case-insensitive on purpose: Unity normalises asset bundle names to
-    // lowercase when writing, so a bundle authored as Voymastina/Voymastina
-    // lands on disk as voymastina__voymastina.bundle. Modders shouldn't be
-    // forced to lowercase their KDL asset= references to compensate.
-    public Dictionary<string, GameObject> AdditionPrefabs { get; } = new(StringComparer.OrdinalIgnoreCase);
+    // Textures, sprites, audio clips and addition prefabs, indexed by name at start and
+    // loaded from their bundle on first use. Consumers ask by name and by type.
+    public readonly LazyBundleAssets Assets;
 
     public BundleReplacementCatalog(List<UnityEngine.Object> pinned)
     {
         _pinned = pinned;
+        Assets = new LazyBundleAssets(pinned) { OnPrefabLoaded = OnAdditionPrefabLoaded };
     }
 
     /// <summary>The mod's own bundled assets, keyed by mod id. Mods that ship no
@@ -72,7 +57,10 @@ internal sealed class BundleReplacementCatalog
             return existing;
 
         var assets = _bundlesByMod.TryGetValue(modId, out var bundles) && bundles.Count > 0
-            ? new ModAssetRegistry(modId, bundles, _pinned, hostLog)
+            ? new ModAssetRegistry(
+                modId, bundles, _pinned, hostLog,
+                key => Assets.TryGetAdditionPrefab(key, modId, out var prefab) ? prefab : null,
+                (bundle, path) => Assets.TryGetAdditionPrefab(bundle, path, modId, out var prefab) ? prefab : null)
             : (IModAssets)NullModAssets.Instance;
         _assetsByMod[modId] = assets;
         return assets;
@@ -80,6 +68,8 @@ internal sealed class BundleReplacementCatalog
 
     public BundleLoadSummary LoadBundles(ModLoadPlan plan, LoaderLog log)
     {
+        _hostLog = log.Raw;
+        Assets.Log = log.Raw;
         var bundleCount = 0;
         var loadableModCount = 0;
 
@@ -152,6 +142,10 @@ internal sealed class BundleReplacementCatalog
         // Il2CppInterop 1.5.1). Unlike UnityEngine.AssetBundle (the
         // Il2CppInterop-generated wrapper), this class is safe to call on
         // Unity 6 + Il2CppInterop 1.5.1.
+        //
+        // Mounting an LZ4 bundle reads its header and asset table and nothing
+        // else, so everything below indexes names; an asset leaves the bundle
+        // the first time something asks for it.
         var bundle = Il2CppAssetBundleManager.LoadFromFile(bundlePath);
         if (bundle == null)
         {
@@ -163,6 +157,31 @@ internal sealed class BundleReplacementCatalog
             _bundlesByMod[mod.Name] = modBundles = new List<Il2CppAssetBundle>();
         modBundles.Add(bundle);
 
+        var assetNames = bundle.GetAllAssetNames();
+        if (assetNames == null || assetNames.Length == 0)
+        {
+            log.Warning("  Bundle contains no assets.");
+            return;
+        }
+
+        var goTypePtr = IL2CPP.Il2CppObjectBaseToPtr(Il2CppType.Of<GameObject>());
+
+        // An addition bundle is one prefab filed under the bundle's own stem. The
+        // prefab, its shader rebind and its script mirrors all wait for the first
+        // request, so a character nobody fields in a session never leaves the bundle.
+        if (isAdditionBundle)
+        {
+            // A UI document bundle sits on the same list and holds no prefab; it reaches
+            // its mod through ModContext.Assets and must not claim a prefab key.
+            var prefabName = PrefabEntryName(assetNames) ?? ProbeUnclassifiedPrefab(bundle, assetNames, goTypePtr);
+            if (prefabName != null)
+            {
+                Assets.RegisterAdditionPrefab(bundleStem, bundle, prefabName, ownerLabel, mod.Name, log);
+                log.Debug($"  Indexed addition prefab '{bundleStem}'.");
+            }
+            return;
+        }
+
         Dictionary<string, string> bundleToGame = null;
         if (meshMappings != null)
         {
@@ -171,77 +190,158 @@ internal sealed class BundleReplacementCatalog
                 bundleToGame[bundleName] = gameName;
         }
 
-        var goTypePtr = IL2CPP.Il2CppObjectBaseToPtr(Il2CppType.Of<GameObject>());
         var meshTypePtr = IL2CPP.Il2CppObjectBaseToPtr(Il2CppType.Of<Mesh>());
-        var textureTypePtr = IL2CPP.Il2CppObjectBaseToPtr(Il2CppType.Of<Texture2D>());
-        var spriteTypePtr = IL2CPP.Il2CppObjectBaseToPtr(Il2CppType.Of<Sprite>());
-        var audioClipTypePtr = IL2CPP.Il2CppObjectBaseToPtr(Il2CppType.Of<AudioClip>());
-        var assetNames = bundle.GetAllAssetNames();
-
-        if (assetNames == null || assetNames.Length == 0)
-        {
-            log.Warning("  Bundle contains no assets.");
-            return;
-        }
+        var indexed = 0;
 
         foreach (var assetName in assetNames)
         {
-            var registered = false;
-            foreach (var kind in ProbeOrderFor(assetName))
+            var stem = AssetStem(assetName);
+            switch (ClassifyAssetName(assetName))
             {
-                // Each LoadAsset miss is a native bundle lookup that costs the
-                // same as a hit, so the asset's own extension picks which type
-                // to try first. Every kind is still attempted, and the first
-                // type that loads is the one the asset registers as.
-                var typePtr = kind switch
-                {
-                    AssetProbeKind.GameObject => goTypePtr,
-                    AssetProbeKind.Sprite => spriteTypePtr,
-                    AssetProbeKind.Texture => textureTypePtr,
-                    _ => audioClipTypePtr,
-                };
+                case BundleAssetClass.Audio:
+                    Assets.RegisterAudioClip(stem, bundle, assetName, ownerLabel, mod.Name, log);
+                    indexed++;
+                    break;
 
-                var ptr = bundle.LoadAsset(assetName, typePtr);
-                if (ptr == IntPtr.Zero)
-                    continue;
+                case BundleAssetClass.Image:
+                    // One imported image loads as a Sprite and as its Texture2D, so it
+                    // answers to both; the request's type picks.
+                    Assets.RegisterSprite(stem, bundle, assetName, ownerLabel, mod.Name, log);
+                    Assets.RegisterTexture(stem, bundle, assetName, ownerLabel, mod.Name, log);
+                    indexed++;
+                    break;
 
-                switch (kind)
-                {
-                    case AssetProbeKind.GameObject:
-                        var prefab = new GameObject(ptr);
-                        if (isAdditionBundle)
-                            RegisterAdditionPrefab(ownerLabel, prefab, bundleStem, log);
-                        else
-                            RegisterPrefabAsset(ownerLabel, assetName, prefab, bundleToGame, meshMetadata, log);
-                        break;
-                    case AssetProbeKind.Sprite:
-                        RegisterSpriteAsset(ownerLabel, ptr, log);
-                        break;
-                    case AssetProbeKind.Texture:
-                        RegisterTextureAsset(ownerLabel, ptr, log);
-                        break;
-                    default:
-                        RegisterAudioAsset(ownerLabel, ptr, log);
-                        break;
-                }
+                case BundleAssetClass.Serialised:
+                    // A mod that replaces meshes ships them as generated assets whose
+                    // compiled metadata the mesh applier reads off the object, so those
+                    // register at start. Every other generated asset is a texture or a
+                    // sprite object and waits for its first request.
+                    if (meshMetadata != null)
+                    {
+                        var meshPtr = bundle.LoadAsset(assetName, meshTypePtr);
+                        if (meshPtr != IntPtr.Zero)
+                        {
+                            RegisterMeshAsset(ownerLabel, meshPtr, bundleToGame, meshMetadata, log);
+                            break;
+                        }
+                    }
+                    Assets.RegisterTexture(stem, bundle, assetName, ownerLabel, mod.Name, log);
+                    Assets.RegisterSprite(stem, bundle, assetName, ownerLabel, mod.Name, log);
+                    indexed++;
+                    break;
 
-                registered = true;
-                break;
+                case BundleAssetClass.Prefab:
+                    // A prefab outside an addition bundle drives mesh replacement: its
+                    // skinned meshes register under the manifest's mappings, which needs
+                    // the object, so it loads at start as it always has. A PSD is in this
+                    // class because rig mode imports one as a prefab; a PSD that turns out
+                    // to be a plain image is indexed as one.
+                    var prefabPtr = bundle.LoadAsset(assetName, goTypePtr);
+                    if (prefabPtr != IntPtr.Zero)
+                    {
+                        RegisterPrefabAsset(ownerLabel, assetName, new GameObject(prefabPtr), bundleToGame, meshMetadata, log);
+                        break;
+                    }
+                    Assets.RegisterSprite(stem, bundle, assetName, ownerLabel, mod.Name, log);
+                    Assets.RegisterTexture(stem, bundle, assetName, ownerLabel, mod.Name, log);
+                    indexed++;
+                    break;
+
+                default:
+                    // UI documents and other assets reach a mod through ModContext.Assets.
+                    break;
             }
+        }
 
-            if (registered)
-                continue;
+        if (indexed > 0)
+            log.Debug($"  Indexed {indexed} asset(s) for first-use loading.");
+    }
 
-            if (meshMetadata == null || meshMetadata.Count == 0)
-                continue;
+    internal enum BundleAssetClass { Audio, Image, Serialised, Prefab, Other }
 
-            var meshPtr = bundle.LoadAsset(assetName, meshTypePtr);
-            if (meshPtr != IntPtr.Zero)
-                RegisterMeshAsset(ownerLabel, meshPtr, bundleToGame, meshMetadata, log);
+    /// <summary>
+    /// What a bundle asset is, from its file extension alone, so the catalog can index it
+    /// without loading it. Unity keeps the source file's extension in the asset path. A
+    /// PSD counts as prefab-capable: imported in rig mode its main asset is a GameObject.
+    /// </summary>
+    internal static BundleAssetClass ClassifyAssetName(string assetName)
+    {
+        var dot = assetName.LastIndexOf('.');
+        if (dot < 0 || dot == assetName.Length - 1)
+            return BundleAssetClass.Other;
+
+        switch (assetName[(dot + 1)..].ToLowerInvariant())
+        {
+            case "wav":
+            case "ogg":
+            case "mp3":
+            case "aif":
+            case "aiff":
+            case "flac":
+            case "m4a":
+                return BundleAssetClass.Audio;
+            case "png":
+            case "jpg":
+            case "jpeg":
+            case "tga":
+            case "bmp":
+            case "exr":
+            case "gif":
+            case "tif":
+            case "tiff":
+            case "webp":
+                return BundleAssetClass.Image;
+            case "asset":
+                return BundleAssetClass.Serialised;
+            case "prefab":
+            case "fbx":
+            case "gltf":
+            case "glb":
+            case "obj":
+            case "psd":
+                return BundleAssetClass.Prefab;
+            default:
+                return BundleAssetClass.Other;
         }
     }
 
-    internal enum AssetProbeKind { GameObject, Sprite, Texture, Audio }
+    /// <summary>The file stem of a bundle asset path, which is the name Unity gives the object inside.</summary>
+    internal static string AssetStem(string assetName)
+    {
+        var slash = assetName.LastIndexOf('/');
+        var leaf = slash >= 0 ? assetName[(slash + 1)..] : assetName;
+        var dot = leaf.LastIndexOf('.');
+        return dot > 0 ? leaf[..dot] : leaf;
+    }
+
+    // A bundle built outside the compile pipeline may list its prefab under an
+    // extensionless or unusual path that no extension names. Those entries are probed as
+    // GameObject the one time, at start; a bundle without a prefab answers null to every
+    // probe and claims no key. The compile pipeline's own bundles never reach this.
+    private static string ProbeUnclassifiedPrefab(Il2CppAssetBundle bundle, IEnumerable<string> assetNames, IntPtr goTypePtr)
+    {
+        foreach (var assetName in assetNames)
+        {
+            if (ClassifyAssetName(assetName) != BundleAssetClass.Other)
+                continue;
+            if (bundle.LoadAsset(assetName, goTypePtr) != IntPtr.Zero)
+                return assetName;
+        }
+        return null;
+    }
+
+    // The asset an addition bundle is loaded by: its first prefab by extension, or null
+    // when none names one.
+    internal static string PrefabEntryName(IEnumerable<string> assetNames)
+    {
+        foreach (var name in assetNames)
+        {
+            if (ClassifyAssetName(name) == BundleAssetClass.Prefab)
+                return name;
+        }
+        return null;
+    }
+
 
     internal enum ShaderRebindAction
     {
@@ -285,63 +385,6 @@ internal sealed class BundleReplacementCatalog
         }
 
         return ShaderRebindAction.KeepModShipped;
-    }
-
-    // Sprite BEFORE Texture2D in every ordering below, without exception. A PNG
-    // imported through Unity's TextureImporter is one bundle asset loadable as
-    // either type (Texture2D main asset, Sprite sub-asset), so probing Texture2D
-    // first would hide the sprite from the catalog and break KDL asset=
-    // references typed against Sprite. Pure texture replacements have no sprite
-    // sub-asset, miss the Sprite probe, and fall through cleanly.
-    //
-    // ProbeImage is the one ordering that demotes GameObject, so it is limited
-    // to extensions whose importer emits no prefab. Formats that can carry one
-    // (.psd through the PSD importer in rig mode) keep ProbePrefab.
-    private static readonly AssetProbeKind[] ProbePrefab =
-        { AssetProbeKind.GameObject, AssetProbeKind.Sprite, AssetProbeKind.Texture, AssetProbeKind.Audio };
-    private static readonly AssetProbeKind[] ProbeImage =
-        { AssetProbeKind.Sprite, AssetProbeKind.Texture, AssetProbeKind.GameObject, AssetProbeKind.Audio };
-    private static readonly AssetProbeKind[] ProbeAudio =
-        { AssetProbeKind.Audio, AssetProbeKind.GameObject, AssetProbeKind.Sprite, AssetProbeKind.Texture };
-
-    /// <summary>
-    /// Probe order for one bundle asset, hinted by its file extension. Every
-    /// kind is tried in every ordering, so an unrecognised or wrong extension
-    /// costs wasted probes and nothing else.
-    /// </summary>
-    internal static AssetProbeKind[] ProbeOrderFor(string assetName)
-    {
-        var dot = assetName.LastIndexOf('.');
-        if (dot < 0 || dot == assetName.Length - 1)
-            return ProbePrefab;
-
-        var ext = assetName[(dot + 1)..].ToLowerInvariant();
-        switch (ext)
-        {
-            case "wav":
-            case "ogg":
-            case "mp3":
-            case "aif":
-            case "aiff":
-            case "flac":
-            case "m4a":
-                return ProbeAudio;
-            case "png":
-            case "jpg":
-            case "jpeg":
-            case "tga":
-            case "bmp":
-            case "exr":
-            case "gif":
-            case "tif":
-            case "tiff":
-            case "webp":
-                return ProbeImage;
-            default:
-                // .prefab / .fbx / .gltf / .glb / .obj / .psd and anything
-                // unknown keep the GameObject-first order.
-                return ProbePrefab;
-        }
     }
 
     private void RegisterPrefabAsset(
@@ -415,79 +458,12 @@ internal sealed class BundleReplacementCatalog
         }
     }
 
-    private void RegisterTextureAsset(string ownerLabel, IntPtr texturePtr, LoaderLog log)
+    // Runs once per addition prefab, from the lazy table, the first time a KDL asset=
+    // reference or a ModContext.Assets load asks for it. The prefab is already pinned by
+    // then; this pass makes it renderable and complete.
+    private void OnAdditionPrefabLoaded(string key, string ownerLabel, string modId, GameObject prefab)
     {
-        var loadedTexture = new Texture2D(texturePtr)
-        {
-            hideFlags = HideFlags.DontUnloadUnusedAsset,
-        };
-        RegisterTextureOverride(loadedTexture.name, loadedTexture, ownerLabel, log);
-        _pinned.Add(loadedTexture);
-        log.Debug($"  Registered texture asset: {loadedTexture.name} ({loadedTexture.width}x{loadedTexture.height})");
-    }
-
-    private void RegisterAudioAsset(string ownerLabel, IntPtr audioClipPtr, LoaderLog log)
-    {
-        var loadedClip = new AudioClip(audioClipPtr)
-        {
-            hideFlags = HideFlags.DontUnloadUnusedAsset,
-        };
-        RegisterAudioOverride(loadedClip.name, loadedClip, ownerLabel, log);
-        _pinned.Add(loadedClip);
-        log.Debug($"  Registered audio asset: {loadedClip.name}");
-    }
-
-    private void RegisterSpriteAsset(string ownerLabel, IntPtr spritePtr, LoaderLog log)
-    {
-        var loadedSprite = new Sprite(spritePtr)
-        {
-            hideFlags = HideFlags.DontUnloadUnusedAsset,
-        };
-        RegisterSpriteOverride(loadedSprite.name, loadedSprite, ownerLabel, log);
-        _pinned.Add(loadedSprite);
-        log.Debug($"  Registered sprite asset: {loadedSprite.name}");
-
-        // JIANGYU-CONTRACT: Sprite replacement lands via in-place mutation of
-        // the backing Texture2D. Registering the bundle sprite's backing texture
-        // under the sprite's name lets TextureMutationService find it during
-        // its sweep (game Sprites carry the same .name as their backing texture
-        // for the unique-texture-backed case, which compile-time validation
-        // ensures is the only case we accept). Explicit texture replacements
-        // take precedence if both are registered under the same name.
-        //
-        // The .texture cast can throw if the bundle's sprite was built through
-        // a path that produced an unresolvable m_RD.texture PPtr (older
-        // runtime-Texture2D pipeline). Skip the backing-texture registration
-        // for those sprites rather than aborting the whole bundle load.
-        Texture2D backingTexture;
-        try
-        {
-            backingTexture = loadedSprite.texture;
-        }
-        catch (Exception ex)
-        {
-            log.Warning($"    Sprite '{loadedSprite.name}': backing texture access failed ({ex.GetType().Name}); skipping backing-texture registration.");
-            return;
-        }
-        if (backingTexture != null && !ReplacementTextures.ContainsKey(loadedSprite.name))
-        {
-            backingTexture.hideFlags = HideFlags.DontUnloadUnusedAsset;
-            RegisterTextureOverride(loadedSprite.name, backingTexture, ownerLabel + " (sprite backing)", log);
-            _pinned.Add(backingTexture);
-        }
-    }
-
-    // Register a GameObject from a modder-shipped addition bundle. Skips the
-    // mesh-replacement processing in RegisterPrefabAsset entirely; the prefab
-    // is held under the bundle's filename stem (matches the KDL asset=
-    // reference after ToBundleAssetName translation) for ModAssetResolver
-    // Phase 1 lookups. Object.name on the GameObject is irrelevant here so
-    // modders can name prefabs whatever they want inside Unity without
-    // affecting the lookup contract.
-    private void RegisterAdditionPrefab(string ownerLabel, GameObject prefab, string key, LoaderLog log)
-    {
-        prefab.hideFlags = HideFlags.DontUnloadUnusedAsset;
-        _pinned.Add(prefab);
+        var log = new LoaderLog(_hostLog) { Mod = modId };
 
         // Rebind shaders to the runtime's resolved shader by name.
         // AssetRipper extracts shaders as stubs (real HLSL isn't recoverable
@@ -543,18 +519,14 @@ internal sealed class BundleReplacementCatalog
 
         var mirrorNotes = PrefabMirrors.Queue(prefab, key, log.Raw);
 
-        if (_additionPrefabOwners.TryGetValue(key, out var previousOwner))
-            log.Warning($"  Override addition prefab '{key}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
-
-        AdditionPrefabs[key] = prefab;
-        _additionPrefabOwners[key] = ownerLabel;
         var shaderSuffix = $"; rebound {rebinds} shader(s)";
         if (modShipped > 0)
             shaderSuffix += $"; kept {modShipped} mod-shipped shader(s)";
         if (unresolved > 0)
             shaderSuffix += $"; {unresolved} unresolved (will render wrong)";
-        log.Debug($"  Registered addition prefab: {key} (object name: {prefab.name}{shaderSuffix}{mirrorNotes})");
+        log.Debug($"  Loaded addition prefab on first use: {key} (object name: {prefab.name}{shaderSuffix}{mirrorNotes})");
     }
+
 
     private void RegisterMeshAsset(
         string ownerLabel,
@@ -597,33 +569,6 @@ internal sealed class BundleReplacementCatalog
 
         Meshes[targetName] = mesh;
         _meshOwners[targetName] = ownerLabel;
-    }
-
-    private void RegisterTextureOverride(string textureName, Texture2D texture, string ownerLabel, LoaderLog log)
-    {
-        if (_textureOwners.TryGetValue(textureName, out var previousOwner))
-            log.Warning($"  Override texture '{textureName}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
-
-        ReplacementTextures[textureName] = texture;
-        _textureOwners[textureName] = ownerLabel;
-    }
-
-    private void RegisterSpriteOverride(string spriteName, Sprite sprite, string ownerLabel, LoaderLog log)
-    {
-        if (_spriteOwners.TryGetValue(spriteName, out var previousOwner))
-            log.Warning($"  Override sprite '{spriteName}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
-
-        ReplacementSprites[spriteName] = sprite;
-        _spriteOwners[spriteName] = ownerLabel;
-    }
-
-    private void RegisterAudioOverride(string clipName, AudioClip clip, string ownerLabel, LoaderLog log)
-    {
-        if (_audioOwners.TryGetValue(clipName, out var previousOwner))
-            log.Warning($"  Override audio '{clipName}': later-loaded mod '{ownerLabel}' replaces '{previousOwner}'.");
-
-        ReplacementAudioClips[clipName] = clip;
-        _audioOwners[clipName] = ownerLabel;
     }
 
     private static string ResolveTargetMeshName(string bundleMeshName, Dictionary<string, string> bundleToGame)

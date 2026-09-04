@@ -83,6 +83,9 @@ internal sealed class PrefabMirrorScheduler
     /// first drain (the registry is populated by then) gets its missing
     /// reference surfaced once, so a misspelt sentinel is diagnosable.
     /// </summary>
+    /// <summary>Whether a prefab still waits for a vanilla reference the registry did not hold when it loaded.</summary>
+    public bool HasPending => _pending.Count > 0;
+
     public void DrainPending(MelonLogger.Instance log)
     {
         if (_pending.Count == 0) return;

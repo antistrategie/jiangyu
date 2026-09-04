@@ -1,4 +1,5 @@
 using HarmonyLib;
+using Jiangyu.Loader.Bundles;
 using Jiangyu.Loader.Runtime.Patching;
 using MelonLoader;
 using UnityEngine;
@@ -13,20 +14,20 @@ namespace Jiangyu.Loader.Replacements;
 /// </summary>
 internal sealed class AudioReplacementPatch : IHarmonyPatchModule
 {
-    private static Dictionary<string, AudioClip> _replacementClips;
+    private static LazyBundleAssets _assets;
     private static MelonLogger.Instance _log;
     private static readonly HashSet<string> _mismatchWarningsEmitted = new(StringComparer.Ordinal);
 
-    private readonly Dictionary<string, AudioClip> _replacementClipsSource;
+    private readonly LazyBundleAssets _assetsSource;
 
-    public AudioReplacementPatch(Dictionary<string, AudioClip> replacementClips)
+    public AudioReplacementPatch(LazyBundleAssets assets)
     {
-        _replacementClipsSource = replacementClips;
+        _assetsSource = assets;
     }
 
     public void Install(HarmonyLib.Harmony harmony, LoaderHarmonyPatchContext context)
     {
-        _replacementClips = _replacementClipsSource;
+        _assets = _assetsSource;
         _log = context.Log;
 
         PatchInstance(harmony, nameof(PlayOneShotPrefix), "PlayOneShot", typeof(AudioClip));
@@ -73,11 +74,12 @@ internal sealed class AudioReplacementPatch : IHarmonyPatchModule
         }
     }
 
+    // Name check first: this runs on every Play call in the game, and only a name the
+    // mods ship is worth a bundle load.
     private static AudioClip TryGetReplacement(string name)
     {
-        if (_replacementClips == null || name == null) return null;
-        _replacementClips.TryGetValue(name, out var replacement);
-        return replacement;
+        if (_assets == null || name == null || !_assets.HasAudioClip(name)) return null;
+        return _assets.TryGetAudioClip(name, out var replacement) ? replacement : null;
     }
 
     private static void WarnIfMismatched(AudioClip original, AudioClip replacement)

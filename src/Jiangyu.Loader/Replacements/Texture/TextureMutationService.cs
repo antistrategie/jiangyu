@@ -1,4 +1,5 @@
 using Il2CppInterop.Runtime;
+using Jiangyu.Loader.Bundles;
 using Jiangyu.Loader.Logging;
 using MelonLoader;
 using UnityEngine;
@@ -17,17 +18,19 @@ namespace Jiangyu.Loader.Replacements;
 /// </summary>
 internal sealed class TextureMutationService
 {
-    private readonly Dictionary<string, Texture2D> _replacementTextures;
+    private readonly LazyBundleAssets _assets;
     private readonly HashSet<int> _mutatedInstanceIds = new();
     private readonly HashSet<int> _failedInstanceIds = new();
     private readonly HashSet<IntPtr> _spriteTextureCastBlocklist = new();
     // Registered names placed at least once in the current scene, the unit MayHaveUnresolvedTargets
     // counts in. Separate from the instance sets because a name can own several instances.
-    private readonly HashSet<string> _resolvedNames = new(StringComparer.Ordinal);
+    // Case-insensitive like the asset table's keys, so two live spellings of one registered
+    // name count as that one name and the gate cannot close early.
+    private readonly HashSet<string> _resolvedNames = new(StringComparer.OrdinalIgnoreCase);
 
-    public TextureMutationService(Dictionary<string, Texture2D> replacementTextures)
+    public TextureMutationService(LazyBundleAssets assets)
     {
-        _replacementTextures = replacementTextures;
+        _assets = assets;
     }
 
     /// <summary>
@@ -37,7 +40,7 @@ internal sealed class TextureMutationService
     /// name too, so counting instances would clear the gate while names were still unresolved.
     /// Scene-scoped, because a new scene loads new instances of the same names.
     /// </summary>
-    public bool MayHaveUnresolvedTargets => _resolvedNames.Count < _replacementTextures.Count;
+    public bool MayHaveUnresolvedTargets => _resolvedNames.Count < _assets.TextureCount;
 
     /// <summary>
     /// Drop the scene's dedupe state. Instance ids and sprite pointers both belong to objects the
@@ -54,14 +57,14 @@ internal sealed class TextureMutationService
 
     public bool HasPendingTargets()
     {
-        if (_replacementTextures.Count == 0)
+        if (_assets.TextureCount == 0)
             return false;
 
         var allTextures = Resources.FindObjectsOfTypeAll(Il2CppType.Of<Texture2D>());
         foreach (var obj in allTextures)
         {
             var gameTexture = obj?.TryCast<Texture2D>();
-            if (!IsPendingMutationCandidate(gameTexture))
+            if (!TryPendingReplacement(gameTexture, out _))
                 continue;
 
             return true;
@@ -77,7 +80,7 @@ internal sealed class TextureMutationService
             var gameSprite = obj?.TryCast<Sprite>();
             if (gameSprite == null || string.IsNullOrEmpty(gameSprite.name))
                 continue;
-            if (!_replacementTextures.ContainsKey(gameSprite.name))
+            if (!_assets.HasTexture(gameSprite.name))
                 continue;
             var backing = gameSprite.texture;
             if (backing == null)
@@ -93,7 +96,7 @@ internal sealed class TextureMutationService
 
     public int ApplyPending(MelonLogger.Instance log)
     {
-        if (_replacementTextures.Count == 0)
+        if (_assets.TextureCount == 0)
             return 0;
 
         var mutated = 0;
@@ -101,10 +104,9 @@ internal sealed class TextureMutationService
         foreach (var obj in allTextures)
         {
             var gameTexture = obj?.TryCast<Texture2D>();
-            if (!IsPendingMutationCandidate(gameTexture))
+            if (!TryPendingReplacement(gameTexture, out var replacement))
                 continue;
 
-            var replacement = _replacementTextures[gameTexture.name];
             var instanceId = gameTexture.GetInstanceID();
 
             if (TextureMutationHelpers.MutateInPlace(replacement, gameTexture, log))
@@ -132,7 +134,10 @@ internal sealed class TextureMutationService
             if (gameSprite == null || string.IsNullOrEmpty(gameSprite.name))
                 continue;
 
-            if (!_replacementTextures.TryGetValue(gameSprite.name, out var replacement) || replacement == null)
+            // Name first, load second: the sweep visits every live sprite, and only a name
+            // the mods ship is worth pulling a texture out of a bundle for.
+            if (!_assets.HasTexture(gameSprite.name)
+                || !_assets.TryGetTexture(gameSprite.name, out var replacement) || replacement == null)
                 continue;
 
             // Some sprites in MENACE's runtime carry a backing-texture PPtr that
@@ -180,29 +185,29 @@ internal sealed class TextureMutationService
         return mutated;
     }
 
-    private bool IsPendingMutationCandidate(Texture2D gameTexture)
+    // Whether a live texture still wants a replacement, and which. The name check and the
+    // per-instance bookkeeping run before the bundle is touched, so a live texture no mod
+    // replaces, or one already handled, never loads anything.
+    private bool TryPendingReplacement(Texture2D gameTexture, out Texture2D replacement)
     {
+        replacement = null;
         if (gameTexture == null)
             return false;
 
-        if (string.IsNullOrEmpty(gameTexture.name))
-            return false;
-
-        if (!_replacementTextures.TryGetValue(gameTexture.name, out var replacement))
-            return false;
-
-        if (replacement == null)
-            return false;
-
-        // Skip the modder-supplied replacement texture itself (registered in the
-        // catalogue under the target name, so it shows up in the scan). Mutating
-        // a texture into itself would be a no-op at best and an ICall error at
-        // worst.
-        if (gameTexture.GetInstanceID() == replacement.GetInstanceID())
+        if (string.IsNullOrEmpty(gameTexture.name) || !_assets.HasTexture(gameTexture.name))
             return false;
 
         var instanceId = gameTexture.GetInstanceID();
         if (_mutatedInstanceIds.Contains(instanceId) || _failedInstanceIds.Contains(instanceId))
+            return false;
+
+        if (!_assets.TryGetTexture(gameTexture.name, out replacement) || replacement == null)
+            return false;
+
+        // Skip the modder-supplied replacement texture itself (loaded under the target
+        // name, so it shows up in the scan). Mutating a texture into itself would be a
+        // no-op at best and an ICall error at worst.
+        if (instanceId == replacement.GetInstanceID())
             return false;
 
         return true;

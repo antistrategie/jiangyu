@@ -1,3 +1,4 @@
+using Jiangyu.Loader.Bundles;
 using Jiangyu.Shared.Bundles;
 using MelonLoader;
 using UnityEngine;
@@ -17,15 +18,15 @@ namespace Jiangyu.Loader.Replacements;
 /// </summary>
 internal sealed class MaterialReplacementService
 {
-    private readonly Dictionary<string, Texture2D> _replacementTextures;
+    private readonly LazyBundleAssets _assets;
     private readonly HashSet<int> _mutatedInstanceIds = new();
     private readonly HashSet<int> _failedInstanceIds = new();
 
-    public bool HasReplacementTextures => _replacementTextures.Count > 0;
+    public bool HasReplacementTextures => _assets.TextureCount > 0;
 
-    public MaterialReplacementService(Dictionary<string, Texture2D> replacementTextures)
+    public MaterialReplacementService(LazyBundleAssets assets)
     {
-        _replacementTextures = replacementTextures;
+        _assets = assets;
     }
 
     public void ApplyBindings(
@@ -70,7 +71,7 @@ internal sealed class MaterialReplacementService
             return;
         }
 
-        if (!_replacementTextures.TryGetValue(replacementTextureName, out var replacement) || replacement == null)
+        if (!_assets.TryGetTexture(replacementTextureName, out var replacement) || replacement == null)
             return;
 
         var destinationTexture = sourceMaterial.GetTexture(propertyName);
