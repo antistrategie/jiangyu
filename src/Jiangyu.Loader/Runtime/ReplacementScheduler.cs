@@ -47,6 +47,8 @@ internal sealed class ReplacementScheduler
                 scheduleIndex++;
             }
         }
+
+        _coordinator.OnPollScheduleComplete(log);
     }
 
     // Apply registered replacements now. Textures only land at scene or asset-stream

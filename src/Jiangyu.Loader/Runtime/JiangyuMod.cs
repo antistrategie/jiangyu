@@ -49,6 +49,7 @@ public class JiangyuMod : MelonMod, IDevServicesContext
 
         LoggerInstance.Msg(
             $"Resolved {loadSummary.LoadableModCount} loadable mod(s), skipped {loadSummary.BlockedModCount} blocked mod(s), loaded {loadSummary.LoadedBundleCount} bundle(s).");
+        MemoryReport.Write(LoggerInstance, "after bundle load", describeMachine: true);
 
         // The stamps come off the plan, which parsed each manifest during discovery, so no
         // jiangyu.json is read twice. A gate names the mod by its id, which is what the rest

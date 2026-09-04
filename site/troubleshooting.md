@@ -11,6 +11,10 @@ When things go sideways, two places to check first:
 
 Most issues fall out of one of those two logs. The rest of this page covers the symptoms that aren't immediately obvious from the log line itself.
 
+## The game crashes at the title screen on a low-spec machine
+
+`Latest.log` carries two `Memory` lines: one after the loader has read every mod bundle, naming the machine's RAM, graphics memory and GPU, and one after the first scene's replacement passes have settled. They show how much the loaded mods hold resident before a campaign exists. Include both lines in a crash report, and compare the texture figure against the machine's graphics memory: a mod whose textures alone exceed it will not boot there whatever else is done. The [texture](/assets/additions/textures#how-textures-are-imported), [sprite](/assets/additions/sprites#authoring-at-the-right-size) and [audio](/assets/additions/audio#how-clips-are-imported) pages describe what the compile does to keep those figures down.
+
 ## My mod doesn't load
 
 Open `MelonLoader/Latest.log` and search for your mod's name. The loader logs a discovery line per mod under `Mods/`. If your mod isn't there, it wasn't discovered. If it's there but blocked, the block reason is on the next line.

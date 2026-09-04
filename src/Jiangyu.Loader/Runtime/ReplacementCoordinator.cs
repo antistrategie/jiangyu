@@ -39,6 +39,7 @@ internal class ReplacementCoordinator
 
     private bool _templateWorkSeen;
     private bool _templatesAppliedRaised;
+    private bool _memoryAfterPassesReported;
 
     /// <summary>Invoked once, after the last authored template clone or patch has been
     /// applied to the live templates. Null until the runtime binds the mod host.</summary>
@@ -253,6 +254,18 @@ internal class ReplacementCoordinator
             ReportSelfCheck(log);
             TemplatesApplied?.Invoke();
         }
+    }
+
+    // The second memory line lands when the first scene's poll schedule has run to its end,
+    // so it counts the lazy-loaded assets the later polls painted as well as the template
+    // passes, and it does not wait on a template that never resolves. Later scenes do not
+    // report: the figure of interest is what the mods hold before a campaign exists.
+    public void OnPollScheduleComplete(MelonLogger.Instance log)
+    {
+        if (_memoryAfterPassesReported)
+            return;
+        _memoryAfterPassesReported = true;
+        MemoryReport.Write(log, "after replacement passes", describeMachine: false);
     }
 
     // One consolidated line once every patch has been tried against the live game.
