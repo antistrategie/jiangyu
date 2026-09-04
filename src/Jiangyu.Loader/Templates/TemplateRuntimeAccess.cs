@@ -197,8 +197,19 @@ internal static class TemplateRuntimeAccess
     private static bool TryResolveScriptableObjectByName(
         string templateId, Type resolvedType, out Il2CppObjectBase template, out string error)
     {
-        template = null;
         error = null;
+        if (TryFindScriptableObjectByName(templateId, resolvedType, out template))
+            return true;
+
+        // A miss may be an asset the game has unloaded since its folder was last
+        // loaded, so load the folder again and scan once more before giving up.
+        return EnsureResourcesFolderLoaded(templateTypeName: null, resolvedType, reload: true)
+            && TryFindScriptableObjectByName(templateId, resolvedType, out template);
+    }
+
+    private static bool TryFindScriptableObjectByName(string templateId, Type resolvedType, out Il2CppObjectBase template)
+    {
+        template = null;
         var il2CppType = Il2CppType.From(resolvedType);
         var candidates = Resources.FindObjectsOfTypeAll(il2CppType);
         if (candidates == null || candidates.Length == 0)
@@ -260,9 +271,51 @@ internal static class TemplateRuntimeAccess
         }
 
         if (typeof(ScriptableObject).IsAssignableFrom(type))
-            return EnumerateScriptableObjects(type);
+        {
+            EnsureResourcesFolderLoaded(templateTypeName, type);
+            var live = EnumerateScriptableObjects(type);
+            if (live.Count == 0 && EnsureResourcesFolderLoaded(templateTypeName, type, reload: true))
+                live = EnumerateScriptableObjects(type);
+            return live;
+        }
 
         return Array.Empty<Il2CppObjectBase>();
+    }
+
+    // Types whose registered Resources folder this process has loaded. A folder load
+    // walks every entry beneath it (3891 for Data/Conversations) and costs a good part
+    // of a tenth of a second, so it runs once, and again only after a lookup misses:
+    // the game's own UnloadUnusedAssets may drop a conversation nothing references,
+    // and a later pass then needs it back.
+    private static readonly HashSet<Type> ResourcesFoldersLoaded = new();
+
+    /// <summary>
+    /// Loads the Resources folder registered for a non-DataTemplate type so that
+    /// <c>Resources.FindObjectsOfTypeAll</c> sees its assets. The clone pass runs at
+    /// the title screen before the game has loaded any conversation, so without this
+    /// every ConversationTemplate source reads as missing until some later load pulls
+    /// it in. Returns true when this call loaded the folder, which tells a caller that
+    /// missed that a second scan can see more than the first did.
+    /// </summary>
+    private static bool EnsureResourcesFolderLoaded(string templateTypeName, Type resolvedType, bool reload = false)
+    {
+        var folder = NonDataTemplateIdentityRegistry.GetResourcesFolder(templateTypeName, resolvedType);
+        if (folder == null)
+            return false;
+        if (!reload && ResourcesFoldersLoaded.Contains(resolvedType))
+            return false;
+
+        try
+        {
+            Resources.LoadAll(folder, Il2CppType.From(resolvedType));
+        }
+        catch
+        {
+            return false;
+        }
+
+        ResourcesFoldersLoaded.Add(resolvedType);
+        return true;
     }
 
     /// <summary>

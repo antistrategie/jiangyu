@@ -18,6 +18,13 @@ namespace Jiangyu.Loader.Templates;
 ///     (e.g. <c>JeanSy/click_bark</c>), which is what the conversation
 ///     matcher uses at runtime too.</description></item>
 /// </list>
+///
+/// <para>The registry also names the Resources folder for types whose assets
+/// nothing has loaded by the time the clone pass runs. <c>FindObjectsOfTypeAll</c>
+/// only sees loaded assets, so a source in such a folder is found by loading the
+/// folder first (<see cref="GetResourcesFolder"/>). Types absent from that map are
+/// live already when they are cloned: SoundBank and PerkTreeTemplate arrive as
+/// dependencies of the skill and unit-leader templates the pass materialises.</para>
 /// </summary>
 internal static class NonDataTemplateIdentityRegistry
 {
@@ -29,13 +36,30 @@ internal static class NonDataTemplateIdentityRegistry
         { "Il2CppMenace.Conversations.ConversationTemplate", "Path" },
     };
 
-    public static string GetIdentityField(string templateTypeName, Type resolvedType)
+    private static readonly Dictionary<string, string> ResourcesFolders = new(StringComparer.Ordinal)
     {
-        if (templateTypeName != null && IdentityFields.TryGetValue(templateTypeName, out var byName))
+        { "ConversationTemplate", "Data/Conversations" },
+        { "Il2CppMenace.Conversations.ConversationTemplate", "Data/Conversations" },
+    };
+
+    public static string GetIdentityField(string templateTypeName, Type resolvedType)
+        => Lookup(IdentityFields, templateTypeName, resolvedType);
+
+    /// <summary>
+    /// The Resources folder holding a non-DataTemplate type's assets, when those
+    /// need loading before a by-name lookup can see them; null for types that are
+    /// live by the time they are cloned.
+    /// </summary>
+    public static string GetResourcesFolder(string templateTypeName, Type resolvedType)
+        => Lookup(ResourcesFolders, templateTypeName, resolvedType);
+
+    private static string Lookup(Dictionary<string, string> map, string templateTypeName, Type resolvedType)
+    {
+        if (templateTypeName != null && map.TryGetValue(templateTypeName, out var byName))
             return byName;
-        if (resolvedType != null && IdentityFields.TryGetValue(resolvedType.FullName ?? string.Empty, out var byFullName))
+        if (resolvedType != null && map.TryGetValue(resolvedType.FullName ?? string.Empty, out var byFullName))
             return byFullName;
-        if (resolvedType != null && IdentityFields.TryGetValue(resolvedType.Name ?? string.Empty, out var byShort))
+        if (resolvedType != null && map.TryGetValue(resolvedType.Name ?? string.Empty, out var byShort))
             return byShort;
         return null;
     }

@@ -55,5 +55,26 @@ namespace Jiangyu.Loader.Tests
         {
             Assert.Null(NonDataTemplateIdentityRegistry.GetIdentityField(null!, null));
         }
+
+        [Fact]
+        public void GetResourcesFolder_ReturnsConversationsFolder_ForShortAndFullName()
+        {
+            Assert.Equal(
+                "Data/Conversations",
+                NonDataTemplateIdentityRegistry.GetResourcesFolder("ConversationTemplate", resolvedType: null));
+            Assert.Equal(
+                "Data/Conversations",
+                NonDataTemplateIdentityRegistry.GetResourcesFolder(
+                    templateTypeName: null,
+                    resolvedType: typeof(Il2CppMenace.Conversations.ConversationTemplate)));
+        }
+
+        [Fact]
+        public void GetResourcesFolder_ReturnsNull_ForTypesLiveBeforeTheClonePass()
+        {
+            Assert.Null(NonDataTemplateIdentityRegistry.GetResourcesFolder("SoundBank", resolvedType: null));
+            Assert.Null(NonDataTemplateIdentityRegistry.GetResourcesFolder("PerkTreeTemplate", resolvedType: null));
+            Assert.Null(NonDataTemplateIdentityRegistry.GetResourcesFolder(null, null));
+        }
     }
 }

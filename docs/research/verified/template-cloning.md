@@ -80,8 +80,8 @@ Implemented in `src/Jiangyu.Loader/Templates/TemplateCloneApplier.cs`:
    used the base type's class and the game's own `GetAll<T>` consumer hung
    on the result. Using the original's element class keeps the replacement
    byte-identical to what the dict slot expects.
-8. Walk `resolvedType.BaseType` upward while
-   `typeof(DataTemplate).IsAssignableFrom(current)`. For each ancestor,
+8. Walk `resolvedType.BaseType` upward through every ancestor below
+   `DataTemplate` itself. For each ancestor,
    force `m_TemplateMaps[Ancestor]` and `m_TemplateArrays[Ancestor]` into
    existence by invoking `DataTemplateLoader.GetAll<Ancestor>()` (which
    materialises both slots from the game's master list if absent), then
@@ -100,6 +100,14 @@ Implemented in `src/Jiangyu.Loader/Templates/TemplateCloneApplier.cs`:
    materialisation those snapshots cache a clone-free result before the
    first re-registration tick can backfill, and the save deserialiser
    throws `KeyNotFoundException` on the missing clone key.
+   The root `DataTemplate` slot is excluded from the walk. No consumer
+   enumerates `GetAll<DataTemplate>()`, and forcing it makes
+   `LoadTemplates` load every template asset under `Data/` together with
+   everything those assets reference (terrain chunks, setpieces, unit
+   prefabs), gigabytes resident at the title screen. Non-DataTemplate
+   sources that nothing has loaded by then (ConversationTemplate) are
+   loaded from their Resources folder by `TemplateRuntimeAccess` before
+   the by-name lookup; `NonDataTemplateIdentityRegistry` names the folder.
 
 ## Session re-registration
 

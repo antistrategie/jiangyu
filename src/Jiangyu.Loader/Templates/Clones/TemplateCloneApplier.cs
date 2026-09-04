@@ -19,10 +19,12 @@ namespace Jiangyu.Loader.Templates;
 // resolve it. HideFlags.DontUnloadUnusedAsset prevents scene-change GC.
 // m_TemplateArrays (the GetAll<T> enumeration backing store) is extended in
 // the same pass so GetAll<T>() consumers see the clone. The clone is also
-// mirrored into every ancestor m_TemplateMaps / m_TemplateArrays slot up to
-// DataTemplate that the game has already materialised, because both dicts
+// mirrored into every ancestor m_TemplateMaps / m_TemplateArrays slot below
+// DataTemplate itself, each forced into existence first, because both dicts
 // are keyed by exact runtime type and gameplay code typically enumerates by
 // a base type (e.g. GetAll<BaseItemTemplate>() for the BlackMarket pool).
+// The root DataTemplate slot is left alone: nothing enumerates it, and
+// forcing it loads every template asset under Data/ with its dependencies.
 // Contract rationale and verification live in docs/research/verified/template-cloning.md.
 
 /// <summary>
@@ -864,7 +866,15 @@ internal sealed class TemplateCloneApplier
     {
         var dataTemplateType = typeof(DataTemplate);
         var current = resolvedType.BaseType;
-        while (current != null && dataTemplateType.IsAssignableFrom(current))
+        // The walk stops short of DataTemplate itself. No consumer enumerates
+        // GetAll<DataTemplate>(): gameplay code reads a family (BaseItemTemplate,
+        // SkillTemplate, EntityTemplate), so the root slot has no reader to
+        // satisfy, and forcing it makes DataTemplateLoader load every template
+        // asset under Data/ plus everything those reference (terrain chunks,
+        // setpieces, unit prefabs). That is gigabytes resident at the title
+        // screen, and on a machine short on memory the difference between
+        // booting and dying inside the load.
+        while (current != null && current != dataTemplateType && dataTemplateType.IsAssignableFrom(current))
         {
             // Force the ancestor slot into existence before reading. Without
             // this, a slot the game hasn't yet materialised gets skipped, and
