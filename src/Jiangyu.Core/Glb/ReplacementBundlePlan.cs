@@ -22,6 +22,10 @@ internal sealed class ReplacementBundlePlan
 {
     private const string Header = "jiangyu-bundle-plan 1";
 
+    // Part of every texture hash, so a change in how the Unity pass encodes textures
+    // re-bakes them even when their bytes and the toolchain version are unchanged.
+    private const string TextureBakePolicy = "additions-dxt-with-mips";
+
     /// <summary>Extensionless bundle file names this plan produces, sorted.</summary>
     public required IReadOnlyList<string> BundleFiles { get; init; }
 
@@ -69,11 +73,14 @@ internal sealed class ReplacementBundlePlan
             // The Jiangyu version is part of every bake hash: the baked output is a
             // function of the bake code as well as the input bytes, so a Jiangyu upgrade
             // re-bakes everything once rather than serving assets baked by removed logic.
+            var role = texture.IsAddition ? "addition" : "replacement";
             var hash = FileFingerprint.Combine(
                 Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(texture.Content)),
                 texture.Linear ? "linear" : "srgb",
+                role,
+                TextureBakePolicy,
                 JiangyuVersion.Current);
-            lines.Add($"texture\t{texture.Name}\t{bundle}\t{hash}");
+            lines.Add($"texture\t{texture.Name}\t{bundle}\t{hash}\t{role}");
         }
 
         string? meshesBundle = null;

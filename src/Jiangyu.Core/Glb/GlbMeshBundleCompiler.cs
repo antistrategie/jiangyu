@@ -90,6 +90,11 @@ public static class GlbMeshBundleCompiler
         public required string Name { get; init; }
         public required byte[] Content { get; init; }
         public required bool Linear { get; init; }
+
+        /// <summary>An addition ships as its own asset and may bake block-compressed. A
+        /// replacement stays uncompressed: the loader re-encodes it into the game's texture
+        /// at runtime, and a second lossy pass would compound the first.</summary>
+        public bool IsAddition { get; init; }
     }
 
     public sealed class ImportedAudioAsset

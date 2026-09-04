@@ -236,6 +236,7 @@ internal static class ReplacementDiscovery
                 Name = AssetCategory.ToBundleAssetName(AssetCategory.LogicalAdditionName(dir, file)),
                 Content = File.ReadAllBytes(file),
                 Linear = false,
+                IsAddition = true,
             })
             .OrderBy(entry => entry.Name, StringComparer.Ordinal);
     }

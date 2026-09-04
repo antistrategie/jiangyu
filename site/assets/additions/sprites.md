@@ -36,6 +36,8 @@ Two files sharing the same logical name with different extensions in the same fo
 
 There's no atlas compositing for additions. The Sprite is created from the full PNG, with the pivot at `(0.5, 0.5)` and a default `pixelsPerUnit` of 100. Author the file at the size you want the icon to render in-game.
 
+A sprite whose width and height both divide by four compiles to BC7 at a quarter of the memory of uncompressed RGBA32. Any other size stays uncompressed because block formats cannot encode it, so pad or crop to multiples of four where the art allows.
+
 If you're starting from a vanilla asset to use as reference, [export it as a texture](/assets/replacements/textures) first:
 
 ```sh

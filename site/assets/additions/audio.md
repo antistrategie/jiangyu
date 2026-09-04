@@ -10,6 +10,12 @@ assets/additions/audio/<logical-name>.<ext>
 
 `<ext>` is `.wav`, `.ogg`, or `.mp3`. Subdirectories are allowed, and the path under `audio/` (with the extension stripped) is the logical name.
 
+## How clips are imported
+
+Every clip compiles to Vorbis at quality 0.7 and is held compressed in memory, decoded as it plays. A mod's voice and ambience then sit in memory at about a tenth of what uncompressed PCM would pin from the moment the loader reads the bundle.
+
+Clips whose source file declares a sample rate above 48 kHz keep uncompressed PCM, decoded at load. The compile reads the rate from the WAV or Ogg header; an MP3 source always compresses. A rate above 48 kHz marks a short effect: the game's own gunfire and impacts ship as 96 kHz PCM while its speech is 48 kHz Vorbis, and short effects fire in quantity, where dozens of concurrent decodes cost more than the few megabytes PCM keeps resident. Author weapon and impact effects at 96 kHz to get this treatment, and speech at 44.1 or 48 kHz. There is no per-clip setting.
+
 ## KDL syntax
 
 Append a new `Sound` to an existing bank. Use `from="<existing>"` to inherit playback defaults (volume, pitch, distance falloff, retrigger mode) so you only have to set what differs.

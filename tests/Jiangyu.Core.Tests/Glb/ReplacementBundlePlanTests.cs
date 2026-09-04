@@ -28,8 +28,8 @@ public sealed class ReplacementBundlePlanTests : IDisposable
     private static GlbMeshBundleCompiler.ImportedAudioAsset Audio(string name)
         => new() { Name = name, SourceFilePath = "unused.wav", Extension = ".wav" };
 
-    private static GlbMeshBundleCompiler.CompiledTexture Texture(string name, byte[]? content = null, bool linear = false)
-        => new() { Name = name, Content = content ?? [1, 2, 3], Linear = linear };
+    private static GlbMeshBundleCompiler.CompiledTexture Texture(string name, byte[]? content = null, bool linear = false, bool isAddition = false)
+        => new() { Name = name, Content = content ?? [1, 2, 3], Linear = linear, IsAddition = isAddition };
 
     private GlbMeshBundleCompiler.ImportedSpriteAsset Sprite(string name, bool isAddition, string content = "png")
         => new()
@@ -62,6 +62,20 @@ public sealed class ReplacementBundlePlanTests : IDisposable
         Assert.Equal(["mymod__audio__cheyanne", "mymod__audio__robella"], plan.BundleFiles);
         Assert.Contains("audio\tcheyanne__BarrackEntrance\tmymod__audio__cheyanne", plan.PlanText);
         Assert.Contains("audio\trobella__BarrackEntrance\tmymod__audio__robella", plan.PlanText);
+    }
+
+    [Fact]
+    public void TextureLinesNameTheRoleAndHashIt()
+    {
+        var addition = Build(textures: [Texture("portrait", isAddition: true)]).PlanText
+            .Split('\n').Single(l => l.StartsWith("texture\tportrait\t", StringComparison.Ordinal));
+        var replacement = Build(textures: [Texture("portrait")]).PlanText
+            .Split('\n').Single(l => l.StartsWith("texture\tportrait\t", StringComparison.Ordinal));
+
+        Assert.EndsWith("\taddition", addition);
+        Assert.EndsWith("\treplacement", replacement);
+        // Same bytes, different role: the Unity pass bakes them differently, so the hash differs.
+        Assert.NotEqual(addition.Split('\t')[3], replacement.Split('\t')[3]);
     }
 
     [Fact]

@@ -13,6 +13,18 @@ namespace Jiangyu.Mod
         private const uint Magic = 0x4D455348; // "MESH"
         private const uint TextureMagic = 0x54585452; // "TXTR"
 
+        // Vorbis quality for clips that compress. 0.7 is transparent for speech and
+        // ambience at about a tenth of the PCM size.
+        private const float VorbisQuality = 0.7f;
+
+        // Clips above this sample rate keep PCM. A rate above 48 kHz is a deliberate
+        // effects-fidelity choice (the game's own gunfire and impacts ship as 96 kHz PCM
+        // while its speech is 48 kHz Vorbis), and short effects fire in quantity, where
+        // dozens of concurrent Vorbis decodes cost more than the few megabytes PCM keeps
+        // resident. Speech never arrives above 48 kHz, so the rate carries the intent
+        // without a per-clip setting.
+        private const int VorbisMaximumSampleRate = 48000;
+
         private const string StagingRoot = "Assets/Jiangyu/Staging/MeshReplacement";
         private const string GeneratedDir = StagingRoot + "/Generated";
         private const string SpriteSourcesDir = StagingRoot + "/SpriteSources";
@@ -110,6 +122,7 @@ namespace Jiangyu.Mod
                 AddToBundle(assetsByBundle, plan.MeshesBundle, assetPath);
             }
 
+            var textureFormats = new Dictionary<TextureFormat, int>();
             foreach (var textureData in textures)
             {
                 string bundle;
@@ -124,12 +137,23 @@ namespace Jiangyu.Mod
                     if (File.Exists(assetPath))
                         AssetDatabase.DeleteAsset(assetPath);
                     var texture = CreateTexture(textureData);
+                    // Only an addition compresses. A replacement is re-encoded into the
+                    // game's own texture by the loader at runtime, and a second lossy pass
+                    // on top of one here would compound; it stays at source fidelity.
+                    if (plan.TextureAdditions.Contains(textureData.Name))
+                        CompressIfBlockAligned(texture);
+                    textureFormats.TryGetValue(texture.format, out var formatCount);
+                    textureFormats[texture.format] = formatCount + 1;
                     AssetDatabase.CreateAsset(texture, assetPath);
                 }
                 newBakedState[bakedKey] = hash;
                 expectedGenerated.Add($"{textureData.Name}.asset");
                 AddToBundle(assetsByBundle, bundle, assetPath);
             }
+
+            if (textureFormats.Count > 0)
+                Debug.Log("[Jiangyu] Texture additions baked as: " + string.Join(", ",
+                    textureFormats.OrderByDescending(pair => pair.Value).Select(pair => pair.Value + " " + pair.Key)));
 
             var spriteAssetCount = 0;
             // Decode the source PNG directly into an explicit RGBA32 Texture2D
@@ -231,6 +255,12 @@ namespace Jiangyu.Mod
                     // Reconfigure and reimport only when the saved settings differ.
                     // Staging keeps unchanged files and their metas in place across
                     // builds, so on a warm project this loop costs no imports.
+                    // A sprite whose dimensions divide by four compresses to BC7, the
+                    // importer's high-quality setting on desktop. The rest stay
+                    // uncompressed because block formats cannot encode them.
+                    var wantCompression = IsBlockAligned(importer)
+                        ? TextureImporterCompression.CompressedHQ
+                        : TextureImporterCompression.Uncompressed;
                     if (importer.textureType != TextureImporterType.Sprite
                         || importer.spriteImportMode != SpriteImportMode.Single
                         || !importer.alphaIsTransparency
@@ -238,7 +268,7 @@ namespace Jiangyu.Mod
                         || importer.mipmapEnabled
                         || importer.filterMode != FilterMode.Bilinear
                         || importer.wrapMode != TextureWrapMode.Clamp
-                        || importer.textureCompression != TextureImporterCompression.Uncompressed)
+                        || importer.textureCompression != wantCompression)
                     {
                         importer.textureType = TextureImporterType.Sprite;
                         importer.spriteImportMode = SpriteImportMode.Single;
@@ -247,7 +277,7 @@ namespace Jiangyu.Mod
                         importer.mipmapEnabled = false;
                         importer.filterMode = FilterMode.Bilinear;
                         importer.wrapMode = TextureWrapMode.Clamp;
-                        importer.textureCompression = TextureImporterCompression.Uncompressed;
+                        importer.textureCompression = wantCompression;
                         importer.SaveAndReimport();
                     }
 
@@ -277,16 +307,27 @@ namespace Jiangyu.Mod
                 if (importer == null)
                     continue;
 
-                // Force PCM + DecompressOnLoad: Vorbis transcoding smears
-                // transients on percussive content (gunshots, impacts).
+                var clipName = Path.GetFileNameWithoutExtension(assetPath);
+
+                // Speech and ambience compile to Vorbis held compressed in memory: the
+                // decode runs at play time for a fraction of a core, and the clip sits in
+                // memory at a tenth of its PCM size, where PCM decoded at load would pin the
+                // whole clip set from the moment the bundle catalog touches it. Clips above
+                // VorbisMaximumSampleRate keep PCM decoded at load, see that constant.
                 if (importer is AudioImporter audioImporter)
                 {
+                    var keepPcm = KeepsPcm(assetPath);
+                    var wantFormat = keepPcm ? AudioCompressionFormat.PCM : AudioCompressionFormat.Vorbis;
+                    var wantLoadType = keepPcm ? AudioClipLoadType.DecompressOnLoad : AudioClipLoadType.CompressedInMemory;
                     var settings = audioImporter.defaultSampleSettings;
-                    if (settings.compressionFormat != AudioCompressionFormat.PCM
-                        || settings.loadType != AudioClipLoadType.DecompressOnLoad)
+                    if (settings.compressionFormat != wantFormat
+                        || settings.loadType != wantLoadType
+                        || (!keepPcm && Math.Abs(settings.quality - VorbisQuality) > 0.001f))
                     {
-                        settings.compressionFormat = AudioCompressionFormat.PCM;
-                        settings.loadType = AudioClipLoadType.DecompressOnLoad;
+                        settings.compressionFormat = wantFormat;
+                        settings.loadType = wantLoadType;
+                        if (!keepPcm)
+                            settings.quality = VorbisQuality;
                         audioImporter.defaultSampleSettings = settings;
                         audioImporter.SaveAndReimport();
                     }
@@ -296,7 +337,6 @@ namespace Jiangyu.Mod
                 // so scrub any bundle assignment it carries.
                 if (!string.IsNullOrEmpty(importer.assetBundleName))
                     importer.assetBundleName = string.Empty;
-                var clipName = Path.GetFileNameWithoutExtension(assetPath);
                 string audioBundle;
                 if (!plan.AudioBundles.TryGetValue(clipName, out audioBundle))
                     throw new InvalidDataException($"Bundle plan has no entry for audio clip '{clipName}'");
@@ -442,6 +482,7 @@ namespace Jiangyu.Mod
         private sealed class BundlePlan
         {
             public readonly Dictionary<string, string> AudioBundles = new Dictionary<string, string>();
+            public readonly HashSet<string> TextureAdditions = new HashSet<string>(StringComparer.Ordinal);
             public readonly Dictionary<string, string> TextureBundles = new Dictionary<string, string>();
             public readonly Dictionary<string, string> TextureHashes = new Dictionary<string, string>();
             public readonly Dictionary<string, string> SpriteSourceHashes = new Dictionary<string, string>();
@@ -474,6 +515,8 @@ namespace Jiangyu.Mod
                         case "texture":
                             plan.TextureBundles[parts[1]] = parts[2];
                             plan.TextureHashes[parts[1]] = parts[3];
+                            if (parts.Length > 4 && parts[4] == "addition")
+                                plan.TextureAdditions.Add(parts[1]);
                             break;
                         case "meshes":
                             plan.MeshesBundle = parts[1];
@@ -556,6 +599,102 @@ namespace Jiangyu.Mod
 
             serialized.ApplyModifiedPropertiesWithoutUndo();
             EditorUtility.SetDirty(mesh);
+        }
+
+        // DXT5 (DXT1 for a texture without alpha) holds 8 bits per pixel against 32 for
+        // an uncompressed one, and is the format the game uses for its own portraits, so
+        // a compressed addition matches the vanilla art beside it. Block formats need both
+        // dimensions divisible by four; a texture that is not stays uncompressed rather
+        // than failing the bake. Texture2D.Compress is the encoder because
+        // EditorUtility.CompressTexture declines, without a word, any texture carrying a
+        // mip chain, and additions keep theirs for 3D use. A texture is regenerated
+        // whenever this policy changes, so it only ever compresses once, from source pixels.
+        private static void CompressIfBlockAligned(Texture2D texture)
+        {
+            if (texture.width % 4 == 0 && texture.height % 4 == 0)
+                texture.Compress(highQuality: true);
+        }
+
+        // The rate comes from the source file's own header. The imported clip cannot
+        // supply it: a Vorbis import resamples anything above 48 kHz down to 48 kHz, so
+        // reading the asset would answer its own previous import rather than the source.
+        private static bool KeepsPcm(string assetPath)
+            => SourceSampleRate(assetPath) > VorbisMaximumSampleRate;
+
+        // Sample rate declared by a WAV (RIFF fmt chunk) or Ogg Vorbis (identification
+        // header) file; 0 for anything else, including MP3, which then compresses.
+        private static int SourceSampleRate(string assetPath)
+        {
+            try
+            {
+                using (var stream = File.OpenRead(assetPath))
+                using (var reader = new BinaryReader(stream))
+                {
+                    var head = reader.ReadBytes(12);
+                    if (head.Length == 12 && Ascii(head, 0, "RIFF") && Ascii(head, 8, "WAVE"))
+                        return WavSampleRate(stream, reader);
+                    if (head.Length >= 4 && Ascii(head, 0, "OggS"))
+                    {
+                        stream.Position = 0;
+                        return OggSampleRate(reader.ReadBytes(64 * 1024));
+                    }
+                }
+            }
+            catch (IOException)
+            {
+            }
+
+            return 0;
+        }
+
+        // Walk the RIFF chunk list from just after the WAVE tag until "fmt ": <id 4>
+        // <size 4> <body>, with the rate at body byte 4 and odd-sized bodies padded by
+        // one. The walk seeks chunk to chunk, so a large LIST or JUNK chunk ahead of the
+        // format chunk costs nothing and cannot hide it.
+        private static int WavSampleRate(Stream stream, BinaryReader reader)
+        {
+            while (stream.Position + 8 <= stream.Length)
+            {
+                var id = reader.ReadBytes(4);
+                var size = reader.ReadInt32();
+                if (size < 0)
+                    return 0;
+                if (Ascii(id, 0, "fmt "))
+                {
+                    if (size < 8 || stream.Position + 8 > stream.Length)
+                        return 0;
+                    stream.Seek(4, SeekOrigin.Current);
+                    return reader.ReadInt32();
+                }
+                stream.Seek(size + (size & 1), SeekOrigin.Current);
+            }
+            return 0;
+        }
+
+        // The identification header sits in the first Ogg page: 0x01 "vorbis" <version 4>
+        // <channels 1> <rate 4>.
+        private static int OggSampleRate(byte[] head)
+        {
+            for (var i = 0; i + 16 <= head.Length; i++)
+            {
+                if (head[i] == 0x01 && Ascii(head, i + 1, "vorbis"))
+                    return BitConverter.ToInt32(head, i + 12);
+            }
+            return 0;
+        }
+
+        private static bool Ascii(byte[] bytes, int offset, string literal)
+        {
+            if (offset + literal.Length > bytes.Length) return false;
+            for (var i = 0; i < literal.Length; i++)
+                if (bytes[offset + i] != literal[i]) return false;
+            return true;
+        }
+
+        private static bool IsBlockAligned(TextureImporter importer)
+        {
+            importer.GetSourceTextureWidthAndHeight(out var width, out var height);
+            return width % 4 == 0 && height % 4 == 0;
         }
 
         private static Texture2D CreateTexture(TextureData data)
