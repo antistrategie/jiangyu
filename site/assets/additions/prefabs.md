@@ -50,7 +50,7 @@ Then KDL reference is `asset="MyCharacter/main"`.
 
 Some vanilla prefabs carry sub-assemblies that are more than geometry. The CQB assault rifle's laser pointer (`rifle_red_laser` on `pv.assault_rifle_cqb`) is three unlit quads driven by MENACE's `LookAtCamera`, `ExpandRetract` and `VisibilityChangeListener` scripts. Copy that node into your own weapon prefab in the Unity Editor and the GameObjects, transforms, meshes and materials come across fine, but every one of those components is dropped: your project has no reference to the game's script assemblies, so there is nothing for Unity to serialise into the bundle. The laser ships as a dead quad that never faces the camera and never pulses.
 
-Mark the copied node and the loader restores the scripts from the live vanilla prefab at load time. **Imports carry the marks for you**: when a prefab lands in `Assets/Imported/`, every node that had scripts stripped gets an empty marker child named `__jiangyu_scripts:<prefab>@<path>`, so a sub-assembly you copy out of it brings its markers along and just works. Delete a marker to keep a copy scripts-free. For a copy built any other way, add the marker yourself: an empty child GameObject under the copied node, named `__jiangyu_scripts:` plus the vanilla prefab's name:
+Mark the copied node and the loader restores the scripts from the live vanilla prefab the first time the prefab loads. **Imports carry the marks for you**: when a prefab lands in `Assets/Imported/`, every node that had scripts stripped gets an empty marker child named `__jiangyu_scripts:<prefab>@<path>`, so a sub-assembly you copy out of it brings its markers along and just works. Delete a marker to keep a copy scripts-free. For a copy built any other way, add the marker yourself: an empty child GameObject under the copied node, named `__jiangyu_scripts:` plus the vanilla prefab's name:
 
 ```text
 my_rifle                                  your prefab root
@@ -64,7 +64,7 @@ my_rifle                                  your prefab root
         └── HALO_STAR_001
 ```
 
-At load time Jiangyu finds `pv.assault_rifle_cqb` in the game's asset registry, locates the node named `rifle_red_laser` in it, pairs the two subtrees by name, attaches the missing components and copies their field values across. References a component holds to another node in the same sub-assembly are remapped onto your copy, so nothing reaches back into the vanilla prefab.
+When the prefab first loads, Jiangyu finds `pv.assault_rifle_cqb` in the game's asset registry, locates the node named `rifle_red_laser` in it, pairs the two subtrees by name, attaches the missing components and copies their field values across. References a component holds to another node in the same sub-assembly are remapped onto your copy, so nothing reaches back into the vanilla prefab.
 
 Rules to author against:
 

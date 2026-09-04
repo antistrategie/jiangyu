@@ -21,6 +21,8 @@ Each category folder is walked recursively. The asset's runtime name is its **pa
 
 Forward slashes (`/`) in the reference mirror the folder layout. Use them whenever you want to organise files by feature, weapon family, or any other grouping.
 
+Every addition loads on first use. At start-up the loader reads each bundle's asset table and nothing else; a sprite, texture, clip or prefab leaves its bundle the first time a template field, a texture match or a `Context.Assets` call asks for it, then stays resident for the session. A mod pays memory for what a player's session touches, not for everything it ships.
+
 Prefab additions work differently. You author them in the mod's [Unity project](/unity-project) under `unity/Assets/Prefabs`, and the compiler builds them into bundles. See [Prefabs](/assets/additions/prefabs).
 
 ## KDL syntax
