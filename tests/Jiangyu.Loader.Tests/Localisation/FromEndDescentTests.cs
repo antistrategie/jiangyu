@@ -17,18 +17,18 @@ public sealed class FromEndDescentTests
 {
     private sealed class Line
     {
-        public string m_DefaultTranslation { get; set; }
+        public string m_DefaultTranslation { get; set; } = "";
     }
 
     private sealed class Tooltip
     {
-        public Line TooltipText { get; set; }
+        public Line TooltipText { get; set; } = new();
     }
 
     private sealed class Config
     {
-        public List<Tooltip> Tooltips { get; set; }
-        public Tooltip[] Fixed { get; set; }
+        public List<Tooltip> Tooltips { get; set; } = [];
+        public Tooltip[] Fixed { get; set; } = [];
     }
 
     private static Config ThreeTooltips() => new()
