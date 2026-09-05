@@ -27,7 +27,7 @@ depends = ["build:sdk", "build:loader"]
 [tasks."build:studio"]
 description = "Build Studio frontend + host"
 run = """
-cd src/Jiangyu.Studio.UI && bun run build
+(cd src/Jiangyu.Studio.UI && bun run build)
 dotnet build src/Jiangyu.Studio.Host/Jiangyu.Studio.Host.csproj -c Release
 """
 
