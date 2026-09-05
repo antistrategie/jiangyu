@@ -671,23 +671,19 @@ public static partial class RpcHandlers
 
     /// <summary>
     /// Concrete subtypes the modder can pick when appending to a polymorphic
-    /// owned-element collection (e.g. EventHandlers). Populated only for
-    /// collections whose element type is a non-DataTemplate ScriptableObject
-    /// base with strict descendants — this is the construction-style
-    /// polymorphism (the modder builds a fresh subordinate object), distinct
-    /// from ref-style polymorphism where the modder picks an existing
-    /// DataTemplateLoader instance. Null otherwise so the visual editor falls
-    /// through to the standard composite/ref flow.
+    /// collection: an owned ScriptableObject family (EventHandlers) or a
+    /// plain Odin-serialised class family (ShipUpgradeTemplate.Effects).
+    /// This is construction-style polymorphism (the modder builds a fresh
+    /// element with type=), distinct from ref-style polymorphism where the
+    /// modder picks an existing DataTemplateLoader instance. Null otherwise
+    /// so the visual editor falls through to the standard composite/ref flow.
     /// </summary>
     private static List<string>? ComputeElementSubtypes(TemplateTypeCatalog catalog, MemberShape m, string? modId)
     {
         var elementType = TemplateTypeCatalog.GetElementType(m.MemberType);
         if (elementType is null) return null;
-        if (!TemplateTypeCatalog.IsTemplateReferenceTarget(elementType)) return null;
-        if (TemplateTypeCatalog.IsDataTemplateType(elementType)) return null;
-        if (!catalog.HasReferenceSubtype(elementType)) return null;
 
-        var subtypes = catalog.EnumerateConcreteSubtypes(elementType);
+        var subtypes = catalog.EnumerateConstructibleElementSubtypes(elementType);
         if (subtypes.Count == 0) return null;
         return [.. subtypes
             .Select(s => SubtypeName(catalog, s, modId))
@@ -725,7 +721,7 @@ public static partial class RpcHandlers
         // wrong signal that the field is constructible. Multi-dimensional
         // arrays land here too because GetElementType only recognises 1D
         // collections; a richer editor for those is a separate task.
-        if (IsCatchAllRuntimeType(memberType)) return null;
+        if (TemplateTypeCatalog.IsCatchAllRuntimeType(memberType)) return null;
 
         // Use the broad concrete-descendant set rather than HasReferenceSubtype:
         // Odin-routed interface fields (e.g. ITacticalCondition) typically
@@ -736,11 +732,4 @@ public static partial class RpcHandlers
             .Select(s => SubtypeName(catalog, s, modId))
             .OrderBy(n => n, StringComparer.Ordinal)];
     }
-
-    /// <summary>
-    /// True for runtime "any-object" wrapper types whose subtypes span the
-    /// entire game-type graph and so don't represent a meaningful authoring
-    /// choice. Surfacing them as polymorphic-construct destinations would
-    /// dump the modder into a thousands-long picker that doesn't compose
-    /// to a usable value.
 }

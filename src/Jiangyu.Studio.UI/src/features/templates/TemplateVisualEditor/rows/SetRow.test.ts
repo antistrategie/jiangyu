@@ -62,7 +62,7 @@ describe("HandlerSubtypePicker", () => {
         onPick,
       }),
     );
-    const input = screen.getByPlaceholderText<HTMLInputElement>("Pick handler type…");
+    const input = screen.getByPlaceholderText<HTMLInputElement>("Pick subtype…");
     act(() => {
       fireEvent.focus(input);
     });
@@ -84,7 +84,7 @@ describe("HandlerSubtypePicker", () => {
         onPick,
       }),
     );
-    const input = screen.getByPlaceholderText("Pick handler type…");
+    const input = screen.getByPlaceholderText("Pick subtype…");
     act(() => {
       fireEvent.focus(input);
     });
@@ -104,7 +104,7 @@ describe("HandlerSubtypePicker", () => {
         onPick,
       }),
     );
-    const input = screen.getByPlaceholderText("Pick handler type…");
+    const input = screen.getByPlaceholderText("Pick subtype…");
     act(() => {
       fireEvent.focus(input);
     });

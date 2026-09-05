@@ -165,17 +165,6 @@ public static partial class RpcHandlers
             MapQueryResult(catalog, result, _cachedInstantiatedClassNames, _cachedOdinMatrixSchemas, modId),
             TemplatesJsonOptions);
     }
-    private static bool IsCatchAllRuntimeType(Type type)
-    {
-        return type.FullName switch
-        {
-            "Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase" => true,
-            "Il2CppSystem.Object" => true,
-            "System.Object" => true,
-            _ => false,
-        };
-    }
-
     private static TemplateQueryResult MapQueryResult(
         TemplateTypeCatalog catalog,
         QueryResult result,

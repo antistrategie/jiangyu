@@ -482,6 +482,43 @@ public sealed class TemplateTypeCatalog : IDisposable
         return EnumerateConcreteSubtypes(baseType).Count > 0;
     }
 
+    /// <summary>
+    /// Concrete subtypes the modder picks from with <c>type=</c> when
+    /// constructing a fresh element of a polymorphic collection. Covers
+    /// owned ScriptableObject families (<c>SkillEventHandlerTemplate</c>)
+    /// and plain Odin-serialised class families (<c>BaseGameEffect</c>)
+    /// alike. Empty for element types authored another way: scalars,
+    /// DataTemplate references (<c>ref=</c>), Unity scene and asset
+    /// references (<c>asset=</c>), catch-all runtime object types, and
+    /// monomorphic element types.
+    /// </summary>
+    public IReadOnlyList<Type> EnumerateConstructibleElementSubtypes(Type elementType)
+    {
+        if (IsScalar(elementType)) return [];
+        if (IsDataTemplateType(elementType)) return [];
+        if (IsCatchAllRuntimeType(elementType)) return [];
+        var isUnityObject = string.Equals(elementType.FullName, "UnityEngine.Object", StringComparison.Ordinal)
+            || DescendsFromUnityObject(elementType);
+        if (isUnityObject && !IsTemplateReferenceTarget(elementType)) return [];
+        return EnumerateConcreteSubtypes(elementType);
+    }
+
+    /// <summary>
+    /// True for the runtime "any object" wrapper types. Every game class
+    /// descends from these, so a subtype picker built on one would list
+    /// the whole type graph.
+    /// </summary>
+    public static bool IsCatchAllRuntimeType(Type type)
+    {
+        return type.FullName switch
+        {
+            Il2CppObjectBaseFullName => true,
+            "Il2CppSystem.Object" => true,
+            "System.Object" => true,
+            _ => false,
+        };
+    }
+
     public static bool IsTemplateReferenceTarget(Type type)
     {
         for (var current = type; current != null; current = current.BaseType)

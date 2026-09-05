@@ -91,14 +91,15 @@ export function FieldAdder({
       // member is a multi-dim primitive array (AOETiles, ChunkTileFlags;
       // picked, grid opens), (b) the member is a HashSet<T> (picked,
       // modder gets append/remove rows; same UX as List<T>), or (c) they
-      // are polymorphic-constructible (scalarSubtypes populated; picked,
-      // modder fills inner fields, loader applier constructs the value).
-      // Hide everything else because there's no sensible default editor
-      // for it yet.
+      // are polymorphic-constructible (scalarSubtypes or elementSubtypes
+      // populated; picked, modder fills inner fields, loader applier
+      // constructs the value). Hide everything else because there's no
+      // sensible default editor for it yet.
       (m.isLikelyOdinOnly !== true ||
         (m.isOdinMultiDimArray === true && onAddMatrix !== undefined) ||
         m.isOdinHashSet === true ||
-        (m.scalarSubtypes != null && m.scalarSubtypes.length > 0)) &&
+        (m.scalarSubtypes != null && m.scalarSubtypes.length > 0) ||
+        (m.elementSubtypes != null && m.elementSubtypes.length > 0)) &&
       m.name.toLowerCase().includes(lowerQuery),
   );
   // Multi-directive fields (collections, named arrays) stay in `available`

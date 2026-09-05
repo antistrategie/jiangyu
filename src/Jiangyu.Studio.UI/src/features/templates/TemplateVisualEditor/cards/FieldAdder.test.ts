@@ -108,4 +108,30 @@ describe("FieldAdder", () => {
     // It should still be clickable in the main list.
     expect(screen.getByText("tags")).toBeDefined();
   });
+
+  it("keeps an Odin-routed polymorphic list whose elements are constructible", () => {
+    renderAdder({
+      members: [
+        makeMember({
+          name: "Effects",
+          typeName: "BaseGameEffect[]",
+          isCollection: true,
+          isLikelyOdinOnly: true,
+          elementTypeName: "BaseGameEffect",
+          elementSubtypes: ["ChangeOffmapAbilityDelayEffect"],
+        }),
+        makeMember({
+          name: "Opaque",
+          typeName: "BaseGameEffect[]",
+          isCollection: true,
+          isLikelyOdinOnly: true,
+          elementTypeName: "BaseGameEffect",
+        }),
+      ],
+    });
+    const input = screen.getByPlaceholderText("Add field…");
+    fireEvent.focus(input);
+    expect(screen.getByText("Effects")).toBeDefined();
+    expect(screen.queryByText("Opaque")).toBeNull();
+  });
 });

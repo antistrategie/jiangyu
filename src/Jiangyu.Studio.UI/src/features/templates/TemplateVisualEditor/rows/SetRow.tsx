@@ -408,10 +408,10 @@ export function HandlerSubtypePicker({ subtypeChoices, onPick }: HandlerSubtypeP
   return (
     <div className={styles.compositeBody}>
       <div className={styles.compositeHeader}>
-        <span className={styles.compositeKind}>handler</span>
+        <span className={styles.compositeKind}>subtype</span>
         <SuggestionCombobox
           value={typed}
-          placeholder="Pick handler type…"
+          placeholder="Pick subtype…"
           fetchSuggestions={fetchSuggestions}
           onChange={setTyped}
           onCommit={(picked) => {

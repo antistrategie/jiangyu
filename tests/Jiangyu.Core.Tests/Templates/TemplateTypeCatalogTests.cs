@@ -647,6 +647,78 @@ public class TemplateTypeCatalogTests
         Assert.False(catalog.HasPolymorphicSubtype(leaf));
     }
 
+    // --- EnumerateConstructibleElementSubtypes: the visual editor's
+    // element-subtype picker. Fires for any polymorphic collection whose
+    // elements are built fresh with type=, whether the family is
+    // ScriptableObject-rooted (EventHandlers) or plain Odin-serialised
+    // classes (ShipUpgradeTemplate.Effects). Empty where elements are
+    // picked by reference or are not polymorphic at all.
+
+    private static Type ElementTypeOf(TemplateTypeCatalog catalog, string typeName, string memberName)
+    {
+        var type = catalog.ResolveType(typeName, out _, out _)!;
+        var member = TemplateTypeCatalog.GetMembers(type).Single(m => m.Name == memberName);
+        return TemplateTypeCatalog.GetElementType(member.MemberType)!;
+    }
+
+    [Fact]
+    public void EnumerateConstructibleElementSubtypes_PlainClassFamily_ListsConcreteLeaves()
+    {
+        using var catalog = Load();
+        var elementType = ElementTypeOf(catalog, "FixtureUpgradeTemplate", "Effects");
+
+        var names = catalog.EnumerateConstructibleElementSubtypes(elementType)
+            .Select(t => t.Name)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(["FixtureDelayEffect", "FixtureSpeedEffect"], names);
+    }
+
+    [Fact]
+    public void EnumerateConstructibleElementSubtypes_InterfaceFamily_ListsImplementations()
+    {
+        using var catalog = Load();
+        var elementType = ElementTypeOf(catalog, "FixtureEntity", "AoEShapes");
+
+        var names = catalog.EnumerateConstructibleElementSubtypes(elementType).Select(t => t.Name).ToArray();
+
+        Assert.Equal(["FixtureAoEShapeImpl"], names);
+    }
+
+    [Fact]
+    public void EnumerateConstructibleElementSubtypes_DataTemplateFamily_IsEmpty()
+    {
+        // FixtureEntity.Handlers is List<FixtureBaseDataTemplate>: the modder
+        // points at an existing template with ref=, nothing is constructed.
+        using var catalog = Load();
+        var elementType = ElementTypeOf(catalog, "FixtureEntity", "Handlers");
+
+        Assert.True(catalog.HasPolymorphicSubtype(elementType));
+        Assert.Empty(catalog.EnumerateConstructibleElementSubtypes(elementType));
+    }
+
+    [Fact]
+    public void EnumerateConstructibleElementSubtypes_UnityComponentFamily_IsEmpty()
+    {
+        using var catalog = Load();
+        var elementType = ElementTypeOf(catalog, "FixtureUpgradeTemplate", "Attachments");
+
+        Assert.True(catalog.HasPolymorphicSubtype(elementType));
+        Assert.Empty(catalog.EnumerateConstructibleElementSubtypes(elementType));
+    }
+
+    [Fact]
+    public void EnumerateConstructibleElementSubtypes_ScalarAndLeafElements_AreEmpty()
+    {
+        using var catalog = Load();
+        var scalarElement = ElementTypeOf(catalog, "FixtureEntity", "BoneIndices");
+        var leaf = catalog.ResolveType("FixtureDelayEffect", out _, out _)!;
+
+        Assert.Empty(catalog.EnumerateConstructibleElementSubtypes(scalarElement));
+        Assert.Empty(catalog.EnumerateConstructibleElementSubtypes(leaf));
+    }
+
     [Fact]
     public void EnrichMembers_DetectsListFormTaggedString()
     {

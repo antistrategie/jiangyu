@@ -26,6 +26,13 @@ namespace UnityEngine
     public class Material { }
     public class Mesh { }
     public class GameObject { }
+
+    // Unity's object root with one component family under it. A collection
+    // of these holds scene or asset references, never elements built from
+    // KDL, so a constructible-subtype scan over them must stay empty.
+    public class Object { }
+    public class Component : Object { }
+    public class Transform : Component { }
 }
 
 namespace Menace.Tools
@@ -334,6 +341,29 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
     public class WrapperSampleNode : BaseSampleNode
     {
         public List<SampleNodeContainer> NestedContainers { get; set; } = new();
+    }
+
+    // Mirrors ShipUpgradeTemplate.Effects: a BaseGameEffect[] whose concrete
+    // subtypes are plain Odin-serialised classes, not ScriptableObjects. The
+    // visual editor's element-subtype picker lists them for type=.
+    public abstract class FixtureEffectBase
+    {
+    }
+
+    public class FixtureDelayEffect : FixtureEffectBase
+    {
+        public int DelayDelta { get; set; }
+    }
+
+    public class FixtureSpeedEffect : FixtureEffectBase
+    {
+        public float Multiplier { get; set; }
+    }
+
+    public class FixtureUpgradeTemplate : Menace.Tools.DataTemplate
+    {
+        public FixtureEffectBase[] Effects { get; set; } = [];
+        public UnityEngine.Component[] Attachments { get; set; } = [];
     }
 }
 
