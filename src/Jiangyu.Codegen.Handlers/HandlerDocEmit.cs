@@ -8,22 +8,51 @@ public sealed record HandlerMethodDoc(string Name, string Signature);
 /// <summary>A handler base type and the methods a modder overrides on it (the C# authoring path).</summary>
 public sealed record HandlerBaseDoc(string Name, string Summary, IReadOnlyList<HandlerMethodDoc> Methods);
 
-/// <summary>One settable field on a built-in handler (the KDL authoring path).</summary>
-public sealed record HandlerFieldDoc(string Name, string Type, bool CodeOnly, IReadOnlyList<string> EnumValues);
+/// <summary>
+/// One settable field on a built-in handler or family subtype (the KDL authoring path).
+/// <paramref name="Family"/> names the family whose subtypes fill the field when it is a
+/// polymorphic slot (an interface-typed field such as <c>ITacticalCondition</c>), so the row can
+/// link to that section. <paramref name="CodeOnly"/> marks a slot with nothing built in to pick.
+/// <paramref name="IsCollection"/> says whether the slot holds a list of them, which takes
+/// <c>append</c> rather than <c>set</c>.
+/// </summary>
+public sealed record HandlerFieldDoc(
+    string Name,
+    string Type,
+    bool CodeOnly,
+    IReadOnlyList<string> EnumValues,
+    string? Family = null,
+    bool IsCollection = false);
 
-/// <summary>A built-in handler subtype: the discriminator a modder names in <c>type="X"</c> and its fields.</summary>
-public sealed record HandlerDoc(string Name, IReadOnlyList<HandlerFieldDoc> Fields);
+/// <summary>
+/// A built-in subtype: the discriminator a modder names in <c>type="X"</c> and its fields.
+/// <paramref name="SharesFamilyFields"/> is false for a family subtype that implements the
+/// slot interface without deriving from the family's class base, so the base's shared
+/// fields do not apply to it.
+/// </summary>
+public sealed record HandlerDoc(string Name, IReadOnlyList<HandlerFieldDoc> Fields, bool SharesFamilyFields = true);
+
+/// <summary>
+/// A polymorphic family (conditions, value providers, …): the subtypes a modder picks from with
+/// <c>type="X"</c> when a handler field is typed with the family's interface, the fields every
+/// subtype shares from the family base, and an example of filling a slot.
+/// </summary>
+public sealed record FamilyDoc(
+    string Title,
+    string Intro,
+    string? Example,
+    IReadOnlyList<HandlerFieldDoc> SharedFields,
+    IReadOnlyList<HandlerDoc> Subtypes);
 
 /// <summary>
 /// The whole page model: the handler base types and their overridable methods, the built-in
-/// handler catalogue, and the condition and value-provider families. Built by the reflection
-/// shell (Program); rendered here with no IO or reflection so it stays unit-testable.
+/// handler catalogue, and the polymorphic families. Built by the reflection shell (Program);
+/// rendered here with no IO or reflection so it stays unit-testable.
 /// </summary>
 public sealed record HandlerModel(
     IReadOnlyList<HandlerBaseDoc> Bases,
     IReadOnlyList<HandlerDoc> Handlers,
-    IReadOnlyList<string> Conditions,
-    IReadOnlyList<string> ValueProviders);
+    IReadOnlyList<FamilyDoc> Families);
 
 /// <summary>Pure markdown rendering for the generated event-handler reference.</summary>
 public static class HandlerDocEmit
@@ -38,29 +67,59 @@ public static class HandlerDocEmit
         sb.AppendLine();
         sb.AppendLine("# Event handler reference");
         sb.AppendLine();
-        sb.AppendLine("Every event handler the game ships, the methods you override to write your own, and the conditions it models. Generated from the game assembly, so it tracks the current build. See [Write a custom template type](/sdk/template-types) for the C# path and [Patch and clone templates](/templates) for wiring handlers from KDL.");
+        sb.AppendLine("Every event handler the game ships, the methods you override to write your own, and the conditions, value providers and filters that plug into them. Generated from the game assembly, so it tracks the current build. See [Write a custom template type](/sdk/template-types) for the C# path and [Patch and clone templates](/templates) for wiring handlers from KDL.");
         sb.AppendLine();
         sb.AppendLine("An **event handler** is the unit of skill, perk, and status behaviour. Each entry in a `SkillTemplate` or `PerkTemplate`'s `EventHandlers` list is one handler the game ticks through its lifecycle. There are two ways to author one:");
         sb.AppendLine();
-        sb.AppendLine("- **From data (KDL).** Add, edit, or remove any [built-in handler](#built-in-handlers) on a skill or perk and set its fields, naming the subtype with `type=\"<Name>\"`. No C# needed.");
+        sb.AppendLine("- **From data (KDL).** Add, edit, or remove any [built-in handler](#built-in-handlers) on a skill or perk and set its fields, naming the subtype with `type=\"<Name>\"`. A handler's condition, value provider or filter is set the same way. No C# needed.");
         sb.AppendLine("- **From code (C#).** Subclass `SkillEventHandlerTemplate` and `SkillEventHandler` and override the [lifecycle methods](#lifecycle-methods) when no built-in does what you want.");
 
+        // A family with nothing to pick is not rendered, so a row that names it
+        // reads as C# only instead of linking to a heading that does not exist.
+        var renderedFamilies = model.Families.Where(f => f.Subtypes.Count > 0).ToList();
+        var rendered = renderedFamilies.ToDictionary(f => f.Title, StringComparer.Ordinal);
+        var collisions = SubtypeNamesInSeveralSections(model, renderedFamilies);
+        var anyCodeOnly = model.Handlers.Concat(renderedFamilies.SelectMany(f => f.Subtypes))
+            .SelectMany(s => s.Fields)
+            .Concat(renderedFamilies.SelectMany(f => f.SharedFields))
+            .Any(f => IsCodeOnly(f, rendered));
+
         EmitBases(sb, model.Bases);
-        EmitHandlers(sb, model.Handlers);
-        EmitNamedFamily(sb, "Conditions", model.Conditions,
-            "The game models these reusable conditions (`TacticalCondition` subtypes). They live in handler fields typed `ITacticalCondition`, which are Odin-routed, so **KDL cannot set a condition** (those fields are marked **C# only** above). To gate a handler on a condition, write the handler in C# and put the check in the override body. The conditions the game already models:");
-        EmitNamedFamily(sb, "Value providers", model.ValueProviders,
-            "A value provider computes a number for a handler field typed `IValueProvider` (for example `ChangeProperty.ValueProvider`). These are Odin-routed too, so they are **C# only**. The providers the game ships:");
+        EmitHandlers(sb, model.Handlers, rendered, collisions, anyCodeOnly);
+        // Families render in model order, which the reflection shell fixes.
+        foreach (var family in renderedFamilies)
+            EmitFamily(sb, family, rendered, collisions);
 
         return sb.ToString();
     }
+
+    // Two families can ship a subtype of the same short name (the game has a skill filter and
+    // an item filter both called ItemSlotFilter). Their headings get the section name appended
+    // so the page has one anchor per subtype.
+    private static HashSet<string> SubtypeNamesInSeveralSections(HandlerModel model, IEnumerable<FamilyDoc> families)
+    {
+        var sections = new List<IEnumerable<string>> { model.Handlers.Select(h => h.Name) };
+        sections.AddRange(families.Select(f => f.Subtypes.Select(s => s.Name)));
+        return sections
+            .SelectMany(names => names.Distinct(StringComparer.Ordinal))
+            .GroupBy(n => n, StringComparer.Ordinal)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static bool IsCodeOnly(HandlerFieldDoc f, IReadOnlyDictionary<string, FamilyDoc> rendered)
+        => f.Family is { } family ? !rendered.ContainsKey(family) : f.CodeOnly;
+
+    /// <summary>The heading anchor a family title renders to, for links from field rows.</summary>
+    public static string Anchor(string title) => title.Trim().ToLowerInvariant().Replace(' ', '-');
 
     private static void EmitBases(StringBuilder sb, IReadOnlyList<HandlerBaseDoc> bases)
     {
         sb.AppendLine();
         sb.AppendLine("## Lifecycle methods");
         sb.AppendLine();
-        sb.AppendLine("When you write a handler in C#, these are the methods you override. The template is the factory the data holds, and its `Create()` returns the handler the game ticks. Override only the ones you need; the rest keep the base's empty default. None of these carry doc comments in the game assembly, so this lists the signature you implement against.");
+        sb.AppendLine("When you write a handler in C#, these are the methods you override. The template is the factory the data holds, and its `Create()` returns the handler the game ticks. Override only the ones you need. The rest keep the base's empty default. None of these carry doc comments in the game assembly, so this lists the signature you implement against.");
 
         foreach (var b in bases)
         {
@@ -99,12 +158,20 @@ public static class HandlerDocEmit
             sb.AppendLine($"| `{m.Signature}` |");
     }
 
-    private static void EmitHandlers(StringBuilder sb, IReadOnlyList<HandlerDoc> handlers)
+    private static void EmitHandlers(
+        StringBuilder sb,
+        IReadOnlyList<HandlerDoc> handlers,
+        IReadOnlyDictionary<string, FamilyDoc> rendered,
+        HashSet<string> collisions,
+        bool anyCodeOnly)
     {
         sb.AppendLine();
         sb.AppendLine("## Built-in handlers");
         sb.AppendLine();
-        sb.AppendLine($"The {handlers.Count} handlers the game ships. Name one in `type=\"<Name>\"` to add it, and set the fields listed; every field you do not set takes its type default. A field marked **C# only** is Odin-routed (an `ITacticalCondition` or `IValueProvider`) and cannot be set from KDL, so reach for the [C# path](#lifecycle-methods) when you need it. Enum fields list their allowed values.");
+        sb.Append($"The {handlers.Count} handlers the game ships. Name one in `type=\"<Name>\"` to add it, and set the fields listed. Every field you do not set takes its type default. Enum fields list their allowed values. A field typed with an interface (`ITacticalCondition`, `IValueProvider`, …) is a polymorphic slot: fill it with `set \"<Field>\" type=\"<Subtype>\" {{ ... }}`, or `append` for an array of them, picking the subtype from the family section the row links to.");
+        if (anyCodeOnly)
+            sb.Append(" A field marked **C# only** has nothing built in to fill it from KDL, so it needs the [C# path](#lifecycle-methods).");
+        sb.AppendLine();
         sb.AppendLine();
         sb.AppendLine("```kdl");
         sb.AppendLine("append \"EventHandlers\" type=\"AddSkill\" {");
@@ -113,39 +180,101 @@ public static class HandlerDocEmit
         sb.AppendLine("}");
         sb.AppendLine("```");
 
-        foreach (var h in handlers.OrderBy(h => h.Name, StringComparer.Ordinal))
+        EmitSubtypes(sb, handlers, "Built-in handlers", rendered, collisions, familyHasSharedFields: false);
+    }
+
+    private static void EmitFamily(
+        StringBuilder sb,
+        FamilyDoc family,
+        IReadOnlyDictionary<string, FamilyDoc> rendered,
+        HashSet<string> collisions)
+    {
+        sb.AppendLine();
+        sb.AppendLine($"## {family.Title}");
+        sb.AppendLine();
+        sb.AppendLine(family.Intro);
+        if (!string.IsNullOrWhiteSpace(family.Example))
         {
             sb.AppendLine();
-            sb.AppendLine($"### {h.Name}");
+            sb.AppendLine("```kdl");
+            sb.AppendLine(family.Example.TrimEnd());
+            sb.AppendLine("```");
+        }
+        if (family.SharedFields.Count > 0)
+        {
+            var outsiders = family.Subtypes
+                .Where(s => !s.SharesFamilyFields)
+                .Select(s => $"`{s.Name}`")
+                .OrderBy(n => n, StringComparer.Ordinal)
+                .ToList();
             sb.AppendLine();
-            if (h.Fields.Count == 0)
+            sb.AppendLine(outsiders.Count == 0
+                ? $"Every one of the {family.Subtypes.Count} subtypes below also takes these fields:"
+                : $"Every subtype below except {JoinNames(outsiders)} also takes these fields:");
+            sb.AppendLine();
+            EmitFieldTable(sb, family.SharedFields, rendered);
+        }
+
+        EmitSubtypes(sb, family.Subtypes, family.Title, rendered, collisions, familyHasSharedFields: family.SharedFields.Count > 0);
+    }
+
+    private static string JoinNames(IReadOnlyList<string> names) => names.Count switch
+    {
+        1 => names[0],
+        2 => $"{names[0]} and {names[1]}",
+        _ => $"{string.Join(", ", names.Take(names.Count - 1))} and {names[^1]}",
+    };
+
+    private static void EmitSubtypes(
+        StringBuilder sb,
+        IReadOnlyList<HandlerDoc> subtypes,
+        string sectionTitle,
+        IReadOnlyDictionary<string, FamilyDoc> rendered,
+        HashSet<string> collisions,
+        bool familyHasSharedFields)
+    {
+        foreach (var s in subtypes.OrderBy(s => s.Name, StringComparer.Ordinal))
+        {
+            sb.AppendLine();
+            sb.AppendLine(collisions.Contains(s.Name)
+                ? $"### {s.Name} ({sectionTitle.ToLowerInvariant()})"
+                : $"### {s.Name}");
+            sb.AppendLine();
+            if (s.Fields.Count == 0)
             {
-                sb.AppendLine("No settable fields. It carries behaviour only.");
+                sb.AppendLine(familyHasSharedFields && s.SharesFamilyFields
+                    ? "No fields of its own. It takes only the shared fields above."
+                    : "No settable fields. It carries behaviour only.");
                 continue;
             }
-            sb.AppendLine("| Field | Type | Values / notes |");
-            sb.AppendLine("| --- | --- | --- |");
-            foreach (var f in h.Fields.OrderBy(f => f.Name, StringComparer.Ordinal))
-            {
-                var notes = f.CodeOnly
-                    ? "**C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions)."
-                    : f.EnumValues.Count > 0
-                        ? string.Join(", ", f.EnumValues.Select(v => $"`{v}`"))
-                        : "";
-                sb.AppendLine($"| `{f.Name}` | `{f.Type}` | {notes} |");
-            }
+            EmitFieldTable(sb, s.Fields, rendered);
         }
     }
 
-    private static void EmitNamedFamily(StringBuilder sb, string title, IReadOnlyList<string> names, string intro)
+    private static void EmitFieldTable(
+        StringBuilder sb,
+        IReadOnlyList<HandlerFieldDoc> fields,
+        IReadOnlyDictionary<string, FamilyDoc> rendered)
     {
-        if (names.Count == 0) return;
-        sb.AppendLine();
-        sb.AppendLine($"## {title}");
-        sb.AppendLine();
-        sb.AppendLine(intro);
-        sb.AppendLine();
-        foreach (var n in names.OrderBy(n => n, StringComparer.Ordinal))
-            sb.AppendLine($"- `{n}`");
+        sb.AppendLine("| Field | Type | Values / notes |");
+        sb.AppendLine("| --- | --- | --- |");
+        foreach (var f in fields.OrderBy(f => f.Name, StringComparer.Ordinal))
+            sb.AppendLine($"| `{f.Name}` | `{f.Type}` | {FieldNotes(f, rendered)} |");
+    }
+
+    private static string FieldNotes(HandlerFieldDoc f, IReadOnlyDictionary<string, FamilyDoc> rendered)
+    {
+        if (IsCodeOnly(f, rendered))
+            return "**C# only**: nothing built in fills this field from KDL, so set it from your handler in C#.";
+        if (f.Family is { } family)
+        {
+            var link = $"[{family}](#{Anchor(family)})";
+            return f.IsCollection
+                ? $"Polymorphic list: add subtypes from {link} with `append \"{f.Name}\" type=\"<Subtype>\" {{ ... }}`."
+                : $"Polymorphic: pick a subtype from {link} with `set \"{f.Name}\" type=\"<Subtype>\" {{ ... }}`.";
+        }
+        return f.EnumValues.Count > 0
+            ? string.Join(", ", f.EnumValues.Select(v => $"`{v}`"))
+            : "";
     }
 }

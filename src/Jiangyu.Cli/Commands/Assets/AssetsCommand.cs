@@ -55,39 +55,16 @@ public static class AssetsCommand
     /// </summary>
     private static void BuildIl2CppMetadataSupplement(EnvironmentContext ctx, ConsoleLogSink log)
     {
-        var gameRoot = Path.GetDirectoryName(ctx.GameDataPath);
-        if (gameRoot is null)
-        {
-            log.Warning("Could not derive game install root; skipping IL2CPP metadata extract.");
-            return;
-        }
-
-        var gameAssemblyPath = Path.Combine(gameRoot, "GameAssembly.dll");
-        var metadataPath = Path.Combine(ctx.GameDataPath, "il2cpp_data", "Metadata", "global-metadata.dat");
-        if (!File.Exists(gameAssemblyPath) || !File.Exists(metadataPath))
-        {
-            log.Info("IL2CPP metadata files not found (Mono build?); skipping IL2CPP metadata extract.");
-            return;
-        }
-
-        var unityVersion = UnityVersionValidationService.DetectGameVersion(ctx.GameDataPath);
-        if (unityVersion is null || unityVersion.Value == default)
-        {
-            log.Warning("Could not detect Unity version; skipping IL2CPP metadata extract.");
-            return;
-        }
-
-        try
-        {
-            Il2CppMetadataCache.BuildAndPersist(ctx.CachePath, gameAssemblyPath, metadataPath, unityVersion.Value, log);
-        }
-        catch (Exception ex)
-        {
-            // Don't fail the asset index just because Cpp2IL stumbled — the
-            // catalog will keep working without the supplement, just without
-            // attribute-derived hints like NamedArray pairings.
-            log.Warning($"IL2CPP metadata extract failed (catalog will fall back): {ex.Message}");
-        }
+        // Shared with `jiangyu templates index` and the Studio rebuild, which
+        // keep a supplement that is at least as new as the game binaries.
+        // This command is the full refresh, so it rebuilds regardless. A
+        // probe or extract failure only costs the attribute-derived hints.
+        Il2CppMetadataCache.BuildIfStale(
+            ctx.CachePath,
+            ctx.GameDataPath,
+            () => UnityVersionValidationService.DetectGameVersion(ctx.GameDataPath),
+            log,
+            force: true);
     }
 
     private static Command CreateSearchCommand()

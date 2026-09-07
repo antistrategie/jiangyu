@@ -46,7 +46,13 @@ import {
   navStepBack,
   navStepForward,
   pushNavEntry,
+  skippedValuesNote,
 } from "./helpers";
+
+// Whether this session has already been told the index has gaps. Lives
+// outside the component so a second browser pane, or a pane remount, does
+// not repeat the toast. A rebuild resets it to the new state.
+let announcedGaps = false;
 
 function templatesIndexStatus(): Promise<TemplateIndexStatus> {
   return rpcCall<TemplateIndexStatus>("templatesIndexStatus");
@@ -211,7 +217,16 @@ export function TemplateBrowser({
     let cancelled = false;
     void templatesIndexStatus()
       .then((s) => {
-        if (!cancelled) setStatus(s);
+        if (cancelled) return;
+        setStatus(s);
+        // A build that left gaps says so once per session, not only on the
+        // build that produced them.
+        // A stale index is about to be rebuilt; its gaps are not worth a toast.
+        const note = s.state === "current" ? skippedValuesNote(s.skippedValueCount, s.skippedValues) : null;
+        if (note && !announcedGaps) {
+          announcedGaps = true;
+          pushToast({ variant: "info", message: "Template index has gaps", detail: note });
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -224,7 +239,7 @@ export function TemplateBrowser({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [pushToast]);
 
   // Reset catalogue state synchronously off status state.
   const [prevStatusState, setPrevStatusState] = useState(status?.state);
@@ -367,7 +382,10 @@ export function TemplateBrowser({
     try {
       const result = await templatesIndex();
       setStatus(result);
-      pushToast({ variant: "success", message: "Template index built" });
+      const note = skippedValuesNote(result.skippedValueCount, result.skippedValues);
+      announcedGaps = note !== null;
+      if (note) pushToast({ variant: "info", message: "Template index built with gaps", detail: note });
+      else pushToast({ variant: "success", message: "Template index built" });
     } catch (err) {
       const msg = (err as Error).message;
       setIndexError(msg);

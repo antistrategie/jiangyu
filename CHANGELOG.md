@@ -2,6 +2,14 @@
 
 Changes relevant to modders building with Jiangyu, and to players running Jiangyu mods where they can see the difference. Entries are scoped Loader, Compiler, Studio, CLI, MCP or SDK.
 
+## 1.4.3
+
+- (Studio) Shows Odin-routed enum fields by member name instead of number
+- (Compiler) Compiles a number on an enum field to the member name, and rejects a decimal or boolean on one
+- (Compiler) Documented conditions, value providers and filters, and the `type=` shape that fills a handler's interface-typed field
+- (CLI) Made `jiangyu templates index` refresh the IL2CPP metadata supplement when it is stale
+- (Studio) Reports the templates an index build skipped
+
 ## 1.4.2
 
 - (Loader) Stopped the clone pass loading every template asset in the game at the title screen

@@ -2,16 +2,16 @@
 
 # Event handler reference
 
-Every event handler the game ships, the methods you override to write your own, and the conditions it models. Generated from the game assembly, so it tracks the current build. See [Write a custom template type](/sdk/template-types) for the C# path and [Patch and clone templates](/templates) for wiring handlers from KDL.
+Every event handler the game ships, the methods you override to write your own, and the conditions, value providers and filters that plug into them. Generated from the game assembly, so it tracks the current build. See [Write a custom template type](/sdk/template-types) for the C# path and [Patch and clone templates](/templates) for wiring handlers from KDL.
 
 An **event handler** is the unit of skill, perk, and status behaviour. Each entry in a `SkillTemplate` or `PerkTemplate`'s `EventHandlers` list is one handler the game ticks through its lifecycle. There are two ways to author one:
 
-- **From data (KDL).** Add, edit, or remove any [built-in handler](#built-in-handlers) on a skill or perk and set its fields, naming the subtype with `type="<Name>"`. No C# needed.
+- **From data (KDL).** Add, edit, or remove any [built-in handler](#built-in-handlers) on a skill or perk and set its fields, naming the subtype with `type="<Name>"`. A handler's condition, value provider or filter is set the same way. No C# needed.
 - **From code (C#).** Subclass `SkillEventHandlerTemplate` and `SkillEventHandler` and override the [lifecycle methods](#lifecycle-methods) when no built-in does what you want.
 
 ## Lifecycle methods
 
-When you write a handler in C#, these are the methods you override. The template is the factory the data holds, and its `Create()` returns the handler the game ticks. Override only the ones you need; the rest keep the base's empty default. None of these carry doc comments in the game assembly, so this lists the signature you implement against.
+When you write a handler in C#, these are the methods you override. The template is the factory the data holds, and its `Create()` returns the handler the game ticks. Override only the ones you need. The rest keep the base's empty default. None of these carry doc comments in the game assembly, so this lists the signature you implement against.
 
 ### SkillEventHandler
 
@@ -111,7 +111,7 @@ The factory the template data holds. `Create()` returns a fresh handler with the
 
 ## Built-in handlers
 
-The 155 handlers the game ships. Name one in `type="<Name>"` to add it, and set the fields listed; every field you do not set takes its type default. A field marked **C# only** is Odin-routed (an `ITacticalCondition` or `IValueProvider`) and cannot be set from KDL, so reach for the [C# path](#lifecycle-methods) when you need it. Enum fields list their allowed values.
+The 155 handlers the game ships. Name one in `type="<Name>"` to add it, and set the fields listed. Every field you do not set takes its type default. Enum fields list their allowed values. A field typed with an interface (`ITacticalCondition`, `IValueProvider`, …) is a polymorphic slot: fill it with `set "<Field>" type="<Subtype>" { ... }`, or `append` for an array of them, picking the subtype from the family section the row links to.
 
 ```kdl
 append "EventHandlers" type="AddSkill" {
@@ -142,7 +142,7 @@ append "EventHandlers" type="AddSkill" {
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `Condition` | `ITacticalCondition` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `Condition` | `ITacticalCondition` | Polymorphic: pick a subtype from [Conditions](#conditions) with `set "Condition" type="<Subtype>" { ... }`. |
 | `Event` | `AddEvent` | `OnAdded`, `OnAttack`, `OnElementDeath`, `OnMissionStart`, `OnRemoved`, `OnRoundStart`, `OnTargetElementDestroyed`, `OnUse` |
 | `OnlyApplyOnHit` | `bool` |  |
 | `OnlyApplyOnHitpointDamage` | `bool` |  |
@@ -165,7 +165,7 @@ append "EventHandlers" type="AddSkill" {
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `SkillFilter` | `ISkillFilter` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `SkillFilter` | `ISkillFilter` | Polymorphic: pick a subtype from [Skill filters](#skill-filters) with `set "SkillFilter" type="<Subtype>" { ... }`. |
 | `SkillToAdd` | `SkillTemplate` |  |
 
 ### AddSkillRescuedUnit
@@ -181,7 +181,7 @@ append "EventHandlers" type="AddSkill" {
 | `ApplyToType` | `ItemType` | `Accessory`, `Armor`, `None`, `Weapon` |
 | `BonusPercentage` | `float` |  |
 | `MinimumBonus` | `int` |  |
-| `SkillFilter` | `ISkillFilter` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `SkillFilter` | `ISkillFilter` | Polymorphic: pick a subtype from [Skill filters](#skill-filters) with `set "SkillFilter" type="<Subtype>" { ... }`. |
 
 ### ApplyAuthorityDisciplineMod
 
@@ -250,7 +250,7 @@ append "EventHandlers" type="AddSkill" {
 | `DamageDropoff` | `float` |  |
 | `DamageDropoffAOE` | `float` |  |
 | `DamageDropoffMult` | `float` |  |
-| `DamageFilterCondition` | `ITacticalCondition` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `DamageFilterCondition` | `ITacticalCondition` | Polymorphic: pick a subtype from [Conditions](#conditions) with `set "DamageFilterCondition" type="<Subtype>" { ... }`. |
 | `DamageMult` | `float` |  |
 | `DamagePctCurrentHitpoints` | `float` |  |
 | `DamagePctCurrentHitpointsMin` | `float` |  |
@@ -296,7 +296,7 @@ append "EventHandlers" type="AddSkill" {
 | --- | --- | --- |
 | `CanBeTriggeredByAnySkill` | `bool` |  |
 | `Chance` | `int` |  |
-| `Condition` | `ITacticalCondition` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `Condition` | `ITacticalCondition` | Polymorphic: pick a subtype from [Conditions](#conditions) with `set "Condition" type="<Subtype>" { ... }`. |
 | `OnlyApplyOnHitpointDamage` | `bool` |  |
 | `OnlyApplyWhenNoElementWasDestroyed` | `bool` |  |
 | `ShowHUDText` | `bool` |  |
@@ -345,7 +345,7 @@ append "EventHandlers" type="AddSkill" {
 | --- | --- | --- |
 | `CostDelta` | `int` |  |
 | `CostMin` | `int` |  |
-| `SkillFilter` | `ISkillFilter` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `SkillFilter` | `ISkillFilter` | Polymorphic: pick a subtype from [Skill filters](#skill-filters) with `set "SkillFilter" type="<Subtype>" { ... }`. |
 
 ### ChangeActionPoints
 
@@ -424,7 +424,7 @@ append "EventHandlers" type="AddSkill" {
 | `PropertyType` | `EntityPropertyType` | `AIPriorityMult`, `APEnterCost`, `APLeaveCost`, `Accuracy`, `AccuracyDropoff`, `AccuracyDropoffMult`, `AccuracyMult`, `ActionPoints`, `ActionPointsMult`, `AdditionalMovementCost`, `AdditionalTurningCost`, `Armor`, `ArmorDurabilityPerElement`, `ArmorMult`, `ArmorPenetration`, `ArmorPenetrationDropoff`, `ArmorPenetrationDropoffMult`, `ArmorPenetrationMult`, `BackwardsMovementMult`, `Concealment`, `ConcealmentMult`, `CoverEffectivenessMult`, `CoverGainedByVehicleOffset`, `CoverTypeOffset`, `CriticalChance`, `CriticalDamageMult`, `Damage`, `DamageDropoff`, `DamageDropoffMult`, `DamageMult`, `DamageSustainedMult`, `DamageSustainedSquadLeaderMult`, `DamageToArmorDurability`, `DamageToArmorDurabilityDropoff`, `DamageToArmorDurabilityDropoffMult`, `DamageToArmorDurabilityMult`, `DamageToMoraleMult`, `DefectThresholdOffset`, `DefenseMult`, `DeployCostMult`, `DeploymentZoneMinExtend`, `DeploymentZoneMult`, `Detection`, `DetectionMult`, `Discipline`, `DisciplineMult`, `DismemberChance`, `ElementsHit`, `ElementsHitPct`, `GetDismemberedChanceBonus`, `GetDismemberedChanceMult`, `GetDismemberedMaxParts`, `GetDismemberedMinParts`, `HitchanceMin`, `HitpointsPerElement`, `HitpointsPerElementMult`, `IgnoreCoverMult`, `MaxElements`, `MoraleBonus`, `MoraleImpactMult`, `MoraleMult`, `MoraleRecoveryMult`, `MoraleStateOffset`, `PromotionCostMult`, `ProvidedCoverBonus`, `ReduceElementsHit`, `SuppressionDealt`, `SuppressionDealtMult`, `SuppressionImpactMult`, `TotalDamageMult`, `Vision`, `VisionMult` |
 | `TooltipPlaceholderIndex` | `int` |  |
 | `Trigger` | `UpdateEvent` | `OnBeforeAnySkillUsed`, `OnBeingAttacked`, `OnUpdate` |
-| `ValueProvider` | `IValueProvider` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `ValueProvider` | `IValueProvider` | Polymorphic: pick a subtype from [Value providers](#value-providers) with `set "ValueProvider" type="<Subtype>" { ... }`. |
 
 ### ChangePropertyAura
 
@@ -438,7 +438,7 @@ append "EventHandlers" type="AddSkill" {
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `Condition` | `ITacticalCondition` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `Condition` | `ITacticalCondition` | Polymorphic: pick a subtype from [Conditions](#conditions) with `set "Condition" type="<Subtype>" { ... }`. |
 | `DefaultText` | `string` |  |
 | `Event` | `EventType` | `OnBeforeAnySkillUsed`, `OnBeingAttacked`, `OnThisSkillUsed`, `OnUpdate` |
 | `HideIfNotActive` | `bool` |  |
@@ -471,13 +471,13 @@ append "EventHandlers" type="AddSkill" {
 | `MaxRangeMult` | `float` |  |
 | `MinRangeChange` | `int` |  |
 | `MinRangeMult` | `float` |  |
-| `SkillFilter` | `ISkillFilter` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `SkillFilter` | `ISkillFilter` | Polymorphic: pick a subtype from [Skill filters](#skill-filters) with `set "SkillFilter" type="<Subtype>" { ... }`. |
 
 ### ChangeSkillUseAmount
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `SkillFilter` | `ISkillFilter` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `SkillFilter` | `ISkillFilter` | Polymorphic: pick a subtype from [Skill filters](#skill-filters) with `set "SkillFilter" type="<Subtype>" { ... }`. |
 | `UsesAmount` | `int` |  |
 
 ### ChangeSkillsWithTags
@@ -487,7 +487,7 @@ append "EventHandlers" type="AddSkill" {
 | `Amount` | `int` |  |
 | `AmountMult` | `float` |  |
 | `PropertyType` | `EntityPropertyType` | `AIPriorityMult`, `APEnterCost`, `APLeaveCost`, `Accuracy`, `AccuracyDropoff`, `AccuracyDropoffMult`, `AccuracyMult`, `ActionPoints`, `ActionPointsMult`, `AdditionalMovementCost`, `AdditionalTurningCost`, `Armor`, `ArmorDurabilityPerElement`, `ArmorMult`, `ArmorPenetration`, `ArmorPenetrationDropoff`, `ArmorPenetrationDropoffMult`, `ArmorPenetrationMult`, `BackwardsMovementMult`, `Concealment`, `ConcealmentMult`, `CoverEffectivenessMult`, `CoverGainedByVehicleOffset`, `CoverTypeOffset`, `CriticalChance`, `CriticalDamageMult`, `Damage`, `DamageDropoff`, `DamageDropoffMult`, `DamageMult`, `DamageSustainedMult`, `DamageSustainedSquadLeaderMult`, `DamageToArmorDurability`, `DamageToArmorDurabilityDropoff`, `DamageToArmorDurabilityDropoffMult`, `DamageToArmorDurabilityMult`, `DamageToMoraleMult`, `DefectThresholdOffset`, `DefenseMult`, `DeployCostMult`, `DeploymentZoneMinExtend`, `DeploymentZoneMult`, `Detection`, `DetectionMult`, `Discipline`, `DisciplineMult`, `DismemberChance`, `ElementsHit`, `ElementsHitPct`, `GetDismemberedChanceBonus`, `GetDismemberedChanceMult`, `GetDismemberedMaxParts`, `GetDismemberedMinParts`, `HitchanceMin`, `HitpointsPerElement`, `HitpointsPerElementMult`, `IgnoreCoverMult`, `MaxElements`, `MoraleBonus`, `MoraleImpactMult`, `MoraleMult`, `MoraleRecoveryMult`, `MoraleStateOffset`, `PromotionCostMult`, `ProvidedCoverBonus`, `ReduceElementsHit`, `SuppressionDealt`, `SuppressionDealtMult`, `SuppressionImpactMult`, `TotalDamageMult`, `Vision`, `VisionMult` |
-| `RequiredTags` | `TagType[]` |  |
+| `RequiredTags` | `TagType[]` | `ACCESSORY`, `ACCURATE`, `AIRPOWER`, `ANTI_INFANTRY`, `ANTI_STRUCTURE`, `ANTI_VEHICLE`, `AREA_OF_EFFECT`, `ARMOR_DAMAGING`, `ARMOR_PIERCING`, `ASSAULT_RIFLE`, `BATTLE_RIFLE`, `CAMOUFLAGE`, `COMMODITY`, `CRAFTING_MATERIAL`, `DEMORALIZING`, `DEPLOY`, `DEPLOYABLE`, `DESTRUCTIBLE`, `DISABLING`, `DRUG`, `EMP`, `ENERGY`, `FLEXIBLE`, `GRENADE`, `HAZARDOUS`, `HEAVY_ARMOR`, `HIGH_RATE_OF_FIRE`, `HORDE`, `HOVERING`, `IGNORES_COVER`, `INACCURATE`, `INCENDIARY`, `INDIRECT_FIRE`, `INFANTRY`, `JAM`, `JETPACK`, `LARGE`, `LIGHT_ARMOR`, `LIMITED_AMMO`, `LONG_RANGE`, `LOW_PENETRATION`, `LOW_QUALITY`, `Last`, `MACHINE`, `MANY_ACCESSORIES`, `MASSIVE_EXPLOSION`, `MEDIUM_ARMOR`, `MINE`, `MINIMUM_RANGE`, `MINI_BOSS`, `MOBILE`, `MOTORIZED_INFANTRY`, `ORBITAL`, `PROJECTILE`, `ROCKET`, `SCANNER`, `SCATTER`, `SHORT_RANGE`, `SHOTGUN`, `SMG`, `SMOKE`, `SNIPER`, `SPECIAL_WEAPON`, `SQUAD_WEAPON`, `STANCE`, `STEALTH`, `STRUCTURE`, `SUPPRESSIVE`, `TANK`, `UNIQUE`, `UNUSED_MUST_DEPLOY`, `UTILITY`, `VEHICLE`, `VEHICLE_WEAPON`, `VIP`, `WALKER`, `WEAPON`, `WEAPONS_TEAM`, `XENO` |
 
 ### ChangeStance
 
@@ -502,7 +502,7 @@ append "EventHandlers" type="AddSkill" {
 | Field | Type | Values / notes |
 | --- | --- | --- |
 | `CostMult` | `float` |  |
-| `Filter` | `IItemFilter` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `Filter` | `IItemFilter` | Polymorphic: pick a subtype from [Item filters](#item-filters) with `set "Filter" type="<Subtype>" { ... }`. |
 
 ### ChangeSuppression
 
@@ -517,7 +517,7 @@ append "EventHandlers" type="AddSkill" {
 | --- | --- | --- |
 | `AmountPerElement` | `int` |  |
 | `MaxIncreasePct` | `int` |  |
-| `SkillFilter` | `ISkillFilter` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `SkillFilter` | `ISkillFilter` | Polymorphic: pick a subtype from [Skill filters](#skill-filters) with `set "SkillFilter" type="<Subtype>" { ... }`. |
 
 ### Charge
 
@@ -571,7 +571,7 @@ append "EventHandlers" type="AddSkill" {
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `SkillFilter` | `ISkillFilter` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `SkillFilter` | `ISkillFilter` | Polymorphic: pick a subtype from [Skill filters](#skill-filters) with `set "SkillFilter" type="<Subtype>" { ... }`. |
 
 ### Cooldown
 
@@ -584,7 +584,7 @@ append "EventHandlers" type="AddSkill" {
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `SkillFilter` | `ISkillFilter` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `SkillFilter` | `ISkillFilter` | Polymorphic: pick a subtype from [Skill filters](#skill-filters) with `set "SkillFilter" type="<Subtype>" { ... }`. |
 
 ### Crawl
 
@@ -705,7 +705,7 @@ No settable fields. It carries behaviour only.
 | --- | --- | --- |
 | `HideDisabledSkills` | `bool` |  |
 | `MarkAsDestroyed` | `bool` |  |
-| `SkillFilter` | `ISkillFilter` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `SkillFilter` | `ISkillFilter` | Polymorphic: pick a subtype from [Skill filters](#skill-filters) with `set "SkillFilter" type="<Subtype>" { ... }`. |
 
 ### DisallowInvisible
 
@@ -766,7 +766,7 @@ No settable fields. It carries behaviour only.
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `Condition` | `ITacticalCondition` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `Condition` | `ITacticalCondition` | Polymorphic: pick a subtype from [Conditions](#conditions) with `set "Condition" type="<Subtype>" { ... }`. |
 
 ### FilterByMorale
 
@@ -778,7 +778,7 @@ No settable fields. It carries behaviour only.
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `NotEnabledIfActorHasSkillWithTags` | `TagType[]` |  |
+| `NotEnabledIfActorHasSkillWithTags` | `TagType[]` | `ACCESSORY`, `ACCURATE`, `AIRPOWER`, `ANTI_INFANTRY`, `ANTI_STRUCTURE`, `ANTI_VEHICLE`, `AREA_OF_EFFECT`, `ARMOR_DAMAGING`, `ARMOR_PIERCING`, `ASSAULT_RIFLE`, `BATTLE_RIFLE`, `CAMOUFLAGE`, `COMMODITY`, `CRAFTING_MATERIAL`, `DEMORALIZING`, `DEPLOY`, `DEPLOYABLE`, `DESTRUCTIBLE`, `DISABLING`, `DRUG`, `EMP`, `ENERGY`, `FLEXIBLE`, `GRENADE`, `HAZARDOUS`, `HEAVY_ARMOR`, `HIGH_RATE_OF_FIRE`, `HORDE`, `HOVERING`, `IGNORES_COVER`, `INACCURATE`, `INCENDIARY`, `INDIRECT_FIRE`, `INFANTRY`, `JAM`, `JETPACK`, `LARGE`, `LIGHT_ARMOR`, `LIMITED_AMMO`, `LONG_RANGE`, `LOW_PENETRATION`, `LOW_QUALITY`, `Last`, `MACHINE`, `MANY_ACCESSORIES`, `MASSIVE_EXPLOSION`, `MEDIUM_ARMOR`, `MINE`, `MINIMUM_RANGE`, `MINI_BOSS`, `MOBILE`, `MOTORIZED_INFANTRY`, `ORBITAL`, `PROJECTILE`, `ROCKET`, `SCANNER`, `SCATTER`, `SHORT_RANGE`, `SHOTGUN`, `SMG`, `SMOKE`, `SNIPER`, `SPECIAL_WEAPON`, `SQUAD_WEAPON`, `STANCE`, `STEALTH`, `STRUCTURE`, `SUPPRESSIVE`, `TANK`, `UNIQUE`, `UNUSED_MUST_DEPLOY`, `UTILITY`, `VEHICLE`, `VEHICLE_WEAPON`, `VIP`, `WALKER`, `WEAPON`, `WEAPONS_TEAM`, `XENO` |
 
 ### FilterByStance
 
@@ -799,7 +799,7 @@ No settable fields. It carries behaviour only.
 | --- | --- | --- |
 | `Effect` | `SkillTemplate` |  |
 | `RemoveOnUse` | `bool` |  |
-| `SkillFilter` | `ISkillFilter` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `SkillFilter` | `ISkillFilter` | Polymorphic: pick a subtype from [Skill filters](#skill-filters) with `set "SkillFilter" type="<Subtype>" { ... }`. |
 
 ### GrantBonusTurn
 
@@ -825,7 +825,7 @@ No settable fields. It carries behaviour only.
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `Condition` | `ITacticalCondition` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `Condition` | `ITacticalCondition` | Polymorphic: pick a subtype from [Conditions](#conditions) with `set "Condition" type="<Subtype>" { ... }`. |
 
 ### Hitchance
 
@@ -842,7 +842,7 @@ No settable fields. It carries behaviour only.
 | --- | --- | --- |
 | `AbsorbDamagePct` | `int` |  |
 | `ChanceToApply` | `int` |  |
-| `RequiredTags` | `TagType[]` |  |
+| `RequiredTags` | `TagType[]` | `ACCESSORY`, `ACCURATE`, `AIRPOWER`, `ANTI_INFANTRY`, `ANTI_STRUCTURE`, `ANTI_VEHICLE`, `AREA_OF_EFFECT`, `ARMOR_DAMAGING`, `ARMOR_PIERCING`, `ASSAULT_RIFLE`, `BATTLE_RIFLE`, `CAMOUFLAGE`, `COMMODITY`, `CRAFTING_MATERIAL`, `DEMORALIZING`, `DEPLOY`, `DEPLOYABLE`, `DESTRUCTIBLE`, `DISABLING`, `DRUG`, `EMP`, `ENERGY`, `FLEXIBLE`, `GRENADE`, `HAZARDOUS`, `HEAVY_ARMOR`, `HIGH_RATE_OF_FIRE`, `HORDE`, `HOVERING`, `IGNORES_COVER`, `INACCURATE`, `INCENDIARY`, `INDIRECT_FIRE`, `INFANTRY`, `JAM`, `JETPACK`, `LARGE`, `LIGHT_ARMOR`, `LIMITED_AMMO`, `LONG_RANGE`, `LOW_PENETRATION`, `LOW_QUALITY`, `Last`, `MACHINE`, `MANY_ACCESSORIES`, `MASSIVE_EXPLOSION`, `MEDIUM_ARMOR`, `MINE`, `MINIMUM_RANGE`, `MINI_BOSS`, `MOBILE`, `MOTORIZED_INFANTRY`, `ORBITAL`, `PROJECTILE`, `ROCKET`, `SCANNER`, `SCATTER`, `SHORT_RANGE`, `SHOTGUN`, `SMG`, `SMOKE`, `SNIPER`, `SPECIAL_WEAPON`, `SQUAD_WEAPON`, `STANCE`, `STEALTH`, `STRUCTURE`, `SUPPRESSIVE`, `TANK`, `UNIQUE`, `UNUSED_MUST_DEPLOY`, `UTILITY`, `VEHICLE`, `VEHICLE_WEAPON`, `VIP`, `WALKER`, `WEAPON`, `WEAPONS_TEAM`, `XENO` |
 
 ### InterceptAPChange
 
@@ -1028,7 +1028,7 @@ No settable fields. It carries behaviour only.
 | --- | --- | --- |
 | `RestoreMinimum` | `int` |  |
 | `RestorePct` | `float` |  |
-| `SkillFilter` | `ISkillFilter` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `SkillFilter` | `ISkillFilter` | Polymorphic: pick a subtype from [Skill filters](#skill-filters) with `set "SkillFilter" type="<Subtype>" { ... }`. |
 
 ### RefillSquaddies
 
@@ -1063,7 +1063,7 @@ No settable fields. It carries behaviour only.
 | Field | Type | Values / notes |
 | --- | --- | --- |
 | `MaxTargets` | `int` |  |
-| `TargetCondition` | `ITacticalCondition` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `TargetCondition` | `ITacticalCondition` | Polymorphic: pick a subtype from [Conditions](#conditions) with `set "TargetCondition" type="<Subtype>" { ... }`. |
 
 ### ReportAmmoToAnimator
 
@@ -1140,7 +1140,7 @@ No settable fields. It carries behaviour only.
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `Conditions` | `ITacticalCondition[]` |  |
+| `Conditions` | `ITacticalCondition[]` | Polymorphic list: add subtypes from [Conditions](#conditions) with `append "Conditions" type="<Subtype>" { ... }`. |
 | `Icon` | `Sprite` |  |
 | `Target` | `TargetUnit` | `AllEnemies`, `Self` |
 
@@ -1299,68 +1299,426 @@ No settable fields. It carries behaviour only.
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `Condition` | `ITacticalCondition` | **C# only** (Odin-routed): set in your handler in C#, see [Conditions](#conditions). |
+| `Condition` | `ITacticalCondition` | Polymorphic: pick a subtype from [Conditions](#conditions) with `set "Condition" type="<Subtype>" { ... }`. |
 
 ## Conditions
 
-The game models these reusable conditions (`TacticalCondition` subtypes). They live in handler fields typed `ITacticalCondition`, which are Odin-routed, so **KDL cannot set a condition** (those fields are marked **C# only** above). To gate a handler on a condition, write the handler in C# and put the check in the override body. The conditions the game already models:
+A condition gates a handler: the handler only acts when the condition holds. A handler field typed `ITacticalCondition` takes one of these subtypes, and a field typed `ITacticalCondition[]` takes a list of them. Name the subtype with `type="<Name>"` and set its fields, the same way as a handler:
 
-- `ActorTypeCondition`
-- `CoverCondition`
-- `DisabledOrStunnedCondition`
-- `DistanceCondition`
-- `ElementCountCondition`
-- `ElementsHitCondition`
-- `EntityTypeCondition`
-- `EntityWithOneOfTheTagsCondition`
-- `EntityWithTagsCondition`
-- `FactionCondition`
-- `HasAnySkillCondition`
-- `HasBeenAttackedThisRoundCondition`
-- `HasDefectCondition`
-- `HasFlagCondition`
-- `HasItemInSlotCondition`
-- `HasItemWithSlotCondition`
-- `HasItemWithTagsCondition`
-- `HasSpecificVehicleCondition`
-- `HitpointsPercentageCondition`
-- `ImmuneToMoraleCondition`
-- `IsContainingEntityCondition`
-- `IsDeployedCondition`
-- `IsHiddenCondition`
-- `IsObjectiveTargetCondition`
-- `IsUsingSkillInSlotCondition`
-- `IsVehicleCondition`
-- `IsolatedCondition`
-- `LastAttackedByCondition`
-- `LightCondition`
-- `MoralePercentCondition`
-- `MoraleStateCondition`
-- `SkillWithOneOfTheTagsCondition`
-- `SkillWithTagsCondition`
-- `SpecificSkillCondition`
-- `StationaryCondition`
-- `StructureTypeCondition`
-- `SuppressionCondition`
+```kdl
+set "EventHandlers" index=0 {
+    set "Condition" type="EntityWithTagsCondition" {
+        set "CheckEntity" "Target"
+        append "RequiredTags" "LARGE"
+    }
+}
+```
+
+Every subtype below except `AndCondition`, `IsAlliedCondition`, `OrCondition` and `PincerCondition` also takes these fields:
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `CheckEntity` | `CheckTarget` | `Target`, `User` |
+| `Negated` | `bool` |  |
+
+### ActorTypeCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `RequiredType` | `ActorType` | `Infantry`, `Turret`, `Vehicle` |
+
+### AndCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `Conditions` | `ITacticalCondition[]` | Polymorphic list: add subtypes from [Conditions](#conditions) with `append "Conditions" type="<Subtype>" { ... }`. |
+
+### CoverCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `MinCover` | `CoverType` | `Heavy`, `Light`, `Medium`, `None` |
+
+### DisabledOrStunnedCondition
+
+No fields of its own. It takes only the shared fields above.
+
+### DistanceCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `MaxDistance` | `int` |  |
+
+### ElementCountCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `TargetCount` | `int` |  |
+
+### ElementsHitCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `MinElementsHit` | `int` |  |
+
+### EntityTypeCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `RequiredType` | `EntityType` | `Actor`, `None`, `Structure` |
+
+### EntityWithOneOfTheTagsCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `RequiredTags` | `TagType[]` | `ACCESSORY`, `ACCURATE`, `AIRPOWER`, `ANTI_INFANTRY`, `ANTI_STRUCTURE`, `ANTI_VEHICLE`, `AREA_OF_EFFECT`, `ARMOR_DAMAGING`, `ARMOR_PIERCING`, `ASSAULT_RIFLE`, `BATTLE_RIFLE`, `CAMOUFLAGE`, `COMMODITY`, `CRAFTING_MATERIAL`, `DEMORALIZING`, `DEPLOY`, `DEPLOYABLE`, `DESTRUCTIBLE`, `DISABLING`, `DRUG`, `EMP`, `ENERGY`, `FLEXIBLE`, `GRENADE`, `HAZARDOUS`, `HEAVY_ARMOR`, `HIGH_RATE_OF_FIRE`, `HORDE`, `HOVERING`, `IGNORES_COVER`, `INACCURATE`, `INCENDIARY`, `INDIRECT_FIRE`, `INFANTRY`, `JAM`, `JETPACK`, `LARGE`, `LIGHT_ARMOR`, `LIMITED_AMMO`, `LONG_RANGE`, `LOW_PENETRATION`, `LOW_QUALITY`, `Last`, `MACHINE`, `MANY_ACCESSORIES`, `MASSIVE_EXPLOSION`, `MEDIUM_ARMOR`, `MINE`, `MINIMUM_RANGE`, `MINI_BOSS`, `MOBILE`, `MOTORIZED_INFANTRY`, `ORBITAL`, `PROJECTILE`, `ROCKET`, `SCANNER`, `SCATTER`, `SHORT_RANGE`, `SHOTGUN`, `SMG`, `SMOKE`, `SNIPER`, `SPECIAL_WEAPON`, `SQUAD_WEAPON`, `STANCE`, `STEALTH`, `STRUCTURE`, `SUPPRESSIVE`, `TANK`, `UNIQUE`, `UNUSED_MUST_DEPLOY`, `UTILITY`, `VEHICLE`, `VEHICLE_WEAPON`, `VIP`, `WALKER`, `WEAPON`, `WEAPONS_TEAM`, `XENO` |
+
+### EntityWithTagsCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `RequiredTags` | `TagType[]` | `ACCESSORY`, `ACCURATE`, `AIRPOWER`, `ANTI_INFANTRY`, `ANTI_STRUCTURE`, `ANTI_VEHICLE`, `AREA_OF_EFFECT`, `ARMOR_DAMAGING`, `ARMOR_PIERCING`, `ASSAULT_RIFLE`, `BATTLE_RIFLE`, `CAMOUFLAGE`, `COMMODITY`, `CRAFTING_MATERIAL`, `DEMORALIZING`, `DEPLOY`, `DEPLOYABLE`, `DESTRUCTIBLE`, `DISABLING`, `DRUG`, `EMP`, `ENERGY`, `FLEXIBLE`, `GRENADE`, `HAZARDOUS`, `HEAVY_ARMOR`, `HIGH_RATE_OF_FIRE`, `HORDE`, `HOVERING`, `IGNORES_COVER`, `INACCURATE`, `INCENDIARY`, `INDIRECT_FIRE`, `INFANTRY`, `JAM`, `JETPACK`, `LARGE`, `LIGHT_ARMOR`, `LIMITED_AMMO`, `LONG_RANGE`, `LOW_PENETRATION`, `LOW_QUALITY`, `Last`, `MACHINE`, `MANY_ACCESSORIES`, `MASSIVE_EXPLOSION`, `MEDIUM_ARMOR`, `MINE`, `MINIMUM_RANGE`, `MINI_BOSS`, `MOBILE`, `MOTORIZED_INFANTRY`, `ORBITAL`, `PROJECTILE`, `ROCKET`, `SCANNER`, `SCATTER`, `SHORT_RANGE`, `SHOTGUN`, `SMG`, `SMOKE`, `SNIPER`, `SPECIAL_WEAPON`, `SQUAD_WEAPON`, `STANCE`, `STEALTH`, `STRUCTURE`, `SUPPRESSIVE`, `TANK`, `UNIQUE`, `UNUSED_MUST_DEPLOY`, `UTILITY`, `VEHICLE`, `VEHICLE_WEAPON`, `VIP`, `WALKER`, `WEAPON`, `WEAPONS_TEAM`, `XENO` |
+
+### FactionCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `RequiredFaction` | `FactionType` | `AlliedLocalForces`, `Civilian`, `Constructs`, `EnemyLocalForces`, `Neutral`, `Pirates`, `Player`, `PlayerAI`, `RogueArmy`, `Wildlife` |
+
+### HasAnySkillCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `SkillsToCheck` | `SkillTemplate[]` |  |
+
+### HasBeenAttackedThisRoundCondition
+
+No fields of its own. It takes only the shared fields above.
+
+### HasDefectCondition
+
+No fields of its own. It takes only the shared fields above.
+
+### HasFlagCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `RequiredFlag` | `EntityFlags` | `CantEnterContainers`, `Confused`, `DesignatedTarget`, `HeavyWeaponsAllowed`, `IgnoreArmorMovementCosts`, `IgnoreDeploymentRequirements`, `IgnoreSuppressedAPLoss`, `ImmuneDesignatedTarget`, `ImmuneToDamage`, `ImmuneToIndirectSuppression`, `ImmuneToLightEffect`, `ImmuneToMorale`, `ImmuneToSuppression`, `ImmuneToSuppressionFromElementLost`, `IrrelevantToMorale`, `None`, `Rooted`, `RootedByStance`, `Stunned` |
+
+### HasItemInSlotCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `Slots` | `ItemSlot[]` | `All`, `COUNT`, `InfantryAccessory`, `InfantryArmor`, `InfantrySpecial`, `InfantryWeapon`, `ModularVehicleHeavy`, `ModularVehicleLight`, `ModularVehicleMedium`, `None`, `Vehicle`, `VehicleAccessory`, `VehicleHeavyTurret`, `VehicleLightTurret` |
+
+### HasItemWithSlotCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `Slots` | `ItemSlot[]` | `All`, `COUNT`, `InfantryAccessory`, `InfantryArmor`, `InfantrySpecial`, `InfantryWeapon`, `ModularVehicleHeavy`, `ModularVehicleLight`, `ModularVehicleMedium`, `None`, `Vehicle`, `VehicleAccessory`, `VehicleHeavyTurret`, `VehicleLightTurret` |
+
+### HasItemWithTagsCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `RequiredTags` | `TagTemplate[]` |  |
+
+### HasSpecificVehicleCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `AllowedVehicles` | `VehicleItemTemplate[]` |  |
+
+### HitpointsPercentageCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `CheckOperation` | `CheckCondition` | `GreaterOrEqual`, `LowerOrEqual` |
+| `Percentage` | `int` |  |
+
+### ImmuneToMoraleCondition
+
+No fields of its own. It takes only the shared fields above.
+
+### IsAlliedCondition
+
+No settable fields. It carries behaviour only.
+
+### IsContainingEntityCondition
+
+No fields of its own. It takes only the shared fields above.
+
+### IsDeployedCondition
+
+No fields of its own. It takes only the shared fields above.
+
+### IsHiddenCondition
+
+No fields of its own. It takes only the shared fields above.
+
+### IsObjectiveTargetCondition
+
+No fields of its own. It takes only the shared fields above.
+
+### IsUsingSkillInSlotCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `Slots` | `ItemSlot[]` | `All`, `COUNT`, `InfantryAccessory`, `InfantryArmor`, `InfantrySpecial`, `InfantryWeapon`, `ModularVehicleHeavy`, `ModularVehicleLight`, `ModularVehicleMedium`, `None`, `Vehicle`, `VehicleAccessory`, `VehicleHeavyTurret`, `VehicleLightTurret` |
+
+### IsVehicleCondition
+
+No fields of its own. It takes only the shared fields above.
+
+### IsolatedCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `Radius` | `int` |  |
+
+### LastAttackedByCondition
+
+No fields of its own. It takes only the shared fields above.
+
+### LightCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `RequiredLightCondition` | `LightConditionType` | `Dawn`, `Day`, `Dusk`, `Last`, `Night`, `Random` |
+
+### MoralePercentCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `CheckOperation` | `CheckCondition` | `HigherOrEqual`, `LowerOrEqual` |
+| `MoralePercent` | `int` |  |
+
+### MoraleStateCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `CheckOperation` | `CheckCondition` | `Equal`, `HigherOrEqual`, `LowerOrEqual` |
+| `MoraleState` | `MoraleState` | `Fleeing`, `Neutral`, `Wavering` |
+
+### OrCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `Conditions` | `ITacticalCondition[]` | Polymorphic list: add subtypes from [Conditions](#conditions) with `append "Conditions" type="<Subtype>" { ... }`. |
+
+### PincerCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `MaxDistance` | `int` |  |
+
+### SkillWithOneOfTheTagsCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `RequiredTags` | `TagType[]` | `ACCESSORY`, `ACCURATE`, `AIRPOWER`, `ANTI_INFANTRY`, `ANTI_STRUCTURE`, `ANTI_VEHICLE`, `AREA_OF_EFFECT`, `ARMOR_DAMAGING`, `ARMOR_PIERCING`, `ASSAULT_RIFLE`, `BATTLE_RIFLE`, `CAMOUFLAGE`, `COMMODITY`, `CRAFTING_MATERIAL`, `DEMORALIZING`, `DEPLOY`, `DEPLOYABLE`, `DESTRUCTIBLE`, `DISABLING`, `DRUG`, `EMP`, `ENERGY`, `FLEXIBLE`, `GRENADE`, `HAZARDOUS`, `HEAVY_ARMOR`, `HIGH_RATE_OF_FIRE`, `HORDE`, `HOVERING`, `IGNORES_COVER`, `INACCURATE`, `INCENDIARY`, `INDIRECT_FIRE`, `INFANTRY`, `JAM`, `JETPACK`, `LARGE`, `LIGHT_ARMOR`, `LIMITED_AMMO`, `LONG_RANGE`, `LOW_PENETRATION`, `LOW_QUALITY`, `Last`, `MACHINE`, `MANY_ACCESSORIES`, `MASSIVE_EXPLOSION`, `MEDIUM_ARMOR`, `MINE`, `MINIMUM_RANGE`, `MINI_BOSS`, `MOBILE`, `MOTORIZED_INFANTRY`, `ORBITAL`, `PROJECTILE`, `ROCKET`, `SCANNER`, `SCATTER`, `SHORT_RANGE`, `SHOTGUN`, `SMG`, `SMOKE`, `SNIPER`, `SPECIAL_WEAPON`, `SQUAD_WEAPON`, `STANCE`, `STEALTH`, `STRUCTURE`, `SUPPRESSIVE`, `TANK`, `UNIQUE`, `UNUSED_MUST_DEPLOY`, `UTILITY`, `VEHICLE`, `VEHICLE_WEAPON`, `VIP`, `WALKER`, `WEAPON`, `WEAPONS_TEAM`, `XENO` |
+
+### SkillWithTagsCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `RequiredTags` | `TagType[]` | `ACCESSORY`, `ACCURATE`, `AIRPOWER`, `ANTI_INFANTRY`, `ANTI_STRUCTURE`, `ANTI_VEHICLE`, `AREA_OF_EFFECT`, `ARMOR_DAMAGING`, `ARMOR_PIERCING`, `ASSAULT_RIFLE`, `BATTLE_RIFLE`, `CAMOUFLAGE`, `COMMODITY`, `CRAFTING_MATERIAL`, `DEMORALIZING`, `DEPLOY`, `DEPLOYABLE`, `DESTRUCTIBLE`, `DISABLING`, `DRUG`, `EMP`, `ENERGY`, `FLEXIBLE`, `GRENADE`, `HAZARDOUS`, `HEAVY_ARMOR`, `HIGH_RATE_OF_FIRE`, `HORDE`, `HOVERING`, `IGNORES_COVER`, `INACCURATE`, `INCENDIARY`, `INDIRECT_FIRE`, `INFANTRY`, `JAM`, `JETPACK`, `LARGE`, `LIGHT_ARMOR`, `LIMITED_AMMO`, `LONG_RANGE`, `LOW_PENETRATION`, `LOW_QUALITY`, `Last`, `MACHINE`, `MANY_ACCESSORIES`, `MASSIVE_EXPLOSION`, `MEDIUM_ARMOR`, `MINE`, `MINIMUM_RANGE`, `MINI_BOSS`, `MOBILE`, `MOTORIZED_INFANTRY`, `ORBITAL`, `PROJECTILE`, `ROCKET`, `SCANNER`, `SCATTER`, `SHORT_RANGE`, `SHOTGUN`, `SMG`, `SMOKE`, `SNIPER`, `SPECIAL_WEAPON`, `SQUAD_WEAPON`, `STANCE`, `STEALTH`, `STRUCTURE`, `SUPPRESSIVE`, `TANK`, `UNIQUE`, `UNUSED_MUST_DEPLOY`, `UTILITY`, `VEHICLE`, `VEHICLE_WEAPON`, `VIP`, `WALKER`, `WEAPON`, `WEAPONS_TEAM`, `XENO` |
+
+### SpecificSkillCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `RequiredSkill` | `SkillTemplate` |  |
+
+### StationaryCondition
+
+No fields of its own. It takes only the shared fields above.
+
+### StructureTypeCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `RequiredType` | `StructureType` | `Building`, `Vegetation` |
+
+### SuppressionCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `SuppressionState` | `SuppressionState` | `None`, `PinnedDown`, `Suppressed` |
 
 ## Value providers
 
-A value provider computes a number for a handler field typed `IValueProvider` (for example `ChangeProperty.ValueProvider`). These are Odin-routed too, so they are **C# only**. The providers the game ships:
+A value provider computes a number for a handler field typed `IValueProvider` (for example `ChangeProperty.ValueProvider`). Name the subtype with `type="<Name>"` and set its fields:
 
-- `AdjacentEnemiesKilledByPlayerProvider`
-- `AdjacentInfantryProvider`
-- `AttackedThisRoundValueProvider`
-- `CoverValueProvider`
-- `DistanceValueProvider`
-- `EnemiesKilledProvider`
-- `EnemyVehiclesDestroyedByPlayerProvider`
-- `EntityPropertyProvider`
-- `MissingHealthProvider`
-- `ProximityValueProvider`
-- `RoundValueProvider`
-- `SquadSizeProvider`
-- `SquaddiesLostProvider`
-- `SumProvider`
-- `SuppressedCountProvider`
-- `TilesMovedProvider`
-- `WrecksDestroyedProvider`
+```kdl
+set "EventHandlers" index=0 {
+    set "ValueProvider" type="CoverValueProvider" {
+        set "HeavyCoverValue" 3
+    }
+}
+```
+
+### AdjacentEnemiesKilledByPlayerProvider
+
+No settable fields. It carries behaviour only.
+
+### AdjacentInfantryProvider
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `MaxAmount` | `int` |  |
+
+### AttackedThisRoundValueProvider
+
+No settable fields. It carries behaviour only.
+
+### CoverValueProvider
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `HeavyCoverValue` | `int` |  |
+| `LightCoverValue` | `int` |  |
+| `MediumCoverValue` | `int` |  |
+
+### DistanceValueProvider
+
+No settable fields. It carries behaviour only.
+
+### EnemiesKilledProvider
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `Maximum` | `int` |  |
+| `Minimum` | `int` |  |
+
+### EnemyVehiclesDestroyedByPlayerProvider
+
+No settable fields. It carries behaviour only.
+
+### EntityPropertyProvider
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `MaxValue` | `int` |  |
+| `MinValue` | `int` |  |
+| `PropertyType` | `EntityPropertyType` | `AIPriorityMult`, `APEnterCost`, `APLeaveCost`, `Accuracy`, `AccuracyDropoff`, `AccuracyDropoffMult`, `AccuracyMult`, `ActionPoints`, `ActionPointsMult`, `AdditionalMovementCost`, `AdditionalTurningCost`, `Armor`, `ArmorDurabilityPerElement`, `ArmorMult`, `ArmorPenetration`, `ArmorPenetrationDropoff`, `ArmorPenetrationDropoffMult`, `ArmorPenetrationMult`, `BackwardsMovementMult`, `Concealment`, `ConcealmentMult`, `CoverEffectivenessMult`, `CoverGainedByVehicleOffset`, `CoverTypeOffset`, `CriticalChance`, `CriticalDamageMult`, `Damage`, `DamageDropoff`, `DamageDropoffMult`, `DamageMult`, `DamageSustainedMult`, `DamageSustainedSquadLeaderMult`, `DamageToArmorDurability`, `DamageToArmorDurabilityDropoff`, `DamageToArmorDurabilityDropoffMult`, `DamageToArmorDurabilityMult`, `DamageToMoraleMult`, `DefectThresholdOffset`, `DefenseMult`, `DeployCostMult`, `DeploymentZoneMinExtend`, `DeploymentZoneMult`, `Detection`, `DetectionMult`, `Discipline`, `DisciplineMult`, `DismemberChance`, `ElementsHit`, `ElementsHitPct`, `GetDismemberedChanceBonus`, `GetDismemberedChanceMult`, `GetDismemberedMaxParts`, `GetDismemberedMinParts`, `HitchanceMin`, `HitpointsPerElement`, `HitpointsPerElementMult`, `IgnoreCoverMult`, `MaxElements`, `MoraleBonus`, `MoraleImpactMult`, `MoraleMult`, `MoraleRecoveryMult`, `MoraleStateOffset`, `PromotionCostMult`, `ProvidedCoverBonus`, `ReduceElementsHit`, `SuppressionDealt`, `SuppressionDealtMult`, `SuppressionImpactMult`, `TotalDamageMult`, `Vision`, `VisionMult` |
+
+### MissingHealthProvider
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `CheckEntity` | `CheckTarget` | `Target`, `User` |
+| `StacksAt0HP` | `int` |  |
+
+### ProximityValueProvider
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `MaximumDistance` | `int` |  |
+
+### RoundValueProvider
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `MaxValue` | `int` |  |
+| `Offset` | `int` |  |
+
+### SquadSizeProvider
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `NeutralSize` | `int` |  |
+
+### SquaddiesLostProvider
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `Multiplier` | `int` |  |
+
+### SumProvider
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `MaxValue` | `int` |  |
+| `MinValue` | `int` |  |
+| `Providers` | `IValueProvider[]` | Polymorphic list: add subtypes from [Value providers](#value-providers) with `append "Providers" type="<Subtype>" { ... }`. |
+
+### SuppressedCountProvider
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `MaxStacks` | `int` |  |
+
+### TilesMovedProvider
+
+No settable fields. It carries behaviour only.
+
+### WrecksDestroyedProvider
+
+No settable fields. It carries behaviour only.
+
+## Skill filters
+
+A skill filter narrows which skills a handler applies to. A handler field typed `ISkillFilter` takes one of these subtypes. Name it with `type="<Name>"` and set its fields.
+
+### AllSkillsExcept
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `ExcludedSkills` | `SkillTemplate[]` |  |
+
+### AndSkillFilter
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `Filters` | `ISkillFilter[]` | Polymorphic list: add subtypes from [Skill filters](#skill-filters) with `append "Filters" type="<Subtype>" { ... }`. |
+
+### IsAttackFilter
+
+No settable fields. It carries behaviour only.
+
+### IsItemSkillFilter
+
+No settable fields. It carries behaviour only.
+
+### IsObjectiveSkillFilter
+
+No settable fields. It carries behaviour only.
+
+### IsStanceChange
+
+No settable fields. It carries behaviour only.
+
+### IsTargetedFilter
+
+No settable fields. It carries behaviour only.
+
+### ItemSlotFilter (skill filters)
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `ItemSlots` | `ItemSlot[]` | `All`, `COUNT`, `InfantryAccessory`, `InfantryArmor`, `InfantrySpecial`, `InfantryWeapon`, `ModularVehicleHeavy`, `ModularVehicleLight`, `ModularVehicleMedium`, `None`, `Vehicle`, `VehicleAccessory`, `VehicleHeavyTurret`, `VehicleLightTurret` |
+
+### SpecificSkillsFilter
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `TargetSkills` | `SkillTemplate[]` |  |
+
+### TagFilter
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `ForbiddenTags` | `TagType[]` | `ACCESSORY`, `ACCURATE`, `AIRPOWER`, `ANTI_INFANTRY`, `ANTI_STRUCTURE`, `ANTI_VEHICLE`, `AREA_OF_EFFECT`, `ARMOR_DAMAGING`, `ARMOR_PIERCING`, `ASSAULT_RIFLE`, `BATTLE_RIFLE`, `CAMOUFLAGE`, `COMMODITY`, `CRAFTING_MATERIAL`, `DEMORALIZING`, `DEPLOY`, `DEPLOYABLE`, `DESTRUCTIBLE`, `DISABLING`, `DRUG`, `EMP`, `ENERGY`, `FLEXIBLE`, `GRENADE`, `HAZARDOUS`, `HEAVY_ARMOR`, `HIGH_RATE_OF_FIRE`, `HORDE`, `HOVERING`, `IGNORES_COVER`, `INACCURATE`, `INCENDIARY`, `INDIRECT_FIRE`, `INFANTRY`, `JAM`, `JETPACK`, `LARGE`, `LIGHT_ARMOR`, `LIMITED_AMMO`, `LONG_RANGE`, `LOW_PENETRATION`, `LOW_QUALITY`, `Last`, `MACHINE`, `MANY_ACCESSORIES`, `MASSIVE_EXPLOSION`, `MEDIUM_ARMOR`, `MINE`, `MINIMUM_RANGE`, `MINI_BOSS`, `MOBILE`, `MOTORIZED_INFANTRY`, `ORBITAL`, `PROJECTILE`, `ROCKET`, `SCANNER`, `SCATTER`, `SHORT_RANGE`, `SHOTGUN`, `SMG`, `SMOKE`, `SNIPER`, `SPECIAL_WEAPON`, `SQUAD_WEAPON`, `STANCE`, `STEALTH`, `STRUCTURE`, `SUPPRESSIVE`, `TANK`, `UNIQUE`, `UNUSED_MUST_DEPLOY`, `UTILITY`, `VEHICLE`, `VEHICLE_WEAPON`, `VIP`, `WALKER`, `WEAPON`, `WEAPONS_TEAM`, `XENO` |
+| `Mode` | `TagFilterMode` | `AllTags`, `OneOfTheTags` |
+| `RequiredTags` | `TagType[]` | `ACCESSORY`, `ACCURATE`, `AIRPOWER`, `ANTI_INFANTRY`, `ANTI_STRUCTURE`, `ANTI_VEHICLE`, `AREA_OF_EFFECT`, `ARMOR_DAMAGING`, `ARMOR_PIERCING`, `ASSAULT_RIFLE`, `BATTLE_RIFLE`, `CAMOUFLAGE`, `COMMODITY`, `CRAFTING_MATERIAL`, `DEMORALIZING`, `DEPLOY`, `DEPLOYABLE`, `DESTRUCTIBLE`, `DISABLING`, `DRUG`, `EMP`, `ENERGY`, `FLEXIBLE`, `GRENADE`, `HAZARDOUS`, `HEAVY_ARMOR`, `HIGH_RATE_OF_FIRE`, `HORDE`, `HOVERING`, `IGNORES_COVER`, `INACCURATE`, `INCENDIARY`, `INDIRECT_FIRE`, `INFANTRY`, `JAM`, `JETPACK`, `LARGE`, `LIGHT_ARMOR`, `LIMITED_AMMO`, `LONG_RANGE`, `LOW_PENETRATION`, `LOW_QUALITY`, `Last`, `MACHINE`, `MANY_ACCESSORIES`, `MASSIVE_EXPLOSION`, `MEDIUM_ARMOR`, `MINE`, `MINIMUM_RANGE`, `MINI_BOSS`, `MOBILE`, `MOTORIZED_INFANTRY`, `ORBITAL`, `PROJECTILE`, `ROCKET`, `SCANNER`, `SCATTER`, `SHORT_RANGE`, `SHOTGUN`, `SMG`, `SMOKE`, `SNIPER`, `SPECIAL_WEAPON`, `SQUAD_WEAPON`, `STANCE`, `STEALTH`, `STRUCTURE`, `SUPPRESSIVE`, `TANK`, `UNIQUE`, `UNUSED_MUST_DEPLOY`, `UTILITY`, `VEHICLE`, `VEHICLE_WEAPON`, `VIP`, `WALKER`, `WEAPON`, `WEAPONS_TEAM`, `XENO` |
+
+## Item filters
+
+An item filter narrows which items a handler applies to. A handler field typed `IItemFilter` takes one of these subtypes. Name it with `type="<Name>"` and set its fields.
+
+### ItemSlotFilter (item filters)
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `ValidSlots` | `ItemSlot[]` | `All`, `COUNT`, `InfantryAccessory`, `InfantryArmor`, `InfantrySpecial`, `InfantryWeapon`, `ModularVehicleHeavy`, `ModularVehicleLight`, `ModularVehicleMedium`, `None`, `Vehicle`, `VehicleAccessory`, `VehicleHeavyTurret`, `VehicleLightTurret` |

@@ -1264,7 +1264,14 @@ public sealed class TemplateTypeCatalog : IDisposable
         return false;
     }
 
-    private static bool LooksLikeUnfillableShell(Type type)
+    /// <summary>
+    /// True for a type shaped like an interface or abstract shell on the CIL
+    /// side: not a scalar, not a Unity object, not a collection, and with no
+    /// writable members of its own. Il2CppInterop proxies do not carry
+    /// <see cref="Type.IsInterface"/>, so this shape test is how a
+    /// polymorphic slot type is recognised.
+    /// </summary>
+    public static bool LooksLikeUnfillableShell(Type type)
     {
         if (IsScalar(type)) return false;
         if (DescendsFromUnityObject(type)) return false;

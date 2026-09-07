@@ -240,7 +240,7 @@ The structural baseline is one of several surfaces a game update can move. The f
 
 5. Build the solution against the regenerated proxy assemblies. Compile errors in `Jiangyu.Sdk.Menace` and `Jiangyu.Loader` are the contract check for bespoke game calls. Optional parameters typed `Il2CppSystem.Nullable<T>` need a boxed empty nullable, never a bare `null` (it throws in marshalling at runtime and the compiler cannot catch it).
 
-6. Run the codegen generators. Each fails when a bound target no longer resolves and prints the surface drift report. Add `--update-surface` to rewrite the committed baselines once the drift is understood:
+6. Run the codegen generators. Each fails when a bound target no longer resolves and prints the surface drift report. Add `--update-surface` to rewrite the committed baselines once the drift is understood. The handler generator reads the IL2CPP metadata supplement from the cache and refuses a stale one, so rebuild the template index (step 1) before it:
 
    ```bash
    dotnet run --project src/Jiangyu.Codegen.Verbs -c Release -- src/Jiangyu.Codegen.Verbs/manifests src/Jiangyu.Sdk.Menace/Generated --update-surface

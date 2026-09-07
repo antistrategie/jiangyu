@@ -44,6 +44,8 @@ public static partial class RpcHandlers
             InstanceCount = manifest?.InstanceCount,
             TypeCount = manifest?.TemplateTypeCount,
             IndexedAt = manifest?.IndexedAt,
+            SkippedValueCount = manifest?.SkippedValueCount,
+            SkippedValues = manifest?.SkippedValues,
         });
     }
 
@@ -68,6 +70,8 @@ public static partial class RpcHandlers
             InstanceCount = manifest?.InstanceCount,
             TypeCount = manifest?.TemplateTypeCount,
             IndexedAt = manifest?.IndexedAt,
+            SkippedValueCount = manifest?.SkippedValueCount,
+            SkippedValues = manifest?.SkippedValues,
         });
     }
     private static void ClearIndexCaches()

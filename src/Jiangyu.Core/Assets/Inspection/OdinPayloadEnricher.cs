@@ -1,3 +1,7 @@
+using AsmResolver.DotNet;
+using AssetRipper.Import.Structure.Assembly;
+using AssetRipper.Import.Structure.Assembly.Managers;
+using AssetRipper.SourceGenerated.Classes.ClassID_114;
 using Jiangyu.Core.Models;
 using Jiangyu.Core.Templates.Odin;
 
@@ -34,7 +38,35 @@ internal static class OdinPayloadEnricher
     /// </summary>
     public const string DecodedFieldName = "_decoded";
 
-    public static void Enrich(List<InspectedFieldNode> fields)
+    /// <summary>
+    /// Decodes and names the enum values inside each payload against the
+    /// game assembly (see <see cref="OdinEnumPromoter"/>). The script class
+    /// of <paramref name="monoBehaviour"/> owns the top-level decoded fields.
+    /// </summary>
+    public static void Enrich(
+        List<InspectedFieldNode> fields,
+        IMonoBehaviour monoBehaviour,
+        IAssemblyManager assemblyManager)
+    {
+        ArgumentNullException.ThrowIfNull(monoBehaviour);
+        ArgumentNullException.ThrowIfNull(assemblyManager);
+        // GetFullName spells the script class as TypeDefinition.FullName does
+        // (namespace and class joined with a dot, or the bare class name in
+        // the global namespace), which is the key the resolver indexes on. It
+        // is also what the managed enricher stamps on m_Structure, so the
+        // nested and top-level owner paths agree by construction.
+        Enrich(fields, AssemblyTypeResolver.For(assemblyManager), monoBehaviour.ScriptP?.GetFullName());
+    }
+
+    /// <summary>
+    /// Decodes each payload and, when <paramref name="typeResolver"/> is
+    /// given, names its enum values. Without a resolver the decoded tree
+    /// keeps Odin's integer form for enums.
+    /// </summary>
+    internal static void Enrich(
+        List<InspectedFieldNode> fields,
+        Func<string, TypeDefinition?>? typeResolver,
+        string? ownerTypeName)
     {
         ArgumentNullException.ThrowIfNull(fields);
         // Top-level fields hoist into themselves: a serializationData
@@ -43,12 +75,14 @@ internal static class OdinPayloadEnricher
         // lives one level deeper (under m_Structure), and the recursive
         // descent below threads each object's own fields list through as the
         // hoist target for that level.
-        VisitFields(fields, hoistTarget: fields);
+        VisitFields(fields, hoistTarget: fields, typeResolver, ownerTypeName);
     }
 
     private static void VisitFields(
         List<InspectedFieldNode> fields,
-        List<InspectedFieldNode> hoistTarget)
+        List<InspectedFieldNode> hoistTarget,
+        Func<string, TypeDefinition?>? typeResolver,
+        string? ownerTypeName)
     {
         // Snapshot before iterating: TryDecodeSerializationData mutates
         // hoistTarget by appending hoisted siblings, and hoistTarget may be
@@ -57,7 +91,7 @@ internal static class OdinPayloadEnricher
         var snapshot = fields.ToArray();
         foreach (var field in snapshot)
         {
-            if (TryDecodeSerializationData(field, hoistTarget))
+            if (TryDecodeSerializationData(field, hoistTarget, typeResolver, ownerTypeName))
             {
                 // The decoded subtree we just synthesised is our own output;
                 // re-walking it would only do extra work and risk
@@ -70,7 +104,7 @@ internal static class OdinPayloadEnricher
             // any serializationData inside this object surfaces as a sibling
             // at this object's level.
             if (field.Fields is { Count: > 0 } children)
-                VisitFields(children, children);
+                VisitFields(children, children, typeResolver, OwnerTypeNameFor(field, ownerTypeName));
 
             // Array elements get walked for nested serializationData but
             // each element's hoistTarget is its own fields list, not the
@@ -81,17 +115,38 @@ internal static class OdinPayloadEnricher
                 foreach (var element in elements)
                 {
                     if (element.Fields is { Count: > 0 } elemChildren)
-                        VisitFields(elemChildren, elemChildren);
+                        VisitFields(elemChildren, elemChildren, typeResolver, QualifiedTypeName(element.FieldTypeName));
                 }
             }
         }
     }
 
+    /// <summary>
+    /// The class whose fields a nested object's serializationData describes.
+    /// A node carries its class name once the managed enricher has run;
+    /// <c>m_Structure</c> without one is still the script class's own
+    /// payload, so the owner passed in applies to it.
+    /// </summary>
+    private static string? OwnerTypeNameFor(InspectedFieldNode field, string? ownerTypeName)
+        => QualifiedTypeName(field.FieldTypeName)
+            ?? (string.Equals(field.Name, "m_Structure", StringComparison.Ordinal) ? ownerTypeName : null);
+
+    /// <summary>
+    /// Unity-tree nodes name inline objects by simple class name (<c>Role</c>,
+    /// <c>Perk</c>). The resolver keys on full names, and a simple name could
+    /// match an unrelated global-namespace class, so only a namespace-qualified
+    /// name is trusted as an owner.
+    /// </summary>
+    private static string? QualifiedTypeName(string? typeName)
+        => typeName is not null && (typeName.Contains('.') || typeName.Contains('+')) ? typeName : null;
+
     /// <returns><c>true</c> if the field was a serializationData node we
     /// decoded.</returns>
     private static bool TryDecodeSerializationData(
         InspectedFieldNode field,
-        List<InspectedFieldNode> hoistTarget)
+        List<InspectedFieldNode> hoistTarget,
+        Func<string, TypeDefinition?>? typeResolver,
+        string? ownerTypeName)
     {
         if (!IsSerializationDataNode(field))
             return false;
@@ -118,6 +173,9 @@ internal static class OdinPayloadEnricher
         var decoded = OdinPayloadDecoder.DecodeBinary(bytes, externalRefs);
         if (decoded is null || decoded.Count == 0)
             return false;
+
+        if (typeResolver is not null)
+            OdinEnumPromoter.Promote(decoded, ownerTypeName, typeResolver);
 
         field.Fields.Add(new InspectedFieldNode
         {

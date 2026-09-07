@@ -213,13 +213,23 @@ contract), the clear-smoke clone had 0.
   (`set "Sub" index=0 type="Y" { ... }`) are not supported inside
   construction. To populate a constructed handler's list-typed field, use
   a follow-up patch with descent on the now-existing element.
-- **Odin-routed fields stay out of scope.** Six of fifteen validated
+- **Odin-routed fields are polymorphic slots.** Six of fifteen validated
   handler types carry an interface-typed field (`ITacticalCondition`,
-  `IValueProvider`) whose data lives in the Odin `serializationData` blob.
-  Patching those requires Odin payload write support that Jiangyu does not
-  implement. The compile-time validator marks these fields as Odin-only
-  and rejects writes; modders who need to touch them use the SDK code
-  path.
+  `IValueProvider`) whose data lives in the Odin `serializationData`
+  blob. `set "<Field>" type="<Subtype>" { ... }` fills such a slot: the
+  validator resolves the subtype against the interface's concrete
+  implementations and checks the inner fields (fixture-tested in
+  `TemplateCatalogValidatorTests`), and `TryConstructPolymorphic`
+  allocates the interop object at apply time and writes its fields
+  through the same conversion path as any other composite. Verified
+  in-game on 2026-09-07 on a clone of `effect.drive_by`: with the mod's
+  C# filter swap removed from the build, `set "EventHandlers" index=1 {
+  set "SkillFilter" type="IsAttackFilter" { } }` (and the same on index
+  2) applied with no conversion failures, and an infantry leader's blade
+  attack took the 10 AP discount after moving, which the vanilla
+  vehicle-slot `ItemSlotFilter` rejects. The constructed object is what
+  the game reads: Odin deserialises the slot once at load, before the
+  applier runs, and never revisits it.
 - **Brand-new handler subclass types are SDK-only.** Concrete handler
   types are compiled IL2CPP classes; new types cannot be synthesised from
   data. The SDK roadmap covers `ClassInjector.RegisterTypeInIl2Cpp<T>` for

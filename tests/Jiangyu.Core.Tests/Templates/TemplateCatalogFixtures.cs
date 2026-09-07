@@ -111,7 +111,18 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
         public string? DisplayName { get; set; }
         public bool IsCritical { get; set; }
         public FixtureDamageType DamageType { get; set; }
+        public FixtureFlags Flags { get; set; }
         public int ReadOnlyField { get; } = 0;
+    }
+
+    [Flags]
+    public enum FixtureFlags
+    {
+        None = 0,
+        Stealthy = 1,
+        Armoured = 2,
+        Flying = 4,
+        Last = 4,
     }
 
     public class FixtureSkillTemplate : Menace.Tools.DataTemplate

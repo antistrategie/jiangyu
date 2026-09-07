@@ -161,6 +161,22 @@ public sealed class TemplateIndexManifest
 
     [JsonPropertyName("valueCount")]
     public int ValueCount { get; init; }
+
+    /// <summary>
+    /// Instances whose values could not be extracted and were left out of
+    /// the values cache. Their fields show nothing in Studio until the cause
+    /// is fixed and the index rebuilt.
+    /// </summary>
+    [JsonPropertyName("skippedValueCount")]
+    public int SkippedValueCount { get; init; }
+
+    /// <summary>
+    /// Up to twenty of the skipped instances with the reason each failed, as
+    /// "collection:pathId: ExceptionType: message", for surfaces without a
+    /// log to read.
+    /// </summary>
+    [JsonPropertyName("skippedValues")]
+    public List<string> SkippedValues { get; init; } = [];
 }
 
 public enum TemplateResolutionStatus

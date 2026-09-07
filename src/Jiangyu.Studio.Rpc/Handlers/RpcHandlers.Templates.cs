@@ -290,24 +290,9 @@ public static partial class RpcHandlers
     }
 
     private static void BuildSupplementIfStale(EnvironmentContext ctx)
-    {
-        var gameRoot = Path.GetDirectoryName(ctx.GameDataPath);
-        if (gameRoot is null) return;
-
-        var gameAssemblyPath = Path.Combine(gameRoot, "GameAssembly.so");
-        if (!File.Exists(gameAssemblyPath))
-            gameAssemblyPath = Path.Combine(gameRoot, "GameAssembly.dll");
-        if (!File.Exists(gameAssemblyPath)) return;
-
-        var metadataPath = Path.Combine(ctx.GameDataPath, "il2cpp_data", "Metadata", "global-metadata.dat");
-        if (!File.Exists(metadataPath)) return;
-
-        if (Il2CppMetadataCache.LoadIfFresh(ctx.CachePath, gameAssemblyPath, metadataPath) is not null)
-            return;
-
-        var unityVersion = GetGameUnityVersionCached(ctx.GameDataPath);
-        if (unityVersion is null) return;
-
-        Il2CppMetadataCache.BuildAndPersist(ctx.CachePath, gameAssemblyPath, metadataPath, unityVersion.Value, NullLogSink.Instance);
-    }
+        => Il2CppMetadataCache.BuildIfStale(
+            ctx.CachePath,
+            ctx.GameDataPath,
+            () => GetGameUnityVersionCached(ctx.GameDataPath),
+            NullLogSink.Instance);
 }

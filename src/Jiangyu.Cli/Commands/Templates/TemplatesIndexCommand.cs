@@ -1,6 +1,8 @@
 using System.CommandLine;
 using Jiangyu.Core.Config;
+using Jiangyu.Core.Il2Cpp;
 using Jiangyu.Core.Models;
+using Jiangyu.Core.Unity;
 
 namespace Jiangyu.Cli.Commands.Templates;
 
@@ -18,10 +20,21 @@ public static class TemplatesIndexCommand
                 return 1;
             }
 
-            var service = resolution.Context!.CreateTemplateIndexService(new ConsoleProgressSink(), new ConsoleLogSink());
+            var ctx = resolution.Context!;
+            var log = new ConsoleLogSink();
+            var service = ctx.CreateTemplateIndexService(new ConsoleProgressSink(), log);
             try
             {
                 service.BuildIndex();
+
+                // The supplement is refreshed after the template index: AssetRipper
+                // initialises LibCpp2IL first, then Cpp2IL registers its instruction
+                // sets idempotently.
+                Il2CppMetadataCache.BuildIfStale(
+                    ctx.CachePath,
+                    ctx.GameDataPath,
+                    () => UnityVersionValidationService.DetectGameVersion(ctx.GameDataPath),
+                    log);
 
                 TemplateIndex? index = service.LoadIndex();
                 TemplateIndexManifest? manifest = service.LoadManifest();
@@ -30,6 +43,8 @@ public static class TemplatesIndexCommand
                 if (manifest is not null)
                 {
                     Console.WriteLine($"Classification: {manifest.RuleVersion} ({manifest.RuleDescription})");
+                    if (manifest.SkippedValueCount > 0)
+                        Console.WriteLine($"Skipped values for {manifest.SkippedValueCount} template(s).");
                 }
 
                 return 0;

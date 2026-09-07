@@ -325,6 +325,8 @@ export interface TemplateIndexStatus {
   reason?: string | null;
   instanceCount?: number | null;
   typeCount?: number | null;
+  skippedValueCount?: number | null;
+  skippedValues?: string[] | null;
   indexedAt?: string | null;
 }
 

@@ -42,7 +42,9 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
     // instead of the opaque serializationData.ReferencedUnityObjects path. v12:
     // Odin-decoded Unity math structs (Vector2Int, Color, etc.) carry their
     // component names (x/y, r/g/b/a) instead of nameless positional values.
-    internal const int CurrentFormatVersion = 12;
+    // v13: Odin-decoded enum scalars and enum-array elements carry kind
+    // "enum" with the member name.
+    internal const int CurrentFormatVersion = 13;
     private const int ValuesInspectDepth = 6;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -120,6 +122,8 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
 
         TemplateIndex index;
         Dictionary<string, List<InspectedFieldNode>> values = [];
+        var skippedValues = 0;
+        List<string> skipSamples = [];
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
         using (var session = new GameDataSession(GameDataPath, _progress))
@@ -139,9 +143,19 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
 
             sw.Restart();
             _progress.SetPhase("Extracting template values");
-            values = ExtractTemplateValues(index, session.GameData);
+            (values, skippedValues, skipSamples) = ExtractTemplateValues(index, session.GameData, _log);
             _progress.Finish();
             elapsedValues = sw.ElapsedMilliseconds;
+
+            // A handful of unreadable templates ship with a gap each; a
+            // systemic failure must not ship at all, or a broken build would
+            // replace a working cache and report itself as current.
+            if (ValuesExtractionFailed(index.Instances.Count, values.Count, skippedValues))
+            {
+                var first = skipSamples.Count > 0 ? $" First: {skipSamples[0]}" : "";
+                throw new InvalidOperationException(
+                    $"Values could not be extracted for {skippedValues} of {index.Instances.Count} templates, so the index was not written.{first}");
+            }
 
             // Swap opaque Odin reference paths for decoded semantic ones now
             // that both the index and the decoded value tree exist.
@@ -175,6 +189,8 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
             TemplateTypeCount = index.TemplateTypes.Count,
             InstanceCount = index.Instances.Count,
             ValueCount = values.Count,
+            SkippedValueCount = skippedValues,
+            SkippedValues = skipSamples,
         };
         File.WriteAllText(
             Path.Combine(CachePath, ManifestFileName),
@@ -182,6 +198,8 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
 
         swTotal.Stop();
         _log.Info($"Indexed {index.Instances.Count} template instances across {index.TemplateTypes.Count} template types to: {CachePath}");
+        if (skippedValues > 0)
+            _log.Warning($"{skippedValues} template(s) have no values in the cache. Their fields show nothing in Studio until the cause is fixed and the index rebuilt.");
         _log.Info(
             $"Timing: load={elapsedLoad}ms process={elapsedProcess}ms index={elapsedIndex}ms "
             + $"values={elapsedValues}ms write={elapsedWrite}ms total={swTotal.ElapsedMilliseconds}ms");
@@ -627,8 +645,22 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
         return loaded;
     }
 
-    private static Dictionary<string, List<InspectedFieldNode>> ExtractTemplateValues(
-        TemplateIndex index, GameData gameData)
+    private const int SkipSampleLimit = 20;
+
+    /// <summary>
+    /// Whether the values phase failed as a whole rather than for a few
+    /// templates: nothing extracted, or more than one template in fifty
+    /// skipped.
+    /// </summary>
+    internal static bool ValuesExtractionFailed(int instances, int extracted, int skipped)
+    {
+        if (instances > 0 && extracted == 0) return true;
+        return skipped * 50 > instances;
+    }
+
+    private static (Dictionary<string, List<InspectedFieldNode>> Values, int Skipped, List<string> SkipSamples) ExtractTemplateValues(
+        TemplateIndex index, GameData gameData,
+        ILogSink log)
     {
         // Build a single (collection, pathId) → asset lookup so each instance
         // doesn't re-scan every collection to find its own asset. Trades
@@ -646,25 +678,58 @@ public sealed class TemplateIndexService(string gameDataPath, string cachePath, 
         // safe across threads as long as each thread's walker is isolated
         // (which it is — RawTreeWalker is stateful per-Inspect call). Parallel
         // here halves the values phase on most machines.
+        // The Odin enum promoter's type map enumerates the manager's assembly
+        // list, which the workers below add to as they resolve scripts. Build
+        // it here so that enumeration never races those additions.
+        var typeMap = AssemblyTypeResolver.Warm(gameData.AssemblyManager);
+        if (typeMap.SkippedAssemblies > 0)
+            log.Warning($"Type map: {typeMap.Types} types; {typeMap.SkippedAssemblies} assembly(ies) could not be read, so their enum values inspect as integers.");
         var values = new System.Collections.Concurrent.ConcurrentDictionary<string, List<InspectedFieldNode>>();
+        var skipped = 0;
+        var skipSamples = new System.Collections.Concurrent.ConcurrentBag<string>();
         Parallel.ForEach(index.Instances, instance =>
         {
+            var key = TemplateIndex.IdentityKey(instance.Identity);
             if (!assetLookup.TryGetValue((instance.Identity.Collection, instance.Identity.PathId), out var asset))
-                return;
-
-            var inspection = ObjectFieldInspector.Inspect(asset, ValuesInspectDepth, 0);
-            if (asset is IMonoBehaviour mono)
             {
-                ManagedTypeInspectionEnricher.Enrich(mono, gameData.AssemblyManager, inspection.Fields);
-                OdinPayloadEnricher.Enrich(inspection.Fields);
+                // The index and this lookup come from the same session, so a
+                // miss is a bug rather than bad data. It counts as a skip so
+                // the gate below sees it.
+                Interlocked.Increment(ref skipped);
+                var missing = $"{key}: asset not found in the loaded game data";
+                log.Warning($"Values: skipped {missing}");
+                if (skipSamples.Count < SkipSampleLimit) skipSamples.Add(missing);
+                return;
             }
 
-            // Extract m_Structure fields as the template payload.
-            var structure = inspection.Fields.FirstOrDefault(f =>
-                string.Equals(f.Name, "m_Structure", StringComparison.Ordinal));
-            var key = TemplateIndex.IdentityKey(instance.Identity);
-            values[key] = structure?.Fields ?? inspection.Fields;
+            try
+            {
+                var inspection = ObjectFieldInspector.Inspect(asset, ValuesInspectDepth, 0);
+                if (asset is IMonoBehaviour mono)
+                {
+                    ManagedTypeInspectionEnricher.Enrich(mono, gameData.AssemblyManager, inspection.Fields);
+                    OdinPayloadEnricher.Enrich(inspection.Fields, mono, gameData.AssemblyManager);
+                }
+
+                // Extract m_Structure fields as the template payload.
+                var structure = inspection.Fields.FirstOrDefault(f =>
+                    string.Equals(f.Name, "m_Structure", StringComparison.Ordinal));
+                values[key] = structure?.Fields ?? inspection.Fields;
+            }
+            catch (Exception ex)
+            {
+                // One template's values are lost, not the whole index: the
+                // enrichers read metadata for every class an Odin payload
+                // names, and a single unreadable one must not abort the run.
+                Interlocked.Increment(ref skipped);
+                var reason = $"{key}: {ex.GetType().Name}: {ex.Message}";
+                log.Warning($"Values: skipped {reason}");
+                // A sample of reasons travels with the manifest for surfaces
+                // that have no log to read, such as the Studio index status.
+                if (skipSamples.Count < SkipSampleLimit) skipSamples.Add(reason);
+            }
         });
-        return new Dictionary<string, List<InspectedFieldNode>>(values);
+        var samples = skipSamples.OrderBy(r => r, StringComparer.Ordinal).Take(SkipSampleLimit).ToList();
+        return (new Dictionary<string, List<InspectedFieldNode>>(values), skipped, samples);
     }
 }

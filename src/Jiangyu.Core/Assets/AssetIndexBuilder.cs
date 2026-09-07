@@ -268,7 +268,9 @@ internal static class AssetIndexBuilder
             // ArraySample 4096 covers any bank without truncation.
             var inspection = ObjectFieldInspector.Inspect(monoBehaviour, maxDepth: 4, maxArraySampleLength: 4096);
             ManagedTypeInspectionEnricher.Enrich(monoBehaviour, gameData.AssemblyManager, inspection.Fields);
-            OdinPayloadEnricher.Enrich(inspection.Fields);
+            // The asset index reads names, paths and ids out of these payloads,
+            // never enum values, so it decodes without the type map.
+            OdinPayloadEnricher.Enrich(inspection.Fields, typeResolver: null, ownerTypeName: null);
             return inspection;
         }
         catch
@@ -357,7 +359,9 @@ internal static class AssetIndexBuilder
             // ArraySample 64 covers any plausible conversation.
             var inspection = ObjectFieldInspector.Inspect(monoBehaviour, maxDepth: 5, maxArraySampleLength: 64);
             ManagedTypeInspectionEnricher.Enrich(monoBehaviour, gameData.AssemblyManager, inspection.Fields);
-            OdinPayloadEnricher.Enrich(inspection.Fields);
+            // The asset index reads names, paths and ids out of these payloads,
+            // never enum values, so it decodes without the type map.
+            OdinPayloadEnricher.Enrich(inspection.Fields, typeResolver: null, ownerTypeName: null);
             return inspection;
         }
         catch

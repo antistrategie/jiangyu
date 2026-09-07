@@ -183,7 +183,7 @@ patch "PerkTemplate" "perk.unique_darby_high_value_targets" {
 }
 ```
 
-The handler name in `type=` (`AddSkill`), the fields you `set` (`Event`, `SkillToAdd`, `ShowHUDText`), and the values an `enum=` field accepts (`OnAttack`) all come from the [event handler reference](/reference/event-handlers). It lists every built-in handler with its settable fields and their enum values, and flags the fields you cannot set from KDL, the Odin-routed conditions and value providers, so you know when a behaviour needs the [C# path](/sdk/template-types) instead.
+The handler name in `type=` (`AddSkill`), the fields you `set` (`Event`, `SkillToAdd`, `ShowHUDText`), and the values an `enum=` field accepts (`OnAttack`) all come from the [event handler reference](/reference/event-handlers). It lists every built-in handler with its settable fields and their enum values, plus the conditions, value providers and filters that fill a handler's interface-typed fields, and marks the few slots with no built-in subtype, which need the [C# path](/sdk/template-types) instead.
 
 - `append "F" type="X" { ... }` / `insert "F" index=N type="X" { ... }`: build a fresh X and add it.
 - `set "F" index=N type="X" { ... }`: build a fresh X and replace polymorphic element N.
@@ -355,7 +355,7 @@ Compile refuses the build, with a clear message, when:
 - An `enum=` value isn't a member of the named enum.
 - A `ref=` target isn't a template of the declared type.
 
-Some fields are flagged as Odin-only in the inspect output, and the compiler rejects writes to them.
+A field typed with an interface (`ITacticalCondition`, `IValueProvider`, a filter) takes a constructed subtype rather than a scalar, see [Construction](#construction).
 
 ## CLI alternative
 

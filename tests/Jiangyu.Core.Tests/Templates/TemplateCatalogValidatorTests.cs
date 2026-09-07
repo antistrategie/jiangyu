@@ -814,6 +814,205 @@ public class TemplateCatalogValidatorTests
     ];
 
     [Fact]
+    public void Enum_QualifiedTypeName_NormalisedToShortName()
+    {
+        // The inspector names enum types namespace-qualified, and the visual
+        // editor seeds enum= from that spelling. The loader compares short
+        // names, so the compile step writes the short name back.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = EnumPatch(new CompiledTemplateValue
+        {
+            Kind = CompiledTemplateValueKind.Enum,
+            EnumType = "Menace.Fixtures.FixtureDamageType",
+            EnumValue = "Plasma",
+        });
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Equal("FixtureDamageType", patches[0].Set[0].Value!.EnumType);
+    }
+
+    [Fact]
+    public void Enum_QualifiedNameOfAnotherType_Errors()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = EnumPatch(new CompiledTemplateValue
+        {
+            Kind = CompiledTemplateValueKind.Enum,
+            EnumType = "Menace.Fixtures.OtherEnum",
+            EnumValue = "Plasma",
+        });
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("does not match the declared enum type", log.Errors[0]);
+    }
+
+    [Fact]
+    public void Enum_IntegerValue_CoercedToTheMemberWithThatValue()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = EnumPatch(new CompiledTemplateValue
+        {
+            Kind = CompiledTemplateValueKind.Int32,
+            Int32 = 2,
+        });
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        var value = patches[0].Set[0].Value!;
+        Assert.Equal(CompiledTemplateValueKind.Enum, value.Kind);
+        Assert.Equal("FixtureDamageType", value.EnumType);
+        Assert.Equal("Plasma", value.EnumValue);
+    }
+
+    [Fact]
+    public void Enum_IntegerValueWithNoMember_Errors()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = EnumPatch(new CompiledTemplateValue
+        {
+            Kind = CompiledTemplateValueKind.Int32,
+            Int32 = 7,
+        });
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("7 is not the value of any member of enum FixtureDamageType", log.Errors[0]);
+    }
+
+    [Fact]
+    public void Enum_IntegerCombiningFlags_ErrorsNamingTheMembers()
+    {
+        // The loader accepts a single defined member only, so a flags
+        // combination is rejected, and the message says what the number is
+        // rather than claiming it matches nothing.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "Properties.Flags",
+                    Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 3 },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        // Declaration order (Stealthy = 1, Armoured = 2), not alphabetical.
+        Assert.Contains("3 combines Stealthy | Armoured in [Flags] enum FixtureFlags. Set a single member.", log.Errors[0]);
+    }
+
+    [Theory]
+    [InlineData(CompiledTemplateValueKind.Single)]
+    [InlineData(CompiledTemplateValueKind.Boolean)]
+    public void Enum_ValueKindWithNoEnumReading_Errors(CompiledTemplateValueKind kind)
+    {
+        // A decimal or a boolean cannot name a member, and the loader would
+        // reject either at apply time, so the compile step refuses it.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = EnumPatch(new CompiledTemplateValue { Kind = kind, Single = 2.0f, Boolean = true });
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains($"value kind {kind} cannot be written to enum field", log.Errors[0]);
+    }
+
+    [Theory]
+    [InlineData(CompiledTemplateValueKind.Int32)]
+    [InlineData(CompiledTemplateValueKind.Byte)]
+    public void Enum_NumericKindWithoutANumber_Errors(CompiledTemplateValueKind kind)
+    {
+        // A numeric kind whose payload is missing must not read as member 0.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = EnumPatch(new CompiledTemplateValue { Kind = kind, Int32 = null, Byte = null });
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("carries no number", log.Errors[0]);
+    }
+
+    [Fact]
+    public void Enum_ByteValue_CoercedLikeAnInteger()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = EnumPatch(new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Byte, Byte = 1 });
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Equal("Ballistic", patches[0].Set[0].Value!.EnumValue);
+    }
+
+    [Fact]
+    public void Enum_IntegerValue_NamesTheFirstDeclaredAlias()
+    {
+        // Flying and Last share the value 4. The inspector shows the member
+        // declared first, and the compiled name must agree with it rather
+        // than with alphabetical order.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "Properties.Flags",
+                    Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 4 },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Equal("Flying", patches[0].Set[0].Value!.EnumValue);
+    }
+
+    [Fact]
+    public void Enum_NumericStringValue_CompilesToTheMemberName()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = EnumPatch(new CompiledTemplateValue
+        {
+            Kind = CompiledTemplateValueKind.Enum,
+            EnumType = "FixtureDamageType",
+            EnumValue = "2",
+        });
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Equal("Plasma", patches[0].Set[0].Value!.EnumValue);
+    }
+
+    [Fact]
     public void Enum_MatchingTypeAndDefinedMember_Passes()
     {
         using var catalog = Load();

@@ -1,3 +1,4 @@
+using System.Reflection;
 using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Code;
 using Jiangyu.Shared.Replacements;
@@ -535,16 +536,22 @@ public static class TemplateCatalogValidator
         // Reference / enum shorthand. The catalog is the single source of
         // truth for the destination type — modders don't have to repeat
         // ref="…" or enum="…" when the declared field type already pins
-        // it down. Three coercions:
+        // it down. Four coercions:
         //   - value.Kind == String on a reference-target field → coerce to
         //     a TemplateReference with TemplateType=null. Loader derives
         //     the lookup type from the field at apply time.
         //   - value.Kind == String on an enum field → coerce to an Enum
         //     with EnumType = declared type's short name. Validates the
         //     member name against the declared enum's known members.
+        //   - value.Kind == Int32 or Byte on an enum field → coerce to the
+        //     Enum member with that value; an error names the members when
+        //     none has it. Any other kind on an enum field is an error.
         //   - value.Kind == TemplateReference: validate ref= matches the
         //     declared type when present; require ref= when the declared
         //     type is abstract (polymorphic).
+        // An explicit enum= that spells the declared type with its
+        // namespace (the inspector's form) is accepted and rewritten to
+        // the short name the loader compares against.
         var declaredType = result.CurrentType;
         var fieldIsReferenceTarget = declaredType is not null
             && TemplateTypeCatalog.IsTemplateReferenceTarget(declaredType);
@@ -634,10 +641,50 @@ public static class TemplateCatalogValidator
                     EnumValue = memberName,
                 };
             }
+            else if (op.Value.Kind is CompiledTemplateValueKind.Int32 or CompiledTemplateValueKind.Byte
+                && declaredType is { IsEnum: true })
+            {
+                // A bare number on an enum field names the member with that
+                // value. The loader has no integer-to-enum widening, so the
+                // member name is what reaches the manifest.
+                long? number = op.Value.Kind == CompiledTemplateValueKind.Byte ? op.Value.Byte : op.Value.Int32;
+                if (number is null)
+                {
+                    reportError(
+                        $"numeric value on enum field '{op.FieldPath}' carries no number "
+                        + $"(declared {declaredType.Name}).");
+                    return 1;
+                }
+                var memberName = EnumMemberWithValue(declaredType, number.Value);
+                if (memberName is null)
+                {
+                    reportError(DescribeUnmatchedEnumNumber(declaredType, result.EnumMemberNames, number.Value));
+                    return 1;
+                }
+                op.Value = new CompiledTemplateValue
+                {
+                    Kind = CompiledTemplateValueKind.Enum,
+                    EnumType = declaredType.Name,
+                    EnumValue = memberName,
+                };
+            }
             else if (op.Value.Kind == CompiledTemplateValueKind.Enum)
             {
                 if (ValidateEnumValue(op.Value, declaredType, result.EnumMemberNames, reportError))
                     return 1;
+            }
+            else if (declaredType is { IsEnum: true }
+                && op.Value.Kind is not (CompiledTemplateValueKind.AssetReference
+                    or CompiledTemplateValueKind.Composite
+                    or CompiledTemplateValueKind.TypeConstruction))
+            {
+                // Anything else (a decimal, a boolean, null) has no enum
+                // reading. The loader would reject it at apply time.
+                reportError(
+                    $"value kind {op.Value.Kind} cannot be written to enum field '{op.FieldPath}' "
+                    + $"(declared {declaredType.Name}). Use a member name or its number "
+                    + $"(known: {string.Join(", ", result.EnumMemberNames)}).");
+                return 1;
             }
             else if (op.Value.Kind == CompiledTemplateValueKind.AssetReference)
             {
@@ -764,10 +811,19 @@ public static class TemplateCatalogValidator
         if (!string.IsNullOrWhiteSpace(value.EnumType)
             && !string.Equals(value.EnumType, declaredName, StringComparison.Ordinal))
         {
-            reportError(
-                $"enum=\"{value.EnumType}\" does not match the declared enum type "
-                + $"'{declaredName}' (known members: {string.Join(", ", declaredMembers)}).");
-            return true;
+            // The inspector names enum types namespace-qualified
+            // (Menace.Tags.TagType, TacticalCondition+CheckTarget), and a
+            // value seeded from it carries that spelling. The loader compares
+            // the short name, so a qualified name that ends in the declared
+            // type is accepted and written back as the short name.
+            if (!string.Equals(ShortTypeName(value.EnumType), declaredName, StringComparison.Ordinal))
+            {
+                reportError(
+                    $"enum=\"{value.EnumType}\" does not match the declared enum type "
+                    + $"'{declaredName}' (known members: {string.Join(", ", declaredMembers)}).");
+                return true;
+            }
+            value.EnumType = declaredName;
         }
 
         var enumValue = value.EnumValue;
@@ -788,21 +844,116 @@ public static class TemplateCatalogValidator
         // MetadataLoadContext (Enum.TryParse rejects those).
         if (long.TryParse(enumValue, out var numeric))
         {
-            foreach (var name in declaredMembers)
+            // A numeric enum= value compiles to the member name, the same as
+            // a bare number does, so both spellings produce one manifest.
+            if (EnumMemberWithValue(declaredType, numeric) is { } memberName)
             {
-                var field = declaredType.GetField(name);
-                if (field?.GetRawConstantValue() is { } raw
-                    && Convert.ToInt64(raw) == numeric)
-                {
-                    return false;
-                }
+                value.EnumValue = memberName;
+                return false;
             }
+            reportError(DescribeUnmatchedEnumNumber(declaredType, declaredMembers, numeric));
+            return true;
         }
 
         reportError(
             $"'{enumValue}' is not a defined member of enum '{declaredName}' "
             + $"(known members: {string.Join(", ", declaredMembers)}).");
         return true;
+    }
+
+    private static string ShortTypeName(string typeName)
+    {
+        var cut = Math.Max(typeName.LastIndexOf('.'), typeName.LastIndexOf('+'));
+        return cut < 0 ? typeName : typeName[(cut + 1)..];
+    }
+
+    // The first member in declaration order whose constant equals `number`,
+    // read through reflection so it works on MetadataLoadContext types
+    // (Enum.GetName rejects those). Declaration order matches the inspector,
+    // so an aliased value (Pistol_Holster = 13, Last = 13) names the member
+    // the inspector shows rather than the alphabetically first one.
+    private static string? EnumMemberWithValue(Type enumType, long number)
+        => EnumFieldsInDeclarationOrder(enumType)
+            .FirstOrDefault(f => EnumConstant(f) == number)
+            ?.Name;
+
+    // Reflection on a MetadataLoadContext type can throw when a referenced
+    // assembly is outside the resolver's paths, and a ulong constant above
+    // long.MaxValue does not convert. Either reads as "no constant", the
+    // same convention the catalogue uses for its attribute reads.
+    private static long? EnumConstant(FieldInfo? member)
+    {
+        try
+        {
+            return member?.GetRawConstantValue() is { } raw
+                ? Convert.ToInt64(raw, System.Globalization.CultureInfo.InvariantCulture)
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // A number that names no single member is either a [Flags] combination,
+    // which the loader does not accept (it checks Enum.IsDefined on the
+    // parsed value), or not a member at all. Say which.
+    // `knownNames` only feeds the error text.
+    private static string DescribeUnmatchedEnumNumber(Type enumType, IReadOnlyList<string> knownNames, long number)
+    {
+        if (IsFlagsEnum(enumType) && TryComposeFlags(enumType, number, out var composed))
+        {
+            return $"{number} combines {composed} in [Flags] enum {enumType.Name}. "
+                + "Set a single member. Combinations are not supported.";
+        }
+        return $"{number} is not the value of any member of enum {enumType.Name} "
+            + $"(known: {string.Join(", ", knownNames)}).";
+    }
+
+    private static bool IsFlagsEnum(Type enumType)
+    {
+        try
+        {
+            return enumType.CustomAttributes.Any(a =>
+                string.Equals(a.AttributeType.FullName, "System.FlagsAttribute", StringComparison.Ordinal));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // Members are matched in declaration order, each consuming the bits it
+    // contributes, the same walk ManagedTypeInspectionEnricher uses to name
+    // a flags value.
+    private static bool TryComposeFlags(Type enumType, long number, out string composed)
+    {
+        composed = "";
+        if (number == 0) return false;
+        var remaining = number;
+        var names = new List<string>();
+        foreach (var field in EnumFieldsInDeclarationOrder(enumType))
+        {
+            if (EnumConstant(field) is not { } bit || bit == 0) continue;
+            if ((number & bit) != bit || (remaining & bit) == 0) continue;
+            names.Add(field.Name);
+            remaining &= ~bit;
+        }
+        if (names.Count < 2 || remaining != 0) return false;
+        composed = string.Join(" | ", names);
+        return true;
+    }
+
+    private static FieldInfo[] EnumFieldsInDeclarationOrder(Type enumType)
+    {
+        try
+        {
+            return enumType.GetFields(BindingFlags.Public | BindingFlags.Static);
+        }
+        catch
+        {
+            return [];
+        }
     }
 
     /// <summary>

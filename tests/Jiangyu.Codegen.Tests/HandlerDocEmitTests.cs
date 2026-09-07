@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Jiangyu.Codegen.Handlers;
 using Xunit;
 
@@ -22,13 +24,31 @@ public class HandlerDocEmitTests
             new HandlerDoc("AddSkill",
             [
                 new HandlerFieldDoc("Event", "AddEvent", false, ["OnAttack", "OnUse"]),
-                new HandlerFieldDoc("Condition", "ITacticalCondition", true, []),
+                new HandlerFieldDoc("Condition", "ITacticalCondition", false, [], Family: "Conditions"),
+                new HandlerFieldDoc("SkillFilter", "ISkillFilter", true, []),
                 new HandlerFieldDoc("ShowHUDText", "bool", false, []),
             ]),
             new HandlerDoc("AccuracyStacks", []),
         ],
-        Conditions: ["HitpointsPercentageCondition", "FactionCondition"],
-        ValueProviders: ["SomeProvider"]);
+        Families:
+        [
+            new FamilyDoc(
+                "Conditions",
+                "A condition gates a handler.",
+                "set \"Condition\" type=\"FactionCondition\" {\n}",
+                [new HandlerFieldDoc("Negated", "bool", false, [])],
+                [
+                    new HandlerDoc("HitpointsPercentageCondition", [new HandlerFieldDoc("Percentage", "int", false, [])]),
+                    new HandlerDoc("FactionCondition", []),
+                ]),
+            new FamilyDoc(
+                "Value providers",
+                "A value provider computes a number.",
+                null,
+                [],
+                [new HandlerDoc("SumProvider", [new HandlerFieldDoc("Providers", "IValueProvider[]", false, [], Family: "Value providers", IsCollection: true)])]),
+            new FamilyDoc("Skill filters", "A skill filter narrows skills.", null, [], []),
+        ]);
 
     [Fact]
     public void Emit_renders_header_and_both_authoring_paths()
@@ -56,13 +76,39 @@ public class HandlerDocEmitTests
     }
 
     [Fact]
-    public void Emit_lists_enum_values_and_flags_odin_fields()
+    public void Emit_lists_enum_values()
     {
         var md = HandlerDocEmit.Emit(Sample());
         Assert.Contains("| `Event` | `AddEvent` | `OnAttack`, `OnUse` |", md);
-        Assert.Contains("**C# only**", md);
-        // The Odin field row names the field but routes the modder to the C# path.
-        Assert.Contains("| `Condition` | `ITacticalCondition` |", md);
+    }
+
+    [Fact]
+    public void Emit_links_polymorphic_slots_to_their_family()
+    {
+        var md = HandlerDocEmit.Emit(Sample());
+        Assert.Contains("| `Condition` | `ITacticalCondition` | Polymorphic: pick a subtype from [Conditions](#conditions) with `set \"Condition\" type=\"<Subtype>\" { ... }`. |", md);
+        // A list slot inside a family subtype links the same way, with a
+        // multi-word anchor, and takes append rather than set.
+        Assert.Contains("| `Providers` | `IValueProvider[]` | Polymorphic list: add subtypes from [Value providers](#value-providers) with `append \"Providers\" type=\"<Subtype>\" { ... }`. |", md);
+    }
+
+    [Fact]
+    public void Emit_keys_append_guidance_on_collection_ness_not_the_type_spelling()
+    {
+        // A List<T> slot renders without brackets but is still a list.
+        var handlers = new List<HandlerDoc>
+        {
+            new("Gate", [new HandlerFieldDoc("Conditions", "List<ITacticalCondition>", false, [], Family: "Conditions", IsCollection: true)]),
+        };
+        var md = HandlerDocEmit.Emit(Sample() with { Handlers = handlers });
+        Assert.Contains("`append \"Conditions\" type=\"<Subtype>\" { ... }`", md);
+    }
+
+    [Fact]
+    public void Emit_flags_slots_with_nothing_to_pick_as_code_only()
+    {
+        var md = HandlerDocEmit.Emit(Sample());
+        Assert.Contains("| `SkillFilter` | `ISkillFilter` | **C# only**: nothing built in fills this field from KDL, so set it from your handler in C#. |", md);
     }
 
     [Fact]
@@ -74,21 +120,114 @@ public class HandlerDocEmitTests
     }
 
     [Fact]
-    public void Emit_renders_condition_and_value_provider_families()
+    public void Emit_renders_family_intro_example_shared_fields_and_subtypes()
     {
         var md = HandlerDocEmit.Emit(Sample());
-        Assert.Contains("## Conditions", md);
-        Assert.Contains("- `FactionCondition`", md);
+        var conditions = md.IndexOf("## Conditions", StringComparison.Ordinal);
+        Assert.True(conditions > 0);
+        Assert.Contains("A condition gates a handler.", md);
+        Assert.Contains("```kdl\nset \"Condition\" type=\"FactionCondition\" {\n}\n```", md);
+        Assert.Contains("Every one of the 2 subtypes below also takes these fields:", md);
+        Assert.Contains("| `Negated` | `bool` |  |", md);
+        // A subtype with no fields of its own still takes the shared ones.
+        Assert.Contains("### FactionCondition\n\nNo fields of its own. It takes only the shared fields above.", md);
+        Assert.DoesNotContain("### FactionCondition\n\nNo settable fields.", md);
+        // Subtypes render like handlers, sorted by name, after the shared table.
+        var faction = md.IndexOf("### FactionCondition", StringComparison.Ordinal);
+        var hitpoints = md.IndexOf("### HitpointsPercentageCondition", StringComparison.Ordinal);
+        Assert.True(conditions < faction && faction < hitpoints);
+        Assert.Contains("| `Percentage` | `int` |  |", md);
         Assert.Contains("## Value providers", md);
-        Assert.Contains("- `SomeProvider`", md);
+        Assert.Contains("### SumProvider", md);
     }
 
     [Fact]
-    public void Emit_omits_empty_families()
+    public void Emit_scopes_shared_fields_to_subtypes_that_derive_from_the_family_base()
     {
-        var model = Sample() with { Conditions = [], ValueProviders = [] };
+        // AndCondition implements the slot interface without deriving from
+        // TacticalCondition, so the shared table does not apply to it and an
+        // outsider with no fields is not told to use fields it lacks.
+        var model = Sample() with
+        {
+            Families =
+            [
+                new FamilyDoc(
+                    "Conditions",
+                    "A condition gates a handler.",
+                    null,
+                    [new HandlerFieldDoc("Negated", "bool", false, [])],
+                    [
+                        new HandlerDoc("FactionCondition", []),
+                        new HandlerDoc("AndCondition", [new HandlerFieldDoc("Conditions", "ITacticalCondition[]", false, [], Family: "Conditions", IsCollection: true)], SharesFamilyFields: false),
+                        new HandlerDoc("PincerCondition", [], SharesFamilyFields: false),
+                    ]),
+            ],
+        };
         var md = HandlerDocEmit.Emit(model);
-        Assert.DoesNotContain("## Conditions", md);
-        Assert.DoesNotContain("## Value providers", md);
+        Assert.Contains("Every subtype below except `AndCondition` and `PincerCondition` also takes these fields:", md);
+        Assert.Contains("### FactionCondition\n\nNo fields of its own. It takes only the shared fields above.", md);
+        Assert.Contains("### PincerCondition\n\nNo settable fields. It carries behaviour only.", md);
+    }
+
+    [Fact]
+    public void Emit_omits_families_without_subtypes()
+    {
+        var md = HandlerDocEmit.Emit(Sample());
+        Assert.DoesNotContain("## Skill filters", md);
+    }
+
+    [Fact]
+    public void Emit_qualifies_subtype_headings_that_collide_across_sections()
+    {
+        var model = Sample() with
+        {
+            Families =
+            [
+                new FamilyDoc("Skill filters", "Narrows skills.", null, [], [new HandlerDoc("ItemSlotFilter", []), new HandlerDoc("TagFilter", [])]),
+                new FamilyDoc("Item filters", "Narrows items.", null, [], [new HandlerDoc("ItemSlotFilter", [])]),
+            ],
+        };
+        var md = HandlerDocEmit.Emit(model);
+        Assert.Contains("### ItemSlotFilter (skill filters)", md);
+        Assert.Contains("### ItemSlotFilter (item filters)", md);
+        // Families render in model order, not alphabetically.
+        Assert.True(md.IndexOf("## Skill filters", StringComparison.Ordinal) < md.IndexOf("## Item filters", StringComparison.Ordinal));
+        Assert.DoesNotContain("### ItemSlotFilter\n", md);
+        // A name that appears in one section only keeps its bare heading.
+        Assert.Contains("### TagFilter\n", md);
+    }
+
+    [Fact]
+    public void Emit_explains_the_code_only_marker_only_when_a_row_carries_it()
+    {
+        var marked = HandlerDocEmit.Emit(Sample());
+        Assert.Contains("A field marked **C# only** has nothing built in to fill it from KDL", marked);
+
+        var handlers = Sample().Handlers
+            .Select(h => new HandlerDoc(h.Name, h.Fields.Where(f => !f.CodeOnly).ToList()))
+            .ToList();
+        var unmarked = HandlerDocEmit.Emit(Sample() with { Handlers = handlers });
+        Assert.DoesNotContain("**C# only**", unmarked);
+    }
+
+    [Fact]
+    public void Emit_treats_a_link_to_an_unrendered_family_as_code_only()
+    {
+        // "Skill filters" is in the sample model with no subtypes, so it is not
+        // rendered and a row naming it cannot link anywhere.
+        var handlers = new List<HandlerDoc>
+        {
+            new("AmmoPouch", [new HandlerFieldDoc("SkillFilter", "ISkillFilter", false, [], Family: "Skill filters")]),
+        };
+        var md = HandlerDocEmit.Emit(Sample() with { Handlers = handlers });
+        Assert.Contains("| `SkillFilter` | `ISkillFilter` | **C# only**: nothing built in fills this field from KDL, so set it from your handler in C#. |", md);
+        Assert.DoesNotContain("(#skill-filters)", md);
+    }
+
+    [Fact]
+    public void Anchor_lowercases_and_hyphenates_titles()
+    {
+        Assert.Equal("value-providers", HandlerDocEmit.Anchor("Value providers"));
+        Assert.Equal("conditions", HandlerDocEmit.Anchor("Conditions"));
     }
 }

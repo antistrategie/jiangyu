@@ -28,6 +28,14 @@ public static partial class RpcHandlers
         [JsonPropertyName("typeCount")]
         public int? TypeCount { get; set; }
 
+        /// <summary>Instances left out of the values cache by the last build; their fields show nothing until the index is rebuilt after the cause is fixed.</summary>
+        [JsonPropertyName("skippedValueCount")]
+        public int? SkippedValueCount { get; set; }
+
+        /// <summary>A sample of the skipped instances with their failure reasons.</summary>
+        [JsonPropertyName("skippedValues")]
+        public List<string>? SkippedValues { get; set; }
+
         [JsonPropertyName("indexedAt")]
         public DateTimeOffset? IndexedAt { get; set; }
     }

@@ -205,3 +205,20 @@ export function navStepForward(
   if (key === undefined) return null;
   return { index: newIdx, key };
 }
+
+/**
+ * The note shown when the last index build left templates without values.
+ * Null when nothing was skipped, so callers can gate a toast on it.
+ */
+export function skippedValuesNote(
+  skippedValueCount: number | null | undefined,
+  skippedValues?: readonly string[] | null,
+): string | null {
+  if (!skippedValueCount || skippedValueCount <= 0) return null;
+  const one = skippedValueCount === 1;
+  const noun = one ? "template has" : "templates have";
+  const whose = one ? "Its" : "Their";
+  const example = skippedValues?.[0];
+  const detail = example ? ` First: ${example}.` : "";
+  return `${skippedValueCount} ${noun} no values in the index. ${whose} fields show nothing until the cause is fixed and the index rebuilt.${detail}`;
+}

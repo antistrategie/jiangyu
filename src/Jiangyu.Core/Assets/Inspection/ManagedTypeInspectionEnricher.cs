@@ -47,7 +47,7 @@ internal static class ManagedTypeInspectionEnricher
 
     private static void EnrichFields(List<InspectedFieldNode> fields, TypeDefinition typeDefinition)
     {
-        Dictionary<string, ManagedFieldMetadata> metadataByName = BuildMetadataMap(typeDefinition);
+        IReadOnlyDictionary<string, ManagedFieldMetadata> metadataByName = GetMetadataMap(typeDefinition);
         foreach (InspectedFieldNode field in fields)
         {
             if (field.Name is null || !metadataByName.TryGetValue(field.Name, out ManagedFieldMetadata? metadata))
@@ -153,7 +153,7 @@ internal static class ManagedTypeInspectionEnricher
     // a string. Classifying every enum-typed scalar as "enum" (with a string Value) keeps the kind
     // stable across instances, so a flags combination on one template does not read as a different
     // kind than a single flag on another (which would otherwise break structural-baseline comparison).
-    private static void PromoteEnumScalar(InspectedFieldNode node, TypeDefinition enumType)
+    internal static void PromoteEnumScalar(InspectedFieldNode node, TypeDefinition enumType)
     {
         if (!string.Equals(node.Kind, "int", StringComparison.Ordinal)) return;
         if (node.Value is null) return;
@@ -240,6 +240,17 @@ internal static class ManagedTypeInspectionEnricher
         }
     }
 
+    // A type's field metadata, read once. The same class recurs across thousands of template
+    // instances, and each read resolves every field signature and scans its attributes.
+    private static readonly ConditionalWeakTable<TypeDefinition, Dictionary<string, ManagedFieldMetadata>> MetadataCache = new();
+
+    /// <summary>
+    /// Field metadata by name for <paramref name="typeDefinition"/> and its bases. One instance
+    /// serves every caller on every thread, so it is handed out read-only.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, ManagedFieldMetadata> GetMetadataMap(TypeDefinition typeDefinition)
+        => MetadataCache.GetValue(typeDefinition, BuildMetadataMap);
+
     private static Dictionary<string, ManagedFieldMetadata> BuildMetadataMap(TypeDefinition typeDefinition)
     {
         var result = new Dictionary<string, ManagedFieldMetadata>(StringComparer.Ordinal);
@@ -289,7 +300,7 @@ internal static class ManagedTypeInspectionEnricher
         return null;
     }
 
-    private static bool IsEnumTypeDefinition(TypeDefinition typeDefinition)
+    internal static bool IsEnumTypeDefinition(TypeDefinition typeDefinition)
     {
         TypeDefinition? current = typeDefinition;
         while (current is not null)
@@ -377,7 +388,7 @@ internal static class ManagedTypeInspectionEnricher
         };
     }
 
-    private static string GetDisplayName(ITypeDefOrRef type)
+    internal static string GetDisplayName(ITypeDefOrRef type)
     {
         string? ns = type.Namespace?.ToString();
         string name = type.Name?.ToString() ?? "Unknown";
@@ -450,7 +461,7 @@ internal static class ManagedTypeInspectionEnricher
         }
     }
 
-    private sealed record ManagedFieldMetadata(
+    internal sealed record ManagedFieldMetadata(
         string DisplayName,
         bool IsEnum,
         TypeDefinition? ResolvedType,

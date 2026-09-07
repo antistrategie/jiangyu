@@ -79,5 +79,5 @@ Common causes:
 - **The template id doesn't exist.** Check the Template Browser or `jiangyu templates list --type <TypeName>`.
 - **The field path doesn't resolve.** Use `jiangyu templates query <Type>.<path>` to navigate the type tree and confirm the path.
 - **The value kind doesn't match the field type.** Writing a `String` into a `Single` field fails loudly. The error names the expected type.
-- **The field is Odin-only.** Some `DataTemplate` fields are serialised through Odin, which Jiangyu can't currently write. The Template Browser flags these.
+- **The field is an interface-typed slot.** A field typed `ITacticalCondition`, `IValueProvider` or a filter interface takes a constructed subtype, `set "<Field>" type="<Subtype>" { ... }`, not a scalar. The [event handler reference](/reference/event-handlers) lists the subtypes and their fields.
 - **Save-frozen field vs new campaign.** Some fields are read once when a save is created and frozen on disk. If your stat change isn't visible on an existing save, start a new campaign before assuming the patch failed.

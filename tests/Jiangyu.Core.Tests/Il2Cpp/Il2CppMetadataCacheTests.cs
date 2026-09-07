@@ -1,3 +1,4 @@
+using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Il2Cpp;
 
 namespace Jiangyu.Core.Tests.Il2Cpp;
@@ -80,6 +81,100 @@ public sealed class Il2CppMetadataCacheTests : IDisposable
         var loaded = Il2CppMetadataCache.LoadIfPresent(_cacheRoot);
 
         Assert.Null(loaded);
+    }
+
+    [Fact]
+    public void TryResolveGamePaths_PrefersTheNativeAssembly_ThenTheDll()
+    {
+        var dataPath = MakeGameLayout(withSo: true, withDll: true, withMetadata: true);
+
+        Assert.True(Il2CppMetadataCache.TryResolveGamePaths(dataPath, out var assembly, out var metadata));
+        Assert.EndsWith("GameAssembly.so", assembly);
+        Assert.EndsWith(Path.Combine("il2cpp_data", "Metadata", "global-metadata.dat"), metadata);
+
+        File.Delete(assembly);
+        Assert.True(Il2CppMetadataCache.TryResolveGamePaths(dataPath, out assembly, out _));
+        Assert.EndsWith("GameAssembly.dll", assembly);
+    }
+
+    [Fact]
+    public void TryResolveGamePaths_FailsWithoutTheMetadataFile()
+    {
+        var dataPath = MakeGameLayout(withSo: false, withDll: true, withMetadata: false);
+
+        Assert.False(Il2CppMetadataCache.TryResolveGamePaths(dataPath, out _, out _));
+    }
+
+    [Fact]
+    public void BuildIfStale_KeepsAFreshSupplement_WithoutProbingTheVersion()
+    {
+        var dataPath = MakeGameLayout(withSo: false, withDll: true, withMetadata: true);
+        Assert.True(Il2CppMetadataCache.TryResolveGamePaths(dataPath, out var assembly, out var metadata));
+        WriteCache(NewSupplement(
+            new DateTimeOffset(File.GetLastWriteTimeUtc(assembly)),
+            new DateTimeOffset(File.GetLastWriteTimeUtc(metadata))));
+        var probed = false;
+
+        var fresh = Il2CppMetadataCache.BuildIfStale(_cacheRoot, dataPath, () => { probed = true; return null; }, NullLogSink.Instance);
+
+        Assert.True(fresh);
+        Assert.False(probed);
+    }
+
+    [Fact]
+    public void BuildIfStale_RebuildsAFreshSupplement_WhenForced()
+    {
+        var dataPath = MakeGameLayout(withSo: false, withDll: true, withMetadata: true);
+        Assert.True(Il2CppMetadataCache.TryResolveGamePaths(dataPath, out var assembly, out var metadata));
+        WriteCache(NewSupplement(
+            new DateTimeOffset(File.GetLastWriteTimeUtc(assembly)),
+            new DateTimeOffset(File.GetLastWriteTimeUtc(metadata))));
+        var probed = false;
+
+        // The probe runs (and here declines), so the forced path went past
+        // the freshness check. The fresh supplement it failed to replace is
+        // still in place, which is what the return value reports.
+        var fresh = Il2CppMetadataCache.BuildIfStale(_cacheRoot, dataPath, () => { probed = true; return null; }, NullLogSink.Instance, force: true);
+
+        Assert.True(probed);
+        Assert.True(fresh);
+    }
+
+    [Fact]
+    public void BuildIfStale_ReportsFalse_WhenTheGameFilesAreMissing()
+    {
+        var dataPath = MakeGameLayout(withSo: false, withDll: false, withMetadata: false);
+
+        Assert.False(Il2CppMetadataCache.BuildIfStale(_cacheRoot, dataPath, () => null, NullLogSink.Instance));
+    }
+
+    [Fact]
+    public void BuildIfStale_ReportsFalse_WhenTheVersionProbeThrows()
+    {
+        // A stale or missing supplement plus a probe failure degrades to "no
+        // supplement", never to an exception out of the caller's command.
+        var dataPath = MakeGameLayout(withSo: false, withDll: true, withMetadata: true);
+
+        var fresh = Il2CppMetadataCache.BuildIfStale(_cacheRoot, dataPath, () => throw new IOException("locked"), NullLogSink.Instance);
+
+        Assert.False(fresh);
+    }
+
+    // <root>/game/GameAssembly.{so,dll} beside <root>/game/Game_Data/il2cpp_data/Metadata/global-metadata.dat.
+    private string MakeGameLayout(bool withSo, bool withDll, bool withMetadata)
+    {
+        var gameRoot = Path.Combine(_root, "game");
+        var dataPath = Path.Combine(gameRoot, "Game_Data");
+        Directory.CreateDirectory(dataPath);
+        if (withSo) File.WriteAllText(Path.Combine(gameRoot, "GameAssembly.so"), "so");
+        if (withDll) File.WriteAllText(Path.Combine(gameRoot, "GameAssembly.dll"), "dll");
+        if (withMetadata)
+        {
+            var metadataDir = Path.Combine(dataPath, "il2cpp_data", "Metadata");
+            Directory.CreateDirectory(metadataDir);
+            File.WriteAllText(Path.Combine(metadataDir, "global-metadata.dat"), "meta");
+        }
+        return dataPath;
     }
 
     public void Dispose()
