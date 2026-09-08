@@ -1,0 +1,8 @@
+# Build outputs
+bin/
+obj/
+
+# Machine-specific paths written by `jiangyu code sync`. The committed
+# Directory.Build.props carries portable defaults; local.props pins the
+# resolved game and SDK paths for IDE / bare `dotnet build` use.
+local.props

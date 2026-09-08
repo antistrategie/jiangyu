@@ -234,6 +234,91 @@ internal static class TemplateRuntimeAccess
         return false;
     }
 
+    public static bool IsDataTemplateType(Type resolvedType)
+        => resolvedType != null && typeof(DataTemplate).IsAssignableFrom(resolvedType);
+
+    public static bool IsScriptableObjectType(Type resolvedType)
+        => resolvedType != null && typeof(ScriptableObject).IsAssignableFrom(resolvedType);
+
+    /// <summary>Whether two type names address the same templates: the same spelling, or
+    /// types one of which derives from the other, so an id looked up under either finds the
+    /// same object (a DataTemplate is registered in every ancestor map, a ScriptableObject is
+    /// found by name under any base type). <c>DataTemplate</c> itself has no map and matches
+    /// only its own spelling.</summary>
+    public static bool SameTemplateSpace(string typeNameA, string typeNameB)
+    {
+        if (string.IsNullOrEmpty(typeNameA) || string.IsNullOrEmpty(typeNameB))
+            return false;
+        if (string.Equals(typeNameA, typeNameB, StringComparison.Ordinal))
+            return true;
+        var a = ResolveTemplateType(typeNameA, out _);
+        var b = ResolveTemplateType(typeNameB, out _);
+        if (a == null || b == null || a == typeof(DataTemplate) || b == typeof(DataTemplate))
+            return false;
+        return a.IsAssignableFrom(b) || b.IsAssignableFrom(a);
+    }
+
+    // The canonical name of each spelling seen. A name that does not resolve is not cached:
+    // its type may be injected later.
+    private static readonly Dictionary<string, string> CanonicalNames = new(StringComparer.Ordinal);
+
+    /// <summary>The one name the loader files a type under, whatever spelling a mod used: a
+    /// code-defined <c>ns:Name</c> as written; otherwise the resolved type's short name when
+    /// that short name resolves to the same type on its own, else its full name; a name that
+    /// does not resolve, as written. Both catalogues, the held blocks, the changed sets and
+    /// the missing-template keys use it, so a qualified spelling, a short spelling and a clone
+    /// directive name one thing.</summary>
+    public static string CanonicalTypeName(string templateTypeName)
+    {
+        if (string.IsNullOrEmpty(templateTypeName) || templateTypeName.Contains(':'))
+            return templateTypeName;
+        if (CanonicalNames.TryGetValue(templateTypeName, out var canonical))
+            return canonical;
+        var type = ResolveTemplateType(templateTypeName, out _);
+        if (type == null)
+            return templateTypeName;
+        canonical = string.Equals(type.Name, templateTypeName, StringComparison.Ordinal) || ResolveTemplateType(type.Name, out _) == type
+            ? type.Name
+            : type.FullName ?? templateTypeName;
+        CanonicalNames[templateTypeName] = canonical;
+        return canonical;
+    }
+
+    /// <summary>Loads the type's Resources folder again and enumerates its live objects. A
+    /// probe that missed calls this once per type per scene: the game unloads an asset nothing
+    /// references, and the reload brings it back.</summary>
+    public static IReadOnlyList<Il2CppObjectBase> ReloadScriptableObjects(string templateTypeName, Type resolvedType)
+    {
+        EnsureResourcesFolderLoaded(templateTypeName, resolvedType, reload: true);
+        return EnumerateScriptableObjects(resolvedType);
+    }
+
+    /// <summary>Whether a type name names the SoundBank type, short or qualified.</summary>
+    public static bool IsSoundBankTypeName(string templateTypeName)
+        => string.Equals(templateTypeName, "SoundBank", StringComparison.Ordinal)
+            || (templateTypeName != null && templateTypeName.EndsWith(".SoundBank", StringComparison.Ordinal));
+
+    /// <summary>Finds a ScriptableObject template by <c>Object.name</c> in a list
+    /// <see cref="GetAllTemplates"/> returned, so a caller with several ids to check
+    /// walks the loaded objects once.</summary>
+    public static bool TryFindByName(IReadOnlyList<Il2CppObjectBase> candidates, string templateId, out Il2CppObjectBase template)
+    {
+        template = null;
+        if (candidates == null || string.IsNullOrEmpty(templateId))
+            return false;
+
+        foreach (var candidate in candidates)
+        {
+            if (candidate is UnityEngine.Object obj && string.Equals(obj.name, templateId, StringComparison.Ordinal))
+            {
+                template = candidate;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Returns all live templates of the given type, dispatching by base class:
     /// <list type="bullet">
@@ -247,7 +332,7 @@ internal static class TemplateRuntimeAccess
     ///     loaded (not "not ready yet").</description></item>
     /// </list>
     /// </summary>
-    public static IReadOnlyList<Il2CppObjectBase> GetAllTemplates(string templateTypeName, out Type resolvedType, out string resolveError)
+    public static IReadOnlyList<Il2CppObjectBase> GetAllTemplates(string templateTypeName, out Type resolvedType, out string resolveError, bool reloadOnEmpty = true)
     {
         resolvedType = null;
         if (string.IsNullOrWhiteSpace(templateTypeName))
@@ -273,8 +358,11 @@ internal static class TemplateRuntimeAccess
         if (typeof(ScriptableObject).IsAssignableFrom(type))
         {
             EnsureResourcesFolderLoaded(templateTypeName, type);
+            // An empty enumeration may mean the game unloaded the type's assets: one reload,
+            // unless the caller bounds reloads itself (the patch applier's probe, once per
+            // type per scene).
             var live = EnumerateScriptableObjects(type);
-            if (live.Count == 0 && EnsureResourcesFolderLoaded(templateTypeName, type, reload: true))
+            if (live.Count == 0 && reloadOnEmpty && EnsureResourcesFolderLoaded(templateTypeName, type, reload: true))
                 live = EnumerateScriptableObjects(type);
             return live;
         }

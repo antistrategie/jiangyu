@@ -57,7 +57,7 @@ internal static class LocaleInheritance
     /// </summary>
     public static int Apply(
         TemplateCloneCatalog clones, TemplatePatchCatalog patches, MelonLogger.Instance log,
-        bool translatable, HashSet<string> decided)
+        bool translatable, HashSet<string> decided, Func<string, string, bool> templateHeld = null)
     {
         if (clones == null || !clones.HasClones)
             return 0;
@@ -74,6 +74,23 @@ internal static class LocaleInheritance
             return 0;
 
         var written = 0;
+        // A clone reads through its source's entry, and a source declared under another
+        // entry of its type family may be decided later in the walk: the entries are walked
+        // again until nothing new is decided.
+        while (true)
+        {
+            var decidedBefore = decided.Count;
+            written += ApplyOnce(clones, patches, data, log, translatable, decided, templateHeld);
+            if (decided.Count == decidedBefore)
+                return written;
+        }
+    }
+
+    private static int ApplyOnce(
+        TemplateCloneCatalog clones, TemplatePatchCatalog patches, LocaData data, MelonLogger.Instance log,
+        bool translatable, HashSet<string> decided, Func<string, string, bool> templateHeld)
+    {
+        var written = 0;
         foreach (var typeEntry in clones.EnumerateByType())
         {
             // Resolving a template is the expensive part, so the type answers first: no localised
@@ -85,7 +102,8 @@ internal static class LocaleInheritance
             if (members.Length == 0)
                 continue;
 
-            var authored = AuthoredMembers(typeEntry.Key, patches);
+            // A patch may address a clone under any name of its type: the catalogue's aliases.
+            var authored = AuthoredMembers(patches?.AliasNames(typeEntry.Key) ?? new[] { typeEntry.Key }, patches);
 
             // A clone of a clone reads through its source's entry, which this pass writes, so the
             // source has to be done first. Same ordering the clone applier uses: anything whose
@@ -96,11 +114,25 @@ internal static class LocaleInheritance
 
             foreach (var directive in ordered)
             {
-                if (string.IsNullOrEmpty(directive.SourceId) || decided.Contains(directive.CloneId))
+                if (string.IsNullOrEmpty(directive.SourceId) || decided.Contains(LateTemplateSet.Key(typeEntry.Key, directive.CloneId)))
+                    continue;
+                // A clone with a block of patches still held is decided on the pass that
+                // follows the block: its authored text has not been written yet. So is a
+                // clone whose source is held or not yet decided, since it reads through the
+                // source's entry.
+                if (templateHeld != null
+                    && (templateHeld(typeEntry.Key, directive.CloneId) || templateHeld(typeEntry.Key, directive.SourceId)))
+                    continue;
+                // A source that is itself a clone, under this entry or an alias of it, reads
+                // through its own entry, written when it was decided. A created source has no
+                // entry to wait for.
+                if (clones.TryGetDirective(typeEntry.Key, directive.SourceId, out var sourceDirective, out var sourceEntry)
+                    && !string.IsNullOrEmpty(sourceDirective.SourceId)
+                    && !decided.Contains(LateTemplateSet.Key(sourceEntry, directive.SourceId)))
                     continue;
                 if (!MirrorOne(directive, resolvedType, members, authored, data, translatable, log, out var mirrored))
                     continue;   // not registered yet; a later pass looks again
-                decided.Add(directive.CloneId);
+                decided.Add(LateTemplateSet.Key(typeEntry.Key, directive.CloneId));
                 written += mirrored;
             }
         }
@@ -114,7 +146,7 @@ internal static class LocaleInheritance
         LoadedCloneDirective directive,
         Type resolvedType,
         PropertyInfo[] members,
-        IReadOnlyDictionary<string, HashSet<string>> authored,
+        IReadOnlyDictionary<string, Dictionary<string, string>> authored,
         LocaData data,
         bool translatable,
         MelonLogger.Instance log,
@@ -130,7 +162,7 @@ internal static class LocaleInheritance
 
         foreach (var member in members)
         {
-            if (authoredHere != null && authoredHere.Contains(member.Name))
+            if (authoredHere != null && authoredHere.ContainsKey(member.Name))
                 continue;   // the mod wrote this field, so it is the mod's to translate
 
             var line = ReadLine(clone, member);
@@ -174,9 +206,23 @@ internal static class LocaleInheritance
                 // serve whichever clone wrote last. The line is per clone, so its default is the one
                 // place this text can live and stay right. It is the clone's own line, never the
                 // source's.
+                // The English kept for the source language is the clone's own line before this
+                // pass first wrote it, unless the line was just copied from a source already
+                // translated: by this pass, in which case the source's recorded English is the
+                // original, or by the mod's own translation of a field it authored on the
+                // source, in which case the authored English is.
                 var key = (directive.CloneId, member.Name);
                 if (!OriginalDefaults.ContainsKey(key))
-                    OriginalDefaults[key] = line.m_DefaultTranslation;
+                {
+                    OriginalDefaults[key] = OriginalDefaults.TryGetValue((directive.SourceId, member.Name), out var sourceEnglish)
+                        ? sourceEnglish
+                        : authored.TryGetValue(directive.SourceId, out var sourceAuthored)
+                            && sourceAuthored.TryGetValue(member.Name, out var authoredEnglish)
+                            && authoredEnglish != null
+                            ? authoredEnglish
+                            : line.m_DefaultTranslation;
+                }
+
                 line.SetDefaultTranslation(translated);
 
                 // The source's entry copied under the clone's own id as well. The game never looks
@@ -204,16 +250,19 @@ internal static class LocaleInheritance
     // and a replacement built at the member (`set "Description" type="LocalizedMultiLine" { ... }`).
     // Anything deeper than one step is a line nested inside a member rather than the member itself,
     // and no such line is one of this template's own localised properties.
-    private static Dictionary<string, HashSet<string>> AuthoredMembers(
-        string templateTypeName, TemplatePatchCatalog patches)
+    // Ops addressed under the type or any of its ancestor names all write the same clone.
+    // The value is the English the mod wrote, the last written when several ops write the
+    // member: a clone rebased from that member's owner takes it as its own original.
+    private static Dictionary<string, Dictionary<string, string>> AuthoredMembers(
+        IReadOnlyList<string> typeNames, TemplatePatchCatalog patches)
     {
-        var byTemplate = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        var byTemplate = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
         if (patches == null)
             return byTemplate;
 
         foreach (var typeEntry in patches.EnumerateByType())
         {
-            if (!string.Equals(typeEntry.Key, templateTypeName, StringComparison.Ordinal))
+            if (!typeNames.Contains(typeEntry.Key))
                 continue;
 
             foreach (var template in typeEntry.Value)
@@ -223,14 +272,36 @@ internal static class LocaleInheritance
                     var member = AuthoredMember(op);
                     if (member == null)
                         continue;
-                    if (!byTemplate.TryGetValue(template.Key, out var set))
-                        byTemplate[template.Key] = set = new HashSet<string>(StringComparer.Ordinal);
-                    set.Add(member);
+                    if (!byTemplate.TryGetValue(template.Key, out var members))
+                        byTemplate[template.Key] = members = new Dictionary<string, string>(StringComparer.Ordinal);
+                    members[member] = AuthoredText(op) ?? (members.TryGetValue(member, out var earlier) ? earlier : null);
                 }
             }
         }
 
         return byTemplate;
+    }
+
+    // The English an op writes into a member's line: the value of a descent into
+    // m_DefaultTranslation, or of the m_DefaultTranslation set inside a replacement built at
+    // the member.
+    private static string AuthoredText(LoadedPatchOperation op)
+    {
+        if (op.FieldPath == LocaleCoordinate.DefaultTranslationMember)
+            return op.Value?.String;
+        var construction = op.Value?.TypeConstruction ?? op.Value?.Composite;
+        if (construction?.Operations == null)
+            return null;
+        string text = null;
+        foreach (var inner in construction.Operations)
+        {
+            if (inner.Op == Jiangyu.Shared.Templates.CompiledTemplateOp.Set
+                && inner.FieldPath == LocaleCoordinate.DefaultTranslationMember
+                && inner.Value?.String != null)
+                text = inner.Value.String;
+        }
+
+        return text;
     }
 
     private static string AuthoredMember(LoadedPatchOperation op)

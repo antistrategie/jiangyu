@@ -463,6 +463,12 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 // after the validator's pass, so these fillers run last.
                 CompositeAutoFillers.ApplyPostValidation(templatePatchResult.Patches);
             }
+            else if (templatePatchResult.Patches?.Count > 0)
+            {
+                _log.Warning(
+                    $"Template patches were not validated: {assemblyPath} is missing. "
+                    + "Template references stay untyped, so the loader cannot hold a patch block for a template another mod registers later.");
+            }
         }
         _log.Info($"  [timing] Template compilation: {phaseSw.Elapsed.TotalSeconds:F1}s");
 

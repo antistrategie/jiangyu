@@ -18,18 +18,21 @@ internal sealed class LoaderLog
     /// <summary>The underlying logger, for subsystems that log without a mod scope.</summary>
     public MelonLogger.Instance Raw => _log;
 
-    public void Msg(string message) => _log.Msg(Format(message));
+    public void Msg(string message) => _log?.Msg(Format(message));
 
     /// <summary>Verbose per-item detail, emitted only when the `debug` dev flag is set (see LoaderDebug).</summary>
     public void Debug(string message)
     {
+        // No logger (a test host): nothing to write, and no debug flag to read.
+        if (_log == null)
+            return;
         if (LoaderDebug.Enabled)
             Msg(LoaderDebug.Decorate(message));
     }
 
-    public void Warning(string message) => _log.Warning(Format(message));
+    public void Warning(string message) => _log?.Warning(Format(message));
 
-    public void Error(string message) => _log.Error(Format(message));
+    public void Error(string message) => _log?.Error(Format(message));
 
     private string Format(string message)
         => string.IsNullOrEmpty(Mod) ? message : $"[{Mod}] {message}";

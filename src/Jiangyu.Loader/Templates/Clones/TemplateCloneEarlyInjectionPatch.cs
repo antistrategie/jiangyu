@@ -49,18 +49,31 @@ internal sealed class TemplateCloneEarlyInjectionPatch : IHarmonyPatchModule
     };
 
     private static TemplateCloneApplier _templateCloneApplier;
+    private static TemplatePatchCatalog _patches;
     private static MelonLogger.Instance _log;
 
-    public TemplateCloneEarlyInjectionPatch(TemplateCloneApplier templateCloneApplier)
+    /// <summary>The late template pass, run as the last prefix on every entry point this
+    /// patch hooks, after every other mod's prefix on the same method. An id another loader
+    /// registered since Jiangyu's last replacement pass is patched here, before the campaign
+    /// is built or the save is read. Set by the replacement coordinator.</summary>
+    public static Action<MelonLogger.Instance, string> LatePass { get; set; }
+
+    public TemplateCloneEarlyInjectionPatch(TemplateCloneApplier templateCloneApplier, TemplatePatchCatalog patches)
     {
         _templateCloneApplier = templateCloneApplier;
+        _patches = patches;
     }
 
+    // Installed when any mod ships clones or patches: the clone prefix needs clones, the
+    // late pass needs either, since a patch can target a template another mod's prefix
+    // on the same entry point registers.
     public void Install(HarmonyLib.Harmony harmony, LoaderHarmonyPatchContext context)
     {
         _log = context.Log;
 
-        if (_templateCloneApplier == null || !_templateCloneApplier.HasConfiguredClones)
+        var hasClones = _templateCloneApplier is { HasConfiguredClones: true };
+        var hasPatches = _patches is { HasPatches: true };
+        if (!hasClones && !hasPatches)
             return;
 
         var strategyStateType = ResolveStrategyStateType();
@@ -205,7 +218,28 @@ internal sealed class TemplateCloneEarlyInjectionPatch : IHarmonyPatchModule
     private static void PatchMethod(HarmonyLib.Harmony harmony, MethodInfo target, string prefixName)
     {
         harmony.Patch(target, prefix: new HarmonyMethod(typeof(TemplateCloneEarlyInjectionPatch), prefixName));
+        harmony.Patch(target, prefix: new HarmonyMethod(typeof(TemplateCloneEarlyInjectionPatch), nameof(LatePrefix))
+        {
+            priority = Priority.Last,
+        });
         HarmonyPatching.Installed(_log, $"Patched {target.DeclaringType?.Name}.{target.Name} for early template clone injection.");
+    }
+
+    // Priority.Last: runs after the other prefixes on the method, so a template another
+    // mod's prefix registered is visible to the pass.
+    private static void LatePrefix(MethodBase __originalMethod)
+    {
+        var trigger = __originalMethod == null
+            ? "entry"
+            : $"{__originalMethod.DeclaringType?.Name}.{__originalMethod.Name}";
+        try
+        {
+            LatePass?.Invoke(_log, trigger);
+        }
+        catch (Exception ex)
+        {
+            _log?.Error($"Template late pass at {trigger} failed: {ex}");
+        }
     }
 
     private static Type ResolveSaveSystemType()

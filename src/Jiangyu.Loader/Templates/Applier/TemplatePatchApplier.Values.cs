@@ -871,9 +871,38 @@ internal sealed partial class TemplatePatchApplier
             ? targetType.Name
             : reference.TemplateType;
 
-        if (!TemplateRuntimeAccess.TryGetTemplateById(
+        // The pass's probe has just looked this template up: take what it found rather than
+        // enumerating the type again.
+        if (_passResolved != null
+            && _passResolved.TryGetValue(new TemplateRef(TemplateRuntimeAccess.CanonicalTypeName(lookupTypeName), reference.TemplateId), out var cached)
+            && cached != null)
+        {
+            var cachedType = TemplateRuntimeAccess.ResolveTemplateType(lookupTypeName, out _);
+            if (cachedType != null && targetType.IsAssignableFrom(cachedType))
+            {
+                converted = cached;
+                error = null;
+                return true;
+            }
+        }
+
+        bool found;
+        Il2CppObjectBase resolvedTemplate;
+        Type resolvedType;
+        string resolveError;
+        try
+        {
+            found = TemplateRuntimeAccess.TryGetTemplateById(
                 lookupTypeName, reference.TemplateId,
-                out var resolvedTemplate, out var resolvedType, out var resolveError))
+                out resolvedTemplate, out resolvedType, out resolveError);
+        }
+        catch (Exception ex)
+        {
+            error = $"TemplateReference '{lookupTypeName}:{reference.TemplateId}': lookup threw: {ex.Message}";
+            return false;
+        }
+
+        if (!found)
         {
             error = resolvedType == null
                 ? $"TemplateReference '{lookupTypeName}:{reference.TemplateId}': {resolveError}"

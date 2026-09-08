@@ -277,8 +277,34 @@ public class TemplateCatalogValidatorTests
         Assert.Empty(log.Errors);
         Assert.Equal(CompiledTemplateValueKind.TemplateReference, op.Value.Kind);
         Assert.NotNull(op.Value.Reference);
-        Assert.Null(op.Value.Reference!.TemplateType);
+        // A compiled reference carries the declared type, so the loader can check that
+        // the template exists before it writes anything.
+        Assert.EndsWith("FixtureSkillTemplate", op.Value.Reference!.TemplateType);
         Assert.Equal("skill.x", op.Value.Reference.TemplateId);
+    }
+
+    [Fact]
+    public void Reference_StringValueOnConcreteField_EditorNormaliseKeepsTheBareId()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var op = new CompiledTemplateSetOperation
+        {
+            Op = CompiledTemplateOp.Set,
+            FieldPath = "ConcreteRef",
+            Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.String, String = "skill.x" },
+        };
+        var patches = new[]
+        {
+            new CompiledTemplatePatch { TemplateType = "FixtureRefHolder", TemplateId = "x", Set = [op] },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log, mode: ValidationMode.EditorNormalise);
+
+        Assert.Equal(0, errors);
+        Assert.Equal(CompiledTemplateValueKind.TemplateReference, op.Value.Kind);
+        // The editor keeps the inference shape. The type is stamped again on compile.
+        Assert.Null(op.Value.Reference!.TemplateType);
     }
 
     [Fact]

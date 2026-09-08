@@ -15,14 +15,45 @@ namespace Jiangyu.Loader.Templates;
 internal sealed class TemplatePatchCatalog
 {
     // Outer key: template type name (e.g. "EntityTemplate").
-    // Middle key: templateId. Inner list: operations in applied order. Set
-    // ops dedup on fieldPath within the inner list (later replaces earlier);
-    // Append ops always add a new entry so N appends on the same field apply
-    // N new elements in authored/load order.
+    // Middle key: templateId. Inner list: operations in load order. A later set on
+    // the same slot wins when the ops apply; append ops always add a new entry so N
+    // appends on the same field apply N new elements in authored/load order.
     private readonly Dictionary<string, Dictionary<string, List<LoadedPatchOperation>>> _patches
         = new(StringComparer.Ordinal);
 
     public int PatchCount { get; private set; }
+
+    // The position counter: each op takes the next value, so a template's ops gathered
+    // under several type names order by load order across every mod.
+    private int _nextSequence;
+
+    // Type names that address the same templates as a given name, cached: the catalogue is
+    // fixed after load.
+    private readonly Dictionary<string, List<string>> _aliasNames = new(StringComparer.Ordinal);
+    private readonly Func<string, string, bool> _sameTemplateSpace;
+
+    // The entry name each spelling files under: one entry per type, named canonically, so a
+    // qualified and a short name of one type share an entry, and the clone catalogue's entry
+    // for the type has the same name.
+    private readonly Dictionary<string, string> _entryNames = new(StringComparer.Ordinal);
+    private readonly Func<string, string> _canonicalName;
+
+    public TemplatePatchCatalog(Func<string, string, bool> sameTemplateSpace = null, Func<string, string> canonicalName = null)
+    {
+        _sameTemplateSpace = sameTemplateSpace ?? TemplateRuntimeAccess.SameTemplateSpace;
+        _canonicalName = canonicalName ?? TemplateRuntimeAccess.CanonicalTypeName;
+    }
+
+    /// <summary>The name the catalogue files <paramref name="templateType"/> under
+    /// (<see cref="TemplateRuntimeAccess.CanonicalTypeName"/>).</summary>
+    public string EntryNameFor(string templateType)
+    {
+        if (templateType == null)
+            return null;
+        if (!_entryNames.TryGetValue(templateType, out var name))
+            _entryNames[templateType] = name = _canonicalName(templateType) ?? templateType;
+        return name;
+    }
 
     public bool HasPatches => _patches.Count > 0;
 
@@ -39,13 +70,51 @@ internal sealed class TemplatePatchCatalog
     {
         ops = null;
         return templateType != null && templateId != null
-            && _patches.TryGetValue(templateType, out var byId)
+            && _patches.TryGetValue(EntryNameFor(templateType), out var byId)
             && byId.TryGetValue(templateId, out ops);
+    }
+
+    /// <summary>The entry names that address the same templates as
+    /// <paramref name="templateType"/>: its own entry name, and every entry whose type derives
+    /// from or is an ancestor of its type (a DataTemplate is registered in every ancestor map).
+    /// Ops under any of them target the same object.</summary>
+    public IReadOnlyList<string> AliasNames(string templateType)
+    {
+        if (templateType == null)
+            return Array.Empty<string>();
+        var entryName = EntryNameFor(templateType);
+        if (_aliasNames.TryGetValue(entryName, out var names))
+            return names;
+        names = new List<string> { entryName };
+        foreach (var typeName in _patches.Keys)
+        {
+            if (!names.Contains(typeName) && _sameTemplateSpace(entryName, typeName))
+                names.Add(typeName);
+        }
+
+        _aliasNames[entryName] = names;
+        return names;
+    }
+
+    /// <summary>A template's ops under every alias of <paramref name="templateType"/>, in
+    /// load order across them, so a later mod still wins whichever name it used.</summary>
+    public List<LoadedPatchOperation> OperationsAcrossAliases(string templateType, string templateId)
+    {
+        var all = new List<LoadedPatchOperation>();
+        foreach (var typeName in AliasNames(templateType))
+        {
+            if (TryGetOperations(typeName, templateId, out var ops))
+                all.AddRange(ops);
+        }
+
+        if (all.Count > 1)
+            all.Sort((a, b) => a.Sequence.CompareTo(b.Sequence));
+        return all;
     }
 
     /// <summary>
     /// The set of top-level member names the patch ops for
-    /// <paramref name="templateId"/> write to. The clone applier uses this to
+    /// <paramref name="templateId"/> write to, under every alias of the type. The clone applier uses this to
     /// tell which non-collection fields a clone authored itself, so
     /// re-inheritance from a cloned source fills only the ones the clone left
     /// untouched (never overwriting an authored value, nor sharing a mutable
@@ -55,13 +124,13 @@ internal sealed class TemplatePatchCatalog
     public HashSet<string> TouchedTopLevelFields(string templateType, string templateId)
     {
         var result = new HashSet<string>(StringComparer.Ordinal);
-        if (TryGetOperations(templateType, templateId, out var ops))
-            foreach (var op in ops)
-            {
-                var top = TopLevelField(op);
-                if (!string.IsNullOrEmpty(top))
-                    result.Add(top);
-            }
+        foreach (var op in OperationsAcrossAliases(templateType, templateId))
+        {
+            var top = TopLevelField(op);
+            if (!string.IsNullOrEmpty(top))
+                result.Add(top);
+        }
+
         return result;
     }
 
@@ -174,6 +243,7 @@ internal sealed class TemplatePatchCatalog
             return;
         }
 
+        templateType = EntryNameFor(templateType);
         if (!_patches.TryGetValue(templateType, out var patchesForType))
         {
             patchesForType = new Dictionary<string, List<LoadedPatchOperation>>(StringComparer.Ordinal);
@@ -186,33 +256,27 @@ internal sealed class TemplatePatchCatalog
             patchesForType[templateId] = operationsForTemplate;
         }
 
-        // Set ops dedup by destination — later replaces earlier, whether
-        // from the same mod or a later-loaded mod. The destination is
-        // the descent prefix + fieldPath + index + indexPath: two writes
-        // that target the same exact slot collide; writes to different
-        // collection indexes (e.g. InitialAttributes[0] vs
-        // InitialAttributes[6]), different descent indexes
-        // (Conditions[0] vs Conditions[1]) and different N-dim cell
-        // coordinates do not. Append ops never dedup, so two appends on
-        // the same collection apply as two additions in order.
+        // A later set on the same slot wins: it applies after the earlier one, and an
+        // earlier one that lands later (its block was held) is skipped by the applier.
+        // Both stay in the catalogue, so a held later block never takes a ready earlier
+        // mod's value with it. The slot is the descent prefix + fieldPath + index +
+        // indexPath: writes to different collection indexes, descent indexes or N-dim
+        // cells do not collide, and append ops never do.
         if (op.Op == CompiledTemplateOp.Set)
         {
-            for (var i = 0; i < operationsForTemplate.Count; i++)
+            foreach (var existing in operationsForTemplate)
             {
-                var existing = operationsForTemplate[i];
                 if (SetOpsCollide(existing, effectivePath, op.Index, op.Descent, op.IndexPath))
                 {
                     log.Warning(
                         $"Override template patch '{templateType}:{templateId}.{effectivePath}': "
                         + $"later-loaded mod '{mod.Name}' replaces '{existing.OwnerLabel}'.");
-                    operationsForTemplate.RemoveAt(i);
-                    PatchCount--;
                     break;
                 }
             }
         }
 
-        operationsForTemplate.Add(new LoadedPatchOperation(op.Op, effectivePath, op.Index, op.IndexPath, op.Descent, op.Value, mod.Name));
+        operationsForTemplate.Add(new LoadedPatchOperation(op.Op, effectivePath, op.Index, op.IndexPath, op.Descent, op.Value, mod.Name, _nextSequence++));
         PatchCount++;
     }
 
@@ -281,8 +345,10 @@ internal sealed class LoadedPatchOperation
         IReadOnlyList<int> indexPath,
         IReadOnlyList<TemplateDescentStep> descent,
         CompiledTemplateValue value,
-        string ownerLabel)
+        string ownerLabel,
+        int sequence = 0)
     {
+        Sequence = sequence;
         Op = op;
         FieldPath = fieldPath;
         Index = index;
@@ -293,6 +359,9 @@ internal sealed class LoadedPatchOperation
     }
 
     public CompiledTemplateOp Op { get; }
+    /// <summary>Position in the load order across every mod and template type. Ops on one
+    /// template gathered under several type names are ordered by it.</summary>
+    public int Sequence { get; }
     /// <summary>Inner-relative member path on the destination instance.</summary>
     public string FieldPath { get; }
     public int? Index { get; }

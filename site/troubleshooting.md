@@ -77,6 +77,7 @@ The loader logs a `Template patch '<id>' ...` line per operation. Missing line =
 Common causes:
 
 - **The template id doesn't exist.** Check the Template Browser or `jiangyu templates list --type <TypeName>`.
+- **A template id belongs to another loader's mod.** Your operations on a template are held as one block while that template, or any template a value in the block refers to, does not exist, and retried on every later pass, every five seconds while held, on every scene load, and when a new game starts or a save loads. A `Template patch '<Type>:<id>': waiting on ...` warning at the end of a scene's passes names what is still missing. Check that the other mod loaded and that each id matches exactly. Nothing in a held block is applied until all of it can be.
 - **The field path doesn't resolve.** Use `jiangyu templates query <Type>.<path>` to navigate the type tree and confirm the path.
 - **The value kind doesn't match the field type.** Writing a `String` into a `Single` field fails loudly. The error names the expected type.
 - **The field is an interface-typed slot.** A field typed `ITacticalCondition`, `IValueProvider` or a filter interface takes a constructed subtype, `set "<Field>" type="<Subtype>" { ... }`, not a scalar. The [event handler reference](/reference/event-handlers) lists the subtypes and their fields.

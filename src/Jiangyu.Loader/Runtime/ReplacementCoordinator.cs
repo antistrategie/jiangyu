@@ -40,6 +40,11 @@ internal class ReplacementCoordinator
     private bool _templateWorkSeen;
     private bool _templatesAppliedRaised;
     private bool _memoryAfterPassesReported;
+    // Post-template work a pass could not complete (a chain rebuild whose map was not
+    // available, a rebuild that threw): run again by the next pass, over this scope (null
+    // covers every clone).
+    private bool _postWorkPending;
+    private HashSet<string> _postWorkScope;
 
     /// <summary>Invoked once, after the last authored template clone or patch has been
     /// applied to the live templates. Null until the runtime binds the mod host.</summary>
@@ -58,10 +63,15 @@ internal class ReplacementCoordinator
         _templateClones = new TemplateCloneCatalog();
         _templateCloneApplier = new TemplateCloneApplier(_templateClones);
         _templatePatchApplier.DeferToChainedReplay = _templateCloneApplier.IsChainedClone;
+        _templateCloneApplier.SourcePatchesHeld = SourcePatchesHeld;
+        _templateCloneApplier.Registered = _templatePatchApplier.OnTemplateRegistered;
+        _templatePatchApplier.CloneHeld = (type, id) => _templateCloneApplier.LateSources.Contains(
+            name => TemplateRuntimeAccess.SameTemplateSpace(type, name), id);
+        TemplateCloneEarlyInjectionPatch.LatePass = ApplyLate;
         _harmonyPatchInstaller = new LoaderHarmonyPatchInstaller(
             new IHarmonyPatchModule[]
             {
-                new TemplateCloneEarlyInjectionPatch(_templateCloneApplier),
+                new TemplateCloneEarlyInjectionPatch(_templateCloneApplier, _templatePatches),
                 new AudioReplacementPatch(_catalog.Assets),
                 new Jiangyu.Loader.Replacements.ElementSpawnReplacementPatch(this),
                 new ConversationManagerTrackingPatch(),
@@ -114,8 +124,61 @@ internal class ReplacementCoordinator
             counts.PatchOps = manifest?.TemplatePatches?.Sum(patch => patch.Set?.Count ?? 0) ?? 0;
             counts.Locales = CountLocaleFiles(mod);
         }
-        _localeApplier = new LocaleApplier(plan.LoadableMods, _templateClones, _templatePatches);
+        _localeApplier = new LocaleApplier(plan.LoadableMods, _templateClones, _templatePatches)
+        {
+            TemplateHeld = IsTemplateHeld,
+            // A held clone has no fields to translate yet, whoever owns the text.
+            BlockHeld = (owner, type, id) => _templatePatchApplier.HeldBlocks.Contains(
+                    owner, name => TemplateRuntimeAccess.SameTemplateSpace(type, name), id)
+                || _templateCloneApplier.LateSources.Contains(
+                    name => TemplateRuntimeAccess.SameTemplateSpace(type, name), id),
+        };
         return summary;
+    }
+
+    /// <summary>True while template work waits on something outside this pass: a held patch
+    /// block or clone waiting on a template another loader has not registered, a type whose
+    /// templates are not live yet, or a scoped locale re-run that could not complete.</summary>
+    public bool HasDeferredTemplateWork
+        => !_templatePatchApplier.HeldBlocks.IsEmpty
+            || !_templateCloneApplier.LateSources.IsEmpty
+            || _templatePatchApplier.HasPendingPatches
+            || _templateCloneApplier.HasPendingClones
+            || _postWorkPending
+            || (_localeApplier?.ScopePending ?? false);
+
+    // A clone of a type without re-inheritance waits for its source's held patches, with one
+    // exception: a source block that itself waits on this clone. Then the clone copies the
+    // source as it stands, the block lands once the clone exists, and the copy keeps the
+    // source's earlier state. That case is warned about when the block lands.
+    private bool SourcePatchesHeld(string templateType, string sourceId, string cloneId)
+    {
+        Func<string, bool> sameSpace = name => TemplateRuntimeAccess.SameTemplateSpace(templateType, name);
+        // Only a block that waits on something other than this very clone holds it back. A
+        // reference to the clone may carry any name of its type or of a base of it.
+        Func<TemplateRef, bool> isThisClone = missing =>
+            string.Equals(missing.Id, cloneId, StringComparison.Ordinal)
+            && TemplateRuntimeAccess.SameTemplateSpace(templateType, missing.Type);
+        var held = _templatePatchApplier.HeldBlocks;
+        if (held.ContainsTemplate(sameSpace, sourceId))
+            return held.AnyBlockWaitsOnOther(sameSpace, sourceId, isThisClone);
+
+        // Before the source's own patch pass has run, the block is not held yet but would be.
+        return _templatePatchApplier.WouldHold(templateType, sourceId, isThisClone);
+    }
+
+    // A SoundBank addressed under any spelling or base of its type.
+    private static bool IsSoundBankSpace(string templateType)
+        => TemplateRuntimeAccess.IsSoundBankTypeName(templateType)
+            || TemplateRuntimeAccess.SameTemplateSpace("SoundBank", templateType);
+
+    // Whether the template waits on another loader under any name it is registered in: a
+    // held patch block on it, or a held clone directive for it.
+    private bool IsTemplateHeld(string templateType, string templateId)
+    {
+        Func<string, bool> sameSpace = name => TemplateRuntimeAccess.SameTemplateSpace(templateType, name);
+        return _templatePatchApplier.HeldBlocks.ContainsTemplate(sameSpace, templateId)
+            || _templateCloneApplier.LateSources.Contains(sameSpace, templateId);
     }
 
     private static int CountLocaleFiles(DiscoveredMod mod)
@@ -144,6 +207,11 @@ internal class ReplacementCoordinator
         _screenTextureSweeps.Clear();
         _textureMutation.OnSceneUnloaded();
         _meshPreparation.ClearPreparedAssignments();
+        // Held work is reported once per scene's schedule.
+        _templatePatchApplier.HeldBlocks.ResetReported();
+        _templateCloneApplier.LateSources.ResetReported();
+        _templatePatchApplier.OnSceneUnloaded();
+        _templateCloneApplier.OnSceneUnloaded();
     }
 
     /// <summary>
@@ -174,6 +242,19 @@ internal class ReplacementCoordinator
 
     public void ApplyReplacements(MelonLogger.Instance log, bool includeTextures = true)
     {
+        _templatePatchApplier.BeginPass();
+        try
+        {
+            ApplyReplacementsPass(log, includeTextures);
+        }
+        finally
+        {
+            _templatePatchApplier.EndPass();
+        }
+    }
+
+    private void ApplyReplacementsPass(MelonLogger.Instance log, bool includeTextures)
+    {
         // A prefab loaded before the game's asset registry was populated waits here for
         // its script mirror, so a queued mirror is work even for a mod that ships nothing
         // else.
@@ -185,7 +266,25 @@ internal class ReplacementCoordinator
             !_templatePatchApplier.HasPendingPatches &&
             !_templateCloneApplier.HasPendingClones &&
             !(_localeApplier?.Pending ?? false))
+        {
+            // Late template ids are the one job left once everything above has settled.
+            // Their lookups are the only cost of this pass: no renderer sweep, no texture pass.
+            var lateOnly = new HashSet<string>(StringComparer.Ordinal);
+            var lateOnlyClones = new HashSet<string>(StringComparer.Ordinal);
+            RetryLateTemplates(log, lateOnly, chainedToo: true, lateOnlyClones);
+            // Registrations beyond the held clones came from a prefix's regular clone pass.
+            if (_templateCloneApplier.TakeRegisteredSinceLastCall() > lateOnlyClones.Count)
+                RunPostTemplateWork(log, changed: null);
+            else if (lateOnly.Count > 0)
+                RunPostTemplateWork(log, lateOnly);
+            else if (_postWorkPending)
+                RunPostTemplateWork(log, new HashSet<string>(StringComparer.Ordinal));
+            // A scoped locale pass that could not complete on an earlier poll is retried here too.
+            if (lateOnly.Count > 0 || (_localeApplier?.ScopePending ?? false))
+                _localeApplier?.Apply(log);
+            RaiseTemplatesAppliedIfSettled(log);
             return;
+        }
 
         // Prefab-time rebind propagates by sharedMesh reference to every
         // Instantiate'd copy, so future spawns of the carrier (loadout
@@ -207,34 +306,29 @@ internal class ReplacementCoordinator
         if (visualReplacements > 0 || textureMutations > 0)
             log.Msg($"Applied {visualReplacements} visual replacement(s) and {textureMutations} texture mutation(s).");
 
-        // Clones first: patches may target the newly registered cloneIds.
+        // Clones first, held clones included: patches may target the newly registered cloneIds,
+        // and a ref to one resolves only if the clone exists when the op applies.
         if (_templatePatchApplier.HasPendingPatches || _templateCloneApplier.HasPendingClones)
             _templateWorkSeen = true;
+        // Held clones with an outside source land before the regular patch pass, so a ref to
+        // one of them resolves. Held clones chained on a sibling clone land after it, so they
+        // copy the sibling as patched.
+        var late = new HashSet<string>(StringComparer.Ordinal);
+        var lateClones = new HashSet<string>(StringComparer.Ordinal);
         var clonesApplied = _templateCloneApplier.TryApply(new LoaderLog(log));
+        RetryLateTemplates(log, late, chainedToo: false, lateClones);
         var patchesApplied = _templatePatchApplier.TryApply(log);
+        RetryLateTemplates(log, late, chainedToo: true, lateClones);
+        // Clones a prefix registered since the last pass count as this pass's regular work.
+        var freshClones = _templateCloneApplier.TakeRegisteredSinceLastCall();
 
-        // A clone whose source is itself a mod clone was instantiated from the
-        // source's PRE-PATCH base (the clone pass runs before any patch), so it
-        // inherited none of the source's own appends/sets. Now that patches have
-        // landed, rebuild it from the fully patched source and replay its own
-        // ops on top.
-        if (clonesApplied > 0 || patchesApplied > 0)
-            _templateCloneApplier.ReinheritChainedClones(_templatePatchApplier, new LoaderLog(log));
-
-        // Type-specific post-patch registration. SoundBank clones need to
-        // be registered with Stem's runtime SoundManager only after the
-        // bankId patch lands, otherwise Stem indexes them under the source
-        // bank's bankId and SAY/skill audio lookups by the modder's chosen
-        // bankId resolve to nothing. Skipping this no-op when neither
-        // applier did work avoids re-deserialising every clone on each of
-        // the ~25 post-scene-load polls.
-        if (clonesApplied > 0 || patchesApplied > 0)
-        {
-            _templateCloneApplier.RunPostPatchHooks(new LoaderLog(log));
-            // Newly registered templates are the only reason the locale pass would see more than it
-            // did last time, so it re-runs here rather than on every poll.
-            _localeApplier?.NotifyTemplatesChanged();
-        }
+        // A pass with regular work rebuilds every chained clone. A pass with late work alone
+        // rebuilds only the chains the late ids touched: by then a mod's OnTemplatesApplied
+        // may have edited the others, and a full rebuild would put them back.
+        if (clonesApplied > 0 || patchesApplied > 0 || freshClones > clonesApplied + lateClones.Count)
+            RunPostTemplateWork(log, changed: null);
+        else if (late.Count > 0)
+            RunPostTemplateWork(log, late);
 
         // Active-language translations rewrite m_DefaultTranslation after the base patches set
         // the source text, so they overwrite English in the same pass the base patches land. Never
@@ -251,21 +345,252 @@ internal class ReplacementCoordinator
         // queue on success.
         _catalog.PrefabMirrors.DrainPending(log);
 
-        if (_templateWorkSeen && !_templatesAppliedRaised
-            && !_templatePatchApplier.HasPendingPatches && !_templateCloneApplier.HasPendingClones)
+        RaiseTemplatesAppliedIfSettled(log);
+    }
+
+    // Fires the one-shot templates-applied signal once every type's pass has run. Checked
+    // after every pass that can settle the last type, the campaign-entry pass included.
+    private void RaiseTemplatesAppliedIfSettled(MelonLogger.Instance log)
+    {
+        if (!_templateWorkSeen || _templatesAppliedRaised
+            || _templatePatchApplier.HasPendingPatches || _templateCloneApplier.HasPendingClones)
+            return;
+        _templatesAppliedRaised = true;
+        ReportSelfCheck(log);
+        TemplatesApplied?.Invoke();
+    }
+
+    // The late pass on its own, from the last prefix on a campaign entry point (new game, save
+    // load, startup). Whatever another mod's prefix on the same method registered is patched
+    // here, before the game reads the templates.
+    /// <summary>The template work alone: the steady-state pass the scheduler runs every
+    /// 300 frames while <see cref="HasDeferredTemplateWork"/>, with no renderer sweep, prefab
+    /// rebind or texture pass.</summary>
+    public void ApplyDeferredTemplateWork(MelonLogger.Instance log) => ApplyLate(log, "steady-state pass");
+
+    private void ApplyLate(MelonLogger.Instance log, string trigger)
+    {
+        _templatePatchApplier.BeginPass();
+        try
         {
-            _templatesAppliedRaised = true;
-            ReportSelfCheck(log);
-            TemplatesApplied?.Invoke();
+            ApplyLatePass(log, trigger);
         }
+        finally
+        {
+            _templatePatchApplier.EndPass();
+        }
+    }
+
+    private void ApplyLatePass(MelonLogger.Instance log, string trigger)
+    {
+        // The same order as a regular pass: regular clones for a type that became live since
+        // the polls, held clones with an outside source, the regular patch pass for types
+        // that became live (a clone that landed here may hold its inline ops there), held
+        // clones chained on siblings, and the held patches.
+        var late = new HashSet<string>(StringComparer.Ordinal);
+        var lateClones = new HashSet<string>(StringComparer.Ordinal);
+        if (_templatePatchApplier.HasPendingPatches || _templateCloneApplier.HasPendingClones)
+            _templateWorkSeen = true;
+        var clonesApplied = _templateCloneApplier.HasPendingClones
+            ? _templateCloneApplier.TryApply(new LoaderLog(log))
+            : 0;
+        RetryLateTemplates(log, late, chainedToo: false, lateClones);
+        var patchesApplied = _templatePatchApplier.HasPendingPatches
+            ? _templatePatchApplier.TryApply(log)
+            : 0;
+        RetryLateTemplates(log, late, chainedToo: true, lateClones);
+        // Clones the normal-priority prefix registered just before this pass count as its
+        // regular work: their chained ops wait on the post-template work that follows.
+        var freshClones = _templateCloneApplier.TakeRegisteredSinceLastCall();
+        if (freshClones > clonesApplied + lateClones.Count)
+            clonesApplied = freshClones;
+
+        if (late.Count == 0 && clonesApplied == 0 && patchesApplied == 0)
+        {
+            // Post-template work an earlier pass could not complete, and a scoped locale pass
+            // that could not, are retried here too.
+            if (_postWorkPending)
+                RunPostTemplateWork(log, new HashSet<string>(StringComparer.Ordinal));
+            if (_localeApplier?.ScopePending ?? false)
+                _localeApplier.Apply(log);
+            // A type may have latched here with every target held, which settles the passes.
+            RaiseTemplatesAppliedIfSettled(log);
+            LoaderDebug.Write(log, $"Template late pass at {trigger}: nothing new "
+                + $"({_templatePatchApplier.HeldBlocks.Count} patch block(s) and {_templateCloneApplier.LateSources.Count} clone source(s) still held).");
+            return;
+        }
+
+        if (clonesApplied > 0 || patchesApplied > 0)
+            RunPostTemplateWork(log, changed: null);
+        else
+            RunPostTemplateWork(log, late);
+        _localeApplier?.Apply(log);
+        RaiseTemplatesAppliedIfSettled(log);
+        log.Msg($"Template late pass at {trigger}: {late.Count} template(s) landed.");
+    }
+
+    // Held clones first, then held patches. A clone pass lands one link of a chain per pass
+    // (it matches sources against one snapshot of the live templates), so it repeats while it
+    // lands something. Between passes, a landed clone that a still-held clone is cloned from
+    // gets its patches at once, so the next link copies a patched source. Every other held
+    // patch waits until the chains are complete: a ref in one of them resolves only if its
+    // target exists when the op applies. A clone a prefix registered since the last pass
+    // counts as landed ahead of the first pass.
+    // lateClones collects the held clones that landed, kept apart from the patch targets in
+    // registered so a caller can tell a prefix's regular registrations from them.
+    private void RetryLateTemplates(MelonLogger.Instance log, ISet<string> registered, bool chainedToo, ISet<string> lateClones)
+    {
+        var landedNow = new HashSet<string>(StringComparer.Ordinal);
+        _templateCloneApplier.DrainLateRegistrations(landedNow);
+        registered.UnionWith(landedNow);
+        lateClones.UnionWith(landedNow);
+        PatchHeldSources(log, registered, landedNow);
+
+        while (!_templateCloneApplier.LateSources.IsEmpty)
+        {
+            var heldBefore = _templateCloneApplier.LateSources.Count;
+            landedNow = new HashSet<string>(StringComparer.Ordinal);
+            _templateCloneApplier.RetryLate(new LoaderLog(log), landedNow, chainedToo);
+            registered.UnionWith(landedNow);
+            lateClones.UnionWith(landedNow);
+            if (_templateCloneApplier.LateSources.Count == heldBefore)
+                break;
+            PatchHeldSources(log, registered, landedNow);
+        }
+
+        // The remaining held patches run once every chain is complete, so a ref in one of
+        // them can see any clone that landed. The chained phase is the last one. A block that
+        // lands there may release a clone that waited on it, so the phase repeats while the
+        // patches land something and clones are still held.
+        if (!chainedToo)
+            return;
+        while (true)
+        {
+            var before = registered.Count;
+            RetryLatePatches(log, registered);
+            if (!_templateCloneApplier.LateSources.IsEmpty)
+            {
+                var released = new HashSet<string>(StringComparer.Ordinal);
+                _templateCloneApplier.RetryLate(new LoaderLog(log), released, chainedToo: true);
+                registered.UnionWith(released);
+                lateClones.UnionWith(released);
+                if (released.Count > 0)
+                    PatchHeldSources(log, registered, released);
+            }
+
+            if (registered.Count == before)
+                return;
+        }
+    }
+
+    // The held patches on those of the landed clones that a still-held clone is cloned from.
+    private void PatchHeldSources(MelonLogger.Instance log, ISet<string> registered, HashSet<string> landed)
+    {
+        if (landed.Count == 0 || _templatePatchApplier.HeldBlocks.IsEmpty)
+            return;
+        var sources = _templateCloneApplier.HeldSourceKeys();
+        sources.IntersectWith(landed);
+        if (sources.Count > 0)
+            _templatePatchApplier.RetryLate(log, registered, (type, id) => LateTemplateSet.KeyedUnderAnyName(sources, type, id));
+    }
+
+    // Each held patch target that has turned up is applied and added to registered.
+    private void RetryLatePatches(MelonLogger.Instance log, ISet<string> registered)
+    {
+        if (!_templatePatchApplier.HeldBlocks.IsEmpty)
+            _templatePatchApplier.RetryLate(log, registered);
+    }
+
+    // Runs once per pass that registered a clone or applied an op. changed scopes the
+    // chained-clone rebuild and the conversation refresh to the ids that landed this pass
+    // (plus the chains rebuilt from them), null covers every clone.
+    private void RunPostTemplateWork(MelonLogger.Instance log, ISet<string> changed)
+    {
+        // Work an earlier pass could not complete joins this one's scope.
+        if (_postWorkPending)
+        {
+            if (changed == null || _postWorkScope == null)
+                changed = null;
+            else
+            {
+                var merged = new HashSet<string>(changed, StringComparer.Ordinal);
+                merged.UnionWith(_postWorkScope);
+                changed = merged;
+            }
+        }
+        else if (changed is { Count: 0 })
+            return;
+
+        try
+        {
+            RunPostTemplateWorkCore(log, changed);
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Post-template work threw {ex.GetType().Name}: {ex.Message}; retried next pass.");
+            RememberPostWork(changed);
+        }
+    }
+
+    private void RememberPostWork(ISet<string> changed)
+    {
+        _postWorkPending = true;
+        _postWorkScope = changed == null ? null : new HashSet<string>(changed, StringComparer.Ordinal);
+    }
+
+    private void RunPostTemplateWorkCore(MelonLogger.Instance log, ISet<string> changed)
+    {
+        // A clone whose source is itself a mod clone was instantiated from the
+        // source's PRE-PATCH base (the clone pass runs before any patch), so it
+        // inherited none of the source's own appends/sets. Now that patches have
+        // landed, rebuild it from the fully patched source and replay its own
+        // ops on top. A rebuild that could not run is retried by the next pass.
+        _templateCloneApplier.ReinheritChainedClones(_templatePatchApplier, changed, new LoaderLog(log), out var incomplete);
+        if (incomplete)
+            RememberPostWork(changed);
+        else
+        {
+            _postWorkPending = false;
+            _postWorkScope = null;
+        }
+
+        // Type-specific post-patch registration. SoundBank clones need to
+        // be registered with Stem's runtime SoundManager only after the
+        // bankId patch lands, otherwise Stem indexes them under the source
+        // bank's bankId and SAY/skill audio lookups by the modder's chosen
+        // bankId resolve to nothing. Skipping this no-op when neither
+        // applier did work avoids re-deserialising every clone on each of
+        // the ~25 post-scene-load polls.
+        _templateCloneApplier.RunPostPatchHooks(
+            changed,
+            _templatePatchApplier.PatchesLandedFor(IsSoundBankSpace),
+            bankId => _templatePatchApplier.HeldBlocks.ContainsTemplate(IsSoundBankSpace, bankId),
+            new LoaderLog(log));
+        // Newly registered templates are the only reason the locale pass would see more than it
+        // did last time, so it re-runs here rather than on every poll. A late-only pass re-runs
+        // for the changed templates alone.
+        _localeApplier?.NotifyTemplatesChanged(changed);
+    }
+
+    /// <summary>Warns once per scene for each held block and clone not yet reported, naming
+    /// what it waits on. Called at the end of a scene's poll schedule and after each
+    /// steady-state pass, so a block first held after the schedule is reported too.</summary>
+    public void ReportLate(MelonLogger.Instance log)
+    {
+        _templateCloneApplier.ReportLate(new LoaderLog(log));
+        _templatePatchApplier.ReportLate(log);
     }
 
     // The second memory line lands when the first scene's poll schedule has run to its end,
     // so it counts the lazy-loaded assets the later polls painted as well as the template
     // passes, and it does not wait on a template that never resolves. Later scenes do not
     // report: the figure of interest is what the mods hold before a campaign exists.
+    // Late template ids still absent at this point are warned about once each here, and
+    // stay held for the next scene.
     public void OnPollScheduleComplete(MelonLogger.Instance log)
     {
+        ReportLate(log);
+
         if (_memoryAfterPassesReported)
             return;
         _memoryAfterPassesReported = true;
@@ -279,10 +604,15 @@ internal class ReplacementCoordinator
     private void ReportSelfCheck(MelonLogger.Instance log)
     {
         var check = _templatePatchApplier.SelfCheck;
+        var lateClones = _templateCloneApplier.LateSources.Count;
+        var late = check.Late > 0 || lateClones > 0
+            ? $" {check.Late} op(s) and {lateClones} clone(s) wait on templates another mod has not registered yet."
+            : string.Empty;
         if (check.Mismatches == 0)
         {
-            var clones = _templateClones.CloneCount > 0 ? $"{_templateClones.CloneCount} clone(s) registered, " : string.Empty;
-            log.Msg($"Template self-check: {clones}all {check.Applied} patch op(s) matched the current game.");
+            var registeredClones = _templateClones.CloneCount - lateClones;
+            var clones = registeredClones > 0 ? $"{registeredClones} clone(s) registered, " : string.Empty;
+            log.Msg($"Template self-check: {clones}all {check.Applied} patch op(s) matched the current game.{late}");
             return;
         }
 
@@ -290,7 +620,7 @@ internal class ReplacementCoordinator
             $"Template self-check: {check.Applied} op(s) applied, {check.Mismatches} did not match the current game "
             + $"(unresolved types {check.UnresolvedTypes}, missing templates {check.MissingTemplates}, "
             + $"missing fields {check.MissingMembers}, value conversions {check.ConversionFailures}). "
-            + "If the game updated since these mods were built, that is expected.");
+            + $"If the game updated since these mods were built, that is expected.{late}");
     }
 
     public bool HasReplacementTargets()

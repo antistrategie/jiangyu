@@ -1,3 +1,4 @@
+using Jiangyu.Loader.Logging;
 using Jiangyu.Loader.Templates;
 using Jiangyu.Shared.Bundles;
 using Jiangyu.Shared.Localisation;
@@ -28,8 +29,8 @@ internal sealed class LocaleApplier
     private readonly TemplateCloneCatalog _clones;
     private readonly TemplatePatchCatalog _patches;
 
-    // Inheritance progress for the current language: the clones already decided, and the lines
-    // written for them. Kept across the passes it takes for every clone to register, so a pass
+    // Inheritance progress for the current language: the clones already decided (keyed by
+    // LateTemplateSet.Key), and the lines written for them. Kept across the passes it takes for every clone to register, so a pass
     // visits only the clones that arrived since the last one and the summary reports the total.
     private (string Token, HashSet<string> Decided, int Written) _inherited;
 
@@ -45,6 +46,20 @@ internal sealed class LocaleApplier
     // load-time apply lands, which is also the "pending" signal, and the dedup for a repeated apply.
     private string _appliedToken;
 
+    // Templates registered or patched after the load-time apply landed, keyed by
+    // LateTemplateSet.Key. The next Apply writes the plan's text for these alone.
+    private HashSet<string> _scope;
+
+    /// <summary>Whether a template (type name, id) waits on another loader, under any name it
+    /// is registered in. The load-time apply leaves its text out, so it completes without it,
+    /// and a scoped re-run writes it when it lands.</summary>
+    public Func<string, string, bool> TemplateHeld { get; set; }
+
+    /// <summary>Whether a mod's block (owner, type name, id) is held. The mod's own
+    /// translations of that block are left out, another mod's translations of the same
+    /// template stay.</summary>
+    public Func<string, string, string, bool> BlockHeld { get; set; }
+
     public LocaleApplier(
         IReadOnlyList<DiscoveredMod> mods, TemplateCloneCatalog clones, TemplatePatchCatalog patches)
     {
@@ -57,13 +72,73 @@ internal sealed class LocaleApplier
     /// <summary>True while the load-time apply has not yet completed.</summary>
     public bool Pending => _appliedToken == null;
 
+    /// <summary>True while a scoped re-run for late templates is queued and has not completed.</summary>
+    public bool ScopePending => _scope is { Count: > 0 };
+
     /// <summary>
     /// Re-run the apply once, after the clone or patch appliers have registered more templates. The
     /// inheritance pass reads live templates, so clones that arrive on a later poll are only seen if
     /// it looks again, and this is the signal that looking is worthwhile. Anything already decided
     /// stays decided, so the extra pass is cheap.
     /// </summary>
-    public void NotifyTemplatesChanged() => _appliedToken = null;
+    public void NotifyTemplatesChanged()
+    {
+        _appliedToken = null;
+        // Every chained clone is rebuilt from its source on a full pass: all inherited text
+        // is decided again.
+        _inherited.Decided?.Clear();
+    }
+
+    /// <summary>
+    /// Re-run for the templates in <paramref name="changed"/> only (keyed by
+    /// <see cref="LateTemplateSet.Key"/>). Text already settled on every other template is left as
+    /// it is, so an edit a mod made after the load-time apply survives. Null re-runs everything.
+    /// Before the load-time apply has landed there is nothing to scope: that apply covers them.
+    /// </summary>
+    public void NotifyTemplatesChanged(ISet<string> changed)
+    {
+        if (changed == null)
+        {
+            NotifyTemplatesChanged();
+            return;
+        }
+
+        if (changed.Count == 0)
+            return;
+        // A changed clone was rebuilt from its source: its inherited text is decided again,
+        // by the scoped pass or by the load-time pass still to come. Decided is keyed by
+        // template, so an unrelated clone of another type sharing the id stays decided.
+        _inherited.Decided?.RemoveWhere(key =>
+        {
+            var separator = key.IndexOf('\0');
+            return separator >= 0 && LateTemplateSet.KeyedUnderAnyName(changed, key[..separator], key[(separator + 1)..]);
+        });
+
+        if (_appliedToken == null)
+            return;
+        // A translation may address a DataTemplate clone under an ancestor's name or another
+        // spelling of its type: the scope is matched by template, not by key.
+        _scope ??= new HashSet<string>(StringComparer.Ordinal);
+        _scope.UnionWith(changed);
+    }
+
+    // The plan without the fields of held blocks and the conversations of held templates.
+    private LocalePlan WithoutHeld(LocalePlan plan)
+    {
+        if (BlockHeld == null && TemplateHeld == null)
+            return plan;
+        return LocalePlanner.Without(
+            plan,
+            BlockHeld ?? ((_, _, _) => false),
+            TemplateHeld ?? ((_, _) => false));
+    }
+
+    // Whether the template a scope key names is still held, under any name.
+    private bool IsHeld(string key)
+    {
+        var separator = key.IndexOf('\0');
+        return separator >= 0 && TemplateHeld(key[..separator], key[(separator + 1)..]);
+    }
 
     /// <summary>Re-apply after an in-game language change. Invoked by the SetCurrentLanguage hook.</summary>
     public static void NotifyLanguageReloaded(MelonLogger.Instance log) => _current?.Reapply(log);
@@ -71,10 +146,65 @@ internal sealed class LocaleApplier
     /// <summary>Load-time pass, called each scene poll until it completes.</summary>
     public void Apply(MelonLogger.Instance log)
     {
-        if (_appliedToken != null)
+        if (_appliedToken == null)
+        {
+            if (TryApplyCurrentLanguage(log, revertFirst: false, out var note))
+                Report(log, "Locale apply", note);
             return;
-        if (TryApplyCurrentLanguage(log, revertFirst: false, out var note))
-            Report(log, "Locale apply", note);
+        }
+
+        if (_scope is { Count: > 0 })
+            TryApplyScoped(log);
+    }
+
+    // Writes the plan's text for the scoped templates only. Returns false when the language is not
+    // resolvable yet or a target is not live, so the caller retries with the scope kept. A language
+    // change since the last apply makes the full pass run instead, which covers the scope.
+    private bool TryApplyScoped(MelonLogger.Instance log)
+    {
+        var (state, code, language) = LocaleResolver.Resolve(log);
+        if (state == LocaleResolver.State.NotReady)
+            return false;
+
+        var token = state == LocaleResolver.State.Translatable ? code : "<source>";
+        if (_appliedToken != token)
+        {
+            _appliedToken = null;
+            if (TryApplyCurrentLanguage(log, revertFirst: false, out var note))
+                Report(log, "Locale apply", note);
+            return _appliedToken != null;
+        }
+
+        // A held block's ops have not run, and its translations address the fields those
+        // ops write, so they are left out. Its template stays in the scope for the pass that
+        // follows the block. The other translations of a template in scope apply now.
+        var scope = new HashSet<string>(_scope, StringComparer.Ordinal);
+        var plan = WithoutHeld(LocalePlanner.ScopeTo(
+            LocalePlanner.Build(_poSources ??= ReadPoSources(log), state, code, revertFirst: false),
+            (type, id) => LateTemplateSet.KeyedUnderAnyName(scope, type, id)));
+
+        if (plan.LoadList.Count > 0 || plan.Conversations.Count > 0)
+        {
+            var fieldsResolved = LocaleTableInjector.Apply(plan.LoadList, log);
+            var conversationsResolved = LocaleTableInjector.ApplyConversations(plan.Conversations, log);
+            if (!fieldsResolved || !conversationsResolved)
+                return false;
+        }
+
+        if (_inherited.Token != token)
+            _inherited = (token, new HashSet<string>(StringComparer.Ordinal), 0);
+        _inherited.Written += LocaleInheritance.Apply(
+            _clones, _patches, log, state == LocaleResolver.State.Translatable, _inherited.Decided, TemplateHeld);
+
+        LoaderDebug.Write(log,
+            $"Locale apply: {scope.Count} late template(s) for {language ?? "source"} "
+            + $"({plan.LoadList.Count} manifest(s), {plan.Conversations.Count} subtitle op(s)).");
+        _scope.ExceptWith(scope);
+        if (TemplateHeld != null)
+            _scope.UnionWith(scope.Where(IsHeld));
+        if (_scope.Count == 0)
+            _scope = null;
+        return true;
     }
 
     private void Reapply(MelonLogger.Instance log)
@@ -115,6 +245,7 @@ internal sealed class LocaleApplier
             return true;
 
         var plan = LocalePlanner.Build(_poSources ??= ReadPoSources(log), state, code, revertFirst);
+        plan = WithoutHeld(plan);
 
         // The active language's UI strings, or an empty map for the source language so Locale.Text
         // falls back to the English literal.
@@ -135,9 +266,11 @@ internal sealed class LocaleApplier
         if (_inherited.Token != token)
             _inherited = (token, new HashSet<string>(StringComparer.Ordinal), 0);
         _inherited.Written += LocaleInheritance.Apply(
-            _clones, _patches, log, state == LocaleResolver.State.Translatable, _inherited.Decided);
+            _clones, _patches, log, state == LocaleResolver.State.Translatable, _inherited.Decided, TemplateHeld);
 
         _appliedToken = token;
+        // A full pass covers every template, so a scoped re-run queued before it has nothing left to do.
+        _scope = null;
         note = Describe(state, code, language, plan.TranslatedOps, _inherited.Written);
         return true;
     }

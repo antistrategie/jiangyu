@@ -129,11 +129,12 @@ internal static class ConversationManagerRegistry
     /// on that base class can't find the type-specific properties we need)
     /// and injects it into every live manager whose <c>ConversationType</c>
     /// filter matches.</summary>
-    public static void RegisterConversationClone(Il2CppObjectBase clone, Type resolvedType)
+    public static void RegisterConversationClone(Il2CppObjectBase clone, Type resolvedType, string key)
     {
         if (clone == null || resolvedType == null) return;
         var prepared = PrepareClone(clone, resolvedType);
         if (prepared == null) return;
+        prepared.Key = key;
 
         ManagerCache[] managersSnapshot;
         lock (Sync)
@@ -158,16 +159,35 @@ internal static class ConversationManagerRegistry
     /// stale and the matcher walks pre-patch Requirements. <c>OnAfterDeserialize</c>
     /// is idempotent, so re-running it from here is safe even for clones
     /// that didn't need rebuilding.</para></summary>
-    public static void OnPostPatch()
+    /// <param name="changed">Keys (<see cref="LateTemplateSet.Key"/>) of the clones whose
+    /// serialised strings changed this pass. Null refreshes every registered clone.</param>
+    public static void OnPostPatch(ISet<string> changed)
     {
         PreparedClone[] snapshot;
         lock (Sync) snapshot = Clones.ToArray();
         if (snapshot.Length == 0) return;
 
+        var refreshed = 0;
         foreach (var prepared in snapshot)
+        {
+            if (changed != null && !ChangedHas(changed, prepared.Key))
+                continue;
             Refresh(prepared);
+            refreshed++;
+        }
 
-        _log?.Debug($"  Conversation clone post-patch refresh: {snapshot.Length} clone(s) re-deserialised against patched strings.");
+        if (refreshed > 0)
+            _log?.Debug($"  Conversation clone post-patch refresh: {refreshed} clone(s) re-deserialised against patched strings.");
+    }
+
+    // A clone registered under one spelling of its type may have changed under another (an
+    // alias, an ancestor name): matched by template, not by key.
+    private static bool ChangedHas(ISet<string> changed, string key)
+    {
+        if (key == null)
+            return false;
+        var separator = key.IndexOf('\0');
+        return separator >= 0 && LateTemplateSet.KeyedUnderAnyName(changed, key[..separator], key[(separator + 1)..]);
     }
 
     // -----------------------------------------------------------------
@@ -747,6 +767,9 @@ internal static class ConversationManagerRegistry
 
     private sealed class PreparedClone
     {
+        // The registering directive's type-qualified clone id, matched against a
+        // pass's changed set to scope a refresh.
+        public string Key;
         public object TypedWrapper;
         public Type CloneType;
         public CloneTypeCache CloneCache;

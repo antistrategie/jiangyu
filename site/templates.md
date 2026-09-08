@@ -103,6 +103,14 @@ The loader merges patches from all installed mods before applying. Mods load in 
 
 Collection-style edits compose without per-mod compatibility patches. Genuine scalar conflicts become explicit warnings rather than silent overrides.
 
+### Templates registered by other loaders
+
+A patch or clone can depend on a template id that a MelonLoader mod outside Jiangyu registers, for example a template another modding framework creates at runtime: as the template it patches, as the `from=` source of a clone, or as a `ref="..."` value, inside a constructed handler included.
+
+Your operations on one template form a block. A block applies only when that template and every template its values refer to exist, and it then applies in order, all at once. Until then it is held and nothing in it is written, so a template is never left half-patched. A held block is looked up again on every later pass in the scene, every five seconds after those passes end for as long as anything is held, on each scene load, and once more when a new game starts or a save loads, after the hooks other mods had already installed on that entry point. Held blocks do not delay the rest of the mod, and the `Template self-check` line reports their operations as waiting. If a block is held when a scene's passes end, or is first held by a later pass, the loader logs `Template patch '<Type>:<id>': waiting on <Type>:<id>, ...` once per scene, naming what is missing, and keeps the block held. A block whose reference never appears never applies. A clone whose `from=` source is such an id is held the same way.
+
+Another mod's block on the same template applies on its own. Operations you write under an ancestor type name (a `WeaponTemplate` addressed as `BaseItemTemplate:<id>`) belong to the same block. An `append` from a held block lands after the appends of blocks that were ready before it, and a `set` from a held block never overwrites the value a later-loaded mod's `set` put on the same field.
+
 Within a single project, `(templateType, templateId)` collisions remain a hard error at compile time (see [File layout](#file-layout)).
 
 ## Field paths

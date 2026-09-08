@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Jiangyu.Loader.Runtime.Localisation;
+using Jiangyu.Loader.Templates;
 using Jiangyu.Shared.Bundles;
 using Jiangyu.Shared.Localisation;
 using Jiangyu.Shared.Templates;
@@ -132,5 +133,78 @@ public class LocalePlannerTests
         Assert.Equal(2, plan.Conversations.Count);
         Assert.Equal("Your orders.", plan.Conversations[0].Value);    // English baseline first
         Assert.Equal("À vos ordres.", plan.Conversations[1].Value);   // translation overlays
+    }
+
+    [Fact]
+    public void ScopeTo_KeepsOnlyTheChangedTemplatesAndConversations()
+    {
+        var mod = Mod("A");
+        var plan = LocalePlanner.Build(
+            [Po(mod, "fr", Fr), Po(mod, "fr", FrConv)],
+            LocaleResolver.State.Translatable, "fr", revertFirst: false);
+        Assert.NotEmpty(plan.LoadList);
+        Assert.NotEmpty(plan.Conversations);
+
+        // Nothing changed: nothing to write, the UI map carries over.
+        var none = LocalePlanner.ScopeTo(plan, (_, _) => false);
+        Assert.Empty(none.LoadList);
+        Assert.Empty(none.Conversations);
+        Assert.Same(plan.Ui, none.Ui);
+
+        // The translated weapon changed: its op stays, the subtitle op does not.
+        var weapon = LocalePlanner.ScopeTo(plan, (type, id) => (type, id) == ("WeaponTemplate", "weapon.ak15"));
+        Assert.Equal("Kalachnikova-15", OnlyOpValue(Assert.Single(weapon.LoadList)));
+        Assert.Empty(weapon.Conversations);
+
+        // The conversation changed: its subtitle op stays, the weapon op does not.
+        var conv = LocalePlanner.ScopeTo(plan, (type, id) => (type, id) == ("ConversationTemplate", "A/click_bark"));
+        Assert.Empty(conv.LoadList);
+        Assert.Single(conv.Conversations);
+
+        // A different type with the same id is another template.
+        var other = LocalePlanner.ScopeTo(plan, (type, id) => (type, id) == ("ItemTemplate", "weapon.ak15"));
+        Assert.Empty(other.LoadList);
+    }
+
+    [Fact]
+    public void Without_LeavesOutTheHeldTemplatesOnly()
+    {
+        var mod = Mod("A");
+        var plan = LocalePlanner.Build(
+            [Po(mod, "fr", Fr), Po(mod, "fr", FrConv)],
+            LocaleResolver.State.Translatable, "fr", revertFirst: false);
+
+        var none = LocalePlanner.Without(plan, (_, _, _) => false, (_, _) => false);
+        Assert.Equal(plan.LoadList.Count, none.LoadList.Count);
+        Assert.Equal(plan.Conversations.Count, none.Conversations.Count);
+
+        // The coordinate names MyMod's patch: MyMod's held block leaves the translation out.
+        static bool Weapon(string type, string id) => (type, id) == ("WeaponTemplate", "weapon.ak15");
+        var heldByOwner = LocalePlanner.Without(plan, (owner, type, id) => owner == "MyMod" && Weapon(type, id), Weapon);
+        Assert.Empty(heldByOwner.LoadList);
+        Assert.Single(heldByOwner.Conversations);
+
+        // Another mod's block on the same template is held: MyMod's translation stays.
+        var heldByOther = LocalePlanner.Without(plan, (owner, type, id) => owner == "B" && Weapon(type, id), Weapon);
+        Assert.Single(heldByOther.LoadList);
+
+        var convHeld = LocalePlanner.Without(plan, (_, _, _) => false, (type, id) => (type, id) == ("ConversationTemplate", "A/click_bark"));
+        Assert.Single(convHeld.LoadList);
+        Assert.Empty(convHeld.Conversations);
+    }
+
+    [Fact]
+    public void Without_MatchesTheOwnerTheCoordinateNames_NotTheModShippingThePo()
+    {
+        // Mod B ships a translation of MyMod's patch: the coordinate names MyMod, so MyMod's
+        // held block leaves it out and B's own held block does not.
+        var plan = LocalePlanner.Build([Po(Mod("B"), "fr", Fr)], LocaleResolver.State.Translatable, "fr", revertFirst: false);
+        var entry = Assert.Single(plan.LoadList);
+        Assert.Equal("B", entry.Mod.Name);
+        Assert.All(entry.Templates.TemplatePatches!, patch => Assert.Equal("MyMod", patch.Owner));
+
+        static bool Weapon(string type, string id) => (type, id) == ("WeaponTemplate", "weapon.ak15");
+        Assert.Empty(LocalePlanner.Without(plan, (owner, type, id) => owner == "MyMod" && Weapon(type, id), (_, _) => false).LoadList);
+        Assert.Single(LocalePlanner.Without(plan, (owner, type, id) => owner == "B" && Weapon(type, id), (_, _) => false).LoadList);
     }
 }

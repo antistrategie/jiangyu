@@ -186,8 +186,8 @@ public static class LocaleTable
     public static LocaleTableResult Compile(string poText)
     {
         var po = PoFormat.Parse(poText);
-        var translations = new Dictionary<(string type, string id), CompiledTemplatePatch>();
-        var baseline = new Dictionary<(string type, string id), CompiledTemplatePatch>();
+        var translations = new Dictionary<(string mod, string type, string id), CompiledTemplatePatch>();
+        var baseline = new Dictionary<(string mod, string type, string id), CompiledTemplatePatch>();
         var conversationTranslations = new List<LocaleConversationOp>();
         var conversationBaseline = new List<LocaleConversationOp>();
         var ui = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -198,7 +198,7 @@ public static class LocaleTable
             if (entry.Context == null)
                 continue;
 
-            if (!LocaleCoordinate.TryParse(entry.Context, out _, out var kind, out var type, out var id, out var path))
+            if (!LocaleCoordinate.TryParse(entry.Context, out var modId, out var kind, out var type, out var id, out var path))
             {
                 malformed++;
                 continue;
@@ -234,9 +234,9 @@ public static class LocaleTable
             // The baseline reverts the field to English on a switch, so it covers every entry the PO
             // names, translated or not. The baseline and translation ops can share the parsed descent:
             // it is only ever read when applied, never mutated.
-            AddOp(baseline, type, id, descent, entry.Id);
+            AddOp(baseline, modId, type, id, descent, entry.Id);
             if (entry.HasUsableTranslation)
-                AddOp(translations, type, id, descent, entry.Str);
+                AddOp(translations, modId, type, id, descent, entry.Str);
         }
 
         return new LocaleTableResult(
@@ -248,14 +248,16 @@ public static class LocaleTable
             malformed);
     }
 
+    // One patch per mod and template: the coordinate's mod owns the patch the text belongs
+    // to, which the loader matches against that mod's held blocks.
     private static void AddOp(
-        Dictionary<(string type, string id), CompiledTemplatePatch> byTarget,
-        string type, string id, List<TemplateDescentStep> descent, string value)
+        Dictionary<(string mod, string type, string id), CompiledTemplatePatch> byTarget,
+        string modId, string type, string id, List<TemplateDescentStep> descent, string value)
     {
-        if (!byTarget.TryGetValue((type, id), out var patch))
+        if (!byTarget.TryGetValue((modId, type, id), out var patch))
         {
-            patch = new CompiledTemplatePatch { TemplateType = type, TemplateId = id };
-            byTarget[(type, id)] = patch;
+            patch = new CompiledTemplatePatch { TemplateType = type, TemplateId = id, Owner = modId };
+            byTarget[(modId, type, id)] = patch;
         }
 
         patch.Set.Add(new CompiledTemplateSetOperation

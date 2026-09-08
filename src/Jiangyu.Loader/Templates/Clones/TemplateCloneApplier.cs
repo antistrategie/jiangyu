@@ -41,11 +41,38 @@ internal sealed class TemplateCloneApplier
     // idempotency lives in TryApplyType's innerMap.TryGetValue check, not here.
     private readonly HashSet<string> _appliedTypes = new(StringComparer.Ordinal);
     private readonly List<(UnityEngine.Object Clone, Type ResolvedType, string CloneId)> _pendingSoundBankRegistrations = new();
+    // ScriptableObject types whose Resources folder a pass reloaded this scene, for a type
+    // with no live object: once per type per scene, like the patch applier's probe.
+    private readonly HashSet<string> _reloadedThisScene = new(StringComparer.Ordinal);
+    // Directives whose id another mod registered before their source existed (keyed by
+    // LateTemplateSet.Key): that template stands, the directive is skipped, and it is not a
+    // chained clone to rebuild.
+    private readonly HashSet<string> _foreign = new(StringComparer.Ordinal);
 
     public TemplateCloneApplier(TemplateCloneCatalog catalog)
     {
         _catalog = catalog;
     }
+
+    /// <summary>Clone directives whose source id is absent from a type that has live
+    /// templates, keyed by clone id. They do not count as pending: the type is latched.
+    /// <see cref="RetryLate"/> registers each one the poll its source turns up.</summary>
+    public LateTemplateSet LateSources { get; } = new();
+
+    /// <summary>Whether a clone must wait for its source's held patches: (type, sourceId,
+    /// cloneId), set by the coordinator. A clone of a type without re-inheritance copies its
+    /// source once, so it waits while a block of patches on the source is held, whichever
+    /// pass would clone it. A source block that waits on this very clone is the one case
+    /// the clone does not wait for, or neither would ever land.</summary>
+    public Func<string, string, string, bool> SourcePatchesHeld { get; set; }
+    // Held directives that registered since the coordinator last drained them. A pass outside
+    // the coordinator (the early-injection prefix) registers held clones too, and the
+    // coordinator's next post-pass work must still see them.
+    private readonly HashSet<string> _lateRegistered = new(StringComparer.Ordinal);
+    // Clones registered by any pass since the coordinator last asked. A pass outside the
+    // coordinator (the early-injection prefix) registers clones too, and the post-template
+    // work that follows a registration must still run for them.
+    private int _registeredSinceTaken;
 
     public bool HasPendingClones
     {
@@ -68,13 +95,22 @@ internal sealed class TemplateCloneApplier
 
     public void ResetApplyState() => _appliedTypes.Clear();
 
+    /// <summary>A scene change may unload assets: a pass in the next scene may reload a
+    /// type's Resources folder once more.</summary>
+    public void OnSceneUnloaded() => _reloadedThisScene.Clear();
+
     /// <summary>Runs the post-patch registration steps for type-specific
     /// runtime indexes that the clone applier itself can't populate at
     /// clone time. Called from <see cref="Runtime.ReplacementCoordinator"/>
     /// after <c>_templatePatchApplier.TryApply</c> finishes, so any patches
     /// the modder applied (in particular SoundBank.bankId rewrites) have
-    /// already landed.</summary>
-    public void RunPostPatchHooks(LoaderLog log)
+    /// already landed. <paramref name="changed"/> scopes the conversation refresh to the
+    /// clones (keyed by <see cref="LateTemplateSet.Key"/>) whose content changed this pass,
+    /// null refreshes them all. <paramref name="soundBanksPatched"/> is false while the
+    /// SoundBank patch pass has not run, and <paramref name="bankPatchesHeld"/> names a bank
+    /// whose own block of patches is still held: those banks stay queued, so none registers
+    /// with Stem under its source bankId.</summary>
+    public void RunPostPatchHooks(ISet<string> changed, bool soundBanksPatched, Func<string, bool> bankPatchesHeld, LoaderLog log)
     {
         // Re-deserialise typed Requirements/m_Nodes on every registered
         // ConversationTemplate clone against its now-patched serialised
@@ -82,14 +118,22 @@ internal sealed class TemplateCloneApplier
         // pass which runs BEFORE the patch applier; the per-injection
         // refresh in ConversationManagerRegistry captures pre-patch
         // typed state, so this hook is what closes the loop.
-        ConversationManagerRegistry.OnPostPatch();
+        ConversationManagerRegistry.OnPostPatch(changed);
 
-        if (_pendingSoundBankRegistrations.Count == 0) return;
+        if (_pendingSoundBankRegistrations.Count == 0 || !soundBanksPatched) return;
+        var stillHeld = new List<(UnityEngine.Object Clone, Type ResolvedType, string CloneId)>();
         foreach (var pending in _pendingSoundBankRegistrations)
         {
+            if (bankPatchesHeld?.Invoke(pending.CloneId) == true)
+            {
+                stillHeld.Add(pending);
+                continue;
+            }
+
             TryRegisterSoundBankWithStem(pending.Clone, pending.ResolvedType, log);
         }
         _pendingSoundBankRegistrations.Clear();
+        _pendingSoundBankRegistrations.AddRange(stillHeld);
     }
 
     // Members never re-inherited: object identity and the Odin serialisation
@@ -149,16 +193,24 @@ internal sealed class TemplateCloneApplier
     /// <see cref="ReinheritChainedClones"/> after the rebase onto its patched
     /// source, so the first patch pass skips them outright: applied there they
     /// resolve against the not-yet-inherited vanilla-derived base, do no
-    /// lasting good, and warn about members the wrong handlers lack.</summary>
+    /// lasting good, and warn about members the wrong handlers lack.
+    /// The replay covers DataTemplate types only, so a chained clone of any
+    /// other ScriptableObject type takes its ops in the first pass, on the base
+    /// it was cloned from.</summary>
     public bool IsChainedClone(string templateTypeName, string templateId)
     {
-        foreach (var typeEntry in _catalog.EnumerateByType())
-        {
-            if (!string.Equals(typeEntry.Key, templateTypeName, StringComparison.Ordinal))
-                continue;
-            return IsChained(typeEntry.Value, templateId);
-        }
-        return false;
+        var resolvedType = TemplateRuntimeAccess.ResolveTemplateType(templateTypeName, out _);
+        if (resolvedType != null && !TemplateRuntimeAccess.IsDataTemplateType(resolvedType))
+            return false;
+
+        // A patch may address the clone under an ancestor's name, and the chain may be
+        // declared across ancestor and descendant entries: the catalogue looks through them.
+        // An id another mod registered ahead of the directive is that mod's template, not a
+        // chained clone.
+        if (_catalog.TryGetDirective(templateTypeName, templateId, out _, out var entryName)
+            && _foreign.Contains(LateTemplateSet.Key(entryName, templateId)))
+            return false;
+        return _catalog.IsChainedClone(templateTypeName, templateId);
     }
 
     internal static bool IsChained(Dictionary<string, LoadedCloneDirective> directives, string templateId)
@@ -168,15 +220,53 @@ internal sealed class TemplateCloneApplier
             && directives.ContainsKey(directive.SourceId);
 
     public int ReinheritChainedClones(TemplatePatchApplier patchApplier, LoaderLog log)
+        => ReinheritChainedClones(patchApplier, changed: null, log, out _);
+
+    // Set while a rebuild pass runs when a chain it should rebuild could not be: its type's
+    // map was not available, a clone it names was not in the map, or a rebuild threw.
+    private bool _rebuildIncomplete;
+
+    /// <summary>Re-inherits only the chained clones whose content is stale: a clone in
+    /// <paramref name="changed"/> (keyed by <see cref="LateTemplateSet.Key"/>), or one whose
+    /// source chain reaches such a clone. A clone re-inherited here is added to the set, so a
+    /// chain propagates. Null re-inherits every chained clone.</summary>
+    /// <summary><paramref name="incomplete"/> is true when a chain this pass should have
+    /// rebuilt could not be (its type's map not available, a clone missing from the map, a
+    /// rebuild that threw): the caller runs the pass again later.</summary>
+    public int ReinheritChainedClones(TemplatePatchApplier patchApplier, ISet<string> changed, LoaderLog log, out bool incomplete)
     {
+        incomplete = false;
         if (patchApplier == null || !_catalog.HasClones)
             return 0;
+        if (changed != null && changed.Count == 0)
+            return 0;
 
+        _rebuildIncomplete = false;
+        try
+        {
+            return ReinheritAll(patchApplier, changed, log);
+        }
+        finally
+        {
+            incomplete = _rebuildIncomplete;
+        }
+    }
+
+    private int ReinheritAll(TemplatePatchApplier patchApplier, ISet<string> changed, LoaderLog log)
+    {
         var done = new HashSet<string>(StringComparer.Ordinal);
+        var maps = new Dictionary<string, (Type Type, Il2CppDictionary Map)>(StringComparer.Ordinal);
         var total = 0;
-        foreach (var typeEntry in _catalog.EnumerateByType())
-            total += ReinheritType(typeEntry.Key, typeEntry.Value, patchApplier, done, log);
-        return total;
+        // A rebuilt clone joins the changed set, and a chain on it may sit in an entry already
+        // visited, so the entries are walked again until nothing new changes.
+        while (true)
+        {
+            var before = changed?.Count ?? 0;
+            foreach (var typeEntry in _catalog.EnumerateByType())
+                total += ReinheritType(typeEntry.Key, typeEntry.Value, patchApplier, done, changed, maps, log);
+            if (changed == null || changed.Count == before)
+                return total;
+        }
     }
 
     private int ReinheritType(
@@ -184,64 +274,206 @@ internal sealed class TemplateCloneApplier
         Dictionary<string, LoadedCloneDirective> directives,
         TemplatePatchApplier patchApplier,
         HashSet<string> done,
+        ISet<string> changed,
+        Dictionary<string, (Type Type, Il2CppDictionary Map)> maps,
         LoaderLog log)
     {
-        var liveTemplates = TemplateRuntimeAccess.GetAllTemplates(templateTypeName, out var resolvedType, out _);
+        // A scoped pass touches only types with a chained clone on the changed set. The
+        // catalogue lookups below cost a map materialisation per type, so skip the rest.
+        if (changed != null && !HasChangedChain(templateTypeName, directives, changed, isChained: id => _catalog.IsChainedClone(templateTypeName, id)))
+            return 0;
         // Only DataTemplate types are m_TemplateMaps-registered and reachable
         // by id here; the ScriptableObject-only path has no chained-clone use.
-        if (resolvedType == null
-            || liveTemplates.Count == 0
-            || !typeof(DataTemplate).IsAssignableFrom(resolvedType)
-            || !TryGetTemplateMap(resolvedType, out var innerMap))
+        if (!TryMapFor(templateTypeName, maps, out var resolvedType, out var innerMap))
+        {
+            var resolved = TemplateRuntimeAccess.ResolveTemplateType(templateTypeName, out _);
+            if (TemplateRuntimeAccess.IsDataTemplateType(resolved)
+                && directives.Values.Any(directive => _catalog.IsChainedClone(templateTypeName, directive.CloneId)))
+                _rebuildIncomplete = true;
             return 0;
+        }
 
         var applied = 0;
         foreach (var directive in directives.Values)
-            applied += ReinheritOne(templateTypeName, resolvedType, innerMap, directives, directive.CloneId, patchApplier, done, log);
+        {
+            try
+            {
+                applied += ReinheritOne(templateTypeName, resolvedType, innerMap, directive.CloneId, patchApplier, done, changed, maps, log);
+            }
+            catch (Exception ex)
+            {
+                _rebuildIncomplete = true;
+                log.Warning($"Template clone '{directive.CloneId}': re-inherit threw {ex.GetType().Name}: {ex.Message}; retried next pass.");
+            }
+        }
+
         return applied;
     }
 
-    // Re-inherit one clone, first ensuring its source (if itself a clone of
-    // this type) has been re-inherited, so a 3-deep chain resolves base-first
-    // regardless of directive iteration order.
+    // The live map of a DataTemplate type, resolved once per post-work pass. A type that is
+    // not live, or not a DataTemplate, has none.
+    private static bool TryMapFor(
+        string templateTypeName,
+        Dictionary<string, (Type Type, Il2CppDictionary Map)> maps,
+        out Type resolvedType,
+        out Il2CppDictionary innerMap)
+    {
+        if (!maps.TryGetValue(templateTypeName, out var entry))
+        {
+            try
+            {
+                var liveTemplates = TemplateRuntimeAccess.GetAllTemplates(templateTypeName, out var type, out _, reloadOnEmpty: false);
+                entry = type == null
+                    || liveTemplates.Count == 0
+                    || !typeof(DataTemplate).IsAssignableFrom(type)
+                    || !TryGetTemplateMap(type, out var map)
+                    ? (null, null)
+                    : (type, map);
+            }
+            catch
+            {
+                entry = (null, null);
+            }
+
+            maps[templateTypeName] = entry;
+        }
+
+        resolvedType = entry.Type;
+        innerMap = entry.Map;
+        return innerMap != null;
+    }
+
+    // True when some chained clone of the type is on the changed set, or has a source on it.
+    // A change deeper in a chain reaches the clone through the recursion in ReinheritOne, so
+    // one hop is enough to decide whether the type needs a pass at all.
+    internal static bool HasChangedChain(
+        string templateTypeName,
+        Dictionary<string, LoadedCloneDirective> directives,
+        ISet<string> changed,
+        Func<string, string, bool> sameSpace = null,
+        Func<string, bool> isChained = null)
+    {
+        isChained ??= id => IsChained(directives, id);
+        foreach (var directive in directives.Values)
+        {
+            if (!isChained(directive.CloneId))
+                continue;
+            if (ChangedHas(changed, templateTypeName, directive.CloneId, sameSpace)
+                || ChangedHas(changed, templateTypeName, directive.SourceId, sameSpace))
+                return true;
+        }
+
+        return false;
+    }
+
+    // A patch may address a clone under an ancestor type's name (a clone is registered in
+    // every ancestor map) or another spelling of its type, so a changed key matches on the id
+    // under any name that addresses the same templates. An unrelated type reusing the id does
+    // not match.
+    internal static bool ChangedHas(ISet<string> changed, string templateTypeName, string templateId, Func<string, string, bool> sameSpace = null)
+        => LateTemplateSet.KeyedUnderAnyName(changed, templateTypeName, templateId, sameSpace);
+
+    // Re-inherit one clone, first ensuring its source (if itself a clone, under this entry
+    // or an alias of it) has been re-inherited, so a 3-deep chain resolves base-first
+    // regardless of directive iteration order. With a changed set, a clone is rebuilt only
+    // when it or its source is on the set, and joins the set once rebuilt so the clones
+    // chained on it follow.
     private int ReinheritOne(
         string templateTypeName,
         Type resolvedType,
         Il2CppDictionary innerMap,
-        Dictionary<string, LoadedCloneDirective> directives,
         string cloneId,
         TemplatePatchApplier patchApplier,
         HashSet<string> done,
+        ISet<string> changed,
+        Dictionary<string, (Type Type, Il2CppDictionary Map)> maps,
         LoaderLog log)
     {
-        if (!done.Add(templateTypeName + "\0" + cloneId))
+        var key = LateTemplateSet.Key(templateTypeName, cloneId);
+        // Done, or on the path being walked now: a chain that loops back never registers,
+        // and the walk must not follow it round.
+        if (done.Contains(key) || !_visiting.Add(key))
             return 0;
-        if (!directives.TryGetValue(cloneId, out var directive))
+        try
+        {
+            return ReinheritOneCore(templateTypeName, resolvedType, innerMap, cloneId, patchApplier, done, changed, maps, log, key);
+        }
+        finally
+        {
+            _visiting.Remove(key);
+        }
+    }
+
+    // The clones on the current rebuild path, the cycle guard for ReinheritOne.
+    private readonly HashSet<string> _visiting = new(StringComparer.Ordinal);
+
+    private int ReinheritOneCore(
+        string templateTypeName,
+        Type resolvedType,
+        Il2CppDictionary innerMap,
+        string cloneId,
+        TemplatePatchApplier patchApplier,
+        HashSet<string> done,
+        ISet<string> changed,
+        Dictionary<string, (Type Type, Il2CppDictionary Map)> maps,
+        LoaderLog log,
+        string key)
+    {
+        if (!_catalog.TryGetDirective(templateTypeName, cloneId, out var directive, out _) || _foreign.Contains(key))
+        {
+            done.Add(key);
             return 0;
+        }
+
         var sourceId = directive.SourceId;
         // No source (a 'create'), or a vanilla source: the base instantiate
         // already gave the correct inheritance, nothing to re-sync.
-        if (string.IsNullOrEmpty(sourceId) || !directives.ContainsKey(sourceId))
+        if (string.IsNullOrEmpty(sourceId) || !_catalog.TryGetDirective(templateTypeName, sourceId, out _, out var sourceEntry))
+        {
+            done.Add(key);
             return 0;
+        }
 
-        var applied = ReinheritOne(templateTypeName, resolvedType, innerMap, directives, sourceId, patchApplier, done, log);
+        var applied = 0;
+        if (TryMapFor(sourceEntry, maps, out var sourceType, out var sourceMap))
+            applied += ReinheritOne(sourceEntry, sourceType, sourceMap, sourceId, patchApplier, done, changed, maps, log);
+
+        // Not on the changed set yet: a source rebuilt later in this pass may put it there, so
+        // it is not done.
+        if (changed != null && !ChangedHas(changed, templateTypeName, cloneId) && !ChangedHas(changed, templateTypeName, sourceId))
+            return applied;
+        done.Add(key);
 
         // Set after the source recursion, which leaves the log tagged with the
         // source directive's owner.
         log.Mod = directive.OwnerLabel;
 
+        // A source declared under a descendant entry is mirrored into this entry's map. A
+        // clone or source not in the map now is rebuilt by a later pass.
         if (!innerMap.TryGetValue(cloneId, out var cloneObj) || cloneObj == null
             || !innerMap.TryGetValue(sourceId, out var sourceObj) || sourceObj == null)
+        {
+            _rebuildIncomplete = true;
             return applied;
+        }
 
         var touched = patchApplier.TouchedTopLevelFields(templateTypeName, cloneId);
-        RebaseOntoSource(cloneObj, sourceObj, resolvedType, touched, cloneId, log);
+        // The clone's live type, which may be more derived than the entry it was declared
+        // under (a clone declared under an ancestor's name): every member of that type is
+        // re-inherited, not only the ancestor's.
+        RebaseOntoSource(cloneObj, sourceObj, LiveConcreteType(cloneObj, resolvedType), touched, cloneId, log);
         // Re-apply the clone's own ops so its appends/sets land on top of the
         // freshly inherited base (resolves the concrete template by id itself).
         patchApplier.ReapplyTemplateEntry(templateTypeName, cloneId, log.Raw);
+        changed?.Add(key);
         log.Debug($"Template clone '{cloneId}': re-inherited from cloned source '{sourceId}' and replayed own ops.");
         return applied + 1;
     }
+
+    // The wrapper type of the object's live class, within the family of declaredType, or
+    // declaredType itself when the class cannot be read.
+    private static Type LiveConcreteType(Il2CppObjectBase template, Type declaredType)
+        => TemplatePatchApplier.TryCastToLiveConcreteType(template, declaredType, out var cast, out _) ? cast.GetType() : declaredType;
 
     // Reset the clone's fields to the patched source's values ahead of an op
     // replay: every collection field takes a fresh deep copy of the source's
@@ -320,6 +552,80 @@ internal sealed class TemplateCloneApplier
         }
     }
 
+    /// <summary>Re-runs the pass over the held directives of each type holding a late
+    /// source. A directive whose source is now live registers. Every held directive that has
+    /// registered since the last drain, by this pass or another, is added to
+    /// <paramref name="registered"/> under <see cref="LateTemplateSet.Key"/>. Directives
+    /// already registered are not passed in, so the pass does not touch them. A directive of
+    /// a non-DataTemplate type whose source is a sibling clone is left held while
+    /// <paramref name="chainedToo"/> is false or <see cref="SourcePatchesHeld"/> says a
+    /// block of patches on that source is still held. Returns the clones registered.</summary>
+    public int RetryLate(LoaderLog log, ISet<string> registered, bool chainedToo = true)
+    {
+        if (LateSources.IsEmpty)
+            return 0;
+
+        var totalApplied = 0;
+        foreach (var typeEntry in _catalog.EnumerateByType())
+        {
+            // A DataTemplate chain is rebuilt from its patched source afterwards, so it lands
+            // whenever it can. A chain of any other type copies its source once, so it waits
+            // for the pass that follows the source's own patches: with chainedToo false, and
+            // for as long as a block of patches on the source is itself held.
+            var resolvedType = TemplateRuntimeAccess.ResolveTemplateType(typeEntry.Key, out _);
+            var copiesOnce = !TemplateRuntimeAccess.IsDataTemplateType(resolvedType);
+            var held = new Dictionary<string, LoadedCloneDirective>(StringComparer.Ordinal);
+            foreach (var directive in typeEntry.Value)
+            {
+                if (LateSources.Contains(typeEntry.Key, directive.Key))
+                    held[directive.Key] = directive.Value;
+            }
+
+            if (held.Count == 0)
+                continue;
+
+            // The wait is decided inside the pass, after its check for an id that already
+            // exists: an id another mod registered meanwhile is released whatever its source's
+            // state.
+            var entryName = typeEntry.Key;
+            bool WaitFor(LoadedCloneDirective directive)
+            {
+                if (!copiesOnce)
+                    return false;
+                var sourceId = directive.SourceId ?? string.Empty;
+                if (!chainedToo && _catalog.TryGetDirective(entryName, sourceId, out _, out _))
+                    return true;
+                return !string.IsNullOrEmpty(sourceId)
+                    && SourcePatchesHeld?.Invoke(entryName, sourceId, directive.CloneId) == true;
+            }
+
+            // One pass matches sources against one snapshot of the live templates, so a chain
+            // of held clones lands one link per pass. The caller repeats while a pass lands
+            // something, with the held patches in between, so each link is patched before the
+            // next is cloned from it.
+            var before = LateSources.Count;
+            totalApplied += TryApplyType(typeEntry.Key, held, log, WaitFor);
+            var landed = before - LateSources.Count;
+            if (landed > 0)
+                log.Msg($"Template clone: {landed} {typeEntry.Key} clone(s) registered on a source that turned up late.");
+        }
+
+        if (registered != null)
+            DrainLateRegistrations(registered);
+        return totalApplied;
+    }
+
+    /// <summary>Warns once for each held directive whose source is still absent. The
+    /// directive stays held, so a later scene can still register it.</summary>
+    public void ReportLate(LoaderLog log)
+    {
+        foreach (var entry in LateSources.TakeUnreported())
+        {
+            log.Mod = entry.OwnerLabel;
+            log.Warning($"{entry.Detail} Registered if a later scene registers the source.");
+        }
+    }
+
     public int TryApply(LoaderLog log)
     {
         if (!_catalog.HasClones)
@@ -387,15 +693,35 @@ internal sealed class TemplateCloneApplier
     private int TryApplyType(
         string templateTypeName,
         Dictionary<string, LoadedCloneDirective> directives,
-        LoaderLog log)
+        LoaderLog log,
+        Func<LoadedCloneDirective, bool> waitFor = null)
     {
         // Call GetAllTemplates once for two reasons: resolve the managed Type
         // for Il2CppType.From below, and trigger DataTemplateLoader.GetAll<T>()
         // which materialises both m_TemplateMaps and m_TemplateArrays for this
         // type. An empty result means the cache isn't ready yet — return 0 and
         // let the scheduled apply coroutine retry.
-        var liveTemplates = TemplateRuntimeAccess.GetAllTemplates(
-            templateTypeName, out var resolvedType, out var resolveError);
+        IReadOnlyList<Il2CppObjectBase> liveTemplates;
+        Type resolvedType;
+        string resolveError;
+        try
+        {
+            liveTemplates = TemplateRuntimeAccess.GetAllTemplates(templateTypeName, out resolvedType, out resolveError, reloadOnEmpty: false);
+            // A ScriptableObject type with no live object reloads its folder once per scene
+            // (the game unloads an asset nothing references).
+            if (liveTemplates.Count == 0
+                && TemplateRuntimeAccess.IsScriptableObjectType(resolvedType)
+                && !TemplateRuntimeAccess.IsDataTemplateType(resolvedType)
+                && _reloadedThisScene.Add(templateTypeName))
+                liveTemplates = TemplateRuntimeAccess.ReloadScriptableObjects(templateTypeName, resolvedType);
+        }
+        catch (Exception ex)
+        {
+            // An enumeration that throws leaves the type pending for the next pass; the pass
+            // goes on to the other types, the patches and the held work.
+            log.Debug($"Template clone: enumerating {templateTypeName} threw {ex.GetType().Name}: {ex.Message}; retried next pass.");
+            return 0;
+        }
 
         if (resolvedType == null)
         {
@@ -419,8 +745,18 @@ internal sealed class TemplateCloneApplier
         // the moment Instantiate returns.
         if (!typeof(DataTemplate).IsAssignableFrom(resolvedType))
         {
-            return TryApplyScriptableObjectType(
-                templateTypeName, resolvedType, liveTemplates, directives, log);
+            try
+            {
+                return TryApplyScriptableObjectType(
+                    templateTypeName, resolvedType, liveTemplates, directives, log, waitFor);
+            }
+            catch (Exception ex)
+            {
+                // The type is not latched: the directives not yet registered are retried next
+                // pass, those registered are found there and skipped.
+                log.Warning($"Template clone: the {templateTypeName} pass threw {ex.GetType().Name}: {ex.Message}; retried next pass.");
+                return 0;
+            }
         }
 
         if (!TryGetTemplateMap(resolvedType, out var innerMap))
@@ -433,23 +769,58 @@ internal sealed class TemplateCloneApplier
         // so declaration order must never decide whether a chained clone registers.
         var ordered = OrderBySourceAvailability(directives.Values, innerMap.ContainsKey, out var unresolved);
         foreach (var directive in ordered)
-            ApplyOne(directive);
-        // Unresolvable sources (no live template, no sibling clone) and cycles: warn once each,
-        // as the single pass used to.
+            ApplyOneSafely(directive);
+        // A cycle (a chain that leads back to one of its own clones) never resolves: warn
+        // now. A source that is neither live nor a sibling clone may be registered by
+        // another loader on a later poll: hold it. An id already registered while its
+        // source is absent is another mod's template under this id: the directive is
+        // skipped, and that template stands.
         foreach (var directive in unresolved)
         {
             log.Mod = directive.OwnerLabel;
-            log.Warning(
-                $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
-                + "source template not found in DataTemplateLoader.");
+            if (innerMap.ContainsKey(directive.CloneId))
+            {
+                ApplyOneSafely(directive);
+                continue;
+            }
+
+            if (ChainLoops(directive, directives))
+            {
+                log.Warning(
+                    $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
+                    + "source chain loops back on itself.");
+                continue;
+            }
+
+            HoldLateSource(templateTypeName, directive, "source template not found in DataTemplateLoader.", log);
         }
 
         _appliedTypes.Add(templateTypeName);
         return applied;
 
+        // A directive that throws is reported and the pass goes on: the type latches, and
+        // the directive is left as it stands.
+        void ApplyOneSafely(LoadedCloneDirective directive)
+        {
+            try
+            {
+                ApplyOne(directive);
+            }
+            catch (Exception ex)
+            {
+                log.Warning(
+                    $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
+                    + $"threw {ex.GetType().Name}: {ex.Message}.");
+            }
+        }
+
         void ApplyOne(LoadedCloneDirective directive)
         {
             log.Mod = directive.OwnerLabel;
+            // The clone's live type, which may be more derived than the entry it was declared
+            // under (a clone declared under an ancestor's name): its collections and owned
+            // elements are copied for that whole type, and it is registered in that type's slot.
+            var liveType = resolvedType;
             if (!innerMap.TryGetValue(directive.CloneId, out var clone))
             {
                 // An empty sourceId is a 'create' directive: instantiate a fresh
@@ -464,14 +835,13 @@ internal sealed class TemplateCloneApplier
                 {
                     if (!innerMap.TryGetValue(directive.SourceId, out var source))
                     {
-                        log.Warning(
-                            $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
-                            + "source template not found in DataTemplateLoader.");
+                        HoldLateSource(templateTypeName, directive, "source template not found in DataTemplateLoader.", log);
                         return;
                     }
 
                     if (!TryCloneTemplate(source, directive.CloneId, log, out clone))
                         return;
+                    liveType = LiveConcreteType(clone, resolvedType);
 
                     // Object.Instantiate shallow-copies the clone's collection
                     // containers: clone.List<T> / clone.T[] field instances are
@@ -479,7 +849,7 @@ internal sealed class TemplateCloneApplier
                     // on the clone leaks straight into the source. Reallocate
                     // each container with the same element refs so the clone
                     // mutates its own data.
-                    DeepCopyCollectionContainers(clone, resolvedType, directive.CloneId, log);
+                    DeepCopyCollectionContainers(clone, liveType, directive.CloneId, log);
 
                     // Object.Instantiate also shallow-copies PPtr element refs,
                     // so abstract-polymorphic ScriptableObject elements
@@ -490,7 +860,7 @@ internal sealed class TemplateCloneApplier
                     // PerkTemplate); the clone variable is DataTemplate-typed,
                     // so reflection on it sees only base-class members. We
                     // re-cast inside the helper.
-                    DeepCopyOwnedReferences(clone, resolvedType, directive.CloneId, log);
+                    DeepCopyOwnedReferences(clone, liveType, directive.CloneId, log);
                 }
 
                 RegisterCloneIntoSlot(resolvedType, innerMap, resolvedType, directive.CloneId, clone, log);
@@ -499,10 +869,125 @@ internal sealed class TemplateCloneApplier
                     ? $"Template create registered: {templateTypeName}:{directive.CloneId}."
                     : $"Template clone registered: {templateTypeName}:{directive.SourceId} -> {directive.CloneId}.");
                 applied++;
+                _registeredSinceTaken++;
+            }
+            else if (LateSources.Contains(templateTypeName, directive.CloneId))
+            {
+                // Held, and now there under this id: another mod's template. The directive is
+                // skipped, that template stands as it is, and it is not one of this loader's
+                // clones to mirror or rebuild.
+                if (_foreign.Add(LateTemplateSet.Key(templateTypeName, directive.CloneId)))
+                {
+                    log.Warning(
+                        $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
+                        + "another mod registered this id before the directive could; the directive is skipped and that template stands.");
+                }
+
+                NoteRegistered(templateTypeName, directive.CloneId);
+                return;
+            }
+            else
+            {
+                liveType = LiveConcreteType(clone, resolvedType);
             }
 
-            MirrorCloneToAncestors(resolvedType, directive.CloneId, clone, log);
+            // A clone declared under an ancestor's name is an instance of its source's live
+            // type: it is registered in that type's slot too, and mirrored from there, so a
+            // lookup or a later clone under the live type's name finds it.
+            if (liveType != resolvedType)
+            {
+                TemplateRuntimeAccess.EnsureDataTemplateSlotMaterialised(liveType);
+                if (TryGetTemplateMap(liveType, out var liveMap) && !liveMap.ContainsKey(directive.CloneId))
+                    RegisterCloneIntoSlot(liveType, liveMap, resolvedType, directive.CloneId, clone, log);
+            }
+
+            MirrorCloneToAncestors(liveType, directive.CloneId, clone, log);
+            NoteRegistered(templateTypeName, directive.CloneId);
         }
+    }
+
+    /// <summary>Set by the coordinator: told the type of every clone as it registers, so
+    /// the patch applier's probe drops an enumeration taken before the clone existed.</summary>
+    internal Action<string> Registered { get; set; }
+
+    // A directive has registered: release it if it was held and remember it for the
+    // coordinator.
+    private void NoteRegistered(string templateTypeName, string cloneId)
+    {
+        Registered?.Invoke(templateTypeName);
+        if (LateSources.Remove(templateTypeName, cloneId))
+            _lateRegistered.Add(LateTemplateSet.Key(templateTypeName, cloneId));
+    }
+
+    /// <summary>The type-qualified keys (<see cref="LateTemplateSet.Key"/>) of the sources of
+    /// the directives still held, for the types that have no chained-clone re-inheritance
+    /// (every type but DataTemplate). A clone that is one of these is copied from again once
+    /// it is patched, so its patches run ahead of the other held patches. A DataTemplate
+    /// chain is rebuilt from its patched source afterwards instead.</summary>
+    public HashSet<string> HeldSourceKeys()
+    {
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        if (LateSources.IsEmpty)
+            return keys;
+        foreach (var typeEntry in _catalog.EnumerateByType())
+        {
+            var resolvedType = TemplateRuntimeAccess.ResolveTemplateType(typeEntry.Key, out _);
+            if (resolvedType == null || TemplateRuntimeAccess.IsDataTemplateType(resolvedType))
+                continue;
+            foreach (var directive in typeEntry.Value.Values)
+            {
+                if (!string.IsNullOrEmpty(directive.SourceId) && LateSources.Contains(typeEntry.Key, directive.CloneId))
+                    keys.Add(LateTemplateSet.Key(typeEntry.Key, directive.SourceId));
+            }
+        }
+
+        return keys;
+    }
+
+    /// <summary>The clones any pass registered since the last call, then resets the count.</summary>
+    public int TakeRegisteredSinceLastCall()
+    {
+        var count = _registeredSinceTaken;
+        _registeredSinceTaken = 0;
+        return count;
+    }
+
+    /// <summary>Moves every held directive that has registered since the last drain into
+    /// <paramref name="into"/> (keyed by <see cref="LateTemplateSet.Key"/>), whichever pass
+    /// registered it. Returns the count moved.</summary>
+    public int DrainLateRegistrations(ISet<string> into)
+    {
+        var count = _lateRegistered.Count;
+        if (count == 0)
+            return 0;
+        into.UnionWith(_lateRegistered);
+        _lateRegistered.Clear();
+        return count;
+    }
+
+    // Holds a directive whose source is absent from a live type. Reported once at the end of
+    // the poll schedule, retried until the source is registered.
+    private void HoldLateSource(string templateTypeName, LoadedCloneDirective directive, string note, LoaderLog log)
+    {
+        var detail = $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': {note}";
+        if (LateSources.Add(templateTypeName, directive.CloneId, directive.OwnerLabel, 1, detail))
+            log.Debug($"{detail} Held for a later pass.");
+    }
+
+    // True when following source ids through the mod's own directives returns to a clone
+    // already on the path. Such a chain has no live root and can never register.
+    internal static bool ChainLoops(LoadedCloneDirective directive, IReadOnlyDictionary<string, LoadedCloneDirective> directives)
+    {
+        var visited = new HashSet<string>(StringComparer.Ordinal) { directive.CloneId };
+        var current = directive.SourceId;
+        while (!string.IsNullOrEmpty(current) && directives.TryGetValue(current, out var next))
+        {
+            if (!visited.Add(current))
+                return true;
+            current = next.SourceId;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -520,7 +1005,8 @@ internal sealed class TemplateCloneApplier
         Type resolvedType,
         IReadOnlyList<Il2CppObjectBase> liveTemplates,
         Dictionary<string, LoadedCloneDirective> directives,
-        LoaderLog log)
+        LoaderLog log,
+        Func<LoadedCloneDirective, bool> waitFor = null)
     {
         var identityField = NonDataTemplateIdentityRegistry.GetIdentityField(templateTypeName, resolvedType);
 
@@ -531,11 +1017,34 @@ internal sealed class TemplateCloneApplier
             // Idempotency: skip if a clone with this id already exists
             // (e.g. session re-registration after a save reload).
             if (FindBySourceId(liveTemplates, directive.CloneId, identityField, resolvedType) != null)
+            {
+                if (LateSources.Contains(templateTypeName, directive.CloneId) && _foreign.Add(LateTemplateSet.Key(templateTypeName, directive.CloneId)))
+                {
+                    log.Warning(
+                        $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
+                        + "another mod registered this id before the directive could; the directive is skipped and that template stands.");
+                }
+
+                NoteRegistered(templateTypeName, directive.CloneId);
+                continue;
+            }
+
+            // A held directive's wait (a chained sibling in the wrong phase, a source whose
+            // patches are held), decided after the id check above.
+            if (waitFor?.Invoke(directive) == true)
                 continue;
 
             // An empty sourceId is a 'create' directive: a fresh ScriptableObject
             // of this type rather than a copy of a source.
             var isCreate = string.IsNullOrEmpty(directive.SourceId);
+
+            // A copy of a source whose patches are still held would carry the source as it
+            // stands now, and this type is not re-inherited: wait for them.
+            if (!isCreate && SourcePatchesHeld?.Invoke(templateTypeName, directive.SourceId, directive.CloneId) == true)
+            {
+                HoldLateSource(templateTypeName, directive, "the source's own patches are still held.", log);
+                continue;
+            }
 
             UnityEngine.Object cloneObj;
             if (isCreate)
@@ -565,9 +1074,7 @@ internal sealed class TemplateCloneApplier
                     var lookupNote = identityField != null
                         ? $"source ScriptableObject not found by name or by {identityField}."
                         : "source ScriptableObject not found by name.";
-                    log.Warning(
-                        $"Template clone '{templateTypeName}:{directive.SourceId} -> {directive.CloneId}': "
-                        + lookupNote);
+                    HoldLateSource(templateTypeName, directive, lookupNote, log);
                     continue;
                 }
 
@@ -616,6 +1123,8 @@ internal sealed class TemplateCloneApplier
                 ? $"Template create registered: {templateTypeName}:{directive.CloneId}."
                 : $"Template clone registered: {templateTypeName}:{directive.SourceId} -> {directive.CloneId}.");
             applied++;
+            _registeredSinceTaken++;
+            NoteRegistered(templateTypeName, directive.CloneId);
 
             // For ConversationTemplate, hand the clone to the registry so it
             // gets injected into every live conversation manager's per-trigger
@@ -626,7 +1135,8 @@ internal sealed class TemplateCloneApplier
             if (templateTypeName == "ConversationTemplate"
                 || resolvedType?.FullName == "Il2CppMenace.Conversations.ConversationTemplate")
             {
-                ConversationManagerRegistry.RegisterConversationClone(cloneObj, resolvedType);
+                ConversationManagerRegistry.RegisterConversationClone(
+                    cloneObj, resolvedType, LateTemplateSet.Key(templateTypeName, directive.CloneId));
             }
 
             // For SoundBank, defer Stem registration to a post-patch pass.

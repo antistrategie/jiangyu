@@ -207,6 +207,15 @@ public static class TemplateCatalogValidator
         }
     }
 
+    // The name a reference is stamped with: the short name when the catalogue resolves it to
+    // this very type on its own (the spelling the offline previews and the loader use), else
+    // the full name, which the loader resolves exactly, so two types sharing a short name
+    // stay apart.
+    private static string StampName(Type declaredType, TemplateTypeCatalog catalog)
+        => catalog.ResolveType(declaredType.Name, out _, out _) == declaredType
+            ? declaredType.Name
+            : declaredType.FullName ?? declaredType.Name;
+
     /// <summary>
     /// Resolve the source ConversationTemplate's Roles list for an
     /// editor node. For clones, the source is <c>sourceId</c>. For
@@ -567,12 +576,15 @@ public static class TemplateCatalogValidator
                         + "is polymorphic; specify ref=\"<TemplateType>\" to disambiguate.");
                     return 1;
                 }
+                // A compiled reference carries the destination's declared type, so the
+                // loader can tell whether the template exists before it writes anything.
+                // Editor documents keep the bare id and infer the type again on compile.
                 op.Value = new CompiledTemplateValue
                 {
                     Kind = CompiledTemplateValueKind.TemplateReference,
                     Reference = new CompiledTemplateReference
                     {
-                        TemplateType = null,
+                        TemplateType = mode == ValidationMode.Compile ? StampName(declaredType, catalog) : null,
                         TemplateId = op.Value.String ?? string.Empty,
                     },
                 };
@@ -603,6 +615,8 @@ public static class TemplateCatalogValidator
                     // from the field at apply time.
                     if (clearRedundantTypes && !declaredType.IsAbstract)
                         refPayload.TemplateType = null;
+                    else if (mode == ValidationMode.Compile)
+                        refPayload.TemplateType = StampName(resolved, catalog);
                 }
                 else if (declaredType!.IsAbstract)
                 {
@@ -610,6 +624,10 @@ public static class TemplateCatalogValidator
                         $"field type {catalog.FriendlyName(declaredType)} "
                         + "is polymorphic; specify ref=\"<TemplateType>\".");
                     return 1;
+                }
+                else if (mode == ValidationMode.Compile && refPayload is not null)
+                {
+                    refPayload.TemplateType = StampName(declaredType, catalog);
                 }
             }
             else if (op.Value.Kind == CompiledTemplateValueKind.String

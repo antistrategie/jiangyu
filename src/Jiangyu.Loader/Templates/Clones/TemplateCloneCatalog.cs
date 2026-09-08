@@ -15,6 +15,68 @@ internal sealed class TemplateCloneCatalog
     private readonly Dictionary<string, Dictionary<string, LoadedCloneDirective>> _clonesByType
         = new(StringComparer.Ordinal);
 
+    // The entry name each spelling files under: one entry per type, named canonically, so a
+    // chain declared across a qualified and a short spelling of one type is one chain, and
+    // the patch catalogue's entry for the type has the same name.
+    private readonly Dictionary<string, string> _entryNames = new(StringComparer.Ordinal);
+    private readonly Func<string, string> _canonicalName;
+    private readonly Func<string, string, bool> _sameTemplateSpace;
+
+    public TemplateCloneCatalog(Func<string, string> canonicalName = null, Func<string, string, bool> sameTemplateSpace = null)
+    {
+        _canonicalName = canonicalName ?? TemplateRuntimeAccess.CanonicalTypeName;
+        _sameTemplateSpace = sameTemplateSpace ?? TemplateRuntimeAccess.SameTemplateSpace;
+    }
+
+    /// <summary>The directive for <paramref name="templateId"/> under <paramref name="templateType"/>
+    /// or any entry whose type is an ancestor or descendant of it (a clone is registered in
+    /// every ancestor map, so a chain may be declared across such entries), with the entry it
+    /// was found in.</summary>
+    public bool TryGetDirective(string templateType, string templateId, out LoadedCloneDirective directive, out string entryName)
+    {
+        directive = null;
+        entryName = null;
+        if (templateType == null || templateId == null)
+            return false;
+        var own = EntryNameFor(templateType);
+        if (_clonesByType.TryGetValue(own, out var byId) && byId.TryGetValue(templateId, out directive))
+        {
+            entryName = own;
+            return true;
+        }
+
+        foreach (var entry in _clonesByType)
+        {
+            if (!string.Equals(entry.Key, own, StringComparison.Ordinal)
+                && _sameTemplateSpace(own, entry.Key)
+                && entry.Value.TryGetValue(templateId, out directive))
+            {
+                entryName = entry.Key;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Whether the directive for <paramref name="cloneId"/> clones a template that is
+    /// itself a clone directive, under the same entry or an alias of it.</summary>
+    public bool IsChainedClone(string templateType, string cloneId)
+        => TryGetDirective(templateType, cloneId, out var directive, out var entryName)
+            && !string.IsNullOrEmpty(directive.SourceId)
+            && TryGetDirective(entryName, directive.SourceId, out _, out _);
+
+    /// <summary>The name the catalogue files <paramref name="templateType"/> under
+    /// (<see cref="TemplateRuntimeAccess.CanonicalTypeName"/>).</summary>
+    public string EntryNameFor(string templateType)
+    {
+        if (templateType == null)
+            return null;
+        if (!_entryNames.TryGetValue(templateType, out var name))
+            _entryNames[templateType] = name = _canonicalName(templateType) ?? templateType;
+        return name;
+    }
+
     public int CloneCount { get; private set; }
 
     public bool HasClones => _clonesByType.Count > 0;
@@ -84,6 +146,7 @@ internal sealed class TemplateCloneCatalog
             return;
         }
 
+        templateType = EntryNameFor(templateType);
         if (!_clonesByType.TryGetValue(templateType, out var byId))
         {
             byId = new Dictionary<string, LoadedCloneDirective>(StringComparer.Ordinal);

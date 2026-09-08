@@ -1,0 +1,35 @@
+// Every dependency kind on a template another loader registers later. The ids come from
+// LateRegistrarSystem, on its clock: harness.late_entity inside the scene's poll schedule,
+// harness.late_entity_2 after it.
+
+// A. A patch whose target is registered late.
+patch "EntityTemplate" "harness.late_entity" {
+    set "ArmyPointCost" 21
+}
+
+// B. A clone whose source is registered late, with an op of its own.
+clone "EntityTemplate" from="harness.late_entity" id="harness.clone_of_late" {
+    set "ArmyPointCost" 31
+}
+
+// C. A clone chained on B: rebuilt from B once B exists and is patched.
+clone "EntityTemplate" from="harness.clone_of_late" id="harness.clone_of_clone" {
+    set "ArmyPointCost" 41
+}
+
+// D. A ref value nested in a constructed handler, the "buying informal mercs" shape: the
+// remove and the insert are one block, held whole until the referenced id exists.
+clone "PerkTemplate" from="perk.buyout_murdock" id="harness.perk" {
+    remove "EventHandlers" index=1
+    insert "EventHandlers" index=1 type="Buyout" {
+        set "EntityToSpawn" "allied_civilian_militia_buyout"
+        set "Faction" enum="FactionType" "Player"
+        append "Whitelist" "civilian.worker"
+        append "Whitelist" "harness.late_entity"
+    }
+}
+
+// E. A target registered after the scene's poll schedule: lands on the steady-state pass.
+patch "EntityTemplate" "harness.late_entity_2" {
+    set "ArmyPointCost" 51
+}

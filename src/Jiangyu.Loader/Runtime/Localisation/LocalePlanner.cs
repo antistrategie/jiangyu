@@ -1,3 +1,4 @@
+using Jiangyu.Loader.Templates;
 using Jiangyu.Shared.Bundles;
 using Jiangyu.Shared.Localisation;
 using Jiangyu.Shared.Templates;
@@ -49,6 +50,49 @@ internal sealed class LocalePlan
 /// </summary>
 internal static class LocalePlanner
 {
+    /// <summary>The part of <paramref name="plan"/> that writes to the templates
+    /// <paramref name="inScope"/> accepts (type name and id): the field ops on those templates
+    /// and the subtitle ops of those conversations. The UI map and the op count are carried
+    /// over unchanged. A pass that registered templates late re-applies this rather than the
+    /// whole plan, so text settled on every other template is left as it is.</summary>
+    public static LocalePlan ScopeTo(LocalePlan plan, Func<string, string, bool> inScope)
+        => Filter(plan, (_, type, id) => inScope(type, id), id => inScope(ConversationType, id));
+
+    /// <summary>The part of <paramref name="plan"/> that does not write the fields of a held
+    /// block. <paramref name="blockHeld"/> answers for a block (owner, type name, id): a mod's
+    /// translations of its own held block are left out while another mod's translations of the
+    /// same template, whose block applied, stay in. <paramref name="templateHeld"/> answers for
+    /// a template, for the conversation ops that carry no owner. The load-time apply leaves held
+    /// work out so its absence does not keep the apply incomplete, and the scoped path writes
+    /// it when it lands.</summary>
+    public static LocalePlan Without(LocalePlan plan, Func<string, string, string, bool> blockHeld, Func<string, string, bool> templateHeld)
+        => Filter(plan,
+            (owner, type, id) => !blockHeld(owner, type, id),
+            id => !templateHeld(ConversationType, id));
+
+    private const string ConversationType = "ConversationTemplate";
+
+    // A field op's owner is the mod whose patch the coordinate names, which a translation-only
+    // mod's PO may differ from; the PO's own mod stands in when the table carries no owner.
+    private static LocalePlan Filter(LocalePlan plan, Func<string, string, string, bool> keepField, Func<string, bool> keepConversation)
+    {
+        var loadList = new List<(DiscoveredMod Mod, CompiledTemplatePatchManifest Templates)>();
+        foreach (var (mod, manifest) in plan.LoadList)
+        {
+            var patches = manifest.TemplatePatches?
+                .Where(patch => keepField(patch.Owner ?? mod.Name, patch.TemplateType, patch.TemplateId))
+                .ToList();
+            if (patches is { Count: > 0 })
+                loadList.Add((mod, new CompiledTemplatePatchManifest { TemplatePatches = patches }));
+        }
+
+        var conversations = plan.Conversations
+            .Where(op => keepConversation(op.ConvId))
+            .ToList();
+
+        return new LocalePlan(loadList, conversations, plan.Ui, plan.TranslatedOps);
+    }
+
     public static LocalePlan Build(
         IReadOnlyList<LocalePo> sources, LocaleResolver.State state, string activeCode, bool revertFirst)
     {

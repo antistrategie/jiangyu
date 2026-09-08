@@ -74,6 +74,12 @@ public sealed class CompiledTemplatePatch
 
     [JsonPropertyName("set")]
     public List<CompiledTemplateSetOperation> Set { get; set; } = [];
+
+    /// <summary>The mod whose patch these operations belong to, set when the patch is one
+    /// mod's part of a translation table (a PO file may carry text for another mod's patch).
+    /// Never written to a manifest.</summary>
+    [JsonIgnore]
+    public string? Owner { get; set; }
 }
 
 public sealed class CompiledTemplateSetOperation

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Mod C# project. Build settings and the Jiangyu.Sdk + game references come
+    from the Jiangyu-managed Directory.Build.props / Directory.Build.targets in
+    this folder. Add NuGet packages or extra game-DLL references here as needed.
+    The compiled DLL is picked up from code/bin/ by `jiangyu compile`.
+  -->
+
+</Project>

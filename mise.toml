@@ -88,3 +88,7 @@ sleep 2
 cd ../..
 JIANGYU_DEV_URL=http://localhost:5173 dotnet run --project src/Jiangyu.Studio.Host
 """
+
+[tasks."harness:late-templates"]
+description = "Deploy the late-template regression mod and check a game session (needs the dev loader)"
+run = "bash tests/harness/late-templates/run.sh"

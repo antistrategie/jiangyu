@@ -19,7 +19,7 @@ internal sealed partial class TemplatePatchApplier
     /// place) when the concrete type can't be resolved; callers treat that as
     /// best-effort.
     /// </summary>
-    private static bool TryCastToLiveConcreteType(object element, Type collectionType, out object cast, out string error)
+    internal static bool TryCastToLiveConcreteType(object element, Type collectionType, out object cast, out string error)
     {
         cast = null!;
         error = null!;
