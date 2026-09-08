@@ -4,7 +4,6 @@ using InfiniFrame;
 using Jiangyu.Core.Config;
 using Jiangyu.Core.Models;
 using Jiangyu.Studio.Rpc;
-using static Jiangyu.Studio.Rpc.RpcHelpers;
 
 namespace Jiangyu.Studio.Host.Rpc;
 
@@ -227,12 +226,8 @@ public static partial class RpcDispatcher
 
     private static JsonElement HandleOpenFolder(IInfiniFrameWindow window, JsonElement? parameters)
     {
-        var initial = TryGetString(parameters, "initial");
-        if (initial is not null && !Directory.Exists(initial))
-            initial = null;
-
-        var results = window.ShowOpenFolder("Open Jiangyu project", defaultPath: initial);
-        var path = results.FirstOrDefault(p => p is not null);
+        var path = PickDirectory(window.Features.FilePickerDialogs, "Open Jiangyu project",
+            TryGetString(parameters, "initial"));
         if (path is null)
             return JsonSerializer.SerializeToElement<string?>(null);
 
@@ -444,28 +439,29 @@ public static partial class RpcDispatcher
     /// A starting directory for a file dialog, or null to let the dialog choose.
     /// </summary>
     /// <remarks>
-    /// The path is handed to the native dialog as-is, and a directory that does
-    /// not exist can stop it opening at all. A failed dialog and a cancelled one
-    /// are indistinguishable here (both yield no selection), so the button
-    /// appears to do nothing whatsoever. The stale path that provokes it is
-    /// ordinary: a configured Unity that was upgraded or uninstalled leaves one
-    /// behind, which is exactly when someone reaches for this button.
+    /// Windows shell dialogs require native separators, while frontend paths
+    /// use forward slashes. An unparseable or missing starting directory can
+    /// prevent the dialog opening, returning the same result as cancellation.
     /// </remarks>
     internal static string? ExistingDialogDirectory(string? path)
     {
         if (string.IsNullOrEmpty(path))
             return null;
+        path = NormaliseDialogSeparators(path, Path.DirectorySeparatorChar);
         if (Directory.Exists(path))
-            return path;
+            return Path.GetFullPath(path);
         var parent = Path.GetDirectoryName(path);
-        return !string.IsNullOrEmpty(parent) && Directory.Exists(parent) ? parent : null;
+        return !string.IsNullOrEmpty(parent) && Directory.Exists(parent) ? Path.GetFullPath(parent) : null;
     }
+
+    internal static string NormaliseDialogSeparators(string path, char directorySeparator)
+        => path.Replace('/', directorySeparator);
 
     private static JsonElement HandleSetGamePath(IInfiniFrameWindow window, JsonElement? _)
     {
-        var config = Jiangyu.Core.Config.GlobalConfig.Load();
+        var config = GlobalConfig.Load();
         var defaultPath = ExistingDialogDirectory(
-            !string.IsNullOrEmpty(config.Game) ? Jiangyu.Core.Config.GlobalConfig.ExpandHome(config.Game) : null);
+            !string.IsNullOrEmpty(config.Game) ? GlobalConfig.ExpandHome(config.Game) : null);
         var results = window.ShowOpenFolder("Select MENACE game directory", defaultPath: defaultPath);
         var path = results.FirstOrDefault(p => p is not null);
         if (path is null)
@@ -492,13 +488,13 @@ public static partial class RpcDispatcher
 
     private static JsonElement HandleSetUnityEditorPath(IInfiniFrameWindow window, JsonElement? _)
     {
-        var config = Jiangyu.Core.Config.GlobalConfig.Load();
+        var config = GlobalConfig.Load();
         // Fall back to the resolved editor when none is configured, so a pick
         // triggered by a version mismatch opens beside the installs rather than
         // wherever the dialog last was.
         var configured = !string.IsNullOrEmpty(config.UnityEditor)
-            ? Jiangyu.Core.Config.GlobalConfig.ExpandHome(config.UnityEditor)
-            : Jiangyu.Core.Config.GlobalConfig.ResolveUnityEditorPath(config).editorPath;
+            ? GlobalConfig.ExpandHome(config.UnityEditor)
+            : GlobalConfig.ResolveUnityEditorPath(config).editorPath;
         var defaultDir = ExistingDialogDirectory(
             configured is not null ? Path.GetDirectoryName(configured) : null);
         var results = window.ShowOpenFile(

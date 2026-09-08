@@ -91,6 +91,7 @@ public static partial class RpcDispatcher
         {
             var secondary = InfiniFrameWindowBuilder.Create()
                 .SetTitle(title)
+                .SetTemporaryFilesPath(StudioBrowserProfile.DataPath)
                 .SetSize(new Size(1200, 800))
                 .SetStartPageUrl(paneUrl)
                 .CenteredOnMainMonitor()

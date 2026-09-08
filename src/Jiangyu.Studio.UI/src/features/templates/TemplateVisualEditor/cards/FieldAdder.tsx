@@ -205,11 +205,9 @@ export function FieldAdder({
             className={styles.fieldAdderDropdown}
             ref={dropdownRef}
             style={{
+              ...position,
               position: "fixed",
-              top: position.top,
-              left: position.left,
               right: "auto",
-              width: position.width,
               zIndex: "var(--z-portal)",
             }}
           >

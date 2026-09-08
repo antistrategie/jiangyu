@@ -5,7 +5,6 @@ using System.Security.Cryptography;
 using InfiniFrame;
 using InfiniFrame.WebServer;
 using Jiangyu.Studio.Host.Acp;
-using Jiangyu.Studio.Host.Infrastructure;
 using Jiangyu.Studio.Host.Mcp;
 using Jiangyu.Studio.Host.Rpc;
 using Jiangyu.Studio.Rpc.Mcp;
@@ -54,6 +53,7 @@ public static class Program
 
         builder.WindowBuilder
             .SetTitle("Jiangyu Studio")
+            .SetTemporaryFilesPath(StudioBrowserProfile.DataPath)
             .SetSize(new Size(1680, 1050))
             .SetIconFile(Path.Combine(AppContext.BaseDirectory, "icon.png"))
             .CenteredOnMainMonitor()

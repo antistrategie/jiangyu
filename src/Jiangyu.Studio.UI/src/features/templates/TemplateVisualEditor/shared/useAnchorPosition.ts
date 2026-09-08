@@ -1,21 +1,22 @@
 import { useCallback, useLayoutEffect, useState, type RefObject } from "react";
 
 export interface AnchorPosition {
-  readonly top: number;
+  readonly top: number | "auto";
+  readonly bottom: number | "auto";
   readonly left: number;
   readonly width: number;
+  readonly maxHeight: number;
 }
 
 /**
- * Track the viewport-relative position of an anchor element while `open` is
- * true. Returns `null` when closed, or `{ top: rect.bottom, left: rect.left,
- * width: rect.width }` when open. Updates on scroll (any ancestor, via
- * capture-phase listener) and window resize, so a portalled menu can stay
- * glued to its anchor as the user scrolls the visual editor.
+ * Position a portalled menu beside its anchor within the viewport. Opens
+ * above when there is too little room below and limits the menu's height to
+ * the available space. Tracks ancestor scrolling and window resizing.
  */
 export function useAnchorPosition(
   anchorRef: RefObject<HTMLElement | null>,
   open: boolean,
+  { maxHeight = 240, minWidth = 0 }: { maxHeight?: number; minWidth?: number } = {},
 ): AnchorPosition | null {
   const [position, setPosition] = useState<AnchorPosition | null>(null);
 
@@ -23,6 +24,24 @@ export function useAnchorPosition(
     const el = anchorRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
+    const margin = 8;
+    const viewportBottom = Math.max(margin, window.innerHeight - margin);
+    const anchorTop = Math.min(Math.max(rect.top, margin), viewportBottom);
+    const anchorBottom = Math.min(Math.max(rect.bottom, margin), viewportBottom);
+    const above = anchorTop - margin;
+    const below = viewportBottom - anchorBottom;
+    const openAbove = below < maxHeight && above > below;
+    const width = Math.min(
+      Math.max(rect.width, minWidth),
+      Math.max(0, window.innerWidth - 2 * margin),
+    );
+    const next: AnchorPosition = {
+      top: openAbove ? "auto" : anchorBottom,
+      bottom: openAbove ? window.innerHeight - anchorTop : "auto",
+      left: Math.max(margin, Math.min(rect.left, window.innerWidth - margin - width)),
+      width,
+      maxHeight: Math.min(maxHeight, openAbove ? above : below),
+    };
     // Bail when nothing changed. The capture-phase scroll listener fires for
     // every scroll in the document, including unrelated panes; without this
     // check React re-renders the consumer on every one of those, repainting
@@ -34,15 +53,17 @@ export function useAnchorPosition(
     setPosition((prev) => {
       if (
         prev !== null &&
-        prev.top === rect.bottom &&
-        prev.left === rect.left &&
-        prev.width === rect.width
+        prev.top === next.top &&
+        prev.bottom === next.bottom &&
+        prev.left === next.left &&
+        prev.width === next.width &&
+        prev.maxHeight === next.maxHeight
       ) {
         return prev;
       }
-      return { top: rect.bottom, left: rect.left, width: rect.width };
+      return next;
     });
-  }, [anchorRef]);
+  }, [anchorRef, maxHeight, minWidth]);
 
   useLayoutEffect(() => {
     if (!open) return;

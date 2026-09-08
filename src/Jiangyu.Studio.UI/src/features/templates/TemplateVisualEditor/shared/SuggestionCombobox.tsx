@@ -77,7 +77,7 @@ export function SuggestionCombobox({
   // descendants). useAnchorPosition tracks the input's bounding rect on
   // scroll/resize so the dropdown stays glued to the input.
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const position = useAnchorPosition(inputRef, open);
+  const position = useAnchorPosition(inputRef, open, { maxHeight: 200 });
 
   // Close on outside click. The dropdown lives in a portal so it's NOT a
   // descendant of `wrapRef`; treat clicks inside it as "inside" too.
@@ -141,11 +141,9 @@ export function SuggestionCombobox({
             className={styles.refComboboxDropdown}
             ref={dropdownRef}
             style={{
+              ...position,
               position: "fixed",
-              top: position.top,
-              left: position.left,
               right: "auto",
-              width: position.width,
               zIndex: "var(--z-portal)",
             }}
             role="presentation"
@@ -190,12 +188,11 @@ export function SuggestionCombobox({
         createPortal(
           <div
             className={styles.refComboboxDropdown}
+            ref={dropdownRef}
             style={{
+              ...position,
               position: "fixed",
-              top: position.top,
-              left: position.left,
               right: "auto",
-              width: position.width,
               zIndex: "var(--z-portal)",
             }}
           >

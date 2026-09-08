@@ -4,6 +4,9 @@ Changes relevant to modders building with Jiangyu, and to players running Jiangy
 
 ## 1.4.3
 
+- (Studio) Fixed Open Project failing on Windows after a project had already been opened
+- (Studio) Keeps the browser profile across launches so recent projects and session restoration persist on Windows
+- (Studio) Keeps template-editor dropdowns inside the window, opening upwards when needed
 - (Studio) Shows Odin-routed enum fields by member name instead of number
 - (Compiler) Compiles a number on an enum field to the member name, and rejects a decimal or boolean on one
 - (Compiler) Documented conditions, value providers and filters, and the `type=` shape that fills a handler's interface-typed field

@@ -1,6 +1,5 @@
 using System.Text.Json;
 using InfiniFrame;
-using static Jiangyu.Studio.Rpc.RpcHelpers;
 
 namespace Jiangyu.Studio.Host.Rpc;
 
@@ -13,9 +12,13 @@ public static partial class RpcDispatcher
     private static JsonElement HandlePickDirectory(IInfiniFrameWindow window, JsonElement? parameters)
     {
         var title = TryGetString(parameters, "title") ?? "Select directory";
-        var initial = TryGetString(parameters, "initial");
-        var results = window.ShowOpenFolder(title, defaultPath: initial);
-        var path = results.FirstOrDefault(p => p is not null);
+        var path = PickDirectory(window.Features.FilePickerDialogs, title, TryGetString(parameters, "initial"));
         return JsonSerializer.SerializeToElement(path);
+    }
+
+    internal static string? PickDirectory(IFilePickerDialogsInfiniFrameWindowFeature picker, string title, string? initial)
+    {
+        var results = picker.ShowOpenFolder(title, defaultPath: ExistingDialogDirectory(initial));
+        return results.FirstOrDefault(p => p is not null);
     }
 }

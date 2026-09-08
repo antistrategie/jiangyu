@@ -102,6 +102,31 @@ public class RpcDispatcherTests
         Assert.Equal(real, RpcDispatcher.ExistingDialogDirectory(real));
     }
 
+    [Theory]
+    [InlineData("C:/Users/Modder/My Projects", "C:\\Users\\Modder\\My Projects")]
+    [InlineData("C:/", "C:\\")]
+    [InlineData("//server/share/project", "\\\\server\\share\\project")]
+    [InlineData("//server/share/", "\\\\server\\share\\")]
+    [InlineData("C:\\Users/Modder", "C:\\Users\\Modder")]
+    public void NormaliseDialogSeparators_UsesWindowsSeparators(string frontendPath, string expected)
+    {
+        Assert.Equal(expected, RpcDispatcher.NormaliseDialogSeparators(frontendPath, '\\'));
+    }
+
+    [Fact]
+    public void NormaliseDialogSeparators_PreservesBackslashesInUnixFileNames()
+    {
+        const string path = "/home/modder/project\\name";
+
+        Assert.Equal(path, RpcDispatcher.NormaliseDialogSeparators(path, '/'));
+    }
+
+    [Fact]
+    public void ExistingDialogDirectory_ReturnsAnAbsoluteStartingDirectory()
+    {
+        Assert.Equal(Environment.CurrentDirectory, RpcDispatcher.ExistingDialogDirectory("."));
+    }
+
     // The Unity editor of a version that was uninstalled leaves its Hub root
     // behind. Opening there beats opening at the dialog's own default, since it
     // is where the other installs are.

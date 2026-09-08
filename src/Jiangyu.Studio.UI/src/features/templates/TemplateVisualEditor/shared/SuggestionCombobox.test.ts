@@ -3,7 +3,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createElement, useState } from "react";
 import { render, screen, fireEvent, waitFor, act, cleanup } from "@testing-library/react";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 vi.mock("../TemplateVisualEditor.module.css", () => ({
   default: new Proxy({}, { get: (_, key) => key }),
@@ -110,6 +114,26 @@ describe("SuggestionCombobox", () => {
     expect(screen.getByText("Beta")).toBeDefined();
     expect(screen.queryByText("Alpha")).toBeNull();
     expect(screen.queryByText("Gamma")).toBeNull();
+  });
+
+  it("keeps suggestions and the empty result above an input near the bottom edge", async () => {
+    vi.stubGlobal("innerHeight", 768);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(80, 710, 200, 30),
+    );
+    render(createElement(Wrapper, { initialValue: "", placeholder: "Pick one", fetchSuggestions }));
+    const input = screen.getByPlaceholderText("Pick one");
+    fireEvent.focus(input);
+    const alpha = await screen.findByText("Alpha");
+    const dropdown = alpha.closest<HTMLElement>(".refComboboxDropdown");
+    expect(dropdown?.style.top).toBe("auto");
+    expect(dropdown?.style.bottom).toBe("58px");
+    expect(dropdown?.style.maxHeight).toBe("200px");
+
+    fireEvent.change(input, { target: { value: "no such option" } });
+    const empty = screen.getByText("No matches").parentElement;
+    expect(empty?.style.top).toBe("auto");
+    expect(empty?.style.bottom).toBe("58px");
   });
 
   it("calls onChange when item clicked", async () => {

@@ -153,7 +153,7 @@ export function SetRow({
   const opMenuRef = useRef<HTMLDivElement>(null);
   // Portalled so the menu can escape the card's compositor-promoted
   // stacking context; otherwise it gets trapped under the next card.
-  const opMenuPosition = useAnchorPosition(opRef, opOpen);
+  const opMenuPosition = useAnchorPosition(opRef, opOpen, { minWidth: 80 });
 
   // The menu lives in a portal so it's NOT a descendant of `opRef`; treat
   // clicks inside it as "inside" too.
@@ -225,9 +225,8 @@ export function SetRow({
                   className={styles.setOpMenu}
                   ref={opMenuRef}
                   style={{
+                    ...opMenuPosition,
                     position: "fixed",
-                    top: opMenuPosition.top,
-                    left: opMenuPosition.left,
                     zIndex: "var(--z-portal)",
                   }}
                 >

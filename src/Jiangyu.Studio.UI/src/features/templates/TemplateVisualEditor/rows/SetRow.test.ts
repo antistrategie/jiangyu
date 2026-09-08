@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { createElement } from "react";
+import { createElement, useState } from "react";
 import { render, screen, fireEvent, waitFor, act, cleanup } from "@testing-library/react";
+import type { TemplateMember } from "@shared/rpc";
 
 afterEach(cleanup);
 
@@ -23,12 +24,40 @@ vi.mock("@tanstack/react-virtual", () => ({
   }),
 }));
 
-// Quiet the editor's RPC paths. CompositeEditor calls useTemplateMembers
-// when expanded and the prototype-types fetch on first render of a
-// from=-supporting type; both go through rpcCall.
-vi.mock("@shared/rpc", () => ({
-  rpcCall: vi.fn(() => Promise.resolve({ members: [], instances: [], types: [] })),
-}));
+vi.mock("@shared/rpc", () => {
+  const membersByType: Record<string, readonly TemplateMember[]> = {
+    AndCondition: [
+      {
+        name: "Conditions",
+        typeName: "ITacticalCondition[]",
+        isWritable: true,
+        isInherited: false,
+        isCollection: true,
+        elementTypeName: "ITacticalCondition",
+        elementSubtypes: ["AndCondition", "DistanceCondition"],
+      },
+    ],
+    DistanceCondition: [
+      {
+        name: "MaxDistance",
+        typeName: "int",
+        isWritable: true,
+        isInherited: false,
+        isScalar: true,
+        patchScalarKind: "Int32",
+      },
+    ],
+  };
+  return {
+    rpcCall: vi.fn((method: string, params?: { typeName?: string }) =>
+      Promise.resolve({
+        members: method === "templatesQuery" ? (membersByType[params?.typeName ?? ""] ?? []) : [],
+        instances: [],
+        types: [],
+      }),
+    ),
+  };
+});
 
 vi.mock("../shared/rpcHelpers", async () => {
   const actual: object = await vi.importActual("../shared/rpcHelpers");
@@ -42,6 +71,62 @@ vi.mock("../shared/rpcHelpers", async () => {
 import { CompositeEditor, HandlerSubtypePicker } from "./SetRow";
 import { CompositeCollapseContext, type CompositeCollapseControl } from "../store";
 import type { EditorValue } from "../types";
+
+describe("nested condition editing", () => {
+  it("offers child subtypes and their fields inside an AndCondition", async () => {
+    const onChange = vi.fn();
+    function ConditionEditor() {
+      const [value, setValue] = useState<EditorValue>({
+        kind: "TypeConstruction",
+        compositeType: "AndCondition",
+        compositeDirectives: [],
+      });
+      return createElement(CompositeEditor, {
+        value,
+        elementType: "ITacticalCondition",
+        onChange: (next: EditorValue) => {
+          setValue(next);
+          onChange(next);
+        },
+      });
+    }
+
+    render(createElement(ConditionEditor));
+    fireEvent.focus(screen.getByPlaceholderText("Add field…"));
+    fireEvent.click(await screen.findByText("Conditions"));
+    fireEvent.focus(screen.getByPlaceholderText("Pick subtype…"));
+    fireEvent.click(await screen.findByText("DistanceCondition"));
+
+    const childAdder = screen.getAllByPlaceholderText("Add field…")[0]!;
+    fireEvent.focus(childAdder);
+    fireEvent.click(await screen.findByText("MaxDistance"));
+    const distance = screen.getByRole("spinbutton");
+    fireEvent.change(distance, { target: { value: "6" } });
+    fireEvent.blur(distance);
+
+    expect(onChange.mock.lastCall?.[0]).toMatchObject({
+      kind: "TypeConstruction",
+      compositeType: "AndCondition",
+      compositeDirectives: [
+        {
+          op: "Append",
+          fieldPath: "Conditions",
+          value: {
+            kind: "TypeConstruction",
+            compositeType: "DistanceCondition",
+            compositeDirectives: [
+              {
+                op: "Set",
+                fieldPath: "MaxDistance",
+                value: { kind: "Int32", int32: 6 },
+              },
+            ],
+          },
+        },
+      ],
+    });
+  });
+});
 
 // HandlerSubtypePicker is the polymorphic-handler "must pick from list"
 // surface. Its bug history: the original implementation passed `value=""`
