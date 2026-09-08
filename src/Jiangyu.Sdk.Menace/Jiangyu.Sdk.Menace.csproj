@@ -27,6 +27,7 @@
   <ItemGroup>
     <ProjectReference Include="../Jiangyu.Sdk/Jiangyu.Sdk.csproj" />
     <InternalsVisibleTo Include="Jiangyu.Loader" />
+    <InternalsVisibleTo Include="Jiangyu.Loader.Diagnostics" />
   </ItemGroup>
 
   <!--

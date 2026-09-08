@@ -164,9 +164,13 @@ public sealed class UiTarget
         catch { return null; }
     }
 
-    private static VisualElement RootOf(UIScreen screen)
+    internal static VisualElement RootOf(UIScreen screen)
     {
-        try { return screen.GetRootElement(); }
+        // JIANGYU-CONTRACT: GetRootElement (RVA 0x823360) caches Q<VisualElement>("Root") in
+        // m_RootElement. Cleanup (0x822FB0) uses that field to decide whether teardown is needed.
+        // Discovery must not populate it on screens such as Splash, whose UIDocument can clear
+        // its own root before screen cleanup. Query the live tree without changing native state.
+        try { return screen?.m_RootElement ?? screen?.Q<VisualElement>("Root", null); }
         catch { return null; }
     }
 

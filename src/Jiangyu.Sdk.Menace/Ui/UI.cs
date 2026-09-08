@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
 using Il2CppInterop.Runtime;
+using Il2CppMenace.UI;
 using Jiangyu.Sdk;
 using UnityEngine.UIElements;
 
@@ -207,18 +208,19 @@ public static class UI
     // Whether any injection is registered. The loader skips its driver when false.
     internal static bool HasInjections => Injections.Count > 0;
 
-    // The loader's UIManager.ActivateScreen postfix calls this when a screen becomes the
+    // The loader's UIScreen.Activate and UIManager.OpenScreen postfixes call this when it becomes the
     // active one. Re-applies immediately, then hooks the screen root's GeometryChangedEvent
     // so an injection whose target site is built after activation lands once the screen
     // lays out, without polling. Idempotent: re-apply skips occupied sites, and each root
     // is hooked once.
-    internal static void NotifyScreenActivated(VisualElement screenRoot)
+    internal static void NotifyScreenActivated(UIScreen screen)
     {
         if (!HasInjections)
             return;
 
         ReapplyAll();
 
+        var screenRoot = UiTarget.RootOf(screen);
         if (screenRoot == null)
             return;
 

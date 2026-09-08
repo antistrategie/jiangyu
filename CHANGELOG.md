@@ -4,6 +4,7 @@ Changes relevant to modders building with Jiangyu, and to players running Jiangy
 
 ## 1.4.3
 
+- (Loader) Fixed mod UI disappearing when returning to cached screens and splash-screen cleanup errors caused by UI discovery and inspection
 - (Studio) Fixed Open Project failing on Windows after a project had already been opened
 - (Studio) Keeps the browser profile across launches so recent projects and session restoration persist on Windows
 - (Studio) Keeps template-editor dropdowns inside the window, opening upwards when needed

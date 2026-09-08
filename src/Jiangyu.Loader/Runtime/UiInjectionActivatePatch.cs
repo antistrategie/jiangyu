@@ -9,9 +9,9 @@ namespace Jiangyu.Loader.Runtime;
 
 /// <summary>
 /// Re-applies mod UI injections when the game brings a screen up, by Harmony-postfixing
-/// both <c>UIManager.OpenScreen</c> (a fresh open, the path the strategy screens actually
-/// take) and <c>UIManager.ActivateScreen</c> (a re-activation, e.g. back-navigation).
-/// Replaces the per-frame active-screen poll: <see cref="UI"/> re-applies immediately and
+/// both <c>UIManager.OpenScreen</c> (a fresh open) and <c>UIScreen.Activate</c>
+/// (including cached-screen reactivation through Escape and pause/Continue).
+/// <see cref="UI"/> re-applies immediately and
 /// hooks the screen root's GeometryChangedEvent so content built after the open still
 /// lands, without a settle loop.
 ///
@@ -34,13 +34,16 @@ internal sealed class UiInjectionActivatePatch : IHarmonyPatchModule
     public void Install(HarmonyLib.Harmony harmony, LoaderHarmonyPatchContext context)
     {
         _log = context.Log;
-        HarmonyPatching.TryPostfix(harmony, "Il2CppMenace.UI.UIManager", "ActivateScreen",
-            typeof(UiInjectionActivatePatch), nameof(ActivateScreenPostfix), _log, "ui injection");
+        // JIANGYU-CONTRACT: UIScreen.Activate is non-virtual in the current game metadata
+        // (RVA 0x822D70). Cached screens can call it without UIManager.ActivateScreen,
+        // so this entry point covers both direct activation and the manager wrapper.
+        HarmonyPatching.TryPostfix(harmony, "Il2CppMenace.UI.UIScreen", "Activate",
+            typeof(UiInjectionActivatePatch), nameof(ActivatePostfix), _log, "ui injection");
         HarmonyPatching.TryPostfix(harmony, "Il2CppMenace.UI.UIManager", "OpenScreen",
             typeof(UiInjectionActivatePatch), nameof(OpenScreenPostfix), _log, "ui injection");
     }
 
-    private static void ActivateScreenPostfix(UIScreen __0) => OnScreen(__0, "ActivateScreen");
+    private static void ActivatePostfix(UIScreen __instance) => OnScreen(__instance, "Activate");
     private static void OpenScreenPostfix(UIScreen __result) => OnScreen(__result, "OpenScreen");
 
     private static void OnScreen(UIScreen screen, string via)
@@ -55,7 +58,7 @@ internal sealed class UiInjectionActivatePatch : IHarmonyPatchModule
                 _log?.Debug($"[ui] {via} '{id}'");
             }
 
-            UI.NotifyScreenActivated(screen == null ? null : screen.GetRootElement());
+            UI.NotifyScreenActivated(screen);
 
             // In the same frame the screen is built, so a swapped UI texture is in place
             // before its first paint rather than a few poll frames later.

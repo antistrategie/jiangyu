@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using Il2CppMenace.UI;
+using Jiangyu.Game.Ui;
 using UnityEngine.UIElements;
 
 namespace Jiangyu.Loader.Diagnostics.UiProbe;
@@ -63,8 +64,7 @@ internal static class UiTreeProbe
         };
 
         var nodes = 0;
-        VisualElement screenRoot = null;
-        try { screenRoot = screen != null ? screen.GetRootElement() : null; } catch { /* none */ }
+        var screenRoot = UiTarget.RootOf(screen);
         if (screenRoot != null)
             dump.ScreenTree = Walk(screenRoot, 0, ref nodes);
         if (dialog != null)
