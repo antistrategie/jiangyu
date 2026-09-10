@@ -136,7 +136,7 @@ namespace Jiangyu.Mod
                 {
                     if (File.Exists(assetPath))
                         AssetDatabase.DeleteAsset(assetPath);
-                    var texture = CreateTexture(textureData);
+                    var texture = CreateTexture(textureData, plan.StandingPortraits.Contains(textureData.Name));
                     // Only an addition compresses. A replacement is re-encoded into the
                     // game's own texture by the loader at runtime, and a second lossy pass
                     // on top of one here would compound; it stays at source fidelity.
@@ -483,6 +483,7 @@ namespace Jiangyu.Mod
         {
             public readonly Dictionary<string, string> AudioBundles = new Dictionary<string, string>();
             public readonly HashSet<string> TextureAdditions = new HashSet<string>(StringComparer.Ordinal);
+            public readonly HashSet<string> StandingPortraits = new HashSet<string>(StringComparer.Ordinal);
             public readonly Dictionary<string, string> TextureBundles = new Dictionary<string, string>();
             public readonly Dictionary<string, string> TextureHashes = new Dictionary<string, string>();
             public readonly Dictionary<string, string> SpriteSourceHashes = new Dictionary<string, string>();
@@ -492,7 +493,7 @@ namespace Jiangyu.Mod
             public static BundlePlan Load(string path)
             {
                 var lines = File.ReadAllLines(path);
-                if (lines.Length == 0 || lines[0] != "jiangyu-bundle-plan 1")
+                if (lines.Length == 0 || lines[0] != "jiangyu-bundle-plan 2")
                     throw new InvalidDataException($"Unrecognised bundle plan at '{path}'");
 
                 var plan = new BundlePlan();
@@ -515,8 +516,10 @@ namespace Jiangyu.Mod
                         case "texture":
                             plan.TextureBundles[parts[1]] = parts[2];
                             plan.TextureHashes[parts[1]] = parts[3];
-                            if (parts.Length > 4 && parts[4] == "addition")
+                            if (parts[4] == "addition")
                                 plan.TextureAdditions.Add(parts[1]);
+                            if (parts[5] == "standing-portrait")
+                                plan.StandingPortraits.Add(parts[1]);
                             break;
                         case "meshes":
                             plan.MeshesBundle = parts[1];
@@ -697,7 +700,7 @@ namespace Jiangyu.Mod
             return width % 4 == 0 && height % 4 == 0;
         }
 
-        private static Texture2D CreateTexture(TextureData data)
+        private static Texture2D CreateTexture(TextureData data, bool standingPortrait)
         {
             var texture = new Texture2D(2, 2, TextureFormat.RGBA32, true, data.Linear);
             texture.name = data.Name;
@@ -705,7 +708,10 @@ namespace Jiangyu.Mod
                 throw new InvalidDataException($"Failed to decode texture '{data.Name}'");
 
             texture.wrapMode = TextureWrapMode.Repeat;
-            texture.filterMode = FilterMode.Bilinear;
+            // Blend between mip levels as standing artwork scales, favouring a little
+            // more detail than the default bilinear selection without dropping mipmaps.
+            texture.filterMode = standingPortrait ? FilterMode.Trilinear : FilterMode.Bilinear;
+            texture.mipMapBias = standingPortrait ? -0.5f : 0f;
             texture.Apply(updateMipmaps: true, makeNoLongerReadable: false);
             return texture;
         }

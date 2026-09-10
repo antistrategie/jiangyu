@@ -28,8 +28,8 @@ public sealed class ReplacementBundlePlanTests : IDisposable
     private static GlbMeshBundleCompiler.ImportedAudioAsset Audio(string name)
         => new() { Name = name, SourceFilePath = "unused.wav", Extension = ".wav" };
 
-    private static GlbMeshBundleCompiler.CompiledTexture Texture(string name, byte[]? content = null, bool linear = false, bool isAddition = false)
-        => new() { Name = name, Content = content ?? [1, 2, 3], Linear = linear, IsAddition = isAddition };
+    private static GlbMeshBundleCompiler.CompiledTexture Texture(string name, byte[]? content = null, bool linear = false, bool isAddition = false, bool isStandingPortrait = false)
+        => new() { Name = name, Content = content ?? [1, 2, 3], Linear = linear, IsAddition = isAddition, IsStandingPortrait = isStandingPortrait };
 
     private GlbMeshBundleCompiler.ImportedSpriteAsset Sprite(string name, bool isAddition, string content = "png")
         => new()
@@ -72,10 +72,24 @@ public sealed class ReplacementBundlePlanTests : IDisposable
         var replacement = Build(textures: [Texture("portrait")]).PlanText
             .Split('\n').Single(l => l.StartsWith("texture\tportrait\t", StringComparison.Ordinal));
 
-        Assert.EndsWith("\taddition", addition);
-        Assert.EndsWith("\treplacement", replacement);
+        Assert.Equal("addition", addition.Split('\t')[4]);
+        Assert.Equal("replacement", replacement.Split('\t')[4]);
         // Same bytes, different role: the Unity pass bakes them differently, so the hash differs.
         Assert.NotEqual(addition.Split('\t')[3], replacement.Split('\t')[3]);
+    }
+
+    [Fact]
+    public void PortraitSamplingChangesTheBakeHashWithoutChangingBundleGrouping()
+    {
+        var ordinary = Build(textures: [Texture("character__art", isAddition: true)]);
+        var portrait = Build(textures: [Texture("character__art", isAddition: true, isStandingPortrait: true)]);
+        var ordinaryLine = ordinary.PlanText.Split('\n').Single(line => line.StartsWith("texture\t", StringComparison.Ordinal)).Split('\t');
+        var portraitLine = portrait.PlanText.Split('\n').Single(line => line.StartsWith("texture\t", StringComparison.Ordinal)).Split('\t');
+
+        Assert.Equal(ordinary.BundleFiles, portrait.BundleFiles);
+        Assert.NotEqual(ordinaryLine[3], portraitLine[3]);
+        Assert.Equal("default", ordinaryLine[5]);
+        Assert.Equal("standing-portrait", portraitLine[5]);
     }
 
     [Fact]
@@ -161,6 +175,6 @@ public sealed class ReplacementBundlePlanTests : IDisposable
     {
         var plan = Build(audio: [Audio("a__b")]);
 
-        Assert.StartsWith("jiangyu-bundle-plan 1\n", plan.PlanText);
+        Assert.StartsWith("jiangyu-bundle-plan 2\n", plan.PlanText);
     }
 }

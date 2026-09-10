@@ -1,4 +1,6 @@
+using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Compile;
+using Jiangyu.Core.Templates;
 
 namespace Jiangyu.Core.Tests.Compile;
 
@@ -40,10 +42,18 @@ public sealed class IncrementalUnityPassTests : IDisposable
     private (string Project, string Prefabs, string Assets) Fingerprints(string bundleName = "mymod")
     {
         var project = CompilationService.UnityProjectFingerprint(UnityDir, "1.0");
+        var textures = ReplacementDiscovery.DiscoverAdditionTextureEntries(Path.Combine(_projectDir, "assets", "additions")).ToList();
+        var templatesDir = Path.Combine(_projectDir, "templates");
+        if (Directory.Exists(templatesDir))
+        {
+            var parsed = KdlTemplateParser.ParseAll(templatesDir, NullLogSink.Instance);
+            Assert.Equal(0, parsed.ErrorCount);
+            PortraitTexturePolicy.Apply(textures, parsed.Patches);
+        }
         return (
             project,
             CompilationService.PrefabInputsFingerprint(UnityDir, project),
-            CompilationService.AssetInputsFingerprint(_projectDir, project, bundleName));
+            CompilationService.AssetInputsFingerprint(_projectDir, project, bundleName, textures));
     }
 
     [Theory]
@@ -101,6 +111,34 @@ public sealed class IncrementalUnityPassTests : IDisposable
     }
 
     [Fact]
+    public void PortraitAssignmentChangesInvalidateOnlyTheAssetHalf()
+    {
+        Write("assets/additions/textures/character/art.png", "image");
+        var before = Fingerprints();
+
+        Write("templates/speaker.kdl", """
+            clone "SpeakerTemplate" from="speaker.darby" id="speaker.custom" {
+                set "StandLookLeftImage" asset="character/art"
+            }
+            """);
+        var portrait = Fingerprints();
+        Assert.Equal(before.Project, portrait.Project);
+        Assert.Equal(before.Prefabs, portrait.Prefabs);
+        Assert.NotEqual(before.Assets, portrait.Assets);
+
+        Write("templates/speaker.kdl", """
+            clone "SpeakerTemplate" from="speaker.darby" id="speaker.renamed" {
+                set "StandLookRightInactiveImage" asset="character/art"
+                set "StandLookRightImage" asset="character/art"
+            }
+            """);
+        Assert.Equal(portrait, Fingerprints());
+
+        File.Delete(Path.Combine(_projectDir, "templates", "speaker.kdl"));
+        Assert.Equal(before, Fingerprints());
+    }
+
+    [Fact]
     public void EditorScriptEditInvalidatesBothHalves()
     {
         var before = Fingerprints();
@@ -135,7 +173,7 @@ public sealed class IncrementalUnityPassTests : IDisposable
 
         var project = CompilationService.UnityProjectFingerprint(UnityDir, "2.0");
         var prefabs = CompilationService.PrefabInputsFingerprint(UnityDir, project);
-        var assets = CompilationService.AssetInputsFingerprint(_projectDir, project, "mymod");
+        var assets = CompilationService.AssetInputsFingerprint(_projectDir, project, "mymod", []);
 
         Assert.NotEqual(before.Project, project);
         Assert.NotEqual(before.Prefabs, prefabs);

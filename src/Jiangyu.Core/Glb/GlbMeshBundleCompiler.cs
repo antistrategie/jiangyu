@@ -95,6 +95,7 @@ public static class GlbMeshBundleCompiler
         /// replacement stays uncompressed: the loader re-encodes it into the game's texture
         /// at runtime, and a second lossy pass would compound the first.</summary>
         public bool IsAddition { get; init; }
+        public bool IsStandingPortrait { get; set; }
     }
 
     public sealed class ImportedAudioAsset

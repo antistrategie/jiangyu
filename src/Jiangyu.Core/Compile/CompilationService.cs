@@ -498,6 +498,8 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         await EmitLocalisationAsync(projectDir, outputDir, manifest.Name, compiledTemplates);
         _log.Info($"  [timing] Localisation: {phaseSw.Elapsed.TotalSeconds:F1}s");
 
+        PortraitTexturePolicy.Apply(replacementTextures, templatePatchResult.Patches);
+
         // Detect the combined-Unity-pass case: a mod with both addition
         // prefabs AND mesh-replacement work pays two cold starts today. When
         // both have work we fold the prefab pass into the first Unity call
@@ -531,7 +533,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         // metadata it produces is cached alongside the fingerprint and restored on reuse.
         // --clean starts from an empty build state.
         var assetsFingerprint = useRawGlbPipeline
-            ? AssetInputsFingerprint(projectDir, unityProjectFingerprint, bundleName)
+            ? AssetInputsFingerprint(projectDir, unityProjectFingerprint, bundleName, replacementTextures)
             : string.Empty;
         _log.Info($"  [timing] Input fingerprints: {phaseSw.Elapsed.TotalSeconds:F1}s");
         // Each half's output is a SET of bundle files recorded with its phase. Reuse
@@ -904,11 +906,16 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
     // this bundle current.
     // The bundle name is an input too: it prefixes every planned bundle file, so a mod
     // rename must rebuild rather than reuse bundles recorded under the old name.
-    internal static string AssetInputsFingerprint(string projectDir, string unityProjectFingerprint, string bundleName)
+    // Portrait assignments affect texture sampling even when the image bytes are unchanged.
+    internal static string AssetInputsFingerprint(
+        string projectDir, string unityProjectFingerprint, string bundleName,
+        IEnumerable<GlbMeshBundleCompiler.CompiledTexture> textures)
         => FileFingerprint.Combine(
             FileFingerprint.OfDirectory(Path.Combine(projectDir, "assets")),
             unityProjectFingerprint,
-            bundleName);
+            bundleName,
+            string.Join("\n", textures.Where(texture => texture.IsStandingPortrait)
+                .Select(texture => texture.Name).Order(StringComparer.Ordinal)));
 
     /// <summary>
     /// Emits the localisation outputs under <c>compiled/locales/</c>: the source catalogue
