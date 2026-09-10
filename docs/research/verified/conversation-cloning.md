@@ -44,6 +44,14 @@ identity-field on the clone to its KDL `cloneId` so subsequent
 lookups by `cloneId` resolve. Modder-side `set "Path" "..."` patches
 overwrite this with the same value harmlessly.
 
+The clone pass builds one ordinal identity index from its live template
+snapshot. It indexes all object names before alternate identities, and
+keeps the first match for duplicate keys. This preserves name precedence
+even when an earlier template's `Path` matches a later template's name.
+Lookups then reuse the index without repeatedly marshalling every native
+name and path. Each pass builds a fresh index so late registrations are
+visible. Clones created during that pass enter the next snapshot.
+
 ## Runtime injection
 
 Each concrete `BaseConversationManager` subclass
@@ -63,12 +71,11 @@ invisible to those indexes. Cache-invalidating
 manager owns its own snapshot.
 
 Jiangyu's `ConversationManagerRegistry` solves this by tracking live
-managers and injecting clones into their per-trigger bucket dictionary.
-The bucket dict is mutable (it's an Il2Cpp `Dictionary` reference),
-which is the matcher's actual hot read. The master
-`m_ConversationTemplates` array is not touched. Replacing it
-post-construction has downstream side effects that break the matcher
-for unrelated speakers.
+managers and injecting clones into both indexes. The mutable per-trigger
+bucket dictionary serves the matcher's hot read. The master
+`m_ConversationTemplates` array retains its existing entries and appends
+matching clones. Replaying known clones into a newly discovered manager
+batches this array rebuild into one allocation.
 
 Manager discovery is via a Harmony prefix on
 `BaseConversationManager.GetAvailableConversationTemplates` (an instance
@@ -206,14 +213,6 @@ Auto-fills cover the typical omissions:
 - Node `Guid` values are deterministically generated per composite.
 - `VariationCopyCount` is padded to match the number of `Variations`
   appends.
-
-## Out of scope at this layer
-
-- **`ConversationTemplate.m_ConversationTemplates` master array.**
-  Updating only the per-trigger bucket dict is sufficient for the
-  matcher's hot path. Mutating the master array post-construction
-  breaks the matcher for unrelated speakers and is deliberately
-  avoided.
 
 ## See also
 

@@ -1,5 +1,6 @@
 using Il2CppInterop.Runtime;
 using Jiangyu.Loader.Logging;
+using Jiangyu.Loader.Runtime;
 using MelonLoader;
 using UnityEngine;
 
@@ -25,6 +26,7 @@ internal sealed class LazyBundleAssets
         public string Mod;
         public UnityEngine.Object Loaded;
         public bool Tried;
+        public bool ReplacesTexture;
     }
 
     private readonly List<UnityEngine.Object> _pinned;
@@ -48,6 +50,8 @@ internal sealed class LazyBundleAssets
     private readonly Dictionary<Il2CppAssetBundle, Entry> _prefabsByBundle = new(ReferenceEqualityComparer.Instance);
     // Backing textures reached through a sprite of the same name, resolved once each.
     private readonly Dictionary<string, Texture2D> _spriteBackingTextures = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Texture2D> _replacementSpriteBackingTextures = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _textureReplacementNames = new(StringComparer.OrdinalIgnoreCase);
 
     public LazyBundleAssets(List<UnityEngine.Object> pinned) => _pinned = pinned;
 
@@ -62,6 +66,8 @@ internal sealed class LazyBundleAssets
     public Action<string, string, string, GameObject> OnPrefabLoaded { get; set; }
 
     public int TextureCount => _textures.Count;
+    public int TextureReplacementCount => _textureReplacementNames.Count;
+    public bool HasTextureReplacement(string name) => name != null && _textureReplacementNames.Contains(name);
     public int SpriteCount => _sprites.Count;
     public int AudioCount => _audio.Count;
     public int PrefabCount => _prefabs.Count;
@@ -74,11 +80,24 @@ internal sealed class LazyBundleAssets
 
     /// <param name="owner">Display label for log lines, "&lt;mod&gt;/&lt;bundle file&gt;".</param>
     /// <param name="mod">The owning mod's id, kept apart from the label since an id may itself contain a slash.</param>
-    public void RegisterTexture(string name, Il2CppAssetBundle bundle, string path, string owner, string mod, LoaderLog log)
-        => Register(_textures, "texture", name, bundle, path, owner, mod, log);
+    public void RegisterTexture(string name, Il2CppAssetBundle bundle, string path, string owner, string mod,
+        LoaderLog log, bool replacesTexture = true)
+        => RegisterImage(_textures, "texture", name, bundle, path, owner, mod, log, replacesTexture);
 
-    public void RegisterSprite(string name, Il2CppAssetBundle bundle, string path, string owner, string mod, LoaderLog log)
-        => Register(_sprites, "sprite", name, bundle, path, owner, mod, log);
+    public void RegisterSprite(string name, Il2CppAssetBundle bundle, string path, string owner, string mod,
+        LoaderLog log, bool replacesTexture = true)
+        => RegisterImage(_sprites, "sprite", name, bundle, path, owner, mod, log, replacesTexture);
+
+    private void RegisterImage(Dictionary<string, List<Entry>> map, string kind, string name,
+        Il2CppAssetBundle bundle, string path, string owner, string mod, LoaderLog log, bool replacesTexture)
+    {
+        var entry = Register(map, kind, name, bundle, path, owner, mod, log);
+        if (entry == null)
+            return;
+        entry.ReplacesTexture = replacesTexture;
+        if (replacesTexture)
+            _textureReplacementNames.Add(name);
+    }
 
     public void RegisterAudioClip(string name, Il2CppAssetBundle bundle, string path, string owner, string mod, LoaderLog log)
         => Register(_audio, "audio", name, bundle, path, owner, mod, log);
@@ -119,6 +138,12 @@ internal sealed class LazyBundleAssets
     }
 
     public bool TryGetTexture(string name, out Texture2D texture)
+        => TryGetTexture(name, replacementsOnly: false, out texture);
+
+    public bool TryGetReplacementTexture(string name, out Texture2D texture)
+        => TryGetTexture(name, replacementsOnly: true, out texture);
+
+    private bool TryGetTexture(string name, bool replacementsOnly, out Texture2D texture)
     {
         texture = null;
         if (name == null)
@@ -126,7 +151,7 @@ internal sealed class LazyBundleAssets
 
         if (_textures.TryGetValue(name, out var candidates))
         {
-            texture = Load<Texture2D>(candidates, null, "texture", name);
+            texture = Load<Texture2D>(candidates, null, "texture", name, replacementsOnly: replacementsOnly);
             if (texture != null)
                 return true;
         }
@@ -137,12 +162,13 @@ internal sealed class LazyBundleAssets
         // accepts, so a bundle sprite's backing texture answers to the sprite's name and
         // the mutation sweep finds it by the name it matched on the live sprite. An
         // explicit texture of the same name takes precedence above.
-        if (_spriteBackingTextures.TryGetValue(name, out texture))
+        var backingTextures = replacementsOnly ? _replacementSpriteBackingTextures : _spriteBackingTextures;
+        if (backingTextures.TryGetValue(name, out texture))
             return texture != null;
         if (!_sprites.TryGetValue(name, out var spriteCandidates))
             return false;
 
-        var sprite = Load<Sprite>(spriteCandidates, null, "sprite", name);
+        var sprite = Load<Sprite>(spriteCandidates, null, "sprite", name, replacementsOnly: replacementsOnly);
         Texture2D backing = null;
         if (sprite != null)
         {
@@ -153,7 +179,7 @@ internal sealed class LazyBundleAssets
             if (backing != null)
                 Pin(backing);
         }
-        _spriteBackingTextures[name] = backing;
+        backingTextures[name] = backing;
         texture = backing;
         return texture != null;
     }
@@ -213,12 +239,15 @@ internal sealed class LazyBundleAssets
     private void PrefabLoaded(Entry entry) => OnPrefabLoaded?.Invoke(entry.Key, entry.Owner, entry.Mod, (GameObject)entry.Loaded);
 
     // The first candidate, from the last-loaded mod back, that loads as T.
-    private T Load<T>(List<Entry> candidates, string modId, string kind, string name, Action<Entry> onFirstLoad = null)
+    private T Load<T>(List<Entry> candidates, string modId, string kind, string name,
+        Action<Entry> onFirstLoad = null, bool replacementsOnly = false)
         where T : UnityEngine.Object
     {
         for (var i = candidates.Count - 1; i >= 0; i--)
         {
             var entry = candidates[i];
+            if (replacementsOnly && !entry.ReplacesTexture)
+                continue;
             if (modId != null && !string.Equals(entry.Mod, modId, StringComparison.Ordinal))
                 continue;
             var loaded = LoadEntry<T>(entry, kind, name, onFirstLoad);
@@ -246,6 +275,7 @@ internal sealed class LazyBundleAssets
         IntPtr ptr;
         try
         {
+            using var timing = StartupTimings.Measure("asset load", name);
             ptr = entry.Bundle.LoadAsset(entry.Path, IL2CPP.Il2CppObjectBaseToPtr(Il2CppType.From(typeof(T))));
         }
         catch (Exception ex)

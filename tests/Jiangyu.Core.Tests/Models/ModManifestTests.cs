@@ -6,6 +6,33 @@ namespace Jiangyu.Core.Tests.Models;
 public class ModManifestTests
 {
     [Fact]
+    public void TextureReplacementMetadataPreservesUnknownEmptyAndNamedTargets()
+    {
+        string[]?[] cases = [null, [], ["portrait", "icon_atlas"]];
+        foreach (var names in cases)
+        {
+            var source = new ModManifest { Name = "Test", TextureReplacements = names?.ToList() };
+            var json = source.ToJson();
+            var compiled = ModManifest.FromJson(json);
+            var loaded = LoaderManifest.FromJson(json)!;
+
+            Assert.Equal(names, compiled.TextureReplacements?.ToArray());
+            Assert.Equal(names, loaded.TextureReplacements?.ToArray());
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DeferredStandingPortraitsRetainsExplicitOptIn(bool defer)
+    {
+        var json = new ModManifest { Name = "Test", DeferStandingPortraits = defer }.ToJson();
+        Assert.Equal(defer, ModManifest.FromJson(json).DeferStandingPortraits);
+        Assert.Equal(defer, LoaderManifest.FromJson(json)!.DeferStandingPortraits);
+        Assert.False(LoaderManifest.FromJson("{\"name\":\"Existing mod\"}")!.DeferStandingPortraits);
+    }
+
+    [Fact]
     public void CreateDefault_SetsNameAndDefaults()
     {
         var manifest = ModManifest.CreateDefault("TestMod");

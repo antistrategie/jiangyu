@@ -35,6 +35,7 @@ internal sealed class BundleReplacementCatalog
     public readonly PrefabMirrorScheduler PrefabMirrors = new();
 
     public Dictionary<string, ReplacementMesh> Meshes { get; } = new(StringComparer.Ordinal);
+    public HashSet<string> DeferredPortraitMods { get; } = new(StringComparer.Ordinal);
 
     // Textures, sprites, audio clips and addition prefabs, indexed by name at start and
     // loaded from their bundle on first use. Consumers ask by name and by type.
@@ -83,17 +84,24 @@ internal sealed class BundleReplacementCatalog
             loadableModCount++;
             log.Mod = mod.Name;
 
+            var manifest = OpenManifest(mod.ManifestPath, log);
+            if (manifest?.DeferStandingPortraits == true)
+                DeferredPortraitMods.Add(mod.Name);
+
             if (mod.BundlePaths.Count == 0)
             {
                 log.Debug($"No bundle files in [{mod.RelativeDirectoryPath}]; treated as present for dependency checks.");
                 continue;
             }
 
+            var textureReplacements = manifest?.TextureReplacements == null
+                ? null
+                : new HashSet<string>(manifest.TextureReplacements, StringComparer.OrdinalIgnoreCase);
             foreach (var bundlePath in mod.BundlePaths)
             {
                 try
                 {
-                    LoadBundle(mod, bundlePath, log);
+                    LoadBundle(mod, bundlePath, manifest, textureReplacements, log);
                     bundleCount++;
                 }
                 catch (Exception ex)
@@ -106,19 +114,15 @@ internal sealed class BundleReplacementCatalog
         return new BundleLoadSummary(loadableModCount, plan.BlockedMods.Count, bundleCount);
     }
 
-    private void LoadBundle(DiscoveredMod mod, string bundlePath, LoaderLog log)
+    private void LoadBundle(DiscoveredMod mod, string bundlePath, LoaderManifest loaderManifest,
+        HashSet<string> textureReplacements, LoaderLog log)
     {
         var ownerLabel = $"{mod.Name}/{Path.GetFileName(bundlePath)}";
         log.Debug($"Loading bundle: {Path.GetFileName(bundlePath)}");
 
-        // Parse the mod's jiangyu.json once and reuse the JsonElement across
-        // the three readers. LoadBundle runs per bundle, but the manifest is
-        // one file per mod, so the previous parse-three-times-per-bundle shape
-        // was O(bundles × 3) reads of the same file at startup.
         Dictionary<string, string> meshMappings = null;
         Dictionary<string, CompiledMeshMetadata> meshMetadata = null;
         HashSet<string> additionPrefabNames = new(StringComparer.Ordinal);
-        var loaderManifest = OpenManifest(mod.ManifestPath, log);
         if (loaderManifest != null)
         {
             meshMappings = LoadMeshMappings(loaderManifest, log);
@@ -196,6 +200,7 @@ internal sealed class BundleReplacementCatalog
         foreach (var assetName in assetNames)
         {
             var stem = AssetStem(assetName);
+            var replacesTexture = textureReplacements == null || textureReplacements.Contains(stem);
             switch (ClassifyAssetName(assetName))
             {
                 case BundleAssetClass.Audio:
@@ -206,8 +211,8 @@ internal sealed class BundleReplacementCatalog
                 case BundleAssetClass.Image:
                     // One imported image loads as a Sprite and as its Texture2D, so it
                     // answers to both; the request's type picks.
-                    Assets.RegisterSprite(stem, bundle, assetName, ownerLabel, mod.Name, log);
-                    Assets.RegisterTexture(stem, bundle, assetName, ownerLabel, mod.Name, log);
+                    Assets.RegisterSprite(stem, bundle, assetName, ownerLabel, mod.Name, log, replacesTexture);
+                    Assets.RegisterTexture(stem, bundle, assetName, ownerLabel, mod.Name, log, replacesTexture);
                     indexed++;
                     break;
 
@@ -225,8 +230,8 @@ internal sealed class BundleReplacementCatalog
                             break;
                         }
                     }
-                    Assets.RegisterTexture(stem, bundle, assetName, ownerLabel, mod.Name, log);
-                    Assets.RegisterSprite(stem, bundle, assetName, ownerLabel, mod.Name, log);
+                    Assets.RegisterTexture(stem, bundle, assetName, ownerLabel, mod.Name, log, replacesTexture);
+                    Assets.RegisterSprite(stem, bundle, assetName, ownerLabel, mod.Name, log, replacesTexture);
                     indexed++;
                     break;
 
@@ -242,8 +247,8 @@ internal sealed class BundleReplacementCatalog
                         RegisterPrefabAsset(ownerLabel, assetName, new GameObject(prefabPtr), bundleToGame, meshMetadata, log);
                         break;
                     }
-                    Assets.RegisterSprite(stem, bundle, assetName, ownerLabel, mod.Name, log);
-                    Assets.RegisterTexture(stem, bundle, assetName, ownerLabel, mod.Name, log);
+                    Assets.RegisterSprite(stem, bundle, assetName, ownerLabel, mod.Name, log, replacesTexture);
+                    Assets.RegisterTexture(stem, bundle, assetName, ownerLabel, mod.Name, log, replacesTexture);
                     indexed++;
                     break;
 

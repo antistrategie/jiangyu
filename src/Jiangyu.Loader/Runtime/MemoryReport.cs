@@ -5,12 +5,9 @@ using MelonLoader;
 namespace Jiangyu.Loader.Runtime;
 
 /// <summary>
-/// One play-log line of memory figures at the two points a machine short on memory
-/// dies: once the loader has materialised every bundle asset, and once the first scene's
-/// replacement poll schedule has run to its end. A crash report carries this
-/// line, so the first one also names the machine's RAM and graphics memory. Every figure
-/// is read defensively: a Unity counter the player build compiles out, or one that reads
-/// zero, is left off the line rather than printed as a number.
+/// Memory figures at startup boundaries. The first report also names the machine's
+/// RAM and graphics memory. Counters that throw or return zero are omitted. Unity's
+/// texture counter covers the engine's texture accounting, not measured VRAM residency.
 /// </summary>
 internal static class MemoryReport
 {
@@ -22,15 +19,17 @@ internal static class MemoryReport
         var figures = new List<string>();
         // Each counter stands alone so one that reads zero (PrivateMemorySize64 does under
         // Proton) drops out without taking a valid neighbour with it.
-        Add(figures, () => Figure("process ", Process.GetCurrentProcess().WorkingSet64, " resident"));
-        Add(figures, () => Figure("", Process.GetCurrentProcess().PrivateMemorySize64, " committed"));
+        using var process = Process.GetCurrentProcess();
+        Add(figures, () => Figure("process ", process.WorkingSet64, " resident"));
+        Add(figures, () => Figure("", process.PeakWorkingSet64, " peak resident"));
+        Add(figures, () => Figure("", process.PrivateMemorySize64, " committed"));
         Add(figures, () => Figure("Unity ", UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong(), " allocated"));
         Add(figures, () => Figure("", UnityEngine.Profiling.Profiler.GetTotalReservedMemoryLong(), " reserved"));
         Add(figures, () => Figure("textures ", (long)UnityEngine.Texture.currentTextureMemory));
         Add(figures, () => Figure("graphics driver ", UnityEngine.Profiling.Profiler.GetAllocatedMemoryForGraphicsDriver()));
         Add(figures, () => Figure("il2cpp heap ", IL2CPP.il2cpp_gc_get_used_size()));
 
-        var line = $"Memory {stage}: {string.Join("; ", figures)}.";
+        var line = $"Memory {stage}: {string.Join(", ", figures)}.";
         if (describeMachine)
         {
             var machine = Read(() =>

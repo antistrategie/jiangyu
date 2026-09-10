@@ -59,8 +59,9 @@ internal class ReplacementCoordinator
         _directReplacements = new DirectMeshReplacementApplier(_materialReplacements, _meshPreparation);
         _prefabRebindApplier = new PrefabMeshRebindApplier(_catalog, _directReplacements);
         _templatePatches = new TemplatePatchCatalog();
-        _templatePatchApplier = new TemplatePatchApplier(_templatePatches, new ModAssetResolver(_catalog));
         _templateClones = new TemplateCloneCatalog();
+        var portraits = new DeferredStandingPortraits(_catalog, _templateClones);
+        _templatePatchApplier = new TemplatePatchApplier(_templatePatches, new ModAssetResolver(_catalog, portraits));
         _templateCloneApplier = new TemplateCloneApplier(_templateClones);
         _templatePatchApplier.DeferToChainedReplay = _templateCloneApplier.IsChainedClone;
         _templateCloneApplier.SourcePatchesHeld = SourcePatchesHeld;
@@ -71,7 +72,9 @@ internal class ReplacementCoordinator
         _harmonyPatchInstaller = new LoaderHarmonyPatchInstaller(
             new IHarmonyPatchModule[]
             {
+                new StandingPortraitDisplayPatch(portraits),
                 new TemplateCloneEarlyInjectionPatch(_templateCloneApplier, _templatePatches),
+                new TemplateCloneAncestorPatch(_templateCloneApplier),
                 new AudioReplacementPatch(_catalog.Assets),
                 new Jiangyu.Loader.Replacements.ElementSpawnReplacementPatch(this),
                 new ConversationManagerTrackingPatch(),
@@ -133,6 +136,7 @@ internal class ReplacementCoordinator
                 || _templateCloneApplier.LateSources.Contains(
                     name => TemplateRuntimeAccess.SameTemplateSpace(type, name), id),
         };
+        LoaderDebug.Write(log, $"Replacement targets: {_catalog.Meshes.Count} mesh(es), {_catalog.Assets.TextureReplacementCount} texture name(s).");
         return summary;
     }
 
@@ -242,6 +246,7 @@ internal class ReplacementCoordinator
 
     public void ApplyReplacements(MelonLogger.Instance log, bool includeTextures = true)
     {
+        using var timing = StartupTimings.Measure("replacement pass");
         _templatePatchApplier.BeginPass();
         try
         {
@@ -259,9 +264,7 @@ internal class ReplacementCoordinator
         // its script mirror, so a queued mirror is work even for a mod that ships nothing
         // else.
         if (_catalog.Meshes.Count == 0 &&
-            _catalog.Assets.TextureCount == 0 &&
-            _catalog.Assets.SpriteCount == 0 &&
-            _catalog.Assets.AudioCount == 0 &&
+            _catalog.Assets.TextureReplacementCount == 0 &&
             !_catalog.PrefabMirrors.HasPending &&
             !_templatePatchApplier.HasPendingPatches &&
             !_templateCloneApplier.HasPendingClones &&
@@ -291,14 +294,17 @@ internal class ReplacementCoordinator
         // rebuilds, SaveSystem.Load reinstantiation) come out pre-swapped.
         // The per-instance sweep below catches replacements without a
         // TargetEntityName and any prefab not yet in Resources.
-        var visualReplacements = _prefabRebindApplier.Apply(log);
-
-        var skinnedRenderers = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<SkinnedMeshRenderer>(), true);
-
-        foreach (var obj in skinnedRenderers)
+        var visualReplacements = 0;
+        if (HasMeshReplacements)
         {
-            if (TryApplyToRenderer(log, obj.Cast<SkinnedMeshRenderer>()))
-                visualReplacements++;
+            using var timing = StartupTimings.Measure("mesh replacement scans");
+            visualReplacements = _prefabRebindApplier.Apply(log);
+            var skinnedRenderers = UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<SkinnedMeshRenderer>(), true);
+            foreach (var obj in skinnedRenderers)
+            {
+                if (TryApplyToRenderer(log, obj.Cast<SkinnedMeshRenderer>()))
+                    visualReplacements++;
+            }
         }
 
         var textureMutations = includeTextures ? _textureMutation.ApplyPending(log) : 0;
@@ -357,6 +363,8 @@ internal class ReplacementCoordinator
             return;
         _templatesAppliedRaised = true;
         ReportSelfCheck(log);
+        StartupTimings.MarkOnce("template patches applied", memory: true);
+        using var timing = StartupTimings.Measure("mod templates-applied callbacks");
         TemplatesApplied?.Invoke();
     }
 
@@ -595,6 +603,7 @@ internal class ReplacementCoordinator
             return;
         _memoryAfterPassesReported = true;
         MemoryReport.Write(log, "after replacement passes", describeMachine: false);
+        StartupTimings.Complete();
     }
 
     // One consolidated line once every patch has been tried against the live game.
@@ -630,9 +639,7 @@ internal class ReplacementCoordinator
             return true;
 
         if (_catalog.Meshes.Count == 0 &&
-            _catalog.Assets.TextureCount == 0 &&
-            _catalog.Assets.SpriteCount == 0 &&
-            _catalog.Assets.AudioCount == 0)
+            _catalog.Assets.TextureReplacementCount == 0)
             return false;
 
         if (_catalog.Meshes.Count > 0)

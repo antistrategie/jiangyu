@@ -142,6 +142,16 @@ namespace Jiangyu.Mod
                     // on top of one here would compound; it stays at source fidelity.
                     if (plan.TextureAdditions.Contains(textureData.Name))
                         CompressIfBlockAligned(texture);
+                    if (plan.StandingPortraits.Contains(textureData.Name))
+                    {
+                        // Standing artwork is sampled on the GPU. Set the serialised flag
+                        // so the bundle retains its pixels but the player omits their CPU copy.
+                        using (var serialised = new SerializedObject(texture))
+                        {
+                            serialised.FindProperty("m_IsReadable").boolValue = false;
+                            serialised.ApplyModifiedPropertiesWithoutUndo();
+                        }
+                    }
                     textureFormats.TryGetValue(texture.format, out var formatCount);
                     textureFormats[texture.format] = formatCount + 1;
                     AssetDatabase.CreateAsset(texture, assetPath);

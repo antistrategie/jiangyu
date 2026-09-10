@@ -1,5 +1,3 @@
-using Il2CppInterop.Runtime;
-using Il2CppInterop.Runtime.InteropTypes;
 using Jiangyu.Shared.Templates;
 using MelonLoader;
 
@@ -212,7 +210,15 @@ internal sealed partial class TemplatePatchApplier
             }
 
             error = null;
-            return RunVerified(parent, memberType, setter, getter, appendDestination: null);
+            var portraits = _assetResolver?.Portraits;
+            if (portraits?.TryDefer(parent, fieldName, _op, getter,
+                    () => RunVerified(parent, memberType, setter, getter, appendDestination: null)) == true)
+                return OperationResult.Applied;
+
+            var result = RunVerified(parent, memberType, setter, getter, appendDestination: null);
+            if (result == OperationResult.Applied)
+                portraits?.Forget(parent, fieldName);
+            return result;
         }
 
         public OperationResult TrySetElement(object parent, string fieldName, int index, CompiledTemplateValue value, out string error)
@@ -335,6 +341,8 @@ internal sealed partial class TemplatePatchApplier
         {
             _latestCurrent = parent;
             var outcome = TryApplyClear(parent, fieldName, _templateTypeName, _templateId, _op, _assetResolver, _log);
+            if (outcome == ApplyOutcome.Applied)
+                _assetResolver?.Portraits?.Forget(parent, fieldName);
             error = null;
             return TranslateOutcome(outcome);
         }

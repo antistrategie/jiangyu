@@ -1,6 +1,7 @@
 using Il2CppInterop.Runtime;
 using Jiangyu.Loader.Bundles;
 using Jiangyu.Loader.Logging;
+using Jiangyu.Loader.Runtime;
 using MelonLoader;
 using UnityEngine;
 
@@ -40,7 +41,7 @@ internal sealed class TextureMutationService
     /// name too, so counting instances would clear the gate while names were still unresolved.
     /// Scene-scoped, because a new scene loads new instances of the same names.
     /// </summary>
-    public bool MayHaveUnresolvedTargets => _resolvedNames.Count < _assets.TextureCount;
+    public bool MayHaveUnresolvedTargets => _resolvedNames.Count < _assets.TextureReplacementCount;
 
     /// <summary>
     /// Drop the scene's dedupe state. Instance ids and sprite pointers both belong to objects the
@@ -57,7 +58,7 @@ internal sealed class TextureMutationService
 
     public bool HasPendingTargets()
     {
-        if (_assets.TextureCount == 0)
+        if (_assets.TextureReplacementCount == 0)
             return false;
 
         var allTextures = Resources.FindObjectsOfTypeAll(Il2CppType.Of<Texture2D>());
@@ -80,7 +81,7 @@ internal sealed class TextureMutationService
             var gameSprite = obj?.TryCast<Sprite>();
             if (gameSprite == null || string.IsNullOrEmpty(gameSprite.name))
                 continue;
-            if (!_assets.HasTexture(gameSprite.name))
+            if (!_assets.HasTextureReplacement(gameSprite.name))
                 continue;
             var backing = gameSprite.texture;
             if (backing == null)
@@ -96,8 +97,9 @@ internal sealed class TextureMutationService
 
     public int ApplyPending(MelonLogger.Instance log)
     {
-        if (_assets.TextureCount == 0)
+        if (_assets.TextureReplacementCount == 0)
             return 0;
+        using var timing = StartupTimings.Measure("texture replacement scans");
 
         var mutated = 0;
         var allTextures = Resources.FindObjectsOfTypeAll(Il2CppType.Of<Texture2D>());
@@ -136,8 +138,8 @@ internal sealed class TextureMutationService
 
             // Name first, load second: the sweep visits every live sprite, and only a name
             // the mods ship is worth pulling a texture out of a bundle for.
-            if (!_assets.HasTexture(gameSprite.name)
-                || !_assets.TryGetTexture(gameSprite.name, out var replacement) || replacement == null)
+            if (!_assets.HasTextureReplacement(gameSprite.name)
+                || !_assets.TryGetReplacementTexture(gameSprite.name, out var replacement) || replacement == null)
                 continue;
 
             // Some sprites in MENACE's runtime carry a backing-texture PPtr that
@@ -194,14 +196,14 @@ internal sealed class TextureMutationService
         if (gameTexture == null)
             return false;
 
-        if (string.IsNullOrEmpty(gameTexture.name) || !_assets.HasTexture(gameTexture.name))
+        if (string.IsNullOrEmpty(gameTexture.name) || !_assets.HasTextureReplacement(gameTexture.name))
             return false;
 
         var instanceId = gameTexture.GetInstanceID();
         if (_mutatedInstanceIds.Contains(instanceId) || _failedInstanceIds.Contains(instanceId))
             return false;
 
-        if (!_assets.TryGetTexture(gameTexture.name, out replacement) || replacement == null)
+        if (!_assets.TryGetReplacementTexture(gameTexture.name, out replacement) || replacement == null)
             return false;
 
         // Skip the modder-supplied replacement texture itself (loaded under the target

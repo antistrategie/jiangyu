@@ -28,6 +28,7 @@ The Jiangyu requirement is not seeded into `depends`. The compiler stamps the to
 | `depends`         | `string[]` | no       | (none)    | See [Dependencies](#dependencies).                     |
 | `conflicts`       | `string[]` | no       | (none)    | See [Conflicts](#conflicts).                           |
 | `imports`         | `string[]` | no       | (none)    | See [Imported prefabs](#imported-prefabs).             |
+| `deferStandingPortraits` | `boolean` | no | `false` | Load standing portrait additions on display. Custom UI must use [the portrait helper](/assets/additions/textures#load-standing-portraits-on-display). |
 
 Unknown fields are ignored on read.
 
@@ -93,9 +94,12 @@ The compiler writes additional fields into `compiled/jiangyu.json`. **Don't auth
 | Field               | Source                                                                       |
 | ------------------- | ---------------------------------------------------------------------------- |
 | `meshes`            | mesh compilation, one entry per replaced skinned-renderer path               |
+| `textureReplacements` | names of texture replacements and sprite replacements with their own backing texture. An empty list lets the loader skip texture replacement scans |
 | `additionPrefabs`   | logical names of prefab addition bundles staged into the compiled output (see [Prefabs](/assets/additions/prefabs)) |
 | `compiledForUnity`  | the game's Unity version stamped at compile time, so the loader can compare it to the running game and warn on a build mismatch |
 | `compiledForJiangyu`| the Jiangyu toolchain version that built the mod; the loader warns when it's newer than the installed loader |
+
+Texture replacement scans use the assets authored under `assets/replacements/textures/` and `assets/replacements/sprites/`, including composited sprite atlases. Textures embedded in model bundles stay with their models and do not replace game textures globally. Manifests without `textureReplacements` retain legacy matching by asset name.
 
 The compiled template program (the patch and clone directives emitted from `templates/*.kdl`) is **not** in the manifest. It ships beside it as `compiled/templates.json`, so `jiangyu.json` stays a small identity record the loader scans cheaply. A mod with no patches or clones ships no `templates.json`.
 

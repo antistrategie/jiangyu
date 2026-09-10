@@ -1,5 +1,6 @@
 using Il2CppInterop.Runtime;
 using UnityEngine;
+using UnityEngine.Profiling;
 using UnityEngine.UI;
 
 namespace Jiangyu.Loader.Diagnostics;
@@ -89,7 +90,24 @@ internal static class SceneIdentityInspector
                 Height = texture.height,
                 Format = texture.format.ToString(),
                 HideFlags = texture.hideFlags.ToString(),
+                RuntimeBytes = Profiler.GetRuntimeMemorySizeLong(texture),
+                Readable = texture.isReadable,
+                MipCount = texture.mipmapCount,
+                ActiveMipmapLimit = texture.activeMipmapLimit,
             });
+        }
+
+        foreach (var obj in Resources.FindObjectsOfTypeAll(Il2CppType.Of<Mesh>()))
+        {
+            var mesh = obj?.TryCast<Mesh>();
+            if (mesh != null)
+                dump.MeshAssets.Add(new MeshAssetInfo
+                {
+                    Name = mesh.name,
+                    RuntimeBytes = Profiler.GetRuntimeMemorySizeLong(mesh),
+                    VertexCount = mesh.vertexCount,
+                    Readable = mesh.isReadable,
+                });
         }
 
         foreach (var obj in UnityEngine.Object.FindObjectsOfType(Il2CppType.Of<SkinnedMeshRenderer>(), true))
@@ -134,6 +152,11 @@ internal static class SceneIdentityInspector
             {
                 Name = clip.name,
                 LengthSeconds = clip.length,
+                RuntimeBytes = Profiler.GetRuntimeMemorySizeLong(clip),
+                LoadType = clip.loadType.ToString(),
+                LoadState = clip.loadState.ToString(),
+                Channels = clip.channels,
+                Frequency = clip.frequency,
             });
         }
 
@@ -180,6 +203,7 @@ internal static class SceneIdentityInspector
         public List<UiImageInfo> UiImages { get; } = new();
         public List<SpriteAssetInfo> SpriteAssets { get; } = new();
         public List<TextureAssetInfo> TextureAssets { get; } = new();
+        public List<MeshAssetInfo> MeshAssets { get; } = new();
         public List<SkinnedMeshRendererInfo> SkinnedMeshRenderers { get; } = new();
         public List<AudioSourceInfo> AudioSources { get; } = new();
         public List<AudioClipAssetInfo> AudioClipAssets { get; } = new();
@@ -201,6 +225,14 @@ internal static class SceneIdentityInspector
         public string BoundsSize { get; set; }
     }
 
+    private sealed class MeshAssetInfo
+    {
+        public string Name { get; set; }
+        public long RuntimeBytes { get; set; }
+        public int VertexCount { get; set; }
+        public bool Readable { get; set; }
+    }
+
     private sealed class TextureAssetInfo
     {
         public string Name { get; set; }
@@ -208,6 +240,10 @@ internal static class SceneIdentityInspector
         public int Height { get; set; }
         public string Format { get; set; }
         public string HideFlags { get; set; }
+        public long RuntimeBytes { get; set; }
+        public bool Readable { get; set; }
+        public int MipCount { get; set; }
+        public int ActiveMipmapLimit { get; set; }
     }
 
     private sealed class DiagnosticCounts
@@ -250,5 +286,10 @@ internal static class SceneIdentityInspector
     {
         public string Name { get; set; }
         public float LengthSeconds { get; set; }
+        public long RuntimeBytes { get; set; }
+        public string LoadType { get; set; }
+        public string LoadState { get; set; }
+        public int Channels { get; set; }
+        public int Frequency { get; set; }
     }
 }

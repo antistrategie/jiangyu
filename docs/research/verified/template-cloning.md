@@ -1,7 +1,7 @@
 # Template Cloning
 
-Status: **verified** (Jiangyu in-game readback plus cold-restart save/load
-confirmed via EntityPatchSmoke + ClonePersistenceSmoke, 2026-04-20).
+Status: **verified** (Jiangyu in-game cache readback and save loading,
+including deferred ancestor registration on 2026-09-10).
 
 ## Contract
 
@@ -47,7 +47,7 @@ manifest on the next launch.
 
 ## Runtime steps
 
-Implemented in `src/Jiangyu.Loader/Templates/TemplateCloneApplier.cs`:
+Implemented in `src/Jiangyu.Loader/Templates/Clones/TemplateCloneApplier.cs`:
 
 1. `TemplateRuntimeAccess.GetAllTemplates(templateType)` — forces
    `DataTemplateLoader.GetAll<T>()` to materialise the per-type cache. An
@@ -80,38 +80,80 @@ Implemented in `src/Jiangyu.Loader/Templates/TemplateCloneApplier.cs`:
    used the base type's class and the game's own `GetAll<T>` consumer hung
    on the result. Using the original's element class keeps the replacement
    byte-identical to what the dict slot expects.
-8. Walk `resolvedType.BaseType` upward through every ancestor below
-   `DataTemplate` itself. For each ancestor,
-   force `m_TemplateMaps[Ancestor]` and `m_TemplateArrays[Ancestor]` into
-   existence by invoking `DataTemplateLoader.GetAll<Ancestor>()` (which
-   materialises both slots from the game's master list if absent), then
-   insert the clone into the ancestor's inner map and run the same length+1
-   array extension on the corresponding `m_TemplateArrays` slot. This
-   mirrors vanilla: a vanilla `WeaponTemplate` instance lives at the same
-   native pointer in both `m_TemplateMaps[WeaponTemplate]` and
-   `m_TemplateMaps[BaseItemTemplate]`, so consumers calling
-   `GetAll<BaseItemTemplate>()` (e.g. the BlackMarket pool, filtered by
-   `BlackMarketMaxQuantity > 0`) see clones the same way they see vanilla.
-   Forcing ancestor materialisation at clone-registration time is
-   load-bearing for any MENACE system that snapshots an ancestor-typed
-   `GetAll` into its own dictionary at init (canonical case:
-   `OwnedItems.m_ItemInstances` keyed by `BaseItemTemplate`, indexed
-   strictly during `OwnedItems.ProcessSaveState`); without forced
-   materialisation those snapshots cache a clone-free result before the
-   first re-registration tick can backfill, and the save deserialiser
-   throws `KeyNotFoundException` on the missing clone key.
-   The root `DataTemplate` slot is excluded from the walk. No consumer
-   enumerates `GetAll<DataTemplate>()`, and forcing it makes
-   `LoadTemplates` load every template asset under `Data/` together with
-   everything those assets reference (terrain chunks, setpieces, unit
-   prefabs), gigabytes resident at the title screen. Non-DataTemplate
-   sources that nothing has loaded by then (ConversationTemplate) are
-   loaded from their Resources folder by `TemplateRuntimeAccess` before
-   the by-name lookup; `NonDataTemplateIdentityRegistry` names the folder.
+8. Walk `resolvedType.BaseType` through every ancestor, including
+   `DataTemplate`. Insert into each existing ancestor map and extend its
+   array with the same native element class. Remember the clone for every
+   ancestor, including those already loaded. A postfix on
+   `Resources.LoadAll(string, Type)` appends remembered clones to that
+   ancestor's resource result before MENACE builds its map and typed array.
+   The match requires both the ancestor type and its exact `GetBaseFolder`
+   path. A query for a narrower subfolder does not receive unrelated clones.
+   An ID already returned by the game or another mod retains precedence.
+
+   Ancestor visibility must hold on the first `GetAll<Ancestor>()` call.
+   `OwnedItems.Init` snapshots `GetAll<BaseItemTemplate>()` into
+   `m_ItemInstances`, which `OwnedItems.ProcessSaveState` indexes strictly.
+   Backfilling the ancestor cache on a later frame cannot repair that
+   private snapshot. Inserting at the resource boundary preserves the
+   first result without loading an ancestor folder merely to register a
+   clone. The registry also serves subsequent cache rebuilds.
+
+   `EffectListTemplate`, the parent of `ShipUpgradeTemplate`, resolves to
+   `Data/`. Loading that family can pull in unrelated template assets and
+   their dependencies. If the resource hook cannot install, the loader
+   warns and materialises non-root ancestor caches before insertion.
+
+Non-DataTemplate sources such as `ConversationTemplate` load from their
+Resources folder before the by-name lookup. `NonDataTemplateIdentityRegistry`
+defines that folder.
+
+### Ancestor resource boundary
+
+Native inspection of the installed MENACE `GameAssembly.dll` confirms:
+
+- The shared `DataTemplateLoader.LoadTemplates<T>` body at RVA `0x9F1110`
+  calls `GetBaseFolder(Type)` at `0x9F12DD`, then `Resources.LoadAll<T>`
+  at `0x9F1354`, before constructing `m_TemplateMaps` and `m_TemplateArrays`.
+- `Resources.LoadAll<T>` at `0xB230B0` calls the non-generic
+  `Resources.LoadAll(string, Type)` at `0xB23103`. The non-generic method
+  is at `0x2842320` and returns an `Object[]`. MENACE's typed cache arrays
+  are constructed from that result, so the postfix returns an `Object[]`
+  rather than changing the array element type expected by an existing cache.
+- `DataTemplate.GetID` at `0x504930` initialises an empty `m_ID` from the
+  Unity object name. It can identify loaded resources before their cache
+  initialisation without invoking another template-family load.
+
+### Deferred registration verification
+
+WOMENACE live checks on 2026-09-10, with all 961 clones registered and all
+9,661 patch operations matching:
+
+- The title-screen cache dump contains no `DataTemplate` or
+  `EffectListTemplate` slot. The concrete `ShipUpgradeTemplate` slot
+  contains all nine Fairy upgrades.
+- `BaseItemTemplate` contains all 290 configured item clones, each at the
+  same native pointer as its concrete-type entry.
+- The first `BaseItemTemplate` resource load occurs while resolving
+  `GlobalDifficultyTemplate.InitialAdditionalUnlockedItems`. Its references
+  to `vehicle.voymastina_mech` and `vehicle.voymastina_mech_erwin` apply
+  successfully before another clone-registration prefix runs. All three
+  difficulty templates contain the expected references on readback.
+- An existing campaign loads through `OwnedItems.ProcessSaveState` without
+  missing-template or missing-key errors. The inspected inventory includes
+  cloned Doll weapons, calibration components and affinity gifts.
+- Blackmarket stock resolves, all three Fairy slots are present, and the
+  Fairy Lodge and Rescue Fairy installation-cost queries resolve.
+
+In one before/after pair on the same PC with the same mods and assets,
+early registration falls from 12.070 s to 5.351 s. Time from Jiangyu
+initialisation to the title scene falls from 23.950 s to 18.027 s.
+The 5.760 s eager `EffectListTemplate` cache load disappears. Resident
+process memory after startup remains similar at 3.7 GB versus 3.6 GB.
+These are local startup measurements, not a prediction for another PC.
 
 ## Session re-registration
 
-Implemented in `src/Jiangyu.Loader/Templates/TemplateCloneEarlyInjectionPatch.cs`.
+Implemented in `src/Jiangyu.Loader/Templates/Clones/TemplateCloneEarlyInjectionPatch.cs`.
 
 Jiangyu installs Harmony prefixes on the earliest validated startup/load
 surfaces in the current MENACE build:
@@ -202,12 +244,10 @@ Ancestor visibility was confirmed end-to-end against the live game,
    lrm10, lrm15, lrm20) from `mod_weapon.medium.rocket_launcher`. A campaign
    acquired all three smaller variants and saved.
 2. Cold restart: the save loaded cleanly through `OwnedItems.ProcessSaveState`
-   without `KeyNotFoundException`. Ancestor force-materialisation (the
-   `EnsureDataTemplateSlotMaterialised` call in `MirrorCloneToAncestors`) is
-   load-bearing here: `OwnedItems.Init` snapshots
-   `GetAll<BaseItemTemplate>()` into `m_ItemInstances`, and clones must be
-   present in that snapshot before the strict-indexer access in
-   `ProcessSaveState`. Without forced materialisation the load throws
+   without `KeyNotFoundException`. `OwnedItems.Init` snapshots
+   `GetAll<BaseItemTemplate>()` into `m_ItemInstances`. Clones must be
+   present in that first snapshot before the strict-indexer access in
+   `ProcessSaveState`. A clone-free first result causes
    `KeyNotFoundException: 'mod_weapon.heavy.rocket_launcher_lrm15
    (Menace.Strategy.ModularVehicleWeaponTemplate)' was not present in the
    dictionary` from `OwnedItems.ProcessSaveState`.

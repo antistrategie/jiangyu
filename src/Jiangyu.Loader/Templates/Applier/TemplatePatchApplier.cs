@@ -4,6 +4,7 @@ using Il2CppInterop.Runtime.InteropTypes;
 using Jiangyu.Shared.Templates;
 using MelonLoader;
 using Jiangyu.Loader.Logging;
+using Jiangyu.Loader.Runtime;
 
 namespace Jiangyu.Loader.Templates;
 
@@ -137,6 +138,7 @@ internal sealed partial class TemplatePatchApplier
             if (_appliedTypes.Contains(typeEntry.Key))
                 continue;
 
+            using var timing = StartupTimings.Measure("patch", typeEntry.Key);
             totalApplied += TryApplyType(typeEntry.Key, typeEntry.Value, log);
         }
 

@@ -1,6 +1,7 @@
 using System.Reflection;
 using HarmonyLib;
 using Jiangyu.Loader.Logging;
+using Jiangyu.Loader.Runtime;
 using Jiangyu.Loader.Runtime.Patching;
 using MelonLoader;
 
@@ -280,8 +281,11 @@ internal sealed class TemplateCloneEarlyInjectionPatch : IHarmonyPatchModule
         if (_templateCloneApplier == null || !_templateCloneApplier.HasConfiguredClones)
             return;
 
+        StartupTimings.MarkOnce("starting early template registration");
+        using var timing = StartupTimings.Measure("early template registration", trigger);
         _templateCloneApplier.ResetApplyState();
         var applied = _templateCloneApplier.TryApply(new Jiangyu.Loader.Logging.LoaderLog(_log));
+        StartupTimings.MarkOnce("after first early template registration", memory: true);
 
         if (_templateCloneApplier.HasPendingClones)
         {

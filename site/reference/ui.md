@@ -6,6 +6,15 @@ The `Jiangyu.Game.Ui` injection surface, the reusable components, and the UI sou
 
 ## Injection and helpers
 
+### Portraits
+
+Standing artwork for native and mod-created UI.
+
+| Member | Description |
+| --- | --- |
+| `BindStandingLoader(Action)` | Bound by the loader to resolve deferred template assets on the main thread. |
+| `GetStanding(SpeakerTemplate, StandingPortrait)` | Get a speaker's standing artwork, loading an opted-in mod's texture on first use. Call from the main thread when building or updating visible UI. |
+
 ### UI
 
 Adds mod UI into the game's live screens and dialogs. Injected elements join the game's own UI Toolkit panel, so the game's stylesheets cascade to them: give an element the game's USS class names (discover them with the Studio UI inspector, or copy them off a neighbour with MatchStyle) and it is styled like native UI. Author the element as a UXML asset bundled with the mod (an .uxml under Assets/UI/, with its USS linked by a &lt;Style&gt; tag) and pass its name or the loaded VisualTreeAsset, or build it from a callback. A UiTarget says which screen and where. The returned UiInjection is re-applied automatically when the screen is rebuilt, and Refresh rebuilds it on demand after the data behind it changes.
@@ -120,6 +129,7 @@ The game's native tooltip: the floating info panel the game shows on hover, buil
 | `Data` | The underlying game tooltip data, for content this wrapper does not surface. |
 | `Heading(string)` | Add a heading row. |
 | `Hide` | Take this tooltip back down. A no-op unless this tooltip is the one currently on top, so a mod never tears down a different tooltip (a game tooltip, or a nested child opened over this one) that it does not own. |
+| `HoverDelayMs` | The game's own hover-to-tooltip delay in milliseconds. The player setting is stored in milliseconds and the vanilla hover path (UIManager.Update) divides it by 1000 to compare against hover time in seconds, so this is exactly the pause vanilla tooltips wait. |
 | `Icon(Sprite, string)` | Add an icon row from sprite (sourced by the mod, e.g. a template's icon). |
 | `Image(Sprite, bool, string)` | Add an image row from sprite. With useImageSize the row takes the sprite's native size, otherwise it fits the tooltip width. |
 | `Interactive(Action, Func)` | Wrap the rows added by content in an interactive container and reveal nested's tooltip as a child panel when that block is hovered. This is the mechanism the game uses to let you examine an item's skills from its tooltip. Call it as many times as you like for multiple independently-nested blocks; nested runs on each hover so the child reflects current state, and may return null to show nothing. |

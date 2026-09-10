@@ -1,4 +1,5 @@
 using System.Reflection;
+using Jiangyu.Loader.Bundles;
 using Jiangyu.Loader.Diagnostics;
 using Jiangyu.Loader.Logging;
 using Jiangyu.Loader.Sdk;
@@ -39,13 +40,16 @@ public class JiangyuMod : MelonMod, IDevServicesContext
 
     public override void OnInitializeMelon()
     {
+        StartupTimings.Begin(LoggerInstance);
         SdkAssemblyResolver.Install();
         BindSdkLog();
 
         LoggerInstance.Msg($"Jiangyu loader v{Info.Version} initialising...");
 
         var modsDir = Path.Combine(MelonEnvironment.MelonBaseDirectory, "Mods");
-        var loadSummary = _replacementCoordinator.LoadBundles(modsDir, LoggerInstance);
+        BundleLoadSummary loadSummary;
+        using (StartupTimings.Measure("bundle discovery and mounting"))
+            loadSummary = _replacementCoordinator.LoadBundles(modsDir, LoggerInstance);
 
         LoggerInstance.Msg(
             $"Resolved {loadSummary.LoadableModCount} loadable mod(s), skipped {loadSummary.BlockedModCount} blocked mod(s), loaded {loadSummary.LoadedBundleCount} bundle(s).");
@@ -66,7 +70,8 @@ public class JiangyuMod : MelonMod, IDevServicesContext
 
         _replacementCoordinator.InstallHarmonyPatches(HarmonyInstance, LoggerInstance);
 
-        InitialiseCodeMods(modsDir, mods);
+        using (StartupTimings.Measure("code initialisation"))
+            InitialiseCodeMods(modsDir, mods);
         _replacementCoordinator.LoadReport.Write(mods, LoggerInstance);
 
         // The dev surface (Studio bridge + probes) is merged into the dev loader DLL
@@ -84,6 +89,7 @@ public class JiangyuMod : MelonMod, IDevServicesContext
             LoggerInstance.Warning($"Dev surface failed to initialise, continuing without it: {ex.Message}");
             _dev = null;
         }
+        StartupTimings.MarkOnce("loader initialised");
     }
 
     // Find the IDevServices implementation merged into this assembly. Present in the
@@ -259,6 +265,7 @@ public class JiangyuMod : MelonMod, IDevServicesContext
         _dev?.OnSceneLoaded();
 
         LoaderDebug.Write(LoggerInstance, $"Scene loaded: {sceneName} ({buildIndex})");
+        StartupTimings.MarkOnce("scene loaded", detail: sceneName);
 
         _modHost?.SceneLoaded(buildIndex, sceneName);
 

@@ -63,6 +63,18 @@ public sealed class ModManifest
     [JsonPropertyName("meshes")]
     public Dictionary<string, MeshManifestEntry>? Meshes { get; set; }
 
+    /// <summary>Names of textures and unique-backed sprites that replace game textures.
+    /// Empty means no texture scans. Null retains name-based matching for manifests
+    /// without compiler-provided replacement metadata.</summary>
+    [JsonPropertyName("textureReplacements")]
+    public List<string>? TextureReplacements { get; set; }
+
+    /// <summary>Load bundled standing portraits when native UI or Portraits.GetStanding
+    /// first displays them. Custom mod UI must use that helper before reading a portrait.</summary>
+    [JsonPropertyName("deferStandingPortraits")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool DeferStandingPortraits { get; set; }
+
     /// <summary>
     /// Logical names (Unity Object.name) of GameObjects shipped as addition
     /// prefabs under <c>assets/additions/prefabs/&lt;name&gt;.bundle</c>. The

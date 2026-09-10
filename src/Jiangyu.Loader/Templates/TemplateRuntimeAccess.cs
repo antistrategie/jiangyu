@@ -1,6 +1,7 @@
 using System.Reflection;
 using Il2CppInterop.Runtime;
 using Jiangyu.Loader.Sdk;
+using Jiangyu.Loader.Runtime;
 using Jiangyu.Loader.Sdk.Types;
 using Il2CppInterop.Runtime.InteropTypes;
 using UnityEngine;
@@ -395,6 +396,7 @@ internal static class TemplateRuntimeAccess
 
         try
         {
+            using var timing = StartupTimings.Measure("resource folder", folder);
             Resources.LoadAll(folder, Il2CppType.From(resolvedType));
         }
         catch
@@ -598,10 +600,8 @@ internal static class TemplateRuntimeAccess
         }
     }
 
-    // Both the open GetAll<> definition and each closed instantiation are
-    // resolved once. Clone application calls this per clone per ancestor slot
-    // (hundreds of clones times the BaseType chain), so GetMethods() +
-    // MakeGenericMethod runs once per template type rather than once per call.
+    // Cache the open GetAll<> definition and each closed instantiation because
+    // clone and patch passes repeatedly probe the same template families.
     // The resolved flag is set last, so a caller that sees it set also sees
     // the definition it guards.
     private static MethodInfo _getAllDefinition;
@@ -641,6 +641,7 @@ internal static class TemplateRuntimeAccess
 
         try
         {
+            using var timing = StartupTimings.Measure("template cache", templateType.Name);
             return bound.Invoke(null, null);
         }
         catch

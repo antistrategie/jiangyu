@@ -173,6 +173,9 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var spriteDiscovery = ReplacementDiscovery.DiscoverReplacementSpriteEntries(replacementRoot, config.GetCachePath(), _log);
         var replacementSprites = spriteDiscovery.UniqueSprites;
         var replacementAudio = ReplacementDiscovery.DiscoverReplacementAudioEntries(replacementRoot, config.GetCachePath(), _log);
+        var textureReplacementNames = replacementTextures.Select(texture => texture.Name)
+            .Concat(replacementSprites.Select(sprite => sprite.Name))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         // Asset additions: files under assets/additions/<category>/ are
         // bundled with their relative path (extension stripped) as the
@@ -192,6 +195,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 (name, collection, pathId) => LoadAtlasBitmap(assetPipeline, name, collection, pathId, _log),
                 _log);
             replacementTextures.AddRange(atlasTextures);
+            textureReplacementNames.UnionWith(atlasTextures.Select(texture => texture.Name));
         }
 
         var totalSpriteCount = replacementSprites.Count + spriteDiscovery.AtlasGroups.Sum(g => g.Replacements.Count);
@@ -475,6 +479,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var compiledManifest = ModManifest.FromJson(manifest.ToJson());
         compiledManifest.CompiledForUnity = gameVersion?.ToString();
         compiledManifest.CompiledForJiangyu = JiangyuVersion.Current;
+        compiledManifest.TextureReplacements = [.. textureReplacementNames.OrderBy(name => name, StringComparer.Ordinal)];
         // `imports` is a compile-time build input (which host rips to pull before the
         // bake), not runtime metadata. The loader never reads it, so keep it out of the
         // shipped manifest rather than leaking host-asset names into every distribution.

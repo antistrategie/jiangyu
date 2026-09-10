@@ -4,6 +4,7 @@ using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using UnityEngine;
 using Jiangyu.Loader.Logging;
+using Jiangyu.Loader.Runtime;
 using DataTemplate = Il2CppMenace.Tools.DataTemplate;
 using DataTemplateLoader = Il2CppMenace.Tools.DataTemplateLoader;
 using Il2CppDictionary = Il2CppSystem.Collections.Generic.Dictionary<string, Il2CppMenace.Tools.DataTemplate>;
@@ -19,12 +20,10 @@ namespace Jiangyu.Loader.Templates;
 // resolve it. HideFlags.DontUnloadUnusedAsset prevents scene-change GC.
 // m_TemplateArrays (the GetAll<T> enumeration backing store) is extended in
 // the same pass so GetAll<T>() consumers see the clone. The clone is also
-// mirrored into every ancestor m_TemplateMaps / m_TemplateArrays slot below
-// DataTemplate itself, each forced into existence first, because both dicts
-// are keyed by exact runtime type and gameplay code typically enumerates by
-// a base type (e.g. GetAll<BaseItemTemplate>() for the BlackMarket pool).
-// The root DataTemplate slot is left alone: nothing enumerates it, and
-// forcing it loads every template asset under Data/ with its dependencies.
+// mirrored into existing ancestor m_TemplateMaps / m_TemplateArrays slots.
+// Unloaded ancestors receive the clones when their resource result first builds
+// the slot, because gameplay snapshots base types such as BaseItemTemplate for
+// inventories. No ancestor folder needs to load merely to register a clone.
 // Contract rationale and verification live in docs/research/verified/template-cloning.md.
 
 /// <summary>
@@ -637,6 +636,7 @@ internal sealed class TemplateCloneApplier
             if (_appliedTypes.Contains(typeEntry.Key))
                 continue;
 
+            using var timing = StartupTimings.Measure("clone", typeEntry.Key);
             totalApplied += TryApplyType(typeEntry.Key, typeEntry.Value, log);
         }
 
@@ -1009,6 +1009,7 @@ internal sealed class TemplateCloneApplier
         Func<LoadedCloneDirective, bool> waitFor = null)
     {
         var identityField = NonDataTemplateIdentityRegistry.GetIdentityField(templateTypeName, resolvedType);
+        var byId = IndexScriptableObjects(liveTemplates, identityField, resolvedType);
 
         var applied = 0;
         foreach (var directive in directives.Values)
@@ -1016,7 +1017,7 @@ internal sealed class TemplateCloneApplier
             log.Mod = directive.OwnerLabel;
             // Idempotency: skip if a clone with this id already exists
             // (e.g. session re-registration after a save reload).
-            if (FindBySourceId(liveTemplates, directive.CloneId, identityField, resolvedType) != null)
+            if (byId.ContainsKey(directive.CloneId))
             {
                 if (LateSources.Contains(templateTypeName, directive.CloneId) && _foreign.Add(LateTemplateSet.Key(templateTypeName, directive.CloneId)))
                 {
@@ -1068,8 +1069,7 @@ internal sealed class TemplateCloneApplier
             }
             else
             {
-                var source = FindBySourceId(liveTemplates, directive.SourceId, identityField, resolvedType);
-                if (source == null)
+                if (!byId.TryGetValue(directive.SourceId, out var source))
                 {
                     var lookupNote = identityField != null
                         ? $"source ScriptableObject not found by name or by {identityField}."
@@ -1257,40 +1257,48 @@ internal sealed class TemplateCloneApplier
         }
     }
 
-    private static Il2CppObjectBase FindBySourceId(
-        IReadOnlyList<Il2CppObjectBase> candidates,
-        string id,
-        string identityField,
-        Type resolvedType)
+    private static Dictionary<string, Il2CppObjectBase> IndexScriptableObjects(
+        IReadOnlyList<Il2CppObjectBase> candidates, string identityField, Type resolvedType)
     {
-        // Try Object.name first (the default identity), which is fastest
-        // and covers most non-DataTemplate types unchanged.
-        foreach (var candidate in candidates)
+        var property = identityField == null ? null
+            : resolvedType?.GetProperty(identityField, BindingFlags.Public | BindingFlags.Instance);
+        return BuildIdentityIndex(candidates, ObjectName, property?.CanRead == true ? Identity : null);
+
+        static string ObjectName(Il2CppObjectBase candidate)
         {
-            if (candidate == null) continue;
-            var unityObj = candidate.TryCast<UnityEngine.Object>();
-            if (unityObj == null) continue;
-            if (string.Equals(unityObj.name, id, StringComparison.Ordinal))
-                return candidate;
+            var obj = candidate.TryCast<UnityEngine.Object>();
+            return obj ? obj.name : null;
         }
 
-        // Fall back to the registered identity field (e.g. ConversationTemplate.Path)
-        // for types whose Object.name is non-unique.
-        if (identityField == null || resolvedType == null) return null;
-
-        var prop = resolvedType.GetProperty(identityField, BindingFlags.Public | BindingFlags.Instance);
-        if (prop == null || !prop.CanRead) return null;
-
-        foreach (var candidate in candidates)
+        string Identity(Il2CppObjectBase candidate)
         {
-            if (candidate == null) continue;
-            string value;
-            try { value = prop.GetValue(candidate) as string; }
-            catch { continue; }
-            if (string.Equals(value, id, StringComparison.Ordinal))
-                return candidate;
+            try { return property.GetValue(candidate) as string; }
+            catch { return null; }
         }
-        return null;
+    }
+
+    // A fresh index per pass keeps late registrations visible. Object names take
+    // precedence over alternate identities, and duplicate names keep the first match.
+    internal static Dictionary<string, T> BuildIdentityIndex<T>(
+        IReadOnlyList<T> candidates, Func<T, string> name, Func<T, string> identity = null) where T : class
+    {
+        var byId = new Dictionary<string, T>(StringComparer.Ordinal);
+        Add(name);
+        if (identity != null)
+            Add(identity);
+        return byId;
+
+        void Add(Func<T, string> read)
+        {
+            foreach (var candidate in candidates)
+            {
+                if (candidate == null)
+                    continue;
+                var id = read(candidate);
+                if (id != null)
+                    byId.TryAdd(id, candidate);
+            }
+        }
     }
 
     private static bool TrySetIdentityField(
@@ -1362,38 +1370,22 @@ internal sealed class TemplateCloneApplier
     /// Mirrors <paramref name="clone"/> into every ancestor
     /// <c>m_TemplateMaps</c>/<c>m_TemplateArrays</c> slot, walking
     /// <paramref name="resolvedType"/>.<c>BaseType</c> upward to
-    /// <c>DataTemplate</c>. Caller must have registered the clone into the
-    /// most-derived slot first; this method handles ancestors only.
-    /// Force-materialises each ancestor slot before mirroring (via
-    /// <c>DataTemplateLoader.GetAll&lt;Ancestor&gt;()</c>) so MENACE's
-    /// lazy-snapshot consumers (e.g. <c>OwnedItems.Init</c>,
-    /// <c>BaseConversationManager</c>) see the clone in their first
-    /// enumeration of an ancestor type. Idempotent: each ancestor is
-    /// independently gated on <c>ContainsKey(cloneId)</c>.
+    /// <c>DataTemplate</c>. Caller registers the most-derived slot first.
+    /// Existing ancestor slots update immediately. Unloaded slots receive the
+    /// clone in the resource result that builds their first lookup table, so
+    /// inventory snapshots include it without an eager ancestor load.
     /// </summary>
     private static void MirrorCloneToAncestors(
         Type resolvedType, string cloneId, DataTemplate clone, LoaderLog log)
     {
         var dataTemplateType = typeof(DataTemplate);
         var current = resolvedType.BaseType;
-        // The walk stops short of DataTemplate itself. No consumer enumerates
-        // GetAll<DataTemplate>(): gameplay code reads a family (BaseItemTemplate,
-        // SkillTemplate, EntityTemplate), so the root slot has no reader to
-        // satisfy, and forcing it makes DataTemplateLoader load every template
-        // asset under Data/ plus everything those reference (terrain chunks,
-        // setpieces, unit prefabs). That is gigabytes resident at the title
-        // screen, and on a machine short on memory the difference between
-        // booting and dying inside the load.
-        while (current != null && current != dataTemplateType && dataTemplateType.IsAssignableFrom(current))
+        while (current != null && dataTemplateType.IsAssignableFrom(current))
         {
-            // Force the ancestor slot into existence before reading. Without
-            // this, a slot the game hasn't yet materialised gets skipped, and
-            // any consumer that later calls GetAll<Ancestor>() to snapshot
-            // its own dict (OwnedItems.m_ItemInstances keyed by
-            // BaseItemTemplate is the canonical case) caches a clone-free
-            // result and the save deserialiser throws KeyNotFoundException
-            // on the missing clone key.
-            TemplateRuntimeAccess.EnsureDataTemplateSlotMaterialised(current);
+            if (TemplateCloneAncestorPatch.Installed)
+                TemplateCloneAncestorPatch.Remember(current, cloneId, clone);
+            else if (current != dataTemplateType)
+                TemplateRuntimeAccess.EnsureDataTemplateSlotMaterialised(current);
 
             if (TryGetTemplateMap(current, out var ancestorMap)
                 && !ancestorMap.ContainsKey(cloneId))

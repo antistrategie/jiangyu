@@ -27,9 +27,12 @@ internal sealed class ModAssetResolver
 {
     private readonly BundleReplacementCatalog _bundles;
 
-    public ModAssetResolver(BundleReplacementCatalog bundles)
+    public DeferredStandingPortraits Portraits { get; }
+
+    public ModAssetResolver(BundleReplacementCatalog bundles, DeferredStandingPortraits portraits = null)
     {
         _bundles = bundles;
+        Portraits = portraits;
     }
 
     public UnityEngine.Object TryFind(System.Type unityType, string name)
