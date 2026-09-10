@@ -80,6 +80,10 @@
       <HintPath>$(MelonLoaderDir)/0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="MonoMod.RuntimeDetour">
+      <HintPath>$(MelonLoaderDir)/MonoMod.RuntimeDetour.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Il2CppInterop.Runtime">
       <HintPath>$(MelonLoaderDir)/Il2CppInterop.Runtime.dll</HintPath>
       <Private>false</Private>

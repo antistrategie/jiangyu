@@ -69,12 +69,6 @@ public sealed class ModManifest
     [JsonPropertyName("textureReplacements")]
     public List<string>? TextureReplacements { get; set; }
 
-    /// <summary>Load bundled standing portraits when native UI or Portraits.GetStanding
-    /// first displays them. Custom mod UI must use that helper before reading a portrait.</summary>
-    [JsonPropertyName("deferStandingPortraits")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public bool DeferStandingPortraits { get; set; }
-
     /// <summary>
     /// Logical names (Unity Object.name) of GameObjects shipped as addition
     /// prefabs under <c>assets/additions/prefabs/&lt;name&gt;.bundle</c>. The

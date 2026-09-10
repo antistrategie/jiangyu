@@ -2,6 +2,17 @@
 
 Changes relevant to modders building with Jiangyu, and to players running Jiangyu mods where they can see the difference. Entries are scoped Loader, Compiler, Studio, CLI, MCP or SDK.
 
+## Unreleased
+
+- (Loader) Reduced start-up loading by leaving unused ancestor template families unloaded while registering clones, preserving their availability when gameplay first requests them
+- (Loader) Speeds up conversation cloning by indexing source names and alternate identities once per pass
+- (Loader) Uses compiler-provided texture replacement lists to skip unnecessary scans, retaining compatibility with older compiled mods
+- (Compiler) Automatically gives standing portrait additions sharper sampling when scaled, based on their KDL references
+- (Compiler) Reduces standing portrait RAM use by omitting CPU-readable pixel copies, preserving resolution, compression and mipmaps. Pixel access such as `GetPixels` requires a separate readable copy
+- (Loader) Automatically loads standing portrait additions when first requested by the game or mod code, reducing initial graphics memory use
+- (Loader) Added detailed start-up timings behind the `debug` dev flag and peak resident memory in startup reports
+- (MCP) Added texture, mesh and audio memory details to scene inspection
+
 ## 1.4.3
 
 - (Loader) A patch, clone or `ref` that depends on a template another mod registers later waits for it and then applies whole

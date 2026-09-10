@@ -21,17 +21,6 @@ public class ModManifestTests
         }
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void DeferredStandingPortraitsRetainsExplicitOptIn(bool defer)
-    {
-        var json = new ModManifest { Name = "Test", DeferStandingPortraits = defer }.ToJson();
-        Assert.Equal(defer, ModManifest.FromJson(json).DeferStandingPortraits);
-        Assert.Equal(defer, LoaderManifest.FromJson(json)!.DeferStandingPortraits);
-        Assert.False(LoaderManifest.FromJson("{\"name\":\"Existing mod\"}")!.DeferStandingPortraits);
-    }
-
     [Fact]
     public void CreateDefault_SetsNameAndDefaults()
     {

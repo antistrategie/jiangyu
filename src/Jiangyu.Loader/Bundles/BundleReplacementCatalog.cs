@@ -35,7 +35,6 @@ internal sealed class BundleReplacementCatalog
     public readonly PrefabMirrorScheduler PrefabMirrors = new();
 
     public Dictionary<string, ReplacementMesh> Meshes { get; } = new(StringComparer.Ordinal);
-    public HashSet<string> DeferredPortraitMods { get; } = new(StringComparer.Ordinal);
 
     // Textures, sprites, audio clips and addition prefabs, indexed by name at start and
     // loaded from their bundle on first use. Consumers ask by name and by type.
@@ -85,8 +84,6 @@ internal sealed class BundleReplacementCatalog
             log.Mod = mod.Name;
 
             var manifest = OpenManifest(mod.ManifestPath, log);
-            if (manifest?.DeferStandingPortraits == true)
-                DeferredPortraitMods.Add(mod.Name);
 
             if (mod.BundlePaths.Count == 0)
             {

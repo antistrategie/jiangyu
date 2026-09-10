@@ -1,6 +1,5 @@
 using Il2CppInterop.Runtime.InteropTypes;
 using Il2CppMenace.Conversations;
-using Jiangyu.Game.Ui;
 using Jiangyu.Loader.Bundles;
 using Jiangyu.Loader.Logging;
 using Jiangyu.Shared.Replacements;
@@ -9,7 +8,7 @@ using MelonLoader;
 
 namespace Jiangyu.Loader.Templates;
 
-/// <summary>Opted-in speaker fields retain their authored asset assignment until the
+/// <summary>Speaker fields retain their authored asset assignment until the
 /// portrait is requested. See docs/research/verified/standing-portrait-textures.md.</summary>
 internal sealed class DeferredStandingPortraits
 {
@@ -18,8 +17,8 @@ internal sealed class DeferredStandingPortraits
     private readonly Dictionary<(IntPtr Speaker, string Field), Action> _pending = new();
     private HashSet<string> _cloneSources;
     private MelonLogger.Instance _log;
+    private bool _readingAssignedValue;
 
-    public bool Configured => _bundles.DeferredPortraitMods.Count > 0;
     public bool Enabled { get; private set; }
 
     public DeferredStandingPortraits(BundleReplacementCatalog bundles, TemplateCloneCatalog clones)
@@ -32,7 +31,6 @@ internal sealed class DeferredStandingPortraits
     {
         _log = log;
         Enabled = true;
-        Portraits.BindStandingLoader(Resolve);
     }
 
     public bool TryDefer(object parent, string field, LoadedPatchOperation op, Func<object> getter, Action apply)
@@ -40,7 +38,6 @@ internal sealed class DeferredStandingPortraits
         if (!Enabled || !IsPortraitField(field) || field != op.FieldPath
             || op.Op != CompiledTemplateOp.Set || op.Descent is { Count: > 0 }
             || op.Value is not { Kind: CompiledTemplateValueKind.AssetReference, Asset: not null }
-            || !_bundles.DeferredPortraitMods.Contains(op.OwnerLabel)
             || parent is not SpeakerTemplate speaker)
             return false;
 
@@ -61,11 +58,11 @@ internal sealed class DeferredStandingPortraits
         if (_cloneSources.Contains(speaker.GetID()))
             return false;
 
-        var original = NativePointer(getter());
+        var original = NativePointer(ReadAssignedValue(getter));
         _pending[(speaker.Pointer, field)] = () =>
         {
             // A runtime mod may replace this field before its first display.
-            if (NativePointer(getter()) == original)
+            if (NativePointer(ReadAssignedValue(getter)) == original)
                 apply();
         };
         LoaderDebug.Write(_log, $"Deferred standing portrait: {speaker.GetID()}.{field} = {op.Value.Asset.Name}.");
@@ -78,17 +75,10 @@ internal sealed class DeferredStandingPortraits
             _pending.Remove((speaker.Pointer, field));
     }
 
-    public void Resolve(SpeakerTemplate speaker, StandingPortrait portrait)
+    public void Resolve(SpeakerTemplate speaker, string field)
     {
-        if (speaker == null)
+        if (!Enabled || _readingAssignedValue || speaker == null)
             return;
-        var field = portrait switch
-        {
-            StandingPortrait.Left => nameof(SpeakerTemplate.StandLookLeftImage),
-            StandingPortrait.Right => nameof(SpeakerTemplate.StandLookRightImage),
-            StandingPortrait.Inactive => nameof(SpeakerTemplate.StandLookRightInactiveImage),
-            _ => throw new ArgumentOutOfRangeException(nameof(portrait)),
-        };
         if (!_pending.Remove((speaker.Pointer, field), out var apply))
             return;
         try
@@ -99,6 +89,15 @@ internal sealed class DeferredStandingPortraits
         {
             _log.Warning($"Standing portrait {speaker.GetID()}.{field} could not load: {ex.Message}");
         }
+    }
+
+    private object ReadAssignedValue(Func<object> getter)
+    {
+        // Queuing a later assignment must not load the portrait it replaces.
+        var wasReading = _readingAssignedValue;
+        _readingAssignedValue = true;
+        try { return getter(); }
+        finally { _readingAssignedValue = wasReading; }
     }
 
     private static bool IsPortraitField(string field) => field is nameof(SpeakerTemplate.StandLookLeftImage)

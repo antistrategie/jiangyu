@@ -1,6 +1,6 @@
 # Standing portrait textures
 
-Status: verified with Unity 6000.0.72f1 bundle compilation and MENACE runtime inspection on 2026-09-10.
+Status: verified with Unity 6000.0.72f1 bundle compilation and MENACE runtime inspection on 2026-09-11.
 
 ## Contract
 
@@ -50,9 +50,8 @@ Unity documents the CPU copy and GPU operations in
 
 ## Deferred assignment contract
 
-`deferStandingPortraits` is an explicit manifest opt-in, defaulting to
-false. The loader defers direct, top-level `set` operations assigning
-bundled additions to the three speaker fields above. It validates the
+The loader automatically defers direct, top-level `set` operations
+assigning bundled additions to the three speaker fields above. It validates the
 writable field and indexed asset before queuing the assignment. Texture
 replacements and template clone sources remain eager. A clone source
 must hold its assigned fields before a child copies them.
@@ -65,8 +64,9 @@ entry before applying the normal conversion, setter and readback path.
 `LazyBundleAssets` loads and retains each texture once, including assets
 shared by multiple speakers.
 
-These native entry points are patched before deferral is enabled. If a
-hook cannot be installed, template patching stays eager.
+The native entry points below and the managed property accessors are
+patched before deferral is enabled. If a hook cannot be installed,
+template patching stays eager.
 
 | Entry point | RVA | Field read |
 | --- | --- | --- |
@@ -84,16 +84,31 @@ metadata assembly only for signatures and RVAs. `StoryFactionWindow`
 reads a separate `StoryFactionTemplate.FactionWindow` texture and is
 outside this policy.
 
-Custom UI requests the appropriate field through
-`Jiangyu.Game.Ui.Portraits.GetStanding` on the main thread. Raw speaker
-fields retain their inherited values until requested. Existing mods
-remain eager unless they opt in. The helper also works with eager fields.
+Managed reads of the existing `SpeakerTemplate.StandLook*Image`
+properties resolve the same pending assignments. The accessor hooks use
+`MonoMod.RuntimeDetour.Hook`, provided by MelonLoader, and named static
+methods because MelonLoader rejects instance hook delegates. They are
+installed before mod code is loaded. Direct calls and reflection reads
+both reach them, so custom UI needs no separate helper or manifest
+setting. Callers must read artwork on the Unity main thread.
+
+Managed writes cancel the pending assignment after the setter succeeds,
+including writes of null or the same texture already in the field. A
+native write that changes the field's pointer also takes precedence,
+compared with its value when the assignment was queued. Internal
+reads used to capture that pointer suppress resolution, so a later
+assignment can replace an earlier one without loading the discarded art.
+
+A mod that reads every standing portrait during initialisation still
+loads those textures at that point. The memory saving applies to artwork
+that has not been requested.
 
 ## Deferred loading verification
 
-Matched runs use the same loader, WOMENACE code, bundles, save files,
-settings and 1600 by 900 headless gamescope wrapper. Only the deployed
-manifest's opt-in differs. Both use warm caches.
+Matched eager and deferred measurements use the same loader, WOMENACE
+code, bundles, save files, settings and 1600 by 900 headless gamescope
+wrapper. Only whether portrait assignments are deferred differs. Both
+use warm caches.
 
 | Main-menu measurement | Eager | Deferred |
 | --- | --- | --- |
@@ -122,3 +137,29 @@ Native conversation, event and inactive-portrait branch selection is
 verified by disassembly, without changing a campaign to exercise those
 branches. The live checks cover the squad viewer and procurement UI.
 Saves and settings remain unchanged, and the game exits after inspection.
+
+## Automatic access verification
+
+The deployed manifest contains no portrait loading option. At the title
+screen and after loading the existing campaign, all 60 speaker-field
+assignments remain pending and none of the 54 distinct standing textures
+are loaded. Selecting Klukai in the squad viewer loads her right portrait.
+Opening Procurement loads only the Sextans and OTs-14 left portraits
+through ordinary property reads. Compositor captures show the expected
+artwork on both screens.
+
+Direct C# reads of Klukai's left, right and inactive properties return the
+expected distinct textures at 2192 by 3668 with 12 mip levels and no CPU
+pixel copy. Reflection reads return the same cached native pointers.
+Five distinct portraits are loaded after these checks.
+
+An unregistered temporary speaker verifies all three properties. Two
+queued assignments stay unloaded until read and only the later callback
+runs. Repeat reads reuse the assignment. Successful writes of the same
+texture or null cancel queued work. The probe uses an owner with no
+manifest and destroys the temporary speaker after the checks. A failed
+accessor installation also verifies the eager fallback.
+
+The game exits after verification. Save files, settings and loader
+configuration are unchanged. The temporary probe is removed and the
+original development flags are restored.

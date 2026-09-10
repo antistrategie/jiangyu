@@ -28,7 +28,6 @@ The Jiangyu requirement is not seeded into `depends`. The compiler stamps the to
 | `depends`         | `string[]` | no       | (none)    | See [Dependencies](#dependencies).                     |
 | `conflicts`       | `string[]` | no       | (none)    | See [Conflicts](#conflicts).                           |
 | `imports`         | `string[]` | no       | (none)    | See [Imported prefabs](#imported-prefabs).             |
-| `deferStandingPortraits` | `boolean` | no | `false` | Load standing portrait additions on display. Custom UI must use [the portrait helper](/assets/additions/textures#load-standing-portraits-on-display). |
 
 Unknown fields are ignored on read.
 

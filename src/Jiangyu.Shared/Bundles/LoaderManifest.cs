@@ -47,12 +47,6 @@ public sealed class LoaderManifest
     [JsonPropertyName("textureReplacements")]
     public List<string>? TextureReplacements { get; set; }
 
-    /// <summary>Load bundled standing portraits when native UI or Portraits.GetStanding
-    /// first displays them. Custom mod UI must use that helper before reading a portrait.</summary>
-    [JsonPropertyName("deferStandingPortraits")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public bool DeferStandingPortraits { get; set; }
-
     [JsonPropertyName("additionPrefabs")]
     public List<string>? AdditionPrefabs { get; set; }
 

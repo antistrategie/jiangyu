@@ -6,15 +6,6 @@ The `Jiangyu.Game.Ui` injection surface, the reusable components, and the UI sou
 
 ## Injection and helpers
 
-### Portraits
-
-Standing artwork for native and mod-created UI.
-
-| Member | Description |
-| --- | --- |
-| `BindStandingLoader(Action)` | Bound by the loader to resolve deferred template assets on the main thread. |
-| `GetStanding(SpeakerTemplate, StandingPortrait)` | Get a speaker's standing artwork, loading an opted-in mod's texture on first use. Call from the main thread when building or updating visible UI. |
-
 ### UI
 
 Adds mod UI into the game's live screens and dialogs. Injected elements join the game's own UI Toolkit panel, so the game's stylesheets cascade to them: give an element the game's USS class names (discover them with the Studio UI inspector, or copy them off a neighbour with MatchStyle) and it is styled like native UI. Author the element as a UXML asset bundled with the mod (an .uxml under Assets/UI/, with its USS linked by a &lt;Style&gt; tag) and pass its name or the loaded VisualTreeAsset, or build it from a callback. A UiTarget says which screen and where. The returned UiInjection is re-applied automatically when the screen is rebuilt, and Refresh rebuilds it on demand after the data behind it changes.

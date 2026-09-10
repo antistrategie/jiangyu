@@ -30,28 +30,19 @@ Standing portraits use trilinear filtering and a mipmap bias of `-0.5` to retain
 
 ## Load standing portraits on display
 
-Set `"deferStandingPortraits": true` in your source `jiangyu.json` to leave standing portrait additions unloaded until they are displayed:
-
-```json
-{
-  "name": "MyMod",
-  "deferStandingPortraits": true
-}
-```
+Jiangyu automatically leaves standing portrait additions unloaded until they are first requested. No manifest setting is needed.
 
 Native leader portraits, conversations, event dialogue and the tactical selected-unit panel request the appropriate image automatically. Each texture loads on its first request and stays cached for the session. Image resolution, compression and sampling are unchanged. This reduces initial graphics memory use, with the loading cost paid when an image is first needed.
 
-Custom UI must request standing artwork through `Jiangyu.Game.Ui.Portraits.GetStanding` on the main thread:
+Custom UI reads the existing speaker properties on the main thread:
 
 ```csharp
-using Jiangyu.Game.Ui;
-
-var texture = Portraits.GetStanding(speaker, StandingPortrait.Left);
+var texture = speaker.StandLookLeftImage;
 ```
 
-Choose `Left`, `Right` or `Inactive` to match the speaker field you need. Omitting the second argument selects `Right`. Before that request, the raw `SpeakerTemplate.StandLook*Image` field can still contain its inherited value. Avoid caching raw fields during template initialisation when opting in.
+Reading `StandLookLeftImage`, `StandLookRightImage` or `StandLookRightInactiveImage` loads its assigned texture when necessary. Writing a property cancels any pending assignment to it. Code that reads all portraits during initialisation loads them at that point, so request artwork when the UI needs it to retain the memory benefit.
 
-Deferral applies to direct KDL `set` assignments of bundled additions to the three standing portrait fields. Portraits on templates used as clone sources stay eager so their children inherit the assigned artwork. Replacement textures and other asset references keep their normal loading behaviour. The option defaults to `false`.
+Deferral applies to direct KDL `set` assignments of bundled additions to the three standing portrait fields. Portraits on templates used as clone sources stay eager so their children inherit the assigned artwork. Replacement textures and other asset references keep their normal loading behaviour.
 
 ## Compile-time errors
 
