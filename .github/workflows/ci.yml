@@ -43,10 +43,7 @@ jobs:
         run: |
           mkdir -p jiangyu/.ci/melonloader
           unzip -q MelonLoader.Linux.x64.zip -d /tmp/ml
-          cp /tmp/ml/MelonLoader/net6/MelonLoader.dll jiangyu/.ci/melonloader/
-          cp /tmp/ml/MelonLoader/net6/0Harmony.dll jiangyu/.ci/melonloader/
-          cp /tmp/ml/MelonLoader/net6/Il2CppInterop.Runtime.dll jiangyu/.ci/melonloader/
-          cp /tmp/ml/MelonLoader/net6/UnityEngine.Il2CppAssetBundleManager.dll jiangyu/.ci/melonloader/
+          cp /tmp/ml/MelonLoader/net6/*.dll jiangyu/.ci/melonloader/
 
       - name: Build Jiangyu.Loader (Release, user variant) for guard test
         run: dotnet build jiangyu/src/Jiangyu.Loader/Jiangyu.Loader.csproj -c Release -p:MelonLoaderDir=${{ github.workspace }}/jiangyu/.ci/melonloader -p:GameAssembliesDir=${{ github.workspace }}/menace-ci-dependencies
@@ -128,10 +125,7 @@ jobs:
         run: |
           mkdir -p jiangyu/.ci/melonloader
           unzip -q MelonLoader.Linux.x64.zip -d /tmp/ml
-          cp /tmp/ml/MelonLoader/net6/MelonLoader.dll jiangyu/.ci/melonloader/
-          cp /tmp/ml/MelonLoader/net6/0Harmony.dll jiangyu/.ci/melonloader/
-          cp /tmp/ml/MelonLoader/net6/Il2CppInterop.Runtime.dll jiangyu/.ci/melonloader/
-          cp /tmp/ml/MelonLoader/net6/UnityEngine.Il2CppAssetBundleManager.dll jiangyu/.ci/melonloader/
+          cp /tmp/ml/MelonLoader/net6/*.dll jiangyu/.ci/melonloader/
 
       # build-loader is the one job with game deps. It builds the platform-agnostic
       # SDK and both loader variants, which stage themselves under dist/ (DistStaging /
