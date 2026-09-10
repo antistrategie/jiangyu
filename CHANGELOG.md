@@ -2,7 +2,7 @@
 
 Changes relevant to modders building with Jiangyu, and to players running Jiangyu mods where they can see the difference. Entries are scoped Loader, Compiler, Studio, CLI, MCP or SDK.
 
-## Unreleased
+## 1.4.4
 
 - (Loader) Reduced start-up loading by leaving unused ancestor template families unloaded while registering clones, preserving their availability when gameplay first requests them
 - (Loader) Speeds up conversation cloning by indexing source names and alternate identities once per pass
