@@ -138,6 +138,15 @@ internal sealed partial class TemplatePatchApplier
                     return false;
                 }
 
+            case CompiledTemplateValueKind.NumericPlaceholder:
+                if (targetType != typeof(string) || value.NumericPlaceholder?.IsValid != true)
+                {
+                    error = "a numeric placeholder requires a valid binding and a string destination.";
+                    return false;
+                }
+                converted = NumericPlaceholderPatch.Register(value.NumericPlaceholder);
+                return true;
+
             case CompiledTemplateValueKind.TemplateReference:
                 return TryResolveTemplateReference(value.Reference, targetType, out converted, out error);
 

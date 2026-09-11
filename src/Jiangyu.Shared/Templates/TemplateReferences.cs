@@ -27,6 +27,9 @@ public static class TemplateReferences
         if (value.Kind == CompiledTemplateValueKind.TemplateReference && value.Reference != null)
             yield return value.Reference;
 
+        if (value.Kind == CompiledTemplateValueKind.NumericPlaceholder && value.NumericPlaceholder?.Source != null)
+            yield return value.NumericPlaceholder.Source;
+
         foreach (var reference in Of(value.Composite?.Operations))
             yield return reference;
         foreach (var reference in Of(value.TypeConstruction?.Operations))

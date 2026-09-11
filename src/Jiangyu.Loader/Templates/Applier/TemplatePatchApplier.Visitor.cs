@@ -212,10 +212,10 @@ internal sealed partial class TemplatePatchApplier
             error = null;
             var portraits = _assetResolver?.Portraits;
             if (portraits?.TryDefer(parent, fieldName, _op, getter,
-                    () => RunVerified(parent, memberType, setter, getter, appendDestination: null)) == true)
+                    () => RunVerified(parent, fieldName, memberType, setter, getter, appendDestination: null)) == true)
                 return OperationResult.Applied;
 
-            var result = RunVerified(parent, memberType, setter, getter, appendDestination: null);
+            var result = RunVerified(parent, fieldName, memberType, setter, getter, appendDestination: null);
             if (result == OperationResult.Applied)
                 portraits?.Forget(parent, fieldName);
             return result;
@@ -249,7 +249,7 @@ internal sealed partial class TemplatePatchApplier
             }
 
             error = null;
-            return RunVerified(parent, elementType, setter, getter, appendDestination: null);
+            return RunVerified(parent, fieldName, elementType, setter, getter, appendDestination: null);
         }
 
         public OperationResult TrySetCell(object parent, string fieldName, IReadOnlyList<int> indexPath, CompiledTemplateValue value, out string error)
@@ -301,7 +301,7 @@ internal sealed partial class TemplatePatchApplier
             }
 
             error = null;
-            return RunVerified(parent, elementType, setter, getter, appendDestination: collection);
+            return RunVerified(parent, fieldName, elementType, setter, getter, appendDestination: collection);
         }
 
         public OperationResult TryInsertAt(object parent, string fieldName, int index, CompiledTemplateValue value, out string error)
@@ -326,7 +326,7 @@ internal sealed partial class TemplatePatchApplier
             }
 
             error = null;
-            return RunVerified(parent, elementType, setter, getter, appendDestination: collection);
+            return RunVerified(parent, fieldName, elementType, setter, getter, appendDestination: collection);
         }
 
         public OperationResult TryRemove(object parent, string fieldName, int? index, CompiledTemplateValue value, out string error)
@@ -433,13 +433,22 @@ internal sealed partial class TemplatePatchApplier
         // single place the "convert, set, optionally read back" sequence
         // is defined.
         private OperationResult RunVerified(
-            object parent, Type memberType, Action<object> setter, Func<object> getter,
+            object parent, string fieldName, Type memberType, Action<object> setter, Func<object> getter,
             object appendDestination)
         {
             _latestCurrent = parent;
+            if (_op.Value?.Kind == CompiledTemplateValueKind.NumericPlaceholder
+                && (parent is not Il2CppMenace.Tools.BaseLocalizedString || fieldName != "m_Placeholders"))
+            {
+                _log.Warning(FormatPrefix(_templateTypeName, _templateId, _op)
+                    + "numeric bindings can only write localised string placeholders.");
+                return OperationResult.ConversionFailed;
+            }
             var outcome = ApplyAndVerify(
                 _templateTypeName, _templateId, _op, memberType, setter, getter,
                 _assetResolver, _log, appendDestination);
+            if (outcome == ApplyOutcome.Applied && _op.Value?.Kind == CompiledTemplateValueKind.NumericPlaceholder)
+                ((Il2CppMenace.Tools.BaseLocalizedString)parent).m_AllowPlaceholders = true;
             return TranslateOutcome(outcome);
         }
 

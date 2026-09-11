@@ -210,6 +210,7 @@ public enum KdlEditorValueKind
     /// is checked at apply time.
     /// </summary>
     Null,
+    NumericPlaceholder,
 }
 
 public sealed class KdlEditorValue
@@ -240,6 +241,12 @@ public sealed class KdlEditorValue
 
     [JsonPropertyName("referenceId")]
     public string? ReferenceId { get; set; }
+
+    [JsonPropertyName("bindingPath")]
+    public string? BindingPath { get; set; }
+
+    [JsonPropertyName("bindingFormat")]
+    public string? BindingFormat { get; set; }
 
     [JsonPropertyName("compositeType")]
     public string? CompositeType { get; set; }

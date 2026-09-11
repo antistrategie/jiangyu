@@ -29,6 +29,8 @@ vi.mock("@tanstack/react-virtual", () => ({
 }));
 
 import { ValueEditor } from "./ValueEditor";
+import { rpcCall } from "@shared/rpc";
+import { invalidateProjectClonesCache, templateTypesCache } from "../shared/rpcHelpers";
 
 // Controlled wrapper so onChange is reflected in re-renders.
 function Controlled(props: { initial: EditorValue; onChange?: (v: EditorValue) => void }) {
@@ -47,6 +49,57 @@ beforeEach(() => {
 });
 
 describe("ValueEditor", () => {
+  it("picks binding types and project effects, updating suggestions when the type changes", async () => {
+    templateTypesCache.types = null;
+    invalidateProjectClonesCache();
+    const instances = [
+      { className: "SkillTemplate", name: "effect.vanilla" },
+      { className: "PerkTemplate", name: "passive.vanilla" },
+    ];
+    vi.mocked(rpcCall).mockImplementation((method, params) => {
+      if (method === "templatesProjectClones") {
+        return Promise.resolve({
+          clones: [
+            { templateType: "SkillTemplate", id: "effect.remolding", file: "remolding.kdl" },
+            { templateType: "PerkTemplate", id: "passive.remolding", file: "remolding.kdl" },
+          ],
+        });
+      }
+      const type = (params as { className?: string } | undefined)?.className;
+      return Promise.resolve({ instances: instances.filter((i) => !type || i.className === type) });
+    });
+    const onChange = vi.fn();
+    render(
+      createElement(Controlled, {
+        initial: { kind: "NumericPlaceholder", bindingFormat: "number" },
+        onChange,
+      }),
+    );
+    const typeInput = screen.getByLabelText("Source template type");
+    fireEvent.focus(typeInput);
+    fireEvent.click(await screen.findByRole("button", { name: "SkillTemplate" }));
+    const idInput = screen.getByLabelText("Source template ID");
+    fireEvent.focus(idInput);
+    expect(await screen.findByRole("button", { name: "effect.vanilla" })).toBeDefined();
+    fireEvent.click(await screen.findByRole("button", { name: /effect\.remolding\s*clone/ }));
+    expect(onChange.mock.lastCall?.[0]).toMatchObject({
+      kind: "NumericPlaceholder",
+      referenceType: "SkillTemplate",
+      referenceId: "effect.remolding",
+    });
+
+    fireEvent.change(typeInput, { target: { value: "Perk" } });
+    fireEvent.click(await screen.findByRole("button", { name: "PerkTemplate" }));
+    fireEvent.change(idInput, { target: { value: "" } });
+    expect(await screen.findByRole("button", { name: /passive\.remolding\s*clone/ })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "effect.vanilla" })).toBeNull();
+    fireEvent.change(idInput, { target: { value: "passive.new_content" } });
+    expect(onChange.mock.lastCall?.[0]).toMatchObject({
+      referenceType: "PerkTemplate",
+      referenceId: "passive.new_content",
+    });
+  });
+
   it("Boolean renders checkbox, toggles on click", () => {
     const onChange = vi.fn();
     render(createElement(Controlled, { initial: { kind: "Boolean", boolean: false }, onChange }));

@@ -240,6 +240,7 @@ public static class TemplatePatchPathValidator
             CompiledTemplateValueKind.Int32 => value.Int32.HasValue,
             CompiledTemplateValueKind.Single => value.Single.HasValue,
             CompiledTemplateValueKind.String => value.String != null,
+            CompiledTemplateValueKind.NumericPlaceholder => value.NumericPlaceholder?.IsValid == true,
             CompiledTemplateValueKind.Enum => !string.IsNullOrWhiteSpace(value.EnumValue),
             // TemplateType is optional. The compile-time validator coerces a
             // bare-string author into TemplateReference{TemplateType=null} for

@@ -88,24 +88,9 @@ public static partial class RpcHandlers
         if (Directory.Exists(melonNet6))
             additionalSearchDirs.Add(melonNet6);
 
-        // Scan the open project's compiled code DLLs into the catalog so the mod's
-        // [JiangyuType]s take part in the normal subtype/member walks: they surface in
-        // a polymorphic field's subtype choices (named modId:Name below) and resolve as
-        // first-class types when one is queried directly.
-        IReadOnlyList<string> codeAssemblies = [];
-        string? modId = null;
-        if (RpcContext.ProjectRoot is { } projectRoot)
-        {
-            var (assemblies, searchDirs) = CodeTypeResolver.LoadInputs(Path.Combine(projectRoot, "compiled", Jiangyu.Shared.Bundles.CompiledLayout.CodeDirName));
-            codeAssemblies = assemblies;
-            // No code DLLs means no mod types to scan or label, so skip the search-dir
-            // wiring and the manifest read that only the modId:Name labelling needs.
-            if (assemblies.Count > 0)
-            {
-                additionalSearchDirs.AddRange(searchDirs);
-                modId = ModManifest.TryLoad(projectRoot)?.Name;
-            }
-        }
+        var codeAssemblies = LoadProjectCodeAssemblies(additionalSearchDirs);
+        var modId = codeAssemblies.Count > 0 && RpcContext.ProjectRoot is { } projectRoot
+            ? ModManifest.TryLoad(projectRoot)?.Name : null;
 
         var supplement = Il2CppMetadataCache.LoadIfPresent(RpcHelpers.RequireEnvironment().CachePath);
         // Cached + reused across queries; reloads when the game assembly or any code DLL

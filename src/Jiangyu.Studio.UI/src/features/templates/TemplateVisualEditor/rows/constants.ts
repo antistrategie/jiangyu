@@ -39,4 +39,5 @@ export const VALUE_KIND_LABELS: Record<EditorValueKind, string> = {
   TypeConstruction: "Construct",
   AssetReference: "Asset",
   Null: "null",
+  NumericPlaceholder: "Binding",
 };

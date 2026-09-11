@@ -346,7 +346,29 @@ export function SetRow({
             </div>
           </>
         )}
-        {kindLabel && <span className={styles.setKind}>{kindLabel}</span>}
+        {kindLabel &&
+          (directive.fieldPath.split(".").at(-1) === "m_Placeholders" &&
+          (directive.value?.kind === "String" || directive.value?.kind === "NumericPlaceholder") ? (
+            <select
+              className={styles.setPlaceholderKind}
+              aria-label="Placeholder value type"
+              value={directive.value.kind}
+              onChange={(e) =>
+                onChange({
+                  ...directive,
+                  value:
+                    e.target.value === "NumericPlaceholder"
+                      ? { kind: "NumericPlaceholder", bindingFormat: "number" }
+                      : { kind: "String", string: "" },
+                })
+              }
+            >
+              <option value="String">Text</option>
+              <option value="NumericPlaceholder">Binding</option>
+            </select>
+          ) : (
+            <span className={styles.setKind}>{kindLabel}</span>
+          ))}
         <button
           type="button"
           className={styles.setDelete}

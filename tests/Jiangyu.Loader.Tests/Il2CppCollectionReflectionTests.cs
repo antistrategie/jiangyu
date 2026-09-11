@@ -1,3 +1,4 @@
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Jiangyu.Loader.Templates;
 using Xunit;
 
@@ -14,6 +15,28 @@ namespace Jiangyu.Loader.Tests;
 /// </summary>
 public sealed class Il2CppCollectionReflectionTests
 {
+    private sealed class PlaceholderOwner
+    {
+        public Il2CppStringArray? Placeholders { get; set; }
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    public void PlaceholderArray_BindsAppendAndInsertUsingTheNativeStringWrapper(int? index)
+    {
+        // Binding inspects the real wrapper without allocating a native array.
+        var owner = new PlaceholderOwner();
+        var ok = TemplatePatchApplier.TryBindCollectionMutation(
+            owner, nameof(owner.Placeholders), null, typeof(Il2CppStringArray), index,
+            out var elementType, out var setter, out var getter, out var error);
+
+        Assert.True(ok, error);
+        Assert.Equal(typeof(string), elementType);
+        Assert.NotNull(setter);
+        Assert.NotNull(getter);
+    }
+
     private sealed class FakeRefArray<T>
     {
         private readonly T[] _items;

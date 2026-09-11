@@ -213,6 +213,9 @@ export function ValueEditor({ value, onChange, member }: ValueEditorProps) {
     case "TemplateReference":
       return <RefValueEditor value={value} onChange={onChange} member={member} />;
 
+    case "NumericPlaceholder":
+      return <NumericPlaceholderEditor value={value} onChange={onChange} />;
+
     case "AssetReference":
       return <AssetValueEditor value={value} onChange={onChange} member={member} />;
 
@@ -227,6 +230,55 @@ export function ValueEditor({ value, onChange, member }: ValueEditorProps) {
     default:
       return <span className={styles.setKind}>?</span>;
   }
+}
+
+function NumericPlaceholderEditor({ value, onChange }: ValueEditorProps) {
+  const sourceType = value.referenceType ?? "";
+  const fetchSources = useCallback(
+    (): Promise<readonly SuggestionItem[]> =>
+      sourceType ? fetchInstancesWithClones(sourceType) : Promise.resolve([]),
+    [sourceType],
+  );
+
+  return (
+    <div className={styles.setBindingRow}>
+      <SuggestionCombobox
+        className={styles.setBindingType}
+        aria-label="Source template type"
+        placeholder="Template type"
+        value={sourceType}
+        fetchSuggestions={getCachedTemplateTypes}
+        onChange={(referenceType) => onChange({ ...value, referenceType })}
+      />
+      <SuggestionCombobox
+        className={styles.setBindingSource}
+        aria-label="Source template ID"
+        placeholder="Template ID"
+        value={value.referenceId ?? ""}
+        fetchSuggestions={fetchSources}
+        onChange={(referenceId) => onChange({ ...value, referenceId })}
+      />
+      <CommitInput
+        className={styles.setBindingPath}
+        aria-label="Numeric field path"
+        placeholder="Field path"
+        value={value.bindingPath ?? ""}
+        onCommit={(bindingPath) => onChange({ ...value, bindingPath })}
+      />
+      <select
+        className={styles.setIndexSelect}
+        aria-label="Number format"
+        value={value.bindingFormat ?? "number"}
+        onChange={(e) => onChange({ ...value, bindingFormat: e.target.value })}
+      >
+        <option value="number">Number</option>
+        <option value="percent">Percentage</option>
+        <option value="bonus-percent">Increase %</option>
+        <option value="reduction-percent">Reduction %</option>
+        <option value="magnitude">Magnitude</option>
+      </select>
+    </div>
+  );
 }
 
 function AssetValueEditor({ value, onChange, member }: ValueEditorProps) {

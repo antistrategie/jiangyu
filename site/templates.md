@@ -247,6 +247,7 @@ A value at the end of a `set`, `append`, or `insert` line is one of:
 | Enum                | `enum="<EnumType>" "<value>"`                            | `set "Tier" enum="PerkTier" "Advanced"`                  |
 | Construction        | `type="<TypeName>" { ...nested set ops... }`             | build a polymorphic element/scalar or tagged string (see [Construction](#construction)) |
 | Null                | `#null`                                                  | `set "CustomHead" #null` (null a reference field)        |
+| Numeric placeholder | `bind="<TemplateType>" "<templateId>" path="<field>"` | `append "m_Placeholders" bind="PerkTemplate" "perk.first_aid" path="Uses"` |
 
 `type=` names a polymorphic subtype (or a tagged-string discriminator). On a monomorphic destination it's an error.
 
@@ -385,3 +386,46 @@ jiangyu compile
 - Round-trips leading and inline `//` comments alongside the code.
 
 Use `--check` in CI: it prints which files would change and exits non-zero if any do, without writing.
+
+## Numeric description placeholders
+
+Bind a localised string's `$1`, `$2`, and subsequent placeholders to numeric fields
+on a template. The game reads the current field when displaying the description,
+so patched and inherited balance values also update its text.
+
+```kdl
+set "Description" {
+    set "m_DefaultTranslation" "Damage increased by $1%."
+    clear "m_Placeholders"
+    append "m_Placeholders" bind="SkillTemplate" "effect.example" path="EventHandlers[0].AmountMult" format="bonus-percent"
+}
+```
+
+In Studio's visual editor, choose **Binding** from the value type menu on a
+placeholder entry to supply a template, field path and number format. Choose
+**Text** for a literal placeholder.
+
+`bind=` names the source template type, the positional string names its ID, and
+`path=` addresses the numeric field. Collection entries require explicit indices.
+Only entries in a localised string's `m_Placeholders` array accept bindings. Use
+`append`, `insert`, or `set` with `index=` as with ordinary placeholder strings.
+Adding a binding enables `m_AllowPlaceholders`. Literal strings and bindings can
+share an array. Clear inherited placeholders before authoring a new sequence.
+
+| Format | Source | Displayed number |
+| --- | --- | --- |
+| `number` (default) | `5` | `5` |
+| `percent` | `0.75` | `75` |
+| `bonus-percent` | `1.08` | `8` |
+| `reduction-percent` | `0.875` | `12.5` |
+| `magnitude` | `-80` | `80` |
+
+Numbers use up to two decimal places. Put `%` in the description itself.
+There are no arithmetic expressions or method calls. The compiler checks field
+types and path syntax. Missing runtime fields, invalid indices and non-finite
+values produce a logged error and `?` in the description.
+
+Bindings keep their explicit source when a description is cloned. For a variant
+that reads different fields, replace its placeholder entries. Native skill-provided
+placeholder overrides still take precedence. `GetTranslated()` resolves bindings,
+while `GetDefaultTranslation()` continues to return the raw default text.

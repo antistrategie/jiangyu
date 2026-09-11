@@ -161,6 +161,20 @@ public static class KdlEditorBridge
                     Name = value.AssetName ?? string.Empty,
                 },
             },
+            KdlEditorValueKind.NumericPlaceholder => new CompiledTemplateValue
+            {
+                Kind = CompiledTemplateValueKind.NumericPlaceholder,
+                NumericPlaceholder = new NumericPlaceholderBinding
+                {
+                    Source = new CompiledTemplateReference
+                    {
+                        TemplateType = value.ReferenceType,
+                        TemplateId = value.ReferenceId ?? string.Empty,
+                    },
+                    Path = value.BindingPath ?? string.Empty,
+                    Format = value.BindingFormat ?? "number",
+                },
+            },
             KdlEditorValueKind.Null => new CompiledTemplateValue
             {
                 Kind = CompiledTemplateValueKind.Null,
@@ -247,6 +261,14 @@ public static class KdlEditorBridge
             {
                 Kind = KdlEditorValueKind.AssetReference,
                 AssetName = v.Asset?.Name,
+            },
+            CompiledTemplateValueKind.NumericPlaceholder => new KdlEditorValue
+            {
+                Kind = KdlEditorValueKind.NumericPlaceholder,
+                ReferenceType = v.NumericPlaceholder?.Source.TemplateType,
+                ReferenceId = v.NumericPlaceholder?.Source.TemplateId,
+                BindingPath = v.NumericPlaceholder?.Path,
+                BindingFormat = v.NumericPlaceholder?.Format,
             },
             CompiledTemplateValueKind.Null => new KdlEditorValue
             {

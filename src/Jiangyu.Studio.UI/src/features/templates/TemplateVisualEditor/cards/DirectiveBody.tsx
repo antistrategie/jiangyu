@@ -564,10 +564,12 @@ function DescentGroup({
 }: DescentGroupProps) {
   // Inner-type members for the FieldAdder. A descent is an edit and carries no
   // type=, so resolve the live slot's concrete type from inspection to offer
-  // that subtype's fields. Fall back to the outer member's element type for a
-  // monomorphic owned-element list (e.g. List<PropertyChange>) or when the
-  // slot can't be inspected.
-  const innerType = inspectedSlotType ?? outerMember?.elementTypeName ?? "";
+  // that subtype's fields. Object edits use the field's declared type, while
+  // uninspected collection slots use the declared element type.
+  const innerType =
+    inspectedSlotType ??
+    (slotIndex === null ? outerMember?.typeName : outerMember?.elementTypeName) ??
+    "";
   // When innerType is a polymorphic subtype name (e.g. "Attack" within a
   // SkillEventHandlerTemplate family), pass the outer element type so the
   // resolver can disambiguate against unrelated short-name twins. Suppress for

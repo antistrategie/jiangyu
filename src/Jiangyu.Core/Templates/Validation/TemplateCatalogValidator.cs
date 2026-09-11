@@ -542,6 +542,49 @@ public static class TemplateCatalogValidator
             return 1;
         }
 
+        if (op.Value?.Kind == CompiledTemplateValueKind.NumericPlaceholder)
+        {
+            if (op.Value.NumericPlaceholder is not { IsValid: true } binding)
+            {
+                reportError("bind= requires a template type, template ID, numeric field path and a supported format "
+                    + "(number, percent, bonus-percent, reduction-percent or magnitude).");
+                return 1;
+            }
+            if (TerminalSegment(op.FieldPath) != "m_Placeholders"
+                || result.CurrentType?.FullName != "System.String"
+                || catalog.ResolveType("BaseLocalizedString", out _, out _)?.IsAssignableFrom(result.DeclaringType) != true
+                || op.Op is not (CompiledTemplateOp.Set or CompiledTemplateOp.Append or CompiledTemplateOp.InsertAt))
+            {
+                reportError("bind= is only supported on entries in a localised string's m_Placeholders array.");
+                return 1;
+            }
+            var source = catalog.ResolveType(binding.Source.TemplateType!, out _, out _);
+            if (source == null || !TemplateTypeCatalog.IsTemplateReferenceTarget(source))
+            {
+                reportError($"bind= source '{binding.Source.TemplateType}' is not a template type.");
+                return 1;
+            }
+            var prefix = binding.Source.TemplateType!;
+            QueryResult? field = null;
+            foreach (var segment in binding.Path.Split('.'))
+            {
+                prefix += "." + segment;
+                field = TemplateMemberQuery.Run(catalog, prefix);
+                if (field.UnwrappedFrom != null && !segment.EndsWith(']'))
+                {
+                    reportError($"bind= collection '{prefix}' requires an explicit index.");
+                    return 1;
+                }
+            }
+            if (field?.Kind == QueryResultKind.Error
+                || field?.PatchScalarKind is not (CompiledTemplateValueKind.Byte or CompiledTemplateValueKind.Int32 or CompiledTemplateValueKind.Single))
+            {
+                reportError($"bind= source '{binding.Source.TemplateType}.{binding.Path}' must be a numeric field. {field?.ErrorMessage}");
+                return 1;
+            }
+            return 0;
+        }
+
         // Reference / enum shorthand. The catalog is the single source of
         // truth for the destination type — modders don't have to repeat
         // ref="…" or enum="…" when the declared field type already pins

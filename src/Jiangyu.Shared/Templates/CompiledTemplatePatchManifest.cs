@@ -208,6 +208,9 @@ public sealed class CompiledTemplateValue
     [JsonPropertyName("reference")]
     public CompiledTemplateReference? Reference { get; set; }
 
+    [JsonPropertyName("numericPlaceholder")]
+    public NumericPlaceholderBinding? NumericPlaceholder { get; set; }
+
     [JsonPropertyName("asset")]
     public CompiledAssetReference? Asset { get; set; }
 
@@ -341,6 +344,9 @@ public enum CompiledTemplateValueKind
     /// behaviour. Value types and primitives reject this kind at apply time.
     /// </summary>
     Null,
+
+    /// <summary>A numeric template field formatted when a localised string is displayed.</summary>
+    NumericPlaceholder,
 }
 
 /// <summary>

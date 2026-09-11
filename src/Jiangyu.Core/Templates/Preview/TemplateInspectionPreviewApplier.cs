@@ -462,6 +462,14 @@ public static class TemplateInspectionPreviewApplier
                     Null = value.String is null ? true : null,
                     Value = value.String,
                 },
+                CompiledTemplateValueKind.NumericPlaceholder => new InspectedFieldNode
+                {
+                    Name = name,
+                    Kind = "string",
+                    FieldTypeName = "String",
+                    Value = $"bind {value.NumericPlaceholder!.Source.TemplateType}/{value.NumericPlaceholder.Source.TemplateId} "
+                        + $"{value.NumericPlaceholder.Path} ({value.NumericPlaceholder.Format})",
+                },
                 CompiledTemplateValueKind.Enum => new InspectedFieldNode
                 {
                     Name = name,

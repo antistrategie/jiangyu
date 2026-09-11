@@ -31,6 +31,7 @@ export interface SuggestionComboboxProps {
    */
   onCommit?: (value: string) => void;
   className?: string;
+  "aria-label"?: string;
 }
 
 export function SuggestionCombobox({
@@ -40,6 +41,7 @@ export function SuggestionCombobox({
   onChange,
   onCommit,
   className,
+  "aria-label": ariaLabel,
 }: SuggestionComboboxProps) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<readonly SuggestionItem[]>([]);
@@ -113,6 +115,7 @@ export function SuggestionCombobox({
         className={styles.setValueInput}
         value={value}
         placeholder={placeholder}
+        aria-label={ariaLabel}
         onFocus={() => setOpen(true)}
         onChange={(e) => {
           onChange(e.target.value);

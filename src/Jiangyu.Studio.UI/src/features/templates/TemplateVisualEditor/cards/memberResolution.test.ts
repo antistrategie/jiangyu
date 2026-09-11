@@ -11,7 +11,7 @@
 
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { createElement } from "react";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 
 afterEach(cleanup);
 
@@ -67,6 +67,12 @@ const ALWAYS_EXPANDED: CompositeCollapseControl = {
 };
 
 const PERK_TREE_TEMPLATE: TemplateMember[] = [
+  {
+    name: "Description",
+    typeName: "LocalizedMultiLine",
+    isWritable: true,
+    isInherited: false,
+  },
   {
     name: "Perks",
     typeName: "Perk[]",
@@ -151,6 +157,17 @@ const FIXTURE_MEMBERS: Record<string, TemplateMember[]> = {
   PerkTreeTemplate: PERK_TREE_TEMPLATE,
   Perk: PERK_MEMBERS,
   PerkStats: PERK_STATS_MEMBERS,
+  LocalizedMultiLine: [
+    {
+      name: "m_Placeholders",
+      typeName: "Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStringArray",
+      isWritable: true,
+      isInherited: true,
+      isCollection: true,
+      patchScalarKind: "String",
+      elementTypeName: "System.String",
+    },
+  ],
 };
 
 beforeEach(() => {
@@ -218,6 +235,31 @@ function directive(d: Partial<StampedDirective>): StampedDirective {
 }
 
 describe("member resolution by context", () => {
+  it("offers another placeholder inside a description object edit", async () => {
+    const existing = directive({
+      op: "Clear",
+      fieldPath: "m_Placeholders",
+      descent: [{ field: "Description", index: null }],
+    });
+    const { dispatch } = renderBody([existing]);
+    fireEvent.focus(screen.getAllByPlaceholderText("Add field…")[0]!);
+    const placeholder = await screen.findByRole("button", { name: /m_Placeholders/ });
+    fireEvent.click(placeholder);
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "setDirectives",
+      nodeIndex: 0,
+      directives: [
+        existing,
+        expect.objectContaining({
+          op: "Append",
+          fieldPath: "m_Placeholders",
+          descent: [{ field: "Description" }],
+          value: { kind: "String", string: "" },
+        }),
+      ],
+    });
+  });
+
   it("top-level monomorphic ref hides the type selector", () => {
     renderBody([
       directive({

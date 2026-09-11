@@ -114,59 +114,49 @@ public static partial class RpcHandlers
         return JsonSerializer.SerializeToElement(new TemplateConversationRolesResult { Roles = roles });
     }
 
-    // Catalog loads are expensive (reflection over Assembly-CSharp.dll), and the
-    // source-view parse RPC fires on every debounced keystroke. Cache the
-    // catalog per assembly path so repeated parses reuse one instance; reload
-    // only when the game path changes.
-    private static TemplateTypeCatalog? _cachedCatalog;
-    private static string? _cachedCatalogPath;
-    private static readonly Lock _catalogLock = new();
-
     private static TemplateTypeCatalog? TryGetCachedCatalog()
     {
         var resolution = EnvironmentContext.ResolveFromGlobalConfig();
         if (!resolution.Success) return null;
 
-        var gamePath = Path.GetDirectoryName(RpcHelpers.RequireEnvironment().GameDataPath);
+        var gamePath = Path.GetDirectoryName(RequireEnvironment().GameDataPath);
         if (gamePath is null) return null;
 
         var assemblyPath = Path.Combine(gamePath, DefaultAssemblyRelativePath);
         if (!File.Exists(assemblyPath)) return null;
 
-        lock (_catalogLock)
+        var additionalSearchDirs = new List<string>();
+        var melonNet6 = Path.Combine(gamePath, MelonLoaderNet6RelativePath);
+        if (Directory.Exists(melonNet6))
+            additionalSearchDirs.Add(melonNet6);
+
+        try
         {
-            if (_cachedCatalog != null && _cachedCatalogPath == assemblyPath)
-                return _cachedCatalog;
-
-            _cachedCatalog?.Dispose();
-            _cachedCatalog = null;
-            _cachedCatalogPath = null;
-
-            var additionalSearchDirs = new List<string>();
-            var melonNet6 = Path.Combine(gamePath, MelonLoaderNet6RelativePath);
-            if (Directory.Exists(melonNet6))
-                additionalSearchDirs.Add(melonNet6);
-
-            try
-            {
-                var supplement = Il2CppMetadataCache.LoadIfPresent(RpcHelpers.RequireEnvironment().CachePath);
-                _cachedCatalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirs, supplement);
-                _cachedCatalogPath = assemblyPath;
-                return _cachedCatalog;
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"templatesParse: failed to load template catalog: {ex.Message}");
-                return null;
-            }
+            var supplement = Il2CppMetadataCache.LoadIfPresent(RequireEnvironment().CachePath);
+            var codeAssemblies = LoadProjectCodeAssemblies(additionalSearchDirs);
+            return GetOrLoadQueryCatalog(assemblyPath, additionalSearchDirs, supplement, codeAssemblies);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"templatesParse: failed to load template catalogue: {ex.Message}");
+            return null;
         }
     }
 
-    // templatesQuery scans the open project's code DLLs into its catalog so a mod's
-    // [JiangyuType]s resolve; that catalog is cached separately from the game-only parse
-    // catalog above. The key is the game assembly plus each code DLL's last-write time,
-    // so a recompile (which rewrites the DLLs) reloads automatically with no explicit
-    // invalidation. Single-slot, matching the parse cache: switching projects reloads.
+    private static IReadOnlyList<string> LoadProjectCodeAssemblies(List<string> additionalSearchDirs)
+    {
+        if (RpcContext.ProjectRoot is not { } projectRoot)
+            return [];
+
+        var (assemblies, searchDirs) = CodeTypeResolver.LoadInputs(
+            Path.Combine(projectRoot, "compiled", Shared.Bundles.CompiledLayout.CodeDirName));
+        additionalSearchDirs.AddRange(searchDirs);
+        return assemblies;
+    }
+
+    // Parsing, serialisation and field queries share the project catalogue so
+    // custom handler fields resolve consistently. Recompiled code invalidates
+    // the cache through each DLL's last-write time.
     private static TemplateTypeCatalog? _queryCatalog;
     private static string? _queryCatalogKey;
     private static readonly Lock _queryCatalogLock = new();
@@ -184,6 +174,7 @@ public static partial class RpcHandlers
                 return _queryCatalog;
 
             _queryCatalog?.Dispose();
+            _queryCatalog = null;
             _queryCatalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirs, supplement, codeAssemblies);
             _queryCatalogKey = key;
             return _queryCatalog;

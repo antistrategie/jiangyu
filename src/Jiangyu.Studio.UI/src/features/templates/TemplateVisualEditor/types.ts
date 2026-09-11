@@ -24,7 +24,8 @@ export type EditorValueKind =
   // Explicit `#null` literal. Clears a scalar reference field; the
   // destination type is checked at apply time. The wire format carries
   // no payload other than the kind tag itself.
-  | "Null";
+  | "Null"
+  | "NumericPlaceholder";
 
 export interface EditorValue {
   kind: EditorValueKind;
@@ -36,6 +37,8 @@ export interface EditorValue {
   enumValue?: string;
   referenceType?: string;
   referenceId?: string;
+  bindingPath?: string;
+  bindingFormat?: string;
   compositeType?: string;
   /** Patch operations applied to the constructed composite/TypeConstruction
    *  instance. Mirrors the outer EditorDirective shape — every op

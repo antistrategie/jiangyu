@@ -1,4 +1,5 @@
 using System.Reflection;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Jiangyu.Shared.Templates;
 using MelonLoader;
 
@@ -94,6 +95,15 @@ internal sealed partial class TemplatePatchApplier
         {
             shape = CollectionShape.List;
             elementType = addMethod.GetParameters()[0].ParameterType;
+            return true;
+        }
+
+        // The non-generic string wrapper uses the same array constructor and
+        // indexer as reference arrays, with managed strings as its elements.
+        if (collectionType == typeof(Il2CppStringArray))
+        {
+            shape = CollectionShape.ReferenceArray;
+            elementType = typeof(string);
             return true;
         }
 
@@ -258,13 +268,13 @@ internal sealed partial class TemplatePatchApplier
     //   - List-like (has instance Add(T)): mutate live collection in place via
     //     Add / Insert, unless the field is null in which case we construct
     //     via the parameterless ctor and writeback.
-    //   - Il2CppReferenceArray<T> / Il2CppStructArray<T>: rebuild a fresh
+    //   - Il2CppStringArray / Il2CppReferenceArray<T> / Il2CppStructArray<T>: rebuild a fresh
     //     native array of length+1 and writeback; null field yields a
     //     1-element array. Writing the whole new array through the generated
     //     property setter uses Il2CppInterop's GC write barrier.
     //
     // insertIndex=null means Append; non-null means InsertAt at that position.
-    private static bool TryBindCollectionMutation(
+    internal static bool TryBindCollectionMutation(
         object parent, string fieldName, object collection, Type collectionType,
         int? insertIndex,
         out Type elementType, out Action<object> setter, out Func<object> getter, out string error)
@@ -279,7 +289,7 @@ internal sealed partial class TemplatePatchApplier
         if (!TryGetCollectionShape(collectionType, out var shape, out elementType))
         {
             error = $"collection type {collectionType.FullName} is not a supported shape "
-                + "(List<T>, Il2CppReferenceArray<T>, or Il2CppStructArray<T>).";
+                + "(List<T>, Il2CppStringArray, Il2CppReferenceArray<T>, or Il2CppStructArray<T>).";
             return false;
         }
 

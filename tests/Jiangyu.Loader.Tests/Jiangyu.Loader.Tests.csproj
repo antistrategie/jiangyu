@@ -52,6 +52,10 @@
     will fail by design. The tests themselves are configuration-agnostic.
   -->
   <ItemGroup>
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>$(MelonLoaderDir)/Il2CppInterop.Runtime.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
     <Reference Include="MelonLoader">
       <HintPath>$(MelonLoaderDir)/MelonLoader.dll</HintPath>
       <Private>true</Private>

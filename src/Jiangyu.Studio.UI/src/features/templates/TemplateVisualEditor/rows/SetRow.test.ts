@@ -68,9 +68,10 @@ vi.mock("../shared/rpcHelpers", async () => {
   };
 });
 
-import { CompositeEditor, HandlerSubtypePicker } from "./SetRow";
+import { CompositeEditor, HandlerSubtypePicker, SetRow } from "./SetRow";
 import { CompositeCollapseContext, type CompositeCollapseControl } from "../store";
 import type { EditorValue } from "../types";
+import type { StampedDirective } from "../helpers";
 
 describe("nested condition editing", () => {
   it("offers child subtypes and their fields inside an AndCondition", async () => {
@@ -361,5 +362,80 @@ describe("CompositeEditor collapse", () => {
     // Default for populatedComposite is collapsed=true, click should
     // request the inverted state.
     expect(toggle).toHaveBeenCalledWith("outer", false);
+  });
+});
+
+describe("placeholder value type", () => {
+  it.each([
+    ["Append", "m_Placeholders", undefined],
+    ["Insert", "m_Placeholders", 1],
+    ["Set", "Description.m_Placeholders", 2],
+  ] as const)("creates a binding in a %s row and switches back to text", (op, fieldPath, index) => {
+    const onChange = vi.fn();
+    const initial: StampedDirective = {
+      _uiId: "placeholder",
+      op,
+      fieldPath,
+      ...(index === undefined ? {} : { index }),
+      value: { kind: "String", string: "8" },
+    };
+    function PlaceholderRow() {
+      const [directive, setDirective] = useState(initial);
+      return createElement(SetRow, {
+        directive,
+        member: {
+          name: "m_Placeholders",
+          typeName: "String[]",
+          isWritable: true,
+          isInherited: false,
+          isCollection: true,
+          patchScalarKind: "String",
+        },
+        onChange: (next) => {
+          setDirective(next);
+          onChange(next);
+        },
+        onDelete: vi.fn(),
+        isDragging: false,
+        onDragStart: vi.fn(),
+        onDragEnd: vi.fn(),
+        onDragOverRow: vi.fn(),
+        onDropRow: vi.fn(),
+      });
+    }
+    render(createElement(PlaceholderRow));
+    fireEvent.change(screen.getByLabelText("Placeholder value type"), {
+      target: { value: "NumericPlaceholder" },
+    });
+    for (const [label, value] of [
+      ["Source template type", "SkillTemplate"],
+      ["Source template ID", "effect.source"],
+      ["Numeric field path", "EventHandlers[0].AmountMult"],
+    ]) {
+      const input = screen.getByLabelText(label!);
+      fireEvent.change(input, { target: { value } });
+      fireEvent.blur(input);
+    }
+    fireEvent.change(screen.getByLabelText("Number format"), {
+      target: { value: "bonus-percent" },
+    });
+    expect(onChange.mock.lastCall?.[0]).toEqual({
+      ...initial,
+      value: {
+        kind: "NumericPlaceholder",
+        referenceType: "SkillTemplate",
+        referenceId: "effect.source",
+        bindingPath: "EventHandlers[0].AmountMult",
+        bindingFormat: "bonus-percent",
+      },
+    });
+    fireEvent.change(screen.getByLabelText("Placeholder value type"), {
+      target: { value: "String" },
+    });
+    expect(onChange.mock.lastCall?.[0]).toEqual({
+      ...initial,
+      value: { kind: "String", string: "" },
+    });
+    expect(screen.queryByLabelText("Source template ID")).toBeNull();
   });
 });

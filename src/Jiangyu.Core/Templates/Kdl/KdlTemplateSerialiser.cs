@@ -352,6 +352,13 @@ public static class KdlTemplateSerialiser
                 EndLine(sb, inlineComment);
                 break;
 
+            case KdlEditorValueKind.NumericPlaceholder:
+                sb.Append($"bind=\"{Esc(v.ReferenceType ?? "")}\" \"{Esc(v.ReferenceId ?? "")}\" path=\"{Esc(v.BindingPath ?? "")}\"");
+                if (v.BindingFormat is { Length: > 0 } format && format != "number")
+                    sb.Append($" format=\"{Esc(format)}\"");
+                EndLine(sb, inlineComment);
+                break;
+
             case KdlEditorValueKind.Null:
                 sb.Append("#null");
                 EndLine(sb, inlineComment);

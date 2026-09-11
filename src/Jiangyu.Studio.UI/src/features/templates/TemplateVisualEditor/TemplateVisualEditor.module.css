@@ -1184,6 +1184,37 @@
   color: var(--fg);
 }
 
+/* --- Numeric placeholder binding --- */
+
+.setBindingRow {
+  composes: setRefRow;
+  flex-wrap: wrap;
+}
+
+.setBindingType {
+  flex: 0 1 160px;
+}
+
+.setBindingSource {
+  flex: 1 1 240px;
+}
+
+.setBindingPath {
+  composes: setValueInput;
+  flex: 1 1 240px;
+  width: auto;
+}
+
+.setPlaceholderKind {
+  composes: setIndexSelect;
+  min-width: 0;
+  font-family: var(--font-label);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
 /* --- Composite value --- */
 
 .compositeBody {

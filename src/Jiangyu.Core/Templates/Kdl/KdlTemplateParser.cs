@@ -821,6 +821,18 @@ public static class KdlTemplateParser
             return false;
         }
 
+        if (GetPropertyValue(node, "bind") != null && opKind is CompiledTemplateOp.Clear or CompiledTemplateOp.Remove)
+        {
+            log.Error($"{pos}: bind= requires set, append or insert.");
+            return false;
+        }
+        if (GetPropertyValue(node, "bind") == null
+            && (GetPropertyValue(node, "path") != null || GetPropertyValue(node, "format") != null))
+        {
+            log.Error($"{pos}: path= and format= require bind=.");
+            return false;
+        }
+
         // Clear takes neither index nor value — empties the whole collection.
         if (opKind == CompiledTemplateOp.Clear)
         {
@@ -1054,11 +1066,12 @@ public static class KdlTemplateParser
 
         if (GetProperty(node, "ref") != null
             || GetProperty(node, "enum") != null
-            || GetProperty(node, "asset") != null)
+            || GetProperty(node, "asset") != null
+            || GetPropertyValue(node, "bind") != null)
         {
             log.Error(
-                $"{pos}: 'set' with a child block must not carry ref=, enum=, or asset= properties; "
-                + "those belong on the inner 'set' that produces the value.");
+                $"{pos}: 'set' with a child block must not carry ref=, enum=, asset= or bind= properties. "
+                + "Those belong on the inner 'set' that produces the value.");
             return false;
         }
 
@@ -1123,6 +1136,9 @@ public static class KdlTemplateParser
     {
         value = null!;
 
+        if (GetPropertyValue(node, "bind") != null)
+            return TryParseNumericPlaceholder(node, pos, log, out value);
+
         // Check for type= construction. On append/insert this builds a fresh
         // polymorphic element (e.g. an EventHandlers entry); on set, type= is
         // consumed earlier as a descent block, so reaching here with type=
@@ -1168,6 +1184,42 @@ public static class KdlTemplateParser
 
         var arg = node.Arguments[1];
         return TryParseLiteralValue(arg, pos, log, out value);
+    }
+
+    private static bool TryParseNumericPlaceholder(
+        KdlNode node, string pos, ILogSink log, out CompiledTemplateValue value)
+    {
+        value = null!;
+        if (node.HasChildren || node.Arguments.Count != 2
+            || GetPropertyValue(node, "type") != null || GetPropertyValue(node, "ref") != null
+            || GetPropertyValue(node, "enum") != null || GetPropertyValue(node, "asset") != null
+            || GetPropertyValue(node, "from") != null)
+        {
+            log.Error($"{pos}: bind= takes one template ID and a path=, without a child block or another value kind.");
+            return false;
+        }
+        var binding = new NumericPlaceholderBinding
+        {
+            Source = new CompiledTemplateReference
+            {
+                TemplateType = GetProperty(node, "bind"),
+                TemplateId = node.Arguments[1].AsString() ?? string.Empty,
+            },
+            Path = GetProperty(node, "path") ?? string.Empty,
+            Format = GetPropertyValue(node, "format") is { } format ? format.AsString() ?? string.Empty : "number",
+        };
+        if (!binding.IsValid)
+        {
+            log.Error($"{pos}: bind= requires a template type, template ID, numeric field path and a supported format "
+                + "(number, percent, bonus-percent, reduction-percent or magnitude).");
+            return false;
+        }
+        value = new CompiledTemplateValue
+        {
+            Kind = CompiledTemplateValueKind.NumericPlaceholder,
+            NumericPlaceholder = binding,
+        };
+        return true;
     }
 
     private static bool TryParseLiteralValue(
