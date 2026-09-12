@@ -520,6 +520,7 @@ function MemberRow({
             <div className={styles.memberNestedList}>
               {valueNode.fields.map((subVal, i) => (
                 <NestedValueRow
+                  // eslint-disable-next-line @eslint-react/no-array-index-key -- Unnamed fields retain their positions in this fixed inspection result.
                   key={subVal.name ?? `unnamed-${i}`}
                   value={subVal}
                   firstLevel
@@ -838,6 +839,7 @@ export function NestedValueRow({
         <div className={styles.memberNestedSubList}>
           {children.map((c, i) => (
             <NestedValueRow
+              // eslint-disable-next-line @eslint-react/no-array-index-key -- Unnamed children retain their positions in this fixed inspection result.
               key={c.name ?? `unnamed-${i}`}
               value={c}
               {...(childrenAreElements && c.name == null && { label: `[${i}]` })}

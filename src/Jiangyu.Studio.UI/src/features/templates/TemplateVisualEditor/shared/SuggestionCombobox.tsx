@@ -51,17 +51,13 @@ export function SuggestionCombobox({
   const requestRef = useRef<ReturnType<typeof fetchSuggestions> | null>(null);
 
   // Reset cache when the fetch function changes (e.g. refType changed).
-  // React-docs prev-state pattern: synchronous setState in render bails out
-  // unless the prop changed, so this doesn't loop. The lint rule is named
-  // `set-state-in-effect` but currently misfires on this conditional pattern.
+  // Reset during render so children cannot display suggestions from the old source.
   // https://react.dev/reference/react/useState#storing-information-from-previous-renders
   const [prevFetchSuggestions, setPrevFetchSuggestions] = useState(() => fetchSuggestions);
   if (prevFetchSuggestions !== fetchSuggestions) {
-    /* eslint-disable @eslint-react/set-state-in-effect -- prev-state pattern in render, not in an effect; see comment above. */
     setPrevFetchSuggestions(() => fetchSuggestions);
     setLoaded(false);
     setItems([]);
-    /* eslint-enable @eslint-react/set-state-in-effect */
   }
 
   // A closed menu keeps its lookup so reopening it does not repeat the work.

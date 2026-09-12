@@ -8,8 +8,12 @@ function makeHandlers(): UnityActionHandlers & {
   const calls = { init: 0, open: 0 };
   return {
     calls,
-    initUnity: () => void calls.init++,
-    openUnity: () => void calls.open++,
+    initUnity: () => {
+      calls.init++;
+    },
+    openUnity: () => {
+      calls.open++;
+    },
   };
 }
 

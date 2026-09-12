@@ -6,7 +6,9 @@ function makeHandlers(): CodeActionHandlers & { calls: { sync: number } } {
   const calls = { sync: 0 };
   return {
     calls,
-    syncCode: () => void calls.sync++,
+    syncCode: () => {
+      calls.sync++;
+    },
   };
 }
 

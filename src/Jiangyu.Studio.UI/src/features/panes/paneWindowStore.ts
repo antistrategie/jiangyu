@@ -87,7 +87,6 @@ export const usePaneWindowStore = create<PaneWindowStore>((set, get) => ({
     set((s) => {
       if (!(windowId in s.windows)) return s;
       const { [windowId]: _removed, ...rest } = s.windows;
-      void _removed;
       persist(rest);
       return { windows: rest };
     });

@@ -8,9 +8,15 @@ function makeHandlers(): ProjectActionHandlers & {
   const calls = { open: 0, close: 0, reveal: 0 };
   return {
     calls,
-    openProject: () => void calls.open++,
-    closeProject: () => void calls.close++,
-    revealProject: () => void calls.reveal++,
+    openProject: () => {
+      calls.open++;
+    },
+    closeProject: () => {
+      calls.close++;
+    },
+    revealProject: () => {
+      calls.reveal++;
+    },
   };
 }
 

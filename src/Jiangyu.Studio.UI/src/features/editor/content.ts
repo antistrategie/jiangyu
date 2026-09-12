@@ -71,7 +71,6 @@ interface EditorContentState {
 
 function omit<V>(record: Readonly<Record<string, V>>, key: string): Record<string, V> {
   const { [key]: _, ...rest } = record;
-  void _;
   return rest;
 }
 

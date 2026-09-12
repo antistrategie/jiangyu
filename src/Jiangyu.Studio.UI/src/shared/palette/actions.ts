@@ -47,7 +47,6 @@ export const usePaletteStore = create<PaletteStore>((set) => ({
     set((s) => {
       if (!(slot in s.slots)) return s;
       const { [slot]: _removed, ...rest } = s.slots;
-      void _removed;
       return { slots: rest };
     });
   },
