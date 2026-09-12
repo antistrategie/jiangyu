@@ -63,6 +63,9 @@ jobs:
       - name: Test Jiangyu.Codegen.Tests
         run: dotnet test jiangyu/tests/Jiangyu.Codegen.Tests/Jiangyu.Codegen.Tests.csproj
 
+      - name: Test Jiangyu.Sdk.Analyzers.Tests
+        run: dotnet test jiangyu/tests/Jiangyu.Sdk.Analyzers.Tests/Jiangyu.Sdk.Analyzers.Tests.csproj
+
       - name: Test Jiangyu.Studio.Host.Tests
         run: dotnet test jiangyu/tests/Jiangyu.Studio.Host.Tests/Jiangyu.Studio.Host.Tests.csproj -p:MelonLoaderDir=${{ github.workspace }}/jiangyu/.ci/melonloader -p:GameAssembliesDir=${{ github.workspace }}/menace-ci-dependencies
 

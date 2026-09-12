@@ -1,4 +1,3 @@
-using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Xunit;
@@ -35,10 +34,15 @@ public sealed class JiangyuTypeConstructorGeneratorTests
     private static string GeneratedText(GeneratorDriverRunResult result)
         => string.Join("\n", result.GeneratedTrees.Select(tree => tree.GetText().ToString()));
 
-    [Fact]
-    public void GeneratedConstructorsCompile()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void GeneratedConstructorsCompile(bool baseHasParameterlessConstructor)
     {
-        var compilation = TestCompilation.Create(GameBase, """
+        var gameBase = baseHasParameterlessConstructor
+            ? GameBase
+            : GameBase.Replace("public GameBase() { }", string.Empty);
+        var compilation = TestCompilation.Create(gameBase, """
             using Jiangyu.Sdk;
             namespace Mod
             {

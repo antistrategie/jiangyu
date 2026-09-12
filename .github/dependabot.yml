@@ -23,7 +23,6 @@ updates:
       - dependency-name: "AssetRipper.*"
       - dependency-name: "NAudio.*"
       - dependency-name: "NUnit*"
-      - dependency-name: "Microsoft.CodeAnalysis.*"
       - dependency-name: "Microsoft.AspNetCore.OpenApi"
       - dependency-name: "Microsoft.OpenApi"
       - dependency-name: "Swashbuckle.AspNetCore"
@@ -36,6 +35,8 @@ updates:
       - dependency-name: "ZstdSharp.Port"
       - dependency-name: "SourceGenerator.Foundations"
       - dependency-name: "oqo0.SwaggerThemes"
+      # Compiler-facing packages stay on the baseline supported by modders' SDKs.
+      - dependency-name: "Microsoft.CodeAnalysis.*"
       # Pinned to 8.0.5 — net6.0 is the last version with a net6.0 target.
       # The Loader runs on MelonLoader's net6.0 runtime. Newer versions
       # pull in Microsoft.Bcl.AsyncInterfaces net10-only and break ILRepack.
