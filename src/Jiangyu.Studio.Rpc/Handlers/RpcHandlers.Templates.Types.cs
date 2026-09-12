@@ -41,6 +41,13 @@ public static partial class RpcHandlers
     }
 
     [RpcType]
+    internal sealed class TemplateSuggestionsResult
+    {
+        [JsonPropertyName("suggestions")]
+        public required List<string> Suggestions { get; set; }
+    }
+
+    [RpcType]
     internal sealed class TemplateSearchResult
     {
         [JsonPropertyName("types")]

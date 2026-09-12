@@ -26,6 +26,18 @@ vi.mock("@tanstack/react-virtual", () => ({
 
 vi.mock("@shared/rpc", () => {
   const membersByType: Record<string, readonly TemplateMember[]> = {
+    CollectionOwner: [
+      {
+        name: "Tags",
+        typeName: "List<TagTemplate>",
+        isWritable: true,
+        isInherited: false,
+        isCollection: true,
+        patchScalarKind: "TemplateReference",
+        elementTypeName: "TagTemplate",
+        referenceTypeName: "TagTemplate",
+      },
+    ],
     AndCondition: [
       {
         name: "Conditions",
@@ -74,6 +86,33 @@ import type { EditorValue } from "../types";
 import type { StampedDirective } from "../helpers";
 
 describe("nested condition editing", () => {
+  it.each([
+    ["Composite", undefined, false],
+    ["TypeConstruction", undefined, false],
+    ["Composite", "", false],
+    ["TypeConstruction", "  ", false],
+    ["Composite", "seed", true],
+    ["TypeConstruction", "seed", true],
+  ] as const)(
+    "only offers existing slots when %s has a prototype (%s)",
+    async (kind, from, allowed) => {
+      render(
+        createElement(CompositeEditor, {
+          value: {
+            kind,
+            compositeType: "CollectionOwner",
+            compositeDirectives: [],
+            ...(from === undefined ? {} : { compositeFrom: from }),
+          },
+          onChange: vi.fn(),
+        }),
+      );
+      fireEvent.focus(screen.getByPlaceholderText("Add field…"));
+      expect(await screen.findByRole("button", { name: /^Tags/ })).toBeDefined();
+      expect(screen.queryByRole("button", { name: /Edit slot of Tags/ }) !== null).toBe(allowed);
+    },
+  );
+
   it("offers child subtypes and their fields inside an AndCondition", async () => {
     const onChange = vi.fn();
     function ConditionEditor() {

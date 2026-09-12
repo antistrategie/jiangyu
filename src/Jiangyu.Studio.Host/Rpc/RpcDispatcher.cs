@@ -98,6 +98,7 @@ public static partial class RpcDispatcher
         Register("templatesIndexStatus", (_, p) => RpcHandlers.TemplatesIndexStatus(p));
         Register("templatesIndex", (_, p) => RpcHandlers.TemplatesIndex(p));
         Register("templatesSearch", (_, p) => RpcHandlers.TemplatesSearch(p));
+        Register("templatesSuggestions", (_, p) => RpcHandlers.TemplatesSuggestions(p));
         Register("templatesQuery", (_, p) => RpcHandlers.TemplatesQuery(p));
         Register("templatesParse", (_, p) => RpcHandlers.TemplatesParse(p));
         Register("templatesSerialise", (_, p) => RpcHandlers.TemplatesSerialise(p));

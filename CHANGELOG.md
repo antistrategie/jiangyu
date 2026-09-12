@@ -2,6 +2,18 @@
 
 Changes relevant to modders building with Jiangyu, and to players running Jiangyu mods where they can see the difference. Entries are scoped Loader, Compiler, Studio, CLI, MCP or SDK.
 
+## 1.4.5
+
+- (Compiler) Added `bind=` so descriptions can take numbers directly from item and skill settings, with number and percentage formatting
+- (Loader) Keeps linked description numbers up to date with changes made by mods, while allowing the game to supply its own values
+- (Studio) Added searchable template and effect pickers for description values, compact format controls, and a choice between fixed text and linked values
+- (Studio) Fixed description placeholders being missing from the Add field menu
+- (Studio) Fixed the visual editor reporting missing fields on custom skill and perk effects even though those fields were defined in the mod's code
+- (Studio) Fixed Edit slot showing a skill's settings instead of letting you choose a replacement skill. Other lists now also use the correct controls for editing their entries
+- (Studio) Fixed asset pickers in lists failing to show assets of the correct type
+- (Studio) Reduced pauses when opening searchable template dropdowns. Closing and reopening a dropdown now keeps its pending lookup instead of starting it again
+- (MCP) Added `jiangyu_templates_suggestions` to look up template names without downloading their full details, reducing the amount of data sent to agents
+
 ## 1.4.4
 
 - (Loader) Reduced start-up loading by leaving unused ancestor template families unloaded while registering clones, preserving their availability when gameplay first requests them

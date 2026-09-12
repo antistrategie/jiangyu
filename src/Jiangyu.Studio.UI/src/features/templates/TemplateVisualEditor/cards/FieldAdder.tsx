@@ -9,7 +9,7 @@ import {
   getActiveTemplateDrag,
 } from "@features/templates/crossInstance";
 import type { InspectedFieldNode } from "@shared/rpc";
-import { allowsMultipleDirectives } from "../helpers";
+import { allowsMultipleDirectives, isFieldBagValue, makeDefaultValue } from "../helpers";
 import type { StampedDirective } from "../helpers";
 import { makeDefaultDirective } from "../shared/rpcHelpers";
 import { useAnchorPosition } from "../shared/useAnchorPosition";
@@ -29,6 +29,8 @@ export interface FieldAdderProps {
    *  drags of fields from unrelated templates. Empty string = accept any. */
   targetTemplateType: string;
   onAdd: (directive: StampedDirective) => void;
+  /** Fresh constructed objects have no existing slots to select. */
+  allowSlotEdits?: boolean;
   /** Picking an Odin multi-dim member (AOETiles, ChunkTileFlags) opts
    *  the field into a matrix grid editor on the card instead of
    *  dispatching a directive. Optional — when absent, matrix members
@@ -63,6 +65,7 @@ export function FieldAdder({
   onDrop,
   vanillaFields,
   onStartDescent,
+  allowSlotEdits = true,
 }: FieldAdderProps) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -122,6 +125,17 @@ export function FieldAdder({
     } else {
       const vanilla = vanillaFields?.get(member.name);
       onAdd(makeDefaultDirective(member, vanilla));
+    }
+    setQuery("");
+    setOpen(false);
+  };
+
+  const handleEditSlot = (member: TemplateMember) => {
+    const directive = makeDefaultDirective(member);
+    if (isFieldBagValue(directive.value)) {
+      onStartDescent?.(member.name, member.elementTypeName ?? "", member.elementSubtypes ?? null);
+    } else {
+      onAdd({ ...directive, op: "Set", index: 0 });
     }
     setQuery("");
     setOpen(false);
@@ -240,20 +254,21 @@ export function FieldAdder({
                     </span>
                   )}
                 </button>
-                {onStartDescent && m.isCollection === true && (
-                  <button
-                    type="button"
-                    className={`${styles.fieldAdderItem} ${styles.fieldAdderItemDescent}`}
-                    onClick={() => {
-                      onStartDescent(m.name, m.elementTypeName ?? "", m.elementSubtypes ?? null);
-                      setQuery("");
-                      setOpen(false);
-                    }}
-                    title="Edit fields of an existing element instead of appending a new one"
-                  >
-                    <span className={styles.fieldAdderItemName}>↳ Edit slot of {m.name}…</span>
-                  </button>
-                )}
+                {allowSlotEdits &&
+                  m.isCollection === true &&
+                  !m.isOdinHashSet &&
+                  !m.isOdinMultiDimArray &&
+                  !m.namedArrayEnumTypeName &&
+                  (onStartDescent !== undefined || !isFieldBagValue(makeDefaultValue(m))) && (
+                    <button
+                      type="button"
+                      className={`${styles.fieldAdderItem} ${styles.fieldAdderItemDescent}`}
+                      onClick={() => handleEditSlot(m)}
+                      title="Edit an existing collection slot"
+                    >
+                      <span className={styles.fieldAdderItemName}>↳ Edit slot of {m.name}…</span>
+                    </button>
+                  )}
               </React.Fragment>
             ))}
             {alreadyAdded.length > 0 && available.length > 0 && (

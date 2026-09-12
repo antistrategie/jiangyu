@@ -330,6 +330,10 @@ export interface TemplateIndexStatus {
   indexedAt?: string | null;
 }
 
+export interface TemplateSuggestionsResult {
+  suggestions: string[];
+}
+
 export interface TemplateSearchResult {
   types: TemplateTypeEntry[];
   instances: TemplateInstanceEntry[];

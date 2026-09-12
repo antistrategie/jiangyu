@@ -46,15 +46,11 @@ describe("vanillaCacheKey", () => {
 describe("getCachedTemplateTypes", () => {
   it("fetches from RPC on first call and caches on second", async () => {
     mockRpcCall.mockResolvedValue({
-      types: [],
-      instances: [
-        { name: "a", className: "UnitTemplate", identity: { collection: "", pathId: 0 } },
-        { name: "b", className: "BuildingTemplate", identity: { collection: "", pathId: 1 } },
-        { name: "c", className: "UnitTemplate", identity: { collection: "", pathId: 2 } },
-      ],
+      suggestions: ["BuildingTemplate", "UnitTemplate"],
     });
 
     const first = await getCachedTemplateTypes();
+    expect(mockRpcCall).toHaveBeenCalledWith("templatesSuggestions", undefined);
     expect(first).toEqual(["BuildingTemplate", "UnitTemplate"]);
     expect(mockRpcCall).toHaveBeenCalledTimes(1);
 
@@ -111,16 +107,9 @@ describe("mergeCloneSuggestions", () => {
 describe("fetchInstancesWithClones", () => {
   it("merges indexed instances with project clones", async () => {
     mockRpcCall.mockImplementation((method) => {
-      if (method === "templatesSearch") {
+      if (method === "templatesSuggestions") {
         return Promise.resolve({
-          types: [],
-          instances: [
-            {
-              name: "archer_01",
-              className: "UnitTemplate",
-              identity: { collection: "", pathId: 0 },
-            },
-          ],
+          suggestions: ["archer_01"],
         });
       }
       return Promise.resolve({
@@ -130,7 +119,7 @@ describe("fetchInstancesWithClones", () => {
 
     const merged = await fetchInstancesWithClones("UnitTemplate");
     expect(merged).toEqual([{ label: "archer_clone", tag: "clone" }, { label: "archer_01" }]);
-    expect(mockRpcCall).toHaveBeenCalledWith("templatesSearch", { className: "UnitTemplate" });
+    expect(mockRpcCall).toHaveBeenCalledWith("templatesSuggestions", { className: "UnitTemplate" });
   });
 });
 

@@ -6,6 +6,7 @@ These are the tools Studio exposes to AI agents via the Model Context Protocol (
 
 | Tool | What it does |
 |---|---|
+| `jiangyu_templates_suggestions` | List template type names or identifiers for a picker |
 | `jiangyu_templates_search` | Search templates by name or type substring |
 | `jiangyu_templates_query` | Get the full field schema for a template type (names, types, collections, enums) |
 | `jiangyu_templates_inspect` | Inspect a template instance's vanilla field values |

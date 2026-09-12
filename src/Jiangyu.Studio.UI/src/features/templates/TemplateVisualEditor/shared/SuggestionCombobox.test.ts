@@ -94,6 +94,69 @@ describe("SuggestionCombobox", () => {
     await waitFor(() => expect(screen.getByText("Alpha")).toBeDefined());
   });
 
+  it("shows loading immediately and ignores a superseded lookup", async () => {
+    let resolveOld!: (items: readonly string[]) => void;
+    const oldRequest = new Promise<readonly string[]>((resolve) => {
+      resolveOld = resolve;
+    });
+    const { rerender } = render(
+      createElement(Wrapper, {
+        initialValue: "",
+        placeholder: "Pick one",
+        fetchSuggestions: () => oldRequest,
+      }),
+    );
+    fireEvent.focus(screen.getByPlaceholderText("Pick one"));
+    expect(screen.getByText("Loading…")).toBeDefined();
+
+    rerender(
+      createElement(Wrapper, {
+        initialValue: "",
+        placeholder: "Pick one",
+        fetchSuggestions: () => Promise.resolve(["New skill"]),
+      }),
+    );
+    expect(await screen.findByText("New skill")).toBeDefined();
+    await act(async () => {
+      resolveOld(["Old skill"]);
+      await oldRequest;
+    });
+    expect(screen.queryByText("Old skill")).toBeNull();
+    expect(screen.getByText("New skill")).toBeDefined();
+    expect(screen.queryByText("Loading…")).toBeNull();
+  });
+
+  it("reuses an in-flight lookup across closing and reopening", async () => {
+    let resolve!: (items: readonly string[]) => void;
+    const request = new Promise<readonly string[]>((done) => {
+      resolve = done;
+    });
+    const fetch = vi.fn(() => request);
+    render(
+      createElement(Wrapper, {
+        initialValue: "",
+        placeholder: "Pick one",
+        fetchSuggestions: fetch,
+      }),
+    );
+    const input = screen.getByPlaceholderText("Pick one");
+    fireEvent.focus(input);
+    fireEvent.keyDown(input, { key: "Escape" });
+    fireEvent.focus(input);
+    expect(screen.getByText("Loading…")).toBeDefined();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(input, { key: "Escape" });
+    await act(async () => {
+      resolve(["Loaded skill"]);
+      await request;
+    });
+    fireEvent.focus(input);
+    expect(screen.getByText("Loaded skill")).toBeDefined();
+    expect(screen.queryByText("Loading…")).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("filters items as user types", async () => {
     render(
       createElement(Wrapper, {

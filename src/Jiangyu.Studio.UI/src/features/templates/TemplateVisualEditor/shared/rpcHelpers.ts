@@ -3,7 +3,7 @@ import type {
   InspectedFieldNode,
   ProjectAdditionEntry,
   TemplateMember,
-  TemplateSearchResult,
+  TemplateSuggestionsResult,
   TemplateValueResult,
 } from "@shared/rpc";
 import { rpcCall } from "@shared/rpc";
@@ -15,8 +15,11 @@ import type { SuggestionItem } from "./SuggestionCombobox";
 
 // --- RPC wrappers ---
 
-export function templatesSearch(className?: string): Promise<TemplateSearchResult> {
-  return rpcCall<TemplateSearchResult>("templatesSearch", className ? { className } : undefined);
+export function templatesSuggestions(className?: string): Promise<TemplateSuggestionsResult> {
+  return rpcCall<TemplateSuggestionsResult>(
+    "templatesSuggestions",
+    className ? { className } : undefined,
+  );
 }
 
 // Per-compositeType candidate-name cache. The server already caches its own
@@ -151,11 +154,11 @@ export function mergeCloneSuggestions(
 export async function fetchInstancesWithClones(
   templateType: string,
 ): Promise<readonly SuggestionItem[]> {
-  const [searchResult, projectClones] = await Promise.all([
-    templatesSearch(templateType),
+  const [result, projectClones] = await Promise.all([
+    templatesSuggestions(templateType),
     getCachedProjectClones(),
   ]);
-  const gameItems: SuggestionItem[] = searchResult.instances.map((i) => ({ label: i.name }));
+  const gameItems: SuggestionItem[] = result.suggestions.map((label) => ({ label }));
   return mergeCloneSuggestions(templateType, gameItems, projectClones);
 }
 
@@ -194,10 +197,9 @@ export function invalidateProjectAdditionsCache() {
 
 export async function getCachedTemplateTypes(): Promise<readonly string[]> {
   if (templateTypesCache.types) return templateTypesCache.types;
-  const result = await templatesSearch();
-  const types = [...new Set(result.instances.map((i) => i.className))].sort();
-  templateTypesCache.types = types;
-  return types;
+  const result = await templatesSuggestions();
+  templateTypesCache.types = result.suggestions;
+  return result.suggestions;
 }
 
 // --- Vanilla fields hook ---

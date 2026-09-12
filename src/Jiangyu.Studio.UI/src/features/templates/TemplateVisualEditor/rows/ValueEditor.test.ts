@@ -11,7 +11,7 @@ vi.mock("../TemplateVisualEditor.module.css", () => ({
 }));
 
 vi.mock("@shared/rpc", () => ({
-  rpcCall: vi.fn(() => Promise.resolve({ members: [], instances: [], types: [] })),
+  rpcCall: vi.fn(() => Promise.resolve({ members: [], suggestions: [] })),
 }));
 
 // Mock the virtualiser for SuggestionCombobox (used by Enum/Ref editors).
@@ -30,7 +30,11 @@ vi.mock("@tanstack/react-virtual", () => ({
 
 import { ValueEditor } from "./ValueEditor";
 import { rpcCall } from "@shared/rpc";
-import { invalidateProjectClonesCache, templateTypesCache } from "../shared/rpcHelpers";
+import {
+  invalidateProjectClonesCache,
+  invalidateProjectAdditionsCache,
+  templateTypesCache,
+} from "../shared/rpcHelpers";
 
 // Controlled wrapper so onChange is reflected in re-renders.
 function Controlled(props: { initial: EditorValue; onChange?: (v: EditorValue) => void }) {
@@ -49,6 +53,43 @@ beforeEach(() => {
 });
 
 describe("ValueEditor", () => {
+  it.each([
+    { typeName: "Sprite" },
+    { typeName: "List<Sprite>", isCollection: true, elementTypeName: "Sprite" },
+  ])("uses the asset element type for $typeName", async (shape) => {
+    invalidateProjectAdditionsCache();
+    vi.mocked(rpcCall).mockImplementation((method) =>
+      Promise.resolve(
+        method === "assetsProjectAdditions"
+          ? {
+              additions: [
+                {
+                  name: "remolding/support",
+                  file: "assets/additions/sprites/remolding/support.png",
+                },
+              ],
+            }
+          : [],
+      ),
+    );
+    const onChange = vi.fn();
+    render(
+      createElement(ValueEditor, {
+        value: { kind: "AssetReference", assetName: "" },
+        onChange,
+        member: { name: "Icons", isWritable: true, isInherited: false, ...shape },
+      }),
+    );
+    fireEvent.focus(screen.getByPlaceholderText("path/to/asset"));
+    fireEvent.click(await screen.findByRole("button", { name: /remolding\/support\s*addition/ }));
+    expect(rpcCall).toHaveBeenCalledWith("assetsProjectAdditions", { unityType: "Sprite" });
+    expect(rpcCall).toHaveBeenCalledWith("assetsSearch", { kind: "Sprite", limit: 5_000 });
+    expect(onChange).toHaveBeenCalledWith({
+      kind: "AssetReference",
+      assetName: "remolding/support",
+    });
+  });
+
   it("picks binding types and project effects, updating suggestions when the type changes", async () => {
     templateTypesCache.types = null;
     invalidateProjectClonesCache();
@@ -66,7 +107,11 @@ describe("ValueEditor", () => {
         });
       }
       const type = (params as { className?: string } | undefined)?.className;
-      return Promise.resolve({ instances: instances.filter((i) => !type || i.className === type) });
+      return Promise.resolve({
+        suggestions: type
+          ? instances.filter((i) => i.className === type).map((i) => i.name)
+          : instances.map((i) => i.className),
+      });
     });
     const onChange = vi.fn();
     render(

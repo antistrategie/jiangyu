@@ -289,7 +289,7 @@ function AssetValueEditor({ value, onChange, member }: ValueEditorProps) {
   // picker that mirrors the template-reference one: project additions
   // first (tagged so the modder can tell their own files from vanilla
   // ones), then any same-type vanilla game asset, deduped by name.
-  const unityType = member?.typeName ?? "";
+  const unityType = member?.elementTypeName ?? member?.typeName ?? "";
   const fetchAssetSuggestions = useCallback(async (): Promise<readonly SuggestionItem[]> => {
     if (!unityType) return [];
     const [additions, gameAssets] = await Promise.all([

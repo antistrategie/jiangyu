@@ -45,7 +45,7 @@ vi.mock("../shared/rpcHelpers", async () => {
     templatesPrototypeCandidates: vi.fn(() => Promise.resolve([])),
     getCachedTemplateTypes: vi.fn(() => Promise.resolve([])),
     getCachedProjectClones: vi.fn(() => Promise.resolve([])),
-    templatesSearch: vi.fn(() => Promise.resolve({ instances: [] })),
+    templatesSuggestions: vi.fn(() => Promise.resolve({ suggestions: [] })),
   };
 });
 
@@ -243,7 +243,7 @@ describe("member resolution by context", () => {
     });
     const { dispatch } = renderBody([existing]);
     fireEvent.focus(screen.getAllByPlaceholderText("Add field…")[0]!);
-    const placeholder = await screen.findByRole("button", { name: /m_Placeholders/ });
+    const placeholder = await screen.findByRole("button", { name: /^m_Placeholders/ });
     fireEvent.click(placeholder);
     expect(dispatch).toHaveBeenCalledWith({
       type: "setDirectives",

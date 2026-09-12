@@ -48,6 +48,7 @@ export function SuggestionCombobox({
   const [loaded, setLoaded] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const requestRef = useRef<ReturnType<typeof fetchSuggestions> | null>(null);
 
   // Reset cache when the fetch function changes (e.g. refType changed).
   // React-docs prev-state pattern: synchronous setState in render bails out
@@ -63,14 +64,28 @@ export function SuggestionCombobox({
     /* eslint-enable @eslint-react/set-state-in-effect */
   }
 
+  // A closed menu keeps its lookup so reopening it does not repeat the work.
+  // Changing the source or unmounting invalidates that request's result.
+  useEffect(
+    () => () => {
+      requestRef.current = null;
+    },
+    [fetchSuggestions],
+  );
+
   useEffect(() => {
-    if (!open || loaded) return;
-    void fetchSuggestions()
+    if (!open || loaded || requestRef.current) return;
+    const request = fetchSuggestions();
+    requestRef.current = request;
+    void request
       .then((result) => {
+        if (requestRef.current !== request) return;
         setItems(result.map((r) => (typeof r === "string" ? { label: r } : r)));
         setLoaded(true);
       })
-      .catch(() => setLoaded(true));
+      .catch(() => {
+        if (requestRef.current === request) setLoaded(true);
+      });
   }, [open, loaded, fetchSuggestions]);
 
   // The dropdown is rendered through a portal so it can escape ancestor
@@ -184,10 +199,8 @@ export function SuggestionCombobox({
           document.body,
         )}
       {open &&
-        loaded &&
         position &&
-        filtered.length === 0 &&
-        value.length > 0 &&
+        (!loaded || (filtered.length === 0 && value.length > 0)) &&
         createPortal(
           <div
             className={styles.refComboboxDropdown}
@@ -199,7 +212,7 @@ export function SuggestionCombobox({
               zIndex: "var(--z-portal)",
             }}
           >
-            <div className={styles.fieldAdderHint}>No matches</div>
+            <div className={styles.fieldAdderHint}>{loaded ? "No matches" : "Loading…"}</div>
           </div>,
           document.body,
         )}

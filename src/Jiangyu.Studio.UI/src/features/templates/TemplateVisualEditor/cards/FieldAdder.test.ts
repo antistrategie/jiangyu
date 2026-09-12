@@ -67,6 +67,139 @@ beforeEach(() => {
 });
 
 describe("FieldAdder", () => {
+  it.each([
+    ["SkillsGranted", "SkillTemplate", "TemplateReference", { referenceId: "" }],
+    ["Tags", "TagTemplate", "TemplateReference", { referenceId: "" }],
+    ["Amounts", "Int32", "Int32", { int32: 0 }],
+    ["m_Placeholders", "String", "String", { string: "" }],
+    ["Modes", "SkillType", "Enum", { enumType: "SkillType", enumValue: "" }],
+    ["Icons", "Sprite", "AssetReference", { assetName: "" }],
+  ] as const)("edits a value at an index for %s", (name, elementTypeName, kind, payload) => {
+    const onStartDescent = vi.fn();
+    const { onAdd } = renderAdder({
+      members: [
+        makeMember({
+          name,
+          typeName: `List<${elementTypeName}>`,
+          isCollection: true,
+          elementTypeName,
+          patchScalarKind: kind,
+        }),
+      ],
+      onStartDescent,
+    });
+    fireEvent.focus(screen.getByPlaceholderText("Add field…"));
+    fireEvent.click(screen.getByRole("button", { name: `↳ Edit slot of ${name}…` }));
+    expect(onStartDescent).not.toHaveBeenCalled();
+    expect(onAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: "Set",
+        fieldPath: name,
+        index: 0,
+        value: { kind, ...payload },
+      }),
+    );
+  });
+
+  it("allows indexed value edits inside an object editor", () => {
+    const { onAdd } = renderAdder({
+      members: [
+        makeMember({
+          name: "m_Placeholders",
+          typeName: "String[]",
+          isCollection: true,
+          elementTypeName: "String",
+          patchScalarKind: "String",
+        }),
+      ],
+    });
+    fireEvent.focus(screen.getByPlaceholderText("Add field…"));
+    fireEvent.click(screen.getByRole("button", { name: "↳ Edit slot of m_Placeholders…" }));
+    expect(onAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: "Set",
+        fieldPath: "m_Placeholders",
+        index: 0,
+      }),
+    );
+  });
+
+  it.each([
+    ["EventHandlers", "SkillEventHandlerTemplate", ["Attack", "Damage"]],
+    ["Properties", "PropertyChange", null],
+  ] as const)("retains field editing for %s objects", (name, elementTypeName, elementSubtypes) => {
+    const onStartDescent = vi.fn();
+    const { onAdd } = renderAdder({
+      members: [
+        makeMember({
+          name,
+          typeName: `List<${elementTypeName}>`,
+          isCollection: true,
+          elementTypeName,
+          elementSubtypes: elementSubtypes ? [...elementSubtypes] : null,
+        }),
+      ],
+      onStartDescent,
+    });
+    fireEvent.focus(screen.getByPlaceholderText("Add field…"));
+    fireEvent.click(screen.getByRole("button", { name: `↳ Edit slot of ${name}…` }));
+    expect(onStartDescent).toHaveBeenCalledWith(name, elementTypeName, elementSubtypes);
+    expect(onAdd).not.toHaveBeenCalled();
+  });
+
+  it("keeps object slot edits hidden when there is no descent editor", () => {
+    renderAdder({
+      members: [
+        makeMember({
+          name: "Properties",
+          typeName: "List<PropertyChange>",
+          isCollection: true,
+          elementTypeName: "PropertyChange",
+        }),
+      ],
+    });
+    fireEvent.focus(screen.getByPlaceholderText("Add field…"));
+    expect(screen.getByText("Properties")).toBeDefined();
+    expect(screen.queryByRole("button", { name: /Edit slot/ })).toBeNull();
+  });
+
+  it("reserves sets, matrix grids and named arrays for their existing editors", () => {
+    renderAdder({
+      members: [
+        makeMember({
+          name: "TagSet",
+          typeName: "HashSet<String>",
+          isCollection: true,
+          elementTypeName: "String",
+          patchScalarKind: "String",
+          isOdinHashSet: true,
+        }),
+        makeMember({
+          name: "InitialAttributes",
+          typeName: "Byte[]",
+          isCollection: true,
+          elementTypeName: "Byte",
+          patchScalarKind: "Byte",
+          namedArrayEnumTypeName: "AttributeType",
+        }),
+        makeMember({
+          name: "AOETiles",
+          typeName: "Byte[,]",
+          isCollection: true,
+          elementTypeName: "Byte",
+          isOdinMultiDimArray: true,
+        }),
+      ],
+      onStartDescent: vi.fn(),
+      onAddMatrix: vi.fn(),
+    });
+    fireEvent.focus(screen.getByPlaceholderText("Add field…"));
+    expect(screen.getByText("TagSet")).toBeDefined();
+    expect(screen.getByText("AOETiles")).toBeDefined();
+    expect(screen.getByText("InitialAttributes")).toBeDefined();
+    expect(screen.queryByRole("button", { name: /Edit slot/ })).toBeNull();
+  });
+
   it("renders search input with placeholder", () => {
     renderAdder();
     expect(screen.getByPlaceholderText("Add field…")).toBeDefined();

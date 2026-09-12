@@ -818,6 +818,7 @@ export function CompositeEditor({
             existingFields={existingFieldNames}
             targetTemplateType={compositeType}
             onAdd={handleAddDirective}
+            allowSlotEdits={Boolean(value.compositeFrom?.trim())}
             onDrop={handleFieldDrop}
             vanillaFields={vanillaSubFields}
           />

@@ -14,6 +14,31 @@ namespace Jiangyu.Studio.Rpc;
 
 public static partial class RpcHandlers
 {
+    [McpTool("jiangyu_templates_suggestions",
+        "List names for template pickers. Without className, returns the indexed template type names. With className, returns that type's template identifiers.")]
+    [McpParam("className", "string", "Template type to list identifiers for (e.g. \"SkillTemplate\"). Omit to list type names.")]
+    internal static JsonElement TemplatesSuggestions(JsonElement? parameters)
+    {
+        var index = EnsureIndexCached(RpcHelpers.RequireEnvironment())
+            ?? throw new InvalidOperationException("Template index not found. Build it first.");
+        return JsonSerializer.SerializeToElement(BuildTemplateSuggestions(index, TryGetString(parameters, "className")));
+    }
+
+    internal static TemplateSuggestionsResult BuildTemplateSuggestions(TemplateIndex index, string? className)
+    {
+        var listTypes = string.IsNullOrWhiteSpace(className);
+        var names = listTypes
+            ? index.Instances.Select(instance => instance.ClassName)
+            : index.Instances
+                .Where(instance => string.Equals(instance.ClassName, className, StringComparison.OrdinalIgnoreCase))
+                .Select(instance => instance.Name);
+        return new TemplateSuggestionsResult
+        {
+            Suggestions = names.Distinct(StringComparer.Ordinal)
+                .Order(listTypes ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase).ToList(),
+        };
+    }
+
     [McpTool("jiangyu_templates_search",
         "Search MENACE game templates by name or type substring. Returns {types, instances, referencedBy}.")]
     [McpParam("query", "string", "Search substring to match against template names. Empty returns the full index.")]
