@@ -42,4 +42,15 @@
     <DefineConstants>$(DefineConstants);JIANGYU_DEV</DefineConstants>
   </PropertyGroup>
 
+  <!--
+    Release builds ship no symbols. The compiler records the PDB path in the DLL's debug directory,
+    and a build path such as /home/<user>/dev/github.com/<org>/<mod>/... both names the build machine
+    and reads as a URL to antivirus URI scanners (Defender's MalUri family flags it). Dev builds keep
+    portable symbols so stack traces carry line numbers.
+  -->
+  <PropertyGroup Condition="'$(JiangyuDev)' != 'true'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
 </Project>
