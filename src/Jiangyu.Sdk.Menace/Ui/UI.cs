@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Il2CppInterop.Runtime;
 using Il2CppMenace.UI;
 using Jiangyu.Sdk;
@@ -46,6 +47,7 @@ public static class UI
         _uxmlResolver = resolver ?? (static (_, _) => null);
 
     /// <summary>Inject the bundled UXML named <paramref name="uxml"/> (from the calling mod's assets) at <paramref name="target"/>.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static UiInjection Inject(UiTarget target, string uxml, Action<VisualElement> bind = null) =>
         Inject(target, ResolveUxml(uxml), bind);
 
@@ -58,6 +60,7 @@ public static class UI
         Register(target, _ => build(), Ignore(bind));
 
     /// <summary>Inject the bundled UXML once per scoped match. <paramref name="bind"/> gets the new element and its scope.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static UiInjection InjectEach(UiTarget target, string uxml, Action<VisualElement, VisualElement> bind = null) =>
         InjectEach(target, ResolveUxml(uxml), bind);
 
@@ -284,13 +287,21 @@ public static class UI
     // first frame whose assembly the loader maps to a mod that owns a UXML of that
     // name, so the mod never names another mod's asset. Resolved eagerly here while
     // the mod is on the stack, since the clone runs later off the loader's driver.
+    //
+    // The walk starts at this method's own caller and neither it nor the public
+    // string overloads may be inlined: a fully optimised JIT (tiering off, or a
+    // host that compiles at full opt on first call) folds a one-line overload into
+    // the mod's method, which moves the mod's frame up by one. A walk that assumed
+    // a fixed depth then started above the only mod frame and resolved nothing.
+    // The SDK's own frames map to no mod, so starting lower costs one failed probe.
+    [MethodImpl(MethodImplOptions.NoInlining)]
     private static VisualTreeAsset ResolveUxml(string name)
     {
         if (string.IsNullOrEmpty(name))
             return null;
 
         const int maxFrames = 16;
-        for (var depth = 2; depth < 2 + maxFrames; depth++)
+        for (var depth = 1; depth < 1 + maxFrames; depth++)
         {
             var method = new StackFrame(depth, needFileInfo: false).GetMethod();
             if (method == null)

@@ -2,6 +2,12 @@
 
 Changes relevant to modders building with Jiangyu, and to players running Jiangyu mods where they can see the difference. Entries are scoped Loader, Compiler, Studio, CLI, MCP or SDK.
 
+## 1.4.6
+
+- (SDK) Fixed UXML injections by name silently injecting nothing on some players' .NET runtimes
+- (SDK) `Units.Move` on the active actor now travels the way a double click does and returns false when no path reaches the tile, instead of stalling the game
+- (Compiler) Release builds of mod code ship without symbols, so no build path is embedded for antivirus URL scanners to flag
+
 ## 1.4.5
 
 - (Compiler) Added `bind=` so descriptions can take numbers directly from item and skill settings, with number and percentage formatting
