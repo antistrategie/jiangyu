@@ -78,7 +78,7 @@ The same rule covers more involved compositions:
 
 The loader sequences mods deterministically:
 
-1. **Bundles load** for every mod, in lexical mod-folder order.
+1. **Bundles load** for every mod, in load order: lexical mod-folder order, with each mod's declared dependencies loaded before it (see [Load order](/reference/manifest#load-order)).
 2. **Clones register** before patches run. A clone deep-copies a vanilla template into a new ID and adds it to the live template registry, so subsequent patches can target that new ID. Clones-before-patches is a hard rule.
 3. **Patches apply** to live templates once the game has materialised the relevant template type. Each patch's directives run in source order, as above.
 4. **Per-type latching**: once a template type has been patched in a session, it's marked applied and skipped on later scene loads.
@@ -96,7 +96,7 @@ The compiler validates everything it can verify offline (bundle assets, addition
 
 ### Conflicts and last-write-wins
 
-When two patches target the same field of the same template, the later application wins. Within one mod, that's source order. Across mods, that's the lexical mod-folder order from step 1.
+When two patches target the same field of the same template, the later application wins. Within one mod, that's source order. Across mods, that's the load order from step 1.
 
 Conflict detection is intentional rather than blocked: shipping a patch that overrides another mod's value is a valid use case (compatibility patches, rebalance overlays). The loader logs every successful application so collisions are visible in `MelonLoader/Logs/` and modders can confirm the final state matches their intent.
 

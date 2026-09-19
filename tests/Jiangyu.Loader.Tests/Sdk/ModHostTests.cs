@@ -275,6 +275,26 @@ public class ModHostTests
         }
     }
 
+    private sealed class InitOrderSystem(List<string> log) : JiangyuSystem
+    {
+        public override void OnInit() => log.Add(Context.ModId);
+    }
+
+    // The loader adopts every mod's systems in load-plan order and then runs InitAll once,
+    // so a mod's OnInit runs after the OnInit of every mod adopted before it.
+    [Fact]
+    public void InitAll_runs_mods_in_the_order_they_were_adopted()
+    {
+        var host = NewHost(out _);
+        var inits = new List<string>();
+        host.Adopt("base", new InitOrderSystem(inits));
+        host.Adopt("addon", new InitOrderSystem(inits));
+
+        host.InitAll();
+
+        Assert.Equal(["base", "addon"], inits);
+    }
+
     [Fact]
     public void Register_discovers_concrete_systems()
     {

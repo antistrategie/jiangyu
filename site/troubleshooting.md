@@ -17,7 +17,7 @@ Most issues fall out of one of those two logs. The rest of this page covers the 
 
 ## My mod doesn't load
 
-Open `MelonLoader/Latest.log` and search for your mod's name. The loader logs a discovery line per mod under `Mods/`. If your mod isn't there, it wasn't discovered. If it's there but blocked, the block reason is on the next line.
+Open `MelonLoader/Latest.log` and search for your mod's name. The loader logs a line per mod that loads. If your mod has no such line, it was either blocked or never discovered, and a `Skipping mod` line carries the block reason.
 
 Common causes:
 
@@ -27,6 +27,13 @@ Common causes:
 - **Manifest has no `name`.** Required field. Without it the loader can't identify the mod.
 - **Two mod folders share the same `name`.** Both copies are blocked. The error names every duplicate location. Rename one.
 - **A required dependency isn't installed.** `depends: ["SomeMod"]` blocks your mod when `SomeMod` isn't in `Mods/`. The literal name `Jiangyu` always satisfies because it's the loader itself.
+- **A required dependency is installed but blocked.** The reason reads `requires SomeMod, which is blocked`. Fix `SomeMod` first: its own block reason is logged beside yours.
+- **Your dependencies form a cycle.** Two mods that require each other are both blocked, with `dependency cycle with` naming the other. Make one side an `optionalDepends` entry, or drop it.
+- **The manifest `name` is `Jiangyu`.** That name is reserved for the loader. Rename the mod.
+
+## My mods load in the wrong order
+
+Search the log for `Load order:`. Each line names a mod and an entry the loader could not honour: an optional dependency that is installed but blocked or outside its version constraint, an entry ignored because honouring it would form a cycle, or an entry that names the mod itself. Without such a line, the order is folder order with dependencies pulled ahead, as [Load order](/reference/manifest#load-order) describes.
 
 ## My mod loaded but my replacement doesn't show up
 

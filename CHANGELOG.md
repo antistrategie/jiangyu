@@ -6,6 +6,9 @@ Changes relevant to modders building with Jiangyu, and to players running Jiangy
 
 - (SDK) Fixed UXML injections by name silently injecting nothing on some players' .NET runtimes
 - (SDK) `Units.Move` on the active actor now travels the way a double click does and returns false when no path reaches the tile, instead of stalling the game
+- (Loader) A mod now loads after the mods it depends on, whatever their folder names. A dependency pulled ahead also passes the unrelated mods between them, which can change which of two mods wins a shared override
+- (Loader) A mod is now blocked when a dependency is itself blocked or when required dependencies form a cycle, and the manifest name `Jiangyu` is reserved for the loader
+- (Loader) Added `optionalDepends` to the manifest: the listed mods load first when they load and meet the constraint, and their absence never blocks
 - (Compiler) Release builds of mod code ship without symbols, so no build path is embedded for antivirus URL scanners to flag
 
 ## 1.4.5

@@ -18,8 +18,20 @@ public sealed class ModManifest
     [JsonPropertyName("description")]
     public string? Description { get; set; }
 
+    /// <summary>
+    /// Mods this one needs. Each loads before this mod. One that is absent, blocked, or
+    /// outside its version constraint blocks this mod.
+    /// </summary>
     [JsonPropertyName("depends")]
     public List<string>? Depends { get; set; }
+
+    /// <summary>
+    /// Mods this one loads after when they are installed. Same grammar as
+    /// <see cref="Depends"/>. One that is absent, blocked, or outside its version
+    /// constraint is left out of the ordering and never blocks this mod.
+    /// </summary>
+    [JsonPropertyName("optionalDepends")]
+    public List<string>? OptionalDepends { get; set; }
 
     /// <summary>
     /// Mods this one refuses to load alongside. Same grammar as <see cref="Depends"/>:

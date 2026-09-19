@@ -18,7 +18,7 @@ namespace Jiangyu.Loader.Tests;
 public class TemplatePatchCatalogAliasTests
 {
     private static DiscoveredMod Mod(string name) =>
-        new(name, "", null, null, "", "", "", new List<string>(), new List<ManifestDependency>(), new List<ManifestDependency>());
+        new(name, "", null, null, "", "", "", new List<string>(), new List<ManifestDependency>(), new List<ManifestDependency>(), new List<ManifestDependency>());
 
     private static CompiledTemplateSetOperation Set(string field, int value) => new()
     {

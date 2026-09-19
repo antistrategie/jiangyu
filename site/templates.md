@@ -96,7 +96,7 @@ Indexes are zero-based. `append` doesn't take an `index=` property, so use `inse
 
 ## Composition across installed mods
 
-The loader merges patches from all installed mods before applying. Mods load in lexical folder-name order.
+The loader merges patches from all installed mods before applying. Mods load in lexical folder-name order, with each mod's declared dependencies loaded before it (see [Load order](/reference/manifest#load-order)).
 
 - **`set` dedups by field path.** Two installed mods setting the same field on the same template: later-loaded mod wins, earlier is dropped, and the loader logs an `Override template patch ...` warning naming both mods.
 - **`append`, `insert`, `remove`, `clear` accumulate.** No deduplication, and all ops apply in load order. Three mods each appending a perk to the same tree leave three perks added.

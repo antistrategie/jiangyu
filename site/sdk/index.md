@@ -82,6 +82,8 @@ public sealed class TradeSystem : JiangyuSystem { /* ... */ }
 
 A dependency that is not a system of the same mod is ignored with a warning, as is a cycle (its members fall back to the name order). The analyzer flags both in the IDE before you run (`JIA010`, `JIA011`), along with a system the loader cannot construct because it has no parameterless constructor (`JIA012`).
 
+Across mods, initialisation follows the [load order](/reference/manifest#load-order): every system of a mod your manifest lists in `depends`, or in an `optionalDepends` entry the load order honours, has run `OnInit` before yours.
+
 ## The mod API
 
 `Context` is the mod's handle on the loader's services. A `[JiangyuType]` handler with no `Context` of its own reaches the same services through `ModContext.For(this)`.

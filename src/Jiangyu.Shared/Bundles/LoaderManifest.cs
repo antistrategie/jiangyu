@@ -23,6 +23,9 @@ public sealed class LoaderManifest
     [JsonPropertyName("depends")]
     public List<string>? Depends { get; set; }
 
+    [JsonPropertyName("optionalDepends")]
+    public List<string>? OptionalDepends { get; set; }
+
     [JsonPropertyName("conflicts")]
     public List<string>? Conflicts { get; set; }
 

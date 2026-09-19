@@ -43,16 +43,24 @@ public class ModManifestTests
             Author = "Test Author",
             Description = "A test mod",
             Depends = ["Jiangyu >= 1.0.0", "OtherMod >= 2.0"],
+            OptionalDepends = ["WeaponPack >= 2.0.0"],
+            Conflicts = ["IncompatibleMod"],
         };
 
         var json = original.ToJson();
         var restored = ModManifest.FromJson(json);
+        var loaded = LoaderManifest.FromJson(json)!;
 
         Assert.Equal(original.Name, restored.Name);
         Assert.Equal(original.Version, restored.Version);
         Assert.Equal(original.Author, restored.Author);
         Assert.Equal(original.Description, restored.Description);
         Assert.Equal(original.Depends, restored.Depends);
+        Assert.Equal(original.OptionalDepends, restored.OptionalDepends);
+        Assert.Equal(original.Conflicts, restored.Conflicts);
+        Assert.Equal(original.Depends, loaded.Depends);
+        Assert.Equal(original.OptionalDepends, loaded.OptionalDepends);
+        Assert.Equal(original.Conflicts, loaded.Conflicts);
     }
 
     [Fact]

@@ -78,6 +78,9 @@ internal sealed class BundleReplacementCatalog
             log.Error($"Skipping mod '{blockedMod.DisplayName}' [{blockedMod.RelativeDirectoryPath}]: {blockedMod.Reason}");
         }
 
+        foreach (var warning in plan.Warnings)
+            log.Warning($"Load order: {warning}");
+
         foreach (var mod in plan.LoadableMods)
         {
             loadableModCount++;
