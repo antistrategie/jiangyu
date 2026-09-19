@@ -883,4 +883,46 @@ public class TemplateTypeCatalogTests
         Assert.NotNull(type);
         Assert.False(TemplateTypeCatalog.IsInPlaceEditableStruct(type!));
     }
+
+    [Fact]
+    public void IsInFamily_ReadsAStrippedInterfaceFromTheSupplement_AndCountsADescendant()
+    {
+        // FixtureStrippedInterface is a plain class, as an Il2Cpp interface wrapper is,
+        // so managed assignability sees nothing. The supplement records the implementer,
+        // and a subclass of it belongs too, though the leaf list would prune the parent.
+        var supplement = new Il2CppMetadataSupplement
+        {
+            InterfaceImpls =
+            {
+                new InterfaceImplementation
+                {
+                    ConcreteFullName = typeof(FixtureStrippedImpl).FullName!,
+                    InterfaceFullName = typeof(FixtureStrippedInterface).FullName!,
+                },
+            },
+        };
+        using var catalog = LoadWithSupplement(supplement);
+        // The catalogue's own Type instances (its metadata load context), not the test
+        // assembly's runtime ones.
+        var iface = catalog.ResolveType("FixtureStrippedInterface", out _, out _)!;
+        var impl = catalog.ResolveType("FixtureStrippedImpl", out _, out _)!;
+        var derived = catalog.ResolveType("FixtureStrippedImplDerived", out _, out _)!;
+        var unrelated = catalog.ResolveType("FixtureShapeRoot", out _, out _)!;
+
+        Assert.True(catalog.IsInFamily(iface, impl));
+        Assert.True(catalog.IsInFamily(iface, derived));
+        Assert.False(catalog.IsInFamily(iface, unrelated));
+        Assert.Equal(["FixtureStrippedImplDerived"], catalog.EnumerateConcreteSubtypes(iface).Select(t => t.Name));
+    }
+
+    [Fact]
+    public void IsInFamily_SeesNothingWithoutTheSupplement()
+    {
+        using var catalog = Load();
+        var iface = catalog.ResolveType("FixtureStrippedInterface", out _, out _)!;
+        var impl = catalog.ResolveType("FixtureStrippedImpl", out _, out _)!;
+
+        Assert.False(catalog.IsInFamily(iface, impl));
+        Assert.Empty(catalog.EnumerateConcreteSubtypes(iface));
+    }
 }

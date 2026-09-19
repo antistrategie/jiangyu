@@ -139,12 +139,12 @@ public static class TemplateCatalogValidator
             if (string.IsNullOrWhiteSpace(node.TemplateType))
                 continue;
 
-            var resolvedType = catalog.ResolveType(node.TemplateType, out _, out var typeError);
+            var resolvedType = catalog.ResolveType(node.TemplateType, out var nodeCandidates, out var typeError);
             if (resolvedType == null)
             {
                 document.Errors.Add(new KdlEditorError
                 {
-                    Message = typeError ?? $"Unknown template type '{node.TemplateType}'.",
+                    Message = DescribeTypeError(node.TemplateType, nodeCandidates, typeError),
                     Line = node.Line,
                 });
                 continue;
@@ -212,9 +212,7 @@ public static class TemplateCatalogValidator
     // the full name, which the loader resolves exactly, so two types sharing a short name
     // stay apart.
     private static string StampName(Type declaredType, TemplateTypeCatalog catalog)
-        => catalog.ResolveType(declaredType.Name, out _, out _) == declaredType
-            ? declaredType.Name
-            : declaredType.FullName ?? declaredType.Name;
+        => catalog.ResolvableName(declaredType);
 
     /// <summary>
     /// Resolve the source ConversationTemplate's Roles list for an
@@ -252,10 +250,10 @@ public static class TemplateCatalogValidator
         var templateType = patch.TemplateType ?? "EntityTemplate";
         var label = $"{templateType}:{patch.TemplateId}";
 
-        var type = catalog.ResolveType(templateType, out _, out var typeError);
+        var type = catalog.ResolveType(templateType, out var patchCandidates, out var typeError);
         if (type == null)
         {
-            log.Error($"Template patch '{label}' — {typeError ?? $"unknown template type '{templateType}'."}");
+            log.Error($"Template patch '{label}' — {DescribeTypeError(templateType, patchCandidates, typeError)}");
             return 1;
         }
 
@@ -281,14 +279,21 @@ public static class TemplateCatalogValidator
         if (string.IsNullOrWhiteSpace(templateType)) return 0;
 
         var label = $"{templateType}:{clone.CloneId}";
-        var type = catalog.ResolveType(templateType, out _, out var typeError);
+        var type = catalog.ResolveType(templateType, out var cloneCandidates, out var typeError);
         if (type == null)
         {
-            log.Error($"Template clone '{label}' — {typeError ?? $"unknown template type '{templateType}'."}");
+            log.Error($"Template clone '{label}' — {DescribeTypeError(templateType, cloneCandidates, typeError)}");
             return 1;
         }
         return 0;
     }
+
+    // The resolver's error, with the candidates' full names when a short name is
+    // ambiguous, so the modder can copy the one they mean.
+    private static string DescribeTypeError(string typeName, IReadOnlyList<Type> candidates, string? error)
+        => candidates.Count > 0
+            ? $"{error ?? $"type name '{typeName}' is ambiguous."} Candidates: {string.Join(", ", candidates.Select(candidate => candidate.FullName))}. Write the full name."
+            : error ?? $"unknown template type '{typeName}'.";
 
     private static int ValidateOperation(
         CompiledTemplateSetOperation op,
@@ -558,13 +563,37 @@ public static class TemplateCatalogValidator
                 reportError("bind= is only supported on entries in a localised string's m_Placeholders array.");
                 return 1;
             }
-            var source = catalog.ResolveType(binding.Source.TemplateType!, out _, out _);
+            // A short name the game holds twice means the one twin that is a template
+            // type. The member query below walks the source by its full name, and the
+            // compiled binding carries the name the loader resolves without a twin.
+            var authoredSource = binding.Source.TemplateType!;
+            var source = catalog.ResolveType(authoredSource, out var sourceCandidates, out var sourceError);
+            if (source == null && sourceCandidates.Count > 0)
+            {
+                var templateSources = sourceCandidates.Where(TemplateTypeCatalog.IsTemplateReferenceTarget).ToList();
+                if (templateSources.Count == 1)
+                {
+                    source = templateSources[0];
+                }
+                else if (templateSources.Count == 0)
+                {
+                    reportError(
+                        $"bind= source '{authoredSource}' is not a template type. "
+                        + $"Candidates: {string.Join(", ", sourceCandidates.Select(candidate => candidate.FullName))}.");
+                    return 1;
+                }
+                else
+                {
+                    reportError($"bind= source: {DescribeTypeError(authoredSource, templateSources, sourceError)}");
+                    return 1;
+                }
+            }
             if (source == null || !TemplateTypeCatalog.IsTemplateReferenceTarget(source))
             {
-                reportError($"bind= source '{binding.Source.TemplateType}' is not a template type.");
+                reportError($"bind= source '{authoredSource}' is not a template type.");
                 return 1;
             }
-            var prefix = binding.Source.TemplateType!;
+            var prefix = source.FullName ?? authoredSource;
             QueryResult? field = null;
             foreach (var segment in binding.Path.Split('.'))
             {
@@ -576,6 +605,8 @@ public static class TemplateCatalogValidator
                     return 1;
                 }
             }
+            if (mutateHashableIds)
+                binding.Source.TemplateType = StampName(source, catalog);
             if (field?.Kind == QueryResultKind.Error
                 || field?.PatchScalarKind is not (CompiledTemplateValueKind.Byte or CompiledTemplateValueKind.Int32 or CompiledTemplateValueKind.Single))
             {
@@ -644,8 +675,37 @@ public static class TemplateCatalogValidator
                 var refPayload = op.Value.Reference;
                 if (refPayload?.TemplateType is { } explicitType)
                 {
-                    var resolved = catalog.ResolveType(explicitType, out _, out _);
-                    if (resolved is null || !declaredType!.IsAssignableFrom(resolved))
+                    // A short name shared with a class outside the field's family means the
+                    // one candidate assignable to the declared type.
+                    var resolved = catalog.ResolveType(explicitType, out var refCandidates, out var refError);
+                    if (resolved is null && refCandidates.Count > 0)
+                    {
+                        var assignable = refCandidates.Where(candidate => declaredType!.IsAssignableFrom(candidate)).ToList();
+                        if (assignable.Count == 1)
+                        {
+                            resolved = assignable[0];
+                        }
+                        else if (assignable.Count == 0)
+                        {
+                            reportError(
+                                $"ref=\"{explicitType}\" is not assignable to {catalog.FriendlyName(declaredType!)}. "
+                                + $"Candidates: {string.Join(", ", refCandidates.Select(candidate => candidate.FullName))}.");
+                            return 1;
+                        }
+                        else
+                        {
+                            reportError(
+                                $"ref=\"{explicitType}\" is ambiguous for {catalog.FriendlyName(declaredType!)}. "
+                                + $"Candidates: {string.Join(", ", assignable.Select(candidate => candidate.FullName))}. Write the full name.");
+                            return 1;
+                        }
+                    }
+                    if (resolved is null)
+                    {
+                        reportError($"ref=\"{explicitType}\": {refError ?? "unknown type."}");
+                        return 1;
+                    }
+                    if (!declaredType!.IsAssignableFrom(resolved))
                     {
                         reportError(
                             $"ref=\"{explicitType}\" is not assignable to "
@@ -1223,16 +1283,21 @@ public static class TemplateCatalogValidator
             var resolved = catalog.ResolveSubtypeHint(elementType, typeName, out var ambiguous);
             if (resolved is null)
             {
-                var ambiguityNote = ambiguous.Count > 0
-                    ? " candidates: " + string.Join(", ", ambiguous)
-                    : string.Empty;
-                reportError(
-                    $"type=\"{typeName}\" is not a subtype of "
-                    + $"{catalog.FriendlyName(elementType)} required by '{FormatFullPath(op)}'.{ambiguityNote}");
+                reportError(ambiguous.Count > 0
+                    ? $"type=\"{typeName}\" is ambiguous within {catalog.FriendlyName(elementType)} required by '{FormatFullPath(op)}'. "
+                        + $"Candidates: {string.Join(", ", ambiguous)}. Write the full name."
+                    : $"type=\"{typeName}\" is not a subtype of {catalog.FriendlyName(elementType)} required by '{FormatFullPath(op)}'.");
                 return 1;
             }
             subtype = resolved;
         }
+
+        // Compile path writes the resolved subtype's full name, as the composite path
+        // does, so the loader's assembly-wide lookup never meets a short-name twin
+        // elsewhere in the game (ItemSlotFilter exists under both SkillFilters and
+        // ItemFilters). Editor-doc validation keeps the modder's spelling.
+        if (mutateHashableIds)
+            construction.TypeName = subtype.FullName ?? subtype.Name;
 
         // Editor-doc normalisation: drop type= when the destination
         // element type is monomorphic (no concrete subclasses besides itself
@@ -1286,6 +1351,7 @@ public static class TemplateCatalogValidator
     {
         var mutateHashableIds = mode == ValidationMode.Compile;
         var clearRedundantTypes = mode == ValidationMode.EditorNormalise;
+        var authoredTypeName = composite.TypeName;
 
         // Mod-defined types (ns:Name, a colon). With the project's code DLLs scanned
         // (the compile path) resolve the [JiangyuType] and validate its fields; without
@@ -1325,7 +1391,7 @@ public static class TemplateCatalogValidator
             {
                 var candidates = catalog.EnumerateConcreteSubtypes(destinationType);
                 var note = candidates.Count > 0
-                    ? " candidates: " + string.Join(", ", candidates.Select(t => t.Name))
+                    ? " Candidates: " + string.Join(", ", candidates.Select(t => t.FullName ?? t.Name)) + "."
                     : string.Empty;
                 reportError(
                     $"inferred value at '{contextPath}' targets polymorphic destination "
@@ -1371,8 +1437,8 @@ public static class TemplateCatalogValidator
             {
                 reportError(
                     $"tagged-string discriminator \"{composite.TypeName}\" at '{contextPath}' "
-                    + $"is ambiguous within {catalog.FriendlyName(destinationType)}; "
-                    + "candidates: " + string.Join(", ", discriminatorAmbiguous));
+                    + $"is ambiguous within {catalog.FriendlyName(destinationType)}. "
+                    + "Candidates: " + string.Join(", ", discriminatorAmbiguous) + ". Write the full name.");
                 return 1;
             }
             // No discriminator-match — fall through to the normal subtype
@@ -1393,12 +1459,10 @@ public static class TemplateCatalogValidator
             type = catalog.ResolveSubtypeHint(destinationType, composite.TypeName, out var ambiguous);
             if (type == null)
             {
-                var note = ambiguous.Count > 0
-                    ? " candidates: " + string.Join(", ", ambiguous)
-                    : string.Empty;
-                reportError(
-                    $"composite type=\"{composite.TypeName}\" is not a subtype of "
-                    + $"{catalog.FriendlyName(destinationType)} required by composite '{contextPath}'.{note}");
+                reportError(ambiguous.Count > 0
+                    ? $"composite type=\"{composite.TypeName}\" is ambiguous within {catalog.FriendlyName(destinationType)} required by composite '{contextPath}'. "
+                        + $"Candidates: {string.Join(", ", ambiguous)}. Write the full name."
+                    : $"composite type=\"{composite.TypeName}\" is not a subtype of {catalog.FriendlyName(destinationType)} required by composite '{contextPath}'.");
                 return 1;
             }
 
@@ -1428,11 +1492,45 @@ public static class TemplateCatalogValidator
         }
         else
         {
-            type = catalog.ResolveType(composite.TypeName, out _, out var typeError);
+            // A destination whose subtypes are plain managed classes (an Odin family
+            // with no ScriptableObject in it) still narrows a short name to its own
+            // family first. Only then does the assembly-wide lookup run, and what it
+            // finds must fit the destination. A catch-all destination never lands here,
+            // since every game class is a reference subtype of it.
+            var familyKnown = destinationType != null;
+            IReadOnlyList<string> familyAmbiguous = [];
+            type = familyKnown
+                ? catalog.ResolveSubtypeHint(destinationType!, composite.TypeName, out familyAmbiguous)
+                : null;
+            if (type == null && familyAmbiguous.Count > 0)
+            {
+                reportError(
+                    $"composite type=\"{composite.TypeName}\" is ambiguous within {catalog.FriendlyName(destinationType!)} required by composite '{contextPath}'. "
+                    + $"Candidates: {string.Join(", ", familyAmbiguous)}. Write the full name.");
+                return 1;
+            }
             if (type == null)
             {
-                reportError(typeError ?? $"unknown composite type '{composite.TypeName}'.");
-                return 1;
+                type = catalog.ResolveType(composite.TypeName, out var compositeCandidates, out var typeError);
+                if (type == null)
+                {
+                    reportError($"composite '{contextPath}': {DescribeTypeError(composite.TypeName, compositeCandidates, typeError)}");
+                    return 1;
+                }
+                // The type must be in the destination's family: assignable to it, or an
+                // implementer the metadata supplement records for a stripped Il2Cpp
+                // interface (itself subclassed or not). A family the catalogue cannot see
+                // at all (a stripped interface with no supplement loaded) judges nothing,
+                // as before: the loader settles it with the game's own metadata.
+                if (familyKnown
+                    && !catalog.IsInFamily(destinationType!, type)
+                    && catalog.EnumerateConcreteSubtypes(destinationType!).Count > 0)
+                {
+                    reportError(
+                        $"composite type=\"{composite.TypeName}\" ({type.FullName}) is not assignable to "
+                        + $"{catalog.FriendlyName(destinationType!)} required by composite '{contextPath}'.");
+                    return 1;
+                }
             }
 
             // Compile path canonicalises TypeName to the FQN so the loader's
@@ -1442,6 +1540,18 @@ public static class TemplateCatalogValidator
             // emit.
             if (mutateHashableIds)
                 composite.TypeName = type.FullName ?? type.Name;
+        }
+
+        // An abstract member cannot be built. Il2Cpp wrappers carry no abstract flag,
+        // so this only ever fires for a managed type the catalogue can read, whichever
+        // of the game-type branches above resolved it (a mod's ns:Name type returned
+        // earlier). The message quotes the spelling the modder wrote.
+        if (destinationType != null && type.IsAbstract)
+        {
+            reportError(
+                $"composite type=\"{authoredTypeName}\" ({type.FullName}) is abstract and cannot be built "
+                + $"for {catalog.FriendlyName(destinationType)} at composite '{contextPath}'.");
+            return 1;
         }
 
         // Editor-doc normalisation: drop type= whenever the bare

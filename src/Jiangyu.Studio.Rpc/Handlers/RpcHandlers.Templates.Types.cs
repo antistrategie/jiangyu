@@ -166,7 +166,8 @@ public static partial class RpcHandlers
         [JsonPropertyName("isReferenceTypePolymorphic")]
         public bool? IsReferenceTypePolymorphic { get; set; }
 
-        /// <summary>Concrete subtype short-names the modder can pick when
+        /// <summary>Concrete subtype names the modder can pick (short, or full for a
+        /// subtype whose short name another subtype of the family shares) when
         /// appending to an owned polymorphic-element collection. Populated for
         /// construction-style polymorphic collections only (e.g. EventHandlers
         /// → BaseEventHandlerTemplate); null otherwise so the visual editor
@@ -174,7 +175,8 @@ public static partial class RpcHandlers
         [JsonPropertyName("elementSubtypes")]
         public List<string>? ElementSubtypes { get; set; }
 
-        /// <summary>Concrete subtype short-names the modder can pick when
+        /// <summary>Concrete subtype names the modder can pick (short, or full for a
+        /// subtype whose short name another subtype of the family shares) when
         /// constructing a value for a polymorphic scalar field (declared
         /// type is itself an interface or abstract base, e.g. Odin-routed
         /// <c>Attack.DamageFilterCondition: ITacticalCondition</c>). Drives

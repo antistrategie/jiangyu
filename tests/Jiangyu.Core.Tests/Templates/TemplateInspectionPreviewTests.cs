@@ -205,7 +205,8 @@ public sealed class TemplateInspectionPreviewTests : IDisposable
                                 Kind = CompiledTemplateValueKind.TypeConstruction,
                                 TypeConstruction = new CompiledTemplateComposite
                                 {
-                                    TypeName = "IgnoreDamage",
+                                    // The compiler writes the full name. The preview shows the short one.
+                                    TypeName = "Il2CppMenace.Tactical.Skills.Effects.IgnoreDamage",
                                     Operations =
                                     [
                                         new CompiledTemplateSetOperation

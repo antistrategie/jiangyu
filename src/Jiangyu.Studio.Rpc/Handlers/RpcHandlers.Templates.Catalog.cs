@@ -676,15 +676,30 @@ public static partial class RpcHandlers
 
         var subtypes = catalog.EnumerateConstructibleElementSubtypes(elementType);
         if (subtypes.Count == 0) return null;
-        return [.. subtypes
-            .Select(s => SubtypeName(catalog, s, modId))
-            .OrderBy(n => n, StringComparer.Ordinal)];
+        return SubtypeNames(catalog, subtypes, modId);
     }
 
     // A subtype's type= reference: a mod [JiangyuType] is named modId:Name (the KDL
     // construction reference); a game type keeps its catalog friendly name.
     private static string SubtypeName(TemplateTypeCatalog catalog, Type subtype, string? modId)
         => CodeTypeResolver.QualifiedName(catalog, subtype, modId) ?? catalog.FriendlyName(subtype);
+
+    // The picker's entries, sorted. A subtype whose short name another subtype of the
+    // same family shares is shown by its full name, so the picked entry compiles to one
+    // type. A twin outside the family needs nothing: the compiler resolves the short name
+    // within the family and writes the full name itself.
+    private static List<string> SubtypeNames(TemplateTypeCatalog catalog, IReadOnlyList<Type> subtypes, string? modId)
+    {
+        var named = subtypes.Select(subtype => (Type: subtype, Name: SubtypeName(catalog, subtype, modId))).ToList();
+        var shared = named
+            .GroupBy(entry => entry.Name, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.Ordinal);
+        return [.. named
+            .Select(entry => shared.Contains(entry.Name) ? entry.Type.FullName ?? entry.Name : entry.Name)
+            .OrderBy(name => name, StringComparer.Ordinal)];
+    }
 
     /// <summary>
     /// Concrete subtype choices for a polymorphic scalar field (declared
@@ -719,8 +734,6 @@ public static partial class RpcHandlers
         // have plain-managed-class concrete impls, not ScriptableObjects.
         var subtypes = catalog.EnumerateConcreteSubtypes(memberType);
         if (subtypes.Count == 0) return null;
-        return [.. subtypes
-            .Select(s => SubtypeName(catalog, s, modId))
-            .OrderBy(n => n, StringComparer.Ordinal)];
+        return SubtypeNames(catalog, subtypes, modId);
     }
 }

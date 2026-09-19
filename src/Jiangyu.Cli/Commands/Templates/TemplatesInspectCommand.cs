@@ -325,7 +325,14 @@ public static class TemplatesInspectCommand
             : reference.TemplateType.Trim();
         TemplatePreviewKey key = new(templateType, reference.TemplateId);
 
-        if (previewPlan.TryGetClone(key, out _))
+        // A clone is keyed by its authored type spelling, while a compiled reference to it
+        // may carry the full name, so the short spelling is tried as well.
+        var shortCut = Math.Max(templateType.LastIndexOf('.'), templateType.LastIndexOf('+'));
+        TemplatePreviewKey shortKey = shortCut >= 0 && !templateType.Contains(':')
+            ? new(templateType[(shortCut + 1)..], reference.TemplateId)
+            : key;
+
+        if (previewPlan.TryGetClone(key, out _) || previewPlan.TryGetClone(shortKey, out _))
         {
             return new TemplatePreviewResolvedReference
             {

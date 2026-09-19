@@ -217,6 +217,65 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
         public string? m_Name { get; set; }
     }
 
+    // Twin inside the family: Other.FixtureTwinHandler also extends this base, so a
+    // type= or ref= naming the short name cannot pick one and the compiler must
+    // list both full names.
+    public class FixtureTwinHandler : FixtureBaseDataTemplate
+    {
+        public int TwinField { get; set; }
+    }
+
+    // A family whose members are plain classes: a leaf that implements the
+    // interface, a root that does not, and an abstract member. Composite values on
+    // an interface-typed field resolve against this family.
+    public interface IFixtureShapeFamily
+    {
+        int Sides { get; }
+    }
+
+    public class FixtureShapeRoot
+    {
+        public int Sides { get; set; }
+    }
+
+    public class FixtureShapeLeaf : FixtureShapeRoot, IFixtureShapeFamily
+    {
+    }
+
+    public abstract class FixtureShapeAbstract : IFixtureShapeFamily
+    {
+        public int Sides { get; set; }
+    }
+
+    public class FixtureShapeHolder : Menace.Tools.DataTemplate
+    {
+        public IFixtureShapeFamily? Shape { get; set; }
+        public IFixtureUnseenFamily? Unseen { get; set; }
+    }
+
+    // A stripped interface as Il2Cpp interop presents one: a plain class with no
+    // implements relation in the assembly. Only the metadata supplement records that
+    // FixtureStrippedImpl implements it, and FixtureStrippedImplDerived inherits that.
+    public class FixtureStrippedInterface
+    {
+    }
+
+    public class FixtureStrippedImpl
+    {
+        public int Value { get; set; }
+    }
+
+    public class FixtureStrippedImplDerived : FixtureStrippedImpl
+    {
+    }
+
+    // A family the catalogue cannot see: an interface with no implementer in this
+    // assembly, as a stripped Il2Cpp interface looks without the metadata supplement.
+    // A composite on such a field is not judged, since there is nothing to judge by.
+    public interface IFixtureUnseenFamily
+    {
+    }
+
     // Concrete subtype of FixtureBaseDataTemplate used by the polymorphic-
     // descent validator tests. Carries a unique field so descent into the
     // list element via type=hint can resolve it.
@@ -397,6 +456,22 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Other
     public class FixtureConcreteDerived
     {
         public string? UnrelatedField { get; set; }
+    }
+
+    // Short-name twin of Gameplay.FixtureAoEShapeImpl that does not implement
+    // IFixtureAoEShape. Mirrors the production ItemSlotFilter pair
+    // (SkillFilters vs ItemFilters): a type= on an ISkillFilter field must
+    // resolve to the family's own twin and compile to its full name.
+    public class FixtureAoEShapeImpl
+    {
+        public int Radius { get; set; }
+    }
+
+    // Twin of Gameplay.FixtureTwinHandler inside the same family (both extend
+    // FixtureBaseDataTemplate), so the short name is ambiguous within it.
+    public class FixtureTwinHandler : Gameplay.FixtureBaseDataTemplate
+    {
+        public int TwinField { get; set; }
     }
 }
 

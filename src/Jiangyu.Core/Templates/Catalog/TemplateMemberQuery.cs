@@ -134,7 +134,7 @@ public static class TemplateMemberQuery
         resolvedType = bestType;
         if (bestType == null && ambiguousCandidates != null)
         {
-            error = lastError + " candidates: " + string.Join(", ", ambiguousCandidates.Select(t => t.FullName));
+            error = lastError + " Candidates: " + string.Join(", ", ambiguousCandidates.Select(t => t.FullName)) + ". Write the full name.";
         }
         return bestLen;
     }

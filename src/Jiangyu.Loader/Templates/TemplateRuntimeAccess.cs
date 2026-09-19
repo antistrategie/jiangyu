@@ -38,11 +38,11 @@ internal static class TemplateRuntimeAccess
     // is not the primary one (Stem.Sound and Stem.SoundVariation are the hot
     // pair: one composite per voice line) hit that walk on every construction.
     //
-    // Only successful resolutions are cached: a name that fails to resolve now
-    // may resolve later once a mod assembly loads, so caching the failure would
-    // freeze a transient miss. Loading a new assembly can also make a
-    // previously unique short name ambiguous, so the cache is dropped whenever
-    // the assembly set grows. AssemblyLoad can fire on any thread, so reads and
+    // The plain cache holds successful resolutions only: a name that fails to
+    // resolve now may resolve later once a mod assembly loads. The narrowed cache
+    // holds failures too, since every cache is dropped whenever the assembly set
+    // grows, which is also what keeps a previously unique short name from being
+    // served after it turns ambiguous. AssemblyLoad can fire on any thread, so reads and
     // writes both take the lock rather than risk tearing the dictionary.
     private static readonly Dictionary<string, Type> ResolvedTypeCache = new(StringComparer.Ordinal);
     private static readonly object ResolvedTypeCacheGate = new();
@@ -64,7 +64,55 @@ internal static class TemplateRuntimeAccess
     private static void OnAssemblyLoaded(object sender, AssemblyLoadEventArgs args)
     {
         lock (ResolvedTypeCacheGate)
+        {
             ResolvedTypeCache.Clear();
+            NarrowedTypeCache.Clear();
+            CanonicalNames.Clear();
+            CacheGeneration++;
+        }
+    }
+
+    // Bumped by every clear. A resolve notes the generation before it walks the
+    // assemblies and only caches when it is unchanged, since the walk itself can load an
+    // assembly and a result computed against the old set would outlive the clear.
+    private static int CacheGeneration;
+
+    private static int CurrentGeneration()
+    {
+        lock (ResolvedTypeCacheGate)
+            return CacheGeneration;
+    }
+
+    // Narrowed matches by (name, destination full name): a name alone does not identify
+    // one, so they never share the plain cache. A lookup that settles on nothing is
+    // remembered too, with its error, since it costs a walk of every loaded assembly and
+    // an older compiled mod repeats it on every pass.
+    private static readonly Dictionary<(string Name, string Target), (Type Type, string Error)> NarrowedTypeCache = new();
+
+    private static bool TryGetNarrowedType((string Name, string Target) key, out Type cached, out string error)
+    {
+        lock (ResolvedTypeCacheGate)
+        {
+            if (NarrowedTypeCache.TryGetValue(key, out var entry))
+            {
+                cached = entry.Type;
+                error = entry.Error;
+                return true;
+            }
+        }
+        cached = null;
+        error = null;
+        return false;
+    }
+
+    private static Type CacheNarrowedType((string Name, string Target) key, Type resolved, string error, int generation)
+    {
+        lock (ResolvedTypeCacheGate)
+        {
+            if (CacheGeneration == generation)
+                NarrowedTypeCache[key] = (resolved, error);
+        }
+        return resolved;
     }
 
     private static bool TryGetCachedType(string templateTypeName, out Type cached)
@@ -73,10 +121,13 @@ internal static class TemplateRuntimeAccess
             return ResolvedTypeCache.TryGetValue(templateTypeName, out cached);
     }
 
-    private static Type CacheResolvedType(string templateTypeName, Type resolved)
+    private static Type CacheResolvedType(string templateTypeName, Type resolved, int generation)
     {
         lock (ResolvedTypeCacheGate)
-            ResolvedTypeCache[templateTypeName] = resolved;
+        {
+            if (CacheGeneration == generation)
+                ResolvedTypeCache[templateTypeName] = resolved;
+        }
         return resolved;
     }
 
@@ -273,15 +324,23 @@ internal static class TemplateRuntimeAccess
     {
         if (string.IsNullOrEmpty(templateTypeName) || templateTypeName.Contains(':'))
             return templateTypeName;
-        if (CanonicalNames.TryGetValue(templateTypeName, out var canonical))
-            return canonical;
+        lock (ResolvedTypeCacheGate)
+        {
+            if (CanonicalNames.TryGetValue(templateTypeName, out var known))
+                return known;
+        }
+        var generation = CurrentGeneration();
         var type = ResolveTemplateType(templateTypeName, out _);
         if (type == null)
             return templateTypeName;
-        canonical = string.Equals(type.Name, templateTypeName, StringComparison.Ordinal) || ResolveTemplateType(type.Name, out _) == type
+        var canonical = string.Equals(type.Name, templateTypeName, StringComparison.Ordinal) || ResolveTemplateType(type.Name, out _) == type
             ? type.Name
             : type.FullName ?? templateTypeName;
-        CanonicalNames[templateTypeName] = canonical;
+        lock (ResolvedTypeCacheGate)
+        {
+            if (CacheGeneration == generation)
+                CanonicalNames[templateTypeName] = canonical;
+        }
         return canonical;
     }
 
@@ -456,6 +515,19 @@ internal static class TemplateRuntimeAccess
     /// listing candidates.
     /// </summary>
     public static Type ResolveTemplateType(string templateTypeName, out string error)
+        => ResolveTemplateType(templateTypeName, null, out error);
+
+    /// <summary>
+    /// As <see cref="ResolveTemplateType(string, out string)"/>, with the destination the
+    /// type is written to settling a name the game holds twice: when the name's own match
+    /// is not assignable to <paramref name="assignableTo"/>, or the name is ambiguous, the
+    /// one match in any loaded assembly that is assignable is the type meant. The game has
+    /// short-name twins (SkillFilters.ItemSlotFilter and ItemFilters.ItemSlotFilter, and
+    /// Stem.ID in another assembly than AI.ID), and a mod compiled before the compiler
+    /// wrote full names still names the field's own twin this way. Returns the plain match
+    /// when nothing fits, so the caller reports the assignability failure against it.
+    /// </summary>
+    public static Type ResolveTemplateType(string templateTypeName, Type assignableTo, out string error)
     {
         error = null;
 
@@ -466,15 +538,140 @@ internal static class TemplateRuntimeAccess
             return injected;
 
         EnsureAssemblyLoadHook();
-        if (TryGetCachedType(templateTypeName, out var memoised))
-            return memoised;
+        if (assignableTo == null)
+        {
+            if (TryGetCachedType(templateTypeName, out var memoised))
+                return memoised;
+            var generation = CurrentGeneration();
+            var unique = FindUnique(templateTypeName, out error);
+            return unique != null ? CacheResolvedType(templateTypeName, unique, generation) : null;
+        }
+
+        var key = (templateTypeName, assignableTo.FullName ?? assignableTo.Name);
+        if (TryGetNarrowedType(key, out var narrowedMemoised, out var memoisedError))
+        {
+            error = memoisedError;
+            return narrowedMemoised;
+        }
+
+        var narrowedGeneration = CurrentGeneration();
+        var plain = ResolveTemplateType(templateTypeName, out error);
+        if (plain != null && Il2CppTypeAssignability.IsAssignableFromIl2Cpp(assignableTo, plain))
+            return CacheNarrowedType(key, plain, null, narrowedGeneration);
+
+        // The game's own matches are weighed first, so a mod class named after a game
+        // type (its own address is ns:Name) cannot make a game type ambiguous for the
+        // destination. Several fitting candidates are an error that names them.
+        var narrowed = NarrowByAssignability(
+            MatchesEverywhere(templateTypeName), assignableTo,
+            Il2CppTypeAssignability.IsAssignableFromIl2Cpp, candidate => IsGameAssembly(candidate.Assembly),
+            out var competing);
+        if (narrowed != null)
+        {
+            error = null;
+            return CacheNarrowedType(key, narrowed, null, narrowedGeneration);
+        }
+        if (competing.Count > 1)
+        {
+            error = $"template type name '{templateTypeName}' is ambiguous for {assignableTo.FullName}. Candidates: {string.Join(", ", competing.Select(t => t.FullName))}. Write the full name.";
+            return CacheNarrowedType(key, null, error, narrowedGeneration);
+        }
+        // Nothing fits. The plain match, when there is one, goes back so the caller
+        // reports the assignability failure against it, and is remembered as such.
+        return CacheNarrowedType(key, plain, plain == null ? error : null, narrowedGeneration);
+    }
+
+    // Every non-abstract type a loaded assembly holds under the name, by full or short
+    // name.
+    private static List<Type> MatchesEverywhere(string templateTypeName)
+    {
+        var matches = new List<Type>();
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies().Where(asm => !asm.IsDynamic))
+        {
+            foreach (var type in SafeTypes(assembly))
+            {
+                if (type.IsAbstract || (type.FullName != templateTypeName && type.Name != templateTypeName))
+                    continue;
+                if (!matches.Contains(type))
+                    matches.Add(type);
+            }
+        }
+        return matches;
+    }
+
+    private static Type[] SafeTypes(Assembly assembly)
+    {
+        try
+        {
+            return assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            return ex.Types.Where(t => t != null).ToArray();
+        }
+        catch
+        {
+            return Array.Empty<Type>();
+        }
+    }
+
+    // The game's own assemblies: everything loaded from the directory the interop
+    // wrappers live in. A mod's code assembly (compiled in memory, or loaded from Mods)
+    // never outranks them for a name, so a mod that happens to declare a class named like
+    // a game type cannot make another mod's template type ambiguous.
+    private static bool IsGameAssembly(Assembly assembly)
+    {
+        if (assembly.IsDynamic || string.IsNullOrEmpty(assembly.Location))
+            return false;
+        var gameDir = GameAssembliesDirectory.Value;
+        if (gameDir == null)
+        {
+            // No directory to compare against (the wrappers came in from memory): the
+            // assembly names the interop and Unity wrappers carry stand in.
+            var name = assembly.GetName().Name ?? string.Empty;
+            return name.StartsWith("Assembly-CSharp", StringComparison.Ordinal)
+                || name.StartsWith("Il2Cpp", StringComparison.Ordinal)
+                || name.StartsWith("Unity", StringComparison.Ordinal);
+        }
+        var dir = Path.GetDirectoryName(assembly.Location);
+        return dir != null && string.Equals(Path.GetFullPath(dir), gameDir, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static readonly Lazy<string> GameAssembliesDirectory = new(() =>
+    {
+        var location = typeof(DataTemplateLoader).Assembly.Location;
+        if (string.IsNullOrEmpty(location))
+            return null;
+        var dir = Path.GetDirectoryName(location);
+        return dir == null ? null : Path.GetFullPath(dir);
+    });
+
+    // The one candidate assignable to the target, weighing the game's own candidates
+    // first, or null when none fits or several do. <paramref name="competing"/> is the
+    // pool the decision was made in, so a caller can name the candidates that tied.
+    internal static Type NarrowByAssignability(
+        IReadOnlyList<Type> candidates, Type target,
+        Func<Type, Type, bool> assignable, Func<Type, bool> isGame,
+        out IReadOnlyList<Type> competing)
+    {
+        var fitting = candidates.Where(candidate => assignable(target, candidate)).ToList();
+        var fromGame = fitting.Where(isGame).ToList();
+        competing = fromGame.Count > 0 ? fromGame : fitting;
+        return competing.Count == 1 ? competing[0] : null;
+    }
+
+    // The one type a template type name denotes, or null with <paramref name="error"/>
+    // saying the name is ambiguous (naming the candidates) or matches nothing.
+    private static Type FindUnique(string templateTypeName, out string error)
+    {
+        error = null;
 
         var primaryMatch = ResolveInAssembly(typeof(DataTemplateLoader).Assembly, templateTypeName, out var primaryAmbiguous, out var primaryCandidates);
         if (primaryMatch != null)
-            return CacheResolvedType(templateTypeName, primaryMatch);
+            return primaryMatch;
         if (primaryAmbiguous)
         {
-            error = $"template type name '{templateTypeName}' is ambiguous; candidates: {string.Join(", ", primaryCandidates)}.";
+            error = $"template type name '{templateTypeName}' is ambiguous. Candidates: {string.Join(", ", primaryCandidates.Select(t => t.FullName))}. Write the full name.";
             return null;
         }
 
@@ -500,12 +697,15 @@ internal static class TemplateRuntimeAccess
                 fallbackMatches.AddRange(asmCandidates);
         }
 
-        if (fallbackMatches.Count == 1)
-            return CacheResolvedType(templateTypeName, fallbackMatches[0]);
-        if (fallbackMatches.Count > 1)
+        var distinct = fallbackMatches.Distinct().ToList();
+        var fromGame = distinct.Where(t => IsGameAssembly(t.Assembly)).ToList();
+        if (fromGame.Count > 0)
+            distinct = fromGame;
+        if (distinct.Count == 1)
+            return distinct[0];
+        if (distinct.Count > 1)
         {
-            var candidates = string.Join(", ", fallbackMatches.Select(t => t.FullName).Distinct());
-            error = $"template type name '{templateTypeName}' is ambiguous across loaded assemblies; candidates: {candidates}.";
+            error = $"template type name '{templateTypeName}' is ambiguous across loaded assemblies. Candidates: {string.Join(", ", distinct.Select(t => t.FullName))}. Write the full name.";
             return null;
         }
 

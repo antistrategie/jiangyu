@@ -7,8 +7,9 @@ namespace Il2CppMenace.Conversations
     // whose namespace + name produce the exact FQN we register lets the
     // FullName-keyed branch be exercised in a CLR-only test, no IL2CPP
     // runtime needed. The real Il2CppInterop-generated ConversationTemplate
-    // wrapper is in Assembly-CSharp.dll; the test process never loads it,
-    // so there's no CLR-level collision.
+    // wrapper is in Assembly-CSharp.dll. The game-assemblies collection may
+    // load that into the process, but this fixture binds by typeof, so
+    // there's no CLR-level collision.
     public class ConversationTemplate
     {
     }

@@ -133,6 +133,22 @@ public static class TemplateInspectionPreviewApplier
         };
     }
 
+    // The compiled type name is fully qualified where the compiler resolved it. The
+    // preview keeps showing the short spelling it showed before the compiler wrote
+    // full names: the segment after the last '.' or '+', so a nested type shows its
+    // own name. A mod's ns:Name stays whole, and so does a spelling whose last
+    // segment carries generic or assembly-qualified markers.
+    internal static string? ShortTypeName(string? typeName)
+    {
+        if (string.IsNullOrEmpty(typeName) || typeName.Contains(':'))
+            return typeName;
+        var cut = Math.Max(typeName.LastIndexOf('.'), typeName.LastIndexOf('+'));
+        if (cut < 0)
+            return typeName;
+        var last = typeName[(cut + 1)..];
+        return last.Contains('`') || last.Contains('[') || last.Contains(',') ? typeName : last;
+    }
+
     /// <summary>
     /// Adapter that lets <see cref="TemplateOperationWalker"/> mutate an
     /// <c>InspectedFieldNode</c> tree. Node identity is the tree node itself;
@@ -467,7 +483,7 @@ public static class TemplateInspectionPreviewApplier
                     Name = name,
                     Kind = "string",
                     FieldTypeName = "String",
-                    Value = $"bind {value.NumericPlaceholder!.Source.TemplateType}/{value.NumericPlaceholder.Source.TemplateId} "
+                    Value = $"bind {ShortTypeName(value.NumericPlaceholder!.Source.TemplateType)}/{value.NumericPlaceholder.Source.TemplateId} "
                         + $"{value.NumericPlaceholder.Path} ({value.NumericPlaceholder.Format})",
                 },
                 CompiledTemplateValueKind.Enum => new InspectedFieldNode
@@ -484,7 +500,7 @@ public static class TemplateInspectionPreviewApplier
                 // the constructed subtype so an indexed overwrite
                 // (set "Field" index=N type="X") shows the new handler
                 // rather than the element it replaced.
-                CompiledTemplateValueKind.TypeConstruction => BuildCompositeNode(name, value.TypeConstruction?.TypeName ?? fieldTypeName, value.TypeConstruction),
+                CompiledTemplateValueKind.TypeConstruction => BuildCompositeNode(name, ShortTypeName(value.TypeConstruction?.TypeName) ?? fieldTypeName, value.TypeConstruction),
                 _ => throw new InvalidOperationException($"Unsupported template preview value kind '{value.Kind}'."),
             };
         }
@@ -507,13 +523,13 @@ public static class TemplateInspectionPreviewApplier
             {
                 Name = name,
                 Kind = "reference",
-                FieldTypeName = fieldTypeName ?? resolved.TemplateType,
+                FieldTypeName = fieldTypeName ?? ShortTypeName(resolved.TemplateType),
                 Reference = new InspectedReference
                 {
                     FileId = resolved.Collection is null ? null : 0,
                     PathId = resolved.PathId,
                     Name = resolved.TemplateId,
-                    ClassName = resolved.TemplateType,
+                    ClassName = ShortTypeName(resolved.TemplateType) ?? resolved.TemplateType,
                 },
             };
         }
@@ -544,7 +560,7 @@ public static class TemplateInspectionPreviewApplier
             {
                 Name = name,
                 Kind = "object",
-                FieldTypeName = fieldTypeName ?? composite.TypeName,
+                FieldTypeName = fieldTypeName ?? ShortTypeName(composite.TypeName),
                 Fields =
                 [
                     .. setOps.Select(op => BuildNode(op.FieldPath, null, null, op.Value!)),

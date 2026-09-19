@@ -602,28 +602,69 @@ public sealed class TemplateTypeCatalog : IDisposable
             // Look up both shapes — the wrapped one is the one we expect to
             // find at runtime, the unwrapped one is a fallback for any
             // Cpp2IL output that happens to land without the prefix.
-            var ifaceShortNames = new[]
+            // A subclass of a recorded implementer implements the interface too. The
+            // extractor records inherited implementations for game types, and for any
+            // it does not an implementer's concrete descendants join the family here,
+            // with the leaf rule applied to them all.
+            foreach (var concrete in SupplementImplementers(baseType))
             {
-                baseType.FullName,
-                baseType.FullName?.StartsWith(Il2CppNamespacePrefix, StringComparison.Ordinal) == true
-                    ? baseType.FullName![Il2CppNamespacePrefix.Length..]
-                    : null,
-            };
-            foreach (var ifaceLookup in ifaceShortNames)
-            {
-                if (string.IsNullOrEmpty(ifaceLookup)) continue;
-                foreach (var concreteFullName in _supplement.GetInterfaceImplementations(ifaceLookup))
+                foreach (var member in new[] { concrete }.Concat(_allTypes.Where(t => t != concrete && !t.IsAbstract && concrete.IsAssignableFrom(t))))
                 {
-                    var concrete = ResolveSupplementName(concreteFullName);
-                    if (concrete is null) continue;
-                    if (!seen.Add(concrete)) continue;
-                    if (HasStrictDescendant(concrete)) continue;
-                    subtypes.Add(concrete);
+                    if (!seen.Add(member)) continue;
+                    if (HasStrictDescendant(member)) continue;
+                    subtypes.Add(member);
                 }
             }
         }
 
         return subtypes;
+    }
+
+    // The types the metadata supplement records as implementing
+    // <paramref name="interfaceType"/>, subclassed or not, looked up under both the
+    // wrapped and the unwrapped spelling of its name. A wrapped name in the "Il2Cpp"
+    // namespace itself (a type with no namespace) unwraps past the dot.
+    private IEnumerable<Type> SupplementImplementers(Type interfaceType)
+    {
+        if (_supplement == null)
+            yield break;
+        var wrapped = interfaceType.FullName;
+        string? unwrapped = null;
+        if (wrapped?.StartsWith(Il2CppNamespacePrefix + ".", StringComparison.Ordinal) == true)
+            unwrapped = wrapped[(Il2CppNamespacePrefix.Length + 1)..];
+        else if (wrapped?.StartsWith(Il2CppNamespacePrefix, StringComparison.Ordinal) == true)
+            unwrapped = wrapped[Il2CppNamespacePrefix.Length..];
+        var lookups = new[] { wrapped, unwrapped };
+        foreach (var lookup in lookups)
+        {
+            if (string.IsNullOrEmpty(lookup)) continue;
+            foreach (var concreteFullName in _supplement.GetInterfaceImplementations(lookup))
+            {
+                var concrete = ResolveSupplementName(concreteFullName);
+                if (concrete is not null)
+                    yield return concrete;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="candidate"/> belongs to <paramref name="baseType"/>'s
+    /// family: assignable to it in managed terms, or an implementer the metadata
+    /// supplement records for a stripped Il2Cpp interface, or a descendant of one.
+    /// Unlike <see cref="EnumerateConcreteSubtypes"/> this does not prune members
+    /// that have descendants of their own, so a concrete implementer that is itself
+    /// subclassed still counts.
+    /// </summary>
+    public bool IsInFamily(Type baseType, Type candidate)
+    {
+        if (baseType.IsAssignableFrom(candidate))
+            return true;
+        foreach (var implementer in SupplementImplementers(baseType))
+        {
+            if (implementer.IsAssignableFrom(candidate))
+                return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -638,9 +679,11 @@ public sealed class TemplateTypeCatalog : IDisposable
         var direct = _allTypes.FirstOrDefault(t => t.FullName == fullName);
         if (direct != null) return direct;
 
-        // Inject the Il2Cpp prefix at the namespace root and retry.
+        // Inject the Il2Cpp prefix at the namespace root and retry. A type with no
+        // namespace lands under the "Il2Cpp" namespace itself, with a dot.
         var prefixed = Il2CppNamespacePrefix + fullName;
-        return _allTypes.FirstOrDefault(t => t.FullName == prefixed);
+        var rooted = Il2CppNamespacePrefix + "." + fullName;
+        return _allTypes.FirstOrDefault(t => t.FullName == prefixed || t.FullName == rooted);
     }
 
     /// <summary>

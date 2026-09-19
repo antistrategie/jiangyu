@@ -16,6 +16,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The install the loader was built against, for the test that resolves against the
+         game's own assemblies. The same property the build uses, so CI's override reaches it. -->
+    <AssemblyMetadata Include="GameAssembliesDir" Value="$(GameAssembliesDir)" />
+    <AssemblyMetadata Include="MelonLoaderDir" Value="$(MelonLoaderDir)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Jiangyu.Shared\Jiangyu.Shared.csproj" />
     <!--
       Reference the loader to exercise its pure-reflection helpers from
@@ -34,7 +41,10 @@
   <!--
     Test code uses synthetic fixtures that derive only from System.Object
     (PolymorphicReferenceArrayHelperFixtures.cs), so no game-shaped DLLs
-    need to be on the test load path. The helper under test is
+    need to be on the test load path. The one exception is the "game
+    assemblies" collection in TemplateRuntimeAccessTests.cs, which loads the
+    real interop assemblies from GameAssembliesDir (stamped above) and is
+    skipped when that is not a full install. The helper under test is
     parameterised over the DataTemplate / ScriptableObject base types;
     production calls it with the real typeof(), tests pass synthetic
     bases. MelonLoader is referenced because Jiangyu.Loader transitively

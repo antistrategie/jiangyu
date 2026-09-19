@@ -93,6 +93,64 @@ public class NumericPlaceholderTests
         Assert.NotEmpty(doc.Errors);
     }
 
+    [Fact]
+    public void Compile_SettlesATwinBindSourceOnTheTemplateTypeAndStampsItsFullName()
+    {
+        using var catalog = TemplateTypeCatalog.Load(typeof(NumericPlaceholderTests).Assembly.Location);
+        var dir = Path.Combine(Path.GetTempPath(), $"jiangyu-bind-twin-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "bind.kdl"), """
+                patch "PlaceholderFixture" "test" {
+                    set "Description" {
+                        append "m_Placeholders" bind="FixtureSkillTemplate" "skill.x" path="Uses"
+                    }
+                }
+                """);
+            var log = new CollectingLog();
+            var parsed = KdlTemplateParser.ParseAll(dir, log);
+            Assert.Equal(0, parsed.ErrorCount);
+
+            var errors = TemplateCatalogValidator.Validate(parsed.Patches, clones: null, catalog, log);
+
+            Assert.Equal(0, errors);
+            Assert.Empty(log.Errors);
+            var binding = FindBinding(parsed.Patches[0].Set);
+            Assert.NotNull(binding);
+            // FixtureSkillTemplate exists twice and only the Gameplay one is a template type,
+            // so the source settles there and is written in full.
+            Assert.Equal(typeof(Fixtures.Gameplay.FixtureSkillTemplate).FullName, binding!.Source.TemplateType);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // The first bind= anywhere in the ops, whichever shape the parser gave the block.
+    private static NumericPlaceholderBinding? FindBinding(IEnumerable<CompiledTemplateSetOperation> ops)
+    {
+        foreach (var op in ops)
+        {
+            if (op.Value?.NumericPlaceholder is { } binding)
+                return binding;
+            var nested = op.Value?.Composite?.Operations ?? op.Value?.TypeConstruction?.Operations;
+            if (nested != null && FindBinding(nested) is { } inner)
+                return inner;
+        }
+        return null;
+    }
+
+    private sealed class CollectingLog : Jiangyu.Core.Abstractions.ILogSink
+    {
+        public List<string> Errors { get; } = [];
+        public void Debug(string message) { }
+        public void Info(string message) { }
+        public void Warning(string message) { }
+        public void Error(string message) => Errors.Add(message);
+    }
+
     [Theory]
     [InlineData("Count", true)]
     [InlineData("Multiplier", true)]

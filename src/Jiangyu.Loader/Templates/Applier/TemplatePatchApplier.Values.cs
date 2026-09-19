@@ -210,7 +210,7 @@ internal sealed partial class TemplatePatchApplier
         {
             effectivePayload = new CompiledTemplateComposite
             {
-                TypeName = targetType.Name,
+                TypeName = targetType.FullName ?? targetType.Name,
                 Operations = handler.Operations ?? new List<CompiledTemplateSetOperation>(),
                 From = handler.From,
                 TaggedDiscriminator = handler.TaggedDiscriminator,
@@ -228,14 +228,25 @@ internal sealed partial class TemplatePatchApplier
             // "AddSkill", "ChangeProperty", etc.) so inspector dumps show
             // "SkillEventHandlerTemplate:AddSkill" instead of an unnamed
             // entry. ScriptableObject.CreateInstance leaves name empty
-            // by default.
+            // by default. A fully qualified typeName names the object after
+            // the type itself, and any other spelling (a mod's ns:Name, a
+            // short name from an older compile) stays as written, since
+            // from= looks elements up by this name.
             try { asUnity.hideFlags = UnityEngine.HideFlags.DontUnloadUnusedAsset; }
             catch { }
-            try { asUnity.name = effectivePayload.TypeName; }
+            try { asUnity.name = ObjectNameFor(effectivePayload.TypeName, converted.GetType()); }
             catch { }
         }
         return true;
     }
+
+    // The name a constructed object carries: the type's own short name for a fully
+    // qualified spelling (the vanilla convention, and what from= names), the spelling
+    // itself for a mod's ns:Name (a dotted mod id included) or an older compile's short name.
+    internal static string ObjectNameFor(string compiledTypeName, Type constructed)
+        => compiledTypeName.Contains('.') && !compiledTypeName.Contains(':')
+            ? constructed.Name
+            : compiledTypeName;
 
     // Constructs a fresh instance of the composite's typeName and recursively
     // writes each authored field via the same TryConvertScalar conversion.
@@ -265,13 +276,6 @@ internal sealed partial class TemplatePatchApplier
             return false;
         }
 
-        var resolvedType = TemplateRuntimeAccess.ResolveTemplateType(composite.TypeName, out var resolveError);
-        if (resolvedType == null)
-        {
-            error = $"Composite: cannot resolve typeName '{composite.TypeName}': {resolveError}";
-            return false;
-        }
-
         // Tagged-string pack: the composite is destined for a string-typed
         // field (or List<string> element) that stores "DISCRIMINATOR|{json}"
         // entries. The typed instance is intermediate — we build it, run
@@ -280,6 +284,16 @@ internal sealed partial class TemplatePatchApplier
         // against targetType (string) is bypassed because the final
         // converted value will be a string.
         var isTaggedPack = !string.IsNullOrWhiteSpace(composite.TaggedDiscriminator);
+
+        // A short name the game holds twice is settled by the member it is written to.
+        var resolvedType = isTaggedPack
+            ? TemplateRuntimeAccess.ResolveTemplateType(composite.TypeName, out var resolveError)
+            : TemplateRuntimeAccess.ResolveTemplateType(composite.TypeName, targetType, out resolveError);
+        if (resolvedType == null)
+        {
+            error = $"Composite: cannot resolve typeName '{composite.TypeName}': {resolveError}";
+            return false;
+        }
 
         if (!isTaggedPack && !Il2CppTypeAssignability.IsAssignableFromIl2Cpp(targetType, resolvedType))
         {
@@ -652,7 +666,29 @@ internal sealed partial class TemplatePatchApplier
             catch { continue; }
             if (string.Equals(elementName, key, StringComparison.Ordinal))
             {
-                prototype = element;
+                // The live concrete wrapper, so a copy carries every field the subtype adds.
+                prototype = TryCastToLiveConcreteType(element, collectionType, out var concreteByName, out _) ? concreteByName : element;
+                return true;
+            }
+        }
+
+        // A key spelling a type rather than a name (a full name an older compile
+        // gave the object, or the type's short name) takes the first element of
+        // that type, judged by its live concrete type rather than the wrapper the
+        // list hands out, and handed back as that concrete wrapper so a copy
+        // carries every field. A key that is an index never spells a type.
+        var keyIsIndex = int.TryParse(key, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out _);
+        for (var i = 0; !keyIsIndex && i < count; i++)
+        {
+            object element;
+            try { element = indexer.Invoke(collection, new object[] { i }); }
+            catch { continue; }
+            if (element == null) continue;
+            var live = TryCastToLiveConcreteType(element, collectionType, out var concrete, out _) ? concrete : element;
+            var elementType = live.GetType();
+            if (string.Equals(elementType.FullName, key, StringComparison.Ordinal) || string.Equals(elementType.Name, key, StringComparison.Ordinal))
+            {
+                prototype = live;
                 return true;
             }
         }
@@ -874,10 +910,10 @@ internal sealed partial class TemplatePatchApplier
         }
 
         // TemplateType is optional in the canonical schema: when omitted the
-        // destination field's declared type IS the lookup type. Fall back to
-        // targetType.Name so the rest of the resolution path stays unchanged.
+        // destination field's declared type IS the lookup type, under its canonical
+        // name so a short name the game holds twice still names this field's type.
         var lookupTypeName = string.IsNullOrWhiteSpace(reference.TemplateType)
-            ? targetType.Name
+            ? TemplateRuntimeAccess.CanonicalTypeName(targetType.FullName ?? targetType.Name)
             : reference.TemplateType;
 
         // The pass's probe has just looked this template up: take what it found rather than
@@ -886,8 +922,12 @@ internal sealed partial class TemplatePatchApplier
             && _passResolved.TryGetValue(new TemplateRef(TemplateRuntimeAccess.CanonicalTypeName(lookupTypeName), reference.TemplateId), out var cached)
             && cached != null)
         {
-            var cachedType = TemplateRuntimeAccess.ResolveTemplateType(lookupTypeName, out _);
-            if (cachedType != null && targetType.IsAssignableFrom(cachedType))
+            // The object itself is judged, not the name it was filed under, so a hit the
+            // probe filed under a twin's name can never pass as the member's type.
+            var cachedType = TryCastToLiveConcreteType(cached, cached.GetType(), out var cachedConcrete, out _)
+                ? cachedConcrete.GetType()
+                : cached.GetType();
+            if (targetType.IsAssignableFrom(cachedType))
             {
                 converted = cached;
                 error = null;
@@ -896,14 +936,15 @@ internal sealed partial class TemplatePatchApplier
         }
 
         bool found;
-        Il2CppObjectBase resolvedTemplate;
+        Il2CppObjectBase resolvedTemplate = null;
         Type resolvedType;
         string resolveError;
         try
         {
-            found = TemplateRuntimeAccess.TryGetTemplateById(
-                lookupTypeName, reference.TemplateId,
-                out resolvedTemplate, out resolvedType, out resolveError);
+            // An explicit short name the game holds twice is settled by the member's type.
+            resolvedType = TemplateRuntimeAccess.ResolveTemplateType(lookupTypeName, targetType, out resolveError);
+            found = resolvedType != null
+                && TemplateRuntimeAccess.TryGetTemplateById(resolvedType, reference.TemplateId, out resolvedTemplate, out resolveError);
         }
         catch (Exception ex)
         {

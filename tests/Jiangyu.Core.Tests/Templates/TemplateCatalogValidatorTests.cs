@@ -393,6 +393,422 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
+    public void TypeConstruction_OnPolymorphicScalar_CanonicalisedToFqnOnCompile()
+    {
+        // FixtureAoEShapeImpl exists twice: the Gameplay one implements
+        // IFixtureAoEShape, the Other one does not. The compile path resolves
+        // the short name within the field's family and writes the full name, so
+        // the loader's assembly-wide lookup never meets the twin.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var construction = new CompiledTemplateComposite
+        {
+            TypeName = "FixtureAoEShapeImpl",
+            Operations = SetOps(("Radius", new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 4 })),
+        };
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "AoEShape",
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.TypeConstruction, TypeConstruction = construction },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+        Assert.Equal(typeof(FixtureAoEShapeImpl).FullName, construction.TypeName);
+    }
+
+    [Fact]
+    public void TypeConstruction_EditorNormalise_KeepsTheAuthoredSpelling()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var construction = new CompiledTemplateComposite { TypeName = "FixtureAoEShapeImpl", Operations = [] };
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "AoEShape",
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.TypeConstruction, TypeConstruction = construction },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log, mode: ValidationMode.EditorNormalise);
+
+        Assert.Equal(0, errors);
+        Assert.Equal("FixtureAoEShapeImpl", construction.TypeName);
+    }
+
+    [Fact]
+    public void TypeConstruction_AppendToPolymorphicList_CanonicalisedToFqnOnCompile()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var construction = new CompiledTemplateComposite
+        {
+            TypeName = "FixtureConcreteDerived",
+            Operations = SetOps(("DerivedField", new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 1 })),
+        };
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Append,
+                        FieldPath = "Handlers",
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.TypeConstruction, TypeConstruction = construction },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+        Assert.Equal(typeof(FixtureConcreteDerived).FullName, construction.TypeName);
+    }
+
+    [Fact]
+    public void Reference_ExplicitAmbiguousShortName_ResolvesByTheDeclaredType()
+    {
+        // FixtureConcreteDerived has a twin outside the FixtureBaseDataTemplate
+        // family. The field's declared type picks the member of the family, and
+        // the compiled reference carries its full name.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var reference = new CompiledTemplateReference { TemplateType = "FixtureConcreteDerived", TemplateId = "derived.x" };
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureRefHolder",
+                TemplateId = "x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "PolymorphicRef",
+                    Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.TemplateReference, Reference = reference },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+        Assert.Equal(typeof(FixtureConcreteDerived).FullName, reference.TemplateType);
+    }
+
+    [Fact]
+    public void Reference_ExplicitUnknownType_ReportsTheUnknownName()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureRefHolder",
+                TemplateId = "x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "PolymorphicRef",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.TemplateReference,
+                        Reference = new CompiledTemplateReference { TemplateType = "NoSuchTemplate", TemplateId = "x" },
+                    },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("ref=\"NoSuchTemplate\": no type 'NoSuchTemplate' found in the assembly.", log.Errors[0]);
+    }
+
+    [Fact]
+    public void AmbiguousTemplateType_ErrorListsTheCandidates()
+    {
+        // FixtureSkillTemplate exists in two namespaces. A patch naming the short
+        // name cannot pick one, and the error hands the modder both full names.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch { TemplateType = "FixtureSkillTemplate", TemplateId = "x", Set = [] },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains(typeof(Fixtures.Gameplay.FixtureSkillTemplate).FullName!, log.Errors[0]);
+        Assert.Contains(typeof(Fixtures.Other.FixtureSkillTemplate).FullName!, log.Errors[0]);
+        Assert.EndsWith("Write the full name.", log.Errors[0]);
+    }
+
+    [Fact]
+    public void TypeConstruction_FullNameCompilesAsWritten()
+    {
+        // Studio's picker and the compile errors hand modders a full name where a
+        // short one is shared. It resolves within the family and is kept.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var construction = new CompiledTemplateComposite
+        {
+            TypeName = typeof(Fixtures.Other.FixtureTwinHandler).FullName!,
+            Operations = SetOps(("TwinField", new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 1 })),
+        };
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Append,
+                        FieldPath = "Handlers",
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.TypeConstruction, TypeConstruction = construction },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+        Assert.Equal(typeof(Fixtures.Other.FixtureTwinHandler).FullName, construction.TypeName);
+    }
+
+    [Fact]
+    public void TypeConstruction_ShortNameSharedWithinTheFamily_ListsBothFullNames()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Append,
+                        FieldPath = "Handlers",
+                        Value = new CompiledTemplateValue
+                        {
+                            Kind = CompiledTemplateValueKind.TypeConstruction,
+                            TypeConstruction = new CompiledTemplateComposite { TypeName = "FixtureTwinHandler", Operations = [] },
+                        },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        var error = Assert.Single(log.Errors);
+        Assert.Contains("type=\"FixtureTwinHandler\" is ambiguous within FixtureBaseDataTemplate", error);
+        Assert.Contains(typeof(Fixtures.Gameplay.FixtureTwinHandler).FullName!, error);
+        Assert.Contains(typeof(Fixtures.Other.FixtureTwinHandler).FullName!, error);
+        Assert.EndsWith("Write the full name.", error);
+    }
+
+    [Fact]
+    public void Reference_ShortNameSharedWithinTheFamily_ListsBothFullNames()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureRefHolder",
+                TemplateId = "x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "PolymorphicRef",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.TemplateReference,
+                        Reference = new CompiledTemplateReference { TemplateType = "FixtureTwinHandler", TemplateId = "twin.x" },
+                    },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        var error = Assert.Single(log.Errors);
+        Assert.Contains("ref=\"FixtureTwinHandler\" is ambiguous for FixtureBaseDataTemplate", error);
+        Assert.Contains(typeof(Fixtures.Gameplay.FixtureTwinHandler).FullName!, error);
+        Assert.Contains(typeof(Fixtures.Other.FixtureTwinHandler).FullName!, error);
+        Assert.EndsWith("Write the full name.", error);
+    }
+
+    [Fact]
+    public void Reference_ShortNameWithNoAssignableTwin_ReportsNotAssignableWithCandidates()
+    {
+        // FixtureSkillTemplate exists twice and neither twin extends
+        // FixtureBaseDataTemplate: the error says so rather than calling it ambiguous.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureRefHolder",
+                TemplateId = "x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "PolymorphicRef",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.TemplateReference,
+                        Reference = new CompiledTemplateReference { TemplateType = "FixtureSkillTemplate", TemplateId = "skill.x" },
+                    },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        var error = Assert.Single(log.Errors);
+        Assert.Contains("ref=\"FixtureSkillTemplate\" is not assignable to FixtureBaseDataTemplate", error);
+        Assert.Contains(typeof(Fixtures.Gameplay.FixtureSkillTemplate).FullName!, error);
+        Assert.Contains(typeof(Fixtures.Other.FixtureSkillTemplate).FullName!, error);
+    }
+
+    [Theory]
+    [InlineData("FixtureShapeLeaf", true)]
+    [InlineData("FixtureShapeRoot", false)]
+    [InlineData("FixtureShapeAbstract", false)]
+    public void Composite_OnAnInterfaceField_AcceptsOnlyConcreteFamilyMembers(string typeName, bool accepted)
+    {
+        // The interface family has no ScriptableObject in it, so the composite takes the
+        // assembly-wide path. A member implements the interface, a root that does not is
+        // outside the family, and an abstract member cannot be built.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var composite = new CompiledTemplateComposite
+        {
+            TypeName = typeName,
+            Operations = SetOps(("Sides", new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 3 })),
+        };
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureShapeHolder",
+                TemplateId = "shape.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "Shape",
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Composite, Composite = composite },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        if (accepted)
+        {
+            Assert.Equal(0, errors);
+            Assert.Empty(log.Errors);
+            Assert.Equal(typeof(FixtureShapeLeaf).FullName, composite.TypeName);
+        }
+        else
+        {
+            Assert.Equal(1, errors);
+            Assert.Contains($"composite type=\"{typeName}\"", log.Errors[0]);
+            Assert.Contains(typeName == "FixtureShapeAbstract" ? "is abstract and cannot be built" : "is not assignable to IFixtureShapeFamily", log.Errors[0]);
+        }
+    }
+
+    [Fact]
+    public void Composite_OnAFamilyTheCatalogueCannotSee_IsNotJudged()
+    {
+        // With no implementer visible (a stripped Il2Cpp interface and no metadata
+        // supplement), the compiler has nothing to judge the type by and lets it
+        // through, as it did before, for the loader to settle with the game's metadata.
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var composite = new CompiledTemplateComposite
+        {
+            TypeName = "FixtureShapeRoot",
+            Operations = SetOps(("Sides", new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 3 })),
+        };
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureShapeHolder",
+                TemplateId = "shape.x",
+                Set =
+                [
+                    new CompiledTemplateSetOperation
+                    {
+                        Op = CompiledTemplateOp.Set,
+                        FieldPath = "Unseen",
+                        Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Composite, Composite = composite },
+                    },
+                ],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(0, errors);
+        Assert.Empty(log.Errors);
+        Assert.Equal(typeof(FixtureShapeRoot).FullName, composite.TypeName);
+    }
+
+    [Fact]
     public void Reference_ExplicitMismatchedType_Errors()
     {
         using var catalog = Load();

@@ -197,6 +197,8 @@ The handler name in `type=` (`AddSkill`), the fields you `set` (`Event`, `SkillT
 - `set "F" index=N type="X" { ... }`: build a fresh X and replace polymorphic element N.
 - `set "F" type="X" { ... }`: build a fresh X for a polymorphic scalar field (an Odin-routed interface such as `Attack.DamageFilterCondition`).
 
+`X` is the subtype's short name, and it only has to be unique among the destination's own subtypes. The compiler resolves it within that family and writes the full name into the compiled output, so a class elsewhere in the game with the same short name never shadows it (`ItemSlotFilter` exists under both `SkillFilters` and `ItemFilters`, and `set "SkillFilter" type="ItemSlotFilter"` picks the skill filter). The compiler learns which classes implement an interface from the game's metadata, which `jiangyu assets index` records in the project's cache. Run it again after a game update, or a class the update added is not known to the compiler and a `type=` naming it on an interface field is rejected. When two subtypes of the same family share a short name, the compile error lists both full names and you write the one you mean. A `ref="X"` short name resolves the same way, by the field it is written to, and a `bind="X"` source name by which of its twins is a template type.
+
 The inner `set` directives provide the new instance's fields, and everything else takes its type default (`0`, `null`, empty list, …). Nothing carries over, so set every field the new instance needs to function, including its trigger. A passive perk's `AddSkill`, for example, needs `set "Event" enum="AddEvent" "OnMissionStart"` or it never grants the skill. Inner directives accept the full `set` / `append` / `insert` / `remove` / `clear` vocabulary against the new instance.
 
 `type=` is an **error on a monomorphic destination**: there's no subtype to pick. The compiler also errors when the named subtype isn't a subclass of the destination's element type, or when an inner field doesn't exist on it.
@@ -217,7 +219,7 @@ A monomorphic field has only one possible type, so there's nothing for `type=` t
 
 ### `from=`: inherit an existing element's fields
 
-`append` and `insert` accept `from="<name>"` to seed the new element from a named entry already in the destination collection. Inner directives apply on top, so only the fields you want to change need to be listed:
+`append` and `insert` accept `from="<name>"` to seed the new element from a named entry already in the destination collection. The name is the element's own name, or failing that the name of its type, so a mod's own constructed elements are found by their type as well. Inner directives apply on top, so only the fields you want to change need to be listed:
 
 ```kdl
 patch "SoundBank" "weapons_soundbank" {
