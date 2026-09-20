@@ -5,12 +5,12 @@ Changes relevant to modders building with Jiangyu, and to players running Jiangy
 ## 1.4.6
 
 - (SDK) Fixed UXML injections by name silently injecting nothing on some players' .NET runtimes
-- (SDK) `Units.Move` on the active actor now travels the way a double click does and returns false when no path reaches the tile, instead of stalling the game
-- (Loader) A mod now loads after the mods it depends on, whatever their folder names. A dependency pulled ahead also passes the unrelated mods between them, which can change which of two mods wins a shared override
-- (Loader) A mod is now blocked when a dependency is itself blocked or when required dependencies form a cycle, and the manifest name `Jiangyu` is reserved for the loader
-- (Loader) Added `optionalDepends` to the manifest: the listed mods load first when they load and meet the constraint, and their absence never blocks
-- (Compiler) A `type=` subtype named by its short name now compiles to its full name, an ambiguous `ref=` short name resolves by the field it is written to and a `bind=` source by which candidate is a template type, so a class elsewhere in the game with the same short name no longer stops it loading. An ambiguous template type names its candidates
-- (Loader) A short type name the game holds twice is resolved by the field it is written to, so mods compiled before this change load too. An element a mod constructs is named after its type, as the game names its own, and `from=` also finds an element by its type. A mod compiled with this version needs this loader for that naming, so older loaders show the full name
+- (Loader) A mod now loads after the mods it depends on, whatever their folder names
+- (Loader) A mod is now blocked when a dependency is itself blocked or when required dependencies form a cycle
+- (Loader) Added `optionalDepends` to the manifest: listed mods load first when they load and match with their absence being non-blocking
+- (Compiler) A `type=`, `ref=` or `bind=` short name shared with another game class now resolves to the candidate that fits, so the mod still loads
+- (Compiler) An ambiguous template type now raises an error that names its candidates
+- (Loader) A short type name the game holds twice resolves by the field it is written to, so mods compiled before this change load too
 - (Studio) The subtype picker shows the full name of a subtype whose short name another subtype of the same family shares
 - (Compiler) Release builds of mod code ship without symbols, so no build path is embedded for antivirus URL scanners to flag
 
