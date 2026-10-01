@@ -99,7 +99,9 @@ public sealed class PatchInfo
 /// Patches a game method the hook bus does not cover. The mod names the method by
 /// its declaring type and method name; the handler runs before (prefix) or after
 /// (postfix) it. Patches are tracked per mod and removed when the mod unloads. This
-/// is the escape hatch: prefer a <see cref="IHookBus"/> hook where one exists.
+/// is the escape hatch: prefer a <see cref="IHookBus"/> hook where one exists. A
+/// method whose native code the game shares with other methods is refused, with an
+/// error naming them, because a patch on it would also run for those.
 /// </summary>
 public interface IModPatches
 {

@@ -170,3 +170,5 @@ Context.Patches.Postfix("Il2CppMenace.Tactical.Actor", "TakeDamage", info =>
 ```
 
 A prefix handler may set `info.Skip = true` to stop the original method running. This is the escape hatch: prefer a hook where one exists, and a template type to change an effect. Patches are tracked per mod and removed on unload.
+
+The game's compiler can merge the code of tiny methods, such as plain field getters, into one function that several unrelated methods share. A patch on such a method would also run for the others, so the loader refuses it and logs an error naming the methods that share its code. Patch a caller of that method that has a real body instead.

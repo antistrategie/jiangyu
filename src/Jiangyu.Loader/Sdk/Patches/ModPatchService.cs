@@ -46,7 +46,12 @@ internal static class ModPatchCoordinator
         if (target == null)
             return;
 
+        // Refused before the handler is added, so a refused target holds no handlers
+        // and is never patched.
         var label = $"{typeName}.{methodName}";
+        if (!NativeTargetGuard.Allows(target, label, modId, log))
+            return;
+
         Registry.Add(kind, target, modId, label, handler, log);
         if (EnsurePatched(kind, target, log))
             log.Debug($"[{modId}] patch {kind.ToString().ToLowerInvariant()} registered on {label}");

@@ -5,6 +5,7 @@ Changes relevant to modders building with Jiangyu, and to players running Jiangy
 ## 1.4.7
 
 - (Loader) Fixes for the MENACE v0.7.15 game update
+- (Loader) Refuses a mod patch on a game method whose code the game shares with other methods, and logs which ones, so a game update cannot silently redirect it
 
 ## 1.4.6
 
