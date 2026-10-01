@@ -108,10 +108,10 @@ Every verb in the `Jiangyu.Game` namespace, generated from the SDK. Verbs are pl
 | `Operations.Description(Operation)` | The operation's translated description. |
 | `Operations.EnemyFaction(Operation)` | The operation's enemy faction template. |
 | `Operations.EnemyFactionAvailable(FactionTemplate)` | Whether an operation against the given enemy faction is available. |
-| `Operations.Finish(Operation)` | Run the game's operation-finished handling for the given operation. |
+| `Operations.Finish(Operation, bool)` | Run the game's operation-finished handling for the given operation. Pass true for cancel to finish it as cancelled rather than played out. |
 | `Operations.FinishedCount(FactionType, Nullable)` | How many operations have finished against the given faction type. Pass a non-null status to count only those with that result, or null for all. Exposes a C# nullable (not the game's Il2CppSystem.Nullable) so the verb is callable over the bridge. |
 | `Operations.IsActive(OperationTemplate)` | Whether an operation of the given template is currently active. |
-| `Operations.Length(Operation)` | The operation's length. |
+| `Operations.Length(Operation)` | How many missions the operation runs. The game rolls this from its duration template's mission-count range when it generates the operation and keeps it only as a field. |
 | `Operations.Missions(Operation)` | The missions belonging to operation. |
 | `Operations.Name(Operation)` | The operation's translated display name. |
 | `Operations.Planet(Operation)` | The operation's planet template. |
@@ -309,7 +309,7 @@ Every verb in the `Jiangyu.Game` namespace, generated from the SDK. Verbs are pl
 | `Units.MaxMorale(Actor)` | The actor's maximum morale. |
 | `Units.Morale(Actor)` | The actor's current morale. |
 | `Units.MoralePct(Actor)` | The actor's morale as a 0..1 fraction of its maximum. |
-| `Units.Move(Actor, Tile, MovementFlags)` | Move actor to dest. Returns true once the move is accepted (it animates over the following frames). The game validates reachability. |
+| `Units.Move(Actor, Tile, MovementFlags)` | Move actor to dest. Returns true once the move is accepted (it animates over the following frames), false when no path reaches the tile. |
 | `Units.MovementMode(Actor)` | The actor's current movement mode. |
 | `Units.RefillAmmo(Actor, float, int)` | Refill actor's ammo across every skill by refillFactor (0..1 of capacity), granting at least minAmount. Returns true when any skill was refilled. |
 | `Units.SetActionPoints(Actor, int, bool)` | Set the actor's action points. |

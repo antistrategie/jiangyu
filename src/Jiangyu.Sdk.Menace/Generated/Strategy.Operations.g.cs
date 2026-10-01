@@ -31,10 +31,6 @@ public static partial class Operations
     [global::Jiangyu.Sdk.MutatingVerb]
     public static void SetCurrent(global::Il2CppMenace.Strategy.Operation p0) { global::Il2CppMenace.States.StrategyState.Get().Operations.SetCurrentOperation(p0); }
 
-    /// <summary>Run the game's operation-finished handling for the given operation.</summary>
-    [global::Jiangyu.Sdk.MutatingVerb]
-    public static void Finish(global::Il2CppMenace.Strategy.Operation p0) { global::Il2CppMenace.States.StrategyState.Get().Operations.OnOperationFinished(p0); }
-
     /// <summary>The operation's template.</summary>
     public static global::Il2CppMenace.Strategy.OperationTemplate Template(global::Il2CppMenace.Strategy.Operation self) => self.GetTemplate();
 
@@ -58,9 +54,6 @@ public static partial class Operations
 
     /// <summary>The operation's remaining time before it times out.</summary>
     public static int RemainingTime(global::Il2CppMenace.Strategy.Operation self) => self.GetRemainingTime();
-
-    /// <summary>The operation's length.</summary>
-    public static int Length(global::Il2CppMenace.Strategy.Operation self) => self.GetLength();
 
     /// <summary>The operation's generation seed.</summary>
     public static int Seed(global::Il2CppMenace.Strategy.Operation self) => self.GetSeed();

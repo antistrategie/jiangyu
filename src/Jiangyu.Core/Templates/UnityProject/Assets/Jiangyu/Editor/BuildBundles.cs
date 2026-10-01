@@ -30,7 +30,7 @@ namespace Jiangyu.Mod
     /// </summary>
     public static class BuildBundles
     {
-        private const string ExpectedUnityVersion = "6000.0.72f1";
+        private const string ExpectedUnityVersion = "6000.0.82f1";
 
         // Bundles must be built for the target whose graphics API the game runs
         // on. MENACE runs through Proton and DXVK, so its API is D3D11, and a

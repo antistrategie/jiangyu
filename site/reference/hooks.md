@@ -11,7 +11,7 @@ Every hook delivered through the hook bus, generated from the SDK. Subscribe wit
 The count of alive squaddies changed (e.g. one was lost).
 
 - **Context:** `AliveSquaddiesChangedContext`
-- **Source:** event (`Squaddies.OnAliveSquaddiesChanged`)
+- **Source:** event (`Squaddies.OnSquaddiesChanged`)
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -141,6 +141,7 @@ A strategic operation concluded.
 | Field | Type | Description |
 | --- | --- | --- |
 | `Operation` | `Operation` | The operation that finished. |
+| `Cancelled` | `bool` | Whether the operation ended by cancellation rather than being played out. |
 
 ### OperationStarted
 

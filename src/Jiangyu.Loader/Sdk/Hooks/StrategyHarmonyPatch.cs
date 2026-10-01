@@ -67,10 +67,10 @@ internal sealed class StrategyHarmonyPatch : IHarmonyPatchModule
             Publish(new Jiangyu.Sdk.LeaderPerkAddedContext { Leader = __instance, Perk = __0 });
     }
 
-    private static void OnOperationFinishedPostfix(Operation __0)
+    private static void OnOperationFinishedPostfix(Operation __0, bool __1)
     {
         if (__0 != null)
-            Publish(new Jiangyu.Sdk.OperationFinishedContext { Operation = __0 });
+            Publish(new Jiangyu.Sdk.OperationFinishedContext { Operation = __0, Cancelled = __1 });
     }
 
     private static void AddItemPostfix(BaseItem __0)

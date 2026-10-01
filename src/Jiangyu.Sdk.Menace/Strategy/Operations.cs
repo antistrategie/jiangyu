@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Il2CppMenace.States;
 using Il2CppMenace.Strategy;
 using Il2CppMenace.Tactical;
+using Jiangyu.Sdk;
 
 namespace Jiangyu.Game.Strategy;
 
@@ -47,6 +48,20 @@ public static partial class Operations
                 result.Add(raw[i]);
         return result;
     }
+
+    /// <summary>
+    /// How many missions the operation runs. The game rolls this from its duration template's
+    /// mission-count range when it generates the operation and keeps it only as a field.
+    /// </summary>
+    public static int Length(Operation operation) => operation.m_MissionCount;
+
+    /// <summary>
+    /// Run the game's operation-finished handling for the given operation. Pass true for
+    /// <c>cancel</c> to finish it as cancelled rather than played out.
+    /// </summary>
+    [MutatingVerb]
+    public static void Finish(Operation operation, bool cancel = false)
+        => StrategyState.Get().Operations.OnOperationFinished(operation, cancel);
 
     /// <summary>
     /// How many operations have finished against the given faction type. Pass a non-null

@@ -46,7 +46,7 @@ internal static class MissionAutoWin
                     {
                         // Spare player units and their allied AI, only finish off pure enemies that
                         // are still standing.
-                        if (actor == null || actor.IsPlayerControlled(true) || actor.GetHitpoints() <= 0)
+                        if (actor == null || actor.IsPlayerOrPlayerAI() || actor.GetHitpoints() <= 0)
                             continue;
                         try
                         {
@@ -71,10 +71,9 @@ internal static class MissionAutoWin
     }
 
     // The first live player-side actor, used to attribute the forced kills to the player. Uses the
-    // same IsPlayerControlled(true) predicate as the spare-check above (and as the on-kill drop
-    // hooks' player-kill gate), so any unit we are not killing is a valid attributed killer. The
-    // stricter IsPlayerControlled(false) could find none and leave kills unattributed, so no drop
-    // hook would fire.
+    // same IsPlayerOrPlayerAI predicate as the spare-check above (and as the on-kill drop hooks'
+    // player-kill gate), so any unit we are not killing is a valid attributed killer. The stricter
+    // IsPlayer could find none and leave kills unattributed, so no drop hook would fire.
     private static Actor FindPlayerActor(BaseFaction[] factions)
     {
         if (factions == null)
@@ -87,7 +86,7 @@ internal static class MissionAutoWin
             for (var j = 0; j < actors.Count; j++)
             {
                 var actor = actors[j];
-                if (actor != null && actor.IsPlayerControlled(true) && actor.GetHitpoints() > 0)
+                if (actor != null && actor.IsPlayerOrPlayerAI() && actor.GetHitpoints() > 0)
                     return actor;
             }
         }

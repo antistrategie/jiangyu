@@ -24,6 +24,7 @@ internal sealed class StrategyHookPublisher : HookPublisherBase
     private readonly HashSet<IntPtr> _subscribed = new();
     private int _factionsHooked;
     private IntPtr _attachedState;
+    private int _lastAliveCount = -1;
 
     public StrategyHookPublisher(InProcessHookBus bus, IModHostLog log)
         : base(bus, log)
@@ -42,6 +43,7 @@ internal sealed class StrategyHookPublisher : HookPublisherBase
         _attachedState = statePointer;
         _subscribed.Clear();
         _factionsHooked = 0;
+        _lastAliveCount = -1;
         ClearHookedDelegates();
     }
 
@@ -65,7 +67,10 @@ internal sealed class StrategyHookPublisher : HookPublisherBase
 
         var squaddies = ss.Squaddies;
         if (squaddies != null && squaddies.Pointer != IntPtr.Zero && _subscribed.Add(squaddies.Pointer))
-            Hook<Il2CppSystem.Action<int>>(squaddies.add_OnAliveSquaddiesChanged, (Action<int>)OnAliveSquaddiesChanged, "OnAliveSquaddiesChanged");
+        {
+            var owner = squaddies;
+            Hook<Il2CppSystem.Action>(squaddies.add_OnSquaddiesChanged, (Action)(() => OnSquaddiesChanged(owner)), "OnSquaddiesChanged");
+        }
 
         SubscribeFactionsFrom(ss.StoryFactions);
     }
@@ -109,8 +114,19 @@ internal sealed class StrategyHookPublisher : HookPublisherBase
     private void OnConversationVarChanged(string name, int oldValue, int newValue)
         => Publish(new ConversationVarChangedContext { Name = name, OldValue = oldValue, NewValue = newValue });
 
-    private void OnAliveSquaddiesChanged(int aliveCount)
-        => Publish(new AliveSquaddiesChangedContext { AliveCount = aliveCount });
+    // JIANGYU-CONTRACT: Squaddies.OnSquaddiesChanged carries no argument and fires on any
+    // roster change, wounding included (checked against v0.7.15). The hook reports only a
+    // change in the alive count, read from m_AliveSquaddies, because its contract is the
+    // alive count. The first roster change after a state attaches always reports.
+    private void OnSquaddiesChanged(Squaddies squaddies)
+    {
+        var alive = squaddies.m_AliveSquaddies;
+        var aliveCount = alive?.Count ?? 0;
+        if (aliveCount == _lastAliveCount)
+            return;
+        _lastAliveCount = aliveCount;
+        Publish(new AliveSquaddiesChangedContext { AliveCount = aliveCount });
+    }
 
     private void OnFactionTrustChanged(StoryFaction faction, int oldTrust, int newTrust)
         => Publish(new FactionTrustChangedContext { Faction = faction, OldTrust = oldTrust, NewTrust = newTrust });

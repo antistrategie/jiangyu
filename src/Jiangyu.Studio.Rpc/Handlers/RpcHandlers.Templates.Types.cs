@@ -179,7 +179,7 @@ public static partial class RpcHandlers
         /// subtype whose short name another subtype of the family shares) when
         /// constructing a value for a polymorphic scalar field (declared
         /// type is itself an interface or abstract base, e.g. Odin-routed
-        /// <c>Attack.DamageFilterCondition: ITacticalCondition</c>). Drives
+        /// <c>AddSkill.Condition: ITacticalCondition</c>). Drives
         /// the same picker UX as <see cref="ElementSubtypes"/> but the
         /// resulting patch is a Set rather than an Append, and the
         /// destination is the field itself rather than an element slot.</summary>

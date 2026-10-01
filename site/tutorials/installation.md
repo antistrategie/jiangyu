@@ -9,7 +9,7 @@ A few things need to be in place. This core set is required for every mod:
 - **MENACE**, installed through Steam or any build with `MENACE.exe`.
 - **[MelonLoader](https://github.com/LavaGang/MelonLoader/releases)** (latest), installed into your MENACE folder. Follow MelonLoader's own instructions for your platform. Nothing you build runs without it.
 - **.NET**. The [.NET 10 SDK](https://dotnet.microsoft.com/download) runs Jiangyu's toolchain. The [.NET 6 SDK](https://dotnet.microsoft.com/download/dotnet/6.0) is also needed, because a mod's `code/` and the loader target `net6.0`. A compile uses both.
-- **Unity Editor**, version `6000.0.72f1`, via [Unity Hub](https://unity.com/download) (older versions are in the [archive](https://unity.com/releases/editor/archive)). Studio shows the exact version it expects, so trust that over these docs if they ever differ.
+- **Unity Editor**, version `6000.0.82f1`, via [Unity Hub](https://unity.com/download) (older versions are in the [archive](https://unity.com/releases/editor/archive)). Studio shows the exact version it expects, so trust that over these docs if they ever differ.
 - **Jiangyu**, from the [latest release](https://github.com/antistrategie/jiangyu/releases/latest):
     - **Studio** for [Windows](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-studio-win-x64.zip) or [Linux](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-studio-linux-x64.zip). It bundles the in-game loader and deploys it for you.
     - **CLI**, optional, for scripting: [Windows](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-cli-win-x64.zip) or [Linux](https://github.com/antistrategie/jiangyu/releases/latest/download/jiangyu-cli-linux-x64.zip).

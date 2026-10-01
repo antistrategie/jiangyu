@@ -103,10 +103,11 @@ A native item tile: the game's loot slot rendering an item (icon, stack, trade v
 
 ### TextButton
 
-A native-looking text button: the game's .text-button frame with a .text-button-label, the game's UI click sound on press, and the game's native hover glow. It is an open wrapper, not a sealed widget: Root is the real UnityEngine.UIElements.Button, so anything not exposed here is reachable on it (inline styles, extra USS classes, child elements).
+A native-looking text button, built the way the game builds its own: a .text-button root (the standard button frame) holding a .text-button-label and a Hover child with the .text-button-hover class, an absolute fill that the game's stylesheet paints with the standard hover art. The hover child shows while the pointer is over an enabled button, as the game's own text buttons do, and the game's UI click sound plays on press. It is an open wrapper, not a sealed widget: Root is the real UnityEngine.UIElements.Button, so anything not exposed here is reachable on it (inline styles, extra USS classes, child elements).
 
 | Member | Description |
 | --- | --- |
+| `Hover` | The hover overlay (.text-button-hover), shown while the pointer is over the button. |
 | `OnClick(Action)` | Run handler on click (in addition to the click sound). |
 | `Root` | The underlying button element. Add it to the tree, restyle it, extend it. |
 | `TextButton(string, bool)` | Build the button. Pass sound false to suppress the click sound. |

@@ -12,7 +12,7 @@
     },
     {
       "layer": "Strategy", "name": "AliveSquaddiesChanged", "context": "AliveSquaddiesChangedContext", "kind": "event",
-      "owner": "Il2CppMenace.Strategy.Squaddies", "member": "OnAliveSquaddiesChanged",
+      "owner": "Il2CppMenace.Strategy.Squaddies", "member": "OnSquaddiesChanged",
       "summary": "The count of alive squaddies changed (e.g. one was lost).",
       "payload": [ { "name": "AliveCount", "type": "int", "summary": "The number of squaddies still alive." } ]
     },

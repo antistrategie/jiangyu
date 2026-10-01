@@ -1,5 +1,5 @@
 {
-  "_comment": "Strategy.Operations verbs. Trivial passthroughs to OperationsManager (reached via StrategyState.Get().Operations) and to Operation methods (receiver \"self\"). List-returning reads (GetAvailableOperations, GetPreviousOperationResults, Operation.GetMissions) are bespoke and live in Strategy/Operations.cs.",
+  "_comment": "Strategy.Operations verbs. Trivial passthroughs to OperationsManager (reached via StrategyState.Get().Operations) and to Operation methods (receiver \"self\"). List-returning reads (GetAvailableOperations, GetPreviousOperationResults, Operation.GetMissions), the mission count (a field read, not a method) and Finish (an optional cancel flag) are bespoke and live in Strategy/Operations.cs.",
   "verbs": [
     {
       "group": "Strategy.Operations",
@@ -68,15 +68,6 @@
     },
     {
       "group": "Strategy.Operations",
-      "name": "Finish",
-      "onType": "Il2CppMenace.Strategy.OperationsManager",
-      "method": "OnOperationFinished",
-      "receiver": "global::Il2CppMenace.States.StrategyState.Get().Operations",
-      "summary": "Run the game's operation-finished handling for the given operation.",
-      "mutating": true
-    },
-    {
-      "group": "Strategy.Operations",
       "name": "Template",
       "onType": "Il2CppMenace.Strategy.Operation",
       "method": "GetTemplate",
@@ -138,14 +129,6 @@
       "method": "GetRemainingTime",
       "receiver": "self",
       "summary": "The operation's remaining time before it times out."
-    },
-    {
-      "group": "Strategy.Operations",
-      "name": "Length",
-      "onType": "Il2CppMenace.Strategy.Operation",
-      "method": "GetLength",
-      "receiver": "self",
-      "summary": "The operation's length."
     },
     {
       "group": "Strategy.Operations",

@@ -317,11 +317,11 @@ internal static class NavDriver
                         {
                             var maxSupplies = strategy.GetMissionSupplies(mission);
                             var costs = prep.UpdateSupplies(maxSupplies);
-                            prep.LaunchMission(costs, maxSupplies);
+                            prep.StartMission(costs, maxSupplies);
                         }
                         catch (Exception ex)
                         {
-                            chainError = $"LaunchMission: {ex.GetType().Name}: {ex.Message}";
+                            chainError = $"StartMission: {ex.GetType().Name}: {ex.Message}";
                         }
                     }
                 }

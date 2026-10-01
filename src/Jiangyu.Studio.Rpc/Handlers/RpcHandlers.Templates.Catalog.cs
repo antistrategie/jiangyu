@@ -709,7 +709,7 @@ public static partial class RpcHandlers
     /// as a "Pick handler" combobox the same way it does for collection
     /// elements; the resulting patch is a Set with a TypeConstruction
     /// value. Used for Odin-routed scalar fields like
-    /// <c>Attack.DamageFilterCondition: ITacticalCondition</c>.
+    /// <c>AddSkill.Condition: ITacticalCondition</c>.
     /// </summary>
     private static List<string>? ComputeScalarSubtypes(TemplateTypeCatalog catalog, MemberShape m, string? modId)
     {

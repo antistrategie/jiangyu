@@ -31,7 +31,10 @@
       "layer": "Strategy", "name": "OperationFinished", "context": "OperationFinishedContext", "kind": "postfix",
       "owner": "Il2CppMenace.Strategy.OperationsManager", "member": "OnOperationFinished",
       "summary": "A strategic operation concluded.",
-      "payload": [ { "name": "Operation", "type": "Operation", "summary": "The operation that finished." } ]
+      "payload": [
+        { "name": "Operation", "type": "Operation", "summary": "The operation that finished." },
+        { "name": "Cancelled", "type": "bool", "summary": "Whether the operation ended by cancellation rather than being played out." }
+      ]
     },
     {
       "layer": "Strategy", "name": "OperationStarted", "context": "OperationStartedContext", "kind": "postfix",

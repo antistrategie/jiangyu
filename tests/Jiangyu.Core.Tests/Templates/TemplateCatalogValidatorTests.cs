@@ -2685,7 +2685,7 @@ public class TemplateCatalogValidatorTests
         // FixtureEntity.AoEShape is IFixtureAoEShape scalar with concrete
         // implementations. type="<Subtype>" on a Set must be accepted so
         // the modder can construct an Odin-routed condition like
-        // Attack.DamageFilterCondition: ITacticalCondition without writing
+        // AddSkill.Condition: ITacticalCondition without writing
         // to a collection slot.
         using var catalog = Load();
         var log = new RecordingLog();

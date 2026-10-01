@@ -101,6 +101,9 @@ public sealed class OperationFinishedContext
 {
     /// <summary>The operation that finished (a game Operation wrapper).</summary>
     public object Operation { get; init; }
+
+    /// <summary>Whether the operation ended by cancellation rather than being played out.</summary>
+    public bool Cancelled { get; init; }
 }
 
 /// <summary>An item was added to the Black Market.</summary>

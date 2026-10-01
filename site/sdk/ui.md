@@ -113,7 +113,7 @@ A few helpers make an injected element behave like a native one:
 - `target.StackAfter(reference, gap)` positions `target` absolutely one row below `reference`, matching its left edge, width, and height. Use it when the neighbour carries no classes and is positioned in code, as many game bars are. It reads the resolved layout, so call it from `bind`, after the reference has been laid out.
 - `target.SetVisible(bool)`, `target.IsVisible()`, `target.SetWidthPercent(percent)`, and `target.CenterText()` cover the small chores: toggling display, driving a bar fill, and centring a label inline (which beats the game's own `.unity-label` text-align).
 
-The game's hover glow is not a helper you call. It is a trait the [Components](#components) wear by default, so a native-looking control is hovered by virtue of being one.
+The game's hover look is not a helper you call. It is a trait the [Components](#components) wear by default, so a native-looking control is hovered by virtue of being one.
 
 `Sound.Click()` and `Sound.RightClick()` play the game's standard UI click sounds, so a button you wire by hand still clicks like a native one. `UI.CloseOnOutsideClick(element, onClose, keepOpenOn)` dismisses an injected panel when a press lands anywhere outside it, empty space included.
 
@@ -123,7 +123,7 @@ Components are ready-made widgets that bundle the native look, behaviour, and so
 
 | Component | What it is |
 | --- | --- |
-| `TextButton` | the game's text-button frame, native click sound, and native hover glow |
+| `TextButton` | the game's text-button frame, native click sound, and native hover art |
 | `ItemTile` | the game's loot slot for an item, with native hover, a selected border, and a count badge |
 | `Flyout` | a window-framed panel that dismisses on any outside click |
 

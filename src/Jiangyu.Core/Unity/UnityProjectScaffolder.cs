@@ -88,7 +88,7 @@ public sealed class UnityProjectScaffolder
             result);
 
         _log.Info($"Scaffolded Unity project at {unityDir}");
-        _log.Info("  Open in Unity Editor 6000.0.72f1 to bootstrap ProjectSettings/ and Library/.");
+        _log.Info("  Open in Unity Editor 6000.0.82f1 to bootstrap ProjectSettings/ and Library/.");
         _log.Info("  Author prefabs under unity/Assets/Prefabs/.");
 
         return result;

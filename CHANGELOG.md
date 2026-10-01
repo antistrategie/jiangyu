@@ -2,6 +2,10 @@
 
 Changes relevant to modders building with Jiangyu, and to players running Jiangyu mods where they can see the difference. Entries are scoped Loader, Compiler, Studio, CLI, MCP or SDK.
 
+## 1.4.7
+
+- (Loader) Fixes for the MENACE v0.7.15 game update
+
 ## 1.4.6
 
 - (SDK) Fixed UXML injections by name silently injecting nothing on some players' .NET runtimes

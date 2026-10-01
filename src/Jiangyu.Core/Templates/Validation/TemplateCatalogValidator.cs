@@ -1202,7 +1202,7 @@ public static class TemplateCatalogValidator
         //  - Polymorphic scalar field, where the declared type itself has
         //    concrete subtypes the modder must pick from. Phase 2b: lets
         //    Odin-routed interface/abstract scalar fields like
-        //    Attack.DamageFilterCondition (ITacticalCondition) be set to a
+        //    AddSkill.Condition (ITacticalCondition) be set to a
         //    fresh concrete instance.
         //
         // CurrentType is the resolved destination type in either case; only
