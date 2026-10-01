@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-10T13:28:46.6796084+00:00",
-  "gameAssemblyHash": "1b70ee342ce502c2261d276e4575f9c807fb3a1dd47aba5b3504936587023059",
+  "generatedAt": "2026-10-01T14:50:27.6284103+00:00",
+  "gameAssemblyHash": "877622dd02ed79f6a3a37580b5cd9be12e29012bbd6f15a9c80cf917af1373db",
   "types": [
     {
       "typeName": "Menace.Tactical.EntityLootEntry",
@@ -37,7 +37,7 @@
     {
       "typeName": "Menace.Tactical.EntityProperties",
       "category": "supportType",
-      "fieldCount": 102,
+      "fieldCount": 104,
       "sampleNames": [
         "building_military_1x1_bunker",
         "enemy.pirate_scavengers",
@@ -45,6 +45,11 @@
         "player_vehicle.modular_ifv"
       ],
       "fields": [
+        {
+          "name": "MinElements",
+          "kind": "int",
+          "fieldTypeName": "Int32"
+        },
         {
           "name": "MaxElements",
           "kind": "int",
@@ -192,6 +197,11 @@
         },
         {
           "name": "DamageSustainedMult",
+          "kind": "float",
+          "fieldTypeName": "Single"
+        },
+        {
+          "name": "ArmorDamageSustainedMult",
           "kind": "float",
           "fieldTypeName": "Single"
         },
@@ -628,7 +638,7 @@
     {
       "typeName": "EntityTemplate",
       "category": "template",
-      "fieldCount": 112,
+      "fieldCount": 111,
       "sampleNames": [
         "enemy.pirate_scavengers",
         "player_squad.darby"
@@ -690,16 +700,6 @@
           "fieldTypeName": "System.Collections.Generic.List`1<Menace.Tags.TagTemplate>",
           "elementTypeName": "Menace.Tags.TagTemplate",
           "storage": "reference"
-        },
-        {
-          "name": "ElementsMin",
-          "kind": "int",
-          "fieldTypeName": "Int32"
-        },
-        {
-          "name": "ElementsMax",
-          "kind": "int",
-          "fieldTypeName": "Int32"
         },
         {
           "name": "ChanceForFemaleElements",
@@ -1123,6 +1123,11 @@
           "fieldTypeName": "UInt32"
         },
         {
+          "name": "DisableOutlines",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
           "name": "MovementType",
           "kind": "reference",
           "fieldTypeName": "Menace.Tactical.MovementType"
@@ -1243,7 +1248,7 @@
     {
       "typeName": "SkillTemplate",
       "category": "template",
-      "fieldCount": 124,
+      "fieldCount": 125,
       "sampleNames": [
         "active.change_plates",
         "passive.ammo_armor_piercing"
@@ -1635,6 +1640,11 @@
         },
         {
           "name": "ScatterHitOnlyValidTiles",
+          "kind": "bool",
+          "fieldTypeName": "Boolean"
+        },
+        {
+          "name": "IgnoreLineOfSightCheckForAoE",
           "kind": "bool",
           "fieldTypeName": "Boolean"
         },
