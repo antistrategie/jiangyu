@@ -24,6 +24,9 @@ public sealed class TextButton
     /// <summary>The hover overlay (<c>.text-button-hover</c>), shown while the pointer is over the button.</summary>
     public VisualElement Hover { get; }
 
+    /// <summary>The button's label (<c>.text-button-label</c>).</summary>
+    public Label Label { get; }
+
     // Held so the converted hover delegates have an explicit managed owner for the element's lifetime,
     // alongside the element's own callback registry that keeps them alive.
     private readonly EventCallback<PointerEnterEvent> _onPointerEnter;
@@ -41,9 +44,9 @@ public sealed class TextButton
         Hover.SetVisible(false);
         Root.Add(Hover);
 
-        var label = new Label(text);
-        label.AddToClassList("text-button-label");
-        Root.Add(label);
+        Label = new Label(text);
+        Label.AddToClassList("text-button-label");
+        Root.Add(Label);
 
         if (sound)
             Root.clickable.clicked += (Action)Sound.Click;
@@ -55,6 +58,22 @@ public sealed class TextButton
             (Action<PointerLeaveEvent>)(_ => Hover.SetVisible(false)));
         Root.RegisterCallback<PointerEnterEvent>(_onPointerEnter);
         Root.RegisterCallback<PointerLeaveEvent>(_onPointerLeave);
+    }
+
+    /// <summary>
+    /// Apply one of the game's button styles on top of the standard frame, the way the game's own
+    /// <c>TextButton</c> applies its <c>button-style</c> and <c>hover-style</c>: the style class goes
+    /// on the button and its <c>-hover</c> class on the hover overlay. The game ships
+    /// <c>old-text-button</c> (the unit window's header buttons), <c>positive-text-button</c>,
+    /// <c>negative-text-button</c> and <c>neutral-text-button</c>.
+    /// </summary>
+    public TextButton WithStyle(string style)
+    {
+        if (string.IsNullOrEmpty(style))
+            return this;
+        Root.AddToClassList(style);
+        Hover.AddToClassList(style + "-hover");
+        return this;
     }
 
     /// <summary>Run <paramref name="handler"/> on click (in addition to the click sound).</summary>

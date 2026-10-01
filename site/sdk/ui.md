@@ -123,14 +123,15 @@ Components are ready-made widgets that bundle the native look, behaviour, and so
 
 | Component | What it is |
 | --- | --- |
-| `TextButton` | the game's text-button frame, native click sound, and native hover art |
+| `TextButton` | the game's text-button frame, native click sound, and native hover art. `WithStyle` applies one of the game's button styles, such as `old-text-button` for the unit window header |
+| `IconButton` | the game's framed square icon button, with the native glyph tint and hover |
 | `ItemTile` | the game's loot slot for an item, with native hover, a selected border, and a count badge |
 | `Flyout` | a window-framed panel that dismisses on any outside click |
 
 They are open wrappers, not sealed widgets. Each hands back the real elements (`Root`, `Content`, `Badge`, and so on), so anything a knob does not cover is reachable on them: add USS classes, set inline styles, add children, or drop to the helpers above and assemble the element yourself. The full member list is in the [UI reference](/reference/ui).
 
 ```csharp
-var gift = new TextButton("GIFT").OnClick(OpenGifts);
+var gift = new TextButton("GIFT").WithStyle("old-text-button").OnClick(OpenGifts);
 UI.InjectEach(
     UiTarget.Screen<ArmoryUIScreen>().Each(UiSelector.TypeName("UnitWindow")).After(UiSelector.Name("UnitWindowButton")),
     () => gift.Root);

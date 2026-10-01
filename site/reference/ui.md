@@ -108,9 +108,11 @@ A native-looking text button, built the way the game builds its own: a .text-but
 | Member | Description |
 | --- | --- |
 | `Hover` | The hover overlay (.text-button-hover), shown while the pointer is over the button. |
+| `Label` | The button's label (.text-button-label). |
 | `OnClick(Action)` | Run handler on click (in addition to the click sound). |
 | `Root` | The underlying button element. Add it to the tree, restyle it, extend it. |
 | `TextButton(string, bool)` | Build the button. Pass sound false to suppress the click sound. |
+| `WithStyle(string)` | Apply one of the game's button styles on top of the standard frame, the way the game's own TextButton applies its button-style and hover-style: the style class goes on the button and its -hover class on the hover overlay. The game ships old-text-button (the unit window's header buttons), positive-text-button, negative-text-button and neutral-text-button. |
 
 ### Tooltip
 
