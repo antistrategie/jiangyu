@@ -9,7 +9,7 @@ namespace Jiangyu.Game.Ui.Components;
 
 /// <summary>
 /// A native item tile: the game's loot slot rendering an item (icon, stack, trade value),
-/// with native hover, the game's <c>.slot-selected-border</c> highlight while chosen, and
+/// with the game's slot hover, a frame around the tile while chosen, and
 /// a chosen-count badge. Left-click and right-click adjust the count through
 /// <see cref="OnAdjust(Action{int})"/>, or <see cref="OnAdjust(Action{int, bool})"/> to have a
 /// held button repeat. It is an open wrapper: <see cref="Root"/> and <see cref="Badge"/>
@@ -38,6 +38,14 @@ public sealed class ItemTile
     private const float Decay = 0.8f;
     private const long TickMs = 16;
 
+    // The game's gold accent, distinct from the rarity colours a caller may frame the tile in.
+    private static readonly UnityEngine.Color SelectedFrame = new(1f, 214f / 255f, 126f / 255f, 1f);
+    private const float SelectedFrameWidth = 2f;
+
+    private const string HoverSprite = "slot_hovered";
+    private const float HoverSearchInterval = 2f;
+    private static readonly UnityEngine.Color HoverTint = new(238f / 255f, 227f / 255f, 190f / 255f, 0.08f);
+
     private IVisualElementScheduledItem _holdTicker;
     private Action<int, bool> _onDelta;
     private int _holdDelta;
@@ -59,8 +67,11 @@ public sealed class ItemTile
         }
         catch { }
 
+        // The chosen state is a frame drawn here. The game's .slot-selected-border is a solid
+        // notched backing (UI/Sprites/slot_selected) meant to sit behind a slot's contents, so
+        // laid over the tile it covers the item icon.
         _selected = UiElementExtensions.FillOverlay();
-        _selected.AddToClassList("slot-selected-border");
+        SetFrame(_selected, SelectedFrame, SelectedFrameWidth);
         _selected.SetVisible(false);
         Root.Add(_selected);
 
@@ -72,7 +83,75 @@ public sealed class ItemTile
         Badge.SetVisible(false);
         Root.Add(Badge);
 
-        Root.WireNativeHover();
+        WireSlotHover();
+    }
+
+    // The game's slot hover: the sprite and tint the game's tab_button and event_choice_button
+    // layouts give their Hover element. A loot slot has no hover of its own. The sprite is not
+    // under Resources, so it is found among the loaded sprites, and painted on each hover so a
+    // tile built before it loaded, or kept after it unloaded, still shows it. If it is missing,
+    // the hover is the tint alone.
+    private void WireSlotHover()
+    {
+        var hover = UiElementExtensions.FillOverlay();
+        hover.SetVisible(false);
+        Root.Insert(1, hover);
+        Root.RegisterCallback<PointerEnterEvent>(DelegateSupport.ConvertDelegate<EventCallback<PointerEnterEvent>>(
+            (Action<PointerEnterEvent>)(_ =>
+            {
+                PaintHover(hover);
+                hover.SetVisible(true);
+            })));
+        Root.RegisterCallback<PointerLeaveEvent>(DelegateSupport.ConvertDelegate<EventCallback<PointerLeaveEvent>>(
+            (Action<PointerLeaveEvent>)(_ => hover.SetVisible(false))));
+    }
+
+    private static void PaintHover(VisualElement hover)
+    {
+        try
+        {
+            var sprite = SlotHoverSprite();
+            if (sprite != null)
+            {
+                hover.style.backgroundImage = new StyleBackground(sprite);
+                hover.style.unityBackgroundImageTintColor = new StyleColor(HoverTint);
+                hover.style.backgroundColor = new StyleColor(UnityEngine.Color.clear);
+            }
+            else
+            {
+                hover.style.backgroundImage = new StyleBackground(StyleKeyword.None);
+                hover.style.backgroundColor = new StyleColor(HoverTint);
+            }
+        }
+        catch { }
+    }
+
+    private static UnityEngine.Sprite _hoverSprite;
+    private static float _hoverSearchAfter;
+
+    // Searched while unset or destroyed (a scene change can unload it), with a missed search not
+    // repeated for HoverSearchInterval: the search walks every loaded sprite.
+    private static UnityEngine.Sprite SlotHoverSprite()
+    {
+        if (_hoverSprite != null)
+            return _hoverSprite;
+        var now = UnityEngine.Time.unscaledTime;
+        if (now < _hoverSearchAfter)
+            return null;
+        try
+        {
+            foreach (var obj in UnityEngine.Resources.FindObjectsOfTypeAll(Il2CppType.Of<UnityEngine.Sprite>()))
+            {
+                if (obj != null && obj.name == HoverSprite)
+                {
+                    _hoverSprite = obj.Cast<UnityEngine.Sprite>();
+                    return _hoverSprite;
+                }
+            }
+        }
+        catch { }
+        _hoverSearchAfter = now + HoverSearchInterval;
+        return null;
     }
 
     /// <summary>Left-click calls <paramref name="onDelta"/> with +1, right-click with -1.</summary>
@@ -174,4 +253,17 @@ public sealed class ItemTile
         Badge.SetVisible(count > 0);
     }
 
+    private static void SetFrame(VisualElement element, UnityEngine.Color colour, float width)
+    {
+        var c = new StyleColor(colour);
+        element.style.borderTopColor = c;
+        element.style.borderBottomColor = c;
+        element.style.borderLeftColor = c;
+        element.style.borderRightColor = c;
+        var w = new StyleFloat(width);
+        element.style.borderTopWidth = w;
+        element.style.borderBottomWidth = w;
+        element.style.borderLeftWidth = w;
+        element.style.borderRightWidth = w;
+    }
 }

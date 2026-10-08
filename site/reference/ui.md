@@ -90,7 +90,7 @@ A window-framed panel that can dismiss itself on any outside click. Wraps the ga
 
 ### ItemTile
 
-A native item tile: the game's loot slot rendering an item (icon, stack, trade value), with native hover, the game's .slot-selected-border highlight while chosen, and a chosen-count badge. Left-click and right-click adjust the count through OnAdjust, or OnAdjust to have a held button repeat. It is an open wrapper: Root and Badge are real elements to restyle or extend.
+A native item tile: the game's loot slot rendering an item (icon, stack, trade value), with the game's slot hover, a frame around the tile while chosen, and a chosen-count badge. Left-click and right-click adjust the count through OnAdjust, or OnAdjust to have a held button repeat. It is an open wrapper: Root and Badge are real elements to restyle or extend.
 
 | Member | Description |
 | --- | --- |
