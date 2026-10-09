@@ -6,6 +6,8 @@ Changes relevant to modders building with Jiangyu, and to players running Jiangy
 
 - (SDK) Fixed `ItemTile` hover taking its glow from whichever screen opened first, which showed green on some screens
 - (SDK) Fixed a chosen `ItemTile` covering its item icon
+- (Compiler) Fixed setting the fields of a Unity value such as `Vector2Int` or `Color` inside a block failing with "no type prefix matched a known type"
+- (Studio) Fixed the visual editor showing no fields for a Unity value such as `Vector2Int` or `Color`
 
 ## 1.4.7
 

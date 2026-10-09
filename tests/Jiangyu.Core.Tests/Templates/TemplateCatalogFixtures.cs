@@ -299,6 +299,11 @@ namespace Jiangyu.Core.Tests.Templates.Fixtures.Gameplay
         public bool IsEnabled { get; set; }
         public float HudYOffsetScale { get; set; }
 
+        // Value type from an assembly outside the scanned set that the
+        // catalogue loads only on demand, like UnityEngine.Vector2Int (in
+        // UnityEngine.CoreModule) on a game template.
+        public System.Drawing.Point AimOffset { get; set; }
+
         // Wider integer family — exercise scalar-kind mapping and applier
         // range-checked widening for sibling integer widths. Real game data
         // uses these (e.g. UInt16 for SkillTemplate.Repetitions).

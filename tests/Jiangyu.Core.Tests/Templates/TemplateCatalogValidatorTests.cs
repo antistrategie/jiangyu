@@ -177,6 +177,62 @@ public class TemplateCatalogValidatorTests
     }
 
     [Fact]
+    public void InferredComposite_OfAStructOutsideTheScannedAssemblies_ValidatesItsFields()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "FixtureEntity",
+                TemplateId = "unit.x",
+                Set = [new CompiledTemplateSetOperation
+                {
+                    Op = CompiledTemplateOp.Set,
+                    FieldPath = "AimOffset",
+                    Value = new CompiledTemplateValue
+                    {
+                        Kind = CompiledTemplateValueKind.Composite,
+                        Composite = new CompiledTemplateComposite
+                        {
+                            Operations = SetOps(
+                                ("X", new() { Kind = CompiledTemplateValueKind.Int32, Int32 = 1 }),
+                                ("Y", new() { Kind = CompiledTemplateValueKind.Int32, Int32 = 2 })),
+                        },
+                    },
+                }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Empty(log.Errors);
+        Assert.Equal(0, errors);
+    }
+
+    [Fact]
+    public void PatchOnAReferencedAssemblyType_Errors()
+    {
+        using var catalog = Load();
+        var log = new RecordingLog();
+        var patches = new[]
+        {
+            new CompiledTemplatePatch
+            {
+                TemplateType = "System.Drawing.Point",
+                TemplateId = "x",
+                Set = [new CompiledTemplateSetOperation { Op = CompiledTemplateOp.Set, FieldPath = "X", Value = new CompiledTemplateValue { Kind = CompiledTemplateValueKind.Int32, Int32 = 1 } }],
+            },
+        };
+
+        var errors = TemplateCatalogValidator.Validate(patches, clones: null, catalog, log);
+
+        Assert.Equal(1, errors);
+        Assert.Contains("System.Drawing.Point", log.Errors[0]);
+    }
+
+    [Fact]
     public void NamedArray_AppendRejected()
     {
         using var catalog = Load();

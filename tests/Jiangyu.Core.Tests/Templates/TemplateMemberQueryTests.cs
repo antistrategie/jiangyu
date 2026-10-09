@@ -23,6 +23,20 @@ public class TemplateMemberQueryTests
     }
 
     [Fact]
+    public void ReferencedAssemblyStruct_ResolvesByFullName()
+    {
+        // The visual editor asks for an inferred composite's members by the
+        // member's type name, which for an engine struct lives outside the
+        // scanned assemblies.
+        using var catalog = Load();
+        var result = TemplateMemberQuery.Run(catalog, "System.Drawing.Point");
+
+        Assert.Equal(QueryResultKind.TypeNode, result.Kind);
+        Assert.Contains(result.Members!, m => m.Name == "X");
+        Assert.Null(catalog.ResolveType("System.Drawing.Point", out _, out _));
+    }
+
+    [Fact]
     public void NestedWrapper_ReturnsTypeNode()
     {
         using var catalog = Load();

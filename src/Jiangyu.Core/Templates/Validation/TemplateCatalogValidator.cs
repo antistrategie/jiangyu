@@ -94,7 +94,7 @@ public static class TemplateCatalogValidator
         foreach (var node in document.Nodes)
         {
             if (string.IsNullOrWhiteSpace(node.TemplateType)) continue;
-            if (catalog.ResolveType(node.TemplateType, out _, out _) is null) continue;
+            if (catalog.ResolveType(node.TemplateType, out _, out _) is not { } nodeType) continue;
 
             foreach (var directive in node.Directives)
             {
@@ -103,6 +103,7 @@ public static class TemplateCatalogValidator
                 var op = KdlEditorBridge.EditorDirectiveToCompiled(directive);
                 ValidateOperation(
                     op,
+                    nodeType,
                     node.TemplateType,
                     catalog,
                     additions: null,
@@ -173,6 +174,7 @@ public static class TemplateCatalogValidator
                 var localErrors = new List<string>();
                 var errorCount = ValidateOperation(
                     op,
+                    resolvedType,
                     node.TemplateType,
                     catalog,
                     additions: null,
@@ -262,6 +264,7 @@ public static class TemplateCatalogValidator
         {
             errors += ValidateOperation(
                 op,
+                type,
                 templateType,
                 catalog,
                 additions,
@@ -297,7 +300,8 @@ public static class TemplateCatalogValidator
 
     private static int ValidateOperation(
         CompiledTemplateSetOperation op,
-        string templateType,
+        Type rootType,
+        string rootLabel,
         TemplateTypeCatalog catalog,
         IAssetAdditionsCatalog? additions,
         Action<string> reportError,
@@ -315,15 +319,14 @@ public static class TemplateCatalogValidator
 
         // TemplateMemberQuery walks a flat dotted-with-bracket path, so build
         // one from the structural descent at the boundary.
-        var queryPath = BuildLegacyQueryPath(templateType, op);
-        var result = TemplateMemberQuery.Run(catalog, queryPath);
+        var result = TemplateMemberQuery.RunFrom(catalog, rootType, BuildFieldQueryPath(op), rootLabel);
         if (result.Kind == QueryResultKind.Error)
         {
             // Surface the navigator's specific message (polymorphism hint
             // missing, subtype not assignable, indexer on a non-collection,
             // etc.) so modders see what to fix. Falling back to the generic
             // "not a field of X" eats useful context.
-            reportError(result.ErrorMessage ?? $"'{FormatFullPath(op)}' is not a field of {templateType}.");
+            reportError(result.ErrorMessage ?? $"'{FormatFullPath(op)}' is not a field of {rootLabel}.");
             return 1;
         }
 
@@ -339,7 +342,7 @@ public static class TemplateCatalogValidator
         // Key the hashable check on the terminal field's declaring type (e.g.
         // Stem.ID for a descended bankId) and its terminal name, so descent
         // and flat-dotted paths resolve the same as a composite-inner op.
-        var hashableType = result.DeclaringType?.FullName ?? templateType;
+        var hashableType = result.DeclaringType?.FullName ?? rootType.FullName ?? rootLabel;
         var hashableField = TerminalSegment(op.FieldPath);
         if (op.Value is { Kind: CompiledTemplateValueKind.String } stringValue
             && result.PatchScalarKind is CompiledTemplateValueKind.Int32
@@ -1248,7 +1251,7 @@ public static class TemplateCatalogValidator
                 return 0;
             return ValidateInnerOperations(
                 construction.Operations,
-                codeType.FullName ?? typeName,
+                codeType,
                 $"type= construction for '{FormatFullPath(op)}'",
                 catalog,
                 additions,
@@ -1317,7 +1320,7 @@ public static class TemplateCatalogValidator
         // facing context label keeps the friendly short name.
         return ValidateInnerOperations(
             construction.Operations,
-            subtype.FullName ?? subtype.Name,
+            subtype,
             $"type= construction for '{FormatFullPath(op)}'",
             catalog,
             additions,
@@ -1362,7 +1365,7 @@ public static class TemplateCatalogValidator
                 return 0;
             return ValidateInnerOperations(
                 composite.Operations,
-                codeType.FullName ?? composite.TypeName,
+                codeType,
                 $"composite '{contextPath}'",
                 catalog,
                 additions,
@@ -1579,7 +1582,7 @@ public static class TemplateCatalogValidator
 
         return ValidateInnerOperations(
             composite.Operations,
-            type.FullName ?? composite.TypeName,
+            type,
             $"composite '{contextPath}'",
             catalog,
             additions,
@@ -1593,7 +1596,7 @@ public static class TemplateCatalogValidator
 
     private static int ValidateInnerOperations(
         List<CompiledTemplateSetOperation> operations,
-        string typeName,
+        Type rootType,
         string contextLabel,
         TemplateTypeCatalog catalog,
         IAssetAdditionsCatalog? additions,
@@ -1630,7 +1633,8 @@ public static class TemplateCatalogValidator
             void InnerReport(string message) => reportError($"{contextLabel}: {message}");
             errors += ValidateOperation(
                 inner,
-                typeName,
+                rootType,
+                rootType.FullName ?? rootType.Name,
                 catalog,
                 additions,
                 InnerReport,
@@ -1643,29 +1647,27 @@ public static class TemplateCatalogValidator
     }
 
     /// <summary>
-    /// Build the bracketed dotted path that <see cref="TemplateMemberQuery"/>
+    /// Build the bracketed dotted field path that <see cref="TemplateMemberQuery"/>
     /// expects from the structural descent on <paramref name="op"/>. A
     /// non-null step index emits a <c>Field[N]</c> collection indexer; a null
     /// index emits a bare <c>Field</c> object-field descent.
     /// </summary>
-    private static string BuildLegacyQueryPath(
-        string templateType,
-        CompiledTemplateSetOperation op)
+    private static string BuildFieldQueryPath(CompiledTemplateSetOperation op)
     {
         if (op.Descent is not { Count: > 0 } descent)
-            return $"{templateType}.{op.FieldPath}";
+            return op.FieldPath;
 
         var sb = new System.Text.StringBuilder();
-        sb.Append(templateType);
         foreach (var step in descent)
         {
             // The subtype is inferred either way, so the navigator resolves
             // inner members against the base's subtype union.
-            sb.Append('.').Append(step.Field);
+            sb.Append(step.Field);
             if (step.Index is int idx)
                 sb.Append('[').Append(idx).Append(']');
+            sb.Append('.');
         }
-        sb.Append('.').Append(op.FieldPath);
+        sb.Append(op.FieldPath);
         return sb.ToString();
     }
 

@@ -163,6 +163,62 @@ public sealed class TemplateTypeCatalog : IDisposable
 
     private static IEnumerable<Type> SafeGetTypes(Assembly assembly) => AssemblyTypes.SafeGetTypes(assembly);
 
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Type?> _referencedTypes = new(StringComparer.Ordinal);
+    private Assembly[]? _referencedAssemblies;
+
+    /// <summary>
+    /// Resolve the exact full name of a type declared in an assembly the
+    /// scanned assemblies reference directly (<c>UnityEngine.Vector2Int</c> in
+    /// <c>UnityEngine.CoreModule</c>), for naming a member's type the catalogue
+    /// does not scan. Null when no such assembly declares it, or when more than
+    /// one does. <see cref="ResolveType"/> never consults this set.
+    /// </summary>
+    public Type? ResolveReferencedType(string fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName))
+            return null;
+        return _referencedTypes.GetOrAdd(fullName, name =>
+        {
+            var matches = ReferencedAssemblies()
+                .Select(assembly => assembly.GetType(name, throwOnError: false))
+                .OfType<Type>()
+                .Distinct()
+                .Take(2)
+                .ToArray();
+            return matches.Length == 1 ? matches[0] : null;
+        });
+    }
+
+    private Assembly[] ReferencedAssemblies()
+    {
+        if (_referencedAssemblies is { } cached)
+            return cached;
+
+        var scanned = _allTypes.Select(type => type.Assembly).Distinct().ToArray();
+        var names = scanned
+            .SelectMany(assembly => assembly.GetReferencedAssemblies())
+            .Select(name => name.Name)
+            .Where(name => !string.IsNullOrEmpty(name))
+            .Distinct(StringComparer.Ordinal);
+
+        var referenced = new List<Assembly>();
+        foreach (var name in names)
+        {
+            if (scanned.Any(assembly => assembly.GetName().Name == name))
+                continue;
+            try
+            {
+                referenced.Add(_context.LoadFromAssemblyName(name!));
+            }
+            catch (FileNotFoundException)
+            {
+                // A reference outside the resolver's search paths declares
+                // nothing a template member can reach.
+            }
+        }
+        return _referencedAssemblies = [.. referenced];
+    }
+
     /// <summary>
     /// Resolve <paramref name="nameOrFullName"/> to a non-abstract type in the
     /// assembly. Accepts both short names (<c>EntityTemplate</c>) and

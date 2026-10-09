@@ -83,16 +83,36 @@ public static class TemplateMemberQuery
             return QueryResult.FromError(resolutionError ?? $"no type prefix in '{trimmed}' matched a known type.");
 
         var typeName = string.Join('.', segments.Take(typeCutoff));
-        var fieldSegments = segments.Skip(typeCutoff).ToArray();
+        var fieldPath = string.Join('.', segments.Skip(typeCutoff));
+        return RunFrom(catalog, resolvedType, fieldPath, typeName);
+    }
 
-        if (fieldSegments.Length == 0)
-            return TypeNodeFor(catalog, resolvedType, typeName);
+    /// <summary>
+    /// Navigate <paramref name="fieldPath"/> from an already-resolved
+    /// <paramref name="rootType"/>, without looking the root up by name.
+    /// An empty path returns the root's type node.
+    /// </summary>
+    /// <param name="rootLabel">
+    /// How the root is written in resolved paths and messages. Defaults to
+    /// the root's full name.
+    /// </param>
+    public static QueryResult RunFrom(
+        TemplateTypeCatalog catalog,
+        Type rootType,
+        string fieldPath,
+        string? rootLabel = null)
+    {
+        var typeName = rootLabel ?? rootType.FullName ?? rootType.Name;
+        if (fieldPath.Length == 0)
+            return TypeNodeFor(catalog, rootType, typeName);
 
-        var fieldPath = string.Join('.', fieldSegments);
+        var fieldSegments = fieldPath.Split('.');
+        if (fieldSegments.Any(string.IsNullOrWhiteSpace))
+            return QueryResult.FromError("query contains empty segment.");
         if (!TemplatePatchPathValidator.IsSupportedFieldPath(fieldPath))
             return QueryResult.FromError($"field path '{fieldPath}' is not a supported patch path.");
 
-        return NavigateFieldPath(catalog, resolvedType, typeName, fieldSegments);
+        return NavigateFieldPath(catalog, rootType, typeName, fieldSegments);
     }
 
     private static int FindBestTypePrefix(
@@ -117,6 +137,8 @@ public static class TemplateMemberQuery
         {
             var candidate = string.Join('.', segments.Take(len));
             var match = catalog.ResolveType(candidate, out var candidates, out var resolveError, namespaceHint);
+            if (match == null && candidates.Count == 0)
+                match = catalog.ResolveReferencedType(candidate);
             if (match != null)
             {
                 bestLen = len;
