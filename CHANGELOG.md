@@ -2,6 +2,10 @@
 
 Changes relevant to modders building with Jiangyu, and to players running Jiangyu mods where they can see the difference. Entries are scoped Loader, Compiler, Studio, CLI, MCP or SDK.
 
+## 1.4.9
+
+- (Loader) Fixed mod UI disappearing from a screen returned to through Escape, the pause menu or back, since the MENACE v0.7.15 update
+
 ## 1.4.8
 
 - (SDK) Fixed `ItemTile` hover taking its glow from whichever screen opened first, which showed green on some screens

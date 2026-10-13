@@ -211,11 +211,13 @@ public static class UI
     // Whether any injection is registered. The loader skips its driver when false.
     internal static bool HasInjections => Injections.Count > 0;
 
-    // The loader's UIScreen.Activate and UIManager.OpenScreen postfixes call this when it becomes the
-    // active one. Re-applies immediately, then hooks the screen root's GeometryChangedEvent
+    // The loader's UIManager.OpenScreen, UIScreen.OnOpen and UIScreen.Activate postfixes call this
+    // when a screen comes up. Re-applies immediately, then hooks the screen root's GeometryChangedEvent
     // so an injection whose target site is built after activation lands once the screen
-    // lays out, without polling. Idempotent: re-apply skips occupied sites, and each root
-    // is hooked once.
+    // lays out, without polling. The hook also covers a screen re-enabled while the screen
+    // closing over it is still the manager's active one: targets resolve against the active
+    // screen, and its rebuilt root's first layout re-applies once the close has finished.
+    // Idempotent: re-apply skips occupied sites, and each root is hooked once.
     internal static void NotifyScreenActivated(UIScreen screen)
     {
         if (!HasInjections)

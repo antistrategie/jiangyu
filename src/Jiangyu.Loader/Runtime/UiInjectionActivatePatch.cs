@@ -9,9 +9,10 @@ namespace Jiangyu.Loader.Runtime;
 
 /// <summary>
 /// Re-applies mod UI injections when the game brings a screen up, by Harmony-postfixing
-/// both <c>UIManager.OpenScreen</c> (a fresh open) and <c>UIScreen.Activate</c>
-/// (including cached-screen reactivation through Escape and pause/Continue).
-/// <see cref="UI"/> re-applies immediately and
+/// <c>UIManager.OpenScreen</c> (a fresh open), <c>UIScreen.OnOpen</c> (a cached screen
+/// re-enabled through Escape, pause/Continue or the back key, whose UIDocument rebuilt its
+/// tree and dropped every injected element) and <c>UIScreen.Activate</c> (a screen kept
+/// active in the background). <see cref="UI"/> re-applies immediately and
 /// hooks the screen root's GeometryChangedEvent so content built after the open still
 /// lands, without a settle loop.
 ///
@@ -34,15 +35,19 @@ internal sealed class UiInjectionActivatePatch : IHarmonyPatchModule
     public void Install(HarmonyLib.Harmony harmony, LoaderHarmonyPatchContext context)
     {
         _log = context.Log;
-        // JIANGYU-CONTRACT: UIScreen.Activate is non-virtual in the current game metadata
-        // (RVA 0x822D70). Cached screens can call it without UIManager.ActivateScreen,
-        // so this entry point covers both direct activation and the manager wrapper.
+        // JIANGYU-CONTRACT: UIManager.ActivateScreen (RVA 0x843480) and OpenScreen call
+        // UIScreen.Activate (0x86BB50) only when the screen's KeepActiveInBackground is true.
+        // Every other screen comes back through GameObject.SetActive(true), whose
+        // UIScreen.OnEnable (0x86C7D0) calls the non-virtual OnOpen (0x86C860) on a fresh tree.
+        HarmonyPatching.TryPostfix(harmony, "Il2CppMenace.UI.UIScreen", "OnOpen",
+            typeof(UiInjectionActivatePatch), nameof(OnOpenPostfix), _log, "ui injection");
         HarmonyPatching.TryPostfix(harmony, "Il2CppMenace.UI.UIScreen", "Activate",
             typeof(UiInjectionActivatePatch), nameof(ActivatePostfix), _log, "ui injection");
         HarmonyPatching.TryPostfix(harmony, "Il2CppMenace.UI.UIManager", "OpenScreen",
             typeof(UiInjectionActivatePatch), nameof(OpenScreenPostfix), _log, "ui injection");
     }
 
+    private static void OnOpenPostfix(UIScreen __instance) => OnScreen(__instance, "OnOpen");
     private static void ActivatePostfix(UIScreen __instance) => OnScreen(__instance, "Activate");
     private static void OpenScreenPostfix(UIScreen __result) => OnScreen(__result, "OpenScreen");
 
