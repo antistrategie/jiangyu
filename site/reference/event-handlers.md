@@ -111,7 +111,7 @@ The factory the template data holds. `Create()` returns a fresh handler with the
 
 ## Built-in handlers
 
-The 169 handlers the game ships. Name one in `type="<Name>"` to add it, and set the fields listed. Every field you do not set takes its type default. Enum fields list their allowed values. A field typed with an interface (`ITacticalCondition`, `IValueProvider`, …) is a polymorphic slot: fill it with `set "<Field>" type="<Subtype>" { ... }`, or `append` for an array of them, picking the subtype from the family section the row links to.
+The 174 handlers the game ships. Name one in `type="<Name>"` to add it, and set the fields listed. Every field you do not set takes its type default. Enum fields list their allowed values. A field typed with an interface (`ITacticalCondition`, `IValueProvider`, …) is a polymorphic slot: fill it with `set "<Field>" type="<Subtype>" { ... }`, or `append` for an array of them, picking the subtype from the family section the row links to.
 
 ```kdl
 append "EventHandlers" type="AddSkill" {
@@ -145,6 +145,12 @@ append "EventHandlers" type="AddSkill" {
 | `TargetRequiresOneOfTheseTags` | `List<TagTemplate>` |  |
 
 ### AddSkillAfterMovement
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `Effect` | `SkillTemplate` |  |
+
+### AddSkillOnKill
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
@@ -263,7 +269,7 @@ append "EventHandlers" type="AddSkill" {
 | `DismemberChance` | `int` |  |
 | `ElementsHit` | `int` |  |
 | `ElementsHitPercentage` | `float` |  |
-| `EntityFlagsRequired` | `EntityFlags` | `CantEnterContainers`, `Confused`, `DesignatedTarget`, `HeavyWeaponsAllowed`, `IgnoreDeploymentRequirements`, `IgnoreSuppressedAPLoss`, `ImmuneDesignatedTarget`, `ImmuneToDamage`, `ImmuneToEncumbrance`, `ImmuneToIndirectSuppression`, `ImmuneToLightEffect`, `ImmuneToMorale`, `ImmuneToSuppression`, `ImmuneToSuppressionFromElementLost`, `IrrelevantToMorale`, `None`, `Rooted`, `RootedByStance`, `Stunned` |
+| `EntityFlagsRequired` | `EntityFlags` | `CantEnterContainers`, `Confused`, `DesignatedTarget`, `HeavyWeaponsAllowed`, `IgnoreDeploymentRequirements`, `IgnoreSuppressedAPLoss`, `ImmuneDesignatedTarget`, `ImmuneToDamage`, `ImmuneToEncumbrance`, `ImmuneToIndirectSuppression`, `ImmuneToLightEffect`, `ImmuneToMorale`, `ImmuneToStun`, `ImmuneToSuppression`, `ImmuneToSuppressionFromElementLost`, `IrrelevantToMorale`, `None`, `Rooted`, `RootedByStance`, `Stunned` |
 | `FatalityType` | `FatalityType` | `Burning`, `Default`, `Explosion`, `Laser`, `Plasma` |
 | `IsHalfCoverDestroyedOnAOECenterTileOnly` | `bool` |  |
 | `Suppression` | `float` |  |
@@ -325,6 +331,7 @@ append "EventHandlers" type="AddSkill" {
 | Field | Type | Values / notes |
 | --- | --- | --- |
 | `CameraEffect` | `CameraEffectType` | `HeavyQuake`, `LightQuake`, `MoveXZ`, `MoveY`, `None` |
+| `Delay` | `float` |  |
 | `Duration` | `float` |  |
 | `Intensity` | `float` |  |
 | `RecoverTime` | `float` |  |
@@ -333,6 +340,7 @@ append "EventHandlers" type="AddSkill" {
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
+| `AdditionalEffectOnKill` | `SkillTemplate` |  |
 | `Severity` | `DefectSeverity` | `Heavy`, `Light`, `Medium` |
 
 ### ChangeAPBasedOnHP
@@ -460,6 +468,7 @@ append "EventHandlers" type="AddSkill" {
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
+| `Condition` | `ITacticalCondition` | Polymorphic: pick a subtype from [Conditions](#conditions) with `set "Condition" type="<Subtype>" { ... }`. |
 | `OnlyForThisSkill` | `bool` |  |
 | `Properties` | `PropertyChange[]` |  |
 
@@ -491,6 +500,14 @@ append "EventHandlers" type="AddSkill" {
 | `AmountMult` | `float` |  |
 | `PropertyType` | `EntityPropertyType` | `AIPriorityMult`, `APEnterCost`, `APLeaveCost`, `Accuracy`, `AccuracyDropoff`, `AccuracyDropoffMult`, `AccuracyMult`, `ActionPoints`, `ActionPointsMult`, `AdditionalMovementCost`, `AdditionalTurningCost`, `Armor`, `ArmorDamageSustainedMult`, `ArmorDurabilityPerElement`, `ArmorMult`, `ArmorPenetration`, `ArmorPenetrationDropoff`, `ArmorPenetrationDropoffMult`, `ArmorPenetrationMult`, `BackwardsMovementMult`, `Concealment`, `ConcealmentMult`, `CoverEffectivenessMult`, `CoverGainedByVehicleOffset`, `CoverTypeOffset`, `CriticalChance`, `CriticalDamageMult`, `Damage`, `DamageDropoff`, `DamageDropoffMult`, `DamageMult`, `DamageSustainedMult`, `DamageSustainedSquadLeaderMult`, `DamageToArmorDurability`, `DamageToArmorDurabilityDropoff`, `DamageToArmorDurabilityDropoffMult`, `DamageToArmorDurabilityMult`, `DamageToMoraleMult`, `DefectThresholdOffset`, `DefenseMult`, `DeployCostMult`, `DeploymentZoneMinExtend`, `DeploymentZoneMult`, `Detection`, `DetectionMult`, `Discipline`, `DisciplineMult`, `DismemberChance`, `ElementsHit`, `ElementsHitPct`, `GetDismemberedChanceBonus`, `GetDismemberedChanceMult`, `GetDismemberedMaxParts`, `GetDismemberedMinParts`, `HitchanceMin`, `HitpointsPerElement`, `HitpointsPerElementMult`, `IgnoreCoverMult`, `MaxElements`, `MoraleBonus`, `MoraleImpactMult`, `MoraleMult`, `MoraleRecoveryMult`, `MoraleStateOffset`, `PromotionCostMult`, `ProvidedCoverBonus`, `ReduceElementsHit`, `SuppressionDealt`, `SuppressionDealtMult`, `SuppressionImpactMult`, `TotalDamageMult`, `Vision`, `VisionMult` |
 | `RequiredTags` | `TagType[]` | `ACCESSORY`, `ACCURATE`, `AIRPOWER`, `ANTI_INFANTRY`, `ANTI_STRUCTURE`, `ANTI_VEHICLE`, `AREA_OF_EFFECT`, `ARMOR_DAMAGING`, `ARMOR_PIERCING`, `ASSAULT_RIFLE`, `BATTLE_RIFLE`, `CAMOUFLAGE`, `COMMODITY`, `CRAFTING_MATERIAL`, `DEMORALIZING`, `DEPLOY`, `DEPLOYABLE`, `DESTRUCTIBLE`, `DISABLING`, `DRONE`, `DRUG`, `EMP`, `ENERGY`, `FLEXIBLE`, `GRENADE`, `HAZARDOUS`, `HEAVY_ARMOR`, `HIGH_RATE_OF_FIRE`, `HORDE`, `HOVERING`, `IGNORES_COVER`, `INACCURATE`, `INCENDIARY`, `INDIRECT_FIRE`, `INFANTRY`, `JAM`, `JETPACK`, `LARGE`, `LIGHT_ARMOR`, `LIMITED_AMMO`, `LONG_RANGE`, `LOW_PENETRATION`, `LOW_QUALITY`, `Last`, `MACHINE`, `MANY_ACCESSORIES`, `MASSIVE_EXPLOSION`, `MEDIUM_ARMOR`, `MINE`, `MINIMUM_RANGE`, `MINI_BOSS`, `MOBILE`, `MOTORIZED_INFANTRY`, `ORBITAL`, `PROJECTILE`, `ROCKET`, `SCANNER`, `SCATTER`, `SHORT_RANGE`, `SHOTGUN`, `SMG`, `SMOKE`, `SNIPER`, `SPECIAL_WEAPON`, `SQUAD_WEAPON`, `STANCE`, `STEALTH`, `STRUCTURE`, `SUPPRESSIVE`, `TANK`, `UNIQUE`, `UNUSED_MUST_DEPLOY`, `UTILITY`, `VEHICLE`, `VEHICLE_WEAPON`, `VIP`, `WALKER`, `WEAPON`, `WEAPONS_TEAM`, `XENO` |
+
+### ChangeSquaddieRescue
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `BonusRescueChancePerSquaddie` | `int` |  |
+| `GlobalBonusRescueChancePerSquaddie` | `int` |  |
+| `MinRescuedSquaddiesPerSquad` | `int` |  |
 
 ### ChangeStance
 
@@ -703,7 +720,7 @@ No settable fields. It carries behaviour only.
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `Flag` | `EntityFlags` | `CantEnterContainers`, `Confused`, `DesignatedTarget`, `HeavyWeaponsAllowed`, `IgnoreDeploymentRequirements`, `IgnoreSuppressedAPLoss`, `ImmuneDesignatedTarget`, `ImmuneToDamage`, `ImmuneToEncumbrance`, `ImmuneToIndirectSuppression`, `ImmuneToLightEffect`, `ImmuneToMorale`, `ImmuneToSuppression`, `ImmuneToSuppressionFromElementLost`, `IrrelevantToMorale`, `None`, `Rooted`, `RootedByStance`, `Stunned` |
+| `Flag` | `EntityFlags` | `CantEnterContainers`, `Confused`, `DesignatedTarget`, `HeavyWeaponsAllowed`, `IgnoreDeploymentRequirements`, `IgnoreSuppressedAPLoss`, `ImmuneDesignatedTarget`, `ImmuneToDamage`, `ImmuneToEncumbrance`, `ImmuneToIndirectSuppression`, `ImmuneToLightEffect`, `ImmuneToMorale`, `ImmuneToStun`, `ImmuneToSuppression`, `ImmuneToSuppressionFromElementLost`, `IrrelevantToMorale`, `None`, `Rooted`, `RootedByStance`, `Stunned` |
 
 ### DisableItem
 
@@ -723,6 +740,10 @@ No settable fields. It carries behaviour only.
 | `SkillFilter` | `ISkillFilter` | Polymorphic: pick a subtype from [Skill filters](#skill-filters) with `set "SkillFilter" type="<Subtype>" { ... }`. |
 
 ### DisallowInvisible
+
+No settable fields. It carries behaviour only.
+
+### Disdain
 
 No settable fields. It carries behaviour only.
 
@@ -875,6 +896,7 @@ No settable fields. It carries behaviour only.
 | Field | Type | Values / notes |
 | --- | --- | --- |
 | `Effect` | `SkillTemplate` |  |
+| `SetToHpPercentage` | `int` |  |
 
 ### Jamming
 
@@ -939,6 +961,14 @@ No settable fields. It carries behaviour only.
 | Field | Type | Values / notes |
 | --- | --- | --- |
 | `MaxUses` | `int` |  |
+
+### Linebreaker
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `EffectToApply` | `SkillTemplate` |  |
+| `MovementSpeedMultiplier` | `float` |  |
+| `PlayRateMultiplier` | `float` |  |
 
 ### ModifyNamedValue
 
@@ -1015,6 +1045,12 @@ No settable fields. It carries behaviour only.
 | Field | Type | Values / notes |
 | --- | --- | --- |
 | `SkillFilter` | `ISkillFilter` | Polymorphic: pick a subtype from [Skill filters](#skill-filters) with `set "SkillFilter" type="<Subtype>" { ... }`. |
+
+### PartirDeRien
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `RequiredStacksForUse` | `int` |  |
 
 ### PlayAnimationSequence
 
@@ -1183,11 +1219,19 @@ No settable fields. It carries behaviour only.
 | `Delay` | `float` |  |
 | `Parameter` | `AnimatorParameterNameTemplate` |  |
 
+### SetConversationVar
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `Event` | `SetConversationVarEvent` | `OnAfterUse`, `OnMissionFinished`, `OnMissionStart`, `OnRoundStart` |
+| `Value` | `Expression` |  |
+| `Variable` | `string` |  |
+
 ### SetEntityFlag
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `Flag` | `EntityFlags` | `CantEnterContainers`, `Confused`, `DesignatedTarget`, `HeavyWeaponsAllowed`, `IgnoreDeploymentRequirements`, `IgnoreSuppressedAPLoss`, `ImmuneDesignatedTarget`, `ImmuneToDamage`, `ImmuneToEncumbrance`, `ImmuneToIndirectSuppression`, `ImmuneToLightEffect`, `ImmuneToMorale`, `ImmuneToSuppression`, `ImmuneToSuppressionFromElementLost`, `IrrelevantToMorale`, `None`, `Rooted`, `RootedByStance`, `Stunned` |
+| `Flag` | `EntityFlags` | `CantEnterContainers`, `Confused`, `DesignatedTarget`, `HeavyWeaponsAllowed`, `IgnoreDeploymentRequirements`, `IgnoreSuppressedAPLoss`, `ImmuneDesignatedTarget`, `ImmuneToDamage`, `ImmuneToEncumbrance`, `ImmuneToIndirectSuppression`, `ImmuneToLightEffect`, `ImmuneToMorale`, `ImmuneToStun`, `ImmuneToSuppression`, `ImmuneToSuppressionFromElementLost`, `IrrelevantToMorale`, `None`, `Rooted`, `RootedByStance`, `Stunned` |
 
 ### SetNamedValue
 
@@ -1209,17 +1253,10 @@ No settable fields. It carries behaviour only.
 | --- | --- | --- |
 | `IconToShow` | `Icon` | `None`, `TargetDesignated` |
 
-### ShowIsolatedIcon
-
-| Field | Type | Values / notes |
-| --- | --- | --- |
-| `Radius` | `int` |  |
-
 ### ShowUnitHUDIcon
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `Conditions` | `ITacticalCondition[]` | Polymorphic list: add subtypes from [Conditions](#conditions) with `append "Conditions" type="<Subtype>" { ... }`. |
 | `Icon` | `Sprite` |  |
 | `Target` | `TargetUnit` | `AllEnemies`, `Self` |
 
@@ -1269,6 +1306,14 @@ No settable fields. It carries behaviour only.
 | `DelayWithDistance` | `float` |  |
 | `EffectToSpawn` | `TileEffectTemplate` |  |
 | `Event` | `ApplyOnEvent` | `OnDeath`, `OnTileChanged`, `OnUse` |
+
+### Sprint
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `EffectToApply` | `SkillTemplate` |  |
+| `MovementSpeedMultiplier` | `float` |  |
+| `PlayRateMultiplier` | `float` |  |
 
 ### StanceDeployed
 
@@ -1321,12 +1366,6 @@ No settable fields. It carries behaviour only.
 | `APLoss` | `int` |  |
 | `Effect` | `SkillTemplate` |  |
 | `Radius` | `int` |  |
-
-### ThrivingUnderPressure
-
-| Field | Type | Values / notes |
-| --- | --- | --- |
-| `RequiredStacksForUse` | `int` |  |
 
 ### ToggleSkills
 
@@ -1495,7 +1534,7 @@ No fields of its own. It takes only the shared fields above.
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `RequiredFlag` | `EntityFlags` | `CantEnterContainers`, `Confused`, `DesignatedTarget`, `HeavyWeaponsAllowed`, `IgnoreDeploymentRequirements`, `IgnoreSuppressedAPLoss`, `ImmuneDesignatedTarget`, `ImmuneToDamage`, `ImmuneToEncumbrance`, `ImmuneToIndirectSuppression`, `ImmuneToLightEffect`, `ImmuneToMorale`, `ImmuneToSuppression`, `ImmuneToSuppressionFromElementLost`, `IrrelevantToMorale`, `None`, `Rooted`, `RootedByStance`, `Stunned` |
+| `RequiredFlag` | `EntityFlags` | `CantEnterContainers`, `Confused`, `DesignatedTarget`, `HeavyWeaponsAllowed`, `IgnoreDeploymentRequirements`, `IgnoreSuppressedAPLoss`, `ImmuneDesignatedTarget`, `ImmuneToDamage`, `ImmuneToEncumbrance`, `ImmuneToIndirectSuppression`, `ImmuneToLightEffect`, `ImmuneToMorale`, `ImmuneToStun`, `ImmuneToSuppression`, `ImmuneToSuppressionFromElementLost`, `IrrelevantToMorale`, `None`, `Rooted`, `RootedByStance`, `Stunned` |
 
 ### HasItemInSlotCondition
 
@@ -1603,6 +1642,8 @@ No settable fields. It carries behaviour only.
 | Field | Type | Values / notes |
 | --- | --- | --- |
 | `MaxDistance` | `int` |  |
+| `m_Ray` | `FixedLengthRayShape` |  |
+| `m_Tiles` | `List<Tile>` |  |
 
 ### SkillWithOneOfTheTagsCondition
 
@@ -1616,6 +1657,12 @@ No settable fields. It carries behaviour only.
 | --- | --- | --- |
 | `ForbiddenTags` | `TagType[]` | `ACCESSORY`, `ACCURATE`, `AIRPOWER`, `ANTI_INFANTRY`, `ANTI_STRUCTURE`, `ANTI_VEHICLE`, `AREA_OF_EFFECT`, `ARMOR_DAMAGING`, `ARMOR_PIERCING`, `ASSAULT_RIFLE`, `BATTLE_RIFLE`, `CAMOUFLAGE`, `COMMODITY`, `CRAFTING_MATERIAL`, `DEMORALIZING`, `DEPLOY`, `DEPLOYABLE`, `DESTRUCTIBLE`, `DISABLING`, `DRONE`, `DRUG`, `EMP`, `ENERGY`, `FLEXIBLE`, `GRENADE`, `HAZARDOUS`, `HEAVY_ARMOR`, `HIGH_RATE_OF_FIRE`, `HORDE`, `HOVERING`, `IGNORES_COVER`, `INACCURATE`, `INCENDIARY`, `INDIRECT_FIRE`, `INFANTRY`, `JAM`, `JETPACK`, `LARGE`, `LIGHT_ARMOR`, `LIMITED_AMMO`, `LONG_RANGE`, `LOW_PENETRATION`, `LOW_QUALITY`, `Last`, `MACHINE`, `MANY_ACCESSORIES`, `MASSIVE_EXPLOSION`, `MEDIUM_ARMOR`, `MINE`, `MINIMUM_RANGE`, `MINI_BOSS`, `MOBILE`, `MOTORIZED_INFANTRY`, `ORBITAL`, `PROJECTILE`, `ROCKET`, `SCANNER`, `SCATTER`, `SHORT_RANGE`, `SHOTGUN`, `SMG`, `SMOKE`, `SNIPER`, `SPECIAL_WEAPON`, `SQUAD_WEAPON`, `STANCE`, `STEALTH`, `STRUCTURE`, `SUPPRESSIVE`, `TANK`, `UNIQUE`, `UNUSED_MUST_DEPLOY`, `UTILITY`, `VEHICLE`, `VEHICLE_WEAPON`, `VIP`, `WALKER`, `WEAPON`, `WEAPONS_TEAM`, `XENO` |
 | `RequiredTags` | `TagType[]` | `ACCESSORY`, `ACCURATE`, `AIRPOWER`, `ANTI_INFANTRY`, `ANTI_STRUCTURE`, `ANTI_VEHICLE`, `AREA_OF_EFFECT`, `ARMOR_DAMAGING`, `ARMOR_PIERCING`, `ASSAULT_RIFLE`, `BATTLE_RIFLE`, `CAMOUFLAGE`, `COMMODITY`, `CRAFTING_MATERIAL`, `DEMORALIZING`, `DEPLOY`, `DEPLOYABLE`, `DESTRUCTIBLE`, `DISABLING`, `DRONE`, `DRUG`, `EMP`, `ENERGY`, `FLEXIBLE`, `GRENADE`, `HAZARDOUS`, `HEAVY_ARMOR`, `HIGH_RATE_OF_FIRE`, `HORDE`, `HOVERING`, `IGNORES_COVER`, `INACCURATE`, `INCENDIARY`, `INDIRECT_FIRE`, `INFANTRY`, `JAM`, `JETPACK`, `LARGE`, `LIGHT_ARMOR`, `LIMITED_AMMO`, `LONG_RANGE`, `LOW_PENETRATION`, `LOW_QUALITY`, `Last`, `MACHINE`, `MANY_ACCESSORIES`, `MASSIVE_EXPLOSION`, `MEDIUM_ARMOR`, `MINE`, `MINIMUM_RANGE`, `MINI_BOSS`, `MOBILE`, `MOTORIZED_INFANTRY`, `ORBITAL`, `PROJECTILE`, `ROCKET`, `SCANNER`, `SCATTER`, `SHORT_RANGE`, `SHOTGUN`, `SMG`, `SMOKE`, `SNIPER`, `SPECIAL_WEAPON`, `SQUAD_WEAPON`, `STANCE`, `STEALTH`, `STRUCTURE`, `SUPPRESSIVE`, `TANK`, `UNIQUE`, `UNUSED_MUST_DEPLOY`, `UTILITY`, `VEHICLE`, `VEHICLE_WEAPON`, `VIP`, `WALKER`, `WEAPON`, `WEAPONS_TEAM`, `XENO` |
+
+### SpecificEntityCondition
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `RequiredEntity` | `EntityTemplate` |  |
 
 ### SpecificSkillCondition
 
