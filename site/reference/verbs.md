@@ -310,12 +310,12 @@ Every verb in the `Jiangyu.Game` namespace, generated from the SDK. Verbs are pl
 | `Units.Morale(Actor)` | The actor's current morale. |
 | `Units.MoralePct(Actor)` | The actor's morale as a 0..1 fraction of its maximum. |
 | `Units.Move(Actor, Tile, MovementFlags)` | Move actor to dest. Returns true once the move is accepted (it animates over the following frames), false when no path reaches the tile. |
-| `Units.MovementMode(Actor)` | The actor's current movement mode. |
+| `Units.MovementMode(Actor)` | The movement mode forced on actor. Auto means none is forced and the game picks the mode per move. |
 | `Units.RefillAmmo(Actor, float, int)` | Refill actor's ammo across every skill by refillFactor (0..1 of capacity), granting at least minAmount. Returns true when any skill was refilled. |
 | `Units.SetActionPoints(Actor, int, bool)` | Set the actor's action points. |
 | `Units.SetArmorDurability(Actor, int)` | Set the actor's armour durability. |
 | `Units.SetMorale(Actor, float)` | Set the actor's morale. |
-| `Units.SetMovementMode(Actor, MovementMode)` | Set the actor's movement mode. |
+| `Units.SetMovementMode(Actor, MovementMode)` | Force actor's movement mode. Auto hands the choice back to the game. |
 | `Units.SetStance(Actor, ActorStance, bool)` | Set the actor's stance. |
 | `Units.SetSuppression(Actor, float)` | Set the actor's suppression. |
 | `Units.SetTurnDone(Actor, bool)` | Mark the actor's turn as done (or not). |

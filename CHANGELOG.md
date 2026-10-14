@@ -4,6 +4,7 @@ Changes relevant to modders building with Jiangyu, and to players running Jiangy
 
 ## 1.4.9
 
+- (SDK) Fixes for the MENACE v0.7.16 game update
 - (Loader) Fixed mod UI disappearing from a screen returned to through Escape, the pause menu or back, since the MENACE v0.7.15 update
 
 ## 1.4.8

@@ -136,23 +136,6 @@
     },
     {
       "group": "Tactical.Units",
-      "name": "MovementMode",
-      "onType": "Il2CppMenace.Tactical.Actor",
-      "method": "GetMovementMode",
-      "receiver": "self",
-      "summary": "The actor's current movement mode."
-    },
-    {
-      "group": "Tactical.Units",
-      "name": "SetMovementMode",
-      "onType": "Il2CppMenace.Tactical.Actor",
-      "method": "SetMovementMode",
-      "receiver": "self",
-      "summary": "Set the actor's movement mode.",
-      "mutating": true
-    },
-    {
-      "group": "Tactical.Units",
       "name": "IsAlive",
       "onType": "Il2CppMenace.Tactical.Actor",
       "method": "IsAlive",

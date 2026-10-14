@@ -72,4 +72,17 @@ public static partial class Units
     [MutatingVerb]
     public static bool RefillAmmo(Actor actor, float refillFactor = 1f, int minAmount = 0)
         => actor.RefillAmmo(refillFactor, minAmount, null);
+
+    /// <summary>
+    /// The movement mode forced on <paramref name="actor"/>. <c>Auto</c> means none is forced
+    /// and the game picks the mode per move.
+    /// </summary>
+    public static MovementMode MovementMode(Actor actor) => actor.MovementOverrides.MovementMode;
+
+    /// <summary>
+    /// Force <paramref name="actor"/>'s movement mode. <c>Auto</c> hands the choice back to the game.
+    /// </summary>
+    [MutatingVerb]
+    public static void SetMovementMode(Actor actor, MovementMode mode)
+        => actor.MovementOverrides.MovementMode = mode;
 }

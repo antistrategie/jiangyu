@@ -65,13 +65,6 @@ public static partial class Units
     [global::Jiangyu.Sdk.MutatingVerb]
     public static void SetStance(global::Il2CppMenace.Tactical.Actor self, global::Il2CppMenace.Tactical.ActorStance p0, bool p1) { self.SetStance(p0, p1); }
 
-    /// <summary>The actor's current movement mode.</summary>
-    public static global::Il2CppMenace.Tactical.MovementMode MovementMode(global::Il2CppMenace.Tactical.Actor self) => self.GetMovementMode();
-
-    /// <summary>Set the actor's movement mode.</summary>
-    [global::Jiangyu.Sdk.MutatingVerb]
-    public static void SetMovementMode(global::Il2CppMenace.Tactical.Actor self, global::Il2CppMenace.Tactical.MovementMode p0) { self.SetMovementMode(p0); }
-
     /// <summary>Whether the actor is alive.</summary>
     public static bool IsAlive(global::Il2CppMenace.Tactical.Actor self) => self.IsAlive();
 
