@@ -110,38 +110,125 @@ public sealed class AdditionPrefabStagingTests : IDisposable
     }
 
     [Fact]
-    public void ShouldInvokeUnityForPrefabs_NoUnityDir_False()
+    public void ShouldInvokeUnityForBundles_NoUnityDir_False()
     {
-        Assert.False(AdditionPrefabStaging.ShouldInvokeUnityForPrefabs(_tempRoot));
+        Assert.False(AdditionPrefabStaging.ShouldInvokeUnityForBundles(_tempRoot));
     }
 
     [Fact]
-    public void ShouldInvokeUnityForPrefabs_EmptyPrefabsDir_False()
+    public void ShouldInvokeUnityForBundles_EmptyPrefabsDir_False()
     {
         Directory.CreateDirectory(Path.Combine(_tempRoot, "unity", "Assets", "Prefabs"));
 
-        Assert.False(AdditionPrefabStaging.ShouldInvokeUnityForPrefabs(_tempRoot));
+        Assert.False(AdditionPrefabStaging.ShouldInvokeUnityForBundles(_tempRoot));
     }
 
     [Fact]
-    public void ShouldInvokeUnityForPrefabs_HasPrefab_True()
+    public void ShouldInvokeUnityForBundles_HasPrefab_True()
     {
         var prefabsDir = Path.Combine(_tempRoot, "unity", "Assets", "Prefabs");
         Directory.CreateDirectory(prefabsDir);
         File.WriteAllText(Path.Combine(prefabsDir, "test.prefab"), "fake prefab");
 
-        Assert.True(AdditionPrefabStaging.ShouldInvokeUnityForPrefabs(_tempRoot));
+        Assert.True(AdditionPrefabStaging.ShouldInvokeUnityForBundles(_tempRoot));
     }
 
     [Fact]
-    public void ShouldInvokeUnityForPrefabs_OtherFilesOnly_False()
+    public void ShouldInvokeUnityForBundles_OtherFilesOnly_False()
     {
         var prefabsDir = Path.Combine(_tempRoot, "unity", "Assets", "Prefabs");
         Directory.CreateDirectory(prefabsDir);
         File.WriteAllText(Path.Combine(prefabsDir, ".gitkeep"), "");
         File.WriteAllText(Path.Combine(prefabsDir, "README.md"), "");
 
-        Assert.False(AdditionPrefabStaging.ShouldInvokeUnityForPrefabs(_tempRoot));
+        Assert.False(AdditionPrefabStaging.ShouldInvokeUnityForBundles(_tempRoot));
+    }
+
+    [Fact]
+    public void ShouldInvokeUnityForBundles_HasUxml_True()
+    {
+        var uiDir = Path.Combine(_tempRoot, "unity", "Assets", "UI", "shop");
+        Directory.CreateDirectory(uiDir);
+        File.WriteAllText(Path.Combine(uiDir, "panel.uxml"), "<ui:UXML />");
+
+        Assert.True(AdditionPrefabStaging.ShouldInvokeUnityForBundles(_tempRoot));
+    }
+
+    [Fact]
+    public void ShouldInvokeUnityForBundles_HasIcon_True()
+    {
+        var iconsDir = Path.Combine(_tempRoot, "unity", "Assets", "UI", "Icons");
+        Directory.CreateDirectory(iconsDir);
+        File.WriteAllText(Path.Combine(iconsDir, "badge.png"), "fake png");
+
+        Assert.True(AdditionPrefabStaging.ShouldInvokeUnityForBundles(_tempRoot));
+    }
+
+    [Fact]
+    public void ShouldInvokeUnityForBundles_ExtensionCaseDiffers_False()
+    {
+        // BuildBundles matches extensions case-sensitively, so neither counts on any platform.
+        var iconsDir = Path.Combine(_tempRoot, "unity", "Assets", "UI", "Icons");
+        Directory.CreateDirectory(iconsDir);
+        File.WriteAllText(Path.Combine(iconsDir, "badge.PNG"), "fake png");
+        var prefabsDir = Path.Combine(_tempRoot, "unity", "Assets", "Prefabs");
+        Directory.CreateDirectory(prefabsDir);
+        File.WriteAllText(Path.Combine(prefabsDir, "thing.Prefab"), "fake prefab");
+
+        Assert.False(AdditionPrefabStaging.ShouldInvokeUnityForBundles(_tempRoot));
+    }
+
+    [Fact]
+    public void ShouldInvokeUnityForBundles_OnlyInFoldersUnityIgnores_False()
+    {
+        var hidden = Path.Combine(_tempRoot, "unity", "Assets", "Prefabs", ".backup");
+        var tilde = Path.Combine(_tempRoot, "unity", "Assets", "UI", "drafts~");
+        Directory.CreateDirectory(hidden);
+        Directory.CreateDirectory(tilde);
+        File.WriteAllText(Path.Combine(hidden, "old.prefab"), "fake prefab");
+        File.WriteAllText(Path.Combine(tilde, "panel.uxml"), "<ui:UXML />");
+
+        Assert.False(AdditionPrefabStaging.ShouldInvokeUnityForBundles(_tempRoot));
+    }
+
+    [Theory]
+    [InlineData("Prefabs", "._door.prefab")]
+    [InlineData("UI", ".panel.uxml")]
+    [InlineData("UI", "panel.uxml~")]
+    [InlineData("Prefabs/CVS", "door.prefab")]
+    [InlineData("UI/drafts.tmp", "panel.uxml")]
+    public void ShouldInvokeUnityForBundles_FilesUnityHides_False(string folder, string file)
+    {
+        var dir = Path.Combine(_tempRoot, "unity", "Assets", folder);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, file), "");
+
+        Assert.False(AdditionPrefabStaging.ShouldInvokeUnityForBundles(_tempRoot));
+    }
+
+    [Fact]
+    public void CountUnityBundleSources_CountsEachKindWithoutAPrefabsFolder()
+    {
+        var uiDir = Path.Combine(_tempRoot, "unity", "Assets", "UI");
+        Directory.CreateDirectory(Path.Combine(uiDir, "Icons", "campaign"));
+        File.WriteAllText(Path.Combine(uiDir, "panel.uxml"), "<ui:UXML />");
+        File.WriteAllText(Path.Combine(uiDir, "Icons", "badge.png"), "fake png");
+        File.WriteAllText(Path.Combine(uiDir, "Icons", "campaign", "frame0.png"), "fake png");
+
+        var sources = AdditionPrefabStaging.CountUnityBundleSources(_tempRoot);
+
+        Assert.Equal(new UnityBundleSources(0, 1, 2), sources);
+    }
+
+    [Fact]
+    public void ShouldInvokeUnityForBundles_UiTextureOutsideIcons_False()
+    {
+        // A texture elsewhere under Assets/UI is a UXML dependency, not a bundle of its own.
+        var uiDir = Path.Combine(_tempRoot, "unity", "Assets", "UI");
+        Directory.CreateDirectory(uiDir);
+        File.WriteAllText(Path.Combine(uiDir, "background.png"), "fake png");
+
+        Assert.False(AdditionPrefabStaging.ShouldInvokeUnityForBundles(_tempRoot));
     }
 
     [Fact]

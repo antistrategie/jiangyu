@@ -2,6 +2,10 @@
 
 Changes relevant to modders building with Jiangyu, and to players running Jiangyu mods where they can see the difference. Entries are scoped Loader, Compiler, Studio, CLI, MCP or SDK.
 
+## 1.4.10
+
+- (Compiler) Fixed UXML and icon bundles under `unity/Assets/UI` not building when the mod has no prefabs
+
 ## 1.4.9
 
 - (SDK) Fixes for the MENACE v0.7.16 game update

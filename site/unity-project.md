@@ -29,12 +29,13 @@ Use the Unity version the game was built with. Studio shows the expected version
 | --- | --- | --- |
 | `Assets/Prefabs/` | prefab additions (`.prefab`) | a KDL `asset="..."` on a `GameObject` field. See [Prefab additions](/assets/additions/prefabs). |
 | `Assets/UI/` | UI markup (`.uxml`) and stylesheets (`.uss`) | `UI.Inject(target, "name")`. See [Game UI](/sdk/ui). |
+| `Assets/UI/Icons/` | icon textures (`.png`), each its own bundle, a subfolder grouped into one | `Context.Assets.Load` by name. |
 
 A USS linked from a UXML by a `<Style>` tag, or a texture a prefab references, rides along inside that asset's bundle as a dependency, so you only ever name the top-level prefab or UXML.
 
 ## Building
 
-`jiangyu compile`, or Studio's Compile, invokes Unity batchmode against the project, builds one AssetBundle per prefab and per UXML, and stages them into `compiled/` with the rest of the build. There is nothing to run by hand: authoring the asset and compiling is the whole loop.
+`jiangyu compile`, or Studio's Compile, invokes Unity batchmode against the project, builds one AssetBundle per prefab, per UXML and per icon or icon subfolder, and stages them into `compiled/` with the rest of the build. There is nothing to run by hand: authoring the asset and compiling is the whole loop.
 
 ## Naming and subfolders
 

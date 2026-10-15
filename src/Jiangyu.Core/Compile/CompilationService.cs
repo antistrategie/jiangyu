@@ -511,7 +511,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         // of GlbMeshBundleCompiler.BuildAsync below (one launch instead of
         // two); Stage runs after that returns. Otherwise the standalone
         // BuildUnityAdditionPrefabs runs here as before.
-        var hasPrefabWork = AdditionPrefabStaging.ShouldInvokeUnityForPrefabs(projectDir);
+        var hasPrefabWork = AdditionPrefabStaging.ShouldInvokeUnityForBundles(projectDir);
         var combinedUnityPass = hasPrefabWork && useRawGlbPipeline;
 
         const string PrefabPhase = "prefabs";
@@ -1022,21 +1022,23 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
     /// <summary>
     /// Invokes Unity batchmode against the modder's <c>unity/</c> project to
-    /// build each prefab under <c>Assets/Prefabs/</c> into its own AssetBundle.
+    /// build each prefab under <c>Assets/Prefabs/</c>, each UXML under <c>Assets/UI/</c> and
+    /// each icon under <c>Assets/UI/Icons/</c> into its own AssetBundle (the icons in one
+    /// subfolder share a bundle).
     /// Bundles land in <c>&lt;projectDir&gt;/.jiangyu/unity_build/</c> where
     /// <see cref="AdditionPrefabStaging.Stage"/> picks them up. No-op when
-    /// <see cref="AdditionPrefabStaging.ShouldInvokeUnityForPrefabs"/> returns
+    /// <see cref="AdditionPrefabStaging.ShouldInvokeUnityForBundles"/> returns
     /// false.
     /// </summary>
     private async Task BuildUnityAdditionPrefabs(string projectDir, string unityBuildOutputDir, string unityEditorPath)
     {
-        if (!AdditionPrefabStaging.ShouldInvokeUnityForPrefabs(projectDir))
+        if (!AdditionPrefabStaging.ShouldInvokeUnityForBundles(projectDir))
         {
-            // The modder removed their last prefab: clear the previous compile's prefab
-            // bundles so Stage does not re-ship them. Replacement bundles and their
-            // manifests stay. When prefabs DO exist there is no wipe at all: the cached
+            // The modder removed their last prefab, UXML or icon: clear the previous
+            // compile's bundles so Stage does not re-ship them. Replacement bundles and their
+            // manifests stay. When any of them DO exist there is no wipe at all: the cached
             // bundles and their Unity manifests are the incremental state that lets
-            // unchanged prefabs skip rebuilding, and BuildBundles prunes individual
+            // unchanged sources skip rebuilding, and BuildBundles prunes individual
             // stale bundles itself.
             AdditionPrefabStaging.ClearStaleBuildOutput(unityBuildOutputDir);
             return;
@@ -1045,10 +1047,10 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         Directory.CreateDirectory(unityBuildOutputDir);
 
         var unityProjectDir = Path.Combine(projectDir, "unity");
-        var prefabsDir = Path.Combine(unityProjectDir, "Assets", "Prefabs");
-        var prefabFiles = Directory.EnumerateFiles(prefabsDir, "*.prefab", SearchOption.AllDirectories).ToArray();
+        // Counted without touching Assets/Prefabs directly: a UI-only project may have none.
+        var sources = AdditionPrefabStaging.CountUnityBundleSources(projectDir);
 
-        _log.Info($"  Building {prefabFiles.Length} prefab(s) from unity/Assets/Prefabs/...");
+        _log.Info($"  Building Unity bundles from unity/Assets/: {sources.Prefabs} prefab(s), {sources.Uxml} UXML, {sources.Icons} icon(s)...");
 
         // Bundle files persist across compiles as incremental state, so their existence
         // proves nothing about this run. The build script writes this token to the
@@ -1075,16 +1077,16 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         if (!result.Success || !completed)
         {
             _log.Error(result.Success
-                ? "Unity exited successfully but never reached the end of the prefab build script (no completion marker)."
-                : $"Unity exited with code {result.ExitCode} building unity/ prefab bundles.");
+                ? "Unity exited successfully but never reached the end of the bundle build script (no completion marker)."
+                : $"Unity exited with code {result.ExitCode} building unity/ bundles.");
             _log.Error($"  Log: {logFile}");
             foreach (var line in result.LogTailLines)
                 _log.Error($"  {line}");
-            throw new InvalidOperationException("Unity batchmode build for unity/ prefab bundles failed.");
+            throw new InvalidOperationException("Unity batchmode build for unity/ bundles failed.");
         }
 
         var builtBundles = Directory.EnumerateFiles(unityBuildOutputDir, "*.bundle").Count();
-        _log.Info($"  Unity built {builtBundles} prefab bundle(s) into {unityBuildOutputDir}");
+        _log.Info($"  Unity built {builtBundles} bundle(s) into {unityBuildOutputDir}");
     }
 
     internal static bool HasAnyAssetSources(string replacementRoot, string additionRoot)
