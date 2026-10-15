@@ -69,7 +69,7 @@ public sealed class RelationshipSystem : JiangyuSystem
 | Override | Called |
 | --- | --- |
 | `OnInit()` | Once, after the system loads and its `Context` is bound. |
-| `OnTemplatesApplied()` | Once, after every mod's template clones and patches have landed on the live templates. Read or further adjust the final merged template set here. |
+| `OnTemplatesApplied()` | Once, after every mod's template clones and patches have landed on the live templates. Read or further adjust the final merged template set here. When no installed mod edits templates, it runs once the first scene has loaded. |
 | `OnSceneLoaded(buildIndex, sceneName)` | Each time a Unity scene finishes loading. |
 | `OnUnload()` | On shutdown or hot reload. The loader stops your coroutines and removes your patches for you. |
 

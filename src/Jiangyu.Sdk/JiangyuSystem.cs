@@ -26,7 +26,8 @@ public abstract class JiangyuSystem
     /// Called once the loader has applied every mod's template clones and patches to
     /// the live game templates. Read or further adjust the final merged template set
     /// here: unlike <see cref="OnSceneLoaded"/>, it is guaranteed to run after the
-    /// edits have landed.
+    /// edits have landed. When no installed mod edits templates, it runs once the first
+    /// scene has loaded, right after that scene's <see cref="OnSceneLoaded"/>.
     /// </summary>
     public virtual void OnTemplatesApplied() { }
 

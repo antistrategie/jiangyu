@@ -7,6 +7,7 @@ Changes relevant to modders building with Jiangyu, and to players running Jiangy
 - (Compiler) Fixed a mod with only code or only prefabs reporting nothing to compile instead of building it
 - (Compiler) A compile with nothing left to build now removes the previous output instead of leaving it for deploy and package to ship
 - (Compiler) Fixed UXML and icon bundles under `unity/Assets/UI` not building when the mod has no prefabs
+- (Loader) Fixed `OnTemplatesApplied` never running when no installed mod changes templates
 
 ## 1.4.9
 

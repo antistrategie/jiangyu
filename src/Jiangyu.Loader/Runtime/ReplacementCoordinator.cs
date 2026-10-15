@@ -120,6 +120,11 @@ internal class ReplacementCoordinator
             .ToList();
         _templateClones.Load(templates, new LoaderLog(log));
         _templatePatches.Load(templates, new LoaderLog(log));
+        // With every mod's template program loaded and none of them carrying clones or patches,
+        // the template work is settled already, so OnTemplatesApplied still fires on the first
+        // pass for code mods that read templates there.
+        if (!_templatePatchApplier.HasPendingPatches && !_templateCloneApplier.HasPendingClones)
+            _templateWorkSeen = true;
         foreach (var (mod, manifest) in templates)
         {
             var counts = LoadReport.For(mod.Name);
