@@ -56,4 +56,34 @@ public sealed class CodeBuildServiceTests : IDisposable
         Assert.NotNull(result);
         Assert.False(result!.Success);
     }
+
+    [Fact]
+    public void HasCode_IsFalse_WhenThereIsNoCodeDir()
+    {
+        Directory.CreateDirectory(_projectDir);
+
+        Assert.False(CodeBuildService.HasCode(_projectDir));
+    }
+
+    [Fact]
+    public void HasCode_IsFalse_ForAScaffoldedCsprojWithNoCSharpSource()
+    {
+        var codeDir = Path.Combine(_projectDir, "code");
+        Directory.CreateDirectory(Path.Combine(codeDir, "obj"));
+        File.WriteAllText(Path.Combine(codeDir, "Test.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+        File.WriteAllText(Path.Combine(codeDir, "obj", "Test.AssemblyInfo.cs"), "// generated");
+
+        Assert.False(CodeBuildService.HasCode(_projectDir));
+    }
+
+    [Fact]
+    public void HasCode_IsTrue_ForACsprojWithHandWrittenSource()
+    {
+        var codeDir = Path.Combine(_projectDir, "code");
+        Directory.CreateDirectory(codeDir);
+        File.WriteAllText(Path.Combine(codeDir, "Test.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+        File.WriteAllText(Path.Combine(codeDir, "Mod.cs"), "public sealed class Mod { }");
+
+        Assert.True(CodeBuildService.HasCode(_projectDir));
+    }
 }

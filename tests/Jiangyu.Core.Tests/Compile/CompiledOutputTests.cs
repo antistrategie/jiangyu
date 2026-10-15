@@ -44,4 +44,26 @@ public sealed class CompiledOutputTests : IDisposable
         Assert.True(Directory.Exists(outputDir));
         Assert.True(Directory.Exists(Path.Combine(outputDir, CompiledLayout.BundlesDirName)));
     }
+
+    [Fact]
+    public void Clear_DeletesAPopulatedTree()
+    {
+        var code = Path.Combine(_projectDir, "compiled", CompiledLayout.CodeDirName);
+        Directory.CreateDirectory(code);
+        File.WriteAllText(Path.Combine(code, "Old.Code.dll"), "x");
+
+        CompiledOutput.Clear(_projectDir);
+
+        Assert.False(Directory.Exists(Path.Combine(_projectDir, "compiled")));
+    }
+
+    [Fact]
+    public void Clear_DoesNothingWhenNoTreeExists()
+    {
+        Directory.CreateDirectory(_projectDir);
+
+        CompiledOutput.Clear(_projectDir);
+
+        Assert.False(Directory.Exists(Path.Combine(_projectDir, "compiled")));
+    }
 }

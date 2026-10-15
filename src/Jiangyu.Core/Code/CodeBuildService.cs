@@ -14,16 +14,27 @@ namespace Jiangyu.Core.Code;
 /// </summary>
 public sealed class CodeBuildService(ILogSink log)
 {
+    /// <summary>True when <c>&lt;projectDir&gt;/code/</c> holds a project with C# sources to build.</summary>
+    public static bool HasCode(string projectDir)
+    {
+        var codeDir = Path.Combine(projectDir, "code");
+        return HasCodeProject(codeDir) && HasCSharpSources(codeDir);
+    }
+
+    private static bool HasCodeProject(string codeDir) =>
+        Directory.Exists(codeDir)
+        && Directory.EnumerateFiles(codeDir, "*.csproj", SearchOption.TopDirectoryOnly).Any();
+
     /// <summary>
     /// Builds <c>&lt;projectDir&gt;/code/</c> if it contains a project. Returns null
-    /// when there is no code project to build, a failed result on build error, or a
-    /// built result carrying the output DLLs and their <c>[JiangyuType]</c> names.
+    /// when there is no code project or it has no C# sources, a failed result on build
+    /// error, or a built result carrying the output DLLs and their <c>[JiangyuType]</c>
+    /// names.
     /// </summary>
     public async Task<CodeBuildResult?> BuildAsync(string projectDir, string gameDir, string? sdkDir, bool devSources = true, string? cacheContext = null)
     {
         var codeDir = Path.Combine(projectDir, "code");
-        if (!Directory.Exists(codeDir)
-            || !Directory.EnumerateFiles(codeDir, "*.csproj", SearchOption.TopDirectoryOnly).Any())
+        if (!HasCodeProject(codeDir))
             return null;
 
         // A scaffolded code/ ships the .csproj and build props before any C# is written,

@@ -20,7 +20,7 @@ Run it after a Jiangyu update, or on a project scaffolded by an older version. `
 
 ### `jiangyu compile`
 
-Compiles the project's replacements and templates into a shippable mod under `compiled/`. Reads `jiangyu.json`, walks `assets/replacements/` and `templates/`, emits AssetBundles and the compiled manifest. If `unity/Assets/Prefabs/` has any `.prefab` files, `unity/Assets/UI/` any `.uxml` files or `unity/Assets/UI/Icons/` any `.png` icons, invokes Unity batchmode against the `unity/` project to build their bundles.
+Compiles the project's replacements and templates into a shippable mod under `compiled/`. Reads `jiangyu.json`, walks `assets/replacements/` and `templates/`, emits AssetBundles and the compiled manifest. If `unity/Assets/Prefabs/` has any `.prefab` files, `unity/Assets/UI/` any `.uxml` files or `unity/Assets/UI/Icons/` any `.png` icons, invokes Unity batchmode against the `unity/` project to build their bundles. A project with nothing to compile (no assets, prefabs, UI, templates, translations or code) has its `compiled/` removed, so `deploy` and `package` cannot ship stale output.
 
 Compile bootstraps two preconditions on first run so the modder doesn't need to chain commands by hand:
 

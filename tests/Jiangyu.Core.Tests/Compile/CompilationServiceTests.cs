@@ -596,3 +596,100 @@ public class HasAnyAssetSourcesTests : IDisposable
         Assert.True(CompilationService.HasAnyAssetSources(replacementRoot, additionRoot));
     }
 }
+
+public sealed class HasCompileInputsTests : IDisposable
+{
+    private readonly string _projectDir = Path.Combine(Path.GetTempPath(), $"jiangyu-inputs-{Guid.NewGuid():N}");
+
+    public HasCompileInputsTests() => Directory.CreateDirectory(_projectDir);
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_projectDir))
+            Directory.Delete(_projectDir, recursive: true);
+    }
+
+    private void Write(string relativePath, string content = "")
+    {
+        var path = Path.Combine(_projectDir, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, content);
+    }
+
+    [Fact]
+    public void IsFalse_ForAnEmptyProject()
+    {
+        Assert.False(CompilationService.HasCompileInputs(_projectDir, 0));
+    }
+
+    [Fact]
+    public void IsTrue_WhenThereAreAssetInputs()
+    {
+        Assert.True(CompilationService.HasCompileInputs(_projectDir, 1));
+    }
+
+    [Fact]
+    public void IsTrue_ForATemplatesOnlyMod()
+    {
+        Write("templates/patch.kdl", "patch");
+
+        Assert.True(CompilationService.HasCompileInputs(_projectDir, 0));
+    }
+
+    [Fact]
+    public void IsTrue_ForALocalesOnlyMod()
+    {
+        Write("locales/fr.po", "msgid \"\"");
+
+        Assert.True(CompilationService.HasCompileInputs(_projectDir, 0));
+    }
+
+    [Fact]
+    public void IsTrue_ForACodeOnlyMod()
+    {
+        Write("code/Mod.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+        Write("code/Mod.cs", "public sealed class Mod { }");
+
+        Assert.True(CompilationService.HasCompileInputs(_projectDir, 0));
+    }
+
+    [Fact]
+    public void IsTrue_ForAUnityPrefabOnlyMod()
+    {
+        Write("unity/Assets/Prefabs/thing/main.prefab");
+
+        Assert.True(CompilationService.HasCompileInputs(_projectDir, 0));
+    }
+
+    [Fact]
+    public void IsTrue_ForAUxmlOnlyMod()
+    {
+        Write("unity/Assets/UI/panel.uxml", "<ui:UXML />");
+
+        Assert.True(CompilationService.HasCompileInputs(_projectDir, 0));
+    }
+
+    [Fact]
+    public void IsTrue_ForAnIconOnlyMod()
+    {
+        Write("unity/Assets/UI/Icons/badge.png");
+
+        Assert.True(CompilationService.HasCompileInputs(_projectDir, 0));
+    }
+
+    [Fact]
+    public void IsTrue_ForAPrebuiltPrefabBundleOnlyMod()
+    {
+        Write("assets/additions/prefabs/thing.bundle");
+
+        Assert.True(CompilationService.HasCompileInputs(_projectDir, 0));
+    }
+
+    [Fact]
+    public void IsFalse_ForAScaffoldedCodeProjectWithNoSource()
+    {
+        Write("code/Mod.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+
+        Assert.False(CompilationService.HasCompileInputs(_projectDir, 0));
+    }
+}

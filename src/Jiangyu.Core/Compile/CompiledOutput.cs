@@ -5,8 +5,8 @@ namespace Jiangyu.Core.Compile;
 
 /// <summary>
 /// Housekeeping for a mod's <c>compiled/</c> output tree. Everything under it is build
-/// output, regenerated each compile, so a clean slate up front is the single step that
-/// clears whatever a previous compile left behind.
+/// output, regenerated each compile, so each compile either resets it up front or, with
+/// nothing to build, deletes it, and nothing a previous compile left behind survives.
 /// </summary>
 internal static class CompiledOutput
 {
@@ -25,4 +25,8 @@ internal static class CompiledOutput
         ResilientFs.CreateDirectory(Path.Combine(outputDir, CompiledLayout.BundlesDirName));
         return outputDir;
     }
+
+    /// <summary>Delete the project's <c>compiled/</c> tree, for a compile with no inputs.</summary>
+    public static void Clear(string projectDir) =>
+        ResilientFs.DeleteDirectory(Path.Combine(projectDir, "compiled"));
 }

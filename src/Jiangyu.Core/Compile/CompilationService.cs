@@ -219,15 +219,12 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var hasKdlTemplates = Directory.Exists(templatesDir)
             && Directory.EnumerateFiles(templatesDir, "*.kdl", SearchOption.AllDirectories).Any();
 
-        // A localisation-only mod (e.g. one that only translates another mod) ships just locales/*.po
-        // and must still compile so EmitLocalisationAsync emits its tables.
-        var localesDir = Path.Combine(projectDir, LocaleLayout.SourceDirName);
-        var hasLocales = Directory.Exists(localesDir)
-            && Directory.EnumerateFiles(localesDir, "*.po", SearchOption.AllDirectories).Any();
-
-        if (totalCompileInputCount == 0 && !hasKdlTemplates && !hasLocales)
+        if (!HasCompileInputs(projectDir, totalCompileInputCount))
         {
-            _log.Info("No replacement assets or template patches found. Nothing to compile.");
+            // A previous compile's output would otherwise outlive the inputs that made it, and
+            // deploy or package would ship it.
+            CompiledOutput.Clear(projectDir);
+            _log.Info("No assets, prefabs, UI, templates, translations or code found. Nothing to compile, so any previous compiled/ output was removed.");
             return new CompilationResult { Success = true };
         }
 
@@ -1087,6 +1084,36 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         var builtBundles = Directory.EnumerateFiles(unityBuildOutputDir, "*.bundle").Count();
         _log.Info($"  Unity built {builtBundles} bundle(s) into {unityBuildOutputDir}");
+    }
+
+    /// <summary>True when the project has anything to compile: asset inputs, Unity bundle sources
+    /// (prefabs, UXML, icons), prebuilt prefab bundles, KDL templates, translations or a code
+    /// project with C# sources. A false answer deletes <c>compiled/</c>, so every source the
+    /// compile stages has to count here.</summary>
+    internal static bool HasCompileInputs(string projectDir, int assetInputCount)
+    {
+        if (assetInputCount > 0 || AdditionPrefabStaging.ShouldInvokeUnityForBundles(projectDir))
+            return true;
+
+        var prebuiltPrefabs = Path.Combine(projectDir, "assets", "additions", Jiangyu.Shared.Replacements.AssetCategory.Prefabs);
+        if (Directory.Exists(prebuiltPrefabs)
+            && Directory.EnumerateFiles(prebuiltPrefabs, "*.bundle", SearchOption.AllDirectories).Any())
+            return true;
+
+        var templatesDir = Path.Combine(projectDir, "templates");
+        if (Directory.Exists(templatesDir)
+            && Directory.EnumerateFiles(templatesDir, "*.kdl", SearchOption.AllDirectories).Any())
+            return true;
+
+        // A localisation-only mod (e.g. one that only translates another mod) ships just locales/*.po
+        // and must still compile so EmitLocalisationAsync emits its tables.
+        var localesDir = Path.Combine(projectDir, LocaleLayout.SourceDirName);
+        if (Directory.Exists(localesDir)
+            && Directory.EnumerateFiles(localesDir, "*.po", SearchOption.AllDirectories).Any())
+            return true;
+
+        // A code-only mod (runtime systems with no templates or assets) still needs its DLL built and packaged.
+        return CodeBuildService.HasCode(projectDir);
     }
 
     internal static bool HasAnyAssetSources(string replacementRoot, string additionRoot)
