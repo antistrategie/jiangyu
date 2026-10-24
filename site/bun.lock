@@ -9,8 +9,8 @@
         "@fontsource/cormorant-garamond": "^5.3.0",
         "@fontsource/cormorant-sc": "^5.3.0",
         "@fontsource/jetbrains-mono": "^5.3.0",
-        "@fontsource/noto-sans-sc": "^5.3.0",
-        "@fontsource/noto-serif-sc": "^5.3.0",
+        "@fontsource/noto-sans-sc": "^5.3.1",
+        "@fontsource/noto-serif-sc": "^5.3.1",
         "vitepress": "^1.6.4",
       },
     },
@@ -120,9 +120,9 @@
 
     "@fontsource/jetbrains-mono": ["@fontsource/jetbrains-mono@5.3.0", "", {}, "sha512-fqDfB5I9f1p1TV486aUgB9t8zP84P0O1FtQR5Ol9vjwPy+S+EIGlVYm1cvj2W5shcZMTg2nZFdVMoH5wFu8a1A=="],
 
-    "@fontsource/noto-sans-sc": ["@fontsource/noto-sans-sc@5.3.0", "", {}, "sha512-HeqIlGm0+ohOKxZLuHj1qW6r6avHH0OWdKERAcSDI0RQ+MXrteuLKA+M+5eOA8rYy0MFvOR5AT0fQo2rUkye0Q=="],
+    "@fontsource/noto-sans-sc": ["@fontsource/noto-sans-sc@5.3.1", "", {}, "sha512-YxZ/VWAWo9FWzH08Q6fGTzIW6vYNP2TMhUFCnfhlimbhdXnWrxJLrzX3KWt2FKnV0s8XiM5vjpGHQiyFRlTj0w=="],
 
-    "@fontsource/noto-serif-sc": ["@fontsource/noto-serif-sc@5.3.0", "", {}, "sha512-0/zaEFkidiWldE62rTeD74x8ygUsQvejiSNtO0LQxQk3qpaHnlMZ3w4C7yH80B4KTIg8VKeFP4oSgwWMchY9+g=="],
+    "@fontsource/noto-serif-sc": ["@fontsource/noto-serif-sc@5.3.1", "", {}, "sha512-nIK2HyNGcUi2TGwIfrk2MItkh0O3Y5+TI8iPfPSzoNY6uyXYfQ9qqch8czk3aa1VhV4EU52uwCYCe1UDKJELpg=="],
 
     "@iconify-json/simple-icons": ["@iconify-json/simple-icons@1.2.79", "", { "dependencies": { "@iconify/types": "*" } }, "sha512-aNyO7Fd1qej9oQfIyohYFRv0lhQLaZ+6UkK1c1qwax0MDPUOZOdq65MlU500kow97pD/W+b2u1And3e25eE24Q=="],
 
