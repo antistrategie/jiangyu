@@ -110,7 +110,7 @@ UI.InjectEach(
 A few helpers make an injected element behave like a native one:
 
 - `target.MatchStyle(reference)` copies every USS class off `reference` onto `target`, so it inherits the same stylesheet rules. Use it when the neighbour is styled by class.
-- `target.StackAfter(reference, gap)` positions `target` absolutely one row below `reference`, matching its left edge, width, and height. Use it when the neighbour carries no classes and is positioned in code, as many game bars are. It reads the resolved layout, so call it from `bind`, after the reference has been laid out.
+- `target.StackAfter(reference, gap)` positions `target` absolutely one row below `reference`, matching its left edge, width, and height. Use it when the neighbour carries no classes and is positioned in code, as many game bars are. Call it from `bind`: the target is placed once the reference has been laid out and follows it whenever its geometry changes.
 - `target.SetVisible(bool)`, `target.IsVisible()`, `target.SetWidthPercent(percent)`, and `target.CenterText()` cover the small chores: toggling display, driving a bar fill, and centring a label inline (which beats the game's own `.unity-label` text-align).
 
 The game's hover look is not a helper you call. It is a trait the [Components](#components) wear by default, so a native-looking control is hovered by virtue of being one.

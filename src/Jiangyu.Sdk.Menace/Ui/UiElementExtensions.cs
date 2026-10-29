@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using Il2CppInterop.Runtime;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -25,41 +27,82 @@ public static class UiElementExtensions
         }
     }
 
+    // Targets StackAfter keeps positioned, keyed by native pointer, so a repeat call for the
+    // same live target replaces its tracking rather than stacking a second geometry handler.
+    // An entry is dropped when its target leaves the panel, so a recycled pointer starts clean.
+    private static readonly Dictionary<IntPtr, Action> StackTracking = new();
+
     /// <summary>
     /// Position <paramref name="target"/> absolutely one row below <paramref name="reference"/>,
     /// matching its left edge, width, and height, with an optional <paramref name="gap"/>.
     /// This is the way to add a sibling to a game element that has no USS classes and is
     /// absolutely positioned (so <see cref="MatchStyle"/> has nothing to copy), for
-    /// example stacking a third bar under the health and armour bars. Read from the
-    /// reference's resolved layout, so call it after the reference has been laid out.
+    /// example stacking a third bar under the health and armour bars. The target follows
+    /// the reference's layout: it is placed as soon as the reference has been laid out
+    /// and moves whenever the reference's geometry changes, so it can be called from a
+    /// bind callback before the screen's first layout pass. The target and reference must
+    /// share a parent.
     /// </summary>
     public static void StackAfter(this VisualElement target, VisualElement reference, float gap = 0f)
     {
         if (target == null || reference == null)
             return;
 
-        float top, left, width, height;
+        IntPtr targetPtr;
+        try { targetPtr = target.Pointer; }
+        catch { return; }
+
+        if (StackTracking.TryGetValue(targetPtr, out var untrack))
+            untrack();
+
+        EventCallback<GeometryChangedEvent> onGeometry = null;
+        EventCallback<DetachFromPanelEvent> onDetach = null;
+        void Untrack()
+        {
+            StackTracking.Remove(targetPtr);
+            try { reference.UnregisterCallback(onGeometry, TrickleDown.NoTrickleDown); } catch { }
+            try { target.UnregisterCallback(onDetach, TrickleDown.NoTrickleDown); } catch { }
+        }
+
+        onGeometry = DelegateSupport.ConvertDelegate<EventCallback<GeometryChangedEvent>>(
+            (Action<GeometryChangedEvent>)(_ => PlaceBelow(target, reference, gap)));
+        onDetach = DelegateSupport.ConvertDelegate<EventCallback<DetachFromPanelEvent>>(
+            (Action<DetachFromPanelEvent>)(_ => Untrack()));
+
         try
         {
-            var box = reference.resolvedStyle;
-            top = box.top;
-            left = box.left;
-            width = box.width;
-            height = box.height;
+            reference.RegisterCallback(onGeometry, TrickleDown.NoTrickleDown);
+            target.RegisterCallback(onDetach, TrickleDown.NoTrickleDown);
+            StackTracking[targetPtr] = Untrack;
         }
+        catch (Exception) { Untrack(); }
+
+        PlaceBelow(target, reference, gap);
+    }
+
+    private static void PlaceBelow(VisualElement target, VisualElement reference, float gap)
+    {
+        Rect box;
+        try { box = reference.layout; }
         catch { return; }
+
+        // A reference that has not been through a layout pass reports NaN or an empty box.
+        // Its GeometryChangedEvent places the target once it has.
+        if (float.IsNaN(box.x) || float.IsNaN(box.y) || float.IsNaN(box.width) || float.IsNaN(box.height)
+            || box.width <= 0f || box.height <= 0f)
+            return;
 
         try
         {
             target.style.position = new StyleEnum<Position>(Position.Absolute);
-            target.style.left = new StyleLength(left);
-            target.style.width = new StyleLength(width);
-            target.style.height = new StyleLength(height);
-            target.style.top = new StyleLength(top + height + gap);
+            target.style.left = new StyleLength(box.x);
+            target.style.width = new StyleLength(box.width);
+            target.style.height = new StyleLength(box.height);
+            target.style.top = new StyleLength(box.y + box.height + gap);
         }
         catch (Exception)
         {
-            // Layout not ready, or a style setter rejected the value, so it is left as is.
+            // A style setter rejected the value, so it is left as is.
         }
     }
 

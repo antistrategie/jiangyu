@@ -166,11 +166,22 @@ public sealed class UiTarget
 
     internal static VisualElement RootOf(UIScreen screen)
     {
-        // JIANGYU-CONTRACT: GetRootElement (RVA 0x823360) caches Q<VisualElement>("Root") in
-        // m_RootElement. Cleanup (0x822FB0) uses that field to decide whether teardown is needed.
-        // Discovery must not populate it on screens such as Splash, whose UIDocument can clear
-        // its own root before screen cleanup. Query the live tree without changing native state.
-        try { return screen?.m_RootElement ?? screen?.Q<VisualElement>("Root", null); }
+        // JIANGYU-CONTRACT: GetRootElement (RVA 0x88B800) caches Q<VisualElement>("Root") in
+        // m_RootElement. Cleanup (0x88B450) gates teardown on that field and is the only path that
+        // clears it, run from OnInactive (0x88BF50) and OnDestroy (0x88BDE0), not OnDisable
+        // (0x88BE70). Discovery neither populates nor reads it: Splash's UIDocument can clear its
+        // own root before screen cleanup, and a screen re-enabled without OnInactive holds the
+        // detached previous root there. UIScreen.Q (0xBF3190) queries m_Container.rootVisualElement
+        // (GetRootParent, 0x88B870). UITactical's document has no "Root" element, so the document
+        // root is the fallback.
+        try
+        {
+            var document = screen?.m_Container;
+            var documentRoot = document != null ? document.rootVisualElement : null;
+            if (documentRoot == null)
+                return null;
+            return documentRoot.Q<VisualElement>("Root", (string)null) ?? documentRoot;
+        }
         catch { return null; }
     }
 

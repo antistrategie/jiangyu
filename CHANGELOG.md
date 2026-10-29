@@ -8,6 +8,10 @@ Changes relevant to modders building with Jiangyu, and to players running Jiangy
 - (Compiler) A compile with nothing left to build now removes the previous output instead of leaving it for deploy and package to ship
 - (Compiler) Fixed UXML and icon bundles under `unity/Assets/UI` not building when the mod has no prefabs
 - (Loader) Fixed `OnTemplatesApplied` never running when no installed mod changes templates
+- (SDK) Fixed mod UI disappearing from a screen returned to through Escape or the game menu
+- (SDK) Fixed mod UI never injecting into the tactical screen
+- (SDK) `StackAfter` now places the target once the reference has been laid out and follows it when it moves, so it works from a `bind` callback
+- (Studio) Fixed the UI Inspector showing an empty tree on the tactical screen
 
 ## 1.4.9
 
