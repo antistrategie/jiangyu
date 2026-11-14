@@ -141,7 +141,7 @@ namespace Jiangyu.Mod
                     // game's own texture by the loader at runtime, and a second lossy pass
                     // on top of one here would compound; it stays at source fidelity.
                     if (plan.TextureAdditions.Contains(textureData.Name))
-                        CompressIfBlockAligned(texture);
+                        CompressToBlocks(texture);
                     if (plan.StandingPortraits.Contains(textureData.Name))
                     {
                         // Standing artwork is sampled on the GPU. Set the serialised flag
@@ -265,28 +265,38 @@ namespace Jiangyu.Mod
                     // Reconfigure and reimport only when the saved settings differ.
                     // Staging keeps unchanged files and their metas in place across
                     // builds, so on a warm project this loop costs no imports.
-                    // A sprite whose dimensions divide by four compresses to BC7, the
-                    // importer's high-quality setting on desktop. The rest stay
-                    // uncompressed because block formats cannot encode them.
-                    var wantCompression = IsBlockAligned(importer)
+                    // A sprite compresses to BC7, the importer's high-quality setting on
+                    // desktop, which needs dimensions that divide by four. A PNG whose
+                    // dimensions do not is padded in its staged copy, and its sprite is
+                    // the original rectangle of the padded texture, so it is drawn at
+                    // the size it was authored at. Any other unaligned file stays
+                    // uncompressed because block formats cannot encode it.
+                    var paddedRect = PadToBlocks(pngFile, importer);
+                    var wantCompression = paddedRect.HasValue || IsBlockAligned(importer)
                         ? TextureImporterCompression.CompressedHQ
                         : TextureImporterCompression.Uncompressed;
+                    var wantMode = paddedRect.HasValue ? SpriteImportMode.Multiple : SpriteImportMode.Single;
                     if (importer.textureType != TextureImporterType.Sprite
-                        || importer.spriteImportMode != SpriteImportMode.Single
+                        || importer.spriteImportMode != wantMode
+                        || (paddedRect.HasValue && !HasSpriteRect(importer, paddedRect.Value))
                         || !importer.alphaIsTransparency
                         || importer.alphaSource != TextureImporterAlphaSource.FromInput
                         || importer.mipmapEnabled
                         || importer.filterMode != FilterMode.Bilinear
                         || importer.wrapMode != TextureWrapMode.Clamp
+                        || importer.maxTextureSize != SpriteMaximumSize
                         || importer.textureCompression != wantCompression)
                     {
                         importer.textureType = TextureImporterType.Sprite;
-                        importer.spriteImportMode = SpriteImportMode.Single;
+                        importer.spriteImportMode = wantMode;
+                        if (paddedRect.HasValue)
+                            SetSpriteRect(importer, Path.GetFileNameWithoutExtension(pngFile), paddedRect.Value);
                         importer.alphaIsTransparency = true;
                         importer.alphaSource = TextureImporterAlphaSource.FromInput;
                         importer.mipmapEnabled = false;
                         importer.filterMode = FilterMode.Bilinear;
                         importer.wrapMode = TextureWrapMode.Clamp;
+                        importer.maxTextureSize = SpriteMaximumSize;
                         importer.textureCompression = wantCompression;
                         importer.SaveAndReimport();
                     }
@@ -617,15 +627,31 @@ namespace Jiangyu.Mod
         // DXT5 (DXT1 for a texture without alpha) holds 8 bits per pixel against 32 for
         // an uncompressed one, and is the format the game uses for its own portraits, so
         // a compressed addition matches the vanilla art beside it. Block formats need both
-        // dimensions divisible by four; a texture that is not stays uncompressed rather
-        // than failing the bake. Texture2D.Compress is the encoder because
-        // EditorUtility.CompressTexture declines, without a word, any texture carrying a
-        // mip chain, and additions keep theirs for 3D use. A texture is regenerated
-        // whenever this policy changes, so it only ever compresses once, from source pixels.
-        private static void CompressIfBlockAligned(Texture2D texture)
+        // dimensions divisible by four, so a texture that is not is first scaled up to the
+        // next size that is, by at most three pixels each way. A texture is addressed by
+        // normalised coordinates, so the scale moves nothing that samples it.
+        // Texture2D.Compress is the encoder because EditorUtility.CompressTexture declines,
+        // without a word, any texture carrying a mip chain, and additions keep theirs for
+        // 3D use. A texture is regenerated whenever this policy changes, so it only ever
+        // compresses once, from source pixels.
+        private static void CompressToBlocks(Texture2D texture)
         {
-            if (texture.width % 4 == 0 && texture.height % 4 == 0)
-                texture.Compress(highQuality: true);
+            var width = (texture.width + 3) / 4 * 4;
+            var height = (texture.height + 3) / 4 * 4;
+            if (width != texture.width || height != texture.height)
+            {
+                var scaled = new Color[width * height];
+                for (var y = 0; y < height; y++)
+                {
+                    var v = (y + 0.5f) / height;
+                    for (var x = 0; x < width; x++)
+                        scaled[y * width + x] = texture.GetPixelBilinear((x + 0.5f) / width, v);
+                }
+                texture.Reinitialize(width, height);
+                texture.SetPixels(scaled);
+                texture.Apply(updateMipmaps: true, makeNoLongerReadable: false);
+            }
+            texture.Compress(highQuality: true);
         }
 
         // The rate comes from the source file's own header. The imported clip cannot
@@ -703,6 +729,102 @@ namespace Jiangyu.Mod
                 if (bytes[offset + i] != literal[i]) return false;
             return true;
         }
+
+        // The staged copy of a sprite is rewritten once with its last column and row
+        // repeated out to the next multiple of four, and the importer's user data records
+        // the sprite's own size and the padded file's hash. A staged file that no longer
+        // has that hash is a new source, and is looked at afresh. Returns the sprite's
+        // rectangle in a padded file, or null for a file that is the sprite as it is.
+        private const string PaddedMarker = "jiangyu-padded:";
+
+        // A sprite is imported at the size it was authored at. The importer's default
+        // limit scales a larger one down, to dimensions that need not divide by four,
+        // and such a sprite is then left uncompressed without a word.
+        private const int SpriteMaximumSize = 8192;
+
+        private static Rect? PadToBlocks(string file, TextureImporter importer)
+        {
+            var bytes = File.ReadAllBytes(file);
+            var marker = importer.userData ?? string.Empty;
+            if (marker.StartsWith(PaddedMarker, StringComparison.Ordinal))
+            {
+                var parts = marker.Substring(PaddedMarker.Length).Split(',');
+                if (parts.Length == 3
+                    && int.TryParse(parts[0], out var ownWidth)
+                    && int.TryParse(parts[1], out var ownHeight)
+                    && parts[2] == ContentHash(bytes))
+                    return new Rect(0f, 0f, ownWidth, ownHeight);
+                importer.userData = string.Empty;
+            }
+
+            if (!TryPngSize(bytes, out var width, out var height) || (width % 4 == 0 && height % 4 == 0))
+                return null;
+
+            var source = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: false, linear: false);
+            Texture2D padded = null;
+            try
+            {
+                if (!ImageConversion.LoadImage(source, bytes, markNonReadable: false)
+                    || source.width != width || source.height != height)
+                    return null;
+                var paddedWidth = (width + 3) / 4 * 4;
+                var paddedHeight = (height + 3) / 4 * 4;
+                var from = source.GetPixels32();
+                var to = new Color32[paddedWidth * paddedHeight];
+                // Row zero is the bottom of the picture, so the padding is its right and top.
+                for (var y = 0; y < paddedHeight; y++)
+                {
+                    var fromRow = Math.Min(y, height - 1) * width;
+                    for (var x = 0; x < paddedWidth; x++)
+                        to[y * paddedWidth + x] = from[fromRow + Math.Min(x, width - 1)];
+                }
+                padded = new Texture2D(paddedWidth, paddedHeight, TextureFormat.RGBA32, mipChain: false, linear: false);
+                padded.SetPixels32(to);
+                var written = padded.EncodeToPNG();
+                File.WriteAllBytes(file, written);
+                importer.userData = $"{PaddedMarker}{width},{height},{ContentHash(written)}";
+                return new Rect(0f, 0f, width, height);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(source);
+                if (padded != null)
+                    UnityEngine.Object.DestroyImmediate(padded);
+            }
+        }
+
+        private static string ContentHash(byte[] bytes)
+        {
+            using (var md5 = System.Security.Cryptography.MD5.Create())
+                return BitConverter.ToString(md5.ComputeHash(bytes)).Replace("-", string.Empty);
+        }
+
+        // Width and height from a PNG's header: the IHDR chunk follows the eight byte signature.
+        private static bool TryPngSize(byte[] bytes, out int width, out int height)
+        {
+            width = height = 0;
+            if (bytes.Length < 24 || bytes[0] != 0x89 || !Ascii(bytes, 1, "PNG") || !Ascii(bytes, 12, "IHDR"))
+                return false;
+            width = (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19];
+            height = (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23];
+            return width > 0 && height > 0;
+        }
+
+#pragma warning disable CS0618 // The sprite sheet property is the one way to set a rectangle without the sprite editor package.
+        private static bool HasSpriteRect(TextureImporter importer, Rect rect)
+        {
+            var sheet = importer.spritesheet;
+            return sheet != null && sheet.Length == 1 && sheet[0].rect == rect;
+        }
+
+        private static void SetSpriteRect(TextureImporter importer, string name, Rect rect)
+        {
+            importer.spritesheet = new[]
+            {
+                new SpriteMetaData { name = name, rect = rect, alignment = (int)SpriteAlignment.Center, pivot = new Vector2(0.5f, 0.5f) },
+            };
+        }
+#pragma warning restore CS0618
 
         private static bool IsBlockAligned(TextureImporter importer)
         {

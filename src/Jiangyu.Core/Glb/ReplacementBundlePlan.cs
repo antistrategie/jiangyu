@@ -24,7 +24,7 @@ internal sealed class ReplacementBundlePlan
 
     // Part of every texture hash, so a change in how the Unity pass encodes textures
     // re-bakes them even when their bytes and the toolchain version are unchanged.
-    private const string TextureBakePolicy = "additions-dxt-with-mips-portrait-gpu-only";
+    private const string TextureBakePolicy = "additions-dxt-with-mips-portrait-gpu-only-scaled-to-blocks";
 
     /// <summary>Extensionless bundle file names this plan produces, sorted.</summary>
     public required IReadOnlyList<string> BundleFiles { get; init; }
