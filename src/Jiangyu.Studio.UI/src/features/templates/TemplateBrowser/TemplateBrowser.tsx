@@ -222,7 +222,8 @@ export function TemplateBrowser({
         // A build that left gaps says so once per session, not only on the
         // build that produced them.
         // A stale index is about to be rebuilt; its gaps are not worth a toast.
-        const note = s.state === "current" ? skippedValuesNote(s.skippedValueCount, s.skippedValues) : null;
+        const note =
+          s.state === "current" ? skippedValuesNote(s.skippedValueCount, s.skippedValues) : null;
         if (note && !announcedGaps) {
           announcedGaps = true;
           pushToast({ variant: "info", message: "Template index has gaps", detail: note });
@@ -384,7 +385,8 @@ export function TemplateBrowser({
       setStatus(result);
       const note = skippedValuesNote(result.skippedValueCount, result.skippedValues);
       announcedGaps = note !== null;
-      if (note) pushToast({ variant: "info", message: "Template index built with gaps", detail: note });
+      if (note)
+        pushToast({ variant: "info", message: "Template index built with gaps", detail: note });
       else pushToast({ variant: "success", message: "Template index built" });
     } catch (err) {
       const msg = (err as Error).message;

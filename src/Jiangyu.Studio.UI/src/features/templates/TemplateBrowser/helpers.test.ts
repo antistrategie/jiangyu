@@ -12,7 +12,9 @@ describe("skippedValuesNote", () => {
     expect(skippedValuesNote(1)).toBe(
       "1 template has no values in the index. Its fields show nothing until the cause is fixed and the index rebuilt.",
     );
-    expect(skippedValuesNote(40)).toMatch(/^40 templates have no values in the index\. Their fields/);
+    expect(skippedValuesNote(40)).toMatch(
+      /^40 templates have no values in the index\. Their fields/,
+    );
   });
 
   it("quotes the first skipped instance when the status carries one", () => {
