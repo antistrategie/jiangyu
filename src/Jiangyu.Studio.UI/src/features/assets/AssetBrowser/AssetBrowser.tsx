@@ -279,6 +279,7 @@ export function AssetBrowser({ projectPath, initialState, onStateChange }: Asset
   // filter changes; the kind filter applies to the ranked results so we don't
   // rebuild the string array when the user toggles filter pills.
   const haystack = useMemo(() => allAssets.map((a) => a.name ?? ""), [allAssets]);
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-assignment -- IntraMode.SingleError. uFuzzy declares it as an ambient const enum, which verbatimModuleSyntax cannot reference as a value.
   const uf = useMemo(() => new uFuzzy({ intraMode: 1 }), []);
 
   const deferredQuery = useDeferredValue(query);

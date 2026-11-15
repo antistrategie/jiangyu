@@ -32,7 +32,8 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
     if (nx + rect.width > window.innerWidth) nx = Math.max(4, window.innerWidth - rect.width - 4);
     if (ny + rect.height > window.innerHeight)
       ny = Math.max(4, window.innerHeight - rect.height - 4);
-    // eslint-disable-next-line @eslint-react/set-state-in-effect -- legitimate post-layout measurement: read DOM rect, adjust if overflowing viewport. Cannot be derived during render.
+    // Post-layout measurement: read the DOM rect and adjust if it overflows
+    // the viewport. Cannot be derived during render.
     if (nx !== x || ny !== y) setPos({ x: nx, y: ny });
   }, [x, y]);
 

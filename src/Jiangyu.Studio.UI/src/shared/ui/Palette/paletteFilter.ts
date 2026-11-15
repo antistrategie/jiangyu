@@ -26,6 +26,7 @@ export function buildSearchIndex(actions: readonly PaletteAction[]): PaletteSear
     // tolerates a single typo inside a term — matches how palette users search
     // ("formt" → "Format Document"), where MultiInsert would require all chars
     // in order.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-assignment -- IntraMode.SingleError. uFuzzy declares it as an ambient const enum, which verbatimModuleSyntax cannot reference as a value.
     uf: new uFuzzy({ interSplit: "\\s+", intraMode: 1 }),
   };
 }
