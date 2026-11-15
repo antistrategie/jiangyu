@@ -2,6 +2,10 @@
 
 Changes relevant to modders building with Jiangyu, and to players running Jiangyu mods where they can see the difference. Entries are scoped Loader, Compiler, Studio, CLI, MCP or SDK.
 
+## 1.4.11
+
+- (Loader) Fixed an intermittent crash on reaching the main menu
+
 ## 1.4.10
 
 - (Compiler) Fixed a mod with only code or only prefabs reporting nothing to compile instead of building it

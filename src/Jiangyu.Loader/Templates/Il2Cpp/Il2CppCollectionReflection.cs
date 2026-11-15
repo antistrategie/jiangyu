@@ -1,4 +1,6 @@
 using System.Reflection;
+using Il2CppInterop.Runtime;
+using Il2CppInterop.Runtime.InteropTypes;
 
 namespace Jiangyu.Loader.Templates;
 
@@ -153,6 +155,9 @@ internal static class Il2CppCollectionReflection
         fresh = null;
         error = null;
         if (source == null) { error = "source array is null."; return false; }
+        var appended = appendedElement == null ? Array.Empty<object>() : new[] { appendedElement };
+        if (TryRebuildNative(source, arrayType, appended, out fresh, out error))
+            return fresh != null;
 
         var srcType = source.GetType();
         var lengthProp = srcType.GetProperty("Length", BindingFlags.Instance | BindingFlags.Public);
@@ -236,6 +241,37 @@ internal static class Il2CppCollectionReflection
         return true;
     }
 
+    // A real Il2CppStringArray / Il2CppReferenceArray<T> is rebuilt natively, so
+    // every element store passes the GC write barrier. Returns false for any
+    // other shape (BCL arrays, synthetic wrappers), which take the reflective
+    // path. When it returns true, a null fresh means the rebuild failed.
+    private static bool TryRebuildNative(
+        object source, Type arrayType, IReadOnlyList<object> appendedElements,
+        out object fresh, out string error)
+    {
+        fresh = null;
+        error = null;
+        if (source is not Il2CppObjectBase nativeSource
+            || !Il2CppGcWrites.IsReferenceArrayWrapper(source.GetType())
+            || !Il2CppGcWrites.IsReferenceArrayWrapper(arrayType))
+            return false;
+
+        try
+        {
+            var length = (int)IL2CPP.il2cpp_array_length(nativeSource.Pointer);
+            var rebuilt = Il2CppGcWrites.Allocate(arrayType, length + appendedElements.Count);
+            Il2CppGcWrites.CopyElements(nativeSource.Pointer, 0, rebuilt.Pointer, 0, length);
+            for (var i = 0; i < appendedElements.Count; i++)
+                Il2CppGcWrites.SetElement(rebuilt, length + i, appendedElements[i]);
+            fresh = rebuilt;
+        }
+        catch (Exception ex)
+        {
+            error = $"{arrayType.FullName} native rebuild threw: {ex.InnerException?.Message ?? ex.Message}.";
+        }
+        return true;
+    }
+
     /// <summary>
     /// Append-multiple variant of <see cref="TryRebuildReferenceArray"/>. One
     /// allocation + one source pass for the whole batch, instead of N rebuilds
@@ -251,6 +287,8 @@ internal static class Il2CppCollectionReflection
         if (source == null) { error = "source array is null."; return false; }
         if (appendedElements == null || appendedElements.Count == 0)
             return TryRebuildReferenceArray(source, arrayType, elementType, null, out fresh, out error);
+        if (TryRebuildNative(source, arrayType, appendedElements, out fresh, out error))
+            return fresh != null;
 
         var srcType = source.GetType();
         var lengthProp = srcType.GetProperty("Length", BindingFlags.Instance | BindingFlags.Public);
@@ -329,6 +367,15 @@ internal static class Il2CppCollectionReflection
             {
                 Array.Copy(managedSource, managed, Math.Min(managedSource.Length, newLength));
                 fresh = managed;
+                return true;
+            }
+
+            if (source is Il2CppObjectBase nativeSource && Il2CppGcWrites.IsReferenceArrayWrapper(srcType))
+            {
+                var rebuilt = Il2CppGcWrites.Allocate(srcType, newLength);
+                var kept = Math.Min((int)IL2CPP.il2cpp_array_length(nativeSource.Pointer), newLength);
+                Il2CppGcWrites.CopyElements(nativeSource.Pointer, 0, rebuilt.Pointer, 0, kept);
+                fresh = rebuilt;
                 return true;
             }
 

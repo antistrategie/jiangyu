@@ -1,4 +1,5 @@
 using Il2CppInterop.Runtime;
+using Jiangyu.Loader.Templates;
 using MelonLoader;
 using UnityEngine;
 
@@ -376,11 +377,11 @@ internal static class Il2CppComponentMirror
                     result.FieldsSkipped++;
                     continue;
                 }
-                // A struct field may embed object pointers, copied here without a
-                // write barrier. Safe under IL2CPP's Boehm GC: it neither moves
-                // objects nor needs barriers for correctness.
+                // A struct field may embed object pointers, so each is re-stored
+                // through the write barrier after the raw copy.
                 Buffer.MemoryCopy(
                     (byte*)reference + offset, (byte*)addition + offset, size, size);
+                Il2CppGcWrites.BarrierStructReferences(addition, (byte*)addition + offset, fieldClass, 0);
             }
         }
     }

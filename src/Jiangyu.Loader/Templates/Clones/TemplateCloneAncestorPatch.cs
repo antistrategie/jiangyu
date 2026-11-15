@@ -68,10 +68,9 @@ internal sealed class TemplateCloneAncestorPatch : IHarmonyPatchModule
         if (missing.Count == 0)
             return;
         var merged = new Il2CppReferenceArray<UnityEngine.Object>(__result.Length + missing.Count);
-        for (var i = 0; i < __result.Length; i++)
-            merged[i] = __result[i];
+        Il2CppGcWrites.CopyElements(__result.Pointer, 0, merged.Pointer, 0, __result.Length);
         for (var i = 0; i < missing.Count; i++)
-            merged[__result.Length + i] = missing[i];
+            Il2CppGcWrites.SetElement(merged, __result.Length + i, missing[i]);
         __result = merged;
     }
 

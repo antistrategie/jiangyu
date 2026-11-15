@@ -1,4 +1,5 @@
 using System.Reflection;
+using Il2CppInterop.Runtime.InteropTypes;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Jiangyu.Shared.Templates;
 using MelonLoader;
@@ -259,7 +260,10 @@ internal sealed partial class TemplatePatchApplier
         var collectionLocal = collection;
         var indexerLocal = indexer;
         var indexArg = new object[] { index };
-        setter = value => indexerLocal.SetValue(collectionLocal, value, indexArg);
+        if (collection is Il2CppObjectBase nativeArray && Il2CppGcWrites.IsReferenceArrayWrapper(collectionType))
+            setter = value => Il2CppGcWrites.SetElement(nativeArray, index, value);
+        else
+            setter = value => indexerLocal.SetValue(collectionLocal, value, indexArg);
         getter = () => indexerLocal.GetValue(collectionLocal, indexArg);
         return true;
     }
@@ -270,8 +274,9 @@ internal sealed partial class TemplatePatchApplier
     //     via the parameterless ctor and writeback.
     //   - Il2CppStringArray / Il2CppReferenceArray<T> / Il2CppStructArray<T>: rebuild a fresh
     //     native array of length+1 and writeback; null field yields a
-    //     1-element array. Writing the whole new array through the generated
-    //     property setter uses Il2CppInterop's GC write barrier.
+    //     1-element array. Reference-array elements are stored through
+    //     Il2CppGcWrites, and the new array through the generated property
+    //     setter, so every reference write passes the GC write barrier.
     //
     // insertIndex=null means Append; non-null means InsertAt at that position.
     internal static bool TryBindCollectionMutation(
@@ -426,36 +431,42 @@ internal sealed partial class TemplatePatchApplier
         }
 
         var readArgs = new object[1];
+        var holdsReferences = Il2CppGcWrites.IsReferenceArrayWrapper(collectionType);
 
         setter = value =>
         {
             var live = TryReadField(parent, fieldName);
-            int oldLength;
-            object[] old;
-            if (live == null)
-            {
-                if (insertIndex.HasValue && insertIndex.Value > 0)
-                    throw new InvalidOperationException(
-                        $"InsertAt index {insertIndex.Value} out of range for empty array.");
-                oldLength = 0;
-                old = Array.Empty<object>();
-            }
-            else
-            {
-                oldLength = (int)lengthProperty.GetValue(live)!;
-                old = new object[oldLength];
-                for (var i = 0; i < oldLength; i++)
-                {
-                    readArgs[0] = i;
-                    old[i] = indexer.GetValue(live, readArgs);
-                }
-            }
+            if (live == null && insertIndex.HasValue && insertIndex.Value > 0)
+                throw new InvalidOperationException(
+                    $"InsertAt index {insertIndex.Value} out of range for empty array.");
+            var oldLength = live == null ? 0 : (int)lengthProperty.GetValue(live)!;
 
             var newLength = oldLength + 1;
             var targetIndex = insertIndex ?? oldLength;
             if (targetIndex < 0 || targetIndex > oldLength)
                 throw new InvalidOperationException(
                     $"InsertAt index {targetIndex} out of range 0..{oldLength} (inclusive).");
+
+            if (holdsReferences)
+            {
+                var fresh = Il2CppGcWrites.Allocate(collectionType, newLength);
+                if (live is Il2CppObjectBase liveArray)
+                {
+                    Il2CppGcWrites.CopyElements(liveArray.Pointer, 0, fresh.Pointer, 0, targetIndex);
+                    Il2CppGcWrites.CopyElements(
+                        liveArray.Pointer, targetIndex, fresh.Pointer, targetIndex + 1, oldLength - targetIndex);
+                }
+                Il2CppGcWrites.SetElement(fresh, targetIndex, value);
+                fieldSetter(fresh);
+                return;
+            }
+
+            var old = new object[oldLength];
+            for (var i = 0; i < oldLength; i++)
+            {
+                readArgs[0] = i;
+                old[i] = indexer.GetValue(live, readArgs);
+            }
 
             var managed = Array.CreateInstance(elementType, newLength);
             for (var i = 0; i < targetIndex; i++)
@@ -531,6 +542,15 @@ internal sealed partial class TemplatePatchApplier
         if (index < 0 || index >= oldLength)
             throw new IndexOutOfRangeException(
                 $"Remove index {index} out of range 0..{oldLength - 1}.");
+
+        if (Il2CppGcWrites.IsReferenceArrayWrapper(arrayType) && array is Il2CppObjectBase nativeArray)
+        {
+            var fresh = Il2CppGcWrites.Allocate(arrayType, oldLength - 1);
+            Il2CppGcWrites.CopyElements(nativeArray.Pointer, 0, fresh.Pointer, 0, index);
+            Il2CppGcWrites.CopyElements(
+                nativeArray.Pointer, index + 1, fresh.Pointer, index, oldLength - index - 1);
+            return fresh;
+        }
 
         var managed = Array.CreateInstance(elementType, oldLength - 1);
         var readArgs = new object[1];

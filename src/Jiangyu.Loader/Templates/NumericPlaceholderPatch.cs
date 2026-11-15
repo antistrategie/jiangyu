@@ -66,10 +66,9 @@ internal sealed class NumericPlaceholderPatch : IHarmonyPatchModule
             {
                 resolved = new Il2CppStringArray(System.Math.Max(defaults.Length, __0?.Length ?? 0));
                 if (__0 != null)
-                    for (var j = 0; j < __0.Length; j++)
-                        resolved[j] = __0[j];
+                    Il2CppGcWrites.CopyElements(__0.Pointer, 0, resolved.Pointer, 0, __0.Length);
             }
-            resolved[i] = Resolve(token, binding);
+            Il2CppGcWrites.SetElement(resolved, i, Resolve(token, binding));
         }
         if (resolved != null)
             __0 = resolved;

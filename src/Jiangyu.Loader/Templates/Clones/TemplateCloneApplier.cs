@@ -2047,8 +2047,8 @@ internal sealed class TemplateCloneApplier
     // Appends the clone to DataTemplateLoader.m_TemplateArrays[resolvedType].
     //
     // Why a fresh native allocation: IL2CPP arrays are immutable in length, so
-    // we allocate a length+1 array, copy the existing element pointers across,
-    // append the clone, and replace the dict entry.
+    // we allocate a length+1 array, copy the existing element pointers across
+    // through the GC write barrier, append the clone, and replace the dict entry.
     //
     // Why il2cpp_array_new with the original's element class: an earlier
     // attempt used `new Il2CppReferenceArray<DataTemplate>(managedArray)`,
@@ -2156,29 +2156,14 @@ internal sealed class TemplateCloneApplier
             return false;
         }
 
-        var indexer = FindIntIndexer(oldArrayType);
-        if (indexer == null)
-        {
-            log.Warning($"Template clone array extend: no int-indexer on {oldArrayType.FullName}.");
-            return false;
-        }
-
         try
         {
-            var slot = new object[1];
-            for (var i = 0; i < oldLength; i++)
-            {
-                slot[0] = i;
-                var element = indexer.GetValue(oldArray, slot);
-                indexer.SetValue(newArray, element, slot);
-            }
-
-            slot[0] = oldLength;
-            indexer.SetValue(newArray, clone, slot);
+            Il2CppGcWrites.CopyElements(oldArrayPointer, 0, newNativeArray, 0, oldLength);
+            Il2CppGcWrites.SetElement(newNativeArray, oldLength, clone.Pointer);
         }
         catch (Exception ex)
         {
-            log.Warning($"Template clone array extend: indexer copy threw: {ex.InnerException?.Message ?? ex.Message}");
+            log.Warning($"Template clone array extend: element copy threw: {ex.Message}");
             return false;
         }
 
@@ -2210,17 +2195,6 @@ internal sealed class TemplateCloneApplier
             var parameters = method.GetParameters();
             if (parameters.Length == 2 && parameters[1].ParameterType.IsByRef)
                 return method;
-        }
-        return null;
-    }
-
-    private static PropertyInfo FindIntIndexer(Type type)
-    {
-        foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-        {
-            var parameters = property.GetIndexParameters();
-            if (parameters.Length == 1 && parameters[0].ParameterType == typeof(int))
-                return property;
         }
         return null;
     }
