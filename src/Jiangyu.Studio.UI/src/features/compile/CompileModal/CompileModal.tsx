@@ -188,16 +188,6 @@ function InfoPanel({
           <Stat label="Sprites" value={summary?.sprites ?? null} />
           <Stat label="Audio" value={summary?.audio ?? null} />
         </div>
-        <div className={styles.subStats}>
-          <SubStat
-            label="Replacements"
-            value={summary !== null ? String(summary.replacementFiles) : "—"}
-          />
-          <SubStat
-            label="Additions"
-            value={summary !== null ? String(summary.additionFiles) : "—"}
-          />
-        </div>
       </Section>
 
       <Section title="Templates · 模板">

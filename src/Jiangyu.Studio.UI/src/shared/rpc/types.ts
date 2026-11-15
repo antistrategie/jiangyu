@@ -430,8 +430,6 @@ export interface CompileSummary {
   textures: number;
   sprites: number;
   audio: number;
-  replacementFiles: number;
-  additionFiles: number;
   templateFiles: number;
   templatePatches: number;
   templateClones: number;

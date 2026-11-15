@@ -21,8 +21,6 @@ export interface CompileSummary {
   readonly textures: number;
   readonly sprites: number;
   readonly audio: number;
-  readonly replacementFiles: number;
-  readonly additionFiles: number;
   readonly templateFiles: number;
   readonly templatePatches: number;
   readonly templateClones: number;

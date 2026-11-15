@@ -93,12 +93,12 @@ public static partial class RpcHandlers
         }
     }
 
-    // Counts asset replacements, additions, and template files for the currently
+    // Counts asset and template files for the currently
     // open project so the compile modal can show a pre-compile dossier without
     // running the pipeline. Scans directly — cheaper than spinning up the full
     // CompilationService just to count files.
     [McpTool("jiangyu_compile_summary",
-        "Get a pre-compile dossier for the current project: mod name, version, author, and counts of model/texture/sprite/audio replacements, addition files, template files, template patches, and template clones. Requires an open project.")]
+        "Get a pre-compile dossier for the current project: mod name, version, author, and counts of model, texture, sprite and audio assets, template files, template patches, and template clones. Requires an open project.")]
     internal static JsonElement GetCompileSummary(JsonElement? __)
     {
         var projectRoot = RpcContext.ProjectRoot
@@ -151,23 +151,6 @@ public static partial class RpcHandlers
             Sprites = CountFiles(Path.Combine(replacementsRoot, "sprites"))
                 + Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(projectRoot, "sprites").Sum(dir => CountFilesRecursive(dir)),
             Audio = CountFiles(Path.Combine(replacementsRoot, "audio"))
-                + Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(projectRoot, "audio").Sum(dir => CountFilesRecursive(dir)),
-            // Replacements live at assets/replacements/<cat>/<file>; additions
-            // at assets/<cat>/<file> or assets/additions/<cat>/<file>. The two sub-stats break the
-            // top-line totals down by source so the modder can see at a
-            // glance how much of the bundle is replacing vanilla vs adding
-            // new content.
-            ReplacementFiles =
-                CountSubdirs(Path.Combine(replacementsRoot, "models"))
-                + CountFiles(Path.Combine(replacementsRoot, "textures"))
-                + CountFiles(Path.Combine(replacementsRoot, "sprites"))
-                + CountFiles(Path.Combine(replacementsRoot, "audio")),
-            AdditionFiles =
-                Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(projectRoot, "models").Sum(dir => CountSubdirs(dir))
-                + CountMainPrefabs(unityPrefabsRoot)
-                + Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(projectRoot, "prefabs").Sum(dir => CountFiles(dir, "*.bundle"))
-                + Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(projectRoot, "textures").Sum(dir => CountFilesRecursive(dir))
-                + Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(projectRoot, "sprites").Sum(dir => CountFilesRecursive(dir))
                 + Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(projectRoot, "audio").Sum(dir => CountFilesRecursive(dir)),
             TemplateFiles = CountFilesRecursive(templatesRoot, "*.kdl"),
             TemplatePatches = CountKdlNodes(templatesRoot, "patch"),
@@ -262,25 +245,6 @@ public sealed class CompileSummary
 
     [JsonPropertyName("audio")]
     public required int Audio { get; set; }
-
-    /// <summary>
-    /// Count of vanilla-replacement entries (files under
-    /// <c>assets/replacements/&lt;cat&gt;/</c>). Modal sub-stat that shows
-    /// how many of the top-line per-type counts came from replacements
-    /// vs additions.
-    /// </summary>
-    [JsonPropertyName("replacementFiles")]
-    public required int ReplacementFiles { get; set; }
-
-    /// <summary>
-    /// Count of addition-source files: anything under
-    /// <c>assets/additions/&lt;cat&gt;/</c> plus <c>main.prefab</c> files
-    /// under <c>unity/Assets/Prefabs/</c>. Modal sub-stat paired with
-    /// <see cref="ReplacementFiles"/> to split the top-line per-type
-    /// counts between replacement-of-vanilla and new-content sources.
-    /// </summary>
-    [JsonPropertyName("additionFiles")]
-    public required int AdditionFiles { get; set; }
 
     [JsonPropertyName("templateFiles")]
     public required int TemplateFiles { get; set; }
