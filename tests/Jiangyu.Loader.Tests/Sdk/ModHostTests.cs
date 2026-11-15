@@ -900,6 +900,44 @@ public class ModHostTests
     }
 
     [Fact]
+    public void Patch_registry_remove_mod_keeps_other_mods_on_the_same_target()
+    {
+        var registry = new ModPatchRegistry();
+        var ran = new List<string>();
+        registry.Add(ModPatchRegistry.Kind.Postfix, "key", "moda", "T.M", _ => ran.Add("a"), new CollectingLog());
+        registry.Add(ModPatchRegistry.Kind.Postfix, "key", "modb", "T.M", _ => ran.Add("b"), new CollectingLog());
+        registry.Add(ModPatchRegistry.Kind.Prefix, "key", "moda", "T.M", _ => ran.Add("pa"), new CollectingLog());
+        registry.RemoveMod("moda");
+
+        registry.DispatchPrefix("key", null, Array.Empty<object>());
+        registry.DispatchPostfix("key", null, Array.Empty<object>());
+
+        Assert.Equal(new[] { "b" }, ran);
+        Assert.Equal(0, registry.CountForMod("moda"));
+        Assert.Equal(1, registry.CountForMod("modb"));
+    }
+
+    [Fact]
+    public void Patch_registry_handler_added_during_dispatch_runs_from_the_next_call()
+    {
+        var registry = new ModPatchRegistry();
+        var log = new CollectingLog();
+        var calls = new List<string>();
+        registry.Add(ModPatchRegistry.Kind.Postfix, "key", "moda", "T.M", _ =>
+        {
+            calls.Add("a");
+            if (calls.Count == 1)
+                registry.Add(ModPatchRegistry.Kind.Postfix, "key", "modb", "T.M", _ => calls.Add("b"), log);
+        }, log);
+
+        registry.DispatchPostfix("key", null, Array.Empty<object>());
+        Assert.Equal(new[] { "a" }, calls);
+
+        registry.DispatchPostfix("key", null, Array.Empty<object>());
+        Assert.Equal(new[] { "a", "a", "b" }, calls);
+    }
+
+    [Fact]
     public void Patch_registry_remove_mod_drops_its_handlers()
     {
         var registry = new ModPatchRegistry();
