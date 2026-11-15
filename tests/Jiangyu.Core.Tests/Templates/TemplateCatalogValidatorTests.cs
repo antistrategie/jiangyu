@@ -3099,7 +3099,7 @@ public class TemplateCatalogValidatorTests
             patches, clones: null, catalog, log, additions);
 
         Assert.Equal(1, errors);
-        Assert.Contains("assets/additions/sprites/item/missing", log.Errors[0]);
+        Assert.Contains("assets/sprites/item/missing", log.Errors[0]);
     }
 
     [Fact]

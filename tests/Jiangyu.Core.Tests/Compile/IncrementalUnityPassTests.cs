@@ -1,6 +1,7 @@
 using Jiangyu.Core.Abstractions;
 using Jiangyu.Core.Compile;
 using Jiangyu.Core.Templates;
+using Jiangyu.Shared.Replacements;
 
 namespace Jiangyu.Core.Tests.Compile;
 
@@ -42,7 +43,7 @@ public sealed class IncrementalUnityPassTests : IDisposable
     private (string Project, string Prefabs, string Assets) Fingerprints(string bundleName = "mymod")
     {
         var project = CompilationService.UnityProjectFingerprint(UnityDir, "1.0");
-        var textures = ReplacementDiscovery.DiscoverAdditionTextureEntries(Path.Combine(_projectDir, "assets", "additions")).ToList();
+        var textures = ReplacementDiscovery.DiscoverAdditionTextureEntries(AdditionPaths.Roots(_projectDir)).ToList();
         var templatesDir = Path.Combine(_projectDir, "templates");
         if (Directory.Exists(templatesDir))
         {

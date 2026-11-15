@@ -125,7 +125,6 @@ public static partial class RpcHandlers
         }
 
         var replacementsRoot = Path.Combine(projectRoot, "assets", "replacements");
-        var additionsRoot = Path.Combine(projectRoot, "assets", "additions");
         var templatesRoot = Path.Combine(projectRoot, "templates");
         var unityPrefabsRoot = Path.Combine(projectRoot, "unity", "Assets", "Prefabs");
 
@@ -136,7 +135,7 @@ public static partial class RpcHandlers
             ModAuthor = modAuthor,
             // Per-type counts sum the replacement convention
             // (assets/replacements/<cat>/) and the addition convention
-            // (assets/additions/<cat>/) so what the modal advertises matches
+            // (assets/<cat>/ or assets/additions/<cat>/) so what the modal advertises matches
             // what the compile pipeline actually bundles. Models rolls in
             // prefab additions because both are GameObject-shaped 3D content
             // from the modder's perspective: model replacements (vanilla
@@ -144,17 +143,17 @@ public static partial class RpcHandlers
             // BakeHumanoid / dropped under unity/Assets/Prefabs/) share the
             // same stat tile.
             Models = CountSubdirs(Path.Combine(replacementsRoot, "models"))
-                + CountSubdirs(Path.Combine(additionsRoot, "models"))
+                + Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(projectRoot, "models").Sum(dir => CountSubdirs(dir))
                 + CountMainPrefabs(unityPrefabsRoot)
-                + CountFiles(Path.Combine(additionsRoot, "prefabs"), "*.bundle"),
+                + Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(projectRoot, "prefabs").Sum(dir => CountFiles(dir, "*.bundle")),
             Textures = CountFiles(Path.Combine(replacementsRoot, "textures"))
-                + CountFilesRecursive(Path.Combine(additionsRoot, "textures")),
+                + Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(projectRoot, "textures").Sum(dir => CountFilesRecursive(dir)),
             Sprites = CountFiles(Path.Combine(replacementsRoot, "sprites"))
-                + CountFilesRecursive(Path.Combine(additionsRoot, "sprites")),
+                + Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(projectRoot, "sprites").Sum(dir => CountFilesRecursive(dir)),
             Audio = CountFiles(Path.Combine(replacementsRoot, "audio"))
-                + CountFilesRecursive(Path.Combine(additionsRoot, "audio")),
+                + Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(projectRoot, "audio").Sum(dir => CountFilesRecursive(dir)),
             // Replacements live at assets/replacements/<cat>/<file>; additions
-            // at assets/additions/<cat>/<file>. The two sub-stats break the
+            // at assets/<cat>/<file> or assets/additions/<cat>/<file>. The two sub-stats break the
             // top-line totals down by source so the modder can see at a
             // glance how much of the bundle is replacing vanilla vs adding
             // new content.
@@ -164,12 +163,12 @@ public static partial class RpcHandlers
                 + CountFiles(Path.Combine(replacementsRoot, "sprites"))
                 + CountFiles(Path.Combine(replacementsRoot, "audio")),
             AdditionFiles =
-                CountSubdirs(Path.Combine(additionsRoot, "models"))
+                Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(projectRoot, "models").Sum(dir => CountSubdirs(dir))
                 + CountMainPrefabs(unityPrefabsRoot)
-                + CountFiles(Path.Combine(additionsRoot, "prefabs"), "*.bundle")
-                + CountFilesRecursive(Path.Combine(additionsRoot, "textures"))
-                + CountFilesRecursive(Path.Combine(additionsRoot, "sprites"))
-                + CountFilesRecursive(Path.Combine(additionsRoot, "audio")),
+                + Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(projectRoot, "prefabs").Sum(dir => CountFiles(dir, "*.bundle"))
+                + Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(projectRoot, "textures").Sum(dir => CountFilesRecursive(dir))
+                + Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(projectRoot, "sprites").Sum(dir => CountFilesRecursive(dir))
+                + Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(projectRoot, "audio").Sum(dir => CountFilesRecursive(dir)),
             TemplateFiles = CountFilesRecursive(templatesRoot, "*.kdl"),
             TemplatePatches = CountKdlNodes(templatesRoot, "patch"),
             TemplateClones = CountKdlNodes(templatesRoot, "clone"),

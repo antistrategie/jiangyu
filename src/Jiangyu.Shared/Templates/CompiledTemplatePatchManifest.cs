@@ -328,7 +328,7 @@ public enum CompiledTemplateValueKind
 
     /// <summary>
     /// Reference to a Unity asset shipped by the mod under
-    /// <c>assets/additions/&lt;category&gt;/&lt;name&gt;.&lt;ext&gt;</c> or to a
+    /// <c>assets/&lt;category&gt;/&lt;name&gt;.&lt;ext&gt;</c> or to a
     /// game-indexed asset of the same name. The category is inferred from the
     /// destination field's declared Unity type (Sprite, Texture2D, AudioClip,
     /// Material, Mesh) at compile and apply time, so the modder writes the
@@ -352,7 +352,7 @@ public enum CompiledTemplateValueKind
 /// <summary>
 /// Payload for a <see cref="CompiledTemplateValueKind.AssetReference"/> value.
 /// <para><c>Name</c> is the asset's logical key: the path under
-/// <c>assets/additions/&lt;category&gt;/</c> with the file extension stripped
+/// <c>assets/&lt;category&gt;/</c> with the file extension stripped
 /// and directory separators preserved as <c>/</c>. The category is derived
 /// from the destination field's declared Unity type, not stored here.</para>
 /// </summary>

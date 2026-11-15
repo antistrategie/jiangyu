@@ -16,7 +16,7 @@ How far you take it is up to the mod. A rebalance is a KDL patch. A new icon or 
 
 ### Workflow
 
-- **Mods are folders of files.** Assets are declared by location: a file under `assets/additions/` takes its name from its path, and a template references it by that name. Your project is a directory you can put under git.
+- **Mods are folders of files.** Assets are declared by location: a file under `assets/<category>/` takes its name from its path, and a template references it by that name. Your project is a directory you can put under git.
 - **Templates patched in KDL.** Patches live in `templates/*.kdl` with operations and typed values the compiler validates at build time. Stacked operations apply in order, the way RimWorld's `PatchOperation` XML composes. Edit visually or write KDL by hand and switch at any time.
 - **IDE-style Studio.** A grid of splittable, drag-and-drop panes with a command palette (`Ctrl+Shift+P`) and Monaco editors with vim mode.
 - **Live previews and drag-to-author.** Textures, sprites, audio, and 3D models preview inline. Drag a template id or field from the browser into the editor to start a patch with the field path filled in.

@@ -75,7 +75,7 @@ public static partial class RpcHandlers
     }
 
     [McpTool("jiangyu_xref_asset",
-        "Find template directives that reference a bundled asset by its logical name (the path under assets/additions/<category>/ without extension). Reads the compiled manifest, so run jiangyu_compile first.")]
+        "Find template directives that reference a bundled asset by its logical name (the path under assets/<category>/ or assets/additions/<category>/ without extension). Reads the compiled manifest, so run jiangyu_compile first.")]
     [McpParam("name", "string", "The asset's logical name.", Required = true)]
     internal static JsonElement XrefAsset(JsonElement? parameters)
     {

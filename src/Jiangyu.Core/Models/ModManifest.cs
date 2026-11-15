@@ -83,7 +83,7 @@ public sealed class ModManifest
 
     /// <summary>
     /// Logical names (Unity Object.name) of GameObjects shipped as addition
-    /// prefabs under <c>assets/additions/prefabs/&lt;name&gt;.bundle</c>. The
+    /// prefabs under <c>assets/prefabs/&lt;name&gt;.bundle</c>. The
     /// loader uses this list to differentiate "bundled GameObject that should
     /// satisfy <c>asset=</c> lookups" from "bundled GameObject that drives a
     /// mesh replacement". Convention: each addition bundle's filename stem

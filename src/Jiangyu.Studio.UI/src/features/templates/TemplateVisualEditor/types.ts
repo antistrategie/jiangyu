@@ -16,7 +16,7 @@ export type EditorValueKind =
   // to the freshly-constructed instance.
   | "TypeConstruction"
   // Unity asset reference: a single name string the loader resolves
-  // against the mod-bundle catalog (assets/additions/<category>/<name>) or
+  // against the mod-bundle catalog (assets/<category>/<name>) or
   // the live game-asset registry. The category is derived from the
   // destination field's declared Unity type, so the editor only stores
   // the name on assetName.

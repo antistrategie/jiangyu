@@ -78,7 +78,7 @@ Rules to author against:
 
 ### Pre-built bundle drop (escape hatch)
 
-If you already have an AssetBundle (built in your own Unity project, or shared from another mod), drop it directly under `assets/additions/prefabs/<name>.bundle`. The compile pipeline picks it up alongside Unity-built bundles. The filename stem is the asset name your KDL references, and the Object.name on the GameObject inside the bundle does not have to match.
+If you already have an AssetBundle (built in your own Unity project, or shared from another mod), drop it directly under `assets/prefabs/<name>.bundle`. The compile pipeline picks it up alongside Unity-built bundles. The filename stem is the asset name your KDL references, and the Object.name on the GameObject inside the bundle does not have to match.
 
 When the same name appears in both sources, the Unity-built bundle wins so stale hand-shipped artefacts don't shadow fresh builds.
 
@@ -101,7 +101,7 @@ patch "ArmorTemplate" "armor.player_fatigues" {
 }
 ```
 
-The category is **inferred** from the destination field's declared Unity type. `Prefabs` on `EntityTemplate` is `List<UnityEngine.GameObject>`, so the compiler looks for `my_squad_leader` under the prefab addition path (either `unity/Assets/Prefabs/my_squad_leader.prefab` or `assets/additions/prefabs/my_squad_leader.bundle`).
+The category is **inferred** from the destination field's declared Unity type. `Prefabs` on `EntityTemplate` is `List<UnityEngine.GameObject>`, so the compiler looks for `my_squad_leader` under the prefab addition path (either `unity/Assets/Prefabs/my_squad_leader.prefab` or `assets/prefabs/my_squad_leader.bundle`).
 
 ### Soldier visual overrides on a specific cloned unit
 

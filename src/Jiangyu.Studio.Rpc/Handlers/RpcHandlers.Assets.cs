@@ -228,8 +228,8 @@ public static partial class RpcHandlers
     }
 
     [McpTool("jiangyu_assets_project_additions",
-        "List asset additions shipped by the current project under assets/additions/<category>/. Filtered by Unity type so the caller (typically the asset-reference picker) only sees additions whose category matches the destination field. Returns {\"additions\": [{\"name\", \"file\"}, ...]} where name is the modder-facing logical name (slashes preserved, extension stripped). For GameObject fields, also surfaces source prefabs under unity/Assets/Prefabs/ that the compile pipeline will batch-build into bundles.")]
-    [McpParam("unityType", "string", "Unity Object class name of the destination field (\"Sprite\", \"Texture2D\", \"AudioClip\", \"Material\", \"GameObject\"). Drives which assets/additions/<category>/ subtree is scanned.", Required = true)]
+        "List asset additions shipped by the current project under assets/<category>/ (or assets/additions/<category>/). Filtered by Unity type so the caller (typically the asset-reference picker) only sees additions whose category matches the destination field. Returns {\"additions\": [{\"name\", \"file\"}, ...]} where name is the modder-facing logical name (slashes preserved, extension stripped). For GameObject fields, also surfaces source prefabs under unity/Assets/Prefabs/ that the compile pipeline will batch-build into bundles.")]
+    [McpParam("unityType", "string", "Unity Object class name of the destination field (\"Sprite\", \"Texture2D\", \"AudioClip\", \"Material\", \"GameObject\"). Drives which category folder is scanned.", Required = true)]
     internal static JsonElement AssetsProjectAdditions(JsonElement? parameters)
     {
         var unityType = RequireString(parameters, "unityType");
@@ -256,13 +256,14 @@ public static partial class RpcHandlers
         var results = new List<ProjectAdditionEntry>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
-        // Pre-built bundles dropped under assets/additions/<category>/ (the
-        // escape hatch shipped by hand). For non-prefab categories this is
-        // the only source.
-        var categoryRoot = Path.Combine(root, "assets", "additions", category);
+        // Files under assets/<category>/ or assets/additions/<category>/.
+        // For prefabs these are the pre-built bundles shipped by hand (the
+        // escape hatch). For non-prefab categories this is the only source.
         var extensions = Jiangyu.Shared.Replacements.AssetCategory.AdditionExtensionsForCategory(category);
-        if (Directory.Exists(categoryRoot) && extensions.Count > 0)
+        foreach (var categoryRoot in Jiangyu.Shared.Replacements.AdditionPaths.CategoryDirs(root, category))
         {
+            if (!Directory.Exists(categoryRoot) || extensions.Count == 0)
+                continue;
             foreach (var file in Directory.EnumerateFiles(categoryRoot, "*", SearchOption.AllDirectories))
             {
                 var ext = Path.GetExtension(file);

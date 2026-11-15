@@ -4,20 +4,22 @@ An **addition** ships a brand-new asset in your mod and lets a template referenc
 
 The modder workflow is:
 
-1. Drop the asset file under `assets/additions/<category>/<name>.<ext>`.
+1. Drop the asset file under `assets/<category>/<name>.<ext>`.
 2. Reference it from a template clone or patch with `set "FieldName" asset="<name>"`.
 3. Compile and ship.
 
 ## File layout
 
 ```text
-assets/additions/
+assets/
   sprites/
   textures/
   audio/
 ```
 
-Each category folder is walked recursively. The asset's runtime name is its **path under the category folder, with the extension stripped**. So `assets/additions/sprites/lrm5/icon.png` becomes a `Sprite` referenced as `asset="lrm5/icon"`.
+Each category folder is walked recursively. The asset's runtime name is its **path under the category folder, with the extension stripped**. So `assets/sprites/lrm5/icon.png` becomes a `Sprite` referenced as `asset="lrm5/icon"`.
+
+The same category folders are also read under `assets/additions/` (`assets/additions/sprites/lrm5/icon.png` is the same `lrm5/icon`). A name present in both places is a compile error.
 
 Forward slashes (`/`) in the reference mirror the folder layout. Use them whenever you want to organise files by feature, weapon family, or any other grouping.
 
@@ -34,7 +36,7 @@ clone "ItemDefinition" from="pen" id="fancy-pen" {
 }
 ```
 
-The category is **inferred** from the destination field's declared Unity type. `Icon` on `ItemDefinition` is a `Sprite`, so the compiler looks for the file under `assets/additions/sprites/`. You don't have to repeat the category in the KDL.
+The category is **inferred** from the destination field's declared Unity type. `Icon` on `ItemDefinition` is a `Sprite`, so the compiler looks for the file under `assets/sprites/`. You don't have to repeat the category in the KDL.
 
 ## Supported categories
 
@@ -48,23 +50,23 @@ The category is **inferred** from the destination field's declared Unity type. `
 
 ## Compile-time checks
 
-The compiler walks `assets/additions/` once at build time and verifies:
+The compiler walks the category folders once at build time and verifies:
 
 - Every `asset="..."` reference resolves to a real file under the inferred category folder. Missing files fail the build with the expected path:
 
     ```text
     Template patch '...': asset="lrm5/icon" was not found at
-    assets/additions/sprites/lrm5/icon.<ext>. Add the asset file or correct
+    assets/sprites/lrm5/icon.<ext>. Add the asset file or correct
     the reference name.
     ```
 
-- Two files in the same category folder don't share the same logical name with different extensions. `assets/additions/sprites/icon.png` and `assets/additions/sprites/icon.jpg` are a hard error: the runtime can't disambiguate by name.
+- Two files in the same category folder don't share the same logical name with different extensions. `assets/sprites/icon.png` and `assets/sprites/icon.jpg` are a hard error: the runtime can't disambiguate by name.
 
 - The destination field's declared Unity type is a supported asset class. `asset="..."` on a `string` or numeric field is rejected with a clear message.
 
 ## Runtime resolution
 
-At apply time the loader walks the mod's bundle catalog first, then falls back to the live game-asset registry filtered by name. Bundle hits win on collision: a modder shipping `assets/additions/sprites/cocaine.png` overrides the vanilla `cocaine` sprite for any clone that references `asset="cocaine"`, while leaving the vanilla item using its original sprite.
+At apply time the loader walks the mod's bundle catalog first, then falls back to the live game-asset registry filtered by name. Bundle hits win on collision: a modder shipping `assets/sprites/cocaine.png` overrides the vanilla `cocaine` sprite for any clone that references `asset="cocaine"`, while leaving the vanilla item using its original sprite.
 
 ## Backslashes are not allowed
 

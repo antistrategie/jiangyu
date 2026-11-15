@@ -53,7 +53,7 @@ public sealed class ReplacementDeprecationTests : IDisposable
 
         Assert.NotNull(warning);
         Assert.Contains("in use: textures, audio", warning);
-        Assert.Contains("assets/additions/", warning);
+        Assert.Contains("assets/<category>/", warning);
         Assert.Contains("asset=", warning);
     }
 }

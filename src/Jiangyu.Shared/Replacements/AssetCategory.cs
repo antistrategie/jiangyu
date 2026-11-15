@@ -3,7 +3,7 @@ namespace Jiangyu.Shared.Replacements;
 /// <summary>
 /// Shared mapping between Unity Object class names and the asset category
 /// folder modders use under <c>assets/replacements/&lt;category&gt;/</c> and
-/// <c>assets/additions/&lt;category&gt;/</c>.
+/// <c>assets/&lt;category&gt;/</c>.
 ///
 /// <para>The compiler (when validating that an <c>asset="name"</c> reference
 /// resolves to a real file) and the loader applier (when resolving the
@@ -71,7 +71,7 @@ public static class AssetCategory
 
     /// <summary>
     /// Translate a modder-facing logical name (the path under
-    /// <c>assets/additions/&lt;category&gt;/</c> with slashes preserved) into
+    /// <c>assets/&lt;category&gt;/</c> with slashes preserved) into
     /// the flat name used as the Unity Object's <c>.name</c> inside the
     /// bundle. <c>/</c> escapes to <c>__</c> because Unity's
     /// <c>AssetDatabase.CreateAsset</c> overwrites <c>Object.name</c> to the
@@ -89,7 +89,7 @@ public static class AssetCategory
 
     /// <summary>
     /// Build the modder-facing logical name for a file under
-    /// <c>assets/additions/&lt;category&gt;/</c>: the relative path with the
+    /// <c>assets/&lt;category&gt;/</c>: the relative path with the
     /// file extension stripped and platform separators normalised to
     /// <c>/</c>. The compile pipeline (when packing additions into the
     /// bundle) and the studio (when listing project additions for asset

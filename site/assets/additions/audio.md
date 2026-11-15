@@ -5,7 +5,7 @@ Ship a new `AudioClip` and add it to the appropriate `SoundBank`. The game route
 ## File layout
 
 ```text
-assets/additions/audio/<logical-name>.<ext>
+assets/audio/<logical-name>.<ext>
 ```
 
 `<ext>` is `.wav`, `.ogg`, or `.mp3`. Subdirectories are allowed, and the path under `audio/` (with the extension stripped) is the logical name.
@@ -36,7 +36,7 @@ patch "SoundBank" "weapons_soundbank" {
 }
 ```
 
-The two `asset=` references point at files the mod ships at `assets/additions/audio/weapons/custom_rifle/fire_01.wav` and `..._02.wav`. The same shape works for any bank: pick a `from=` entry whose playback feel you want to inherit, override `id`/`name`/`variations`, and the new sound is available for templates to reference.
+The two `asset=` references point at files the mod ships at `assets/audio/weapons/custom_rifle/fire_01.wav` and `..._02.wav`. The same shape works for any bank: pick a `from=` entry whose playback feel you want to inherit, override `id`/`name`/`variations`, and the new sound is available for templates to reference.
 
 To make a template use the new sound, point its bank-id field at the new name. The field name varies by template family. On `SkillTemplate` it's `SoundsOnAttack`:
 

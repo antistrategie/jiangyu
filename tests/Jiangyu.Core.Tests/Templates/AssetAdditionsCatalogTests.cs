@@ -34,6 +34,50 @@ public sealed class AssetAdditionsCatalogTests : IDisposable
     }
 
     [Fact]
+    public void BothLayouts_AreIndexedIntoOneCatalogue()
+    {
+        Write(Path.Combine(AssetCategory.Sprites, "direct.png"));
+        Write(Path.Combine("additions", AssetCategory.Sprites, "lrm5", "nested.png"));
+
+        var catalog = new FileSystemAssetAdditionsCatalog(AdditionPaths.Roots(ProjectDir));
+
+        Assert.True(catalog.Contains(AssetCategory.Sprites, "direct"));
+        Assert.True(catalog.Contains(AssetCategory.Sprites, "lrm5/nested"));
+        Assert.Empty(catalog.ConflictingNames);
+    }
+
+    [Fact]
+    public void SameNameInBothLayouts_IsAConflict()
+    {
+        Write(Path.Combine(AssetCategory.Sprites, "icon.png"));
+        Write(Path.Combine("additions", AssetCategory.Sprites, "icon.png"));
+
+        var catalog = new FileSystemAssetAdditionsCatalog(AdditionPaths.Roots(ProjectDir));
+
+        Assert.Contains($"{AssetCategory.Sprites}/icon", catalog.ConflictingNames);
+    }
+
+    [Fact]
+    public void ReplacementFiles_AreNotIndexedAsAdditions()
+    {
+        Write(Path.Combine("replacements", AssetCategory.Sprites, "UICheckMark.png"));
+
+        var catalog = new FileSystemAssetAdditionsCatalog(AdditionPaths.Roots(ProjectDir));
+
+        Assert.False(catalog.Contains(AssetCategory.Sprites, "UICheckMark"));
+    }
+
+    // A project directory whose assets/ folder is the fixture's temp root.
+    private string ProjectDir => Path.Combine(_tempRoot, "project");
+
+    private void Write(string pathUnderAssets)
+    {
+        var path = Path.Combine(ProjectDir, "assets", pathUnderAssets);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "");
+    }
+
+    [Fact]
     public void AdditionRoot_NestedLayout_IndexedWithSlashedStem()
     {
         var spritesDir = Path.Combine(_tempRoot, "additions", AssetCategory.Sprites, "lrm5");

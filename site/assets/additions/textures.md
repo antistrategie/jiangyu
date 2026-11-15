@@ -7,7 +7,7 @@ For UI icons and item portraits use [sprite additions](/assets/additions/sprites
 ## File layout
 
 ```text
-assets/additions/textures/<logical-name>.<ext>
+assets/textures/<logical-name>.<ext>
 ```
 
 `<ext>` is `.png`, `.jpg`, or `.jpeg`. The basename (with subdirs, without extension) is the logical name the modder writes in KDL.
@@ -20,7 +20,7 @@ clone "...Template" from="..." id="..." {
 }
 ```
 
-The category is inferred from the destination field's declared Unity type. The compiler walks `assets/additions/textures/` because the field is `Texture2D`.
+The category is inferred from the destination field's declared Unity type. The compiler walks `assets/textures/` because the field is `Texture2D`.
 
 ## How textures are imported
 

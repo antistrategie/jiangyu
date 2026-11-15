@@ -7,7 +7,7 @@ namespace Jiangyu.Loader.Templates;
 // JIANGYU-CONTRACT: Asset references inside template patches and clones
 // resolve in two phases at apply time:
 //   (1) the loaded mod-bundle catalog (BundleReplacementCatalog): additions
-//       packed under assets/additions/<category>/ and replacement files under
+//       packed under assets/<category>/ and replacement files under
 //       assets/replacements/<category>/ both land in this dictionary keyed by
 //       the Unity Object's name. Bundle entries win because a modder shipping
 //       an asset with a name colliding with a vanilla asset is expressing
@@ -18,7 +18,7 @@ namespace Jiangyu.Loader.Templates;
 //
 // Scope: the supported destination types match AssetCategory.IsSupported
 // (Sprite, Texture2D, AudioClip, Material, GameObject). GameObject additions
-// flow from `assets/additions/prefabs/<name>.bundle` and are registered into
+// flow from `assets/prefabs/<name>.bundle` and are registered into
 // `BundleReplacementCatalog.Assets` on first request; the
 // `additionPrefabs` list on jiangyu.json tells the loader which bundled
 // GameObjects to treat as additions vs mesh-replacement targets. Mesh and

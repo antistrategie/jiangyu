@@ -540,24 +540,17 @@ public class HasAnyAssetSourcesTests : IDisposable
             Directory.Delete(_root, recursive: true);
     }
 
-    [Fact]
-    public void ReturnsFalse_WhenNeitherDirectoryExists()
+    private void Write(string relativePath)
     {
-        var replacementRoot = Path.Combine(_root, "assets", "replacements");
-        var additionRoot = Path.Combine(_root, "assets", "additions");
-
-        Assert.False(CompilationService.HasAnyAssetSources(replacementRoot, additionRoot));
+        var path = Path.Combine(_root, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, [0x89, 0x50, 0x4E, 0x47]);
     }
 
     [Fact]
-    public void ReturnsFalse_WhenBothDirectoriesExistButAreEmpty()
+    public void ReturnsFalse_WhenNoAssetDirectoryExists()
     {
-        var replacementRoot = Path.Combine(_root, "assets", "replacements");
-        var additionRoot = Path.Combine(_root, "assets", "additions");
-        Directory.CreateDirectory(replacementRoot);
-        Directory.CreateDirectory(additionRoot);
-
-        Assert.False(CompilationService.HasAnyAssetSources(replacementRoot, additionRoot));
+        Assert.False(CompilationService.HasAnyAssetSources(_root));
     }
 
     [Fact]
@@ -565,35 +558,44 @@ public class HasAnyAssetSourcesTests : IDisposable
     {
         // Scaffolding tools may pre-create assets/replacements/textures/ etc.
         // Empty subdirectories must not trigger the asset index requirement.
-        var replacementRoot = Path.Combine(_root, "assets", "replacements");
-        Directory.CreateDirectory(Path.Combine(replacementRoot, "textures"));
-        Directory.CreateDirectory(Path.Combine(replacementRoot, "models"));
-        var additionRoot = Path.Combine(_root, "assets", "additions");
+        Directory.CreateDirectory(Path.Combine(_root, "assets", "replacements", "textures"));
+        Directory.CreateDirectory(Path.Combine(_root, "assets", "replacements", "models"));
+        Directory.CreateDirectory(Path.Combine(_root, "assets", "additions"));
+        Directory.CreateDirectory(Path.Combine(_root, "assets", "sprites"));
 
-        Assert.False(CompilationService.HasAnyAssetSources(replacementRoot, additionRoot));
+        Assert.False(CompilationService.HasAnyAssetSources(_root));
     }
 
     [Fact]
     public void ReturnsTrue_WhenReplacementRootHasNestedFile()
     {
-        var replacementRoot = Path.Combine(_root, "assets", "replacements");
-        var texturesDir = Path.Combine(replacementRoot, "textures");
-        Directory.CreateDirectory(texturesDir);
-        File.WriteAllBytes(Path.Combine(texturesDir, "soldier_BaseMap.png"), [0x89, 0x50, 0x4E, 0x47]);
-        var additionRoot = Path.Combine(_root, "assets", "additions");
+        Write("assets/replacements/textures/soldier_BaseMap.png");
 
-        Assert.True(CompilationService.HasAnyAssetSources(replacementRoot, additionRoot));
+        Assert.True(CompilationService.HasAnyAssetSources(_root));
     }
 
     [Fact]
     public void ReturnsTrue_WhenAdditionRootHasFile()
     {
-        var replacementRoot = Path.Combine(_root, "assets", "replacements");
-        var additionRoot = Path.Combine(_root, "assets", "additions");
-        Directory.CreateDirectory(additionRoot);
-        File.WriteAllBytes(Path.Combine(additionRoot, "new_prop.glb"), [0x67, 0x6C, 0x54, 0x46]);
+        Write("assets/additions/new_prop.glb");
 
-        Assert.True(CompilationService.HasAnyAssetSources(replacementRoot, additionRoot));
+        Assert.True(CompilationService.HasAnyAssetSources(_root));
+    }
+
+    [Fact]
+    public void ReturnsTrue_WhenCategoryFolderUnderAssetsHasFile()
+    {
+        Write("assets/sprites/lrm5/icon.png");
+
+        Assert.True(CompilationService.HasAnyAssetSources(_root));
+    }
+
+    [Fact]
+    public void ReturnsFalse_ForAFileUnderAssetsOutsideAnyCategoryFolder()
+    {
+        Write("assets/notes/readme.txt");
+
+        Assert.False(CompilationService.HasAnyAssetSources(_root));
     }
 }
 
@@ -677,10 +679,12 @@ public sealed class HasCompileInputsTests : IDisposable
         Assert.True(CompilationService.HasCompileInputs(_projectDir, 0));
     }
 
-    [Fact]
-    public void IsTrue_ForAPrebuiltPrefabBundleOnlyMod()
+    [Theory]
+    [InlineData("assets/additions/prefabs/thing.bundle")]
+    [InlineData("assets/prefabs/thing.bundle")]
+    public void IsTrue_ForAPrebuiltPrefabBundleOnlyMod(string bundlePath)
     {
-        Write("assets/additions/prefabs/thing.bundle");
+        Write(bundlePath);
 
         Assert.True(CompilationService.HasCompileInputs(_projectDir, 0));
     }

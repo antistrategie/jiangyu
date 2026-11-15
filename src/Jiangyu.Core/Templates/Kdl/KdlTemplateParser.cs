@@ -1361,7 +1361,7 @@ public static class KdlTemplateParser
     // asset="path/to/name"
     //
     // Reference to a Unity asset shipped by the mod under
-    // assets/additions/<category>/<name>.<ext>, or an indexed game asset of
+    // assets/<category>/<name>.<ext>, or an indexed game asset of
     // the same name. The category is derived from the destination field's
     // declared Unity type at compile and apply time, so the modder writes
     // the name only. The name preserves directory separators as `/`.
@@ -1387,7 +1387,7 @@ public static class KdlTemplateParser
             log.Error(
                 $"{pos}: asset=\"{assetName}\" uses '\\' as a path separator; "
                 + "use '/' instead. KDL asset names are portable text and the "
-                + "filesystem layout under assets/additions/ is normalised at compile time.");
+                + "filesystem layout under assets/ is normalised at compile time.");
             return false;
         }
 

@@ -11,7 +11,7 @@ namespace Jiangyu.Core.Compile;
 /// <see cref="ModManifest.AdditionPrefabs"/> list.
 ///
 /// Two source dirs feed this today: pre-built bundles dropped by the modder
-/// in <c>assets/additions/prefabs/</c> (the escape hatch), and freshly-built
+/// in <c>assets/prefabs/</c> (the escape hatch), and freshly-built
 /// bundles produced by Unity batchmode against the modder's <c>unity/</c>
 /// project (output to <c>.jiangyu/unity_build/</c>). Both flow through the
 /// same staging step. Later-listed sources override earlier ones on name

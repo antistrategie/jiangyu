@@ -3,7 +3,7 @@ using Jiangyu.Shared.Replacements;
 namespace Jiangyu.Core.Templates;
 
 /// <summary>
-/// Compile-time view of <c>assets/additions/&lt;category&gt;/</c> in the mod
+/// Compile-time view of <c>assets/&lt;category&gt;/</c> in the mod
 /// project. The validator queries this to surface missing-asset errors at
 /// compile time rather than at apply time, so a modder learns about a
 /// misspelt or unshipped reference before the build hits the loader.
@@ -22,7 +22,7 @@ public interface IAssetAdditionsCatalog
 
 /// <summary>
 /// File-system implementation of <see cref="IAssetAdditionsCatalog"/>:
-/// indexes <c>assets/additions/&lt;category&gt;/**/*</c> at construction so
+/// indexes <c>assets/&lt;category&gt;/**/*</c> at construction so
 /// validator queries are O(1).
 ///
 /// The category folders walked are exactly the values declared on
@@ -64,9 +64,21 @@ public sealed class FileSystemAssetAdditionsCatalog : IAssetAdditionsCatalog
     public List<string> ConflictingNames { get; } = new();
 
     public FileSystemAssetAdditionsCatalog(string additionRoot, string? unityPrefabsDir = null)
+        : this([additionRoot], unityPrefabsDir)
     {
-        if (!string.IsNullOrEmpty(additionRoot) && Directory.Exists(additionRoot))
+    }
+
+    /// <summary>
+    /// Indexes the category folders under each of <paramref name="additionRoots"/> into one
+    /// catalogue, so a name present under two roots is a conflict like any other duplicate.
+    /// </summary>
+    public FileSystemAssetAdditionsCatalog(IEnumerable<string> additionRoots, string? unityPrefabsDir = null)
+    {
+        foreach (var additionRoot in additionRoots)
         {
+            if (string.IsNullOrEmpty(additionRoot) || !Directory.Exists(additionRoot))
+                continue;
+
             foreach (var category in CategoryFolders)
             {
                 var dir = Path.Combine(additionRoot, category);

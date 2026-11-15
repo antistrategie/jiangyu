@@ -8,7 +8,7 @@ Jiangyu is built around progressive layers. You only learn the next tier when yo
 
 1. **Template patching and cloning.** Tweak existing game data (stats, skills, weapons, perks) by writing KDL under `templates/`. Patches edit a vanilla template in place. Clones deep-copy a vanilla template into a new ID and let further patches diverge from the source.
 
-2. **Asset additions referenced from templates.** When a template needs its own icon (or audio, or texture), drop the file into `assets/additions/` and reference it from KDL with `set "Icon" asset="..."`. A clone gets its own asset, and a patch on a vanilla template changes what that template shows or plays. The compiler verifies the reference resolves to a real file, and the loader resolves the runtime asset by name at apply time.
+2. **Asset additions referenced from templates.** When a template needs its own icon (or audio, or texture), drop the file into `assets/<category>/` and reference it from KDL with `set "Icon" asset="..."`. A clone gets its own asset, and a patch on a vanilla template changes what that template shows or plays. The compiler verifies the reference resolves to a real file, and the loader resolves the runtime asset by name at apply time.
 
 3. **Unity content.** New prefabs and custom UI markup (UXML), built through the mod's [Unity project](/unity-project). Prefabs need the Unity Editor, but UXML is plain text.
 
@@ -18,9 +18,9 @@ The lower tiers stay simple. You don't pay the cost of the SDK to ship a rebalan
 
 ## Name-match contract
 
-Assets resolve by **Unity Object name** at runtime, not by path or GUID. An addition file at `assets/additions/sprites/lrm5/icon.png` becomes a `Sprite` named `lrm5/icon`, available to any template that references `asset="lrm5/icon"`.
+Assets resolve by **Unity Object name** at runtime, not by path or GUID. An addition file at `assets/sprites/lrm5/icon.png` becomes a `Sprite` named `lrm5/icon`, available to any template that references `asset="lrm5/icon"`.
 
-The modder picks an addition's name. The folder layout under `assets/additions/<category>/` is the source of truth: the path under the category folder, with the extension stripped, becomes the asset's runtime name.
+The modder picks an addition's name. The folder layout under `assets/<category>/` is the source of truth: the path under the category folder, with the extension stripped, becomes the asset's runtime name.
 
 An `asset=` reference also resolves a vanilla game asset of that name. The asset index is the source of truth for those names. Build it with `jiangyu assets index`. Studio's Asset Browser and the `jiangyu assets search` CLI both read from it.
 
@@ -118,11 +118,10 @@ A typical Jiangyu mod project looks like this:
 ```text
 my-mod/
   jiangyu.json          # manifest
-  assets/
-    additions/          # new data assets a template references
-      sprites/
-      textures/
-      audio/
+  assets/               # new data assets a template references
+    sprites/
+    textures/
+    audio/
   templates/            # KDL: patches and clones
     weapon-foo.kdl
     skill-bar.kdl

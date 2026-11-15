@@ -4,11 +4,11 @@ Ship a new `Sprite` asset and reference it from a template clone. Common use cas
 
 ## Workflow
 
-1. Drop a PNG or JPG under `assets/additions/sprites/`. The path under that directory (with the extension stripped) is the asset's runtime name. Subdirectories are allowed and encouraged for organisation.
+1. Drop a PNG or JPG under `assets/sprites/`. The path under that directory (with the extension stripped) is the asset's runtime name. Subdirectories are allowed and encouraged for organisation.
 
     ```text
-    assets/additions/sprites/lrm5/icon.png
-    assets/additions/sprites/lrm5/icon_equipment.png
+    assets/sprites/lrm5/icon.png
+    assets/sprites/lrm5/icon_equipment.png
     ```
 
 2. Reference each asset from a template clone:
@@ -25,7 +25,7 @@ Ship a new `Sprite` asset and reference it from a template clone. Common use cas
 ## File layout
 
 ```text
-assets/additions/sprites/<logical-name>.<ext>
+assets/sprites/<logical-name>.<ext>
 ```
 
 `<ext>` is `.png`, `.jpg`, or `.jpeg`. The basename (with subdirs, without extension) is the **logical name** the modder writes in KDL.
@@ -41,14 +41,14 @@ A sprite whose width and height both divide by four compiles to BC7 at a quarter
 If you're starting from a vanilla asset to use as reference, [export it as a texture](/assets/replacements/textures) first:
 
 ```sh
-jiangyu assets export texture <vanilla-name> --output assets/additions/sprites/my-icon.png
+jiangyu assets export texture <vanilla-name> --output assets/sprites/my-icon.png
 ```
 
 ## Studio workflow
 
 1. Open the [Asset Browser](/studio#asset-browser) pane.
 2. Find the vanilla asset you want to start from.
-3. Click **Export** to pull the pixels out, save under `assets/additions/sprites/<your-logical-name>.png`.
+3. Click **Export** to pull the pixels out, save under `assets/sprites/<your-logical-name>.png`.
 4. In the [Visual Editor](/studio), open the clone you want to attach it to. The asset-typed field shows an **Asset** kind chip and a path input. Type your logical name (`lrm5/icon`).
 5. [Compile](/studio#compile).
 
@@ -56,6 +56,6 @@ jiangyu assets export texture <vanilla-name> --output assets/additions/sprites/m
 
 Compile refuses the build, with a clear message, when:
 
-- An `asset="..."` reference doesn't resolve to a file under `assets/additions/sprites/`.
+- An `asset="..."` reference doesn't resolve to a file under `assets/sprites/`.
 - Two files share the same logical name with different extensions.
 - The destination field's declared Unity type isn't `Sprite`. The same `asset="..."` syntax works for textures and audio (with the appropriate Unity field type), since the category is inferred from the field rather than stated in KDL.

@@ -31,7 +31,7 @@ internal static class AgentContext
         Project layout:
         - jiangyu.json — mod manifest (id, name, dependencies)
         - templates/*.kdl — typed patches over MENACE's data templates (units, weapons, perks). Operations include `set "Field" value`, `clone "Source" id="new"`, etc.
-        - assets/additions/<category>/ — new asset files (sprites, textures, audio) a template references with `set "Field" asset="name"`. To change a vanilla asset a template points at, patch that template to reference an addition.
+        - assets/<category>/ — new asset files (sprites, textures, audio) a template references with `set "Field" asset="name"`. To change a vanilla asset a template points at, patch that template to reference an addition.
         - assets/replacements/ — deprecated. Do not author new files there.
         - compiled/ — build output produced by the jiangyu_compile tool.
 

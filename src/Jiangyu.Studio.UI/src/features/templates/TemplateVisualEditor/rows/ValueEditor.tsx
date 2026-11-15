@@ -283,7 +283,7 @@ function NumericPlaceholderEditor({ value, onChange }: ValueEditorProps) {
 
 function AssetValueEditor({ value, onChange, member }: ValueEditorProps) {
   // Asset references carry only the logical name (the path under
-  // assets/additions/<category>/ with the extension stripped). Category is
+  // assets/<category>/ with the extension stripped). Category is
   // derived from the destination field's Unity type at apply time, so the
   // editor surfaces a name input plus a category hint label, with a
   // picker that mirrors the template-reference one: project additions

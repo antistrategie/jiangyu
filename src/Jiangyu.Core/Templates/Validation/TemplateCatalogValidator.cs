@@ -1149,7 +1149,7 @@ public static class TemplateCatalogValidator
             return true;
         }
 
-        // File-existence check against assets/additions/<category>/. Only
+        // File-existence check against assets/<category>/. Only
         // runs when the compiler hands us a catalog; the editor-validation
         // path passes null because it doesn't have project-root context and
         // the actual missing-asset diagnostic surfaces at compile time.
@@ -1166,7 +1166,7 @@ public static class TemplateCatalogValidator
             {
                 reportError(
                     $"asset=\"{value.Asset.Name}\" was not found at "
-                    + $"assets/additions/{category}/{value.Asset.Name}.<ext> "
+                    + $"assets/{category}/{value.Asset.Name}.<ext> "
                     + "and no vanilla game asset of that name exists in the "
                     + $"'{category}' category. Add the asset file or correct the reference name.");
                 return true;

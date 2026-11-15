@@ -7,7 +7,7 @@ namespace Jiangyu.Core.Compile;
 
 /// <summary>
 /// Discovers modder-authored files under <c>assets/replacements/&lt;cat&gt;/</c>
-/// and <c>assets/additions/&lt;cat&gt;/</c> and produces the typed entries the
+/// and <c>assets/&lt;cat&gt;/</c> and produces the typed entries the
 /// compile pipeline feeds into the bundle builder.
 ///
 /// <para>Each replacement discoverer follows the same envelope: bail when
@@ -66,7 +66,7 @@ internal static class ReplacementDiscovery
         => categoriesInUse.Count == 0
             ? null
             : $"  assets/replacements/ is deprecated and will stop compiling in a later release (in use: {string.Join(", ", categoriesInUse)}). "
-              + "To change an asset a template references, ship the new file under assets/additions/ and point the template at it "
+              + "To change an asset a template references, ship the new file under assets/<category>/ and point the template at it "
               + "with a patch: set \"<Field>\" asset=\"<name>\". To change any other asset, use mod code.";
 
     public static List<GlbMeshBundleCompiler.CompiledTexture> DiscoverReplacementTextureEntries(string replacementsRoot, string cachePath, ILogSink log)
@@ -256,38 +256,30 @@ internal static class ReplacementDiscovery
         return [.. entries.OrderBy(entry => entry.Name, StringComparer.Ordinal)];
     }
 
-    public static IEnumerable<GlbMeshBundleCompiler.CompiledTexture> DiscoverAdditionTextureEntries(string additionRoot)
+    public static IEnumerable<GlbMeshBundleCompiler.CompiledTexture> DiscoverAdditionTextureEntries(IEnumerable<string> additionRoots)
     {
-        var dir = Path.Combine(additionRoot, AssetCategory.Textures);
-        if (!Directory.Exists(dir))
-            return [];
-
-        return CollectAdditionFiles(dir, AssetCategory.Textures)
-            .Select(file => new GlbMeshBundleCompiler.CompiledTexture
+        return CollectAdditionFiles(additionRoots, AssetCategory.Textures)
+            .Select(found => new GlbMeshBundleCompiler.CompiledTexture
             {
-                Name = AssetCategory.ToBundleAssetName(AssetCategory.LogicalAdditionName(dir, file)),
-                Content = File.ReadAllBytes(file),
+                Name = AssetCategory.ToBundleAssetName(AssetCategory.LogicalAdditionName(found.Dir, found.File)),
+                Content = File.ReadAllBytes(found.File),
                 Linear = false,
                 IsAddition = true,
             })
             .OrderBy(entry => entry.Name, StringComparer.Ordinal);
     }
 
-    public static IEnumerable<GlbMeshBundleCompiler.ImportedSpriteAsset> DiscoverAdditionSpriteEntries(string additionRoot)
+    public static IEnumerable<GlbMeshBundleCompiler.ImportedSpriteAsset> DiscoverAdditionSpriteEntries(IEnumerable<string> additionRoots)
     {
-        var dir = Path.Combine(additionRoot, AssetCategory.Sprites);
-        if (!Directory.Exists(dir))
-            return [];
-
-        return CollectAdditionFiles(dir, AssetCategory.Sprites)
-            .Select(file =>
+        return CollectAdditionFiles(additionRoots, AssetCategory.Sprites)
+            .Select(found =>
             {
-                var bundleName = AssetCategory.ToBundleAssetName(AssetCategory.LogicalAdditionName(dir, file));
+                var bundleName = AssetCategory.ToBundleAssetName(AssetCategory.LogicalAdditionName(found.Dir, found.File));
                 return new GlbMeshBundleCompiler.ImportedSpriteAsset
                 {
                     Name = bundleName,
-                    SourceFilePath = file,
-                    Extension = Path.GetExtension(file),
+                    SourceFilePath = found.File,
+                    Extension = Path.GetExtension(found.File),
                     StagingName = $"sprite_source__{bundleName}",
                     IsAddition = true,
                 };
@@ -295,37 +287,45 @@ internal static class ReplacementDiscovery
             .OrderBy(entry => entry.Name, StringComparer.Ordinal);
     }
 
-    public static IEnumerable<GlbMeshBundleCompiler.ImportedAudioAsset> DiscoverAdditionAudioEntries(string additionRoot)
+    public static IEnumerable<GlbMeshBundleCompiler.ImportedAudioAsset> DiscoverAdditionAudioEntries(IEnumerable<string> additionRoots)
     {
-        var dir = Path.Combine(additionRoot, AssetCategory.Audio);
-        if (!Directory.Exists(dir))
-            return [];
-
-        return CollectAdditionFiles(dir, AssetCategory.Audio)
-            .Select(file => new GlbMeshBundleCompiler.ImportedAudioAsset
+        return CollectAdditionFiles(additionRoots, AssetCategory.Audio)
+            .Select(found => new GlbMeshBundleCompiler.ImportedAudioAsset
             {
-                Name = AssetCategory.ToBundleAssetName(AssetCategory.LogicalAdditionName(dir, file)),
-                SourceFilePath = file,
-                Extension = Path.GetExtension(file),
+                Name = AssetCategory.ToBundleAssetName(AssetCategory.LogicalAdditionName(found.Dir, found.File)),
+                SourceFilePath = found.File,
+                Extension = Path.GetExtension(found.File),
             })
             .OrderBy(entry => entry.Name, StringComparer.Ordinal);
     }
 
     /// <summary>
-    /// Walk an additions category directory and collect every file whose
-    /// extension is in the category's shared allowlist. Routing through
+    /// Walk the <paramref name="category"/> folder under each addition root
+    /// and collect every file whose extension is in the category's shared
+    /// allowlist, paired with the category folder it sits in (its logical
+    /// name is relative to that folder). Routing through
     /// <see cref="AssetCategory.AdditionExtensionsForCategory"/> keeps the
     /// compile pipeline and the studio picker in lockstep so the dropdown
     /// can never advertise a file the build wouldn't include.
     /// </summary>
-    private static string[] CollectAdditionFiles(string directory, string category)
+    private static List<(string Dir, string File)> CollectAdditionFiles(IEnumerable<string> additionRoots, string category)
     {
+        var found = new List<(string Dir, string File)>();
         var extensions = AssetCategory.AdditionExtensionsForCategory(category);
         if (extensions.Count == 0)
-            return [];
+            return found;
         var globs = new string[extensions.Count];
         for (var i = 0; i < extensions.Count; i++)
             globs[i] = "*" + extensions[i];
-        return CompilationService.CollectAssetFiles(directory, globs);
+
+        foreach (var root in additionRoots)
+        {
+            var dir = Path.Combine(root, category);
+            if (!Directory.Exists(dir))
+                continue;
+            foreach (var file in CompilationService.CollectAssetFiles(dir, globs))
+                found.Add((dir, file));
+        }
+        return found;
     }
 }

@@ -82,6 +82,23 @@ public class RpcAssetsProjectAdditionsTests : IDisposable
     }
 
     [Fact]
+    public void Sprites_UnderAssetsCategoryFolder_AreListedBesideAdditionsFolder()
+    {
+        var direct = Path.Combine(_projectDir, "assets", "sprites", "lrm5", "icon.png");
+        Directory.CreateDirectory(Path.GetDirectoryName(direct)!);
+        File.WriteAllBytes(direct, [0x00]);
+        WriteAddition("sprites", "badge.png");
+
+        var entries = ReadAdditions(Invoke("Sprite"));
+
+        Assert.Equal(2, entries.Count);
+        Assert.Equal("badge", entries[0].name);
+        Assert.Equal("assets/additions/sprites/badge.png", entries[0].file);
+        Assert.Equal("lrm5/icon", entries[1].name);
+        Assert.Equal("assets/sprites/lrm5/icon.png", entries[1].file);
+    }
+
+    [Fact]
     public void Sprites_NestedFile_LogicalNameKeepsForwardSlash()
     {
         WriteAddition("sprites", Path.Combine("lrm5", "icon.png"));

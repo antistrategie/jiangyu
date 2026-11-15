@@ -194,7 +194,7 @@ public enum KdlEditorValueKind
 
     /// <summary>
     /// Reference to a Unity asset shipped in the mod under
-    /// <c>assets/additions/&lt;category&gt;/</c> (or matching a vanilla
+    /// <c>assets/&lt;category&gt;/</c> (or matching a vanilla
     /// game asset by name). Mirrors
     /// <see cref="Jiangyu.Shared.Templates.CompiledTemplateValueKind.AssetReference"/>.
     /// The category is derived from the destination field's declared Unity
@@ -264,7 +264,7 @@ public sealed class KdlEditorValue
     /// <summary>
     /// Asset reference logical name. Set when
     /// <see cref="Kind"/> is <see cref="KdlEditorValueKind.AssetReference"/>;
-    /// matches the file path under <c>assets/additions/&lt;category&gt;/</c>
+    /// matches the file path under <c>assets/&lt;category&gt;/</c>
     /// with the extension stripped and slashes preserved.
     /// </summary>
     [JsonPropertyName("assetName")]

@@ -98,7 +98,8 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var assetPipeline = new AssetPipelineService(gameDataPath, config.GetCachePath(), _progress, _log);
 
         var replacementRoot = Path.Combine(projectDir, "assets", "replacements");
-        var additionRoot = Path.Combine(projectDir, "assets", "additions");
+        var additionRoots = AdditionPaths.Roots(projectDir);
+        var prefabAdditionDirs = AdditionPaths.CategoryDirs(projectDir, AssetCategory.Prefabs);
 
         if (ReplacementDiscovery.DeprecationWarning(ReplacementDiscovery.CategoriesInUse(replacementRoot)) is { } deprecation)
             _log.Warning(deprecation);
@@ -113,7 +114,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 .Where(name => !Directory.Exists(Path.Combine(importedRoot, name)))
                 .ToList()
             : new List<string>();
-        var needsIndex = HasAnyAssetSources(replacementRoot, additionRoot)
+        var needsIndex = HasAnyAssetSources(projectDir)
             && !assetPipeline.GetIndexStatus().IsCurrent;
 
         if (missingImports.Count > 0 || needsIndex)
@@ -180,13 +181,13 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             .Concat(replacementSprites.Select(sprite => sprite.Name))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        // Asset additions: files under assets/additions/<category>/ are
-        // bundled with their relative path (extension stripped) as the
+        // Asset additions: files under assets/<category>/ or
+        // assets/additions/<category>/ are bundled with their relative path (extension stripped) as the
         // Unity Object name, so a template's asset="item/fancy-pen-icon"
         // resolves to the bundle entry of the same name.
-        replacementTextures.AddRange(ReplacementDiscovery.DiscoverAdditionTextureEntries(additionRoot));
-        replacementSprites.AddRange(ReplacementDiscovery.DiscoverAdditionSpriteEntries(additionRoot));
-        replacementAudio.AddRange(ReplacementDiscovery.DiscoverAdditionAudioEntries(additionRoot));
+        replacementTextures.AddRange(ReplacementDiscovery.DiscoverAdditionTextureEntries(additionRoots));
+        replacementSprites.AddRange(ReplacementDiscovery.DiscoverAdditionSpriteEntries(additionRoots));
+        replacementAudio.AddRange(ReplacementDiscovery.DiscoverAdditionAudioEntries(additionRoots));
 
         // Atlas compositing: for atlas-backed sprite replacements, composite the modder's
         // images into a copy of the original atlas and emit as Texture2D replacements.
@@ -208,7 +209,8 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             .Select(entry => entry.SourceFilePath)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var additionModelFiles = CollectAssetFiles(additionRoot, "*.gltf", "*.glb", "*.fbx", "*.obj")
+        var additionModelFiles = AdditionPaths.ScanDirs(projectDir)
+            .SelectMany(dir => CollectAssetFiles(dir, "*.gltf", "*.glb", "*.fbx", "*.obj"))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var modelFiles = replacementModelFiles
             .Concat(additionModelFiles)
@@ -238,7 +240,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var bundleName = manifest.Name.ToLowerInvariant().Replace(" ", "_");
 
         var additionsCatalog = new FileSystemAssetAdditionsCatalog(
-            additionRoot,
+            additionRoots,
             unityPrefabsDir: Path.Combine(projectDir, "unity", "Assets", "Prefabs"));
         var nameConflicts = ReplacementNameValidation.FindConflicts(
             replacementAudio,
@@ -372,7 +374,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
                 using var catalog = TemplateTypeCatalog.Load(assemblyPath, additionalSearchDirs, supplement, codeAssemblies);
                 foreach (var conflict in additionsCatalog.ConflictingNames)
                 {
-                    _log.Error($"Asset addition '{conflict}': two files share the same logical name in the same category. Rename one or remove the duplicate.");
+                    _log.Error($"Asset addition '{conflict}': two files share the same logical name in the same category, counting assets/ and assets/additions/ together. Rename one or remove the duplicate.");
                 }
                 // Load the vanilla game asset index so the validator also
                 // accepts asset="..." references targeting in-game assets,
@@ -518,7 +520,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         const string AssetsPhase = "assets";
         // The two Unity outputs read DISJOINT mod inputs: the prefab bundles come from
         // unity/Assets (prefabs, UXML, and the authored/imported assets they depend on),
-        // the replacement bundle from assets/additions plus the staged mesh data. Only the
+        // the replacement bundle from assets/ plus the staged mesh data. Only the
         // surrounding Unity project (editor scripts, ProjectSettings, package versions) is
         // shared. Fingerprinting them separately is what lets a prefab edit skip the
         // replacement bundle and an audio or sprite edit skip the prefab bundles, instead
@@ -588,7 +590,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
             phaseSw.Restart();
             AdditionPrefabStaging.Stage(
-                sourceDirs: [Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Prefabs), unityBuildDir],
+                sourceDirs: [.. prefabAdditionDirs, unityBuildDir],
                 bundlesDir,
                 compiledManifest,
                 gameDataPath,
@@ -709,7 +711,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
             {
                 phaseSw.Restart();
                 AdditionPrefabStaging.Stage(
-                    sourceDirs: [Path.Combine(additionRoot, Jiangyu.Shared.Replacements.AssetCategory.Prefabs), unityBuildDir],
+                    sourceDirs: [.. prefabAdditionDirs, unityBuildDir],
                     bundlesDir,
                     compiledManifest,
                     gameDataPath,
@@ -800,7 +802,7 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
     // Relative paths under unity/Assets/ that Unity or Jiangyu regenerate during compile, so they
     // must NOT feed the input fingerprint: Assets/Jiangyu/Staging/ is repopulated every compile from
-    // assets/additions/ (already hashed via AssetInputsFingerprint, so hashing it here is both
+    // assets/ (already hashed via AssetInputsFingerprint, so hashing it here is both
     // redundant AND unstable — its Unity .meta GUIDs and staged copies change run-to-run, which
     // otherwise defeats incremental reuse entirely), and Library/Temp/obj are editor caches.
     // Assets/Imported/ is left in: it is a real mesh-replacement input and only changes when the
@@ -1098,9 +1100,9 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         if (assetInputCount > 0 || AdditionPrefabStaging.ShouldInvokeUnityForBundles(projectDir))
             return true;
 
-        var prebuiltPrefabs = Path.Combine(projectDir, "assets", "additions", Jiangyu.Shared.Replacements.AssetCategory.Prefabs);
-        if (Directory.Exists(prebuiltPrefabs)
-            && Directory.EnumerateFiles(prebuiltPrefabs, "*.bundle", SearchOption.AllDirectories).Any())
+        if (AdditionPaths.CategoryDirs(projectDir, AssetCategory.Prefabs).Any(prebuiltPrefabs =>
+                Directory.Exists(prebuiltPrefabs)
+                && Directory.EnumerateFiles(prebuiltPrefabs, "*.bundle", SearchOption.AllDirectories).Any()))
             return true;
 
         var templatesDir = Path.Combine(projectDir, "templates");
@@ -1119,9 +1121,10 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         return CodeBuildService.HasCode(projectDir);
     }
 
-    internal static bool HasAnyAssetSources(string replacementRoot, string additionRoot)
+    internal static bool HasAnyAssetSources(string projectDir)
     {
-        return DirectoryHasAnyFile(replacementRoot) || DirectoryHasAnyFile(additionRoot);
+        return DirectoryHasAnyFile(Path.Combine(projectDir, "assets", "replacements"))
+            || AdditionPaths.ScanDirs(projectDir).Any(DirectoryHasAnyFile);
     }
 
     private static bool DirectoryHasAnyFile(string path)

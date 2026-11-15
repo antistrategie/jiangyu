@@ -5,7 +5,7 @@ namespace Jiangyu.Core.Unity;
 /// <summary>
 /// Scaffolds the per-mod Unity Editor project at <c>&lt;modRoot&gt;/unity/</c>.
 /// The scaffolded project is where modders author prefabs for the
-/// <c>assets/additions/prefabs/</c> bundle pipeline.
+/// <c>assets/prefabs/</c> bundle pipeline.
 ///
 /// Layout (Jiangyu-managed vs modder-owned):
 /// <code>
