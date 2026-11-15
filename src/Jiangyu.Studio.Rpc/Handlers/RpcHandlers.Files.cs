@@ -98,13 +98,28 @@ public static partial class RpcHandlers
             using var process = System.Diagnostics.Process.Start(psi);
             if (process is null) return null;
 
+            // Drained in the background: git blocks on a full stderr pipe otherwise.
+            process.ErrorDataReceived += static (_, _) => { };
+            process.BeginErrorReadLine();
+
             var results = new List<string>(capacity: 1024);
             string? line;
-            while ((line = process.StandardOutput.ReadLine()) is not null)
+            while (results.Count < FileSearchMaxResults
+                && (line = process.StandardOutput.ReadLine()) is not null)
             {
-                if (results.Count >= FileSearchMaxResults) break;
                 results.Add(line);
             }
+
+            if (results.Count >= FileSearchMaxResults)
+            {
+                // The listing is capped, so git still holds unread output and
+                // would block on the full pipe for ever. Stop it instead of waiting.
+                try { process.Kill(entireProcessTree: true); }
+                catch (InvalidOperationException) { }
+                process.WaitForExit();
+                return results;
+            }
+
             process.WaitForExit();
             return process.ExitCode == 0 ? results : null;
         }
