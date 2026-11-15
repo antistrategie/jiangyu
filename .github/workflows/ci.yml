@@ -28,7 +28,7 @@ jobs:
           path: menace-ci-dependencies
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v6.0.0
+        uses: actions/setup-dotnet@v6.1.0
         with:
           dotnet-version: "10.0.x"
 
@@ -113,7 +113,7 @@ jobs:
           path: menace-ci-dependencies
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v6.0.0
+        uses: actions/setup-dotnet@v6.1.0
         with:
           dotnet-version: "10.0.x"
 
@@ -177,7 +177,7 @@ jobs:
           path: jiangyu
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v6.0.0
+        uses: actions/setup-dotnet@v6.1.0
         with:
           dotnet-version: "10.0.x"
 
@@ -215,7 +215,7 @@ jobs:
           path: jiangyu
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v6.0.0
+        uses: actions/setup-dotnet@v6.1.0
         with:
           dotnet-version: "10.0.x"
 
@@ -320,7 +320,7 @@ jobs:
           done
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3.0.3
+        uses: softprops/action-gh-release@v3.0.4
         with:
           name: ${{ github.ref_name }}
           body_path: release-notes.md
