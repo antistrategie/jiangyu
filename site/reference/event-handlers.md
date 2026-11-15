@@ -111,7 +111,7 @@ The factory the template data holds. `Create()` returns a fresh handler with the
 
 ## Built-in handlers
 
-The 174 handlers the game ships. Name one in `type="<Name>"` to add it, and set the fields listed. Every field you do not set takes its type default. Enum fields list their allowed values. A field typed with an interface (`ITacticalCondition`, `IValueProvider`, …) is a polymorphic slot: fill it with `set "<Field>" type="<Subtype>" { ... }`, or `append` for an array of them, picking the subtype from the family section the row links to.
+The 176 handlers the game ships. Name one in `type="<Name>"` to add it, and set the fields listed. Every field you do not set takes its type default. Enum fields list their allowed values. A field typed with an interface (`ITacticalCondition`, `IValueProvider`, …) is a polymorphic slot: fill it with `set "<Field>" type="<Subtype>" { ... }`, or `append` for an array of them, picking the subtype from the family section the row links to.
 
 ```kdl
 append "EventHandlers" type="AddSkill" {
@@ -189,7 +189,7 @@ append "EventHandlers" type="AddSkill" {
 | Field | Type | Values / notes |
 | --- | --- | --- |
 | `Condition` | `ITacticalCondition` | Polymorphic: pick a subtype from [Conditions](#conditions) with `set "Condition" type="<Subtype>" { ... }`. |
-| `SkillToApply` | `SkillTemplate` |  |
+| `SkillToUse` | `SkillTemplate` |  |
 
 ### ApplySkillToSelf
 
@@ -427,10 +427,8 @@ append "EventHandlers" type="AddSkill" {
 
 | Field | Type | Values / notes |
 | --- | --- | --- |
-| `Amount` | `int` |  |
-| `AmountMult` | `float` |  |
 | `IncludePlusSign` | `bool` |  |
-| `PropertyType` | `EntityPropertyType` | `AIPriorityMult`, `APEnterCost`, `APLeaveCost`, `Accuracy`, `AccuracyDropoff`, `AccuracyDropoffMult`, `AccuracyMult`, `ActionPoints`, `ActionPointsMult`, `AdditionalMovementCost`, `AdditionalTurningCost`, `Armor`, `ArmorDamageSustainedMult`, `ArmorDurabilityPerElement`, `ArmorMult`, `ArmorPenetration`, `ArmorPenetrationDropoff`, `ArmorPenetrationDropoffMult`, `ArmorPenetrationMult`, `BackwardsMovementMult`, `Concealment`, `ConcealmentMult`, `CoverEffectivenessMult`, `CoverGainedByVehicleOffset`, `CoverTypeOffset`, `CriticalChance`, `CriticalDamageMult`, `Damage`, `DamageDropoff`, `DamageDropoffMult`, `DamageMult`, `DamageSustainedMult`, `DamageSustainedSquadLeaderMult`, `DamageToArmorDurability`, `DamageToArmorDurabilityDropoff`, `DamageToArmorDurabilityDropoffMult`, `DamageToArmorDurabilityMult`, `DamageToMoraleMult`, `DefectThresholdOffset`, `DefenseMult`, `DeployCostMult`, `DeploymentZoneMinExtend`, `DeploymentZoneMult`, `Detection`, `DetectionMult`, `Discipline`, `DisciplineMult`, `DismemberChance`, `ElementsHit`, `ElementsHitPct`, `GetDismemberedChanceBonus`, `GetDismemberedChanceMult`, `GetDismemberedMaxParts`, `GetDismemberedMinParts`, `HitchanceMin`, `HitpointsPerElement`, `HitpointsPerElementMult`, `IgnoreCoverMult`, `MaxElements`, `MoraleBonus`, `MoraleImpactMult`, `MoraleMult`, `MoraleRecoveryMult`, `MoraleStateOffset`, `PromotionCostMult`, `ProvidedCoverBonus`, `ReduceElementsHit`, `SuppressionDealt`, `SuppressionDealtMult`, `SuppressionImpactMult`, `TotalDamageMult`, `Vision`, `VisionMult` |
+| `Properties` | `PropertyChange[]` |  |
 | `TooltipPlaceholderIndex` | `int` |  |
 | `Trigger` | `UpdateEvent` | `OnBeforeAnySkillUsed`, `OnBeingAttacked`, `OnUpdate` |
 | `ValueProvider` | `IValueProvider` | Polymorphic: pick a subtype from [Value providers](#value-providers) with `set "ValueProvider" type="<Subtype>" { ... }`. |
@@ -462,7 +460,7 @@ append "EventHandlers" type="AddSkill" {
 | `Amount` | `int` |  |
 | `AmountMult` | `float` |  |
 | `MaxStacks` | `int` |  |
-| `PropertyType` | `EntityPropertyType` | `AIPriorityMult`, `APEnterCost`, `APLeaveCost`, `Accuracy`, `AccuracyDropoff`, `AccuracyDropoffMult`, `AccuracyMult`, `ActionPoints`, `ActionPointsMult`, `AdditionalMovementCost`, `AdditionalTurningCost`, `Armor`, `ArmorDamageSustainedMult`, `ArmorDurabilityPerElement`, `ArmorMult`, `ArmorPenetration`, `ArmorPenetrationDropoff`, `ArmorPenetrationDropoffMult`, `ArmorPenetrationMult`, `BackwardsMovementMult`, `Concealment`, `ConcealmentMult`, `CoverEffectivenessMult`, `CoverGainedByVehicleOffset`, `CoverTypeOffset`, `CriticalChance`, `CriticalDamageMult`, `Damage`, `DamageDropoff`, `DamageDropoffMult`, `DamageMult`, `DamageSustainedMult`, `DamageSustainedSquadLeaderMult`, `DamageToArmorDurability`, `DamageToArmorDurabilityDropoff`, `DamageToArmorDurabilityDropoffMult`, `DamageToArmorDurabilityMult`, `DamageToMoraleMult`, `DefectThresholdOffset`, `DefenseMult`, `DeployCostMult`, `DeploymentZoneMinExtend`, `DeploymentZoneMult`, `Detection`, `DetectionMult`, `Discipline`, `DisciplineMult`, `DismemberChance`, `ElementsHit`, `ElementsHitPct`, `GetDismemberedChanceBonus`, `GetDismemberedChanceMult`, `GetDismemberedMaxParts`, `GetDismemberedMinParts`, `HitchanceMin`, `HitpointsPerElement`, `HitpointsPerElementMult`, `IgnoreCoverMult`, `MaxElements`, `MoraleBonus`, `MoraleImpactMult`, `MoraleMult`, `MoraleRecoveryMult`, `MoraleStateOffset`, `PromotionCostMult`, `ProvidedCoverBonus`, `ReduceElementsHit`, `SuppressionDealt`, `SuppressionDealtMult`, `SuppressionImpactMult`, `TotalDamageMult`, `Vision`, `VisionMult` |
+| `PropertyType` | `EntityPropertyType` | `AIPriorityMult`, `APEnterCost`, `APLeaveCost`, `Accuracy`, `AccuracyDropoff`, `AccuracyDropoffMult`, `AccuracyMult`, `ActionPoints`, `ActionPointsMult`, `AdditionalMovementCost`, `AdditionalTurningCost`, `Armor`, `ArmorDamageSustainedMult`, `ArmorDurabilityPerElement`, `ArmorMult`, `ArmorPenetration`, `ArmorPenetrationDropoff`, `ArmorPenetrationDropoffMult`, `ArmorPenetrationMult`, `BackwardsMovementMult`, `Concealment`, `ConcealmentMult`, `CoverEffectivenessMult`, `CoverGainedByVehicleOffset`, `CoverTypeOffset`, `CriticalChance`, `CriticalDamageMult`, `Damage`, `DamageDropoff`, `DamageDropoffMult`, `DamageMult`, `DamageSustainedMult`, `DamageToArmorDurability`, `DamageToArmorDurabilityDropoff`, `DamageToArmorDurabilityDropoffMult`, `DamageToArmorDurabilityMult`, `DamageToMoraleMult`, `DefectThresholdOffset`, `DefenseMult`, `DeployCostMult`, `DeploymentZoneMinExtend`, `DeploymentZoneMult`, `Detection`, `DetectionMult`, `Discipline`, `DisciplineMult`, `DismemberChance`, `ElementsHit`, `ElementsHitPct`, `GetDismemberedChanceBonus`, `GetDismemberedChanceMult`, `GetDismemberedMaxParts`, `GetDismemberedMinParts`, `HitchanceMin`, `HitpointsPerElement`, `HitpointsPerElementMult`, `IgnoreCoverMult`, `MaxElements`, `MoraleBonus`, `MoraleImpactMult`, `MoraleMult`, `MoraleRecoveryMult`, `MoraleStateOffset`, `PromotionCostMult`, `ProvidedCoverBonus`, `ReduceElementsHit`, `SuppressionDealt`, `SuppressionDealtMult`, `SuppressionImpactMult`, `TotalDamageMult`, `UNUSED1`, `Vision`, `VisionMult` |
 
 ### ChangePropertyTarget
 
@@ -471,6 +469,14 @@ append "EventHandlers" type="AddSkill" {
 | `Condition` | `ITacticalCondition` | Polymorphic: pick a subtype from [Conditions](#conditions) with `set "Condition" type="<Subtype>" { ... }`. |
 | `OnlyForThisSkill` | `bool` |  |
 | `Properties` | `PropertyChange[]` |  |
+
+### ChangeRangesOfSkillsConditional
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `Condition` | `ITacticalCondition` | Polymorphic: pick a subtype from [Conditions](#conditions) with `set "Condition" type="<Subtype>" { ... }`. |
+| `MaxRangeChange` | `int` |  |
+| `SkillFilter` | `ISkillFilter` | Polymorphic: pick a subtype from [Skill filters](#skill-filters) with `set "SkillFilter" type="<Subtype>" { ... }`. |
 
 ### ChangeRangesOfSkillsWithTags
 
@@ -498,7 +504,7 @@ append "EventHandlers" type="AddSkill" {
 | --- | --- | --- |
 | `Amount` | `int` |  |
 | `AmountMult` | `float` |  |
-| `PropertyType` | `EntityPropertyType` | `AIPriorityMult`, `APEnterCost`, `APLeaveCost`, `Accuracy`, `AccuracyDropoff`, `AccuracyDropoffMult`, `AccuracyMult`, `ActionPoints`, `ActionPointsMult`, `AdditionalMovementCost`, `AdditionalTurningCost`, `Armor`, `ArmorDamageSustainedMult`, `ArmorDurabilityPerElement`, `ArmorMult`, `ArmorPenetration`, `ArmorPenetrationDropoff`, `ArmorPenetrationDropoffMult`, `ArmorPenetrationMult`, `BackwardsMovementMult`, `Concealment`, `ConcealmentMult`, `CoverEffectivenessMult`, `CoverGainedByVehicleOffset`, `CoverTypeOffset`, `CriticalChance`, `CriticalDamageMult`, `Damage`, `DamageDropoff`, `DamageDropoffMult`, `DamageMult`, `DamageSustainedMult`, `DamageSustainedSquadLeaderMult`, `DamageToArmorDurability`, `DamageToArmorDurabilityDropoff`, `DamageToArmorDurabilityDropoffMult`, `DamageToArmorDurabilityMult`, `DamageToMoraleMult`, `DefectThresholdOffset`, `DefenseMult`, `DeployCostMult`, `DeploymentZoneMinExtend`, `DeploymentZoneMult`, `Detection`, `DetectionMult`, `Discipline`, `DisciplineMult`, `DismemberChance`, `ElementsHit`, `ElementsHitPct`, `GetDismemberedChanceBonus`, `GetDismemberedChanceMult`, `GetDismemberedMaxParts`, `GetDismemberedMinParts`, `HitchanceMin`, `HitpointsPerElement`, `HitpointsPerElementMult`, `IgnoreCoverMult`, `MaxElements`, `MoraleBonus`, `MoraleImpactMult`, `MoraleMult`, `MoraleRecoveryMult`, `MoraleStateOffset`, `PromotionCostMult`, `ProvidedCoverBonus`, `ReduceElementsHit`, `SuppressionDealt`, `SuppressionDealtMult`, `SuppressionImpactMult`, `TotalDamageMult`, `Vision`, `VisionMult` |
+| `PropertyType` | `EntityPropertyType` | `AIPriorityMult`, `APEnterCost`, `APLeaveCost`, `Accuracy`, `AccuracyDropoff`, `AccuracyDropoffMult`, `AccuracyMult`, `ActionPoints`, `ActionPointsMult`, `AdditionalMovementCost`, `AdditionalTurningCost`, `Armor`, `ArmorDamageSustainedMult`, `ArmorDurabilityPerElement`, `ArmorMult`, `ArmorPenetration`, `ArmorPenetrationDropoff`, `ArmorPenetrationDropoffMult`, `ArmorPenetrationMult`, `BackwardsMovementMult`, `Concealment`, `ConcealmentMult`, `CoverEffectivenessMult`, `CoverGainedByVehicleOffset`, `CoverTypeOffset`, `CriticalChance`, `CriticalDamageMult`, `Damage`, `DamageDropoff`, `DamageDropoffMult`, `DamageMult`, `DamageSustainedMult`, `DamageToArmorDurability`, `DamageToArmorDurabilityDropoff`, `DamageToArmorDurabilityDropoffMult`, `DamageToArmorDurabilityMult`, `DamageToMoraleMult`, `DefectThresholdOffset`, `DefenseMult`, `DeployCostMult`, `DeploymentZoneMinExtend`, `DeploymentZoneMult`, `Detection`, `DetectionMult`, `Discipline`, `DisciplineMult`, `DismemberChance`, `ElementsHit`, `ElementsHitPct`, `GetDismemberedChanceBonus`, `GetDismemberedChanceMult`, `GetDismemberedMaxParts`, `GetDismemberedMinParts`, `HitchanceMin`, `HitpointsPerElement`, `HitpointsPerElementMult`, `IgnoreCoverMult`, `MaxElements`, `MoraleBonus`, `MoraleImpactMult`, `MoraleMult`, `MoraleRecoveryMult`, `MoraleStateOffset`, `PromotionCostMult`, `ProvidedCoverBonus`, `ReduceElementsHit`, `SuppressionDealt`, `SuppressionDealtMult`, `SuppressionImpactMult`, `TotalDamageMult`, `UNUSED1`, `Vision`, `VisionMult` |
 | `RequiredTags` | `TagType[]` | `ACCESSORY`, `ACCURATE`, `AIRPOWER`, `ANTI_INFANTRY`, `ANTI_STRUCTURE`, `ANTI_VEHICLE`, `AREA_OF_EFFECT`, `ARMOR_DAMAGING`, `ARMOR_PIERCING`, `ASSAULT_RIFLE`, `BATTLE_RIFLE`, `CAMOUFLAGE`, `COMMODITY`, `CRAFTING_MATERIAL`, `DEMORALIZING`, `DEPLOY`, `DEPLOYABLE`, `DESTRUCTIBLE`, `DISABLING`, `DRONE`, `DRUG`, `EMP`, `ENERGY`, `FLEXIBLE`, `GRENADE`, `HAZARDOUS`, `HEAVY_ARMOR`, `HIGH_RATE_OF_FIRE`, `HORDE`, `HOVERING`, `IGNORES_COVER`, `INACCURATE`, `INCENDIARY`, `INDIRECT_FIRE`, `INFANTRY`, `JAM`, `JETPACK`, `LARGE`, `LIGHT_ARMOR`, `LIMITED_AMMO`, `LONG_RANGE`, `LOW_PENETRATION`, `LOW_QUALITY`, `Last`, `MACHINE`, `MANY_ACCESSORIES`, `MASSIVE_EXPLOSION`, `MEDIUM_ARMOR`, `MINE`, `MINIMUM_RANGE`, `MINI_BOSS`, `MOBILE`, `MOTORIZED_INFANTRY`, `ORBITAL`, `PROJECTILE`, `ROCKET`, `SCANNER`, `SCATTER`, `SHORT_RANGE`, `SHOTGUN`, `SMG`, `SMOKE`, `SNIPER`, `SPECIAL_WEAPON`, `SQUAD_WEAPON`, `STANCE`, `STEALTH`, `STRUCTURE`, `SUPPRESSIVE`, `TANK`, `UNIQUE`, `UNUSED_MUST_DEPLOY`, `UTILITY`, `VEHICLE`, `VEHICLE_WEAPON`, `VIP`, `WALKER`, `WEAPON`, `WEAPONS_TEAM`, `XENO` |
 
 ### ChangeSquaddieRescue
@@ -507,6 +513,7 @@ append "EventHandlers" type="AddSkill" {
 | --- | --- | --- |
 | `BonusRescueChancePerSquaddie` | `int` |  |
 | `GlobalBonusRescueChancePerSquaddie` | `int` |  |
+| `GlobalMinRescuedSquaddies` | `int` |  |
 | `MinRescuedSquaddiesPerSquad` | `int` |  |
 
 ### ChangeStance
@@ -1110,10 +1117,6 @@ No settable fields. It carries behaviour only.
 | `MaxReduction` | `float` |  |
 | `ReductionPerStack` | `float` |  |
 
-### ReduceMoraleOnAttacked
-
-No settable fields. It carries behaviour only.
-
 ### RefillActionPoints
 
 No settable fields. It carries behaviour only.
@@ -1232,6 +1235,18 @@ No settable fields. It carries behaviour only.
 | Field | Type | Values / notes |
 | --- | --- | --- |
 | `Flag` | `EntityFlags` | `CantEnterContainers`, `Confused`, `DesignatedTarget`, `HeavyWeaponsAllowed`, `IgnoreDeploymentRequirements`, `IgnoreSuppressedAPLoss`, `ImmuneDesignatedTarget`, `ImmuneToDamage`, `ImmuneToEncumbrance`, `ImmuneToIndirectSuppression`, `ImmuneToLightEffect`, `ImmuneToMorale`, `ImmuneToStun`, `ImmuneToSuppression`, `ImmuneToSuppressionFromElementLost`, `IrrelevantToMorale`, `None`, `Rooted`, `RootedByStance`, `Stunned` |
+
+### SetMoraleOnAttacked
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `TargetMoraleState` | `MoraleState` | `Fleeing`, `Neutral`, `Wavering` |
+
+### SetMoraleOnElementDied
+
+| Field | Type | Values / notes |
+| --- | --- | --- |
+| `TargetMoraleState` | `MoraleState` | `Fleeing`, `Neutral`, `Wavering` |
 
 ### SetNamedValue
 
@@ -1753,7 +1768,7 @@ No settable fields. It carries behaviour only.
 | --- | --- | --- |
 | `MaxValue` | `int` |  |
 | `MinValue` | `int` |  |
-| `PropertyType` | `EntityPropertyType` | `AIPriorityMult`, `APEnterCost`, `APLeaveCost`, `Accuracy`, `AccuracyDropoff`, `AccuracyDropoffMult`, `AccuracyMult`, `ActionPoints`, `ActionPointsMult`, `AdditionalMovementCost`, `AdditionalTurningCost`, `Armor`, `ArmorDamageSustainedMult`, `ArmorDurabilityPerElement`, `ArmorMult`, `ArmorPenetration`, `ArmorPenetrationDropoff`, `ArmorPenetrationDropoffMult`, `ArmorPenetrationMult`, `BackwardsMovementMult`, `Concealment`, `ConcealmentMult`, `CoverEffectivenessMult`, `CoverGainedByVehicleOffset`, `CoverTypeOffset`, `CriticalChance`, `CriticalDamageMult`, `Damage`, `DamageDropoff`, `DamageDropoffMult`, `DamageMult`, `DamageSustainedMult`, `DamageSustainedSquadLeaderMult`, `DamageToArmorDurability`, `DamageToArmorDurabilityDropoff`, `DamageToArmorDurabilityDropoffMult`, `DamageToArmorDurabilityMult`, `DamageToMoraleMult`, `DefectThresholdOffset`, `DefenseMult`, `DeployCostMult`, `DeploymentZoneMinExtend`, `DeploymentZoneMult`, `Detection`, `DetectionMult`, `Discipline`, `DisciplineMult`, `DismemberChance`, `ElementsHit`, `ElementsHitPct`, `GetDismemberedChanceBonus`, `GetDismemberedChanceMult`, `GetDismemberedMaxParts`, `GetDismemberedMinParts`, `HitchanceMin`, `HitpointsPerElement`, `HitpointsPerElementMult`, `IgnoreCoverMult`, `MaxElements`, `MoraleBonus`, `MoraleImpactMult`, `MoraleMult`, `MoraleRecoveryMult`, `MoraleStateOffset`, `PromotionCostMult`, `ProvidedCoverBonus`, `ReduceElementsHit`, `SuppressionDealt`, `SuppressionDealtMult`, `SuppressionImpactMult`, `TotalDamageMult`, `Vision`, `VisionMult` |
+| `PropertyType` | `EntityPropertyType` | `AIPriorityMult`, `APEnterCost`, `APLeaveCost`, `Accuracy`, `AccuracyDropoff`, `AccuracyDropoffMult`, `AccuracyMult`, `ActionPoints`, `ActionPointsMult`, `AdditionalMovementCost`, `AdditionalTurningCost`, `Armor`, `ArmorDamageSustainedMult`, `ArmorDurabilityPerElement`, `ArmorMult`, `ArmorPenetration`, `ArmorPenetrationDropoff`, `ArmorPenetrationDropoffMult`, `ArmorPenetrationMult`, `BackwardsMovementMult`, `Concealment`, `ConcealmentMult`, `CoverEffectivenessMult`, `CoverGainedByVehicleOffset`, `CoverTypeOffset`, `CriticalChance`, `CriticalDamageMult`, `Damage`, `DamageDropoff`, `DamageDropoffMult`, `DamageMult`, `DamageSustainedMult`, `DamageToArmorDurability`, `DamageToArmorDurabilityDropoff`, `DamageToArmorDurabilityDropoffMult`, `DamageToArmorDurabilityMult`, `DamageToMoraleMult`, `DefectThresholdOffset`, `DefenseMult`, `DeployCostMult`, `DeploymentZoneMinExtend`, `DeploymentZoneMult`, `Detection`, `DetectionMult`, `Discipline`, `DisciplineMult`, `DismemberChance`, `ElementsHit`, `ElementsHitPct`, `GetDismemberedChanceBonus`, `GetDismemberedChanceMult`, `GetDismemberedMaxParts`, `GetDismemberedMinParts`, `HitchanceMin`, `HitpointsPerElement`, `HitpointsPerElementMult`, `IgnoreCoverMult`, `MaxElements`, `MoraleBonus`, `MoraleImpactMult`, `MoraleMult`, `MoraleRecoveryMult`, `MoraleStateOffset`, `PromotionCostMult`, `ProvidedCoverBonus`, `ReduceElementsHit`, `SuppressionDealt`, `SuppressionDealtMult`, `SuppressionImpactMult`, `TotalDamageMult`, `UNUSED1`, `Vision`, `VisionMult` |
 
 ### MissingHealthProvider
 

@@ -399,7 +399,7 @@ so patched and inherited balance values also update its text.
 set "Description" {
     set "m_DefaultTranslation" "Damage increased by $1%."
     clear "m_Placeholders"
-    append "m_Placeholders" bind="SkillTemplate" "effect.example" path="EventHandlers[0].AmountMult" format="bonus-percent"
+    append "m_Placeholders" bind="SkillTemplate" "effect.example" path="EventHandlers[0].Properties[0].AmountMult" format="bonus-percent"
 }
 ```
 
