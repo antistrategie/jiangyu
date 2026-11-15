@@ -1,6 +1,6 @@
 # Studio
 
-Studio is Jiangyu's interactive workspace. Find assets, edit replacements and templates, compile your mod, all in one window. The CLI mirrors most of what Studio does. See [CLI](/reference/cli) for the scripting surface.
+Studio is Jiangyu's interactive workspace. Find assets, edit templates, compile your mod, all in one window. The CLI mirrors most of what Studio does. See [CLI](/reference/cli) for the scripting surface.
 
 ## Opening a project
 
@@ -84,7 +84,7 @@ The Asset Browser searches the asset index built by `jiangyu assets index` (or b
 - **Search box**: live name search across the index. Typing filters results as you type.
 - **Kind filter pills**: **All**, **Model**, **Mesh**, **Texture**, **Sprite**, **Audio**. Click one to narrow results.
 - **Results list**: each row shows the asset name, class, collection, and pathId.
-- **Detail panel**: when you select a result, a side panel shows class, collection, pathId, and asset-specific metadata (frequency and channels for audio, atlas and rect for sprites). The `Replace` row gives the path under `assets/replacements/` to drop your replacement at. The `Affects` row shows the count when the name is shared.
+- **Detail panel**: when you select a result, a side panel shows class, collection, pathId, and asset-specific metadata (frequency and channels for audio, atlas and rect for sprites). The `Same name` row shows how many assets share the name.
 - **Preview pane**: textures and sprites render inline, audio shows an inline player, and models render in a 3D viewer with orbit controls.
 - **Export**: pulls the vanilla asset out as a starting point. The dropdown picks the destination: **Export to default** (`<project>/exported/`), **Export to project defined** (the per-project path, set from the dropdown's **Configure project path…**), or **Export to custom…** to pick a directory. Multi-select to export several at once. Successful exports push a toast with a Reveal action that opens the file location.
 

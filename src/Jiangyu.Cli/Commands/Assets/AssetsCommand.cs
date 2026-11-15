@@ -5,7 +5,6 @@ using Jiangyu.Core.Config;
 using Jiangyu.Core.Il2Cpp;
 using Jiangyu.Core.Models;
 using Jiangyu.Core.Unity;
-using Jiangyu.Shared.Replacements;
 
 namespace Jiangyu.Cli.Commands.Assets;
 
@@ -104,22 +103,6 @@ public static class AssetsCommand
                 return 0;
             }
 
-            // Only model targets need pathId disambiguation in the suggested
-            // path; tex/sprite/audio replacements always use the bare name.
-            // PHO and GameObject share a count bucket because they collapse
-            // to the same effective model target.
-            var fullIndex = service.LoadIndex();
-            var modelNameCounts = new Dictionary<string, int>(StringComparer.Ordinal);
-            if (fullIndex?.Assets is not null)
-            {
-                foreach (var entry in fullIndex.Assets)
-                {
-                    if (string.IsNullOrWhiteSpace(entry.Name)) continue;
-                    if (entry.ClassName != "PrefabHierarchyObject" && entry.ClassName != "GameObject") continue;
-                    modelNameCounts[entry.Name] = modelNameCounts.GetValueOrDefault(entry.Name) + 1;
-                }
-            }
-
             int nameWidth = Math.Min(results.Max(r => r.Name?.Length ?? 0), 50);
             int pathIdTokenWidth = results.Max(r => $"pathId={r.PathId}".Length);
             bool showClassColumn = string.IsNullOrWhiteSpace(typeFilter);
@@ -137,25 +120,6 @@ public static class AssetsCommand
                 var pathIdToken = $"pathId={entry.PathId}".PadRight(pathIdTokenWidth);
 
                 Console.WriteLine($"  {name.PadRight(nameWidth)}  {pathIdToken}{classColumn}{collection}");
-
-                if (string.IsNullOrWhiteSpace(entry.Name))
-                    continue;
-
-                var replacementTarget = entry.ClassName switch
-                {
-                    "PrefabHierarchyObject" => ReplacementPaths.BuildModelReplacementRelativePath(
-                        entry.Name!,
-                        modelNameCounts.GetValueOrDefault(entry.Name) > 2 ? entry.PathId : null),
-                    "Texture2D" => ReplacementPaths.BuildTextureReplacementRelativePath(entry.Name!),
-                    "Sprite" => ReplacementPaths.BuildSpriteReplacementRelativePath(entry.Name!),
-                    "AudioClip" => ReplacementPaths.BuildAudioReplacementRelativePath(entry.Name!),
-                    _ => null,
-                };
-
-                if (replacementTarget is not null)
-                {
-                    Console.WriteLine($"      → {replacementTarget}");
-                }
             }
 
             if (results.Count == 50)

@@ -42,7 +42,7 @@ The loader logs each replacement it applies. If your replacement target is in th
 Walk through:
 
 - **Did compile actually emit your replacement?** Open `compiled/jiangyu.json` and check the asset bundle next to it. If your file isn't represented, compile dropped it. Re-run compile and watch the log column for warnings about your file.
-- **Is the file at the path Studio's `Replace` row showed?** Filename and extension matter. `.txt` and unsupported formats are silently ignored. Textures and sprites need `.png` / `.jpg` / `.jpeg`. Audio needs `.wav` / `.ogg` / `.mp3`. Models need a `model.gltf` or `model.glb` inside `<target-name>/`.
+- **Is the file under `assets/replacements/<category>/` and named after the target asset?** Filename and extension matter. `.txt` and unsupported formats are silently ignored. Textures and sprites need `.png` / `.jpg` / `.jpeg`. Audio needs `.wav` / `.ogg` / `.mp3`. Models need a `model.gltf` or `model.glb` inside `<target-name>/`.
 - **Did you re-run compile after the edit?** A fresh edit doesn't reach the bundle until you rebuild.
 - **Did you copy `compiled/` to `Mods/`?** Compile produces a folder in your project. The loader reads from `<MENACE>/Mods/`. Re-copy after every compile.
 - **Are you in a scene where the asset is actually loaded?** Replacements apply when a scene loads, and the loader keeps reapplying them as new instances spawn (e.g. units the player deploys mid-mission). Make sure the scene with your asset has finished loading.

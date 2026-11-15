@@ -1,14 +1,14 @@
 # What is Jiangyu?
 
-Jiangyu is a modding platform for MENACE (Unity 6, IL2CPP). It covers replacing assets (textures, sprites, models, audio), patching the data MENACE ships with (unit stats, weapon damage, perk trees), adding your own assets and characters, and writing C# that runs inside the game.
+Jiangyu is a modding platform for MENACE (Unity 6, IL2CPP). It covers patching the data MENACE ships with (unit stats, weapon damage, perk trees), adding your own assets and characters and pointing the game's data at them, and writing C# that runs inside the game.
 
 The toolkit has three pieces:
 
-- **Studio**, a desktop editor for browsing assets, editing replacements and KDL patches, and compiling projects.
+- **Studio**, a desktop editor for browsing assets, editing KDL patches, and compiling projects.
 - **CLI** (`jiangyu`), the same operations from the terminal, for scripted workflows.
 - **Loader** (`Jiangyu.Loader.dll`), a MelonLoader plugin that applies mods inside MENACE at runtime.
 
-How far you take it is up to the mod. A re-skin is a single dropped file. A rebalance means writing a KDL patch, and only a genuinely new system needs C# against the [SDK](/sdk/), which is the exception more than the rule. [Concepts](/concepts/) lays out the layers.
+How far you take it is up to the mod. A rebalance is a KDL patch. A new icon or sound is one file plus one line of KDL, and only a genuinely new system needs C# against the [SDK](/sdk/), which is the exception more than the rule. [Concepts](/concepts/) lays out the layers.
 
 ## Compared to MenaceAssetPacker
 
@@ -16,13 +16,13 @@ How far you take it is up to the mod. A re-skin is a single dropped file. A reba
 
 ### Workflow
 
-- **Mods are folders of files.** Replacements are declared by location: drop a file at the path Studio shows you and the filename does the matching. Your project is a directory you can put under git.
+- **Mods are folders of files.** Assets are declared by location: a file under `assets/additions/` takes its name from its path, and a template references it by that name. Your project is a directory you can put under git.
 - **Templates patched in KDL.** Patches live in `templates/*.kdl` with operations and typed values the compiler validates at build time. Stacked operations apply in order, the way RimWorld's `PatchOperation` XML composes. Edit visually or write KDL by hand and switch at any time.
 - **IDE-style Studio.** A grid of splittable, drag-and-drop panes with a command palette (`Ctrl+Shift+P`) and Monaco editors with vim mode.
 - **Live previews and drag-to-author.** Textures, sprites, audio, and 3D models preview inline. Drag a template id or field from the browser into the editor to start a patch with the field path filled in.
 
 ### Foundations
 
-- **Asset bundles built with the Unity Editor.** Studio drives `Unity.exe` to compile your replacements into AssetBundles. Game files like `resources.assets` are not modified.
+- **Asset bundles built with the Unity Editor.** Studio drives `Unity.exe` to compile your assets into AssetBundles. Game files like `resources.assets` are not modified.
 - **Static template analysis.** Jiangyu reads MENACE's IL2CPP types offline (Cpp2IL + AsmResolver). You don't need to launch the game to extract template definitions.
 - **Metadata-only asset index.** Indexing records each asset's name, type, path, and small per-asset details (audio frequency, sprite atlas rects), no actual asset data. Pixels, audio samples, and mesh geometry are pulled lazily when you export or preview an asset. Full extraction of MENACE's assets would be tens of gigabytes, so the index stays small instead.

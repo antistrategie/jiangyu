@@ -1,5 +1,9 @@
 # Sprite replacements
 
+::: warning Deprecated
+Replacements are deprecated, and the compiler warns on any file under `assets/replacements/`. To change an asset a template references, [patch the template](/templates) to point at an [addition](/assets/additions/). To change any other asset, use [mod code](/sdk/).
+:::
+
 Replace any `Sprite` in the game by name. Sprites ride on texture mutation: the new pixels reach every UI element, `SpriteRenderer`, and `Image` component that already references the sprite, automatically.
 
 Most sprites in MENACE are packed into atlases. Jiangyu handles atlases for you at compile time. You author your replacement at the sprite's region size and the compiler composites it into the atlas without disturbing the other sprites packed alongside it. See [Atlas-backed sprites](#atlas-backed-sprites) below.
@@ -8,7 +12,7 @@ Most sprites in MENACE are packed into atlases. Jiangyu handles atlases for you 
 
 1. Open the [Asset Browser](/studio#asset-browser) pane.
 2. Type the asset name in the search box. Filter the type to **Sprite** if you want only sprites.
-3. Select the asset. The detail panel shows a `Replace` row with the path under `assets/replacements/` to save your replacement at, for example:
+3. Select the asset. Your replacement goes under `assets/replacements/`, in the `sprites` folder, named after the asset:
 
     ```text
     sprites/UICheckMark.png

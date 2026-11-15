@@ -37,6 +37,38 @@ internal static class ReplacementDiscovery
         public required List<AtlasCompositor.AtlasGroup> AtlasGroups { get; init; }
     }
 
+    private static readonly string[] ReplacementCategories =
+        [AssetCategory.Meshes, AssetCategory.Textures, AssetCategory.Sprites, AssetCategory.Audio];
+
+    /// <summary>
+    /// The category folders under <paramref name="replacementsRoot"/> that hold at least one
+    /// authored file, in a fixed order. Dotfiles (<c>.gitkeep</c>) do not count.
+    /// </summary>
+    public static List<string> CategoriesInUse(string replacementsRoot)
+    {
+        var inUse = new List<string>();
+        foreach (var category in ReplacementCategories)
+        {
+            var dir = Path.Combine(replacementsRoot, category);
+            if (Directory.Exists(dir)
+                && Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
+                    .Any(file => !Path.GetFileName(file).StartsWith('.')))
+                inUse.Add(category);
+        }
+        return inUse;
+    }
+
+    /// <summary>
+    /// The compile warning for a project that still authors replacements, or null when
+    /// <paramref name="categoriesInUse"/> is empty.
+    /// </summary>
+    public static string? DeprecationWarning(IReadOnlyList<string> categoriesInUse)
+        => categoriesInUse.Count == 0
+            ? null
+            : $"  assets/replacements/ is deprecated and will stop compiling in a later release (in use: {string.Join(", ", categoriesInUse)}). "
+              + "To change an asset a template references, ship the new file under assets/additions/ and point the template at it "
+              + "with a patch: set \"<Field>\" asset=\"<name>\". To change any other asset, use mod code.";
+
     public static List<GlbMeshBundleCompiler.CompiledTexture> DiscoverReplacementTextureEntries(string replacementsRoot, string cachePath, ILogSink log)
     {
         var texturesRoot = Path.Combine(replacementsRoot, "textures");

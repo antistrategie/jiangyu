@@ -6,39 +6,37 @@ A short orientation pass for modders who want the mental model before reaching f
 
 Jiangyu is built around progressive layers. You only learn the next tier when you need it:
 
-1. **Asset replacement.** Drop a file into `assets/replacements/` and ship. No code, no Unity Editor, no template authoring. Covers the bulk of skin-style mods.
+1. **Template patching and cloning.** Tweak existing game data (stats, skills, weapons, perks) by writing KDL under `templates/`. Patches edit a vanilla template in place. Clones deep-copy a vanilla template into a new ID and let further patches diverge from the source.
 
-2. **Template patching and cloning.** Tweak existing game data (stats, skills, weapons, perks) by writing KDL under `templates/`. Patches edit a vanilla template in place. Clones deep-copy a vanilla template into a new ID and let further patches diverge from the source.
+2. **Asset additions referenced from templates.** When a template needs its own icon (or audio, or texture), drop the file into `assets/additions/` and reference it from KDL with `set "Icon" asset="..."`. A clone gets its own asset, and a patch on a vanilla template changes what that template shows or plays. The compiler verifies the reference resolves to a real file, and the loader resolves the runtime asset by name at apply time.
 
-3. **Asset additions referenced from clones.** When a cloned weapon needs its own icon (or audio, or texture), drop the file into `assets/additions/` and reference it from the clone's KDL with `set "Icon" asset="..."`. The compiler verifies the reference resolves to a real file, and the loader resolves the runtime asset by name at apply time.
+3. **Unity content.** New prefabs and custom UI markup (UXML), built through the mod's [Unity project](/unity-project). Prefabs need the Unity Editor, but UXML is plain text.
 
-4. **Unity content.** New prefabs and custom UI markup (UXML), built through the mod's [Unity project](/unity-project). Prefabs need the Unity Editor, but UXML is plain text.
+4. **Runtime SDK.** Custom C# the game runs: your own [template types](/sdk/template-types) (effects, conditions, values, the common case), [hooks](/sdk/#hooks) that react to game moments, [game verbs](/sdk/verbs) that command the live game, and [UI injection](/sdk/ui). For anything the data layers can't express, including changing an asset no template references.
 
-5. **Runtime SDK.** Custom C# the game runs: your own [template types](/sdk/template-types) (effects, conditions, values, the common case), [hooks](/sdk/#hooks) that react to game moments, [game verbs](/sdk/verbs) that command the live game, and [UI injection](/sdk/ui). For anything the data layers can't express.
-
-The lower tiers stay simple. You don't pay the cost of the SDK to ship a re-skin.
+The lower tiers stay simple. You don't pay the cost of the SDK to ship a rebalance.
 
 ## Name-match contract
 
-Both replacements and additions resolve by **Unity Object name** at runtime, not by path or GUID. A replacement file at `assets/replacements/sprites/UICheckMark.png` swaps every game `Sprite` named `UICheckMark`. An addition file at `assets/additions/sprites/lrm5/icon.png` becomes a `Sprite` named `lrm5/icon`, available to any clone that references `asset="lrm5/icon"`.
+Assets resolve by **Unity Object name** at runtime, not by path or GUID. An addition file at `assets/additions/sprites/lrm5/icon.png` becomes a `Sprite` named `lrm5/icon`, available to any template that references `asset="lrm5/icon"`.
 
-This is why the asset index matters for replacements: it's the source of truth for what each game asset's name is. Build it with `jiangyu assets index`. Studio's Asset Browser and the `jiangyu assets search` CLI both read from it.
+The modder picks an addition's name. The folder layout under `assets/additions/<category>/` is the source of truth: the path under the category folder, with the extension stripped, becomes the asset's runtime name.
 
-For additions, the modder picks the name. The folder layout under `assets/additions/<category>/` is the source of truth: the path under the category folder, with the extension stripped, becomes the asset's runtime name.
+An `asset=` reference also resolves a vanilla game asset of that name. The asset index is the source of truth for those names. Build it with `jiangyu assets index`. Studio's Asset Browser and the `jiangyu assets search` CLI both read from it.
 
-## Asset replacement vs addition
+## Changing a vanilla asset
 
-A replacement changes the game in place. Every site that used the vanilla asset now picks up your version instead. An addition does the reverse: it ships an asset the game never had, and nothing uses it until a clone references it by name.
+An addition ships an asset the game never had, and nothing uses it until a template references it by name. To change what a vanilla template shows or plays, patch it to reference your addition:
 
-| | Replacement | Addition |
-| --- | --- | --- |
-| Source file | `assets/replacements/<category>/<vanilla-name>.<ext>` | `assets/additions/<category>/<your-name>.<ext>` |
-| Name | Must match a vanilla asset's runtime name | Modder's choice |
-| Effect | Global. Every game site using that asset name gets the new content. | Local. Only template clones that reference it use it. |
-| Asset index needed | Yes. Targets are validated against the indexed game catalog. | No. The modder chooses the name. |
-| Use when... | Re-skinning, voice swaps, music changes | A cloned weapon, item, or skill needs distinct visuals or audio |
+```kdl
+patch "ItemDefinition" "pen" {
+    set "Icon" asset="lrm5/icon"
+}
+```
 
-Both can coexist in the same mod. Both compile into the same bundle.
+To change an asset no template references (interface sprites, environment textures, music), use [mod code](/sdk/).
+
+[Replacements](/assets/replacements/), which swap a vanilla asset everywhere by name, are deprecated.
 
 ## Template operations
 
@@ -121,12 +119,7 @@ A typical Jiangyu mod project looks like this:
 my-mod/
   jiangyu.json          # manifest
   assets/
-    replacements/       # swap vanilla assets by name
-      textures/
-      sprites/
-      models/
-      audio/
-    additions/          # new data assets a clone references
+    additions/          # new data assets a template references
       sprites/
       textures/
       audio/

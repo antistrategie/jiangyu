@@ -132,44 +132,10 @@ export function passesKindFilter(entry: AssetEntry, kindFilter: AssetKindGroup |
 }
 
 /**
- * Build the replacement alias: bare name when unique, `name--pathId` otherwise.
- */
-export function buildReplacementAlias(name: string, pathId: number, unique: boolean): string {
-  return unique ? name : `${name}--${pathId}`;
-}
-
-/**
- * Build the suggested replacement path for an asset entry.
- * Returns `null` for asset types that don't have a replacement convention
- * (e.g. bare Mesh entries).
- *
- * Only PrefabHierarchyObject targets carry a `--pathId` suffix when ambiguous.
- * Texture2D / Sprite / AudioClip filenames are always bare names because the
- * runtime resolves them by `name`, so a single replacement paints every
- * matching instance and a pathId in the filename would be vestigial.
- */
-export function buildReplacementPath(entry: AssetEntry, unique: boolean): string | null {
-  const name = entry.name;
-  if (!name) return null;
-  switch (entry.className) {
-    case "PrefabHierarchyObject":
-      return `models/${buildReplacementAlias(name, entry.pathId, unique)}/model.gltf (.glb)`;
-    case "Texture2D":
-      return `textures/${name}.png`;
-    case "Sprite":
-      return `sprites/${name}.png`;
-    case "AudioClip":
-      return `audio/${name}.wav`;
-    default:
-      return null;
-  }
-}
-
-/**
  * Returns the count of indexed entries that share `(className, name)` with
- * `entry`, so the UI can tell the modder how many live instances a single
- * tex/sprite/audio replacement will paint. Returns 1 when the name is unique,
- * 0 when the entry has no class or name to look up.
+ * `entry`, so the UI can tell the modder how many assets a by-name reference
+ * to it matches. Returns 1 when the name is unique, 0 when the entry has no
+ * class or name to look up.
  */
 export function countAssetInstances(
   entry: AssetEntry,

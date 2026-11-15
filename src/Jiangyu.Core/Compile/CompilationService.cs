@@ -100,6 +100,9 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         var replacementRoot = Path.Combine(projectDir, "assets", "replacements");
         var additionRoot = Path.Combine(projectDir, "assets", "additions");
 
+        if (ReplacementDiscovery.DeprecationWarning(ReplacementDiscovery.CategoriesInUse(replacementRoot)) is { } deprecation)
+            _log.Warning(deprecation);
+
         // Auto-import host-game prefabs declared in manifest.imports,
         // and auto-build the asset index when stale. Both steps need
         // GameData, which is multi-second to load, so load it lazily and at

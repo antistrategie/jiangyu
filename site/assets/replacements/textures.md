@@ -1,18 +1,22 @@
 # Texture replacements
 
+::: warning Deprecated
+Replacements are deprecated, and the compiler warns on any file under `assets/replacements/`. To change an asset a template references, [patch the template](/templates) to point at an [addition](/assets/additions/). To change any other asset, use [mod code](/sdk/).
+:::
+
 Replace any `Texture2D` in the game by name. The new pixels reach every consumer that already references the texture (materials, UGUI, UI Toolkit, manager caches) automatically. You don't have to enumerate them.
 
 ## Studio workflow
 
 1. Open the [Asset Browser](/studio#asset-browser) pane.
 2. Type the asset name in the search box. Filter the type to **Texture** if you want only textures.
-3. Select the asset. The detail panel shows a `Replace` row with the path under `assets/replacements/` to save your replacement at, for example:
+3. Select the asset. Your replacement goes under `assets/replacements/`, in the `textures` folder, named after the asset:
 
     ```text
     textures/window_background.png
     ```
 
-    If the name is shared by more than one texture in the game, the detail panel also shows an `Affects` row with the count. All matching instances are painted together. See [Shared names](#shared-names) below.
+    If the name is shared by more than one texture in the game, the detail panel shows a `Same name` row with the count. All matching instances are painted together. See [Shared names](#shared-names) below.
 
 4. Click **Export** to pull the vanilla pixels out as a starting point.
 5. Open the exported PNG in your image editor, make your changes, save it under your project's `assets/replacements/` directory at the path Studio showed. For the example above, that's `assets/replacements/textures/window_background.png`.

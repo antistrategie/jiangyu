@@ -17,8 +17,8 @@ hero:
       link: /studio
 
 features:
-  - title: Drop-in replacements
-    details: A texture, sprite, or audio swap is one file. Drop it where Studio tells you and the loader picks it up when the game runs. No code involved.
+  - title: Assets by name
+    details: Ship a sprite, texture, or sound as one file and point a template at it by name. A patch on a vanilla template changes what it shows or plays. No code involved.
   - title: Patch and clone
     details: Change a single stat, or clone a template into a whole new weapon variant. A patch edits the original in place. A clone copies it first, so your changes never touch what they came from. Write the KDL by hand or edit it in Studio.
   - title: Add new characters and gear

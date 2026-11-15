@@ -26,12 +26,13 @@ internal static class AgentContext
     public const string Blurb = $$"""
         {{Sentinel}}
 
-        You are working in a Jiangyu mod project. Jiangyu is a modkit for MENACE (Unity 6, IL2CPP). The working directory holds replacement assets and KDL template patches that compile into an AssetBundle plus a JSON loader manifest.
+        You are working in a Jiangyu mod project. Jiangyu is a modkit for MENACE (Unity 6, IL2CPP). The working directory holds KDL template patches, asset additions and optional mod code that compile into AssetBundles plus a JSON loader manifest.
 
         Project layout:
         - jiangyu.json — mod manifest (id, name, dependencies)
         - templates/*.kdl — typed patches over MENACE's data templates (units, weapons, perks). Operations include `set "Field" value`, `clone "Source" id="new"`, etc.
-        - assets/ — replacement files (textures, sprites, models, audio) matched to game assets by path + filename.
+        - assets/additions/<category>/ — new asset files (sprites, textures, audio) a template references with `set "Field" asset="name"`. To change a vanilla asset a template points at, patch that template to reference an addition.
+        - assets/replacements/ — deprecated. Do not author new files there.
         - compiled/ — build output produced by the jiangyu_compile tool.
 
         Workflows:
@@ -39,7 +40,7 @@ internal static class AgentContext
         - Inspect current vanilla values: jiangyu_templates_inspect or jiangyu_templates_value (NamedArray elements carry their paired enum-member name on each slot).
         - Build: jiangyu_compile.
 
-        Reference docs (manifest schema, KDL operations, replacement formats, troubleshooting) live in jiangyu_docs_list / jiangyu_docs_read tools — call those when you need authoritative material. (They're also exposed as MCP resources at jiangyu://docs/... for clients that prefer that surface.)
+        Reference docs (manifest schema, KDL operations, asset additions, troubleshooting) live in jiangyu_docs_list / jiangyu_docs_read tools — call those when you need authoritative material. (They're also exposed as MCP resources at jiangyu://docs/... for clients that prefer that surface.)
 
         Wait for the user's first real prompt before responding.
         """;

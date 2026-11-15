@@ -20,7 +20,7 @@ Run it after a Jiangyu update, or on a project scaffolded by an older version. `
 
 ### `jiangyu compile`
 
-Compiles the project's replacements and templates into a shippable mod under `compiled/`. Reads `jiangyu.json`, walks `assets/replacements/` and `templates/`, emits AssetBundles and the compiled manifest. If `unity/Assets/Prefabs/` has any `.prefab` files, `unity/Assets/UI/` any `.uxml` files or `unity/Assets/UI/Icons/` any `.png` icons, invokes Unity batchmode against the `unity/` project to build their bundles. A project with nothing to compile (no assets, prefabs, UI, templates, translations or code) has its `compiled/` removed, so `deploy` and `package` cannot ship stale output.
+Compiles the project's assets and templates into a shippable mod under `compiled/`. Reads `jiangyu.json`, walks `assets/` and `templates/`, emits AssetBundles and the compiled manifest. If `unity/Assets/Prefabs/` has any `.prefab` files, `unity/Assets/UI/` any `.uxml` files or `unity/Assets/UI/Icons/` any `.png` icons, invokes Unity batchmode against the `unity/` project to build their bundles. A project with nothing to compile (no assets, prefabs, UI, templates, translations or code) has its `compiled/` removed, so `deploy` and `package` cannot ship stale output.
 
 Compile bootstraps two preconditions on first run so the modder doesn't need to chain commands by hand:
 
@@ -96,11 +96,11 @@ jiangyu assets search local_forces --type PrefabHierarchyObject
 jiangyu assets search mortar --type AudioClip
 ```
 
-The output includes each match's pathId, collection, and the suggested replacement path under `assets/replacements/`. `--type` takes raw Unity class names (`Texture2D`, `Sprite`, `AudioClip`, `PrefabHierarchyObject`, `GameObject`, `Mesh`). These are the same values as the asset index's `className` field.
+The output includes each match's pathId and collection. `--type` takes raw Unity class names (`Texture2D`, `Sprite`, `AudioClip`, `PrefabHierarchyObject`, `GameObject`, `Mesh`). These are the same values as the asset index's `className` field.
 
 ### `jiangyu assets export <kind> <name>`
 
-Exports a vanilla asset as a starting point for your replacement. Five kinds:
+Exports a vanilla asset as a starting point for your own. Five kinds:
 
 | Kind                                     | Output                                                    |
 | ---------------------------------------- | --------------------------------------------------------- |

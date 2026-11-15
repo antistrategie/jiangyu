@@ -1,11 +1,11 @@
 # Additions
 
-An **addition** ships a brand-new asset in your mod and lets a template clone reference it by name. Use additions when a cloned item, weapon, or skill needs its own visual or audio identity that doesn't exist in the vanilla game.
+An **addition** ships a brand-new asset in your mod and lets a template reference it by name. A clone gets its own visual or audio identity, and a patch on a vanilla template changes what that template shows or plays.
 
 The modder workflow is:
 
 1. Drop the asset file under `assets/additions/<category>/<name>.<ext>`.
-2. Reference it from a template clone with `set "FieldName" asset="<name>"`.
+2. Reference it from a template clone or patch with `set "FieldName" asset="<name>"`.
 3. Compile and ship.
 
 ## File layout

@@ -47,7 +47,7 @@ export default defineConfig({
     nav: [
       { text: "What is Jiangyu?", link: "/what-is-jiangyu" },
       { text: "Get started", link: "/tutorials/installation" },
-      { text: "Guides", link: "/assets/replacements/" },
+      { text: "Guides", link: "/assets/additions/" },
       { text: "Reference", link: "/reference/cli" },
     ],
 
@@ -59,14 +59,13 @@ export default defineConfig({
         items: [
           { text: "Installation", link: "/tutorials/installation" },
           { text: "Your first patch", link: "/tutorials/first-patch" },
-          { text: "Your first re-skin", link: "/tutorials/first-reskin" },
         ],
       },
       {
         text: "How-to guides",
         items: [
           {
-            text: "Replace an asset",
+            text: "Replace an asset (deprecated)",
             items: [
               { text: "Overview", link: "/assets/replacements/" },
               { text: "Textures", link: "/assets/replacements/textures" },

@@ -1,8 +1,6 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   buildNameUniquenessMap,
-  buildReplacementAlias,
-  buildReplacementPath,
   classifyAsset,
   countAssetInstances,
   isAssetNameUnique,
@@ -116,68 +114,6 @@ describe("classifyAsset", () => {
     expect(classifyAsset(null)).toBeNull();
     expect(classifyAsset(undefined)).toBeNull();
     expect(classifyAsset("Transform")).toBeNull();
-  });
-});
-
-describe("buildReplacementAlias", () => {
-  it("returns bare name when unique", () => {
-    expect(buildReplacementAlias("soldier", 519, true)).toBe("soldier");
-  });
-
-  it("appends pathId when not unique", () => {
-    expect(buildReplacementAlias("soldier", 519, false)).toBe("soldier--519");
-  });
-});
-
-describe("buildReplacementPath", () => {
-  it("returns model path for PrefabHierarchyObject", () => {
-    const entry: AssetEntry = { ...BASE, className: "PrefabHierarchyObject" };
-    expect(buildReplacementPath(entry, true)).toBe("models/foo/model.gltf (.glb)");
-  });
-
-  it("returns texture path for Texture2D", () => {
-    const entry: AssetEntry = { ...BASE, className: "Texture2D" };
-    expect(buildReplacementPath(entry, true)).toBe("textures/foo.png");
-  });
-
-  it("returns sprite path for Sprite", () => {
-    const entry: AssetEntry = { ...BASE, className: "Sprite" };
-    expect(buildReplacementPath(entry, true)).toBe("sprites/foo.png");
-  });
-
-  it("returns audio path for AudioClip", () => {
-    const entry: AssetEntry = { ...BASE, className: "AudioClip" };
-    expect(buildReplacementPath(entry, true)).toBe("audio/foo.wav");
-  });
-
-  it("keeps Texture2D path bare even when name is ambiguous", () => {
-    const entry: AssetEntry = { ...BASE, className: "Texture2D", pathId: 42 };
-    expect(buildReplacementPath(entry, false)).toBe("textures/foo.png");
-  });
-
-  it("keeps Sprite path bare even when name is ambiguous", () => {
-    const entry: AssetEntry = { ...BASE, className: "Sprite", pathId: 42 };
-    expect(buildReplacementPath(entry, false)).toBe("sprites/foo.png");
-  });
-
-  it("keeps AudioClip path bare even when name is ambiguous", () => {
-    const entry: AssetEntry = { ...BASE, className: "AudioClip", pathId: 42 };
-    expect(buildReplacementPath(entry, false)).toBe("audio/foo.wav");
-  });
-
-  it("includes pathId for ambiguous PrefabHierarchyObject", () => {
-    const entry: AssetEntry = { ...BASE, className: "PrefabHierarchyObject", pathId: 42 };
-    expect(buildReplacementPath(entry, false)).toBe("models/foo--42/model.gltf (.glb)");
-  });
-
-  it("returns null for Mesh", () => {
-    const entry: AssetEntry = { ...BASE, className: "Mesh" };
-    expect(buildReplacementPath(entry, true)).toBeNull();
-  });
-
-  it("returns null for unnamed assets", () => {
-    const entry: AssetEntry = { ...BASE, name: null, className: "Texture2D" };
-    expect(buildReplacementPath(entry, true)).toBeNull();
   });
 });
 

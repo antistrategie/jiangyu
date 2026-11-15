@@ -75,5 +75,5 @@ No line in the log for your weapon means the mod was not read at all. Confirm `c
 That is a one-field patch. The same flow scales up from here:
 
 - [Templates](/templates) is the full KDL reference. It covers every operation, cloning a template into a new variant, and reaching nested values like the fire skill a weapon grants.
-- [Replace an asset](/assets/replacements/textures) is the other common starting point: re-skinning textures, sprites, models, and audio.
+- [Add an asset](/assets/additions/) gives a template its own icon, texture, or sound.
 - [The SDK](/sdk/) is for the rarer mod that needs C#.

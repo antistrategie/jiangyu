@@ -8,7 +8,7 @@ namespace Jiangyu.Studio.Rpc;
 public static partial class RpcHandlers
 {
     [McpTool("jiangyu_docs_list",
-        "List Jiangyu reference docs (manifest schema, KDL template operations, replacement formats, troubleshooting). Returns {\"docs\": [{\"key\": \"reference.templates\", \"title\": \"...\"}, ...]}. Tool form of the MCP `resources/list` surface — useful for clients that don't expose resources to the agent (e.g. Copilot).")]
+        "List Jiangyu reference docs (manifest schema, KDL template operations, asset additions, troubleshooting). Returns {\"docs\": [{\"key\": \"reference.templates\", \"title\": \"...\"}, ...]}. Tool form of the MCP `resources/list` surface — useful for clients that don't expose resources to the agent (e.g. Copilot).")]
     internal static JsonElement DocsList(JsonElement? __)
     {
         var docs = EmbeddedDocs.All

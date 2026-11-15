@@ -5,6 +5,9 @@ Changes relevant to modders building with Jiangyu, and to players running Jiangy
 ## 1.4.11
 
 - (Loader) Fixed an intermittent crash on reaching the main menu
+- (Compiler) Deprecated `assets/replacements/`: a project with files there compiles with a warning
+- (Studio) Removed the `Replace` row from the Asset Browser
+- (CLI) `assets search` no longer suggests replacement paths
 
 ## 1.4.10
 

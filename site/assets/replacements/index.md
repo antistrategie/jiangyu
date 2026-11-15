@@ -1,5 +1,9 @@
 # Replacements
 
+::: warning Deprecated
+Replacements are deprecated, and the compiler warns on any file under `assets/replacements/`. To change an asset a template references, [patch the template](/templates) to point at an [addition](/assets/additions/). To change any other asset, use [mod code](/sdk/).
+:::
+
 A **replacement** swaps an existing game asset by name. The new file ships in your mod's bundle, and at load time Jiangyu finds every game asset of the same name and points it at the modded content.
 
 The modder workflow is:
@@ -44,4 +48,4 @@ Some game asset names cover multiple runtime objects (e.g. a sprite and its back
 
 ## Replacement vs addition
 
-Use a replacement when the modded content should appear everywhere the vanilla asset is used. Use an [addition](/assets/additions/) when only a specific cloned template should reference the modded content. Both routes can coexist in the same mod project.
+A replacement changes every use of the vanilla asset. An [addition](/assets/additions/) changes only the templates that reference it. Both routes can coexist in the same mod project.

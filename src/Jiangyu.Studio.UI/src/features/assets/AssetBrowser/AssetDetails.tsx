@@ -4,7 +4,6 @@
 
 import { useMemo } from "react";
 import {
-  buildReplacementPath,
   countAssetInstances,
   isAssetNameUnique,
   isAudioClip,
@@ -101,9 +100,8 @@ export function AssetDetails({
   }
 
   const unique = isAssetNameUnique(focused, nameUniqueness);
-  const replacementPath = buildReplacementPath(focused, unique);
   const instanceCount = countAssetInstances(focused, nameUniqueness);
-  const showAffects =
+  const showSharedName =
     !unique &&
     instanceCount > 1 &&
     (focused.className === "Texture2D" ||
@@ -220,8 +218,9 @@ export function AssetDetails({
                 value={`${String(Math.round(focused.spriteTextureRectWidth))} × ${String(Math.round(focused.spriteTextureRectHeight))} px`}
               />
             )}
-          {replacementPath != null && <MetaRow label="Replace" value={replacementPath} />}
-          {showAffects && <MetaRow label="Affects" value={`${String(instanceCount)} instances`} />}
+          {showSharedName && (
+            <MetaRow label="Same name" value={`${String(instanceCount)} assets`} />
+          )}
         </MetaBlock>
         <BatchProgressBar progress={exportProgress} active={exporting} />
         <BatchProgressBar progress={importProgress} active={importing} />

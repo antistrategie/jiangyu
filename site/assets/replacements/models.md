@@ -1,5 +1,9 @@
 # Model replacements
 
+::: warning Deprecated
+Replacements are deprecated, and the compiler warns on any file under `assets/replacements/`. To change an asset a template references, [patch the template](/templates) to point at an [addition](/assets/additions/). To change any other asset, use [mod code](/sdk/).
+:::
+
 Replace any 3D model in the game by name. Jiangyu accepts authored glTF or GLB files from Blender (or any DCC tool that produces skinned glTF). At compile time it normalises the authored mesh onto the game's skeleton contract. At runtime, the loader swaps the live `SkinnedMeshRenderer`'s mesh, rebinds bones, and rewires materials so every existing reference picks up your replacement, including units spawned later in a session.
 
 ::: tip Replacement vs. addition
@@ -10,7 +14,7 @@ This page covers **replacing** a vanilla mesh in place. To **add** a new model t
 
 1. Open the [Asset Browser](/studio#asset-browser) pane.
 2. Type the asset name in the search box. Filter the type to **Model**.
-3. Select the asset. The detail panel shows a `Replace` row with the folder under `assets/replacements/` to save your replacement at, for example:
+3. Select the asset. Your replacement goes under `assets/replacements/`, in a folder under `models` named after the asset:
 
     ```text
     models/el.local_forces_basic_soldier_white/model.gltf (.glb)
@@ -37,7 +41,7 @@ When the target name is shared by multiple models in the index, append `--<pathI
 assets/replacements/models/SM_Env_Rock_Seeding_01--1085/model.gltf
 ```
 
-Studio's `Replace` row already includes the `--<pathId>` suffix when the name needs disambiguation. Use the path verbatim.
+The detail panel's `Path ID` row gives the number for the suffix.
 
 ## Mesh hierarchy
 

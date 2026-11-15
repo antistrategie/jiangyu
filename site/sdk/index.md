@@ -1,6 +1,6 @@
 # SDK
 
-Most mods need no code. Stat tweaks, new variants, asset swaps, and audio are all data, and live in [templates](/templates) and [asset files](/assets/replacements/). Reach for C# only when you want something the data layer cannot express.
+Most mods need no code. Stat tweaks, new variants, asset swaps, and audio are all data, and live in [templates](/templates) and [asset files](/assets/additions/). Reach for C# only when you want something the data layer cannot express.
 
 When you do, the common case by far is a **custom [template type](./template-types)**: your own effect, condition, or value provider that the game constructs from a KDL `type=` slot. It needs no entry point, just a `[JiangyuType]` class, and it is where most code mods begin. The rest of this page, the entry point and the mod API, is for the rarer **behaviour mod** that reacts to the game at runtime.
 
