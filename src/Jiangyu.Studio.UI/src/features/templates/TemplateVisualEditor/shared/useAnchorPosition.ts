@@ -47,9 +47,7 @@ export function useAnchorPosition(
     // check React re-renders the consumer on every one of those, repainting
     // the anchor's siblings (ref labels, op chips) for no visible reason.
     // Measuring the anchor IS the external system this hook synchronises with;
-    // setState in the effect is intentional. The lint rule's general advice
-    // about cascading renders doesn't apply to a one-shot DOM read.
-    // eslint-disable-next-line @eslint-react/set-state-in-effect
+    // setState in the effect is intentional.
     setPosition((prev) => {
       if (
         prev !== null &&

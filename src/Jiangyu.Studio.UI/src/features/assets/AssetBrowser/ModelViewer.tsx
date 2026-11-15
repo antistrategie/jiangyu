@@ -164,13 +164,11 @@ export function ModelViewer({ base64 }: ModelViewerProps) {
           e.stopImmediatePropagation();
         }
       };
-      // eslint-disable-next-line @eslint-react/web-api-no-leaked-event-listener -- removed in the dispose closure below.
       renderer.domElement.addEventListener("wheel", wheelGuard, { capture: true });
 
       const stopAutoRotate = () => {
         controls.autoRotate = false;
       };
-      // eslint-disable-next-line @eslint-react/web-api-no-leaked-event-listener -- removed in the dispose closure below.
       controls.addEventListener("start", stopAutoRotate);
 
       // Directional lights add shape on top of the environment probe.
@@ -192,6 +190,7 @@ export function ModelViewer({ base64 }: ModelViewerProps) {
       };
       animate();
 
+      // eslint-disable-next-line @eslint-react/web-api-no-leaked-resize-observer -- disconnected in the dispose closure below.
       const resizeObserver = new ResizeObserver((entries) => {
         for (const entry of entries) {
           const { width, height } = entry.contentRect;
