@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Runtime.InteropServices;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using UnityEngine;
@@ -2004,7 +2003,8 @@ internal sealed class TemplateCloneApplier
     }
 
     // Walks the class hierarchy to find m_ID (inherited from DataTemplate base),
-    // reads its IL2CPP offset by name, and writes the new Il2Cpp string pointer.
+    // reads its IL2CPP offset by name, and stores the new Il2Cpp string through
+    // the GC write barrier.
     private static bool TryWriteTemplateId(Il2CppObjectBase clone, string cloneId, LoaderLog log)
     {
         try
@@ -2032,7 +2032,7 @@ internal sealed class TemplateCloneApplier
             }
 
             var il2CppString = IL2CPP.ManagedStringToIl2Cpp(cloneId);
-            Marshal.WriteIntPtr(objectPointer + (int)offset, il2CppString);
+            IL2CPP.il2cpp_gc_wbarrier_set_field(objectPointer, objectPointer + (int)offset, il2CppString);
             return true;
         }
         catch (Exception ex)
