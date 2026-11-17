@@ -40,6 +40,35 @@ internal static class GameTextReplacer
     private static readonly Dictionary<string, Written> Applied = new(StringComparer.Ordinal);
     private static readonly HashSet<string> MissingReported = new(StringComparer.Ordinal);
 
+    /// <summary>The replacements by full key while the source language is active, which the game's
+    /// code reads past the store (<see cref="GameTextTranslatePatch"/>), and the last segment of
+    /// each key, the one check every Translate call makes. Empty in any other language.</summary>
+    internal static readonly Dictionary<string, string> SourceText = new(StringComparer.Ordinal);
+    internal static readonly HashSet<string> SourceKeys = new(StringComparer.Ordinal);
+
+    // Rebuilds both sets for a new language. Within one language only the keys a mod replaced
+    // since are updated (UpdateSourceText), as a replacement is never withdrawn.
+    private static void RefreshSourceText()
+    {
+        SourceText.Clear();
+        SourceKeys.Clear();
+        UpdateSourceText(keys: null);
+    }
+
+    private static void UpdateSourceText(IEnumerable<string> keys)
+    {
+        if (_token == null || !_sourceLanguage)
+            return;
+        foreach (var (key, text) in Jiangyu.Sdk.Locale.Replacements(sourceLanguage: true, keys))
+        {
+            var slash = key.LastIndexOf('/');
+            if (text == null || slash < 0)
+                continue;
+            SourceText[key] = text;
+            SourceKeys.Add(key[(slash + 1)..]);
+        }
+    }
+
     /// <summary>Write the replacements for the active language, identified by
     /// <paramref name="token"/>. Called on the main thread once the language is resolved and the
     /// mods' locale table is installed.</summary>
@@ -56,7 +85,8 @@ internal static class GameTextReplacer
         if (data == null)
             return;
 
-        var full = token != _token || StoreRebuilt(data);
+        var languageChanged = token != _token;
+        var full = languageChanged || StoreRebuilt(data);
         if (full)
             Applied.Clear();
         _token = token;
@@ -67,6 +97,11 @@ internal static class GameTextReplacer
             Write(data, keys: null);
         else if (keys.Count > 0)
             Write(data, keys);
+
+        if (languageChanged)
+            RefreshSourceText();
+        else if (keys.Count > 0)
+            UpdateSourceText(keys);
     }
 
     private static void OnReplaced(string key)
@@ -76,8 +111,11 @@ internal static class GameTextReplacer
         if (_token == null || Environment.CurrentManagedThreadId != _mainThread)
             return;
         var data = ReadData();
-        if (data != null)
-            Write(data, TakeDirty());
+        if (data == null)
+            return;
+        var keys = TakeDirty();
+        Write(data, keys);
+        UpdateSourceText(keys);
     }
 
     private static List<string> TakeDirty()

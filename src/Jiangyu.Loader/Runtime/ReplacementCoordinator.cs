@@ -82,6 +82,7 @@ internal class ReplacementCoordinator
                 new ModularVehicleSpawnGuardPatch(),
                 new SuppressionHandlerGuardPatch(),
                 new LocaleReloadPatch(),
+                new GameTextTranslatePatch(),
                 new NumericPlaceholderPatch(),
                 new UiInjectionActivatePatch(this),
                 new Jiangyu.Loader.Sdk.Hooks.TacticalManagerStartPatch(),
