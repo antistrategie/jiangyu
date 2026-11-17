@@ -43,6 +43,12 @@ new Unlock { Title = new LocalisedText("MyMod::ui/unlock/lv2", "New outfit") };
 label.text = unlock.Title.Resolve();
 ```
 
+**The game's own interface text** belongs to no template, so KDL cannot reach it. `Locale.Replace(gameKey, text)` shows your text wherever the game shows its string under `gameKey`, the key in the game's localisation CSV. The text is a `LocalisedText`, so it reaches translators like any other. In a language your mod has no translation for, the game keeps its own translation rather than showing your English.
+
+```csharp
+Locale.Replace("UI/common/squaddies", new LocalisedText("MyMod::ui/game/squaddies", "Dummies"));
+```
+
 **Voice-line subtitles** are extracted automatically. The text of every spoken bark (a SAY node in a conversation) becomes a catalogue entry, so a translator can localise what your characters say on screen. This covers the subtitle text only, not the audio: the voice clips stay as recorded, the words shown change with the language.
 
 Literal `Locale.Text` / `Locale.Format` calls and `@`-marked UXML labels are collected into the catalogue automatically, so they reach translators alongside your KDL text.

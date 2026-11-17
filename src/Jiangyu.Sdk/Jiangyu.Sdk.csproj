@@ -10,9 +10,11 @@
     <DistSubdir>sdk</DistSubdir>
   </PropertyGroup>
 
-  <!-- The loader sets a mod's ModContext through the internal setter. -->
+  <!-- The loader sets a mod's ModContext through the internal setter and reads the game strings
+       mods replace, and its tests read them too. -->
   <ItemGroup>
     <InternalsVisibleTo Include="Jiangyu.Loader" />
+    <InternalsVisibleTo Include="Jiangyu.Loader.Tests" />
   </ItemGroup>
 
   <!-- Build the author-time analyzer and co-locate it beside Jiangyu.Sdk.dll so a

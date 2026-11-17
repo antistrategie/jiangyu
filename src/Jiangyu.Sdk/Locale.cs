@@ -19,10 +19,67 @@ public static class Locale
 {
     private static IReadOnlyDictionary<string, string> _strings = new Dictionary<string, string>();
 
+    // The game's own strings a mod puts its text in place of, by the game's key.
+    private static readonly Dictionary<string, LocalisedText> _replacements = new(StringComparer.Ordinal);
+
+    /// <summary>Raised with the game key when a mod replaces a game string, so the loader writes it
+    /// in at once when the game's text is already loaded.</summary>
+    internal static Action<string> ReplacementsChanged;
+
     /// <summary>Install the active locale's UI string table. Called by the loader at load. Mods do
     /// not call this.</summary>
     public static void Install(IReadOnlyDictionary<string, string> strings)
         => _strings = strings ?? new Dictionary<string, string>();
+
+    /// <summary>
+    /// Show <paramref name="text"/> wherever the game shows its own string under
+    /// <paramref name="gameKey"/>, the key the game's localisation table files it under
+    /// (<c>UI/common/squaddies</c>). Use it for the game's interface text, which belongs to no
+    /// template a KDL patch could reach. A template's text is patched in KDL instead.
+    ///
+    /// <para>The replacement is translated like any other mod string: declare it as
+    /// <c>new LocalisedText(key, fallback)</c> in the call so it reaches the POT. In the source
+    /// language the fallback is shown. In any other language the mod's translation is shown, and
+    /// where the mod ships none the game's own translation is kept, so a player never sees English
+    /// in place of their language. The game reloads its table when the language changes, and the
+    /// loader writes the replacements in again each time. A later call for the same key wins.</para>
+    ///
+    /// <para>Called from the game's main thread, the replacement shows at once. Called from another
+    /// thread, it shows from the next locale apply (a scene load or a language change).</para>
+    /// </summary>
+    public static void Replace(string gameKey, LocalisedText text)
+    {
+        if (string.IsNullOrEmpty(gameKey) || !text.HasText)
+            return;
+        lock (_replacements)
+            _replacements[gameKey] = text;
+        ReplacementsChanged?.Invoke(gameKey);
+    }
+
+    /// <summary>The replacements for the active language: each game key with its text, or a null
+    /// text where the active translation does not cover the key (never in the
+    /// <paramref name="sourceLanguage"/>). <paramref name="keys"/> narrows the result to those
+    /// keys. Null returns every replacement.</summary>
+    internal static List<(string Key, string Text)> Replacements(bool sourceLanguage, IEnumerable<string> keys = null)
+    {
+        var strings = _strings;
+        var result = new List<(string Key, string Text)>();
+        lock (_replacements)
+        {
+            foreach (var key in keys ?? _replacements.Keys)
+            {
+                if (!_replacements.TryGetValue(key, out var text))
+                    continue;
+                if (sourceLanguage)
+                    result.Add((key, text.Fallback));
+                else if (text.Key != null && strings.TryGetValue(text.Key, out var translated) && !string.IsNullOrEmpty(translated))
+                    result.Add((key, translated));
+                else
+                    result.Add((key, null));
+            }
+        }
+        return result;
+    }
 
     /// <summary>The active-language string for <paramref name="key"/>, or
     /// <paramref name="fallback"/> when none is installed.</summary>

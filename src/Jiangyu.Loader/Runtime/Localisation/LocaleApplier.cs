@@ -46,6 +46,9 @@ internal sealed class LocaleApplier
     // load-time apply lands, which is also the "pending" signal, and the dedup for a repeated apply.
     private string _appliedToken;
 
+    // The frame of the last language-switch re-apply, which collapses the two hooks' fires.
+    private int _reappliedFrame = -1;
+
     // Templates registered or patched after the load-time apply landed, keyed by
     // LateTemplateSet.Key. The next Apply writes the plan's text for these alone.
     private HashSet<string> _scope;
@@ -209,6 +212,15 @@ internal sealed class LocaleApplier
 
     private void Reapply(MelonLogger.Instance log)
     {
+        // The game has rebuilt its table from the CSV, even when the language is the one already
+        // applied, so every entry written into it is gone: the full pass runs again. Both hooks
+        // fire for one switch, in one frame and after the one rebuild, so the second finds the
+        // first's pass in place unless the language differs. A pass that cannot complete leaves
+        // the apply pending, so the scene polls retry it.
+        var frame = UnityEngine.Time.frameCount;
+        if (frame != _reappliedFrame)
+            NotifyTemplatesChanged();
+        _reappliedFrame = frame;
         if (!TryApplyCurrentLanguage(log, revertFirst: true, out var note))
             return;
 
@@ -238,8 +250,7 @@ internal sealed class LocaleApplier
         if (state == LocaleResolver.State.NotReady)
             return false;
 
-        // Skip redundant work when the language has not changed since the last successful apply. This
-        // also collapses the double-fire when SetCurrentLanguage internally calls ReloadCurrentLanguage.
+        // Skip redundant work when the language has not changed since the last successful apply.
         var token = state == LocaleResolver.State.Translatable ? code : "<source>";
         if (_appliedToken == token)
             return true;
@@ -250,6 +261,7 @@ internal sealed class LocaleApplier
         // The active language's UI strings, or an empty map for the source language so Locale.Text
         // falls back to the English literal.
         Jiangyu.Sdk.Locale.Install(plan.Ui);
+        GameTextReplacer.Apply(log, token, state != LocaleResolver.State.Translatable);
 
         if (plan.LoadList.Count > 0 || plan.Conversations.Count > 0)
         {

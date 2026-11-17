@@ -9,6 +9,7 @@ Changes relevant to modders building with Jiangyu, and to players running Jiangy
 - (Compiler) Deprecated `assets/replacements/`: a project with files there compiles with a warning
 - (Studio) Removed the `Replace` row from the Asset Browser
 - (CLI) `assets search` no longer suggests replacement paths
+- (SDK) `Locale.Replace` replaces one of the game's own interface strings by its localisation key
 
 ## 1.4.10
 
