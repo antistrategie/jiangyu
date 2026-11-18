@@ -10,10 +10,10 @@ namespace Jiangyu.Loader.Runtime.Localisation;
 /// fetches its interface text, by category, subcategory, key and the English it was written with.
 /// In the source language it returns that English as given and never reads the loca store, so
 /// the store write <see cref="GameTextReplacer"/> makes reaches every language but that one. A
-/// postfix returns the replacement instead. Every other way the game's code asks for text (the
-/// format, notification, dialog and enum helpers, and the overload without a key) goes through this
-/// overload, so the one postfix covers them. In another language Translate reads the store, where
-/// the replacement already is.
+/// postfix returns the replacement instead. The game's other text helpers (the overload without a
+/// key, the format, notification, dialog and common helpers, and the enum helper) go through this
+/// overload, so the one postfix covers them as well. In another language Translate reads the
+/// store, where the replacement already is.
 /// </summary>
 internal sealed class GameTextTranslatePatch : IHarmonyPatchModule
 {
@@ -40,12 +40,18 @@ internal sealed class GameTextTranslatePatch : IHarmonyPatchModule
     }
 
     // Translate is behind nearly every string the game's code shows, so a key that is not
-    // replaced costs one set lookup.
+    // replaced costs a search for its last slash and one set lookup. The game joins category,
+    // subcategory and key with slashes into the key it files, and a key may itself hold slashes,
+    // so its last segment is the one checked.
     private static void Postfix(LocaCategory __0, string __1, string __2, ref string __result)
     {
-        if (__2 == null || !GameTextReplacer.SourceKeys.Contains(__2))
+        var map = GameTextReplacer.Source;
+        if (__2 == null || map.Keys.Count == 0)
             return;
-        if (GameTextReplacer.SourceText.TryGetValue($"{__0}/{__1}/{__2}", out var text))
+        var slash = __2.LastIndexOf('/');
+        if (!map.Keys.Contains(slash < 0 ? __2 : __2[(slash + 1)..]))
+            return;
+        if (map.Text.TryGetValue($"{__0}/{__1}/{__2}", out var text))
             __result = text;
     }
 }

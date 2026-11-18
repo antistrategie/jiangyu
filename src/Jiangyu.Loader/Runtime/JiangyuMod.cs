@@ -268,6 +268,8 @@ public class JiangyuMod : MelonMod, IDevServicesContext
         StartupTimings.MarkOnce("scene loaded", detail: sceneName);
 
         _modHost?.SceneLoaded(buildIndex, sceneName);
+        // A game string a mod replaced from another thread is written on the main thread here.
+        Localisation.GameTextReplacer.WritePending();
 
         _replacement.Apply(LoggerInstance);
         MelonCoroutines.Start(_replacement.FollowUpPoll(LoggerInstance));

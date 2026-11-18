@@ -45,6 +45,8 @@ label.text = unlock.Title.Resolve();
 
 **The game's own interface text** belongs to no template, so KDL cannot reach it. `Locale.Replace(gameKey, text)` shows your text wherever the game shows its string under `gameKey`, the key in the game's localisation CSV. The text is a `LocalisedText`, so it reaches translators like any other. In a language your mod has no translation for, the game keeps its own translation rather than showing your English.
 
+Your text and its translations may use the game string's numbered placeholders (`{0}`, `{1}`) up to its highest, or leave them out. A placeholder past that, a number format the game's values cannot take, or a stray brace would break the game's code, so the loader refuses such a replacement, logs it, and keeps the game's text in that language. Strings the game does not format, such as event texts with their own bracketed tokens, take any text. A key the game does not have is logged and changes nothing.
+
 ```csharp
 Locale.Replace("UI/common/squaddies", new LocalisedText("MyMod::ui/game/squaddies", "Dummies"));
 ```

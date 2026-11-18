@@ -6,9 +6,10 @@ namespace Jiangyu.Loader.Runtime.Localisation;
 
 /// <summary>
 /// Re-applies mod translations when the player changes language in-game. The settings menu calls
-/// <c>LocaManager.SetCurrentLanguage</c>. A postfix on it (and on <c>ReloadCurrentLanguage</c> as a
-/// backstop) overlays the active mod translations so an in-game switch updates mod text without a
-/// restart. The load-time pass already covers the case where the game starts in the chosen language.
+/// <c>LocaManager.SetCurrentLanguage</c>, and a debug key calls <c>ReloadCurrentLanguage</c>, each
+/// rebuilding the table from the CSV. A postfix on both overlays the active mod translations so an
+/// in-game switch updates mod text without a restart. The load-time pass already covers the case
+/// where the game starts in the chosen language.
 /// </summary>
 internal sealed class LocaleReloadPatch : IHarmonyPatchModule
 {
@@ -25,7 +26,7 @@ internal sealed class LocaleReloadPatch : IHarmonyPatchModule
         hooked |= TryHook(harmony, "ReloadCurrentLanguage", Array.Empty<string>(), postfix);
 
         if (!hooked)
-            _log.Warning($"{Label}: no LocaManager language-change method found; an in-game language switch will not re-apply mod translations.");
+            _log.Warning($"{Label}: no LocaManager language-change method found, so an in-game language switch will not re-apply mod translations.");
     }
 
     private static bool TryHook(HarmonyLib.Harmony harmony, string methodName, string[] paramSuffixes, HarmonyMethod postfix)

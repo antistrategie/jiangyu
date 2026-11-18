@@ -44,8 +44,15 @@ public static class Locale
     /// in place of their language. The game reloads its table when the language changes, and the
     /// loader writes the replacements in again each time. A later call for the same key wins.</para>
     ///
+    /// <para>A key the game has no string under is reported once in the log and changes nothing.
+    /// Where the game formats its string, the replacement may use its numbered placeholders
+    /// (<c>{0}</c>) up to the highest and leave some out. One that would not format with the values
+    /// the game passes (a higher number, a stray brace) is reported and the game's own text stays,
+    /// in that language. A string the game does not format, such as an event text with its own
+    /// bracketed tokens, takes any text.</para>
+    ///
     /// <para>Called from the game's main thread, the replacement shows at once. Called from another
-    /// thread, it shows from the next locale apply (a scene load or a language change).</para>
+    /// thread, it shows from the next scene load or language change.</para>
     /// </summary>
     public static void Replace(string gameKey, LocalisedText text)
     {

@@ -213,10 +213,10 @@ internal sealed class LocaleApplier
     private void Reapply(MelonLogger.Instance log)
     {
         // The game has rebuilt its table from the CSV, even when the language is the one already
-        // applied, so every entry written into it is gone: the full pass runs again. Both hooks
-        // fire for one switch, in one frame and after the one rebuild, so the second finds the
-        // first's pass in place unless the language differs. A pass that cannot complete leaves
-        // the apply pending, so the scene polls retry it.
+        // applied, so every entry written into it is gone: the full pass runs again. A language
+        // switch and a reload each rebuild once and reach this through their own hook, so a
+        // second call in one frame finds the first's pass in place unless the language differs.
+        // A pass that cannot complete leaves the apply pending, so the scene polls retry it.
         var frame = UnityEngine.Time.frameCount;
         if (frame != _reappliedFrame)
             NotifyTemplatesChanged();
