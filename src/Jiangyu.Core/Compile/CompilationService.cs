@@ -185,9 +185,12 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
         // assets/additions/<category>/ are bundled with their relative path (extension stripped) as the
         // Unity Object name, so a template's asset="item/fancy-pen-icon"
         // resolves to the bundle entry of the same name.
-        replacementTextures.AddRange(ReplacementDiscovery.DiscoverAdditionTextureEntries(additionRoots));
-        replacementSprites.AddRange(ReplacementDiscovery.DiscoverAdditionSpriteEntries(additionRoots));
-        replacementAudio.AddRange(ReplacementDiscovery.DiscoverAdditionAudioEntries(additionRoots));
+        var additionTextures = ReplacementDiscovery.DiscoverAdditionTextureEntries(additionRoots).ToList();
+        var additionSprites = ReplacementDiscovery.DiscoverAdditionSpriteEntries(additionRoots).ToList();
+        var additionAudio = ReplacementDiscovery.DiscoverAdditionAudioEntries(additionRoots).ToList();
+        replacementTextures.AddRange(additionTextures);
+        replacementSprites.AddRange(additionSprites);
+        replacementAudio.AddRange(additionAudio);
 
         // Atlas compositing: for atlas-backed sprite replacements, composite the modder's
         // images into a copy of the original atlas and emit as Texture2D replacements.
@@ -235,7 +238,13 @@ public sealed class CompilationService(ILogSink log, IProgressSink progress)
 
         _log.Info($"Compiling {manifest.Name}...");
         _log.Info(
-            $"  {modelFiles.Count} model file(s), {replacementTextures.Count} texture replacement(s), {totalSpriteCount} sprite replacement(s), {replacementAudio.Count} audio replacement(s), {replacementEntries.Count} replacement mesh target(s)");
+            $"  {additionTextures.Count} texture(s), {additionSprites.Count} sprite(s), {additionAudio.Count} audio clip(s) and {additionModelFiles.Count} model file(s) added");
+        var replacedTextureCount = replacementTextures.Count - additionTextures.Count;
+        var replacedSpriteCount = totalSpriteCount - additionSprites.Count;
+        var replacedAudioCount = replacementAudio.Count - additionAudio.Count;
+        if (replacedTextureCount + replacedSpriteCount + replacedAudioCount + replacementEntries.Count > 0)
+            _log.Info(
+                $"  {replacedTextureCount} texture, {replacedSpriteCount} sprite, {replacedAudioCount} audio and {replacementEntries.Count} mesh replacement(s) from the deprecated assets/replacements/");
 
         var bundleName = manifest.Name.ToLowerInvariant().Replace(" ", "_");
 
