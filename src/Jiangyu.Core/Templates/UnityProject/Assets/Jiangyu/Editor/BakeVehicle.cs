@@ -593,11 +593,37 @@ namespace Jiangyu.Mod
                 if (instance.transform.Find("__jiangyu_timer") == null)
                     new GameObject("__jiangyu_timer").transform.SetParent(instance.transform, false);
 
-                var animator = instance.GetComponentInChildren<Animator>();
-                if (animator == null) animator = instance.AddComponent<Animator>();
+                // A vehicle whose MovementType hugs slopes tilts the root's child named
+                // "rotator" to the ground (Element.HugSlope), and Element.Create logs an
+                // error for a vehicle without one, as every vanilla vehicle carries one. The whole
+                // model goes under it with the Animator, so every clip path stays
+                // relative to the same parent and binds as authored.
+                var rotator = new GameObject("rotator").transform;
+                rotator.SetParent(instance.transform, false);
+                foreach (var child in instance.transform.Cast<Transform>().Where(t => t != rotator).ToArray())
+                    child.SetParent(rotator, worldPositionStays: false);
+                var avatar = AssetDatabase.LoadAllAssetsAtPath(fbxPath).OfType<Avatar>().FirstOrDefault();
+                // Every Animator but the rotator's goes, the import's own on the root among
+                // them: from there its clips' paths would miss the model by the rotator's
+                // level. Grafted vanilla subtrees keep theirs.
+                foreach (var stray in instance.GetComponentsInChildren<Animator>(true)
+                             .Where(a => !IsUnderAny(a.transform, graftRoots)).ToArray())
+                    UnityEngine.Object.DestroyImmediate(stray);
+                // An FBX of one mesh imports it onto the root, which the rotator cannot tilt.
+                // A skinned mesh there with bones still follows them under the rotator.
+                var rootMesh = instance.GetComponent<Renderer>();
+                if (rootMesh != null && !(rootMesh is SkinnedMeshRenderer { bones: { Length: > 0 } }))
+                    Debug.LogWarning("Jiangyu BakeVehicle: the model's root carries its mesh, which stays "
+                        + "outside the rotator and does not tilt to slopes. Parent the mesh under an empty node in the FBX.");
+                foreach (var clip in AssetDatabase.LoadAllAssetsAtPath(fbxPath).OfType<AnimationClip>()
+                             .Where(c => !c.name.StartsWith("__preview", StringComparison.Ordinal)))
+                    if (AnimationUtility.GetCurveBindings(clip).Any(b => b.path.Length == 0 && b.type == typeof(Transform)))
+                        Debug.LogWarning("Jiangyu BakeVehicle: clip '" + clip.name + "' keys the model's root, "
+                            + "which binds to the rotator and fights its slope tilt.");
+
+                var animator = rotator.gameObject.AddComponent<Animator>();
                 animator.runtimeAnimatorController = controller;
                 animator.applyRootMotion = false;
-                var avatar = AssetDatabase.LoadAllAssetsAtPath(fbxPath).OfType<Avatar>().FirstOrDefault();
                 if (avatar != null) animator.avatar = avatar;
 
                 var prefabPath = outDir + "/main.prefab";

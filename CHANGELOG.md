@@ -2,6 +2,10 @@
 
 Changes relevant to modders building with Jiangyu, and to players running Jiangyu mods where they can see the difference. Entries are scoped Loader, Compiler, Studio, CLI, MCP or SDK.
 
+## 1.4.12
+
+- (SDK) `BakeVehicle` puts the model and its Animator under a `rotator` child, so slope-hugging vehicles tilt to the ground
+
 ## 1.4.11
 
 - (Loader) Fixed an intermittent crash on reaching the main menu
