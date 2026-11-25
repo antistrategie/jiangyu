@@ -49,9 +49,9 @@ internal static class ConversationManagerRegistry
 
     public static void Init(MelonLogger.Instance log) => _log = log;
 
-    /// <summary>Called by the Harmony postfix on <c>BaseConversationManager</c>
-    /// subclass constructors. Records the manager and replays any pre-existing
-    /// clone registrations into it.</summary>
+    /// <summary>Called by the Harmony prefix on
+    /// <c>BaseConversationManager.GetAvailableConversationTemplates</c>. Records the
+    /// manager and replays any pre-existing clone registrations into it.</summary>
     public static void RegisterManager(Il2CppObjectBase manager)
     {
         if (manager == null) return;
@@ -64,7 +64,7 @@ internal static class ConversationManagerRegistry
         // manager AND this method snapshots Clones without that clone, losing
         // the injection. Cache build is just a handful of GetProperty/GetMethod
         // calls and only runs once per pointer, so holding Sync across it is cheap.
-        ManagerCache managerCache;
+        ManagerCache managerCache = null;
         PreparedClone[] clonesSnapshot;
         lock (Sync)
         {
@@ -73,33 +73,54 @@ internal static class ConversationManagerRegistry
             // manager; the matcher's index is stable from then on.
             if (ManagerCaches.TryGetValue(pointer, out var existing))
             {
-                // Still the manager we injected into: its indexes already carry our clones.
+                // Still the manager we injected into: its indexes already carry our clones. One
+                // left untyped is typed again once a later manager's registration has resolved
+                // more classes, so a class that failed to resolve the first time still types it.
+                // Only the pointer map is walked here, as this runs on every trigger call.
                 if (existing.IsAlive)
-                    return;
-
-                // The manager at this address was freed and IL2CPP has handed the address to a
-                // new one. Nothing has put our clones in its indexes, so it registers afresh.
-                // Keying on the raw pointer alone would skip it for good, and every doll would go
-                // quiet for the rest of the session while vanilla conversations, which the manager
-                // builds natively, kept working. The append checks the manager's indexes first, so
-                // a replay is idempotent.
-                existing.Release();
-                ManagerCaches.Remove(pointer);
+                {
+                    if (existing.ConversationType.HasValue || NativeManagerClassConversationTypes.Count == existing.ClassesKnown)
+                        return;
+                    existing.ClassesKnown = NativeManagerClassConversationTypes.Count;
+                    existing.ConversationType = ConversationTypeOfKnownClass(pointer);
+                    if (!existing.ConversationType.HasValue)
+                        return;
+                    managerCache = existing;
+                }
+                else
+                {
+                    // The manager at this address was freed and IL2CPP has handed the address to a
+                    // new one. Nothing has put our clones in its indexes, so it registers afresh.
+                    // Keying on the raw pointer alone would skip it for good, and every doll would
+                    // go quiet for the rest of the session while vanilla conversations, which the
+                    // manager builds natively, kept working. The append checks the manager's
+                    // indexes first, so a replay is idempotent.
+                    existing.Release();
+                    ManagerCaches.Remove(pointer);
+                }
             }
 
-            // The dictionary only ever grew, one entry per manager the session had seen.
-            // Dropping the collected ones keeps it to the live set and keeps a recycled
-            // address from finding a stale entry in the first place.
-            PruneCollectedManagers();
+            if (managerCache == null)
+            {
+                // The dictionary only ever grew, one entry per manager the session had seen.
+                // Dropping the collected ones keeps it to the live set and keeps a recycled
+                // address from finding a stale entry in the first place.
+                PruneCollectedManagers();
 
-            managerCache = TryBuildManagerCache(manager);
-            if (managerCache == null) return;
-            ManagerCaches[pointer] = managerCache;
+                managerCache = TryBuildManagerCache(manager);
+                if (managerCache == null) return;
+                ManagerCaches[pointer] = managerCache;
+            }
             clonesSnapshot = Clones.ToArray();
         }
 
-        var managerTypeName = manager.GetType().FullName ?? "<unknown>";
-        _log?.Debug($"  Conversation manager registered: {managerTypeName} (replaying {clonesSnapshot.Length} known clone(s)).");
+        var managerTypeName = managerCache.ClassName;
+        if (!managerCache.ConversationType.HasValue)
+        {
+            _log?.Warning($"  Conversation manager {managerTypeName}: ConversationType unknown (no template to sample, class not mapped), so no clones are injected into it.");
+            return;
+        }
+        _log?.Debug($"  Conversation manager registered: {managerTypeName} (ConversationType={managerCache.ConversationType.Value}, replaying {clonesSnapshot.Length} known clone(s)).");
         BatchInjectClonesIntoManager(managerCache, clonesSnapshot);
     }
 
@@ -196,8 +217,10 @@ internal static class ConversationManagerRegistry
 
     private static void InjectSingleCloneIntoManager(ManagerCache managerCache, PreparedClone prepared)
     {
-        if (managerCache.ConversationType.HasValue
-            && prepared.ConversationType != managerCache.ConversationType.Value)
+        // A manager of unknown type takes no clones: its constructor kept only templates of
+        // its own type, and a clone of another type in its buckets plays where vanilla never
+        // plays that type.
+        if (managerCache.ConversationType != prepared.ConversationType)
             return;
         Refresh(prepared);
         if (!prepared.Active)
@@ -216,7 +239,7 @@ internal static class ConversationManagerRegistry
         var masterAdded = TryAppendToMasterArraySingle(managerCache, prepared.TypedWrapper);
 
         _log?.Debug(
-            $"  Conversation clone injection: into {managerCache.ManagerType.FullName} "
+            $"  Conversation clone injection: into {managerCache.ClassName} "
             + $"(ConversationType={prepared.ConversationType}, "
             + $"{bucketsAdded}/{prepared.Triggers.Length} bucket(s) updated, "
             + $"masterArrayAdded={masterAdded}).");
@@ -233,8 +256,7 @@ internal static class ConversationManagerRegistry
         var inactive = 0;
         foreach (var prepared in clones)
         {
-            if (managerCache.ConversationType.HasValue
-                && prepared.ConversationType != managerCache.ConversationType.Value)
+            if (managerCache.ConversationType != prepared.ConversationType)
                 continue;
             Refresh(prepared);
             if (!prepared.Active) { inactive++; continue; }
@@ -263,7 +285,7 @@ internal static class ConversationManagerRegistry
         {
             _log?.Debug(
                 $"  Conversation clone injection: {matching.Count} clone(s) injected "
-                + $"into {managerCache.ManagerType.FullName} "
+                + $"into {managerCache.ClassName} "
                 + $"({bucketAppends} bucket append(s), masterArrayAdded={masterAddedCount}).");
         }
     }
@@ -431,6 +453,8 @@ internal static class ConversationManagerRegistry
                 }
             }
 
+            cache.ConversationType ??= ConversationTypeOfNativeClass(manager.Pointer);
+            cache.ClassesKnown = NativeManagerClassConversationTypes.Count;
             return cache;
         }
         catch (Exception ex)
@@ -439,6 +463,87 @@ internal static class ConversationManagerRegistry
             cache?.Release();
             return null;
         }
+    }
+
+    // The ConversationType each manager class hands BaseConversationManager's constructor, which
+    // keeps only templates of that type. A manager's type is sampled from the templates it holds,
+    // and this covers the one built empty: vanilla's StrategyConversation templates are all
+    // inactive, so StrategyConversationsManager holds none, and every clone would reach it.
+    // Read from each constructor's call to the base constructor in GameAssembly.dll. BarksManager
+    // takes the type as a constructor argument and has no entry. The game-assemblies tests check
+    // the classes and enum values against the interop assembly.
+    internal static readonly IReadOnlyDictionary<string, int> ManagerClassConversationTypes = new Dictionary<string, int>
+    {
+        ["Il2CppMenace.Conversations.StrategyConversationsManager"] = 0, // StrategyConversation
+        ["Il2CppMenace.Tactical.Barks.TacticalBarksManager"] = 2, // TacticalBark
+        ["Il2CppMenace.Strategy.BlackMarketBarksManager"] = 3, // BlackMarketBark
+        ["Il2CppMenace.Strategy.EventManager"] = 4, // Event
+    };
+
+    // ManagerClassConversationTypes keyed by native class pointer, filled on first use, under Sync.
+    // A class that fails to resolve is tried again by the next manager that needs the map, and
+    // warned about once, so a class that resolves later still types its managers.
+    private static readonly Dictionary<IntPtr, int> NativeManagerClassConversationTypes = new();
+    private static readonly HashSet<string> UnresolvedManagerClasses = new(ManagerClassConversationTypes.Keys);
+    private static readonly HashSet<string> WarnedManagerClasses = new();
+
+    // Walks the manager's native class chain, so a subclass of a mapped class takes its type.
+    // Native pointers, not names: native names lack the interop's Il2Cpp prefix. Called under Sync.
+    private static int? ConversationTypeOfNativeClass(IntPtr managerPointer)
+    {
+        if (UnresolvedManagerClasses.Count > 0)
+            ResolveNativeManagerClasses();
+        return ConversationTypeOfKnownClass(managerPointer);
+    }
+
+    // The walk alone, over the classes resolved so far. Called under Sync.
+    private static int? ConversationTypeOfKnownClass(IntPtr managerPointer)
+    {
+        for (var klass = IL2CPP.il2cpp_object_get_class(managerPointer); klass != IntPtr.Zero; klass = IL2CPP.il2cpp_class_get_parent(klass))
+        {
+            if (NativeManagerClassConversationTypes.TryGetValue(klass, out var conversationType))
+                return conversationType;
+        }
+        return null;
+    }
+
+    private static void ResolveNativeManagerClasses()
+    {
+        foreach (var typeName in UnresolvedManagerClasses.ToArray())
+        {
+            IntPtr klass;
+            string failure;
+            try
+            {
+                var type = AppDomain.CurrentDomain.GetAssemblies()
+                    .Select(assembly => assembly.GetType(typeName, throwOnError: false))
+                    .FirstOrDefault(t => t != null);
+                klass = type == null ? IntPtr.Zero : Il2CppClassPointerStore.GetNativeClassPointer(type);
+                failure = "not found in the game";
+            }
+            catch (Exception ex)
+            {
+                klass = IntPtr.Zero;
+                failure = $"could not be resolved ({ex.GetType().Name}: {ex.Message})";
+            }
+            if (klass == IntPtr.Zero)
+            {
+                if (WarnedManagerClasses.Add(typeName))
+                    _log?.Warning($"  Conversation manager class {typeName} {failure}, so its managers are typed from their templates only.");
+                continue;
+            }
+            NativeManagerClassConversationTypes[klass] = ManagerClassConversationTypes[typeName];
+            UnresolvedManagerClasses.Remove(typeName);
+        }
+    }
+
+    private static string NativeClassName(IntPtr objectPointer)
+    {
+        var klass = IL2CPP.il2cpp_object_get_class(objectPointer);
+        if (klass == IntPtr.Zero) return "<unknown>";
+        var ns = IL2CPP.il2cpp_class_get_namespace_(klass);
+        var name = IL2CPP.il2cpp_class_get_name_(klass);
+        return string.IsNullOrEmpty(ns) ? name : $"{ns}.{name}";
     }
 
     private static int? SampleManagerConversationType(object array, Type arrayType)
@@ -702,7 +807,12 @@ internal static class ConversationManagerRegistry
         private WeakReference<Il2CppObjectBase> _wrapper;
 
         public Type ManagerType;
+        // The Harmony prefix on the base method wraps every manager as BaseConversationManager,
+        // so the wrapper's type names no subclass. Logs name the native class, which does.
+        public string ClassName;
         public int? ConversationType;
+        // How many manager classes were resolved when the type was last looked for.
+        public int ClassesKnown;
 
         public PropertyInfo MasterArrayProp;
         public Type MasterArrayType;
@@ -723,6 +833,7 @@ internal static class ConversationManagerRegistry
             _weakHandle = IL2CPP.il2cpp_gchandle_new_weakref(_pointer, false);
             _wrapper = new WeakReference<Il2CppObjectBase>(manager);
             ManagerType = manager.GetType();
+            ClassName = NativeClassName(_pointer);
         }
 
         public bool IsAlive

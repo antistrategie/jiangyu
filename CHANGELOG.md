@@ -5,6 +5,7 @@ Changes relevant to modders building with Jiangyu, and to players running Jiangy
 ## 1.4.12
 
 - (SDK) `BakeVehicle` puts the model and its Animator under a `rotator` child, so slope-hugging vehicles tilt to the ground
+- (Loader) Fixed a cloned event or bark softlocking the game on the full-screen conversation stage at the end of an operation
 
 ## 1.4.11
 

@@ -128,10 +128,36 @@ Each manager filters its candidate set by `ConversationType`
 (`StrategyConversation`, `TacticalBark`, `BlackMarketBark`, `Event`).
 The clone applier reads the cloned conversation's `ConversationType`
 and matches it against the target manager. The manager doesn't retain
-its filter as a public field on the wrapper, so the registry infers
-the filter by sampling an existing template from the manager's
-`m_ConversationTemplates`. Every template in a single manager shares
-the same `ConversationType`, so a single read is sufficient.
+its filter as a field: each subclass constructor passes a constant to
+`BaseConversationManager`'s constructor, which keeps only templates of
+that type. The registry infers the filter by sampling an existing
+template from the manager's `m_ConversationTemplates`. Every template
+in a single manager shares the same `ConversationType`, so a single
+read is sufficient.
+
+A manager can be built empty. Vanilla's `StrategyConversation`
+templates are all inactive, so `StrategyConversationsManager` holds
+none. The registry then types the manager from its class, by the
+constants read from each constructor in `GameAssembly.dll`:
+
+| Manager | ConversationType |
+|---|---|
+| `StrategyConversationsManager` | `StrategyConversation` |
+| `TacticalBarksManager` | `TacticalBark` |
+| `BlackMarketBarksManager` | `BlackMarketBark` |
+| `EventManager` | `Event` |
+
+`BarksManager` takes its type as a constructor argument and is typed
+through its subclass. The class is the manager's native class, walked
+up its parents and compared by class pointer. The prefix on the base
+method hands every manager over wrapped as `BaseConversationManager`,
+so the wrapper's type names no subclass.
+
+A manager whose type is still unknown receives no clones and is
+warned about once per manager. A clone of another type in its trigger
+lists would play where vanilla never plays that type, and an event
+clone in the strategy manager plays on the full-screen conversation
+stage with no way out.
 
 A clone whose `ConversationType` doesn't match a given manager is
 silently skipped for that manager. If it matches a later manager's

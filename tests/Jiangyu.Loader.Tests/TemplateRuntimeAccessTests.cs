@@ -86,6 +86,65 @@ public sealed class TemplateRuntimeAccessGameTests
         return null;
     }
 
+    // Every conversation manager the game builds gets its ConversationType from its class or from
+    // the parameterised base that its subclasses fill in, so a manager built empty is never left
+    // untyped, and each mapped value names the enum member recorded for that class. The members
+    // were read from each constructor's argument in GameAssembly.dll, which this cannot check: a
+    // game update that changes a constructor's argument passes here. At runtime the registry walks
+    // the manager's native class chain, which needs a live IL2CPP domain. This walks the matching
+    // interop types instead, which checks the map and not that lookup.
+    [SkippableFact]
+    public void ConversationManagerClasses_AreAllTyped()
+    {
+        var gameAssembly = Path.Combine(GameAssembliesDir, "Assembly-CSharp.dll");
+        var melonLoader = Path.Combine(MelonLoaderDir, "MelonLoader.dll");
+        var sameInstall = !string.IsNullOrEmpty(MelonLoaderDir)
+            && string.Equals(Path.GetFullPath(Path.Combine(MelonLoaderDir, "..")), Path.GetFullPath(Path.Combine(GameAssembliesDir, "..")), StringComparison.OrdinalIgnoreCase);
+        Skip.If(!File.Exists(gameAssembly) || !File.Exists(melonLoader) || !sameInstall, $"no full game install at '{GameAssembliesDir}'");
+
+        AppDomain.CurrentDomain.AssemblyResolve += LoadFromGame;
+        try
+        {
+            var game = Assembly.LoadFrom(gameAssembly);
+            var managerBase = game.GetType("Il2CppMenace.Conversations.BaseConversationManager", throwOnError: true)!;
+            var conversationType = game.GetType("Il2CppMenace.Conversations.ConversationType", throwOnError: true)!;
+            // Takes its ConversationType as a constructor argument from its subclasses.
+            const string parameterised = "Il2CppMenace.Strategy.BarksManager";
+
+            Type[] types;
+            try { types = game.GetTypes(); }
+            catch (ReflectionTypeLoadException ex) { types = ex.Types.Where(t => t != null).ToArray()!; }
+            var managers = types.Where(t => t.IsClass && !t.IsAbstract && t != managerBase && managerBase.IsAssignableFrom(t)).ToArray();
+
+            Assert.NotEmpty(managers);
+            foreach (var manager in managers)
+            {
+                var mapped = false;
+                for (var type = manager; type != null && !mapped; type = type.BaseType)
+                    mapped = type.FullName != null && ConversationManagerRegistry.ManagerClassConversationTypes.ContainsKey(type.FullName);
+                Assert.True(mapped != (manager.FullName == parameterised), $"{manager.FullName} mapped={mapped}");
+            }
+
+            var expected = new Dictionary<string, string>
+            {
+                ["Il2CppMenace.Conversations.StrategyConversationsManager"] = "StrategyConversation",
+                ["Il2CppMenace.Tactical.Barks.TacticalBarksManager"] = "TacticalBark",
+                ["Il2CppMenace.Strategy.BlackMarketBarksManager"] = "BlackMarketBark",
+                ["Il2CppMenace.Strategy.EventManager"] = "Event",
+            };
+            Assert.Equal(expected.Keys.OrderBy(k => k), ConversationManagerRegistry.ManagerClassConversationTypes.Keys.OrderBy(k => k));
+            foreach (var (manager, member) in expected)
+            {
+                Assert.NotNull(game.GetType(manager));
+                Assert.Equal(Convert.ToInt32(Enum.Parse(conversationType, member)), ConversationManagerRegistry.ManagerClassConversationTypes[manager]);
+            }
+        }
+        finally
+        {
+            AppDomain.CurrentDomain.AssemblyResolve -= LoadFromGame;
+        }
+    }
+
     // The game's interop assembly holds Attack twice: the skill effect (a
     // SkillEventHandlerTemplate) and the AI behaviour. The short name alone is
     // ambiguous, and the destination it is written to settles it.
